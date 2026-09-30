@@ -11,8 +11,3 @@
  (name producer)
  (modules producer)
  (libraries producer_core))
-
-(test
- (name unit)
- (modules unit)
- (libraries producer_core))

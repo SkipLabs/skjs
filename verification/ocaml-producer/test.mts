@@ -1,14 +1,15 @@
+// The pipeline's suite: every case of the inventory, then the checks no case
+// can make.
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
-import { resolve } from "node:path";
-import { parseFile, definedClassCallables, close as closeParser } from "../tools/fragment-parse.mts";
-import { collectDeclarations, importTargets, tsconfigOf } from "../tools/declaration-graph.mts";
+import { parseFile, close as closeParser } from "../tools/fragment-parse.mts";
+import { collectDeclarations, tsconfigOf } from "../tools/declaration-graph.mts";
 import { overlay as arrayOverlay } from "../tools/array-prototype.mts";
-import type { DeclarationDocument, Reference, TypeDefinition, TypeTerm } from "../tools/declaration-types.mts";
 import type { Ast } from "../tools/fragment.mts";
+import type { TypeDefinition, TypeTerm } from "../tools/declaration-types.mts";
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { check, verifier } from "./check.mts";
 import { cases } from "./cases.mts";
@@ -31,139 +32,109 @@ import { analyse } from "../report-viewer/serve.mts";
 import { fromBundle, parseReport } from "../report-viewer/model.mts";
 import type { Bundle } from "../report-viewer/types.ts";
 const here = import.meta.dirname;
-/** Inspect the source equations used by Lean, rather than a second edge list. */
-function referencesIn(term: TypeTerm): Reference[] {
-  switch (term.k) {
-    case "atom":
-    case "literal":
-    case "self":
-    case "parameter":
-    case "binder":
-    case "callable": return [];
-    case "union":
-    case "intersection": return term.parts.flatMap(referencesIn);
-    case "array": return referencesIn(term.element);
-    case "tuple": return [...term.required, ...term.optional,
-      ...(term.rest ? [term.rest] : [])].flatMap(referencesIn);
-    case "object": return [
-      ...term.fields.flatMap(field => referencesIn(field.type)),
-      ...(term.stringIndex ? referencesIn(term.stringIndex.value) : []),
-      ...(term.numberIndex ? referencesIn(term.numberIndex.value) : []),
-      ...(term.symbolIndex ? referencesIn(term.symbolIndex.value) : []),
-      ...term.calls.flatMap(referencesIn),
-    ];
-    case "function": return [
-      ...(term.receiver ? referencesIn(term.receiver) : []),
-      ...term.params.flatMap(referencesIn),
-      ...(term.rest ? referencesIn(term.rest) : []),
-      ...referencesIn(term.result),
-    ];
-    case "constructor": return [...term.params.flatMap(referencesIn),
-      ...(term.rest ? referencesIn(term.rest) : []), ...referencesIn(term.result)];
-    case "pack": return referencesIn(term.of);
-    case "scheme": return [
-      ...term.binders.flatMap(b => [...(b.bound ? referencesIn(b.bound) : []),
-        ...(b.default ? referencesIn(b.default) : [])]),
-      ...term.signatures.flatMap(referencesIn),
-    ];
-    case "reference": return [term.reference, ...term.args.flatMap(referencesIn)];
-    default: {
-      const exhaustive: never = term;
-      return exhaustive;
-    }
-  }
+const upstreamConfig = tsconfigOf(resolve(here, "upstream"));
+
+function must<T>(value: T | null | undefined, message: string): T {
+  assert.ok(value !== null && value !== undefined, message);
+  return value;
 }
-function referencesInDefinition(definition: TypeDefinition): Reference[] {
-  return [
-    ...definition.parameters.flatMap(parameter => [
-      ...(parameter.bound ? referencesIn(parameter.bound) : []),
-      ...(parameter.default ? referencesIn(parameter.default) : []),
-    ]),
-    ...referencesIn(definition.expression),
-    ...definition.bases.flatMap(referencesIn),
-  ];
+/** An example run as JavaScript, then `expression` evaluated after it. */
+const runExample = (file: string, expression: string): unknown =>
+  vm.runInNewContext(`${stripTypes(readFileSync(join(here, "examples", `${file}.ts`), "utf8"))
+    .replace(/^export /gm, "")}\n${expression}`, {}, { timeout: 1000 });
+/** Check `claims` against `evidence` with the verifier's acceptance entry, and
+ * require a refusal; its words, for the caller to match. */
+const invoke = (claims: string, evidence: string, artifacts: string,
+  ast = join(artifacts, "fragment.json")): string => {
+  const p = spawnSync(verifier, ["--check-source-claims", ast, claims, join(artifacts, "source.ts"), evidence],
+    { encoding: "utf8", timeout: 30_000 });
+  assert.ifError(p.error);
+  assert.equal(p.signal, null);
+  assert.equal(p.status, 1, p.stdout + p.stderr);
+  return p.stdout + p.stderr;
+};
+/** Search for evidence of forged claims, or of a forged parser document. */
+const produceWith = (artifacts: string, claims: string, name: string,
+    fragmentPath = join(artifacts, "fragment.json")): SpawnSyncReturns<string> =>
+  spawnSync(verifier, ["--produce-source-claims", fragmentPath, claims, join(artifacts, "source.ts"),
+    join(artifacts, `${name}-evidence.json`), "12"], { encoding: "utf8", timeout: 30_000 });
+/** Require search over forged claims to fail at the obligation named `at`. */
+const refusedAt = (artifacts: string, claims: string, name: string, at: string): void => {
+  const searched = produceWith(artifacts, claims, name);
+  const detail = searched.stdout + searched.stderr;
+  assert.equal(searched.status, 1, detail);
+  assert.ok(detail.includes(at), detail);
+};
+/** The label of the one-clause row `clause`, added to the claims' rows when
+ * they lack it. */
+const rowOf = (claims: SourceClaims, clause: Row[number]): number => {
+  const i = claims.types.findIndex((row) => row.length === 1 && JSON.stringify(row[0]) === JSON.stringify(clause));
+  return i >= 0 ? i : claims.types.push([clause]) - 1;
+};
+const readClaims = (artifacts: string): SourceClaims =>
+  JSON.parse(readFileSync(join(artifacts, "claims.json"), "utf8"));
+/** Write forged claims beside a run's artifacts. */
+const writeClaims = (artifacts: string, name: string, claims: SourceClaims): string => {
+  const path = join(artifacts, `${name}.json`);
+  writeFileSync(path, JSON.stringify(claims));
+  return path;
+};
+/** A TypeScript project of `files`, strict, with `@fixture/NAME` mapped to
+ * `NAME.ts`; `graphOf` collects the declaration graph of a client importing
+ * from it, `parse` parses such a client. */
+function fixtureProject(files: Record<string, string>) {
+  const dir = mkdtempSync(join(tmpdir(), "skjs-fixture-project-"));
+  for (const [name, text] of Object.entries(files)) writeFileSync(join(dir, name), text);
+  const config = join(dir, "tsconfig.json");
+  writeFileSync(config, JSON.stringify({
+    compilerOptions: { strict: true, noEmit: true, module: "Node16", moduleResolution: "Node16",
+      paths: Object.fromEntries(Object.keys(files).filter((f) => f.endsWith(".ts") && !f.endsWith(".d.ts"))
+        .map((f) => [`@fixture/${f.replace(/\.ts$/, "")}`, [`./${f}`]])) },
+    include: ["*.ts"],
+  }));
+  let clients = 0;
+  const client = (text: string) => {
+    const file = join(dir, `client-${clients++}.ts`);
+    writeFileSync(file, text);
+    return file;
+  };
+  return {
+    graphOf: (text: string) => collectDeclarations(client(text), { tsconfigPath: config }),
+    parse: (text: string) => parseFile(client(text), false, config),
+  };
 }
+
+const outcomes = await pooled(cases, runCase);
+const artifactsOf = new Map<string, string>();
+let verifiedFunctions = 0;
+for (const [i, test] of cases.entries()) {
+  const settled = outcomes[i];
+  if (settled.status === "rejected") throw settled.reason;
+  const result = expectOutcome(test, settled.value);
+  if (result.status === "verified") verifiedFunctions += result.functions.length;
+  else if (test.kind === "negative" && (test.phase === "search" || test.phase === "check"))
+    assert.match(result.detail, /at \[\d+,\d+\)|obligation at \d+/, `${test.file}: a control failing at no located obligation`);
+  artifactsOf.set(test.file, result.artifacts);
+  process.stdout.write(`${test.file}: ${result.status} (${result.phase}, ${test.kind})\n`);
+}
+process.stdout.write(
+  `${verifiedFunctions} functions verified; ${cases.filter((c) => c.kind === "negative").length} negative controls; ${cases.filter((c) => c.kind === "gap").length} named gaps\n`,
+);
+/** The artifacts of a case's run. */
+const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'s run`);
+
 {
-  const source = join(mkdtempSync(join(tmpdir(), "skjs-reopen-")), "client.ts");
-  writeFileSync(source, "function before(): boolean { return true; }\n");
-  assert.equal(parseFile(source).functions[0]?.name, "before");
-  writeFileSync(source, "function after(): boolean { return false; }\n");
-  assert.equal(parseFile(source).functions[0]?.name, "after");
-}
-let pinnedDeclarationDocument: DeclarationDocument | null = null;
-{
-  const local = parseFile(resolve(here, "examples/local-inheritance.ts"));
-  assert.deepEqual(local.declarations.roots.map(root => [root.binding.kind, root.binding.local]),
-    [["local", "Base"], ["local", "Derived"]]);
-  assert.deepEqual(local.declarations.definitions.map(definition =>
-    [definition.declaration.name, definition.bases.length]),
-    [["Base", 0], ["Derived", 1]]);
-}
-let recursiveJson = "";
-// The framework fixture is the upstream source, including its imports and
-// classes. A simplified replacement must not quietly inherit its census row.
-for (const [file, expected] of [
-  ["examples/reactive-sum-prettier-ignore.ts", "8c10ace97b50d5a3521626fe569fcfe87034a48424f84f2d2aeb970eba161efe"],
-] as const) {
-  assert.equal(createHash("sha256").update(readFileSync(join(here, file))).digest("hex"), expected,
-    `${file}: update the upstream provenance and census before replacing this fixture`);
-}
-{
-  const source = resolve(here, "examples/reactive-sum-prettier-ignore.ts");
-  assert.deepEqual(definedClassCallables(source).map(c => c.name), [
-    "AddIndex.constructor", "AddIndex.mapEntry", "Plus.mapEntry",
-    "Minus.mapEntry", "Add.instantiate", "Sub.instantiate",
-  ]);
-  // The corrected client keeps those callables and adds the service class.
-  assert.deepEqual(definedClassCallables(resolve(here, "examples/reactive-sum-sound.ts")).map(c => c.name), [
-    "AddIndex.constructor", "AddIndex.mapEntry", "Plus.mapEntry",
-    "Minus.mapEntry", "Add.instantiate", "Sub.instantiate", "Service.createGraph",
-  ]);
-  const upstreamConfig = tsconfigOf(resolve(here, "upstream"));
-  // TypeScript resolves the framework's imports: interfaces through the core
-  // package's reexports, and a value from the server package. This is
-  // provenance for contracts the fragment cannot yet interpret.
-  assert.deepEqual(importTargets(source, upstreamConfig).map(t => [t.local, t.module, t.name, t.kind]), [
-    ["EagerCollection", "skipruntime-ts/core/src/api.ts", "EagerCollection", "InterfaceDeclaration"],
-    ["Mapper", "skipruntime-ts/core/src/api.ts", "Mapper", "InterfaceDeclaration"],
-    ["Resource", "skipruntime-ts/core/src/api.ts", "Resource", "InterfaceDeclaration"],
-    ["Values", "skipruntime-ts/core/src/api.ts", "Values", "InterfaceDeclaration"],
-    ["InputDefinition", "skipruntime-ts/core/src/api.ts", "InputDefinition", "ClassDeclaration"],
-    ["runService", "skipruntime-ts/server/src/server.ts", "runService", "FunctionDeclaration"],
-  ]);
-  // The runtime's value imports resolve, and the whole declaration graph is
-  // read: `runService`'s `Promise` and the `Iterable` the mappers return from
-  // the standard library, and `ResourceClass` as a construct signature.
-  assert.ok(collectDeclarations(source, { tsconfigPath: upstreamConfig }).definitions.length > 0);
-  // Each runtime interface sum.ts imports, applied in a client of the same
-  // project, and the first declaration the graph refuses on its way.
-  const probe = mkdtempSync(join(tmpdir(), "skjs-runtime-api-"));
-  writeFileSync(join(probe, "package.json"), '{"type":"module"}');
-  writeFileSync(join(probe, "tsconfig.json"),
-    JSON.stringify({ extends: upstreamConfig, include: ["*.ts"] }));
-  // A generic method and a generic function type (`mapReduce`'s result) are
-  // schemes and a `unique symbol` key is a field keyed by that symbol, so
-  // `Resource`, `Context` and
-  // `EagerCollection` (through `Managed`'s `[sk_managed]`) collect, and so do
-  // `Mapper` and `Values`, through the library's `Iterable` and `Iterator`.
-  for (const [use, imports, refusal] of [
-    ["Mapper<string, number, string, number>", "Mapper", null],
-    ["Values<number>", "Values", null],
-    ["EagerCollection<string, number>", "EagerCollection", null],
-    ["Resource<SharedCollections>", "Resource, SharedCollections", null],
-    ["Context", "Context", null],
-  ] as const) {
-    const client = join(probe, `${imports.split(",")[0]}.ts`);
-    writeFileSync(client, `import type { ${imports} } from "@skipruntime/core";\nexport type Use = ${use};\n`);
-    const collect = () => collectDeclarations(client, { tsconfigPath: join(probe, "tsconfig.json") });
-    if (refusal) assert.throws(collect, refusal);
-    else assert.ok(collect().definitions.length > 0);
-  }
-  // The upstream bytes the census row and these results are about.
+  // The upstream `sum.ts`, byte for byte: the census row and the producer's
+  // README describe this file as the framework's own example.
+  assert.equal(createHash("sha256").update(readFileSync(join(here, "examples/reactive-sum-prettier-ignore.ts"))).digest("hex"),
+    "8c10ace97b50d5a3521626fe569fcfe87034a48424f84f2d2aeb970eba161efe",
+    "update the upstream provenance and census before replacing this fixture");
   const upstreamSha = (path: string) =>
     createHash("sha256").update(readFileSync(resolve(here, "upstream", path))).digest("hex");
   assert.equal(upstreamSha("skipruntime-ts/core/src/api.ts"),
     "1e51e0c9cc1447605d9d718d8c094c4f70a0cf5ca065804b775a2d4c76e0e6a6");
+  assert.equal(upstreamSha("skiplang/skjson/ts/binding/src/index.ts"),
+    "3cdd38bb4b6d394133ee922bccb6eff50839740b204c259edb17c19060bf9021");
   // The runtime with a sound service binding holds only the three files the
   // binding changes, pinned here; every other file is the snapshot's own.
   const soundSha = (path: string) =>
@@ -179,9 +150,6 @@ for (const [file, expected] of [
     "skipruntime-ts/server/package.json"])
     assert.equal(realpathSync(resolve(here, "upstream-sound", shared)),
       realpathSync(resolve(here, "upstream", shared)), `upstream-sound/${shared} is the snapshot's`);
-  const jsonModuleSha = upstreamSha("skiplang/skjson/ts/binding/src/index.ts");
-  assert.equal(jsonModuleSha,
-    "3cdd38bb4b6d394133ee922bccb6eff50839740b204c259edb17c19060bf9021");
   // Node's declarations, as Skip's build has them: `@types/node` at the
   // version Skip's lock pins at the snapshot's commit (`upstream/package.json`,
   // installed by `npm ci --prefix verification/ocaml-producer/upstream`).
@@ -194,697 +162,78 @@ for (const [file, expected] of [
     "ba97261afafe85aafe76d988e65e531da8e8cf791c49caf0531f5dd1689bd91b");
   assert.equal(upstreamSha("node_modules/@types/node/process.d.ts"),
     "42aaa94addeed66a04b61e433c14e829c43d1efd653cf2fda480c5fb3d722ed8");
-  // Json reaches the client through the core package's `paths` entry, its
-  // reexports and the workspace symlink; TypeScript follows all three.
+  process.stdout.write("pinned upstream snapshot and Node declarations: bytes as reviewed\n");
+}
+
+{
   const jsonPath = resolve(here, "examples/recursive-json.ts");
-  const jsonClient = readFileSync(jsonPath, "utf8");
-  pinnedDeclarationDocument = collectDeclarations(jsonPath, { tsconfigPath: upstreamConfig });
-  assert.deepEqual(pinnedDeclarationDocument.roots.map(r => [r.binding.local, r.declaration.module,
-    r.declaration.name]), [
-    ["Json", "skiplang/skjson/ts/binding/src/index.ts", "Json"],
-    ["JsonObject", "skiplang/skjson/ts/binding/src/index.ts", "JsonObject"],
-  ]);
-  // Without the project that configures the package, the import has no meaning.
-  assert.throws(() => parseFile(jsonPath), /gate:/);
-  const importedAst = parseFile(jsonPath, false, upstreamConfig);
-  // The client uses arrays, so the parser also lists `ArrayProto`, first, and
-  // the runtime declarations it names: the conversion equation, `Iterator`,
-  // which `[Symbol.iterator]` returns, and what that reaches.
-  const [arrayProto, ...parsedDefinitions] = importedAst.declarations.definitions;
-  assert.equal(arrayProto?.declaration.module, "skjs/array-prototype");
-  const standard = (d: { declaration: { module: string } }) => d.declaration.module.startsWith("typescript/lib/");
-  assert.ok(parsedDefinitions.some(d => standard(d) && d.declaration.name === "Iterator"));
-  assert.deepEqual(importedAst.declarations.symbols.map(s => s.name), ["iterator", "toPrimitive"]);
-  assert.deepEqual({ ...importedAst.declarations, definitions: parsedDefinitions.filter(d =>
-    !standard(d) && d.declaration.module !== "skjs/array-conversion"),
-    symbols: [] }, pinnedDeclarationDocument);
-  const exported = join(mkdtempSync(join(tmpdir(), "skjs-export-")), "client.ts");
-  writeFileSync(exported, "export function own(this: undefined): undefined { return this; }\n");
-  assert.equal(parseFile(exported).functions[0]?.body[0]?.k, "return");
-  // No type name here reaches a declaration, so the modifier is the refusal.
-  writeFileSync(exported, "export default function own(): undefined { return undefined; }\n");
-  assert.throws(() => parseFile(exported),
-    /only the export and async modifiers are admitted on a source function/);
-  const jsonAst = parseFile(jsonPath, false, upstreamConfig);
-  assert.deepEqual(jsonAst.functions.map(f => f.name), ["nest", "lookup"]);
-  // The parser reads one file and TypeScript resolves another path: their
-  // bytes must be equal, or spans in one tree would name code in the other.
   const changedCopy = join(mkdtempSync(join(tmpdir(), "skjs-copy-")), "client.ts");
-  writeFileSync(changedCopy, jsonClient.replace("value, null", "null, value"));
+  writeFileSync(changedCopy, readFileSync(jsonPath, "utf8").replace("value, null", "null, value"));
   assert.throws(() => parseFile(changedCopy, false, upstreamConfig, jsonPath),
     /gate:.*TypeScript client source bytes differ/);
-  const nest = jsonAst.functions[0];
-  const lookup = jsonAst.functions[1];
-  assert(nest && lookup);
-  // Annotations name the declarations TypeScript resolved.
-  const nestParam = nest.params[0]?.type;
-  assert(nestParam?.k === "reference" && nestParam.reference.name === "Json" && !nestParam.args.length);
-  const lookupParam = lookup.params[0]?.type;
-  assert(lookupParam?.k === "reference" && lookupParam.reference.name === "JsonObject");
-  const lookupResult = lookup.retType.k === "union" ? lookup.retType.parts : [lookup.retType];
-  assert(lookupResult.some(t => t.k === "reference" && t.reference.name === "Json"));
-  const checkedJson = check(jsonPath, upstreamConfig);
-  recursiveJson = checkedJson.artifacts;
-  assert.equal(checkedJson.status, "verified", JSON.stringify(checkedJson));
-  assert.equal(checkedJson.phase, "check");
-  assert.deepEqual(checkedJson.functions, ["nest", "lookup"]);
-  const typeScript = spawnSync(resolve(here, "../tools/node_modules/.bin/tsc"),
-    ["-p", upstreamConfig, "--pretty", "false", "--noEmit"], { encoding: "utf8" });
-  assert.ifError(typeScript.error);
-  const typeScriptOutput = typeScript.stdout + typeScript.stderr;
-  assert.match(typeScriptOutput, /invalid-recursive-json-bound\.ts/,
-    "TypeScript must have checked the imported-Json clients");
-  assert.doesNotMatch(typeScriptOutput, /invalid-recursive-json-alias-write\.ts/,
-    "TypeScript should accept the covariant array assignment that the model refuses");
-  // A plain record is not Json: TypeScript accepts both by its implicit index
-  // rule. At a declaration's `V extends Json` bound the refusal is the
-  // request's, as every application bound's is, so it is checked here rather
-  // than as a located control; the Json return is a located one (cases.mts).
-  for (const file of ["invalid-sum-record-json", "invalid-sum-record-collection"])
-    assert.doesNotMatch(typeScriptOutput, new RegExp(`${file}\\.ts`),
-      `TypeScript should accept ${file}, which the model refuses`);
+  process.stdout.write("a snapshot other than the file TypeScript resolves: refused\n");
+}
+
+{
   const recordCollection = check(join(here, "examples/invalid-sum-record-collection.ts"), upstreamConfig);
   assert.equal(recordCollection.status, "unverified", JSON.stringify(recordCollection));
   assert.match(recordCollection.detail, /the type argument for EagerCollection's "V" .* does not establish its declared bound/);
-  const cli = spawnSync(process.execPath, [join(here, "check.mts"), jsonPath,
-    "--project", join(here, "upstream")], { encoding: "utf8", timeout: 30_000 });
-  assert.ifError(cli.error);
-  assert.equal(cli.status, 0, cli.stdout + cli.stderr);
-  const cliResult: unknown = JSON.parse(cli.stdout);
-  assert.ok(cliResult && typeof cliResult === "object" && "status" in cliResult &&
-    "functions" in cliResult && Array.isArray(cliResult.functions));
-  assert.equal(cliResult.status, "verified");
-  assert.deepEqual(cliResult.functions, ["nest", "lookup"]);
-  process.stdout.write("pinned Json imports: 2 functions verified\n");
-  const checkedFragment: unknown = JSON.parse(readFileSync(join(checkedJson.artifacts,
-    "fragment.json"), "utf8"));
-  assert.ok(checkedFragment && typeof checkedFragment === "object" &&
-    "declarations" in checkedFragment);
-  assert.deepEqual(checkedFragment.declarations, jsonAst.declarations);
-  const jsonDefinitions = pinnedDeclarationDocument.definitions;
-  assert.deepEqual(jsonDefinitions.map(d => [d.declaration.name,
-    referencesInDefinition(d).map(r => r.target.name)]), [
-    ["Json", ["Json", "JsonObject"]],
-    ["JsonObject", ["Json"]],
-  ]);
-  assert(jsonDefinitions.every(d =>
-    d.declaration.module === "skiplang/skjson/ts/binding/src/index.ts"));
-  const json = jsonDefinitions.find(d => d.declaration.name === "Json");
-  const jsonObject = jsonDefinitions.find(d => d.declaration.name === "JsonObject");
-  assert(json && jsonObject && json.expression.k === "union" &&
-    jsonObject.expression.k === "object");
-  const array = json.expression.parts.find(p => p.k === "array");
-  const objectRef = json.expression.parts.find(p => p.k === "reference" &&
-    p.reference.target.name === "JsonObject");
-  assert(array && array.k === "array" && array.readonly &&
-    array.element.k === "union" && objectRef && objectRef.k === "reference");
-  assert(array.element.parts.some(p => p.k === "reference" &&
-    p.reference.target.name === "Json" && p.reference.target.module === json.declaration.module));
-  assert(array.element.parts.some(p => p.k === "atom" && p.name === "null"));
-  const index = jsonObject.expression.stringIndex;
-  assert(index && index.readonly && index.value.k === "union");
-  assert(index.value.parts.some(p => p.k === "reference" &&
-    p.reference.target.name === "Json" && p.reference.target.module === json.declaration.module));
-  assert(index.value.parts.some(p => p.k === "atom" && p.name === "null"));
-  // A fixture project: packages mapped by `paths`, a barrel, a global
-  // declaration file. Every client below is resolved by TypeScript in it.
-  const a = "import type { B } from './b.js'; export type A<T> = { next: B<T> }; export type Bound<T extends B<number>> = T; export type Grow<T> = { next: Grow<[T]> };";
-  const b = "import type { A } from './a.js'; export type B<T> = { prev: A<T> };";
-  const pairDir = mkdtempSync(join(tmpdir(), "skjs-generic-import-"));
-  writeFileSync(join(pairDir, "a.ts"), a);
-  writeFileSync(join(pairDir, "b.ts"), b);
-  const barrel = "export type { A } from './a.js';\n";
-  writeFileSync(join(pairDir, "barrel.ts"), barrel);
-  const box = "export interface Box { readonly flag: boolean; }\n" +
-    "export interface FromGlobal { readonly item: GlobalBox; }\n" +
-    "export interface Node { readonly next: Node | null; }\n" +
-    "export interface CallableBox { readonly invoke: (value: number) => boolean; }\n" +
-    "export interface OptionalCallable { readonly invoke: (value?: number) => boolean; }\n" +
-    "export interface WithMethod { read(): boolean; }\n" +
-    "export interface RestMethod { accepts(...values: number[]): boolean; }\n" +
-    "export interface Overloaded { (value: boolean): number; (value: number): boolean; }\n" +
-    "export interface TaggedCallable { label: boolean; (value: boolean): number; }\n" +
-    "export interface VariadicCallable { (...values: number[]): boolean; }\n" +
-    "export type CallableAlias = { (value: number): boolean };\n" +
-    "export interface ReadonlyCallable { readonly label: boolean; (value: boolean): number; }\n" +
-    "export interface IndexedCallable { readonly [key: string]: boolean; (value: boolean): number; }\n" +
-    "export interface GenericCall { <T>(value: T): T; }\n" +
-    "export type WithMethodAlias = WithMethod;\n" +
-    "export type Pair = [boolean, number];\n" +
-    "export type ReadonlyPair = readonly [boolean, number];\n" +
-    "export type OptionalPair = [boolean, number?];\n" +
-    "export type RestPair = [boolean, ...number[]];\n" +
-    "export type NamedPair = [flag: boolean, count: number];\n" +
-    "export type NestedMethod = { inner: { read?(): boolean } };\n" +
-    "export interface GenericMethod { read<T>(value: T): T; }\n" +
-    "export interface OptionalMethod { read(value?: boolean): boolean; }\n" +
-    "export interface Derived extends Box { readonly label: string; }\n" +
-    "export interface Labeled { readonly label: string; }\n" +
-    "export interface MultipleBases extends Box, Labeled { readonly count: number; }\n";
-  const genericShapes = "export type GenericBox<T> = { readonly value: T };\n" +
-    "export type ImportedId<T> = T;\n" +
-    "export type GenericPair<L, R> = { readonly left: L; readonly right: R };\n" +
-    "export type GenericOuter<T> = { readonly inner: GenericBox<T> };\n" +
-    "export type GenericTuple<T> = readonly [T, number];\n" +
-    "export type GenericCallable<T> = (value: T) => T;\n" +
-    "export type BoundedBox<T extends boolean> = { readonly value: T };\n" +
-    "export type BoundedNested<T extends GenericBox<boolean>> = { readonly value: T };\n" +
-    "export type DefaultBox<T = boolean> = { readonly value: T };\n" +
-    "export type DependentDefault<T, U = T> = { readonly first: T; readonly second: U };\n" +
-    "export type DependentBound<T, U extends T = T> = { readonly second: U };\n" +
-    "export type BoundedDefault<T extends boolean = boolean> = { readonly value: T };\n";
-  const inheritedGeneric =
-    "export interface GenericDerived<T> extends GenericBox<T> { readonly label: string; }\n";
-  const literalShapes =
-    "export type Flag = true;\n" +
-    "export type Kind = \"on\";\n" +
-    "export type Overload = ((x: boolean) => number) & ((x: number) => boolean);\n" +
-    "export type Both = { readonly a: boolean } & { readonly b: number };\n";
-  writeFileSync(join(pairDir, "box.ts"),
-    box + genericShapes + inheritedGeneric + literalShapes);
-  const globalText = "interface GlobalBox { readonly flag: boolean; }\n";
-  writeFileSync(join(pairDir, "global.d.ts"), globalText);
-  const pairConfig = join(pairDir, "tsconfig.json");
-  writeFileSync(pairConfig, JSON.stringify({
-    compilerOptions: { strict: true, noEmit: true, module: "Node16",
-      moduleResolution: "Node16", paths: { "@fixture/a": ["./a.ts"],
-        "@fixture/barrel": ["./barrel.ts"], "@fixture/box": ["./box.ts"],
-        "@fixture/merged": ["./merged.ts"], "@fixture/twice": ["./twice.ts"] } },
-    include: ["*.ts"],
-  }));
-  /** The declaration graph of a client consisting of `text`, in the fixture project. */
-  let clients = 0;
-  const graphOf = (text: string) => {
-    const client = join(pairDir, `graph-client-${clients++}.ts`);
-    writeFileSync(client, text);
-    return collectDeclarations(client, { tsconfigPath: pairConfig });
-  };
-  const pairDocument = graphOf("import type { A } from '@fixture/a';");
-  assert.deepEqual(pairDocument.definitions.map(d => [d.declaration.name,
-    d.parameters.map(p => p.name), referencesInDefinition(d).map(r => [r.target.name, r.arguments.length])]), [
-    ["A", ["T"], [["B", 1]]],
-    ["B", ["T"], [["A", 1]]],
-  ]);
-  const aDef = pairDocument.definitions.find(d => d.declaration.name === "A");
-  assert(aDef && aDef.expression.k === "object");
-  const next = aDef.expression.fields.find(f => f.name === "next");
-  assert(next && next.type.k === "reference" && next.type.args[0]?.k === "parameter");
-  assert.equal(next.type.reference.target.module, "b.ts");
-  assert.equal(next.type.args[0].index, 0);
-  const genericClient = join(pairDir, "client.ts");
-  writeFileSync(genericClient,
-    'import type { A } from "@fixture/a";\n' +
-    'export function keep(value: A<boolean>): A<boolean> { return value; }\n');
-  const genericAst = parseFile(genericClient, false, pairConfig);
-  const genericParam = genericAst.functions[0]?.params[0]?.type;
-  assert(genericParam?.k === "reference" && genericParam.reference.name === "A" &&
-    genericParam.args[0]?.k === "atom" && genericParam.args[0].name === "boolean");
-  // Declarations have one lowering, Lean's. A mutually recursive application
-  // the producer reserves a row for is that row, which its equation names
-  // again: a finite graph.
-  const recursiveGeneric = check(genericClient, pairConfig);
-  assert.equal(recursiveGeneric.status, "verified", JSON.stringify(recursiveGeneric));
-  // One at arguments that grow at each unfolding too: a declaration is one
-  // equation, and an application is unfolded one step when it is read
-  // (RECURSIVE-EQUATIONS §3.2), so the family is not enumerated.
-  writeFileSync(genericClient,
-    'import type { Grow } from "@fixture/a";\n' +
-    'export function keepGrow(value: Grow<boolean>): Grow<boolean> { return value; }\n');
-  const growing = check(genericClient, pairConfig);
-  assert.equal(growing.status, "verified", JSON.stringify(growing));
-  // A name imported through a barrel is the declaration the barrel reexports.
-  writeFileSync(genericClient,
-    'import type { A } from "@fixture/barrel";\n' +
-    'export function throughBarrel(value: A<boolean>): A<boolean> { return value; }\n');
-  const barrelAst = parseFile(genericClient, false, pairConfig);
-  assert.equal(barrelAst.declarations.roots[0]?.declaration.module, "a.ts");
-  assert.equal(barrelAst.declarations.roots[0]?.binding.kind === "import" &&
-    barrelAst.declarations.roots[0].binding.specifier, "@fixture/barrel");
-  const boxClient = join(pairDir, "box-client.ts");
-  writeFileSync(boxClient,
-    'import type { Box, FromGlobal, Node, CallableBox, OptionalCallable, WithMethod, WithMethodAlias, RestMethod, Overloaded, TaggedCallable, VariadicCallable, CallableAlias, Pair, ReadonlyPair, OptionalPair, RestPair } from "@fixture/box";\n' +
-    'export function readBox(box: Box): boolean { return box.flag; }\n' +
-    'export function readGlobal(box: FromGlobal): boolean { return box.item.flag; }\n' +
-    'export function nextNode(node: Node): Node | null { return node.next; }\n' +
-    'export function invokeBox(box: CallableBox): boolean { return box.invoke(1); }\n' +
-    'export function omitOptional(box: OptionalCallable): boolean { return box.invoke(); }\n' +
-    'export function callMethod(box: WithMethod): boolean { return box.read(); }\n' +
-    'export function callMethodAlias(box: WithMethodAlias): boolean { return box.read(); }\n' +
-    'export function callRestMethod(box: RestMethod): boolean { return box.accepts(1, 2); }\n' +
-    'export function callOverload(fn: Overloaded): number { return fn(true); }\n' +
-    'export function callTagged(fn: TaggedCallable): number { return fn(fn.label); }\n' +
-    'export function callVariadic(fn: VariadicCallable): boolean { return fn(1, 2); }\n' +
-    'export function callAlias(fn: CallableAlias): boolean { return fn(1); }\n' +
-    'export function pairFirst(pair: Pair): boolean { return pair[0]; }\n' +
-    'export function readonlyPairSecond(pair: ReadonlyPair): number { return pair[1]; }\n' +
-    'export function optionalSecond(pair: OptionalPair): number | undefined { return pair[1]; }\n' +
-    'export function restHead(pair: RestPair): boolean { return pair[0]; }\n' +
-    'export function restTail(pair: RestPair): number | undefined { return pair[1]; }\n');
-  const checkedBox = check(boxClient, pairConfig);
-  assert.equal(checkedBox.status, "verified", JSON.stringify(checkedBox));
-  assert.deepEqual(checkedBox.functions,
-    ["readBox", "readGlobal", "nextNode", "invokeBox", "omitOptional", "callMethod",
-      "callMethodAlias", "callRestMethod", "callOverload", "callTagged",
-      "callVariadic", "callAlias",
-      "pairFirst", "readonlyPairSecond", "optionalSecond", "restHead", "restTail"]);
-  const genericShapesClient = join(pairDir, "generic-shapes-client.ts");
-  writeFileSync(genericShapesClient,
-    'import type { GenericBox, GenericPair, GenericOuter, GenericTuple, GenericCallable } from "@fixture/box";\n' +
-    'export function unbox(value: GenericBox<boolean>): boolean { return value.value; }\n' +
-    'export function right(value: GenericPair<boolean, number>): number { return value.right; }\n' +
-    'export function nested(value: GenericOuter<boolean>): boolean { return value.inner.value; }\n' +
-    'export function first(value: GenericTuple<boolean>): boolean { return value[0]; }\n' +
-    'export function applied(value: GenericCallable<boolean>): boolean { return value(true); }\n');
-  const checkedGenericShapes = check(genericShapesClient, pairConfig);
-  assert.equal(checkedGenericShapes.status, "verified", JSON.stringify(checkedGenericShapes));
-  assert.deepEqual(checkedGenericShapes.functions,
-    ["unbox", "right", "nested", "first", "applied"]);
-  const inheritedClient = join(pairDir, "inherited-client.ts");
-  writeFileSync(inheritedClient,
-    'import type { Derived, MultipleBases, GenericDerived } from "@fixture/box";\n' +
-    'export function inherited(value: Derived): boolean { return value.flag; }\n' +
-    'export function owned(value: Derived): string { return value.label; }\n' +
-    'export function multiple(value: MultipleBases): number { return value.count; }\n' +
-    'export function genericBase(value: GenericDerived<boolean>): boolean { return value.value; }\n');
-  const checkedInherited = check(inheritedClient, pairConfig);
-  assert.equal(checkedInherited.status, "verified", JSON.stringify(checkedInherited));
-  assert.deepEqual(checkedInherited.functions,
-    ["inherited", "owned", "multiple", "genericBase"]);
-  // An interface's base is the declaration TypeScript binds its heritage name to.
-  const inheritedGraph = collectDeclarations(inheritedClient, { tsconfigPath: pairConfig });
-  const derived = must(inheritedGraph.definitions.find(d => d.declaration.name === "Derived"),
-    "Derived declaration");
-  assert.equal(must(referencesInDefinition(derived)[0], "Derived heritage reference").target.name, "Box");
-  const importedIdentityClient = join(pairDir, "imported-identity-client.ts");
-  writeFileSync(importedIdentityClient,
-    'import type { ImportedId } from "@fixture/box";\n' +
-    'export function rigid<T>(value: ImportedId<T>): T { return value; }\n' +
-    'export function ground(value: ImportedId<boolean>): boolean { return value; }\n');
-  const importedIdentity = check(importedIdentityClient, pairConfig);
-  assert.equal(importedIdentity.status, "verified", JSON.stringify(importedIdentity));
-  assert.deepEqual(importedIdentity.functions, ["rigid", "ground"]);
-  // Local/imported parity for declarations applied to a rigid binder: one
-  // source-equation expansion serves both. The same function is written with a
-  // local declaration and with the imported one; the outcomes must agree.
-  const parity = (name: string, local: string, imported: string, body: string) => {
-    const localClient = join(pairDir, `parity-local-${name}.ts`);
-    writeFileSync(localClient, local + body);
-    const importedClient = join(pairDir, `parity-imported-${name}.ts`);
-    writeFileSync(importedClient, imported + body);
-    const l = check(localClient, pairConfig), i = check(importedClient, pairConfig);
-    const outcome = (o: typeof l) => [o.status, o.phase,
-      o.status === "verified" ? "" : o.detail.split("\n")[0]?.replace(/\[\d+,\d+\)/g, "[span]")];
-    assert.deepEqual(outcome(l), outcome(i), `${name}: local and imported outcomes differ`);
-    return l;
-  };
-  const callableLocal = "type GenericCallable<T> = (value: T) => T;\n";
-  const callableImported = 'import type { GenericCallable } from "@fixture/box";\n';
-  const rigidCall = parity("rigid-call", callableLocal, callableImported,
-    "export function applyRigid<T>(f: GenericCallable<T>, x: T): T { return f(x); }\n");
-  assert.equal(rigidCall.status, "verified", JSON.stringify(rigidCall));
-  const wrongRigidCall = parity("wrong-rigid-call", callableLocal, callableImported,
-    "export function wrongRigid<T>(f: GenericCallable<T>, x: T): boolean { return f(x); }\n");
-  assert.equal(wrongRigidCall.status, "unverified", JSON.stringify(wrongRigidCall));
-  assert.match(wrongRigidCall.detail, /no derivation of its return-contract claim/);
-  // A record over a rigid binder is a graph type over its parameter row, for
-  // both.
-  const rigidRecord = parity("rigid-record", "type GenericBox<T> = { readonly value: T };\n",
-    'import type { GenericBox } from "@fixture/box";\n',
-    "export function unboxRigid<T>(value: GenericBox<T>): T { return value.value; }\n");
-  assert.equal(rigidRecord.status, "verified", JSON.stringify(rigidRecord));
-  // Ground applications agree as well.
-  const groundCall = parity("ground-call", callableLocal, callableImported,
-    "export function applyGround(f: GenericCallable<boolean>): boolean { return f(true); }\n");
-  assert.equal(groundCall.status, "verified", JSON.stringify(groundCall));
-  // Literal and intersection equations agree too. A nullary declaration
-  // whose row equals an annotation's row is the same type.
-  const literalLocal = 'type Flag = true;\ntype Kind = "on";\n' +
-    "type Overload = ((x: boolean) => number) & ((x: number) => boolean);\n";
-  const literalImported = 'import type { Flag, Kind, Overload } from "@fixture/box";\n';
-  const literals = parity("literals", literalLocal, literalImported,
-    "export function keepFlag(f: Flag): true { return f; }\n" +
-    'export function keepKind(k: Kind): "on" { return k; }\n' +
-    "export function callOver(f: Overload): number { return f(true); }\n");
-  assert.equal(literals.status, "verified", JSON.stringify(literals));
-  const wrongLiteral = parity("wrong-literal", literalLocal, literalImported,
-    "export function badFlag(f: Flag): false { return f; }\n");
-  assert.equal(wrongLiteral.status, "unverified", JSON.stringify(wrongLiteral));
-  assert.equal(wrongLiteral.phase, "search");
-  // A record intersection is the one record its operands describe, read at
-  // each operand's fields.
-  const bothLocal = "type Both = { readonly a: boolean } & { readonly b: number };\n";
-  const bothImported = 'import type { Both } from "@fixture/box";\n';
-  const recordMeet = parity("record-meet", bothLocal, bothImported,
-    "export function readBoth(x: Both): number { return x.b; }\n");
-  assert.equal(recordMeet.status, "verified", JSON.stringify(recordMeet));
-  const wrongMeet = parity("wrong-record-meet", bothLocal, bothImported,
-    "export function readWrong(x: Both): boolean { return x.b; }\n");
-  assert.equal(wrongMeet.status, "unverified", JSON.stringify(wrongMeet));
-  assert.equal(wrongMeet.phase, "search");
-  const badInheritedClient = join(pairDir, "bad-inherited-client.ts");
-  writeFileSync(badInheritedClient,
-    'import type { GenericDerived } from "@fixture/box";\n' +
-    'export function wrong(value: GenericDerived<boolean>): number { return value.value; }\n');
-  const badInherited = check(badInheritedClient, pairConfig);
-  assert.equal(badInherited.status, "unverified", JSON.stringify(badInherited));
-  assert.equal(badInherited.phase, "search");
-  const badGenericShapeClient = join(pairDir, "bad-generic-shape-client.ts");
-  writeFileSync(badGenericShapeClient,
-    'import type { GenericBox } from "@fixture/box";\n' +
-    'export function wrong(value: GenericBox<boolean>): number { return value.value; }\n');
-  const rejectedGenericShape = check(badGenericShapeClient, pairConfig);
-  assert.equal(rejectedGenericShape.status, "unverified", JSON.stringify(rejectedGenericShape));
-  assert.equal(rejectedGenericShape.phase, "search");
-  const boundedShapeClient = join(pairDir, "bounded-shape-client.ts");
-  writeFileSync(boundedShapeClient,
-    'import type { BoundedBox } from "@fixture/box";\n' +
-    'export function bounded(value: BoundedBox<boolean>): boolean { return value.value; }\n');
-  const boundedShape = check(boundedShapeClient, pairConfig);
-  assert.equal(boundedShape.status, "verified", JSON.stringify(boundedShape));
-  const boundedNestedClient = join(pairDir, "bounded-nested-client.ts");
-  writeFileSync(boundedNestedClient,
-    'import type { BoundedNested, GenericBox } from "@fixture/box";\n' +
-    'export function nestedBound(value: BoundedNested<GenericBox<boolean>>): boolean { return value.value.value; }\n');
-  const boundedNested = check(boundedNestedClient, pairConfig);
-  assert.equal(boundedNested.status, "verified", JSON.stringify(boundedNested));
-  const invalidBoundClient = join(pairDir, "invalid-bound-client.ts");
-  writeFileSync(invalidBoundClient,
-    'import type { BoundedBox } from "@fixture/box";\n' +
-    'export function invalidBound(value: BoundedBox<number>): number { return value.value; }\n');
-  const invalidBound = check(invalidBoundClient, pairConfig);
-  assert.equal(invalidBound.status, "unverified", JSON.stringify(invalidBound));
-  assert.match(invalidBound.detail, /the type argument for BoundedBox's "T" .* does not establish its declared bound/);
-  const defaultClient = join(pairDir, "default-client.ts");
-  writeFileSync(defaultClient,
-    'import type { DefaultBox, DependentDefault, DependentBound, BoundedDefault } from "@fixture/box";\n' +
-    'export function defaulted(value: DefaultBox): boolean { return value.value; }\n' +
-    'export function overridden(value: DefaultBox<number>): number { return value.value; }\n' +
-    'export function dependent(value: DependentDefault<boolean>): boolean { return value.second; }\n' +
-    'export function dependentBound(value: DependentBound<boolean>): boolean { return value.second; }\n' +
-    'export function boundedDefault(value: BoundedDefault): boolean { return value.value; }\n');
-  const defaults = check(defaultClient, pairConfig);
-  assert.equal(defaults.status, "verified", JSON.stringify(defaults));
-  assert.deepEqual(defaults.functions,
-    ["defaulted", "overridden", "dependent", "dependentBound", "boundedDefault"]);
-  const invalidDependentClient = join(pairDir, "invalid-dependent-client.ts");
-  writeFileSync(invalidDependentClient,
-    'import type { DependentBound } from "@fixture/box";\n' +
-    'export function invalidDependent(value: DependentBound<boolean, number>): number { return value.second; }\n');
-  const invalidDependent = check(invalidDependentClient, pairConfig);
-  assert.equal(invalidDependent.status, "unverified", JSON.stringify(invalidDependent));
-  assert.match(invalidDependent.detail,
-    /type argument .*does not establish its declared bound/);
-  // A global declaration file of the project supplies an unimported name.
-  const boxAst = parseFile(boxClient, false, pairConfig);
-  assert.equal(boxAst.declarations.definitions.find(d => d.declaration.name === "GlobalBox")?.
-    declaration.module, "global.d.ts");
-  const badBoxClient = join(pairDir, "bad-box-client.ts");
-  writeFileSync(badBoxClient,
-    'import type { Box } from "@fixture/box";\n' +
-    'export function badBox(box: Box): number { return box.flag; }\n');
-  const rejectedBox = check(badBoxClient, pairConfig);
-  assert.equal(rejectedBox.status, "unverified", JSON.stringify(rejectedBox));
-  assert.equal(rejectedBox.phase, "search");
-  assert.match(rejectedBox.detail, /evidence search failed/);
-  const badInvokeClient = join(pairDir, "bad-invoke-client.ts");
-  writeFileSync(badInvokeClient,
-    'import type { CallableBox } from "@fixture/box";\n' +
-    'export function badInvoke(box: CallableBox): number { return box.invoke(1); }\n');
-  const rejectedInvoke = check(badInvokeClient, pairConfig);
-  assert.equal(rejectedInvoke.status, "unverified", JSON.stringify(rejectedInvoke));
-  assert.equal(rejectedInvoke.phase, "search");
-  const detachedClient = join(pairDir, "detached-method-client.ts");
-  writeFileSync(detachedClient,
-    'import type { WithMethod } from "@fixture/box";\n' +
-    'export function detached(box: WithMethod): boolean { const read = box.read; return read(); }\n');
-  const detached = check(detachedClient, pairConfig);
-  assert.equal(detached.status, "unverified", JSON.stringify(detached));
-  assert.equal(detached.phase, "search");
-  assert.match(detached.detail, /method-receiver/);
-  const badPairClient = join(pairDir, "bad-pair-client.ts");
-  writeFileSync(badPairClient,
-    'import type { Pair } from "@fixture/box";\n' +
-    'export function badPair(pair: Pair): number { return pair[0]; }\n');
-  const rejectedPair = check(badPairClient, pairConfig);
-  assert.equal(rejectedPair.status, "unverified", JSON.stringify(rejectedPair));
-  assert.equal(rejectedPair.phase, "search");
-  // Forms the fragment cannot state are refused where the graph reaches them.
-  for (const [name, refusal] of [
-    ["NamedPair", /named tuple members are outside the fragment in box.ts#NamedPair/],
-    ["NestedMethod", /an optional method of a nested type literal has no declaration as its receiver in box.ts#NestedMethod/],
-    ["GenericCall", /generic or incomplete call signature in box.ts#GenericCall/],
-  ] as const)
-    assert.throws(() => graphOf(`import type { ${name} } from "@fixture/box";`), refusal);
-  // A generic method is a scheme: a call through it is established at the
-  // instance it names, and at no other.
-  assert.ok(graphOf('import type { GenericMethod } from "@fixture/box";').definitions.length > 0);
-  const genericMethodClient = join(pairDir, "generic-method-client.ts");
-  writeFileSync(genericMethodClient,
-    'import type { GenericMethod } from "@fixture/box";\n' +
-    "export function call(m: GenericMethod): boolean { return m.read(true); }\n");
-  const genericMethodCall = check(genericMethodClient, pairConfig);
-  assert.equal(genericMethodCall.status, "verified", JSON.stringify(genericMethodCall));
-  writeFileSync(genericMethodClient,
-    'import type { GenericMethod } from "@fixture/box";\n' +
-    "export function call(m: GenericMethod): number { return m.read(true); }\n");
-  const wrongInstance = check(genericMethodClient, pairConfig);
-  assert.equal(wrongInstance.status, "unverified", JSON.stringify(wrongInstance));
-  assert.equal(wrongInstance.phase, "search");
-  const optionalMethodClient = join(pairDir, "optional-method-client.ts");
-  writeFileSync(optionalMethodClient,
-    'import type { OptionalMethod } from "@fixture/box";\n' +
-    'export function callOptional(box: OptionalMethod): boolean { return box.read(); }\n');
-  const checkedOptionalMethod = check(optionalMethodClient, pairConfig);
-  assert.equal(checkedOptionalMethod.status, "verified", JSON.stringify(checkedOptionalMethod));
-  const wrongRestClient = join(pairDir, "wrong-rest-client.ts");
-  writeFileSync(wrongRestClient,
-    'import type { RestMethod } from "@fixture/box";\n' +
-    'export function wrongRest(box: RestMethod): boolean { return box.accepts("bad"); }\n');
-  const rejectedRest = check(wrongRestClient, pairConfig);
-  assert.equal(rejectedRest.status, "unverified", JSON.stringify(rejectedRest));
-  assert.equal(rejectedRest.phase, "search");
-  const wrongOverloadClient = join(pairDir, "wrong-overload-client.ts");
-  writeFileSync(wrongOverloadClient,
-    'import type { Overloaded } from "@fixture/box";\n' +
-    'export function wrongOverload(fn: Overloaded): boolean { return fn(true); }\n');
-  const rejectedOverload = check(wrongOverloadClient, pairConfig);
-  assert.equal(rejectedOverload.status, "unverified", JSON.stringify(rejectedOverload));
-  assert.equal(rejectedOverload.phase, "search");
-  for (const [name, detail] of [
-    ["ReadonlyCallable", /callable object with index or readonly field/],
-    ["IndexedCallable", /callable object with index or readonly field/],
-  ] as const) {
-    const client = join(pairDir, `unsupported-${name}.ts`);
-    writeFileSync(client,
-      `import type { ${name} } from "@fixture/box";\n` +
-      `export function keep(value: ${name}): ${name} { return value; }\n`);
-    const result = check(client, pairConfig);
-    assert.equal(result.status, "unverified", JSON.stringify(result));
-    assert.equal(result.phase, "search");
-    assert.match(result.detail, detail);
-  }
-  assert.deepEqual(graphOf('import type { Derived } from "@fixture/box";').definitions.map(d =>
-    [d.declaration.name, d.bases.length]), [["Derived", 1], ["Box", 0]]);
-  // Merged declarations have no single equation: refused, as TypeScript sees them.
-  const merged = "export interface Merge { readonly flag: boolean; }\n" +
-    "export interface Merge { readonly label: string; }\n";
-  writeFileSync(join(pairDir, "merged.ts"), merged);
-  const mergedClient = join(pairDir, "merged-client.ts");
-  writeFileSync(mergedClient,
-    'import type { Merge } from "@fixture/merged";\n' +
-    'export function readMerged(value: Merge): boolean { return value.flag; }\n');
-  assert.throws(() => parseFile(mergedClient, false, pairConfig),
-    /TypeScript found 2 declarations for Merge/);
-  // Code the graph uses must be code TypeScript accepts. Two star reexports
-  // of one name: TypeScript reports TS2308 on the barrel (and would bind the
-  // first); the import is refused there.
-  writeFileSync(join(pairDir, "twice.ts"),
-    "export * from './box.js';\nexport * from './labeled.js';\n");
-  writeFileSync(join(pairDir, "labeled.ts"), "export interface Box { readonly other: number; }\n");
-  assert.throws(() => graphOf('import type { Box } from "@fixture/twice";'),
+  process.stdout.write("an imported declaration applied outside its bound: refused\n");
+}
+
+{
+  const project = fixtureProject({
+    "box.ts": "export interface Box { readonly flag: boolean; }\n",
+    "barrel.ts": "export type { Box } from './box.js';\n",
+    "global.d.ts": "interface GlobalBox { readonly flag: boolean; }\n",
+    "other-global.d.ts": "interface GlobalBox { readonly other: number; }\n",
+    "labeled.ts": "export interface Box { readonly other: number; }\n",
+    "twice.ts": "export * from './box.js';\nexport * from './labeled.js';\n",
+    "wrong.ts": "import type { Box } from './box.js';\nexport interface Wrong extends Box { readonly flag: string; }\n",
+  });
+  const ast = project.parse('import type { Box } from "@fixture/barrel";\n' +
+    "export function read(box: Box, global: GlobalBox): boolean { return box.flag && global.flag; }\n");
+  const root = must(ast.declarations.roots[0], "the barrel's name");
+  assert.equal(root.declaration.module, "box.ts");
+  assert.equal(root.binding.kind === "import" && root.binding.specifier, "@fixture/barrel");
+  // A second global declaration merges with the first, as TypeScript merges
+  // it: one equation with both declarations' members, identified by the first.
+  const global = must(ast.declarations.definitions.find((d) => d.declaration.name === "GlobalBox"), "GlobalBox");
+  assert.equal(global.declaration.module, "global.d.ts");
+  assert(global.expression.k === "object");
+  assert.deepEqual(global.expression.fields.map((f) => f.name), ["flag", "other"]);
+  // Two star reexports of one name: TypeScript reports TS2308 on the barrel
+  // (and would bind the first); the import is refused there.
+  assert.throws(() => project.graphOf('import type { Box } from "@fixture/twice";'),
     /TypeScript reports an error in twice.ts on the path to Box: .*already exported a member named 'Box'/);
   // An interface TypeScript rejects is not a contract: refused, not interpreted
   // as the empty conjunction of its incompatible fields.
-  writeFileSync(join(pairDir, "wrong.ts"), "import type { Box } from './box.js';\n" +
-    "export interface Wrong extends Box { readonly flag: string; }\n");
-  assert.throws(() => graphOf("import type { Wrong } from './wrong.js';"),
+  assert.throws(() => project.graphOf("import type { Wrong } from './wrong.js';"),
     /TypeScript reports an error in wrong.ts#Wrong: .*incorrectly extends/);
-  // Errors elsewhere in a used file are not the graph's: the Json route passes
-  // through upstream modules with unrelated errors (missing snapshot modules).
-  writeFileSync(genericClient,
-    'import type { A } from "@fixture/a";\n' +
-    'export function wrong(value: A<boolean, number>): boolean { return true; }\n');
-  assert.throws(() => parseFile(genericClient, false, pairConfig),
-    /type 'A' needs 1 type argument/);
-  const boundDefinitions = graphOf("import type { Bound } from '@fixture/a';").definitions;
-  assert.deepEqual(boundDefinitions.map(d =>
-    [d.declaration.name, referencesInDefinition(d).map(r => r.target.name)]), [
-    ["Bound", ["B"]], ["B", ["A"]], ["A", ["B"]],
-  ]);
-  const bound = boundDefinitions[0]?.parameters[0]?.bound;
-  assert(bound && bound.k === "reference" && bound.args[0]?.k === "atom");
-  assert.equal(bound.args[0].name, "number");
-  writeFileSync(join(pairDir, "missing.ts"), "export type MissingEdge = NoDefinition;");
-  assert.throws(() => graphOf("import type { MissingEdge } from './missing.js';"),
-    /TypeScript reports an error in missing.ts#MissingEdge: Cannot find name 'NoDefinition'/);
-  writeFileSync(join(pairDir, "conditional.ts"),
-    "export type Conditional<T> = T extends boolean ? number : string;");
-  assert.throws(() => graphOf("import type { Conditional } from './conditional.js';"),
-    /type outside the fragment \(ConditionalType\) in conditional.ts#Conditional/);
-  // A second global declaration merges with the first, as TypeScript merges
-  // it: one equation with both declarations' members, identified by the first.
-  writeFileSync(join(pairDir, "other-global.d.ts"), "interface GlobalBox { readonly other: number; }\n");
-  const mergedBox = parseFile(boxClient, false, pairConfig).declarations.definitions
-    .find(d => d.declaration.name === "GlobalBox")?.expression;
-  assert(mergedBox?.k === "object");
-  assert.deepEqual(mergedBox.fields.map(f => f.name), ["flag", "other"]);
-  // Merged declarations must agree on their type parameters.
-  writeFileSync(join(pairDir, "other-global.d.ts"), "interface GlobalBox<T> { readonly other: T; }\n");
-  assert.throws(() => parseFile(boxClient, false, pairConfig), /TypeScript reports an error|different type parameters/);
+  process.stdout.write("imports resolved as TypeScript binds them; TypeScript's errors on their path refused\n");
+}
+
+{
+  const project = fixtureProject({
+    "forms.ts": "export type NamedPair = [flag: boolean, count: number];\n" +
+      "export interface GenericCall { <T>(value: T): T; }\n" +
+      "export type Conditional<T> = T extends boolean ? number : string;\n",
+    "merged.ts": "export interface Merge { readonly flag: boolean; }\n" +
+      "export interface Merge { readonly label: string; }\n",
+  });
+  for (const [name, refusal] of [
+    ["NamedPair", /named tuple members are outside the fragment in forms.ts#NamedPair/],
+    ["GenericCall", /generic or incomplete call signature in forms.ts#GenericCall/],
+    ["Conditional", /type outside the fragment \(ConditionalType\) in forms.ts#Conditional/],
+  ] as const)
+    assert.throws(() => project.graphOf(`import type { ${name} } from "@fixture/forms";`), refusal);
+  assert.throws(() => project.parse('import type { Merge } from "@fixture/merged";\n' +
+    "export function readMerged(value: Merge): boolean { return value.flag; }\n"),
+    /TypeScript found 2 declarations for Merge/);
   closeParser();
+  process.stdout.write("declaration forms the reader cannot lower: refused by name\n");
 }
-function must<T>(value: T | null | undefined, message: string): T {
-  assert.ok(value !== null && value !== undefined, message);
-  return value;
-}
-/** The iterator protocol a program's iterable runs, as JavaScript runs the
- * verified example: its iterator's `return` is called on `break`, `return`
- * and a throw out of the body, and not at the end or on `continue`; a throw
- * out of the body wins over one out of the close. The parser's lowering
- * (`protocolForOf`) calls `return` exactly there. */
-function checkIteratorProtocol(): void {
-  const source = stripTypes(readFileSync(join(here, "examples", "for-of-program-iterable.ts"), "utf8"))
-    .replace(/^export /gm, "");
-  const run = (expression: string): unknown =>
-    vm.runInNewContext(`${source}\n${expression}`, {}, { timeout: 1000 });
-  const list = "new LinkedList(new Cell(1, new Cell(5, new Cell(9, null))), { closed: 0 })";
-  const closes = (call: string) => run(`const l = ${list}; const r = ${call}; JSON.stringify([r, l.log.closed])`);
-  assert.equal(closes("sum(l)"), "[15,0]");
-  assert.equal(closes("firstAbove(l, 3)"), "[5,1]");
-  assert.equal(closes("firstOver(l, 3)"), "[5,1]");
-  assert.equal(closes("skipSmall(l, 3)"), "[14,0]");
-  assert.equal(run("const log = { closed: 0 }; JSON.stringify([firstEven(new Countdowns(5, log)), log.closed])"), "[4,1]");
-  assert.equal(run("bodyThrows(new Brittle()).message"), "body");
-}
-// Execute the same sources the verifier refuses. These exercise trusted
-// native contracts, not Lean's proved rules: callbacks can mutate aliases and
-// conversion invokes methods with arguments absent from TypeScript's type.
-for (const [file, call] of [
-  ["invalid-native-find-mutation", "wrong([1, 2], { value: 0 })"],
-  ["invalid-native-map-mutation", "wrong([1, 2], { value: 0 })"],
-  ["invalid-native-join-coercion", "wrong({ value: 0 })"],
-  ["invalid-native-sort-coercion", "wrong({ value: 0 })"],
-  // What `%Iterate:ForIn%`'s step read is not what a later read finds.
-  ["invalid-for-in-entry-call", "wrong({ a: 1 }, (v) => { delete v.a; })"],
-  ["invalid-for-in-entry-field", "wrong({ inner: { a: 1, b: 2 } }, {})"],
-  ["invalid-for-in-entry-rebound", "wrong({ a: 1, b: 2 }, {})"],
-  // A function's `length` is not enumerable: its copy lacks it.
-  ["invalid-spread-function-length", "arity((a, b) => a + b)"],
-]) {
-  const source = stripTypes(readFileSync(join(here, "examples", `${file}.ts`), "utf8"))
-    .replace(/^export /gm, "");
-  assert.equal(vm.runInNewContext(`${source}\n${call}`, {}, { timeout: 1000 }), undefined,
-    `${file}: the actual source returns undefined despite its number contract`);
-}
-{
-  const source = stripTypes(readFileSync(join(here, "examples", "native-sort-contracts.ts"), "utf8"))
-    .replace(/^export /gm, "");
-  assert.equal(vm.runInNewContext(`${source}\nnoCoercion({ value: 7 })`, {}, { timeout: 1000 }), 7,
-    "an explicit comparator never invokes the element's invalid conversion method");
-}
-// Object.assign writes a function's `name`, which is not writable: it throws.
-{
-  const source = stripTypes(readFileSync(join(here, "examples", "invalid-function-fields-inferred.ts"), "utf8"))
-    .replace(/^export /gm, "");
-  assert.throws(() => vm.runInNewContext(`${source}\nnamed()`, {}, { timeout: 1000 }), /read only property 'name'/);
-}
-// A rest typed by an intersection: TypeScript accepts the call at an instance
-// where the declared contract holds no array, and the result is no boolean.
-{
-  const source = stripTypes(readFileSync(join(here, "examples", "invalid-rest-intersection.ts"), "utf8"))
-    .replace(/^export /gm, "");
-  assert.equal(vm.runInNewContext(`${source}\ntypeof wrong()`, {}, { timeout: 1000 }), "number",
-    "invalid-rest-intersection: the actual source returns a number despite its boolean contract");
-}
-// Forwarding through an ordinarily annotated binding does not prevent the
-// callback from shortening the source; the final map position remains a hole.
-{
-  const source = stripTypes(readFileSync(join(here, "examples", "invalid-callback-effect-forwarding.ts"), "utf8"))
-    .replace(/^export /gm, "");
-  assert.equal(vm.runInNewContext(`${source}\nconst result = wrong([1, 2]); JSON.stringify([result.length, 0 in result, 1 in result])`, {}, { timeout: 1000 }), "[2,true,false]");
-}
-// These deliberately violate the external-array contract. Even numeric
-// tuples can run arbitrary code if their conversion hooks are replaced.
-{
-  const source = stripTypes(readFileSync(join(here, "examples", "native-array-conversion.ts"), "utf8"))
-    .replace(/^export /gm, "");
-  for (const [key, expected] of [["toString", undefined], ["Symbol.toPrimitive", "string"]]) {
-    const member = key === "toString" ? '"toString"' : "Symbol.toPrimitive";
-    assert.equal(vm.runInNewContext(`${source}\nlet seen = 0; const value = [1, 2];
-      value[${member}] = function(required) { seen = required; return "x"; };
-      tuples([value, value]); seen;`, {}, { timeout: 1000 }), expected);
-  }
-}
-// Reading a hole gives undefined, so it satisfies the input annotation. map
-// skips it even when the callback preserves the heap and returns a number.
-{
-  const source = stripTypes(readFileSync(join(here, "examples", "invalid-map-hole-coalescing.ts"), "utf8"))
-    .replace(/^export /gm, "");
-  assert.equal(vm.runInNewContext(`${source}\nconst xs = [1, 2]; delete xs[1];
-    const result = coalescingCallback(xs); JSON.stringify([result.length, 1 in result, result[1]])`,
-    {}, { timeout: 1000 }), "[2,false,null]");
-}
-// The input has Array.prototype and dense elements, with no accessors or
-// proxies. Its extra own constructor is excluded by the ordinary-construction
-// invariant. These controls explain why the external-code assumption matters;
-// they deliberately call the verified functions outside their input contracts.
-{
-  const source = stripTypes(readFileSync(join(here, "examples", "ordinary-array-construction.ts"), "utf8"))
-    .replace(/^export /gm, "");
-  const setup = `class Result { length = "not a number"; }
-    class Constructor { static [Symbol.species] = Result; }
-    const xs = [1, 2]; xs.constructor = Constructor;
-    if (Object.getPrototypeOf(xs) !== Array.prototype || !(0 in xs) || !(1 in xs))
-      throw Error("invalid species witness input");`;
-  for (const call of ["mappedLength(xs)", "filteredLength(xs)"])
-    assert.equal(vm.runInNewContext(`${source}\n${setup}\n${call}`, {}, { timeout: 1000 }), "not a number");
-  assert.equal(vm.runInNewContext(`${source}\n${setup}\nArray.isArray(slicedArray(xs))`, {}, { timeout: 1000 }), false);
-  // Species runs before the first callback: preserving every callback's
-  // entry heap still does not preserve the traversal's original index range.
-  assert.equal(vm.runInNewContext(`const xs = [1, 2];
-    class Species { constructor(n) { xs.length = 0; return new Array(n); } }
-    class Constructor { static [Symbol.species] = Species; }
-    xs.constructor = Constructor;
-    const result = xs.map(x => x);
-    JSON.stringify([result.length, 0 in result, 1 in result]);`, {}, { timeout: 1000 }), "[2,false,false]");
-}
-// A subclass of Array is its instances' `constructor`, so `map` constructs
-// its result through the subclass (ArraySpeciesCreate): the construction the
-// ordinary array construction assumption excludes, and why the pipeline
-// refuses the class (`invalid-array-subclass`).
-{
-  const source = stripTypes(readFileSync(join(here, "examples", "invalid-array-subclass.ts"), "utf8"))
-    .replace(/^export /gm, "");
-  assert.equal(vm.runInNewContext(`${source}\nlet built = 0;
-    class Loud extends Counted { constructor(...args) { super(...args); built++; } }
-    const xs = Loud.from([1, 2]); built = 0;
-    const result = doubled(xs);
-    JSON.stringify([result instanceof Loud, built, Array.from(result)]);`, {}, { timeout: 1000 }),
-    "[true,1,[2,4]]");
-}
-let erasedContract = "";
-let good = "";
-let generic = "";
-let genericClosure = "";
-let twoCalls = "";
-let bounded = "";
-let returned = "";
-let captured = "";
-let callback = "";
-// `Array.prototype`'s contract is TypeScript's declarations through the
-// overlay: every listed member is read, each quantified over the element and
-// taking the array as its receiver, readonly unless it mutates. A declaration
-// that differs from the reviewed text is refused.
+
 {
   const arrays = join(here, "examples", "values.ts");
   const doc = collectDeclarations(arrays, { arrays: [0, 0] });
@@ -920,111 +269,97 @@ let callback = "";
     { name: "notDeclared", from: "ReadonlyArray", signature: "notDeclared(): T;" }] });
   const absentProto = absent.definitions.find(d => d.declaration.module === "skjs/array-prototype");
   assert(absentProto?.expression.k === "object" && absentProto.expression.fields.length === 0);
+  closeParser();
   process.stdout.write("array prototype: overlay members read from TypeScript's declarations\n");
 }
-let inference = "";
-let indexed = "";
-let moduleFunctions = "";
-let moduleInit = "";
-let genericModule = "";
-let sumMapper = "";
-let sumConstructor = "";
-let sumCollections = "";
-let localClosure = "";
-let mutatingClosure = "";
-let exactKeys = "";
-let restKeys = "";
-let variadicOffer = "";
-let explicitCalls = "";
-let classGeneric = "";
-let knownCondition = "";
-let staleCondition = "";
-let cellUnion = "";
-let callableUnion = "";
-let nonRegular = "";
-let schemeHost = "";
-let wireCase = "";
-let verifiedFunctions = 0;
-const outcomes = await pooled(cases, runCase);
-for (const [i, test] of cases.entries()) {
-  const settled = outcomes[i];
-  if (settled.status === "rejected") throw settled.reason;
-  const result = expectOutcome(test, settled.value);
-  if (result.status === "verified")
-    verifiedFunctions += result.functions.length;
-  process.stdout.write(
-    `${test.file}: ${result.status} (${result.phase}, ${test.kind})\n`,
-  );
-  if (test.file === "generic-rest") checkGenericRest(verifier, result.artifacts);
-  if (test.file === "overloads") checkOverloads(verifier, result.artifacts);
-  if (test.file === "invalid-generic-contract-erasure") erasedContract = result.artifacts;
-  if (test.file === "values") good = result.artifacts;
-  if (test.file === "default-parameter-scope") checkDefaults(verifier, result.artifacts);
-  if (test.file === "for-of-program-iterable") checkIteratorProtocol();
-  if (test.file === "invalid-default-invocation") checkEarlyDefault(verifier, result.artifacts);
-  if (test.file === "generic-default") checkSchemeDefaults(verifier, result.artifacts);
-  if (test.file === "generic-inferred") generic = result.artifacts;
-  if (test.file === "generic-closure") genericClosure = result.artifacts;
-  if (test.file === "generic-two-calls") twoCalls = result.artifacts;
-  if (test.file === "generic-bounded") bounded = result.artifacts;
-  if (test.file === "generic-returned") returned = result.artifacts;
-  if (test.file === "generic-captured-store") captured = result.artifacts;
-  if (test.file === "generic-callback") callback = result.artifacts;
-  if (test.file === "module-functions") moduleFunctions = result.artifacts;
-  if (test.file === "module-init") moduleInit = result.artifacts;
-  if (test.file === "generic-module-calls") genericModule = result.artifacts;
-  if (test.file === "generic-inference") inference = result.artifacts;
-  if (test.file === "index-signature") indexed = result.artifacts;
-  if (test.file === "sum-mapper-signature") sumMapper = result.artifacts;
-  if (test.file === "sum-constructor-field") sumConstructor = result.artifacts;
-  if (test.file === "sum-collections") sumCollections = result.artifacts;
-  if (test.file === "closure-result-contract") localClosure = result.artifacts;
-  if (test.file === "closure-graph-captured-cell") mutatingClosure = result.artifacts;
-  if (test.file === "invalid-writable-dictionary-exact-keys") exactKeys = result.artifacts;
-  if (test.file === "invalid-writable-dictionary-rest-keys") restKeys = result.artifacts;
-  if (test.file === "variadic-offer-sync") variadicOffer = result.artifacts;
-  if (test.file === "explicit-type-arguments") explicitCalls = result.artifacts;
-  if (test.file === "class-generic-method") classGeneric = result.artifacts;
-  if (test.file === "known-condition") knownCondition = result.artifacts;
-  if (test.file === "invalid-known-condition") staleCondition = result.artifacts;
-  if (test.file === "cell-union-capture") cellUnion = result.artifacts;
-  if (test.file === "callable-union-capture") callableUnion = result.artifacts;
-  if (test.file === "non-regular-alias") nonRegular = result.artifacts;
-  if (test.file === "scheme-binder-roles") schemeHost = result.artifacts;
-  if (test.file === "pattern-program-iterable") wireCase = result.artifacts;
-}
-process.stdout.write(
-  `${verifiedFunctions} functions verified; ${cases.filter((c) => c.kind === "negative").length} negative controls; ${cases.filter((c) => c.kind === "gap").length} named gaps\n`,
-);
-// Mutations work on the shared typed wire document. JSON is first checked by
-// Lean above; no second hand-maintained SourceClaims shape is introduced here.
-const original: SourceClaims = JSON.parse(
-  readFileSync(join(good, "claims.json"), "utf8"),
-);
-const invoke = (claims: string, evidence: string, artifacts = good,
-  ast = join(artifacts, "fragment.json")) => {
-  const p = spawnSync(
-    verifier,
-    [
-      "--check-source-claims",
-      ast,
-      claims,
-      join(artifacts, "source.ts"),
-      evidence,
-    ],
-    { encoding: "utf8", timeout: 30_000 },
-  );
-  assert.ifError(p.error);
-  assert.equal(p.signal, null);
-  assert.equal(p.status, 1, p.stdout + p.stderr);
-  // Returned so a caller can assert the refusal is for the intended reason,
-  // not merely that something refused.
-  return p.stdout + p.stderr;
-};
-const fragment: unknown = JSON.parse(readFileSync(join(good, "fragment.json"), "utf8"));
-assert.ok(fragment && typeof fragment === "object" && !Array.isArray(fragment));
-assert.ok("file" in fragment && typeof fragment.file === "string");
+
 {
+  for (const [file, call] of [
+    ["invalid-native-find-mutation", "wrong([1, 2], { value: 0 })"],
+    ["invalid-native-map-mutation", "wrong([1, 2], { value: 0 })"],
+    ["invalid-native-join-coercion", "wrong({ value: 0 })"],
+    ["invalid-native-sort-coercion", "wrong({ value: 0 })"],
+    // What `%Iterate:ForIn%`'s step read is not what a later read finds.
+    ["invalid-for-in-entry-call", "wrong({ a: 1 }, (v) => { delete v.a; })"],
+    ["invalid-for-in-entry-field", "wrong({ inner: { a: 1, b: 2 } }, {})"],
+    ["invalid-for-in-entry-rebound", "wrong({ a: 1, b: 2 }, {})"],
+    // A function's `length` is not enumerable: its copy lacks it.
+    ["invalid-spread-function-length", "arity((a, b) => a + b)"],
+  ])
+    assert.equal(runExample(file, call), undefined,
+      `${file}: the actual source returns undefined despite its number contract`);
+  assert.equal(runExample("native-sort-contracts", "noCoercion({ value: 7 })"), 7,
+    "an explicit comparator never invokes the element's invalid conversion method");
+  // Object.assign writes a function's `name`, which is not writable: it throws.
+  assert.throws(() => runExample("invalid-function-fields-inferred", "named()"), /read only property 'name'/);
+  // A rest typed by an intersection: TypeScript accepts the call at an instance
+  // where the declared contract holds no array, and the result is no boolean.
+  assert.equal(runExample("invalid-rest-intersection", "typeof wrong()"), "number",
+    "invalid-rest-intersection: the actual source returns a number despite its boolean contract");
+  // Forwarding through an ordinarily annotated binding does not prevent the
+  // callback from shortening the source; the final map position remains a hole.
+  assert.equal(runExample("invalid-callback-effect-forwarding",
+    "const result = wrong([1, 2]); JSON.stringify([result.length, 0 in result, 1 in result])"), "[2,true,false]");
+  // Reading a hole gives undefined, so it satisfies the input annotation. map
+  // skips it even when the callback preserves the heap and returns a number.
+  assert.equal(runExample("invalid-map-hole-coalescing", `const xs = [1, 2]; delete xs[1];
+    const result = coalescingCallback(xs); JSON.stringify([result.length, 1 in result, result[1]])`), "[2,false,null]");
+  // A subclass of Array is its instances' `constructor`, so `map` constructs
+  // its result through the subclass (ArraySpeciesCreate): the construction the
+  // ordinary array construction assumption excludes, and why the pipeline
+  // refuses the class (`invalid-array-subclass`).
+  assert.equal(runExample("invalid-array-subclass", `let built = 0;
+    class Loud extends Counted { constructor(...args) { super(...args); built++; } }
+    const xs = Loud.from([1, 2]); built = 0;
+    const result = doubled(xs);
+    JSON.stringify([result instanceof Loud, built, Array.from(result)]);`), "[true,1,[2,4]]");
+  process.stdout.write("native-contract counterexamples run under Node: as the contracts say\n");
+}
+
+{
+  for (const [file, expression, expected] of [
+    ["callable-bag-union", "[readWrite(true, true), readWrite(false, true)].join()", "false,false"],
+    ["invalid-callable-bag-union", "wrong(false, true)", false],
+    ["recursive-callable", "selfLoop()", false],
+    ["invalid-recursive-callable", "wrong()", true],
+    ["non-regular-alias", "first({ v: 1, next: null })", 1],
+    ["invalid-non-regular-alias", "wrong({ v: 1, next: null })", null],
+    ["assertion-snapshot", "assertedSnapshot({ value: 3 })", 3],
+    // A closure reads a captured cell when it runs, and sees its own write.
+    ["invalid-closure-graph-captured-cell", "counter()", null],
+    // A generic function type's result: a pair where it holds, the argument
+    // itself where another scheme was passed for it.
+    ["generic-function-type-member", "pass({ twice: () => (x) => [x, x] }).twice()(1).join()", "1,1"],
+    ["invalid-generic-function-type-member", "wrong({ twice: () => (x) => x }).twice()(1)", 1],
+  ] as const)
+    assert.equal(runExample(file, expression), expected, file);
+  // A class has no plain call: calling it throws.
+  assert.throws(() => runExample("invalid-class-as-function", "go()"), /cannot be invoked without 'new'/);
+  // A generic method's contract read as `unknown` admits 42, which no call
+  // can run.
+  assert.throws(() => runExample("invalid-generic-method-nested-scheme", "wrong().run({ id: (x) => x })"),
+    /is not a function/);
+  // The iterator protocol a program's iterable runs: its iterator's `return`
+  // is called on `break`, `return` and a throw out of the body, and not at the
+  // end or on `continue`; a throw out of the body wins over one out of the
+  // close. The parser's lowering (`protocolForOf`) calls `return` exactly there.
+  const list = "new LinkedList(new Cell(1, new Cell(5, new Cell(9, null))), { closed: 0 })";
+  const closes = (call: string) =>
+    runExample("for-of-program-iterable", `const l = ${list}; const r = ${call}; JSON.stringify([r, l.log.closed])`);
+  assert.equal(closes("sum(l)"), "[15,0]");
+  assert.equal(closes("firstAbove(l, 3)"), "[5,1]");
+  assert.equal(closes("firstOver(l, 3)"), "[5,1]");
+  assert.equal(closes("skipSmall(l, 3)"), "[14,0]");
+  assert.equal(runExample("for-of-program-iterable",
+    "const log = { closed: 0 }; JSON.stringify([firstEven(new Countdowns(5, log)), log.closed])"), "[4,1]");
+  assert.equal(runExample("for-of-program-iterable", "bodyThrows(new Brittle()).message"), "body");
+  process.stdout.write("examples run as JavaScript: results as their outcomes say\n");
+}
+
+{
+  const good = run("values");
+  const fragment: unknown = JSON.parse(readFileSync(join(good, "fragment.json"), "utf8"));
+  assert.ok(fragment && typeof fragment === "object" && !Array.isArray(fragment));
   const forged = structuredClone(fragment);
   assert.ok("functions" in forged && Array.isArray(forged.functions));
   const first: unknown = forged.functions[0];
@@ -1038,28 +373,171 @@ assert.ok("file" in fragment && typeof fragment.file === "string");
   ] as const) {
     Object.assign(first, { retType });
     writeFileSync(ast, JSON.stringify(forged));
-    const produced: SpawnSyncReturns<string> = spawnSync(verifier,
-      ["--produce-source-claims", ast, join(good, "claims.json"), fragment.file,
-        join(good, "raw-graph-evidence.json"), "10"], { encoding: "utf8" });
+    const produced = produceWith(good, join(good, "claims.json"), "raw-graph", ast);
     assert.equal(produced.status, 1);
     assert.match(produced.stderr, refusal);
   }
-  process.stdout.write("raw graph label and claim-shaped annotation as a source annotation: refused\n");
+  const extraField = join(good, "extra-ast-field.json");
+  writeFileSync(extraField, JSON.stringify({ ...fragment, unexamined: true }));
+  assert.match(invoke(join(good, "claims.json"), join(good, "evidence.json"), good, extraField), /unexpected fields/);
+  process.stdout.write("a graph label, a claim-shaped annotation and an unexamined field in the parser's document: refused\n");
 }
-const forgedImport = join(good, "forged-import.json");
-writeFileSync(forgedImport, JSON.stringify({ ...fragment,
-  declarations: must(pinnedDeclarationDocument, "the pinned Json import document") }));
-// The claims name declarations by their position in the fragment's
-// document: under another import closure they are other types, which the
-// evidence does not justify.
-assert.match(invoke(join(good, "claims.json"), join(good, "evidence.json"), good,
-  forgedImport), /source evidence does not justify/);
-process.stdout.write("forged import closure: refused\n");
-// Each label tree has one spelling and names a declaration of the fragment's
-// document; a binder is a label, never a row the producer writes.
+
 {
+  // Bypass the producer's refusal: manufacture its old proposal by erasing
+  // the method in a copy of the AST. Both verifier entry points must still
+  // refuse the ORIGINAL contract before accepting any such proposal/evidence.
+  const erased = run("invalid-generic-contract-erasure");
+  const ast: Ast = JSON.parse(readFileSync(join(erased, "fragment.json"), "utf8"));
+  const declaration = ast.declarations?.definitions.find(d => d.declaration.name === "Witness");
+  assert(declaration?.expression.k === "object");
+  const member = declaration.expression.fields.find(f => f.name === "choose");
+  assert(member?.type.k === "scheme");
+  member.type = { k: "atom", name: "unknown", span: member.type.span };
+  const weakened = join(erased, "weakened.json");
+  writeFileSync(weakened, JSON.stringify(ast));
+  const proposal = spawnSync(join(here, "_build/default/producer.exe"), [weakened],
+    { encoding: "utf8", timeout: 30_000 });
+  assert.equal(proposal.status, 0, proposal.stderr);
+  const claims = join(erased, "forged-claims.json");
+  const evidence = join(erased, "forged-evidence.json");
+  writeFileSync(claims, proposal.stdout);
+  writeFileSync(evidence, "{}");
+  const searched = spawnSync(verifier, ["--produce-source-claims",
+    join(erased, "fragment.json"), claims, join(erased, "source.ts"), evidence, "12"],
+    { encoding: "utf8", timeout: 30_000 });
+  assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+  assert.match(searched.stdout + searched.stderr, /generic contract.*cannot be erased/);
+  assert.match(invoke(claims, evidence, erased), /generic contract.*cannot be erased/);
+}
+{
+  // A generic method's argument pack `P` beside a nested generic method
+  // binding its own `P` is a pack: the inner `P` is that method's value binder.
+  // The outer `P` used also as a value inside a nested method binding only `Q`
+  // is refused, as no scheme states such a binder. An alias reaching itself
+  // under no object, array, tuple or function type is refused where it is used.
+  const span: [number, number] = [0, 0];
+  const binder = (name: string): TypeTerm => ({ k: "binder", name, span });
+  const method = (params: TypeTerm[], rest: TypeTerm | null, result: TypeTerm): Extract<TypeTerm, { k: "function" }> =>
+    ({ k: "function", effect: "unrestricted", receiver: { k: "self", span }, params, rest, result, span });
+  const scheme = (name: string, signature: Extract<TypeTerm, { k: "function" }>,
+      bound: TypeTerm | null = null): TypeTerm =>
+    ({ k: "scheme", binders: [{ name, bound, default: null, span }], signatures: [signature], span });
+  const runner = (inner: TypeTerm): TypeTerm => scheme("P", method(
+    [{ k: "object", fields: [{ name: "id", optional: false, readonly: true, type: inner, span }],
+      stringIndex: null, calls: [], span }],
+    { k: "pack", of: binder("P"), span }, { k: "atom", name: "number", span }),
+    { k: "array", presence: "readable", readonly: false, element: { k: "atom", name: "unknown", span }, span });
+  const forgeDefinition = (artifacts: string, name: string, file: string, change: (d: TypeDefinition) => void) => {
+    const fragment: Ast = JSON.parse(readFileSync(join(artifacts, "fragment.json"), "utf8"));
+    change(must(fragment.declarations.definitions.find((d) => d.declaration.name === name), name));
+    const path = join(artifacts, `${file}.json`);
+    writeFileSync(path, JSON.stringify(fragment));
+    const searched = produceWith(artifacts, join(artifacts, "claims.json"), file, path);
+    return { status: searched.status, detail: searched.stdout + searched.stderr };
+  };
+  const withRun = (inner: TypeTerm) => (d: TypeDefinition) => {
+    assert(d.expression.k === "object");
+    must(d.expression.fields[0], "Runner's method").type = runner(inner);
+  };
+  const schemeHost = run("scheme-binder-roles");
+  const shadowed = forgeDefinition(schemeHost, "Runner", "forged-shadowed-pack",
+    withRun(scheme("P", method([binder("P")], null, binder("P")))));
+  assert.equal(shadowed.status, 0, shadowed.detail);
+  const mixed = forgeDefinition(schemeHost, "Runner", "forged-mixed-pack",
+    withRun(scheme("Q", method([binder("Q"), binder("P")], null, binder("Q")))));
+  assert.equal(mixed.status, 1);
+  assert.match(mixed.detail, /Runner: generic contract at \[0,0\]: a binder used as both a value and an argument pack is not represented/);
+  const unguarded = forgeDefinition(run("non-regular-alias"), "Box", "forged-unguarded-alias", (d) => {
+    assert(d.expression.k === "object");
+    const next = must(d.expression.fields.find((f) => f.name === "next"), "Box's next").type;
+    assert(next.k === "union");
+    d.expression = { k: "union", parts: [{ k: "parameter", index: 0, span }, must(next.parts[0], "Box<[T]>")], span };
+  });
+  assert.equal(unguarded.status, 1);
+  assert.match(unguarded.detail, /unguarded alias cycle through Box: a recursive alias must reach itself through an object, array, tuple or function type/);
+}
+{
+  // A class's generic method, a closure the prototype holds, covers the
+  // instance type's member up to renaming the member's binders to the
+  // closure's: the renamed signatures must still follow from the closure's.
+  // The class's declaration tampered to promise a number where the closure
+  // returns its binder is refused at the construct code's return, where the
+  // fresh instance meets the instance type; the untampered one is derived there.
+  // `make` alone is kept, so the construct code is the first obligation.
+  const classGeneric = run("class-generic-method");
+  const source = readFileSync(join(classGeneric, "source.ts"), "utf8");
+  const claims = readClaims(classGeneric);
+  claims.functions = claims.functions.filter((f) => f.name === "make");
+  const makeClaims = writeClaims(classGeneric, "make-claims", claims);
+  const fragment: unknown = JSON.parse(readFileSync(join(classGeneric, "fragment.json"), "utf8"));
+  assert.ok(fragment && typeof fragment === "object" && "functions" in fragment &&
+    Array.isArray(fragment.functions));
+  fragment.functions = fragment.functions.filter((f: unknown) =>
+    f && typeof f === "object" && "name" in f && f.name === "make");
+  const kept = JSON.stringify(fragment);
+  const at = source.indexOf("pick<V>(a: V): V") + "pick<V>(a: V): ".length;
+  const declared = `"result":{"k":"binder","name":"V","span":[${at},${at + 1}]}`;
+  assert.ok(kept.includes(declared), "pick's declared result");
+  const search = (name: string, text: string) => {
+    const ast = join(classGeneric, `${name}.json`);
+    writeFileSync(ast, text);
+    return produceWith(classGeneric, makeClaims, name, ast);
+  };
+  const derived = search("make-only", kept);
+  assert.equal(derived.status, 0, derived.stdout + derived.stderr);
+  const refused = search("forged-member-result",
+    kept.replace(declared, '"result":{"k":"atom","name":"number","span":[0,0]}'));
+  assert.equal(refused.status, 1, refused.stdout + refused.stderr);
+  const ctor = source.indexOf("class Helper") + "class ".length;
+  assert.ok((refused.stdout + refused.stderr).includes(
+    `source expression obligation at [${ctor},${ctor + "Helper".length}): evidence search failed: no derivation of its return-contract claim`),
+    refused.stdout + refused.stderr);
+  process.stdout.write("forged declarations: an erased contract, binder roles, an unguarded alias and an uncovered member refused by the verifier\n");
+}
+
+{
+  const good = run("values");
+  const original = readClaims(good);
+  for (const [name, mutate] of [
+    ["fingerprint", (c: SourceClaims) => { c.sourceSha256 = "0".repeat(64); }],
+    ["missing-function", (c: SourceClaims) => { c.functions.pop(); }],
+  ] as const) {
+    const c = structuredClone(original);
+    mutate(c);
+    invoke(writeClaims(good, name, c), join(good, "evidence.json"), good);
+    process.stdout.write(`tampered ${name}: refused\n`);
+  }
+  // A missing claim is a located refusal, not prose disguised as a failed
+  // judgment. The closed failure sum makes this branch mandatory at the
+  // Lean boundary, and the reader must preserve the distinction.
+  const generic = run("generic-inferred");
+  const claims = readClaims(generic);
+  const fn = must(claims.functions.find((f) => f.name === "inferred"), "inferred");
+  fn.expressions.pop();
+  const refusal = readDiagnostic(invoke(writeClaims(generic, "missing-generic-expression", claims),
+    join(generic, "evidence.json"), generic));
+  assert(refusal?.kind === "source-refusal");
+  assert.deepEqual(refusal.sourceMap.pos, fn.namePos);
+  assert(!("judgment" in refusal));
+  // The claims name declarations by their position in the fragment's
+  // document: under another import closure they are other types, which the
+  // evidence does not justify.
+  const fragment: unknown = JSON.parse(readFileSync(join(good, "fragment.json"), "utf8"));
+  const json: unknown = JSON.parse(readFileSync(join(run("recursive-json"), "fragment.json"), "utf8"));
+  assert.ok(fragment && typeof fragment === "object" && json && typeof json === "object" && "declarations" in json);
+  const forgedImport = join(good, "forged-import.json");
+  writeFileSync(forgedImport, JSON.stringify({ ...fragment, declarations: json.declarations }));
+  assert.match(invoke(join(good, "claims.json"), join(good, "evidence.json"), good, forgedImport),
+    /source evidence does not justify/);
+  process.stdout.write("forged import closure: refused\n");
+}
+{
+  // Each label tree has one spelling and names a declaration of the fragment's
+  // document; a binder is a label, never a row the producer writes.
+  const recursiveJson = run("recursive-json");
   const path = join(recursiveJson, "claims.json");
-  const claims: SourceClaims = JSON.parse(readFileSync(path, "utf8"));
+  const claims = readClaims(recursiveJson);
   const nullary = Number(must(/\{"decl":(\d+)\}/.exec(readFileSync(path, "utf8")),
     "a nullary declaration's label")[1]);
   const param = must(claims.functions[0]?.params[0], "a parameter's claim");
@@ -1076,151 +554,112 @@ process.stdout.write("forged import closure: refused\n");
     ["missing-arguments", [{ decl: nullary, args: [[3]] }], /one argument per parameter/],
     ["order", [{ binder: "T" }, 3], /canonical order/],
     ["one-part-meet", [{ meet: [[3]] }], /at least two parts/],
-  ] as const) {
-    assert.match(forge(name, type), refusal);
-    process.stdout.write(`label tree (${name}): refused\n`);
-  }
+  ] as const)
+    assert.match(forge(name, type), refusal, name);
   assert.match(forge("parameter-row", [claims.types.length],
     [{ param: claims.types.length, name: "T", kind: "value" }]),
     /a producer's row is a clause row or a scheme row/);
-  process.stdout.write("a binder written as a producer row: refused\n");
+  process.stdout.write("label trees other than the one spelling, and a binder as a producer row: refused\n");
 }
-{
-  const ast: Ast = JSON.parse(readFileSync(join(recursiveJson, "fragment.json"), "utf8"));
-  const parameter = ast.functions[0]?.params[0];
-  assert.ok(parameter?.type.k === "reference" && parameter.type.reference.name === "Json");
-  const labelled: unknown = { a: "graph", label: 4 };
-  Object.assign(parameter, { type: labelled });
-  const forged = join(recursiveJson, "forged-internal-label.json");
-  writeFileSync(forged, JSON.stringify(ast));
-  assert.match(invoke(join(recursiveJson, "claims.json"),
-    join(recursiveJson, "evidence.json"), recursiveJson, forged),
-    /source cannot state an internal graph label/);
-  process.stdout.write("source-authored internal graph label: refused\n");
-}
-// Bypass the producer's refusal: manufacture its old proposal by erasing
-// the method in a copy of the AST. Both verifier entry points must still
-// refuse the ORIGINAL contract before accepting any such proposal/evidence.
-{
-  const ast: Ast = JSON.parse(readFileSync(join(erasedContract, "fragment.json"), "utf8"));
-  const declaration = ast.declarations?.definitions.find(d => d.declaration.name === "Witness");
-  assert(declaration?.expression.k === "object");
-  const member = declaration.expression.fields.find(f => f.name === "choose");
-  assert(member?.type.k === "scheme");
-  member.type = { k: "atom", name: "unknown", span: member.type.span };
-  const weakened = join(erasedContract, "weakened.json");
-  writeFileSync(weakened, JSON.stringify(ast));
-  const proposal = spawnSync(join(here, "_build/default/producer.exe"), [weakened],
-    { encoding: "utf8", timeout: 30_000 });
-  assert.equal(proposal.status, 0, proposal.stderr);
-  const claims = join(erasedContract, "forged-claims.json");
-  const evidence = join(erasedContract, "forged-evidence.json");
-  writeFileSync(claims, proposal.stdout);
-  writeFileSync(evidence, "{}");
-  const searched = spawnSync(verifier, ["--produce-source-claims",
-    join(erasedContract, "fragment.json"), claims, join(erasedContract, "source.ts"), evidence, "12"],
-    { encoding: "utf8", timeout: 30_000 });
-  assert.equal(searched.status, 1, searched.stdout + searched.stderr);
-  assert.match(searched.stdout + searched.stderr, /generic contract.*cannot be erased/);
-  assert.match(invoke(claims, evidence, erasedContract), /generic contract.*cannot be erased/);
-  process.stdout.write("unsupported generic contract: refused independently of the producer\n");
-}
-const extraField = join(good, "extra-ast-field.json");
-writeFileSync(extraField, JSON.stringify({ ...fragment, unexamined: true }));
-assert.match(invoke(join(good, "claims.json"), join(good, "evidence.json"), good,
-  extraField), /unexpected fields/);
-process.stdout.write("unexamined source field: refused\n");
-for (const [name, mutate] of new Map<string, (c: SourceClaims) => void>([
-  [
-    "fingerprint",
-    (c) => {
-      c.sourceSha256 = "0".repeat(64);
-    },
-  ],
-  [
-    "missing-function",
-    (c) => {
-      c.functions.pop();
-    },
-  ],
-  [
-    "false-expression",
-    (c) => {
-      const e = c.functions[0]?.expressions[0];
-      assert.ok(e);
-      e.type = [0];
-    },
-  ],
-])) {
-  const c = structuredClone(original);
-  mutate(c);
-  const path = join(good, `${name}.json`);
-  writeFileSync(path, JSON.stringify(c));
-  invoke(path, join(good, "evidence.json"));
-  process.stdout.write(`tampered ${name}: refused\n`);
-}
-const badEvidence = join(good, "bad-evidence.json");
-writeFileSync(badEvidence, "{}");
-invoke(join(good, "claims.json"), badEvidence);
-process.stdout.write("tampered evidence: refused\n");
 
-/** Search for evidence of forged claims, or of a forged parser document. */
-const produceWith = (artifacts: string, claims: string, name: string,
-    fragmentPath = join(artifacts, "fragment.json")): SpawnSyncReturns<string> =>
-  spawnSync(verifier, ["--produce-source-claims", fragmentPath, claims, join(artifacts, "source.ts"),
-    join(artifacts, `${name}-evidence.json`), "12"], { encoding: "utf8", timeout: 30_000 });
-/** An example run as JavaScript, then `expression` evaluated after it. */
-const runExample = (file: string, expression: string): unknown =>
-  vm.runInNewContext(`${stripTypes(readFileSync(join(here, "examples", `${file}.ts`), "utf8"))
-    .replace(/^export /gm, "")}\n${expression}`, {}, { timeout: 1000 });
-/** The label of the one-clause row `clause`, added to the claims' rows when
- * they lack it. */
-const rowOf = (claims: SourceClaims, clause: Row[number]): number => {
-  const i = claims.types.findIndex((row) => row.length === 1 && JSON.stringify(row[0]) === JSON.stringify(clause));
-  return i >= 0 ? i : claims.types.push([clause]) - 1;
-};
-
-// A condition of a Boolean literal type takes one arm (`ifKnown`): claimed at
-// that arm alone, `ready || zs[0]` is `true`, as Node computes. The same claim
-// is refused at that expression where the condition is a binding a closure
-// resets before the arm is chosen, and Node finds `undefined` there.
-for (const [artifacts, file, call, expected] of [
-  [knownCondition, "known-condition", "known([])", true],
-  [staleCondition, "invalid-known-condition", "stale([])", undefined],
+{
+  // The named view remains part of a mixed dictionary's source contract: an
+  // index-only replacement must not certify a function annotated with both.
+  const indexed = run("index-signature");
+  const claims = readClaims(indexed);
+  const mixed = must(claims.types.find((row) =>
+    row.length === 1 && typeof row[0] === "object" && "dict" in row[0] &&
+    row[0].dict.views.some(([name]) => name === "ready")), "the mixed dictionary row");
+  const clause = mixed[0];
+  assert(typeof clause === "object" && "dict" in clause);
+  clause.dict.views = [];
+  assert.match(invoke(writeClaims(indexed, "forged-missing-named-view", claims), join(indexed, "evidence.json"), indexed),
+    /claimed parameter type differs from the source annotation/);
+}
+// A method or constructor claim is compared with its annotation by meaning, so
+// another row for Values<number> is admitted; a domain wider than the
+// annotation, here one that also admits undefined, is still refused.
+for (const [artifacts, arity, refusal] of [
+  [run("sum-mapper-signature"), 2, /closure signature claim is outside the source annotation/],
+  [run("sum-constructor-field"), 1, /construct signature claim is outside the source annotation/],
 ] as const) {
-  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
-  const claims: SourceClaims = JSON.parse(readFileSync(join(artifacts, "claims.json"), "utf8"));
-  const condition = "ready || zs[0]";
-  const at = source.lastIndexOf(condition);
-  const claim = must(claims.functions.flatMap((f) => f.expressions)
-    .find((e) => e.pos[0] === at && e.pos[1] === at + condition.length), "the condition's claim");
-  claim.type = [rowOf(claims, { boolLit: { value: true } })];
-  const forged = join(artifacts, "forged-known-arm.json");
-  writeFileSync(forged, JSON.stringify(claims));
-  const searched = produceWith(artifacts, forged, "forged-known-arm");
-  const detail = searched.stdout + searched.stderr;
-  if (expected) assert.equal(searched.status, 0, detail);
-  else {
-    assert.equal(searched.status, 1, detail);
-    assert.ok(detail.includes(`closure expression claim at [${at},${at + condition.length})`), detail);
-  }
-  assert.equal(runExample(file, call), expected);
+  const claims = readClaims(artifacts);
+  // mapEntry's arrow, or AddIndex's construct signature: its last parameter.
+  const domains = claims.types.flatMap((row) => row.flatMap((clause) =>
+    typeof clause !== "object" ? [] :
+    "arrs" in clause ? clause.arrs.arrows.map((s) => s.arguments) :
+    "ctors" in clause ? clause.ctors.signatures.map(([params]) => params) : []));
+  const params = must(domains.find((ps) => ps.length === arity), "the claimed signature");
+  must(params.at(-1), "a claimed parameter").unshift(3);
+  assert.match(invoke(writeClaims(artifacts, "forged-wider-domain", claims), join(artifacts, "evidence.json"), artifacts), refusal);
 }
-process.stdout.write("a known condition's arm: claimed alone, and refused where the condition may be false\n");
-
-// Which program point a claim is attached to is unproved (DESIGN.md, the
-// trusted tools): a contents observation added to the producer's claims is
-// checked at its own point. On `cell-union-capture`, whose captured cell is
-// of a union of a `null | boolean` arm and a `null` arm, an observation every
-// arm implies holds where the closure reads the cell, and a null-only one is
-// refused there, as one arm admits later Boolean writes; the observed claims
-// with the evidence of the unobserved ones are refused. A statement entry's
-// null-only observation holds after the closure writes `null` into the cell,
-// and not where nothing wrote it; an entry narrowing the cell to its null arm
-// is refused at the read, though its observation holds.
 {
+  // A closure is created at a variadic signature only when the signature's
+  // fixed parameters cover the ones its code binds: `named` binds one, so a
+  // claim offering it `(...rest: unknown[]) => void` is refused where it is
+  // created, not taken from the producer on trust.
+  const variadicOffer = run("variadic-offer-sync");
+  const claims = readClaims(variadicOffer);
+  const offered = must(claims.types.flatMap((row) => row.flatMap((clause) =>
+    typeof clause === "object" && "arrs" in clause && clause.arrs.arrows.length > 0
+      ? clause.arrs.variadic ?? [] : []))
+    .find((s) => s.arguments[0].length === 1), "the variadic signature `named` is offered");
+  offered.arguments[0] = [];
+  assert.match(invoke(writeClaims(variadicOffer, "forged-variadic-offer", claims), join(variadicOffer, "evidence.json"), variadicOffer),
+    /closure signature claim is outside the source annotation/);
+}
+{
+  // An unannotated closure's claimed result is checked against its body, not
+  // taken from the producer on trust. The body, `p !== null ? p - c : c`, is
+  // a number, not the null claimed: the closure's one node returns it at that
+  // result.
+  const localClosure = run("closure-result-contract");
+  const claims = readClaims(localClosure);
+  const own = must(claims.types.flatMap((row) => row.flatMap((clause) =>
+    typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : []))
+    .find((s) => s.arguments.length === 2), "the closure's own arrow");
+  own.result = [0];
+  const body = readFileSync(join(localClosure, "source.ts"), "utf8").indexOf("p !== null");
+  refusedAt(localClosure, writeClaims(localClosure, "forged-closure-result", claims), "forged-closure-result",
+    `source expression obligation at [${body},`);
+  process.stdout.write("claims wider than their annotations: refused\n");
+}
+
+{
+  // A condition of a Boolean literal type takes one arm (`ifKnown`): claimed at
+  // that arm alone, `ready || zs[0]` is `true`, as Node computes. The same claim
+  // is refused at that expression where the condition is a binding a closure
+  // resets before the arm is chosen, and Node finds `undefined` there.
+  for (const [file, call, expected] of [
+    ["known-condition", "known([])", true],
+    ["invalid-known-condition", "stale([])", undefined],
+  ] as const) {
+    const artifacts = run(file);
+    const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+    const claims = readClaims(artifacts);
+    const condition = "ready || zs[0]";
+    const at = source.lastIndexOf(condition);
+    const claim = must(claims.functions.flatMap((f) => f.expressions)
+      .find((e) => e.pos[0] === at && e.pos[1] === at + condition.length), "the condition's claim");
+    claim.type = [rowOf(claims, { boolLit: { value: true } })];
+    const forged = writeClaims(artifacts, "forged-known-arm", claims);
+    if (expected) {
+      const searched = produceWith(artifacts, forged, "forged-known-arm");
+      assert.equal(searched.status, 0, searched.stdout + searched.stderr);
+    } else refusedAt(artifacts, forged, "forged-known-arm", `closure expression claim at [${at},${at + condition.length})`);
+    assert.equal(runExample(file, call), expected);
+  }
+}
+{
+  // On `cell-union-capture`, whose captured cell is of a union of a
+  // `null | boolean` arm and a `null` arm, a contents observation every arm
+  // implies holds where the closure reads the cell, and a null-only one is
+  // refused there, as one arm admits later Boolean writes. A statement entry's
+  // null-only observation holds after the closure writes `null` into the cell,
+  // and not where nothing wrote it; an entry narrowing the cell to its null arm
+  // is refused at the read, though its observation holds.
+  const cellUnion = run("cell-union-capture");
   const source = readFileSync(join(cellUnion, "source.ts"), "utf8");
-  const original = readFileSync(join(cellUnion, "claims.json"), "utf8");
   const within = (fn: string, text: string): number => {
     const start = source.indexOf(`function ${fn}(`);
     const at = source.indexOf(text, start);
@@ -1236,7 +675,7 @@ process.stdout.write("a known condition's arm: claimed alone, and refused where 
    * expression or statement entry starting at `at`. */
   const observed = (fn: string, at: number, name: string,
       pick: (l: ReturnType<typeof labels>) => number[], narrowed = false): string => {
-    const claims: SourceClaims = JSON.parse(original);
+    const claims = readClaims(cellUnion);
     const l = labels(claims);
     const f = must(claims.functions.find((g) => g.name === fn), fn);
     const points = [...f.expressions.filter((e) => e.pos[0] === at && e.pos[1] === at + "cell".length),
@@ -1246,715 +685,280 @@ process.stdout.write("a known condition's arm: claimed alone, and refused where 
       p.current = [["value", pick(l)]];
       if (narrowed) p.type = [l.nullArm];
     }
-    const path = join(cellUnion, `${name}.json`);
-    writeFileSync(path, JSON.stringify(claims));
-    return path;
+    return writeClaims(cellUnion, name, claims);
   };
+  const edge = (span: [number, number]) => `source incoming edge obligation at [${span[0]},${span[1]})`;
   const read = within("readLater", "=> cell.value") + "=> ".length;
-  const every = observed("readLater", read, "observed-every", (l) => l.every);
-  assert.equal(produceWith(cellUnion, every, "observed-every").status, 0);
-  const refusedAt = (claims: string, name: string, span: [number, number]) => {
-    const searched = produceWith(cellUnion, claims, name);
-    const detail = searched.stdout + searched.stderr;
-    assert.equal(searched.status, 1, detail);
-    assert.ok(detail.includes(`source incoming edge obligation at [${span[0]},${span[1]})`), detail);
-  };
-  refusedAt(observed("readLater", read, "observed-null", (l) => [l.nul]), "observed-null", [read, read + 4]);
-  assert.match(invoke(every, join(cellUnion, "evidence.json"), cellUnion), /does not justify/);
+  assert.equal(produceWith(cellUnion, observed("readLater", read, "observed-every", (l) => l.every), "observed-every").status, 0);
+  refusedAt(cellUnion, observed("readLater", read, "observed-null", (l) => [l.nul]), "observed-null", edge([read, read + 4]));
   const written = within("writeThenRead", "return cell.value;");
   assert.equal(produceWith(cellUnion, observed("writeThenRead", written, "entry-written", (l) => [l.nul]),
     "entry-written").status, 0);
   const unwritten = within("readBlock", "return cell.value;");
-  refusedAt(observed("readBlock", unwritten, "entry-unwritten", (l) => [l.nul]), "entry-unwritten",
-    [unwritten, unwritten + "return cell.value;".length]);
+  refusedAt(cellUnion, observed("readBlock", unwritten, "entry-unwritten", (l) => [l.nul]), "entry-unwritten",
+    edge([unwritten, unwritten + "return cell.value;".length]));
   const cellRead = written + "return ".length;
-  refusedAt(observed("writeThenRead", written, "entry-null-arm", (l) => [l.nul], true), "entry-null-arm",
-    [cellRead, cellRead + 4]);
-  process.stdout.write("contents observations on a captured cell: each checked at its own point\n");
+  refusedAt(cellUnion, observed("writeThenRead", written, "entry-null-arm", (l) => [l.nul], true), "entry-null-arm",
+    edge([cellRead, cellRead + 4]));
 }
-// The result of a call through a captured union of functions is not narrowed
-// to one alternative's: claimed `true`, the call is refused where it is.
 {
+  // The result of a call through a captured union of functions is not narrowed
+  // to one alternative's: claimed `true`, the call is refused where it is.
+  const callableUnion = run("callable-union-capture");
   const source = readFileSync(join(callableUnion, "source.ts"), "utf8");
-  const claims: SourceClaims = JSON.parse(readFileSync(join(callableUnion, "claims.json"), "utf8"));
+  const claims = readClaims(callableUnion);
   const at = source.indexOf("f(unit)");
   must(claims.functions.flatMap((f) => f.expressions).find((e) => e.pos[0] === at && e.pos[1] === at + 7),
     "the call's claim").type = [rowOf(claims, { boolLit: { value: true } })];
-  const forged = join(callableUnion, "forged-one-arm.json");
-  writeFileSync(forged, JSON.stringify(claims));
-  const searched = produceWith(callableUnion, forged, "forged-one-arm");
-  assert.equal(searched.status, 1);
-  assert.ok((searched.stdout + searched.stderr).includes(`source expression obligation at [${at},${at + 7})`),
-    searched.stdout + searched.stderr);
-  process.stdout.write("a union call's result narrowed to one alternative: refused at the call\n");
+  refusedAt(callableUnion, writeClaims(callableUnion, "forged-one-arm", claims), "forged-one-arm",
+    `source expression obligation at [${at},${at + 7})`);
 }
-
-// Each tree, key and destination of the evidence has one spelling, and the
-// decoder refuses every other; a string key is never a symbol key.
 {
-  const evidence = readFileSync(join(wireCase, "evidence.json"), "utf8");
-  const once = (pattern: RegExp, spell: (...groups: string[]) => string): string => {
-    const found = must(pattern.exec(evidence), `evidence holding ${pattern}`);
-    return evidence.slice(0, found.index) + spell(...found.slice(1)) + evidence.slice(found.index + found[0].length);
-  };
-  for (const [name, text, refusal] of [
-    ["destination-without-map", once(/\{"label":(\d+),"mapping":null\}/, (l) => `{"label":${l}}`),
-      /unknown fields or missing explicit fields/],
-    ["symbol-key-extra-field", once(/"field":\{"symbol":(\d+)\}/, (s) => `"field":{"symbol":${s},"x":null}`),
-      /a symbol key has exactly the field 'symbol'/],
-    ["symbol-key-as-string", once(/"field":\{"symbol":(\d+)\}/, (s) => `"field":"${s}"`),
-      /does not justify/],
-    ["nullary-application-args", once(/"type":\[(\d+)\]/, (l) => `"type":[{"app":${l},"args":[]}]`),
-      /a nullary application is spelled as its head's number/],
-    ["application-without-args", once(/"type":\[(\d+)\]/, (l) => `"type":[{"app":${l}}]`),
-      /a tree with fields \[app\]: expected exactly \[app, args\]/],
-    ["bound-nullary-args", once(/\{"bound":(\d+),"slot":(\d+)\}/, (b, s) => `{"bound":${b},"args":[],"slot":${s}}`),
-      /an owned parameter with no arguments leaves out 'args'/],
-    ["argument-extra-field", once(/"type":\[(\d+)\]/, () => `"type":[{"arg":0,"extra":1}]`),
-      /a tree with fields \[arg, extra\]: expected exactly \[arg\]/],
-    ["unknown-parameter-kind", once(/"type":\[(\d+)\]/, () => `"type":[{"var":0,"owner":1,"kind":"pack"}]`),
-      /unknown parameter kind 'pack'/],
-    ["negative-head", once(/"type":\[(\d+)\]/, () => `"type":[-1]`), /a head is a natural number/],
-    ["array-tree", once(/"type":\[(\d+)\]/, (l) => `"type":[[${l}]]`), /a tree is a head number or an object/],
-    ["nested-meet", once(/\{"meet":\[(\{"app":\d+,"args":\[\[\d+\]\]\}),/, (a) => `{"meet":[{"meet":[${a},${a}]},`),
-      /meet with a meet as a part: parts are flat/],
-  ] as const) {
-    const path = join(wireCase, `tampered-${name}.json`);
-    writeFileSync(path, text);
-    assert.match(invoke(join(wireCase, "claims.json"), path, wireCase), refusal, name);
-  }
-  process.stdout.write("evidence spellings other than the one: refused by the decoder\n");
-}
-
-// Lowering declarations to equations, on parser documents the parser does not
-// write. A generic method's argument pack `P` beside a nested generic method
-// binding its own `P` is a pack: the inner `P` is that method's value binder.
-// The outer `P` used also as a value inside a nested method binding only `Q`
-// is refused, as no scheme states such a binder. An alias reaching itself
-// under no object, array, tuple or function type is refused where it is used.
-{
-  const span: [number, number] = [0, 0];
-  const binder = (name: string): TypeTerm => ({ k: "binder", name, span });
-  const method = (params: TypeTerm[], rest: TypeTerm | null, result: TypeTerm): Extract<TypeTerm, { k: "function" }> =>
-    ({ k: "function", effect: "unrestricted", receiver: { k: "self", span }, params, rest, result, span });
-  const scheme = (name: string, signature: Extract<TypeTerm, { k: "function" }>,
-      bound: TypeTerm | null = null): TypeTerm =>
-    ({ k: "scheme", binders: [{ name, bound, default: null, span }], signatures: [signature], span });
-  const run = (inner: TypeTerm): TypeTerm => scheme("P", method(
-    [{ k: "object", fields: [{ name: "id", optional: false, readonly: true, type: inner, span }],
-      stringIndex: null, calls: [], span }],
-    { k: "pack", of: binder("P"), span }, { k: "atom", name: "number", span }),
-    { k: "array", presence: "readable", readonly: false, element: { k: "atom", name: "unknown", span }, span });
-  const forgeDefinition = (artifacts: string, name: string, file: string, change: (d: TypeDefinition) => void) => {
-    const fragment: Ast = JSON.parse(readFileSync(join(artifacts, "fragment.json"), "utf8"));
-    change(must(fragment.declarations.definitions.find((d) => d.declaration.name === name), name));
-    const path = join(artifacts, `${file}.json`);
-    writeFileSync(path, JSON.stringify(fragment));
-    const searched = produceWith(artifacts, join(artifacts, "claims.json"), file, path);
-    return { status: searched.status, detail: searched.stdout + searched.stderr };
-  };
-  const withRun = (inner: TypeTerm) => (d: TypeDefinition) => {
-    assert(d.expression.k === "object");
-    must(d.expression.fields[0], "Runner's method").type = run(inner);
-  };
-  const shadowed = forgeDefinition(schemeHost, "Runner", "forged-shadowed-pack",
-    withRun(scheme("P", method([binder("P")], null, binder("P")))));
-  assert.equal(shadowed.status, 0, shadowed.detail);
-  const mixed = forgeDefinition(schemeHost, "Runner", "forged-mixed-pack",
-    withRun(scheme("Q", method([binder("Q"), binder("P")], null, binder("Q")))));
-  assert.equal(mixed.status, 1);
-  assert.match(mixed.detail, /Runner: generic contract at \[0,0\]: a binder used as both a value and an argument pack is not represented/);
-  const unguarded = forgeDefinition(nonRegular, "Box", "forged-unguarded-alias", (d) => {
-    assert(d.expression.k === "object");
-    const next = must(d.expression.fields.find((f) => f.name === "next"), "Box's next").type;
-    assert(next.k === "union");
-    d.expression = { k: "union", parts: [{ k: "parameter", index: 0, span }, must(next.parts[0], "Box<[T]>")], span };
-  });
-  assert.equal(unguarded.status, 1);
-  assert.match(unguarded.detail, /unguarded alias cycle through Box: a recursive alias must reach itself through an object, array, tuple or function type/);
-  process.stdout.write("binder roles and unguarded aliases in forged declarations: lowered or refused by name\n");
-}
-
-// What the pipeline's outcomes above say, run as JavaScript: each positive's
-// result meets its claim, and each negative's contradicts it, or throws.
-for (const [file, expression, expected] of [
-  ["callable-bag-union", "[readWrite(true, true), readWrite(false, true)].join()", "false,false"],
-  ["invalid-callable-bag-union", "wrong(false, true)", false],
-  ["recursive-callable", "selfLoop()", false],
-  ["invalid-recursive-callable", "wrong()", true],
-  ["non-regular-alias", "first({ v: 1, next: null })", 1],
-  ["invalid-non-regular-alias", "wrong({ v: 1, next: null })", null],
-  ["assertion-snapshot", "assertedSnapshot({ value: 3 })", 3],
-  // A closure reads a captured cell when it runs, and sees its own write.
-  ["invalid-closure-graph-captured-cell", "counter()", null],
-  // A generic function type's result: a pair where it holds, the argument
-  // itself where another scheme was passed for it.
-  ["generic-function-type-member", "pass({ twice: () => (x) => [x, x] }).twice()(1).join()", "1,1"],
-  ["invalid-generic-function-type-member", "wrong({ twice: () => (x) => x }).twice()(1)", 1],
-] as const)
-  assert.equal(runExample(file, expression), expected, file);
-// A class has no plain call: calling it throws.
-assert.throws(() => runExample("invalid-class-as-function", "go()"), /cannot be invoked without 'new'/);
-// A generic method's contract read as `unknown` admits 42, which no call
-// can run.
-assert.throws(() => runExample("invalid-generic-method-nested-scheme", "wrong().run({ id: (x) => x })"),
-  /is not a function/);
-process.stdout.write("examples run as JavaScript: results as their outcomes say\n");
-
-// The dynamic-key rule is bound to the actual indexed term, not interchangeable
-// with the static-field rule, even when both promise T | undefined.
-{
-  const evidence = readFileSync(join(indexed, "evidence.json"), "utf8");
-  assert.match(evidence, /"indexDict"/);
-  const forged = join(indexed, "forged-static-read.json");
-  writeFileSync(forged, evidence.replaceAll('"indexDict"', '"readDict"'));
-  invoke(join(indexed, "claims.json"), forged, indexed);
-  process.stdout.write("tampered dynamic-key rule: refused\n");
-}
-
-// The named view remains part of a mixed dictionary's source contract: an
-// index-only replacement must not certify a function annotated with both.
-{
-  const claims: SourceClaims = JSON.parse(readFileSync(join(indexed, "claims.json"), "utf8"));
-  const mixed = claims.types.find((row) =>
-    row.length === 1 && typeof row[0] === "object" && "dict" in row[0] &&
-    row[0].dict.views.some(([name]) => name === "ready"),
-  );
-  assert(mixed);
-  const clause = mixed[0];
-  assert(typeof clause === "object" && "dict" in clause);
-  clause.dict.views = [];
-  const forged = join(indexed, "forged-missing-named-view.json");
-  writeFileSync(forged, JSON.stringify(claims));
-  assert.match(invoke(forged, join(indexed, "evidence.json"), indexed),
-    /claimed parameter type differs from the source annotation/);
-  process.stdout.write("tampered mixed dictionary view: refused\n");
-}
-
-// A method or constructor claim is compared with its annotation by meaning, so
-// another row for Values<number> is admitted; a domain wider than the
-// annotation, here one that also admits undefined, is still refused.
-for (const [artifacts, arity, refusal] of [
-  [sumMapper, 2, /closure signature claim is outside the source annotation/],
-  [sumConstructor, 1, /construct signature claim is outside the source annotation/],
-] as const) {
-  const claims: SourceClaims = JSON.parse(readFileSync(join(artifacts, "claims.json"), "utf8"));
-  // mapEntry's arrow, or AddIndex's construct signature: its last parameter.
-  const domains = claims.types.flatMap((row) => row.flatMap((clause) =>
-    typeof clause !== "object" ? [] :
-    "arrs" in clause ? clause.arrs.arrows.map((s) => s.arguments) :
-    "ctors" in clause ? clause.ctors.signatures.map(([params]) => params) : []));
-  const params = must(domains.find((ps) => ps.length === arity), "the claimed signature");
-  must(params.at(-1), "a claimed parameter").unshift(3);
-  const forged = join(artifacts, "forged-wider-domain.json");
-  writeFileSync(forged, JSON.stringify(claims));
-  assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts), refusal);
-  process.stdout.write(`a signature claim wider than its annotation (arity ${arity}): refused\n`);
-}
-
-// A bound method's variadic signature is covered by the member's when the
-// claimed rest is within the member's (`CoveredRestUsing`): `merge`'s rest,
-// the producer's own row for `EagerCollection<string, number>[]`, admits the
-// declared rest's lists. Widened to admit strings too, the claim is refused
-// at the bound member, by search and by the checker.
-{
-  const claims: SourceClaims = JSON.parse(readFileSync(join(sumCollections, "claims.json"), "utf8"));
+  // A bound method's variadic signature is covered by the member's when the
+  // claimed rest is within the member's (`CoveredRestUsing`): `merge`'s rest,
+  // the producer's own row for `EagerCollection<string, number>[]`, admits the
+  // declared rest's lists. Widened to admit strings too, the claim is refused
+  // at the bound member.
+  const sumCollections = run("sum-collections");
+  const claims = readClaims(sumCollections);
   const rest = must(claims.types.flatMap((row) => row.flatMap((clause) =>
     typeof clause === "object" && "pack" in clause ? [clause.pack.first] : []))
     .find((t) => t.rest !== null), "merge's claimed rest").rest;
   must(rest, "the rest's labels").unshift(4);
-  const forged = join(sumCollections, "forged-wider-rest.json");
-  writeFileSync(forged, JSON.stringify(claims));
-  const searched = spawnSync(verifier, ["--produce-source-claims", join(sumCollections, "fragment.json"),
-    forged, join(sumCollections, "source.ts"), join(sumCollections, "forged-evidence.json"), "12"],
-    { encoding: "utf8", timeout: 30_000 });
-  assert.equal(searched.status, 1, searched.stdout + searched.stderr);
   const member = readFileSync(join(sumCollections, "source.ts"), "utf8").indexOf("cs.input1.merge");
-  assert.ok((searched.stdout + searched.stderr).includes(
-    `source expression obligation at [${member},${member + "cs.input1.merge".length})`),
-    searched.stdout + searched.stderr);
-  assert.match(invoke(forged, join(sumCollections, "evidence.json"), sumCollections), /does not justify/);
-  process.stdout.write("a bound method's rest claim wider than the member's: refused\n");
+  refusedAt(sumCollections, writeClaims(sumCollections, "forged-wider-rest", claims), "forged-wider-rest",
+    `source expression obligation at [${member},${member + "cs.input1.merge".length})`);
 }
-
-// Explicit type arguments, written as another type than the one the claimed
-// instance fits: on a method call, `reduce<number | null>` written as
-// `reduce<number | null | string>`, and on a plain call, `same<number |
-// boolean>` written as `same<number | boolean | string>`. The claims are
-// unchanged, so each call's instance fits its actuals but is not the one the
-// call states.
-const forgeTypeArgument = (artifacts: string, kind: "invoke" | "apply"): string => {
-  type TypeArgument = { parts: unknown[]; span: unknown };
-  const isTypeArgument = (a: unknown): a is TypeArgument =>
-    !!a && typeof a === "object" && "parts" in a && Array.isArray(a.parts) && "span" in a;
-  const ast: unknown = JSON.parse(readFileSync(join(artifacts, "fragment.json"), "utf8"));
-  // Each call's type arguments, as the Fragment holds them: the forgery edits them there.
-  const calls: TypeArgument[][] = [];
-  const visit = (j: unknown): void => {
-    if (Array.isArray(j)) j.forEach(visit);
-    else if (j && typeof j === "object") {
-      if ("k" in j && j.k === kind && "typeArgs" in j && Array.isArray(j.typeArgs) && j.typeArgs.every(isTypeArgument))
-        calls.push(j.typeArgs);
-      Object.values(j).forEach(visit);
-    }
+{
+  // Explicit type arguments, written as another type than the one the claimed
+  // instance fits: on a method call, `reduce<number | null>` written as
+  // `reduce<number | null | string>`, and on a plain call, `same<number |
+  // boolean>` written as `same<number | boolean | string>`. The claims are
+  // unchanged, so each call's instance fits its actuals but is not the one the
+  // call states.
+  const forgeTypeArgument = (artifacts: string, kind: "invoke" | "apply"): string => {
+    type TypeArgument = { parts: unknown[]; span: unknown };
+    const isTypeArgument = (a: unknown): a is TypeArgument =>
+      !!a && typeof a === "object" && "parts" in a && Array.isArray(a.parts) && "span" in a;
+    const ast: unknown = JSON.parse(readFileSync(join(artifacts, "fragment.json"), "utf8"));
+    // Each call's type arguments, as the Fragment holds them: the forgery edits them there.
+    const calls: TypeArgument[][] = [];
+    const visit = (j: unknown): void => {
+      if (Array.isArray(j)) j.forEach(visit);
+      else if (j && typeof j === "object") {
+        if ("k" in j && j.k === kind && "typeArgs" in j && Array.isArray(j.typeArgs) && j.typeArgs.every(isTypeArgument))
+          calls.push(j.typeArgs);
+        Object.values(j).forEach(visit);
+      }
+    };
+    visit(ast);
+    const [typeArg] = must(calls[0], "the call's type arguments");
+    must(typeArg, "the type argument").parts.push({ k: "atom", name: "string", span: typeArg.span });
+    const forgedAst = join(artifacts, "forged-type-argument.json");
+    writeFileSync(forgedAst, JSON.stringify(ast));
+    return forgedAst;
   };
-  visit(ast);
-  const [typeArg] = must(calls[0], "the call's type arguments");
-  must(typeArg, "the type argument").parts.push({ k: "atom", name: "string", span: typeArg.span });
-  const forgedAst = join(artifacts, "forged-type-argument.json");
-  writeFileSync(forgedAst, JSON.stringify(ast));
-  return forgedAst;
-};
-for (const [artifacts, kind] of [[localClosure, "invoke"], [explicitCalls, "apply"]] as const)
-  assert.match(invoke(join(artifacts, "claims.json"), join(artifacts, "evidence.json"), artifacts,
-    forgeTypeArgument(artifacts, kind)),
-    /the call's instance is not the one its explicit type arguments state/);
-process.stdout.write("an instance other than the explicit type argument, method and plain calls: refused\n");
+  for (const [artifacts, kind] of [[run("closure-result-contract"), "invoke"], [run("explicit-type-arguments"), "apply"]] as const)
+    assert.match(invoke(join(artifacts, "claims.json"), join(artifacts, "evidence.json"), artifacts,
+      forgeTypeArgument(artifacts, kind)),
+      /the call's instance is not the one its explicit type arguments state/);
+}
+{
+  // A writable index is never met through an own-key bound: a callee holding
+  // the object as a writable dictionary may add a key the bound says is absent.
+  // Claims forged to state one, the literal's exact keys (none) or the rest's
+  // lacking the pattern's key `x`, are refused at the call handing the object to
+  // the callee. Run as JavaScript with a callee that stores `x`, each function
+  // returns the string stored, where its result claims `number | undefined`.
+  for (const [file, name, call, clause] of [
+    ["invalid-writable-dictionary-exact-keys", "o", "exact((d) => { d.x = 's'; })",
+      (_str: number): Row[number] => ({ refs: { first: [], rest: [], views: [],
+        bounds: [{ among: true, keys: [] }] } })],
+    ["invalid-writable-dictionary-rest-keys", "r", "rest((d) => { d.x = 's'; }, {})",
+      (str: number): Row[number] => ({ dict: { first: [], rest: [], views: [],
+        indexes: [["strings", [str]]], cells: [["strings", [str]]],
+        bounds: [{ among: false, keys: ["x", "[[proto]]"] }] } })],
+  ] as const) {
+    const artifacts = run(file);
+    const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+    const claims = readClaims(artifacts);
+    const str = claims.types.findIndex((row) => row.length === 1 && row[0] === "str");
+    assert.ok(str >= 0, "the string row");
+    const label = claims.types.push([clause(str)]) - 1;
+    const fn = must(claims.functions[0], "the function's claims");
+    for (const entry of fn.entries)
+      for (const b of entry.bindings) if (b.name === name) b.type = [label];
+    // The object's own sites: its allocation (`{}`, `...r`) and every read of it.
+    for (const e of fn.expressions)
+      if ([name, "{}", `...${name}`].includes(source.slice(e.pos[0], e.pos[1]))) e.type = [label];
+    const searched = produceWith(artifacts, writeClaims(artifacts, "forged-own-key-bound", claims), "forged-own-key-bound");
+    const detail = searched.stdout + searched.stderr;
+    assert.equal(searched.status, 1, detail);
+    const site = source.indexOf(`add(${name})`);
+    const at = /source expression obligation at \[(\d+),(\d+)\)/.exec(detail);
+    assert.ok(at && Number(at[1]) >= site && Number(at[2]) <= site + `add(${name})`.length, detail);
+    assert.equal(runExample(file, call), "s");
+  }
+}
+{
+  // A generic body is a graph request over its binders' parameter rows. Reusing
+  // valid evidence must not let an inferred local trust a forged point type,
+  // at its initializer's expression or at its entry binding.
+  const generic = run("generic-inferred");
+  for (const site of ["initializer", "binding"] as const) {
+    const claims = readClaims(generic);
+    const fn = must(claims.functions.find((f) => f.name === "inferred"), "inferred");
+    if (site === "initializer") must(fn.expressions[0], "the initializer's claim").type = [1, 2];
+    else must(fn.entries.flatMap((e) => e.bindings).find((b) => b.name === "saved"), "saved").type = [1, 2];
+    assert.match(invoke(writeClaims(generic, `forged-${site}`, claims), join(generic, "evidence.json"), generic),
+      /source evidence does not justify the extracted program and exact claims/);
+  }
+}
+{
+  // A captured cell keeps the contract its declaration states. Retyping it in the
+  // entry claim changes what the closure's code, checked once at its scheme, is
+  // entered with, so the check refuses: a capture is never retyped per call.
+  const captured = run("generic-captured-store");
+  const claims = readClaims(captured);
+  const fn = must(claims.functions[0], "the containing function");
+  const declaration = must(fn.entries.find((e) => e.bindings.some((b) => b.name === "store") &&
+    !e.bindings.some((b) => b.name === "read")), "the entry at the closure's declaration");
+  must(declaration.bindings.find((b) => b.name === "store"), "store").type = [1, 2];
+  assert.match(invoke(writeClaims(captured, "forged-capture", claims), join(captured, "evidence.json"), captured),
+    /does not justify|evidence search failed/);
+}
+{
+  // A module function is reached at its own annotated signature, which Lean
+  // reads from the source; a producer cannot retype the callee.
+  const moduleFunctions = run("module-functions");
+  const claims = readClaims(moduleFunctions);
+  const source = readFileSync(join(moduleFunctions, "source.ts"), "utf8");
+  const fn = must(claims.functions.find((f) => f.name === "twice"), "twice");
+  const callee = source.indexOf("id(id(x))");
+  const site = must(fn.expressions.find((e) => e.pos[0] === callee && e.pos[1] === callee + 2), "the outer callee's claim");
+  site.type = must(fn.expressions.find((e) => e.pos[0] === source.indexOf("x))", callee)), "the argument's claim").type;
+  invoke(writeClaims(moduleFunctions, "forged-callee", claims), join(moduleFunctions, "evidence.json"), moduleFunctions);
+}
+{
+  // The initialization unit's claims are checked like a function's: claiming
+  // the constant's initializer at another type is refused.
+  const moduleInit = run("module-init");
+  const claims = readClaims(moduleInit);
+  const source = readFileSync(join(moduleInit, "source.ts"), "utf8");
+  const init = must(claims.init, "the initialization unit's claims");
+  must(init.expressions.find((e) => e.pos[0] === source.indexOf("true;")), "the initializer's claim").type = [0];
+  invoke(writeClaims(moduleInit, "forged-initializer", claims), join(moduleInit, "evidence.json"), moduleInit);
+}
+{
+  // A call's substitution is the elimination it proposes, so evidence produced
+  // for the checked substitutions cannot certify a different one: at a plain
+  // call (its type argument, and its binder's name), at a call of a generic
+  // module function, and at a call through a callback.
+  const twoCalls = run("generic-two-calls");
+  for (const [name, mutate] of [
+    ["substitution", (s: NonNullable<SourceClaims["functions"][number]["expressions"][number]["instantiate"]>) => {
+      must(s[0], "the inferred type argument").type = [1, 2];
+    }],
+    ["substitution-domain", (s: NonNullable<SourceClaims["functions"][number]["expressions"][number]["instantiate"]>) => {
+      must(s[0], "the inferred type argument").name = "U";
+    }],
+  ] as const) {
+    const claims = readClaims(twoCalls);
+    const sites = must(claims.functions[0], "the containing function").expressions.filter((e) => e.instantiate);
+    assert.equal(sites.length, 2, "both eliminations must carry a substitution");
+    mutate(must(must(sites[1], "the second call").instantiate, "the second substitution"));
+    invoke(writeClaims(twoCalls, `forged-${name}`, claims), join(twoCalls, "evidence.json"), twoCalls);
+  }
+  const genericModule = run("generic-module-calls");
+  const moduleClaims = readClaims(genericModule);
+  const both = must(moduleClaims.functions.find((f) => f.name === "both"), "both");
+  const call = must(both.expressions.find((e) => e.instantiate?.length)?.instantiate, "an instantiated call");
+  must(call[0], "its type argument").type = [0];
+  invoke(writeClaims(genericModule, "forged-instance", moduleClaims), join(genericModule, "evidence.json"), genericModule);
+  const callback = run("generic-callback");
+  const callbackClaims = readClaims(callback);
+  const through = must(callbackClaims.functions.find((f) => f.name === "throughCallback"), "throughCallback");
+  const site = must(through.expressions.find((e) => e.instantiate?.some((i) => Array.isArray(i.type) && i.type.length === 2))
+    ?.instantiate, "the call instantiated at boolean");
+  must(site[0], "the callback substitution").type = [4];
+  invoke(writeClaims(callback, "forged-callback-instance", callbackClaims), join(callback, "evidence.json"), callback);
+}
+{
+  // A graph certificate for the checked Boolean instance cannot validate a
+  // different quantified contract. The scheme itself is independently consumed.
+  const genericClosure = run("generic-closure");
+  const claims = readClaims(genericClosure);
+  const schemePoint = must(claims.functions[0], "the closure's function").expressions.find(
+    (e) => !Array.isArray(e.type) && "scheme" in e.type);
+  assert.ok(schemePoint && !Array.isArray(schemePoint.type) && "scheme" in schemePoint.type);
+  schemePoint.type.scheme.result = [1, 2];
+  invoke(writeClaims(genericClosure, "forged-scheme", claims), join(genericClosure, "evidence.json"), genericClosure);
+}
+{
+  // A nested closure's claim is checked at the scheme's binder: a ground
+  // `() => boolean` claim fits every observed call and is still refused, since
+  // the body returns a `T`. And a callable over the binder is meaningful only
+  // inside its closure: the same claim placed on an expression outside it names
+  // a binder not in scope there.
+  const returned = run("generic-returned");
+  const returnedClaims = readClaims(returned);
+  const fn = must(returnedClaims.functions[0], "the containing function");
+  const nested = fn.expressions.find(
+    (e) => !Array.isArray(e.type) && "scheme" in e.type && e.type.scheme.typeParams.length === 0);
+  assert.ok(nested && !Array.isArray(nested.type) && "scheme" in nested.type);
+  const outer = fn.expressions.find(
+    (e) => !Array.isArray(e.type) && "scheme" in e.type && e.type.scheme.typeParams.length > 0);
+  assert.ok(outer && !Array.isArray(outer.type) && "scheme" in outer.type);
+  const grounded = structuredClone(returnedClaims);
+  const g = must(grounded.functions[0], "the containing function").expressions.find((e) => e.pos[0] === nested.pos[0] && e.pos[1] === nested.pos[1]);
+  assert.ok(g && !Array.isArray(g.type) && "scheme" in g.type);
+  g.type.scheme.result = [1, 2];
+  // The body `value` is a `T`, and the return-contract obligation at it asks
+  // for a boolean: no derivation exists.
+  const body = readFileSync(join(returned, "source.ts"), "utf8").indexOf("value;");
+  refusedAt(returned, writeClaims(returned, "forged-nested-claim", grounded), "forged-nested",
+    `source expression obligation at [${body},${body + "value".length}): evidence search failed: no derivation of its return-contract claim`);
+  const escaped = structuredClone(returnedClaims);
+  const outside = must(must(escaped.functions[0], "the containing function").expressions.find(
+    (e) => e.pos[0] > outer.pos[1] && Array.isArray(e.type)), "an expression after the closure");
+  outside.type = nested.type;
+  assert.match(invoke(writeClaims(returned, "forged-escape", escaped), join(returned, "evidence.json"), returned),
+    /is not in scope/);
+}
+checkGenericRest(verifier, run("generic-rest"));
+checkOverloads(verifier, run("overloads"));
+checkDefaults(verifier, run("default-parameter-scope"));
+checkEarlyDefault(verifier, run("invalid-default-invocation"));
+checkSchemeDefaults(verifier, run("generic-default"));
+process.stdout.write("forged claims at each kind of point: read and checked there\n");
 
-// A producer cannot manufacture heap preservation. The same ordinary
-// definition check accepts the pure callback and refuses the captured write.
-for (const [artifacts, arity, accepted] of [
-  [localClosure, 2, true], [mutatingClosure, 0, false],
+for (const [file, arity, accepted] of [
+  ["closure-result-contract", 2, true], ["closure-graph-captured-cell", 0, false],
 ] as const) {
-  const claims: SourceClaims = JSON.parse(readFileSync(join(artifacts, "claims.json"), "utf8"));
+  const artifacts = run(file);
+  const claims = readClaims(artifacts);
   const arrow = must(claims.types.flatMap(row => row.flatMap(clause =>
     typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : []))
     .find(s => s.arguments.length === arity), "the callback contract");
   arrow.effect = "preservesInputHeap";
-  const input = join(artifacts, "qualified-callback.json");
-  const output = join(artifacts, "qualified-callback-evidence.json");
-  writeFileSync(input, JSON.stringify(claims));
-  const produce = spawnSync(verifier, ["--produce-source-claims", join(artifacts, "fragment.json"),
-    input, join(artifacts, "source.ts"), output, "12"], {encoding: "utf8", timeout: 30_000});
+  const input = writeClaims(artifacts, "qualified-callback", claims);
+  const produce = produceWith(artifacts, input, "qualified-callback");
   assert.ifError(produce.error);
   assert.equal(produce.signal, null);
   assert.equal(produce.status, accepted ? 0 : 1, produce.stdout + produce.stderr);
   if (accepted) {
     const consume = spawnSync(verifier, ["--check-source-claims", join(artifacts, "fragment.json"),
-      input, join(artifacts, "source.ts"), output], {encoding: "utf8", timeout: 30_000});
+      input, join(artifacts, "source.ts"), join(artifacts, "qualified-callback-evidence.json")], {encoding: "utf8", timeout: 30_000});
     assert.ifError(consume.error);
     assert.equal(consume.status, 0, consume.stdout + consume.stderr);
   } else {
     const failure = readDiagnostic(produce.stdout + produce.stderr);
     assert.ok(failure && failure.kind === "node-typing", "a failed effect must name the callable's typing obligation");
     assert.ok(failure.source?.sourceMap?.pos, "the failed callable must have a source location");
-    assert.match(invoke(input, join(artifacts, "evidence.json"), artifacts), /does not justify/);
   }
   process.stdout.write(`callback heap-preservation claim: ${accepted ? "certified" : "captured write refused"}\n`);
 }
 
-// An unannotated closure's claimed result is checked against its body, not
-// taken from the producer on trust.
-{
-  const claims: SourceClaims = JSON.parse(readFileSync(join(localClosure, "claims.json"), "utf8"));
-  const evidence = join(localClosure, "evidence.json");
-  // The closure's own arrow, two parameters to a number, claimed to return null.
-  const own = must(claims.types.flatMap((row) => row.flatMap((clause) =>
-    typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : []))
-    .find((s) => s.arguments.length === 2), "the closure's own arrow");
-  own.result = [0];
-  const forged = join(localClosure, "forged-closure-result.json");
-  writeFileSync(forged, JSON.stringify(claims));
-  const searched = spawnSync(verifier, ["--produce-source-claims", join(localClosure, "fragment.json"),
-    forged, join(localClosure, "source.ts"), join(localClosure, "forged-evidence.json"), "12"],
-    { encoding: "utf8", timeout: 30_000 });
-  assert.equal(searched.status, 1, searched.stdout + searched.stderr);
-  // The body, `p !== null ? p - c : c`, is a number, not the null
-  // claimed: the closure's one node returns it at that result.
-  const body = readFileSync(join(localClosure, "source.ts"), "utf8").indexOf("p !== null");
-  assert.ok((searched.stdout + searched.stderr).includes(
-    `source expression obligation at [${body},`), searched.stdout + searched.stderr);
-  assert.match(invoke(forged, evidence, localClosure), /does not justify/);
-  process.stdout.write("an unannotated closure's result claim its body does not meet: refused\n");
-}
-
-// A class's generic method, a closure the prototype holds, covers the
-// instance type's member up to renaming the member's binders to the
-// closure's: the renamed signatures must still follow from the closure's.
-// The class's declaration tampered to promise a number where the closure
-// returns its binder is refused at the construct code's return, where the
-// fresh instance meets the instance type; the untampered one is derived there.
-// `make` alone is kept, so the construct code is the first obligation.
-{
-  const source = readFileSync(join(classGeneric, "source.ts"), "utf8");
-  const claims: SourceClaims = JSON.parse(readFileSync(join(classGeneric, "claims.json"), "utf8"));
-  claims.functions = claims.functions.filter((f) => f.name === "make");
-  const makeClaims = join(classGeneric, "make-claims.json");
-  writeFileSync(makeClaims, JSON.stringify(claims));
-  const fragment: unknown = JSON.parse(readFileSync(join(classGeneric, "fragment.json"), "utf8"));
-  assert.ok(fragment && typeof fragment === "object" && "functions" in fragment &&
-    Array.isArray(fragment.functions));
-  fragment.functions = fragment.functions.filter((f: unknown) =>
-    f && typeof f === "object" && "name" in f && f.name === "make");
-  const kept = JSON.stringify(fragment);
-  const at = source.indexOf("pick<V>(a: V): V") + "pick<V>(a: V): ".length;
-  const declared = `"result":{"k":"binder","name":"V","span":[${at},${at + 1}]}`;
-  assert.ok(kept.includes(declared), "pick's declared result");
-  const search = (name: string, text: string) => {
-    const ast = join(classGeneric, `${name}.json`);
-    writeFileSync(ast, text);
-    return spawnSync(verifier, ["--produce-source-claims", ast, makeClaims, join(classGeneric, "source.ts"),
-      join(classGeneric, `${name}-evidence.json`), "12"], { encoding: "utf8", timeout: 30_000 });
-  };
-  const derived = search("make-only", kept);
-  assert.equal(derived.status, 0, derived.stdout + derived.stderr);
-  const refused = search("forged-member-result",
-    kept.replace(declared, '"result":{"k":"atom","name":"number","span":[0,0]}'));
-  assert.equal(refused.status, 1, refused.stdout + refused.stderr);
-  const ctor = source.indexOf("class Helper") + "class ".length;
-  assert.ok((refused.stdout + refused.stderr).includes(
-    `source expression obligation at [${ctor},${ctor + "Helper".length}): evidence search failed: no derivation of its return-contract claim`),
-    refused.stdout + refused.stderr);
-  process.stdout.write("a class's generic method whose closure does not cover the declared member after renaming: refused\n");
-}
-
-// A writable index is never met through an own-key bound: a callee holding
-// the object as a writable dictionary may add a key the bound says is absent.
-// Claims forged to state one, the literal's exact keys (none) or the rest's
-// lacking the pattern's key `x`, are refused at the call handing the object to
-// the callee. Run as JavaScript with a callee that stores `x`, each function
-// returns the string stored, where its result claims `number | undefined`.
-for (const [artifacts, file, name, call, clause] of [
-  [exactKeys, "invalid-writable-dictionary-exact-keys", "o", "exact((d) => { d.x = 's'; })",
-    (_str: number): Row[number] => ({ refs: { first: [], rest: [], views: [],
-      bounds: [{ among: true, keys: [] }] } })],
-  [restKeys, "invalid-writable-dictionary-rest-keys", "r", "rest((d) => { d.x = 's'; }, {})",
-    (str: number): Row[number] => ({ dict: { first: [], rest: [], views: [],
-      indexes: [["strings", [str]]], cells: [["strings", [str]]],
-      bounds: [{ among: false, keys: ["x", "[[proto]]"] }] } })],
-] as const) {
-  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
-  const claims: SourceClaims = JSON.parse(readFileSync(join(artifacts, "claims.json"), "utf8"));
-  const str = claims.types.findIndex((row) => row.length === 1 && row[0] === "str");
-  assert.ok(str >= 0, "the string row");
-  const label = claims.types.push([clause(str)]) - 1;
-  const fn = must(claims.functions[0], "the function's claims");
-  for (const entry of fn.entries)
-    for (const b of entry.bindings) if (b.name === name) b.type = [label];
-  // The object's own sites: its allocation (`{}`, `...r`) and every read of it.
-  for (const e of fn.expressions)
-    if ([name, "{}", `...${name}`].includes(source.slice(e.pos[0], e.pos[1]))) e.type = [label];
-  const forged = join(artifacts, "forged-own-key-bound.json");
-  writeFileSync(forged, JSON.stringify(claims));
-  const searched = spawnSync(verifier, ["--produce-source-claims", join(artifacts, "fragment.json"),
-    forged, join(artifacts, "source.ts"), join(artifacts, "forged-evidence.json"), "12"],
-    { encoding: "utf8", timeout: 30_000 });
-  const detail = searched.stdout + searched.stderr;
-  assert.equal(searched.status, 1, detail);
-  const site = source.indexOf(`add(${name})`);
-  const at = /source expression obligation at \[(\d+),(\d+)\)/.exec(detail);
-  assert.ok(at && Number(at[1]) >= site && Number(at[2]) <= site + `add(${name})`.length, detail);
-  const run = stripTypes(readFileSync(join(here, "examples", `${file}.ts`), "utf8")).replace(/^export /gm, "");
-  assert.equal(vm.runInNewContext(`${run}\n${call}`, {}, { timeout: 1000 }), "s");
-  process.stdout.write(`a forged own-key bound on a writable dictionary (${file}): refused\n`);
-}
-
-// A closure is created at a variadic signature only when the signature's
-// fixed parameters cover the ones its code binds: `named` binds one, so a
-// claim offering it `(...rest: unknown[]) => void` is refused where it is
-// created, not taken from the producer on trust.
-{
-  const claims: SourceClaims = JSON.parse(readFileSync(join(variadicOffer, "claims.json"), "utf8"));
-  const offered = must(claims.types.flatMap((row) => row.flatMap((clause) =>
-    typeof clause === "object" && "arrs" in clause && clause.arrs.arrows.length > 0
-      ? clause.arrs.variadic ?? [] : []))
-    .find((s) => s.arguments[0].length === 1), "the variadic signature `named` is offered");
-  offered.arguments[0] = [];
-  const forged = join(variadicOffer, "forged-variadic-offer.json");
-  writeFileSync(forged, JSON.stringify(claims));
-  assert.match(invoke(forged, join(variadicOffer, "evidence.json"), variadicOffer),
-    /closure signature claim is outside the source annotation/);
-  process.stdout.write("a closure claimed at a variadic signature binding into its rest: refused\n");
-}
-
-// A graph certificate for the checked Boolean instance cannot validate a
-// narrower first-occurrence proposal after inference has joined both arguments.
-{
-  const claims: SourceClaims = JSON.parse(readFileSync(join(inference, "claims.json"), "utf8"));
-  const joined = must(claims.functions.find(f => f.name === "joinedArguments"), "joined arguments");
-  const call = must(joined.expressions.find(e => e.instantiate), "inferred call");
-  assert.deepEqual(call.instantiate, [{name: "T", type: [1, 2]}]);
-  const upper = must(claims.functions.find(f => f.name === "callbackUpperBounds"), "upper bounds");
-  assert.deepEqual(must(upper.expressions.find(e => e.instantiate), "upper call").instantiate,
-    [{name: "T", type: [1]}]);
-  must(must(call.instantiate, "substitution")[0], "type argument").type = [1];
-  call.type = [1];
-  const file = join(inference, "forged-first-candidate.json");
-  writeFileSync(file, JSON.stringify(claims));
-  invoke(file, join(inference, "evidence.json"), inference);
-  process.stdout.write("tampered joined inference candidate: refused\n");
-}
-
-// A graph certificate for the checked Boolean instance cannot validate a
-// different quantified contract. The scheme itself is independently consumed.
-const closureClaims: SourceClaims = JSON.parse(
-  readFileSync(join(genericClosure, "claims.json"), "utf8"),
-);
-const closure = closureClaims.functions[0];
-assert.ok(closure);
-const schemePoint = closure.expressions.find(
-  (e) => !Array.isArray(e.type) && "scheme" in e.type,
-);
-assert.ok(schemePoint && !Array.isArray(schemePoint.type) && "scheme" in schemePoint.type);
-assert.equal(schemePoint.type.scheme.effect, "preservesInputHeap", "identity's inferred effect survives symbolic scheme export");
-schemePoint.type.scheme.result = [1, 2];
-const forgedScheme = join(genericClosure, "forged-scheme.json");
-writeFileSync(forgedScheme, JSON.stringify(closureClaims));
-invoke(forgedScheme, join(genericClosure, "evidence.json"), genericClosure);
-process.stdout.write("tampered quantified closure scheme: refused\n");
-
-// A call's substitution is the elimination it proposes, so evidence produced
-// for the checked substitutions cannot certify a different one. Retyping the
-// second call's type argument leaves one genuine instance of the same scheme,
-// which is why the argument — not the universal gate — is what refuses it.
-const twoCallClaims: SourceClaims = JSON.parse(
-  readFileSync(join(twoCalls, "claims.json"), "utf8"),
-);
-const instantiated = twoCallClaims.functions[0];
-assert.ok(instantiated);
-const sites = instantiated.expressions.filter((e) => e.instantiate);
-assert.equal(sites.length, 2, "both eliminations must carry a substitution");
-for (const [name, mutate] of [
-  ["substitution", (s: NonNullable<typeof sites[1]["instantiate"]>) => {
-    must(s[0], "the inferred type argument").type = [1, 2];
-  }],
-  ["substitution domain", (s: NonNullable<typeof sites[1]["instantiate"]>) => {
-    must(s[0], "the inferred type argument").name = "U";
-  }],
-] as const) {
-  const claims = structuredClone(twoCallClaims);
-  const forged = must(claims.functions[0], "the containing function").expressions.filter((e) => e.instantiate);
-  mutate(must(must(forged[1], "the second call").instantiate, "the second substitution"));
-  const file = join(twoCalls, `forged-${name.replace(/ /g, "-")}.json`);
-  writeFileSync(file, JSON.stringify(claims));
-  invoke(file, join(twoCalls, "evidence.json"), twoCalls);
-  process.stdout.write(`tampered ${name}: refused\n`);
-}
-
-// A substitution names an instance of the scheme row, whose binder bounded by
-// another is read as the meet of the two parameter rows, so at the instance as
-// the meet of the two type arguments. Reversing one call's type arguments keeps
-// them ground and complete, so the domain check passes, but the instance they
-// name is not one the call's actuals meet: the evidence no longer justifies it.
-const boundedClaims: SourceClaims = JSON.parse(
-  readFileSync(join(bounded, "claims.json"), "utf8"),
-);
-{
-  const claims = structuredClone(boundedClaims);
-  const call = must(claims.functions[0], "the containing function").expressions.find((e) => e.instantiate);
-  assert.ok(call?.instantiate);
-  const [u, t] = call.instantiate;
-  assert.ok(u && t && u.name === "U" && t.name === "T");
-  u.type = [1];
-  t.type = [1, 2];
-  const file = join(bounded, "forged-bound.json");
-  writeFileSync(file, JSON.stringify(claims));
-  const said = invoke(file, join(bounded, "evidence.json"), bounded);
-  assert.match(said, /source evidence does not justify the extracted program/);
-  process.stdout.write("tampered substituted bound: refused\n");
-}
-
-// A nested closure's claim is checked at the scheme's binder: a ground
-// `() => boolean` claim fits every observed call and is still refused, since
-// the body returns a `T`. And a callable over the binder is meaningful only
-// inside its closure: the same claim placed on an expression outside it names
-// a binder not in scope there.
-const returnedClaims: SourceClaims = JSON.parse(
-  readFileSync(join(returned, "claims.json"), "utf8"),
-);
-{
-  const fn = must(returnedClaims.functions[0], "the containing function");
-  const nested = fn.expressions.find(
-    (e) => !Array.isArray(e.type) && "scheme" in e.type && e.type.scheme.typeParams.length === 0,
-  );
-  assert.ok(nested && !Array.isArray(nested.type) && "scheme" in nested.type);
-  const outer = fn.expressions.find(
-    (e) => !Array.isArray(e.type) && "scheme" in e.type && e.type.scheme.typeParams.length > 0,
-  );
-  assert.ok(outer && !Array.isArray(outer.type) && "scheme" in outer.type);
-  const grounded = structuredClone(returnedClaims);
-  const g = must(grounded.functions[0], "the containing function").expressions.find((e) => e.pos[0] === nested.pos[0] && e.pos[1] === nested.pos[1]);
-  assert.ok(g && !Array.isArray(g.type) && "scheme" in g.type);
-  g.type.scheme.result = [1, 2];
-  const groundedFile = join(returned, "forged-nested-claim.json");
-  writeFileSync(groundedFile, JSON.stringify(grounded));
-  // The body `value` is a `T`, and the return-contract obligation at it asks
-  // for a boolean: no derivation exists.
-  const searched = spawnSync(verifier, ["--produce-source-claims", join(returned, "fragment.json"),
-    groundedFile, join(returned, "source.ts"), join(returned, "forged-nested-evidence.json"), "12"],
-    { encoding: "utf8", timeout: 30_000 });
-  assert.equal(searched.status, 1, searched.stdout + searched.stderr);
-  const body = readFileSync(join(returned, "source.ts"), "utf8").indexOf("value;");
-  assert.ok((searched.stdout + searched.stderr).includes(
-    `source expression obligation at [${body},${body + "value".length}): evidence search failed: no derivation of its return-contract claim`),
-    searched.stdout + searched.stderr);
-  // The original evidence's labels are read against the forged claims'
-  // equations, whose heads differ, so the evidence does not decode.
-  assert.match(invoke(groundedFile, join(returned, "evidence.json"), returned),
-    /NodeEvidence.*head \d+ takes \d+ arguments/);
-  process.stdout.write("tampered nested closure claim: refused\n");
-
-  const escaped = structuredClone(returnedClaims);
-  const outside = must(escaped.functions[0], "the containing function").expressions.find(
-    (e) => e.pos[0] > outer.pos[1] && Array.isArray(e.type),
-  );
-  assert.ok(outside, "an expression after the closure");
-  outside.type = nested.type;
-  const escapedFile = join(returned, "forged-escape.json");
-  writeFileSync(escapedFile, JSON.stringify(escaped));
-  assert.match(invoke(escapedFile, join(returned, "evidence.json"), returned),
-    /is not in scope/);
-  process.stdout.write("tampered rigid callable escape: refused\n");
-}
-
-// A captured cell keeps the contract its declaration states. Retyping it in the
-// entry claim changes what the closure's code, checked once at its scheme, is
-// entered with, so the check refuses: a capture is never retyped per call.
-const capturedClaims: SourceClaims = JSON.parse(
-  readFileSync(join(captured, "claims.json"), "utf8"),
-);
-{
-  const claims = structuredClone(capturedClaims);
-  const fn = must(claims.functions[0], "the containing function");
-  const declaration = fn.entries.find((e) => e.bindings.some((b) => b.name === "store") && !e.bindings.some((b) => b.name === "read"));
-  assert.ok(declaration, "the entry at the closure's declaration");
-  const store = declaration.bindings.find((b) => b.name === "store");
-  assert.ok(store);
-  store.type = [1, 2];
-  const file = join(captured, "forged-capture.json");
-  writeFileSync(file, JSON.stringify(claims));
-  assert.match(invoke(file, join(captured, "evidence.json"), captured),
-    /does not justify|evidence search failed/);
-  process.stdout.write("tampered captured cell contract: refused\n");
-}
-
-// A module function is reached at its own annotated signature, which Lean
-// reads from the source; a producer cannot retype the callee.
-{
-  const claims: SourceClaims = JSON.parse(readFileSync(join(moduleFunctions, "claims.json"), "utf8"));
-  const source = readFileSync(join(moduleFunctions, "source.ts"), "utf8");
-  const fn = must(claims.functions.find((f) => f.name === "twice"), "twice");
-  const callee = source.indexOf("id(id(x))");
-  const site = fn.expressions.find((e) => e.pos[0] === callee && e.pos[1] === callee + 2);
-  assert.ok(site, "the outer callee's claim");
-  const argument = fn.expressions.find((e) => e.pos[0] === source.indexOf("x))", callee));
-  assert.ok(argument, "the argument's claim");
-  site.type = argument.type;
-  const file = join(moduleFunctions, "forged-callee.json");
-  writeFileSync(file, JSON.stringify(claims));
-  const refusal = invoke(file, join(moduleFunctions, "evidence.json"), moduleFunctions);
-  process.stdout.write(`tampered module callee: refused (${refusal.trim().split("\n")[0]})\n`);
-}
-
-// The initialization unit's claims are checked like a function's: claiming
-// the constant's initializer at another type is refused.
-{
-  const claims: SourceClaims = JSON.parse(readFileSync(join(moduleInit, "claims.json"), "utf8"));
-  const source = readFileSync(join(moduleInit, "source.ts"), "utf8");
-  assert.ok(claims.init, "the initialization unit's claims");
-  const literal = source.indexOf("true;");
-  const site = claims.init.expressions.find((e) => e.pos[0] === literal);
-  assert.ok(site, "the initializer's claim");
-  site.type = [0];
-  const file = join(moduleInit, "forged-initializer.json");
-  writeFileSync(file, JSON.stringify(claims));
-  invoke(file, join(moduleInit, "evidence.json"), moduleInit);
-  process.stdout.write("tampered module initializer: refused\n");
-}
-
-// A call to a generic module function names its instance; naming another
-// changes the arrow its slot holds, which the evidence does not justify.
-{
-  const claims: SourceClaims = JSON.parse(readFileSync(join(genericModule, "claims.json"), "utf8"));
-  const fn = must(claims.functions.find((f) => f.name === "both"), "both");
-  const call = fn.expressions.find((e) => e.instantiate?.length);
-  assert.ok(call?.instantiate, "an instantiated call");
-  must(call.instantiate[0], "its type argument").type = [0];
-  const file = join(genericModule, "forged-instance.json");
-  writeFileSync(file, JSON.stringify(claims));
-  invoke(file, join(genericModule, "evidence.json"), genericModule);
-  process.stdout.write("tampered generic module instance: refused\n");
-}
-
-// A substitution proposed through a callback is validated like any other:
-// naming `number` for the call whose value is `flag` yields a genuine instance
-// of the scheme whose value parameter the argument then fails to meet.
-const callbackClaims: SourceClaims = JSON.parse(
-  readFileSync(join(callback, "claims.json"), "utf8"),
-);
-{
-  const claims = structuredClone(callbackClaims);
-  const fn = claims.functions.find((f) => f.name === "throughCallback");
-  assert.ok(fn);
-  const site = fn.expressions.find((e) => e.instantiate?.some((i) => Array.isArray(i.type) && i.type.length === 2));
-  assert.ok(site?.instantiate, "the call instantiated at boolean");
-  must(site.instantiate[0], "the callback substitution").type = [4];
-  const file = join(callback, "forged-callback-instance.json");
-  writeFileSync(file, JSON.stringify(claims));
-  invoke(file, join(callback, "evidence.json"), callback);
-  process.stdout.write("tampered callback instantiation: refused\n");
-}
-
-// A generic body is a graph request over its binders' parameter rows. Reusing
-// valid evidence must not let an inferred local trust a forged point type.
-const genericClaims: SourceClaims = JSON.parse(
-  readFileSync(join(generic, "claims.json"), "utf8"),
-);
-for (const site of ["initializer", "binding"] as const) {
-  const claims = structuredClone(genericClaims);
-  const fn = claims.functions.find((f) => f.name === "inferred");
-  assert.ok(fn);
-  if (site === "initializer") {
-    const initial = fn.expressions[0];
-    assert.ok(initial);
-    initial.type = [1, 2];
-  } else {
-    const saved = fn.entries.flatMap((e) => e.bindings).find((b) => b.name === "saved");
-    assert.ok(saved);
-    saved.type = [1, 2];
-  }
-  const file = join(generic, `forged-${site}.json`);
-  writeFileSync(file, JSON.stringify(claims));
-  const p = spawnSync(verifier, [
-    "--check-source-claims", join(generic, "fragment.json"), file,
-    join(generic, "source.ts"), join(generic, "evidence.json"),
-  ], {encoding: "utf8", timeout: 30_000});
-  assert.ifError(p.error);
-  assert.equal(p.signal, null);
-  assert.equal(p.status, 1, p.stdout + p.stderr);
-  assert.match(p.stdout + p.stderr, /source evidence does not justify the extracted program and exact claims/);
-  process.stdout.write(`tampered inferred generic ${site}: refused\n`);
-}
-
-// A malformed direct-check input is a located refusal, not prose disguised as
-// a failed judgment. The closed failure sum makes this branch mandatory at the
-// Lean boundary, and the reader must preserve the distinction.
-{
-  const claims = structuredClone(genericClaims);
-  const fn = claims.functions.find((f) => f.name === "inferred");
-  assert.ok(fn);
-  fn.expressions.pop();
-  const file = join(generic, "missing-generic-expression.json");
-  writeFileSync(file, JSON.stringify(claims));
-  const p = spawnSync(verifier, [
-    "--check-source-claims", join(generic, "fragment.json"), file,
-    join(generic, "source.ts"), join(generic, "evidence.json"),
-  ], {encoding:"utf8",timeout:30_000});
-  assert.equal(p.status,1,p.stdout+p.stderr);
-  const refusal = readDiagnostic(p.stdout+p.stderr);
-  assert(refusal?.kind === "source-refusal");
-  assert.deepEqual(refusal.sourceMap.pos,fn.namePos);
-  assert(!("judgment" in refusal));
-  process.stdout.write("malformed generic input: located refusal\n");
-}
-
-/*
- * The reader collects this producer too, by running `check` itself and
- * building its page from that run's outcome and artifacts. What is checked
- * here is that correspondence: the claims the reader carries are the ones the
- * producer wrote, the verdicts are the verifier's, and a source the pipeline
- * refuses is shown under that outcome, in its own words.
- */
 const repositoryPath = (file: string) =>
   `verification/ocaml-producer/examples/${file}.ts`;
 /** The page a bundle becomes. The annotated source reads back as the exact
@@ -1976,183 +980,74 @@ const pageOf = (bundle: Bundle) => {
   return page;
 };
 {
-  const shown = await analyse(repositoryPath("generic-default"), "ocaml");
-  const results = shown.manifest.results ?? [];
-  assert.deepEqual(results.map((r) => r.status), ["not-established"]);
-  assert.notEqual(results[0]?.location, undefined);
-  assert.match(JSON.stringify(results), /source expression obligation at \[400,419\)/);
-  process.stdout.write("reader collection: a scheme default's bad write visibly refused\n");
+  const [collected, defaulted, invocation, assigned, crashing] = await Promise.all([
+    analyse(repositoryPath("values"), "ocaml"),
+    analyse(repositoryPath("generic-default"), "ocaml"),
+    analyse(repositoryPath("invalid-default-invocation"), "ocaml"),
+    analyse(repositoryPath("module-function-assignment"), "ocaml"),
+    analyse("verification/ocaml-producer/examples/crashing-service-sound-binding.ts", "ocaml"),
+  ]);
+  pageOf(collected);
+  assert.equal(collected.collection?.producer, "ocaml");
+  assert.equal(collected.collection?.producerRun, true);
+  assert.equal(collected.collection?.verified, true);
+  // The claims the report is built from are the producer's own, not a display
+  // shape derived from them: the document `check` wrote beside `values`, named by
+  // the file it is about.
+  assert.equal(collected.manifest.claimsSha256, createHash("sha256")
+    .update(JSON.stringify({ ...readClaims(run("values")), file: repositoryPath("values") })).digest("hex"));
+  assert.deepEqual((collected.manifest.results ?? []).map((r) => r.status), ["verified", "verified"]);
   // The page shows the failure at the claim whose obligation stopped.
-  const failed = must(pageOf(shown).functions[0], "the refused function");
+  const results = defaulted.manifest.results ?? [];
+  assert.deepEqual(results.map((r) => r.status), ["not-established"]);
+  assert.match(JSON.stringify(results), /source expression obligation at \[400,419\)/);
+  const failed = must(pageOf(defaulted).functions[0], "the refused function");
   assert.equal(failed.status, "not-established");
   assert.equal(failed.failure?.kind, "expression-obligation");
   assert.deepEqual(failed.sites[failed.failure?.at ?? -1]?.pos, [400, 419]);
-}
-const collected = await analyse(repositoryPath("values"), "ocaml");
-pageOf(collected);
-assert.equal(collected.collection?.producer, "ocaml");
-assert.equal(collected.collection?.producerRun, true);
-assert.equal(collected.collection?.verified, true);
-// The claims the report is built from are the producer's own, not a display
-// shape derived from them: the document `check` wrote beside `values`, named by
-// the file it is about.
-assert.equal(collected.manifest.claimsSha256, createHash("sha256")
-  .update(JSON.stringify({ ...original, file: repositoryPath("values") })).digest("hex"));
-assert.deepEqual(
-  (collected.manifest.results ?? []).map((r) => r.status),
-  ["verified", "verified"],
-);
-process.stdout.write(
-  `reader collection: ${collected.manifest.functions.length} functions, producer's own claims verified\n`,
-);
-
-const collectedGeneric = await analyse(
-  repositoryPath("generic-closure"),
-  "ocaml",
-);
-assert.equal(collectedGeneric.collection?.verified, true);
-pageOf(collectedGeneric);
-assert.match(
-  collectedGeneric.manifest.functions[0]?.expressions.find((e) =>
-    e.type.startsWith("<"),
-  )?.type ?? "",
-  /^<T>\(arg0: T\) => T$/,
-);
-process.stdout.write("reader collection: quantified callable rendered\n");
-
-const collectedDefaults = await analyse(repositoryPath("generic-rigid-default"), "ocaml");
-assert.equal(collectedDefaults.collection?.verified, true);
-assert.match(
-  collectedDefaults.manifest.functions[0]?.expressions.find(e => e.type.startsWith("<"))?.type ?? "",
-  /arg1: \(T\) \| \(undefined\)/,
-);
-process.stdout.write("reader collection: rigid default union rendered\n");
-
-
-const collectedRest = await analyse(repositoryPath("generic-rest"), "ocaml");
-assert.equal(collectedRest.collection?.verified, true);
-assert.match(collectedRest.manifest.functions.find(f=>f.name === "genericRestUses")?.expressions
-  .find(e=>e.type.startsWith("<"))?.type ?? "", /^<T>\(\.\.\.rest: Array<T>\) => Array<T>$/);
-process.stdout.write("reader collection: quantified rest and array contracts rendered\n");
-
-const collectedJsonBound = await analyse(repositoryPath("recursive-json-variants"), "ocaml");
-assert.deepEqual(collectedJsonBound.manifest.results?.map(r => r.status), ["verified"]);
-assert.equal(collectedJsonBound.collection?.verified, true);
-process.stdout.write("reader collection: imported Json bound verified\n");
-
-// Validation controls must reach validation and fail there. Failing there means
-// failing an obligation, which the reader can show at its span; an adapter that
-// throws before any obligation exists has refused, not validated, and the
-// reader can point at nothing. Ranging over the inventory is what keeps a new
-// control from escaping this. Explicit source/proposal refusal controls instead
-// require that exact unsupported outcome and cannot claim to have checked a graph.
-// A call of a generic module value at a type argument outside its bound
-// fails a direct judgment, checked before any graph request exists.
-const directControls = new Set([
-  "invalid-explicit-type-argument-bound",
-]);
-let testedDirectProtocol = false;
-const controls = cases.filter((c) => c.kind === "negative");
-const shownControls = await pooled(controls, (c) => analyse(repositoryPath(c.file), "ocaml"));
-for (const [i, control] of controls.entries()) {
-  const settled = shownControls[i];
-  if (settled.status === "rejected") throw settled.reason;
-  const shown = settled.value;
-  if (control.phase === "source" || control.phase === "proposal") {
-    const outcome = shown.outcome;
-    assert(outcome && outcome.status === "unsupported");
-    assert.equal(outcome.phase, control.phase);
-    if (control.diagnostic) assert.match(outcome.detail, control.diagnostic);
-    assert.equal(shown.collection?.verified, false);
-    assert.equal(shown.manifest.results?.length ?? 0, 0);
-    continue;
-  }
-  // A control may hold correct functions beside the failing one: those it
-  // calls are verified, and only the failing one is shown not established.
-  const all = shown.manifest.results ?? [];
-  const results = all.filter((r) => r.status !== "verified");
-  assert.deepEqual(
-    results.map((r) => r.status),
-    ["not-established"],
-    `${control.file}: reader must show exactly one function not established`,
-  );
-  assert.notEqual(
-    results[0]?.location,
-    undefined,
-    `${control.file}: reached no obligation, so the reader has nothing to show`,
-  );
-  if (directControls.has(control.file)) {
-    assert.equal(
-      results[0]?.obligation?.kind,
-      "direct-obligation",
-      `${control.file}: a direct failure needs a structured judgment`,
-    );
-    const direct = results[0]?.obligation;
-    assert(direct?.kind === "direct-obligation");
-    assert(!("statement" in direct.judgment), "direct judgments cannot store prose");
-    const judgmentView = results[0]?.obligationView?.judgement;
-    assert(judgmentView && !("text" in judgmentView),
-      "judgment text must be derived by the shared printer");
-    if (!testedDirectProtocol) {
-      testedDirectProtocol = true;
-      const {input: _input, ...wire} = direct;
-      const line = (value: unknown) =>
-        `obligation-diagnostic: ${JSON.stringify(value)}`;
-      assert(readDiagnostic(line(wire)), "the structured direct judgment decodes");
-      const unknown = structuredClone(wire);
-      // Deliberately outside the typed union: the reader must refuse it at run time.
-      // Reflect keeps this malformed-wire test from weakening the typed source.
-      Reflect.set(unknown.judgment, "kind", "future-judgment");
-      assert.equal(readDiagnostic(line(unknown)),undefined,"an unhandled judgment variant is refused");
-      const unscoped = structuredClone(wire);
-      unscoped.judgment.actual = [wire.types.length];
-      assert.equal(readDiagnostic(line(unscoped)),undefined,"a label outside the table is refused");
-      const misplaced = structuredClone(wire);
-      misplaced.sourceMap.pos = [0,0];
-      assert.equal(readDiagnostic(line(misplaced)),undefined,"a judgment cannot borrow another source span");
-    }
-  }
-}
-assert(testedDirectProtocol, "no direct control reached the direct checker");
-// A refusal the verifier makes while validating the source, before a graph
-// exists, is shown as a located source refusal.
-{
-  const i = controls.findIndex((c) => c.file === "invalid-default-invocation");
-  const settled = shownControls[i];
-  assert(settled?.status === "fulfilled");
-  const [refused] = settled.value.manifest.results ?? [];
+  // A refusal the verifier makes while validating the source, before a graph
+  // exists, is shown as a located source refusal.
+  const [refused] = invocation.manifest.results ?? [];
   assert.equal(refused?.obligation?.kind, "source-refusal");
   assert.equal(refused?.location?.kind, "source-limitation");
   assert.match(refused?.detail ?? "", /pending closure cannot be invoked or exposed/);
-  process.stdout.write("reader collection: a source refusal shown at its span\n");
+  // What this producer does not implement is refused where it is refused, in
+  // the words that boundary uses, and nothing claimed.
+  assert(assigned.outcome && assigned.outcome.status === "unsupported");
+  assert.equal(assigned.outcome.phase, "proposal");
+  assert.match(assigned.outcome.detail, /^unsupported:/);
+  assert.deepEqual(assigned.manifest.functions, []);
+  // A source TypeScript reports errors in is refused at the parser's gate, and
+  // shown with TypeScript's own errors where it placed them, from the same run.
+  assert.equal(crashing.outcome?.status, "unsupported");
+  assert.equal(crashing.outcome?.phase, "source");
+  assert.match(crashing.manifest.diagnostics ?? "",
+    /^File "verification\/ocaml-producer\/examples\/crashing-service-sound-binding.ts", line 31, character 32-38:\nTypeScript: Property 'input2' does not exist/);
+  process.stdout.write("reader collection: the verifier's verdicts, the producer's claims, refusals at their spans\n");
 }
-process.stdout.write(
-  `reader collection: ${cases.filter((c) => c.kind === "negative").length} negative controls refused at their expected boundaries\n`,
-);
 
-// What this producer does not implement is refused where it is refused, in the
-// words that boundary uses: the reader shows the source under the pipeline's
-// own outcome, and nothing claimed.
-for (const [file, phase, says] of [
-  ["module-function-assignment", "proposal", /^unsupported:/],
-] as const) {
-  const shown = await analyse(repositoryPath(file), "ocaml");
-  const outcome = shown.outcome;
-  assert(outcome && outcome.status === "unsupported");
-  assert.equal(outcome.phase, phase);
-  assert.match(outcome.detail, says);
-  assert.deepEqual(shown.manifest.functions, []);
-  process.stdout.write(`reader collection: ${file} refused by name\n`);
-}
-// A source TypeScript reports errors in is refused at the parser's gate. The
-// reader shows that outcome, and TypeScript's own errors where it placed them,
-// from the same run: the gate names only the declaration holding one.
 {
-  const file = "verification/ocaml-producer/examples/crashing-service-sound-binding.ts";
-  const shown = await analyse(file, "ocaml");
-  assert.equal(shown.outcome?.status, "unsupported");
-  assert.equal(shown.outcome?.phase, "source");
-  assert.match(shown.manifest.diagnostics ?? "",
-    new RegExp(`^File "${file}", line 31, character 32-38:\nTypeScript: Property 'input2' does not exist`));
-  process.stdout.write("reader collection: TypeScript's errors shown at their spans\n");
+  const shown = await analyse(repositoryPath("invalid-explicit-type-argument-bound"), "ocaml");
+  const results = (shown.manifest.results ?? []).filter((r) => r.status !== "verified");
+  assert.deepEqual(results.map((r) => r.status), ["not-established"]);
+  const direct = results[0]?.obligation;
+  assert(direct?.kind === "direct-obligation", "a direct failure needs a structured judgment");
+  assert(!("statement" in direct.judgment), "direct judgments cannot store prose");
+  const judgmentView = results[0]?.obligationView?.judgement;
+  assert(judgmentView && !("text" in judgmentView), "judgment text must be derived by the shared printer");
+  const {input: _input, ...wire} = direct;
+  const line = (value: unknown) => `obligation-diagnostic: ${JSON.stringify(value)}`;
+  assert(readDiagnostic(line(wire)), "the structured direct judgment decodes");
+  const unknown = structuredClone(wire);
+  // Deliberately outside the typed union: the reader must refuse it at run time.
+  // Reflect keeps this malformed-wire test from weakening the typed source.
+  Reflect.set(unknown.judgment, "kind", "future-judgment");
+  assert.equal(readDiagnostic(line(unknown)), undefined, "an unhandled judgment variant is refused");
+  const unscoped = structuredClone(wire);
+  unscoped.judgment.actual = [wire.types.length];
+  assert.equal(readDiagnostic(line(unscoped)), undefined, "a label outside the table is refused");
+  const misplaced = structuredClone(wire);
+  misplaced.sourceMap.pos = [0, 0];
+  assert.equal(readDiagnostic(line(misplaced)), undefined, "a judgment cannot borrow another source span");
+  process.stdout.write("direct obligation records: decoded, and malformed ones refused\n");
 }

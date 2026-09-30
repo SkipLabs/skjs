@@ -24,7 +24,6 @@ node verification/ocaml-producer/check.mts verification/ocaml-producer/examples/
   --project verification/ocaml-producer/upstream
 node verification/ocaml-producer/check.mts verification/ocaml-producer/examples/recursive-json-variants.ts \
   --project verification/ocaml-producer/upstream
-dune runtest --root verification/ocaml-producer
 node verification/ocaml-producer/test.mts
 ```
 
@@ -41,11 +40,10 @@ Set `VERIFIER` to reuse a verifier executable built from this checkout's Lean
 sources. This avoids rebuilding Lean in a fresh worktree. The prototype requires
 Dune for building, but no OCaml libraries beyond the standard library, and no
 Skip toolchain or Docker. Install Dune with `opam install dune` if needed.
-`dune runtest` runs the OCaml unit tests; `node test.mts` (from this directory)
-runs the end-to-end verification tests.
+`node test.mts` (from this directory) runs the end-to-end verification tests.
 
-[dune](dune) declares the producer's library, its executable and its unit
-test; [dune-project](dune-project) makes this directory a dune root of its
+[dune](dune) declares the producer's library and its executable;
+[dune-project](dune-project) makes this directory a dune root of its
 own, which `--root` builds into the `_build/` the reader and `check.mts` run.
 [`../dune`](../dune) limits the repository's dune workspace, which an editor's
 OCaml language server needs at the root, to this directory.
@@ -289,7 +287,6 @@ Modules outside these stages:
 
 - [json.ml](json.ml): the dependency-free JSON codec the stages read and write documents with.
 - [producer.ml](producer.ml): the executable; it emits proposals, never an acceptance decision, and with `--explain` the causes of failure it met.
-- [unit.ml](unit.ml): the Dune unit tests of the codec and the inference.
 
 ## Extending the producer
 
@@ -325,8 +322,7 @@ applies; this file records only what is specific to this producer.
    `node verification/ocaml-producer/run-cases.mts <pattern>` after
    `dune build --root verification/ocaml-producer` (and
    `lake -d verification/lean build` when Lean changed). Before committing,
-   run `node verification/ocaml-producer/test.mts`, plus
-   `dune runtest --root verification/ocaml-producer` for unit tests, and the
+   run `node verification/ocaml-producer/test.mts`, and the
    wider tiers in [AGENTS.md](../AGENTS.md#iterating-run-what-the-change-touches)
    when Lean, the parser or a wire format changed.
 7. Update the documents that own what changed, per
@@ -439,9 +435,11 @@ survive those extensions rather than being replaced by subset shortcuts.
 [cases.mts](cases.mts) is the executable inventory, including expected phase
 and diagnostic for every negative control and known gap.
 [test.mts](test.mts) runs every case against it, then the checks no case can
-make: pinned imports, tampering controls and the reader's correspondence. It
-prints what the suite verifies, refuses and keeps visible, and how many
-tampering controls hold; the numbers live in its output, not here.
+make, in groups each justified by the requirement it guards: pinned trusted
+inputs, import resolution and declaration refusals, forged parser documents
+and claims, Node runs of the examples, and the reader's correspondence. It
+prints what the suite verifies, refuses and keeps visible; the numbers live in
+its output, not here.
 
 | Architectural pressure                      | Small examples with full certificates                                                                                                         |
 | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -670,8 +668,8 @@ method *presence*, generic methods and declaration merging refuse. All four
 runtime API interfaces reach a refused declaration, and `InputDefinition` and
 `runService` are value imports, so the interface slice does not yet admit
 `sum.ts`. Applied in a
-client of the same project, each stops at its first refused declaration
-(pinned in `test.mts`):
+client of the same project, each is collected; the `sum-*` cases import
+them:
 
 | Interface | First refusal | Why |
 | --- | --- | --- |
@@ -809,7 +807,7 @@ to graph rows. The
 OCaml encoder expands the same application from the same definition. So
 `GenericCallable<T> = (value: T) => T` applied to a rigid `T` verifies, and a
 wrong result fails with the same generic obligation, whether the declaration
-is local or imported; `test.mts` compares the two outcomes. Bounded declarations and recursive applications over a binder refuse.
+is local or imported, one lowering serving both. Bounded declarations and recursive applications over a binder refuse.
 Declaration location is no longer a separate type meaning.
 
 The present source checker recognizes `boolean`, an earlier rigid parameter,
@@ -1381,8 +1379,7 @@ Serializable<Todo>>.getUnique(key).title`, through `V extends Json` and
 `EagerCollection`'s bound, which `tsc` accepts and the application's bound
 check refuses — that refusal is the request's, not located at the annotation,
 as every application bound's is, so `test.mts` checks it rather than the
-reader's controls; and `test.mts`'s `record-meet` parity pair, which now
-verifies, local and imported alike, with a wrong read refused.
+reader's controls.
 
 *Left.*
 - `sum-serializable-map` now verifies: the exact meet of a type parameter

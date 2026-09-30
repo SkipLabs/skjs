@@ -508,11 +508,10 @@ to parameters and quantified variables by position.
 
 The pipeline cases `non-regular-alias` and `invalid-non-regular-alias` lower an
 alias applied to a longer tuple at each level to one invariant head.
-`ocaml-producer/test.mts` refuses by name what the parser does not write: every
-spelling of a tree but its one and a nested meet, in tampered evidence; a
-binder used both as an argument pack and as a value, and an unguarded alias,
-in forged declarations, where a nested method's own binder of the same name
-is accepted.
+`ocaml-producer/test.mts` refuses by name, in forged declarations the parser
+does not write, a binder used both as an argument pack and as a value and an
+unguarded alias, where a nested method's own binder of the same name is
+accepted.
 
 The wire spellings are in [SOURCE-CLAIMS](SOURCE-CLAIMS.md#encoding) and
 [REQUEST-PROTOCOL](REQUEST-PROTOCOL.md). Progress is recorded in

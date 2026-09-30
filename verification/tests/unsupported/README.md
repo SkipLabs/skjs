@@ -1,8 +1,10 @@
 # Unsupported source examples
 
 These are readable boundary cases, not verified successes. `unsupported.mts`
-runs each through the pipeline and requires its refusal for a specific
-limitation, so an unrelated failure cannot silently replace the intended gate.
+runs `instanceof_narrow.ts` and `mutable_binding.ts` through the pipeline and
+requires each refusal for its specific limitation, so an unrelated failure
+cannot silently replace the intended gate; `in_inherited.ts`'s refusal is the
+pipeline case `in-inherited-refused`'s.
 
 - `in_inherited.ts`: `"toString" in x`, a key every object inherits from
   `Object.prototype`, which the model's own-key test does not see.

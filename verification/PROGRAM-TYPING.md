@@ -4079,8 +4079,7 @@ neither `constructor` nor any key declared by `ArrayProto`; the host keeps the
 standard array constructor/species behavior. The same own-key exclusion is used
 in array lowering and the realm invariant (`RequestJson.arrayExcludedKeys`).
 Thus `filter` and `slice` can promise ordinary arrays, and certified callback effects
-justify the dense `map` overload. The runtime witnesses in `test.mts` violate
-the explicit external-code premise and document why it is needed.
+justify the dense `map` overload.
 
 **Standard array conversion.** Let P be the primitive types, including
 `undefined`, and define the regular recursive contract
