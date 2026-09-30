@@ -291,6 +291,8 @@ fragment; do not restore acceptance by increasing trust silently.
   Run Lake from that directory so elan selects its pinned `lean-toolchain`;
   `lake -d` from the repository root can select a different compiler before
   changing directories. Never run simultaneous builds against the same cache.
+  Complete builds before starting suites: the verifier executable must stay
+  stable for the whole test run.
 - Lean: a definition generic in its labels or store (`ι` and its type-class
   instances) carries `@[nospecialize]`. Lean's code generator otherwise copies
   the whole generic call graph into the first module that uses it at a concrete

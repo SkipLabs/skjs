@@ -36,6 +36,7 @@ structure Located (ι : Type) where
 inductive Failure (ι : Type) where
   | refusal (pos : Span) (role : SourceRole) (reason : String)
   | obligation (located : Located ι)
+  | exhausted (located : Located ι) (limit rounds visited : Nat)
   deriving BEq, Repr
 
 def SourceRole.wire : SourceRole → String

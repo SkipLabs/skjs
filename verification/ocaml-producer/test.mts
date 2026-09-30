@@ -179,6 +179,36 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     "the source runner distinguishes exhausted work from a completed refusal");
   assert.equal(check(negative).status, "unverified", "the last field's type is incompatible");
 }
+// Module-call bounds run before a graph request exists. Both CLI modes must
+// retain the unfinished comparison at the call, rather than claim a bad bound.
+{
+  const dir = mkdtempSync(join(tmpdir(), "skjs-bound-budget-"));
+  const file = join(dir, "bounded.ts");
+  const text = [
+    "interface A { readonly x: { readonly n: number } }",
+    "interface B { readonly x: { readonly n: number } }",
+    "function bounded<T extends B>(value: T): T { return value; }",
+    "export function convert(value: A): A { return bounded(value); }",
+  ].join("\n");
+  writeFileSync(file, text);
+  const admitted = check(file, undefined, false, "ocaml", 8);
+  assert.equal(admitted.status, "verified", JSON.stringify(admitted));
+  const at = text.lastIndexOf("bounded(value)");
+  for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
+    const run: SpawnSyncReturns<string> = spawnSync(verifier, ["--subtype-rounds", "0", mode,
+      ...["fragment.json", "claims.json", "source.ts", "evidence.json"].map(f => join(admitted.artifacts, f)),
+      ...(mode === "--produce-source-claims" ? ["12"] : [])],
+      {encoding: "utf8", timeout: 30_000});
+    assert.equal(run.status, 1, run.stderr);
+    const diagnostic = readDiagnostic(run.stderr);
+    assert(diagnostic?.kind === "direct-obligation", run.stderr);
+    assert.equal(diagnostic.phase, "request-validation");
+    assert.equal(diagnostic.outcome.kind, "exhausted");
+    assert.equal(diagnostic.sourceMap.role, "scheme-elimination");
+    assert.deepEqual(diagnostic.sourceMap.pos, [at, at + "bounded(value)".length]);
+    assert.equal(diagnostic.judgment.kind, "subtyping");
+  }
+}
 
 {
   // The upstream `sum.ts`, byte for byte: the census row and the producer's

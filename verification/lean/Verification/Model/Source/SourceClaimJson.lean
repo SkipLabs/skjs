@@ -255,17 +255,21 @@ ordinary graph sequents, but their failures use the same mandatory located
 diagnostic channel. The viewer consumes this record structurally and derives
 all prose from it. A type argument outside its binder's bound belongs to the
 scheme the call eliminates, and says so. -/
-private def directFailure (T : EquationStore.State) (failure : DirectObligation.Located Tree) : String :=
+private def directFailure (T : EquationStore.State) (failure : DirectObligation.Located Tree)
+    (outcome : DiagnosticOutcome := .notEstablished) : String :=
   let judgment := failure.judgment
   let p := StoreView.projection T (match judgment with
     | .subtyping _ actual expected => (actual ++ expected).eraseDups)
   let shown : DirectObligation.Judgment Nat := match judgment with
     | .subtyping subject actual expected => .subtyping subject (p.shown actual) (p.shown expected)
-  let message :=
-    s!"quantified call does not satisfy the closure's bound: cannot establish {failure.judgment.render T}"
+  let message := match outcome with
+    | .notEstablished =>
+      s!"quantified call does not satisfy the closure's bound: cannot establish {failure.judgment.render T}"
+    | .exhausted .. =>
+      s!"subtype search exhausted while checking the closure's bound: {failure.judgment.render T}"
   RequestJson.withDiagnostic s!"source direct obligation at [{failure.pos.1},{failure.pos.2}): {message}"
     ([("kind",toJson "direct-obligation"),("phase",toJson "request-validation"),
-     ("outcome",toJson RequestJson.DiagnosticOutcome.notEstablished),("id",toJson s!"scheme:{failure.pos.1}"),
+     ("outcome",toJson outcome),("id",toJson s!"scheme:{failure.pos.1}"),
      ("sourceMap",toJson (SourceMapEntry.mk failure.pos failure.role.wire none [])),
      ("judgment",shown.toJson),("fuel",toJson 0)] ++ p.fields)
 
@@ -426,11 +430,13 @@ def moduleInstances (T : EquationStore.State) (g : Instantiable)
         let (required, grown) ← ((Fragment.translate upper).run T).mapError (refuse pos)
         T := grown
         let G := SourceTypes.graph T
-        let proved := (CertificateProducer.comparisonUsing G (StoreView.images T)
-          actual required).accepted
-        unless proved do
-          throw (.obligation ⟨pos, .schemeElimination,
-            .subtyping pos actual required⟩, T)
+        let obligation : DirectObligation.Located Tree :=
+          ⟨pos, .schemeElimination, .subtyping pos actual required⟩
+        match CertificateProducer.comparisonUsing G (StoreView.images T) actual required with
+        | .established _ => pure ()
+        | .notEstablished => throw (.obligation obligation, T)
+        | .exhausted rounds visited =>
+          throw (.exhausted obligation T.subtypeBudget.rounds rounds visited, T)
     let some atom := (callable.getObjVal? "atoms").toOption.bind (fun a => (a.getArr?.toOption.bind (·[0]?)))
       | throw (refuse pos s!"'{g.name}' is not one callable")
     instances := instances ++ [atom]
@@ -1452,6 +1458,8 @@ def extractPlans (ast claims : Json) (fileKey : String)
                 if reads.contains e.pos then { e with type := .labels A }
                 else if calls.contains e.pos then { e with instantiate := none } else e }
             | .error (.obligation failure, T) => throw (directFailure T failure)
+            | .error (.exhausted failure limit rounds visited, T) =>
+              throw (directFailure T failure (.exhausted limit rounds visited))
             | .error (.refusal pos role reason, _) => throw (sourceRefusal d.types pos role reason)
       -- Every generic closure's scheme is a scheme row by now; a scheme claim
       -- left names no closure of the source.

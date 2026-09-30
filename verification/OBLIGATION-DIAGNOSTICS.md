@@ -105,7 +105,8 @@ is untrusted display data; it cannot establish verification status.
 | `requiredResult` | Whole-function result type on graph diagnostics; absent on standalone expression obligations. |
 | `id` | Local obligation identity, where available. |
 
-An exhausted subtype comparison is inconclusive. `limit` is the requested
+An exhausted subtype comparison is inconclusive. Generic module-call bound
+checks report this outcome in `request-validation`, at the call's span. `limit` is the requested
 frontier-round budget, `rounds` is the number of rounds consumed, and `visited`
 is the number of comparison dependencies visited. The runner reports
 `exhausted`; the viewer displays these counts with the located subtype judgment.
