@@ -5215,18 +5215,107 @@ theorem checkAssertions_sound {r : (SourceRequest σ ι)} {c : (Response ι)}
   simp only [hn] at h
   exact HeapKnowledge.check_sound (m := none) h hk
 
-/-- A unit's obligations, checked with the graph code its certificate checked. -/
-@[nospecialize] def checkObligations (r : SourceRequest σ ι) (c : Response ι) (es : List (ProgramCertificates.Evidence ι)) : Bool :=
-  match codeTable r.toRequest c with
-  | some table => ExpressionClaims.checkAllUsing (RequestJson.graph r.toRequest) (StoreView.images r.types)
-      (StoreView.valid r.types)
-      r.obligations es (GraphCode.admits table)
-  | none => false
+/-- Validate one unit, sharing its checked code table with supplemental obligations. -/
+@[nospecialize] def checkRequestResult (r : SourceRequest σ ι) (c : Response ι)
+    (es : List (ProgramCertificates.Evidence ι)) : ProgramCertificates.CheckResult ι Unit :=
+  (verifyResult r.toRequest c).bind fun table =>
+    (ProgramCertificates.CheckResult.ofBool (checkAssertions r c)).bind fun _ =>
+    ExpressionClaims.checkAllResult (RequestJson.graph r.toRequest) (StoreView.images r.types)
+      (StoreView.valid r.types) r.obligations es (GraphCode.admits table)
+
+theorem checkRequestResult_accepted_iff (r : SourceRequest σ ι) (c : Response ι)
+    (es : List (ProgramCertificates.Evidence ι)) :
+    (checkRequestResult r c es).accepted = true ↔
+      verify r.toRequest c = true ∧ checkAssertions r c = true ∧
+      ∃ table, codeTable r.toRequest c = some table ∧
+        ExpressionClaims.checkAllUsing (RequestJson.graph r.toRequest) (StoreView.images r.types)
+          (StoreView.valid r.types) r.obligations es (GraphCode.admits table) = true := by
+  rw [checkRequestResult, ProgramCertificates.CheckResult.accepted_bind_value,
+    Option.any_eq_true]
+  constructor
+  · rintro ⟨table, ht, hc⟩
+    obtain ⟨hv, htable⟩ := (verifyResult_hasTable _ _ _).mp ht
+    rw [ProgramCertificates.CheckResult.accepted_bind,
+      ProgramCertificates.CheckResult.accepted_ofBool] at hc
+    exact ⟨hv, (Bool.and_eq_true_iff.mp hc).1, table, htable, (Bool.and_eq_true_iff.mp hc).2⟩
+  · rintro ⟨hv, ha, table, ht, ho⟩
+    refine ⟨table, (verifyResult_hasTable _ _ _).mpr ⟨hv, ht⟩, ?_⟩
+    rw [ProgramCertificates.CheckResult.accepted_bind,
+      ProgramCertificates.CheckResult.accepted_ofBool]
+    exact Bool.and_eq_true_iff.mpr ⟨ha, ho⟩
+
+@[nospecialize] def checkRequestsResult (rs : List (SourceRequest σ ι)) (b : Bundle ι) :
+    ProgramCertificates.CheckResult ι Unit :=
+  (ProgramCertificates.CheckResult.ofBool (rs.length == b.functions.length &&
+    rs.length == b.obligations.length)).bind fun _ =>
+  ProgramCertificates.CheckResult.all ((rs.zip b.functions).zip b.obligations)
+    fun ((r,c),es) => checkRequestResult r c es
 
 @[nospecialize] def checkRequests (rs : List (SourceRequest σ ι)) (b : Bundle ι) : Bool :=
-  rs.length == b.functions.length && rs.length == b.obligations.length &&
-    (rs.zip b.functions).all (fun (r,c) => verify r.toRequest c && checkAssertions r c) &&
-    ((rs.zip b.functions).zip b.obligations).all (fun ((r,c),es) => checkObligations r c es)
+  (checkRequestsResult rs b).accepted
+
+theorem checkRequests_eq (rs : List (SourceRequest σ ι)) (b : Bundle ι) :
+    checkRequests rs b = (rs.length == b.functions.length && rs.length == b.obligations.length &&
+      ((rs.zip b.functions).zip b.obligations).all (fun ((r,c),es) => (checkRequestResult r c es).accepted)) := by
+  rw [checkRequests, checkRequestsResult, ProgramCertificates.CheckResult.accepted_bind,
+    ProgramCertificates.CheckResult.accepted_ofBool, ProgramCertificates.CheckResult.accepted_all]
+
+theorem checkRequests_one {rs : List (SourceRequest σ ι)} {b : Bundle ι}
+    (h : checkRequests rs b = true) {r c es}
+    (hm : ((r,c),es) ∈ (rs.zip b.functions).zip b.obligations) :
+    (checkRequestResult r c es).accepted = true := by
+  rw [checkRequests_eq] at h
+  simp only [Bool.and_eq_true, List.all_eq_true] at h
+  exact h.2 ((r,c),es) hm
+
+/-- Exact bundle lengths give every requested unit its supplemental evidence. -/
+theorem checkRequests_pair {rs : List (SourceRequest σ ι)} {b : Bundle ι}
+    (h : checkRequests rs b = true) {r c} (hm : (r,c) ∈ rs.zip b.functions) :
+    ∃ es, ((r,c),es) ∈ (rs.zip b.functions).zip b.obligations ∧
+      (checkRequestResult r c es).accepted = true := by
+  have counts := h
+  rw [checkRequests_eq] at counts
+  have lengths := (Bool.and_eq_true_iff.mp counts).1
+  simp only [Bool.and_eq_true, beq_iff_eq] at lengths
+  have hl : (rs.zip b.functions).length = b.obligations.length := by
+    simp only [List.length_zip, ← lengths.1, lengths.2, Nat.min_self]
+  obtain ⟨i, hi⟩ := List.mem_iff_getElem?.mp hm
+  have hib : i < b.obligations.length := hl ▸ (List.getElem?_eq_some_iff.mp hi).1
+  let es := b.obligations[i]'hib
+  have hz : ((rs.zip b.functions).zip b.obligations)[i]? = some ((r,c),es) :=
+    List.getElem?_zip_eq_some.mpr ⟨hi, by simp [es, hib]⟩
+  have hm' := List.mem_of_getElem? hz
+  exact ⟨es, hm', checkRequests_one h hm'⟩
+
+/-- Source acceptance has the graph, assertion and supplemental premises for every unit. -/
+theorem checkRequests_accepted_iff (rs : List (SourceRequest σ ι)) (b : Bundle ι) :
+    checkRequests rs b = true ↔
+      rs.length = b.functions.length ∧ rs.length = b.obligations.length ∧
+      (∀ r c, (r,c) ∈ rs.zip b.functions → verify r.toRequest c = true ∧ checkAssertions r c = true) ∧
+      (∀ r c es, ((r,c),es) ∈ (rs.zip b.functions).zip b.obligations →
+        ∃ table, codeTable r.toRequest c = some table ∧
+          ExpressionClaims.checkAllUsing (RequestJson.graph r.toRequest) (StoreView.images r.types)
+            (StoreView.valid r.types) r.obligations es (GraphCode.admits table) = true) := by
+  constructor
+  · intro h
+    have counts := h
+    rw [checkRequests_eq] at counts
+    simp only [Bool.and_eq_true, beq_iff_eq] at counts
+    refine ⟨counts.1.1, counts.1.2, ?_, ?_⟩
+    · intro r c hm
+      obtain ⟨es, _, hunit⟩ := checkRequests_pair h hm
+      have hp := (checkRequestResult_accepted_iff _ _ _).mp hunit
+      exact ⟨hp.1, hp.2.1⟩
+    · intro r c es hm
+      exact ((checkRequestResult_accepted_iff _ _ _).mp (checkRequests_one h hm)).2.2
+  · rintro ⟨hf, ho, hu, he⟩
+    rw [checkRequests_eq]
+    simp only [Bool.and_eq_true, beq_iff_eq, List.all_eq_true]
+    refine ⟨⟨hf, ho⟩, ?_⟩
+    intro triple hm
+    rcases triple with ⟨⟨r,c⟩,es⟩
+    have hp := hu r c (List.of_mem_zip hm).1
+    exact (checkRequestResult_accepted_iff _ _ _).mpr ⟨hp.1, hp.2, he r c es hm⟩
 
 /-- At a graph checkpoint, the proved state invariant entails the assertion
 reconstructed from source claims, not merely a producer-selected context. -/
@@ -5235,9 +5324,10 @@ theorem checkRequests_assertions {rs : List (SourceRequest σ ι)} {b : (Bundle 
     {l k n W heap ρ} (hr : (l,k) ∈ r.assertions)
     (hs : StateOk (RequestJson.graph r.toRequest) r.result c.certificate n W heap (.at l ρ)) :
     HeapKnowledge.Holds k ρ heap := by
-  simp only [checkRequests,Bool.and_eq_true,List.all_eq_true] at hc
+  obtain ⟨es, _, hunit⟩ := checkRequests_pair hc hm
+  have hc := (checkRequestResult_accepted_iff _ _ _).mp hunit
   obtain ⟨node,hn,_,hk⟩ := hs
-  exact checkAssertions_sound (hc.1.2 _ hm).2 hr hn hk
+  exact checkAssertions_sound hc.2.1 hr hn hk
 
 /-- Every accepted extracted function has the existing all-budget guarantee.
 This does not assert semantic preservation of the source compiler. -/
@@ -5245,12 +5335,10 @@ theorem checkRequests_safe {rs : List (SourceRequest σ ι)} {b : (Bundle ι)}
     (h : checkRequests rs b = true) {r c} (hm : (r,c) ∈ rs.zip b.functions) (n W heap ρ)
     (he : EnvOk (RequestJson.graph r.toRequest) r.inputs ρ n W) (hw : WorldAdm W) (hh : HeapOk n W heap) :
     SafeGraph r.program (meaning (RequestJson.graph r.toRequest) r.result) n W heap (.at r.start ρ) := by
-  simp only [checkRequests, Bool.and_eq_true, List.all_eq_true] at h
-  exact verify_safe (h.1.2 _ hm).1 n W heap ρ he hw hh
+  obtain ⟨es, _, hunit⟩ := checkRequests_pair h hm
+  exact verify_safe ((checkRequestResult_accepted_iff _ _ _).mp hunit).1 n W heap ρ he hw hh
 
-/-- The same guarantee at every assignment of the request graph's parameter
-rows: a generic body, its binders read as parameter rows, is safe at every
-instantiation of them. -/
+/-- A generic body is safe at every assignment of its parameter meanings. -/
 theorem checkRequests_safe_at {rs : List (SourceRequest σ ι)} {b : (Bundle ι)}
     (h : checkRequests rs b = true) {r c} (hm : (r,c) ∈ rs.zip b.functions)
     (η : PositiveGraphs.MixedAssignment ι) (n W heap ρ)
@@ -5258,8 +5346,8 @@ theorem checkRequests_safe_at {rs : List (SourceRequest σ ι)} {b : (Bundle ι)
     (hh : HeapOk n W heap) :
     SafeGraph r.program (meaning (reassign (RequestJson.graph r.toRequest) η) r.result) n W heap
       (.at r.start ρ) := by
-  simp only [checkRequests, Bool.and_eq_true, List.all_eq_true] at h
-  exact verify_safe_at (h.1.2 _ hm).1 η n W heap ρ he hw hh
+  obtain ⟨es, _, hunit⟩ := checkRequests_pair h hm
+  exact verify_safe_at ((checkRequestResult_accepted_iff _ _ _).mp hunit).1 η n W heap ρ he hw hh
 
 /-- Every supplemental claim is a derivable sequent in the same calculus. -/
 theorem checkRequests_obligations {rs : List (SourceRequest σ ι)} {b : (Bundle ι)}
@@ -5267,18 +5355,8 @@ theorem checkRequests_obligations {rs : List (SourceRequest σ ι)} {b : (Bundle
     {q e} (hq : (q,e) ∈ r.obligations.zip es) :
     HasTyUsing (RequestJson.graph r.toRequest) (StoreView.images r.types) q.sequent.context q.sequent.term
       q.sequent.type := by
-  simp only [checkRequests, Bool.and_eq_true, List.all_eq_true] at h
-  have ho := h.2 _ hm
-  simp only [checkObligations] at ho
-  split at ho
-  · rename_i table ht
-    have hsound : ProgramCertificates.CodesSound (RequestJson.graph r.toRequest) (GraphCode.admits table) := by
-      unfold codeTable at ht
-      split at ht
-      · exact GraphCode.checkCodes_sound ht
-      · contradiction
-    exact ExpressionClaims.checkAll_sound ho hsound hq
-  · contradiction
+  obtain ⟨_, _, table, ht, ho⟩ := (checkRequestResult_accepted_iff _ _ _).mp (checkRequests_one h hm)
+  exact ExpressionClaims.checkAll_sound ho (codeTable_sound ht) hq
 
 end
 

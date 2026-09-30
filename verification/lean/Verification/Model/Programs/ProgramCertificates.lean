@@ -77,6 +77,26 @@ instance : Alternative (CheckResult ι) where
 theorem CheckResult.accepted_ofBool (b : Bool) : (CheckResult.ofBool (ι := ι) b).accepted = b := by
   cases b <;> rfl
 
+theorem CheckResult.value_bind (s : CheckResult ι α) (f : α → CheckResult ι β) :
+    (s.bind f).value = s.value.bind (fun a => (f a).value) := by
+  cases s with
+  | mk v e =>
+    cases v with
+    | none => rfl
+    | some a =>
+      simp only [CheckResult.bind, Option.bind_some]
+      split <;> rfl
+
+theorem CheckResult.accepted_bind_value (s : CheckResult ι α) (f : α → CheckResult ι β) :
+    (s.bind f).accepted = s.value.any (fun a => (f a).accepted) := by
+  rw [CheckResult.accepted, CheckResult.value_bind]
+  cases s.value <;> rfl
+
+theorem CheckResult.accepted_map (s : CheckResult ι α) (f : α → β) :
+    (s.map f).accepted = s.accepted := by
+  cases s with
+  | mk v e => cases v <;> rfl
+
 /-- Require a particular validated result, retaining unfinished work. -/
 @[nospecialize] def CheckResult.expect [DecidableEq α] (s : CheckResult ι α) (expected : α) : CheckResult ι Unit :=
   s.bind fun actual => CheckResult.ofBool (decide (actual = expected))

@@ -46,16 +46,29 @@ theorem check_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {valid 
   rw [h.1.1.2] at ht
   exact ht
 
+@[nospecialize] def checkAllResult (G : NormalGraph ι) (images : InstanceImageCheck G) (valid : ι → Bool)
+    (rs : List (Required ι)) (es : List (Evidence ι)) (codes : CodeEntry ι → Bool := fun _ => false) : CheckResult ι Unit :=
+  (CheckResult.ofBool (rs.length == es.length)).bind fun _ =>
+  CheckResult.all (rs.zip es) fun (r,e) => checkResult G images valid r.sequent e codes
+
 @[nospecialize] def checkAllUsing (G : NormalGraph ι) (images : InstanceImageCheck G) (valid : ι → Bool) (rs : List (Required ι)) (es : List (Evidence ι))
     (codes : CodeEntry ι → Bool := fun _ => false) : Bool :=
-  rs.length == es.length && (rs.zip es).all (fun (r,e) => checkUsing G images valid r.sequent e codes)
+  (checkAllResult G images valid rs es codes).accepted
+
+theorem checkAllUsing_eq (G : NormalGraph ι) (images : InstanceImageCheck G) (valid : ι → Bool)
+    (rs : List (Required ι)) (es : List (Evidence ι)) (codes : CodeEntry ι → Bool) :
+    checkAllUsing G images valid rs es codes =
+      (rs.length == es.length && (rs.zip es).all (fun (r,e) => checkUsing G images valid r.sequent e codes)) := by
+  simp only [checkAllUsing, checkAllResult, CheckResult.accepted_bind, CheckResult.accepted_ofBool,
+    CheckResult.accepted_all, checkUsing]
+
 
 theorem checkAll_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {valid rs es} {codes : CodeEntry ι → Bool}
     (h : checkAllUsing G images valid rs es codes = true)
     (hcodes : CodesSound G codes := by exact Verification.Model.ProgramCertificates.codesSound_none _)
     {r e} (hm : (r,e) ∈ rs.zip es) :
     HasTyUsing G images r.sequent.context r.sequent.term r.sequent.type := by
-  simp only [checkAllUsing, Bool.and_eq_true, List.all_eq_true] at h
+  simp only [checkAllUsing_eq, Bool.and_eq_true, List.all_eq_true] at h
   exact check_sound (h.2 _ hm) hcodes
 
 /-- `valid` says which labels the graph's store holds, `project` what a

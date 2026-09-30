@@ -2593,6 +2593,14 @@ admission and retains its resource outcome. `codeCheckedUsing_eq` and
 `extendTable_eq` prove the acceptance and table projections used by
 `codeChecked_sound` and `checkCodes_sound`.
 
+`RequestJson.verifyResult` returns the code table justified by request validation.
+`verifyResult_hasTable` proves that its successful value is exactly the checked
+table. `SourceExtraction.checkRequestResult` validates source assertions and
+uses that table for supplemental expression obligations. `checkRequestsResult`
+requires exact bundle lengths and checks every unit. `checkRequests_accepted_iff`
+proves the graph, assertion and supplemental premises for all requested units;
+these premises justify the source safety and supplemental-typing theorems.
+
 Failure reports a claim-count mismatch, an expression label, an edge's source
 and destination, or final consumer rejection. Failure means unsupported or
 unjustified within this search, not a proof that the program is untypable.

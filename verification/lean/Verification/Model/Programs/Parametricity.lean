@@ -313,7 +313,7 @@ theorem accept_reassign (R : List ι) (P : Program) (claims : List (CertificateP
     (codes : CodeEntry ι → Bool := fun _ => false) :
     CertificateProducer.acceptUsing (reassign G η) (images.reassign η) R P claims C start inputs codes =
       CertificateProducer.acceptUsing G images R P claims C start inputs codes := by
-  simp only [CertificateProducer.acceptUsing, checkEntry_reassign]
+  simp only [CertificateProducer.acceptUsing_eq, checkEntry_reassign]
 
 /-- **Parametricity.** Accepted evidence is safe at every assignment of the
 graph's parameter rows: every input environment meeting the inputs read at

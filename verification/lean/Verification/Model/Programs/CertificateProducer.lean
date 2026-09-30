@@ -56,22 +56,38 @@ structure PointClaim (ι : Type) where
 @[nospecialize] def signature (c : NodeEvidence ι) : PointClaim ι := ⟨entry c, result c⟩
 
 /-- Claims are part of the request, not facts the producer may replace. -/
+@[nospecialize] def acceptResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (R : Ty ι) (P : Program)
+    (claims : List (PointClaim ι)) (C : ControlFlow.Certificate ι) (start : Nat)
+    (inputs : List (Ty ι) := []) (codes : CodeEntry ι → Bool := fun _ => false) : CheckResult ι Unit :=
+  (CheckResult.ofBool (decide (C.map signature = claims))).bind fun _ =>
+  checkEntryResult G images R P C start inputs codes
+
 @[nospecialize] def acceptUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (R : Ty ι) (P : Program)
     (claims : List (PointClaim ι)) (C : ControlFlow.Certificate ι) (start : Nat)
     (inputs : List (Ty ι) := []) (codes : CodeEntry ι → Bool := fun _ => false) : Bool :=
+  (acceptResult G images R P claims C start inputs codes).accepted
+
+theorem acceptUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (R : Ty ι) (P : Program)
+    (claims : List (PointClaim ι)) (C : ControlFlow.Certificate ι) (start : Nat)
+    (inputs : List (Ty ι)) (codes : CodeEntry ι → Bool) :
+    acceptUsing G images R P claims C start inputs codes = (
   decide (C.map signature = claims) && checkEntryUsing G images R P C start inputs codes
+  ) := by
+  simp only [acceptUsing, acceptResult, CheckResult.accepted_bind,
+    CheckResult.accepted_ofBool, checkEntryUsing]
+
 
 theorem accept_claims [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {R P claims C start inputs codes}
     (hc : acceptUsing G images R P claims C start inputs codes = true) : C.map signature = claims :=
   by
-    simp only [acceptUsing, Bool.and_eq_true, decide_eq_true_eq] at hc
+    simp only [acceptUsing_eq, Bool.and_eq_true, decide_eq_true_eq] at hc
     exact hc.1
 
 theorem accepted_safe [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {R P claims C start}
     (hc : acceptUsing G images R P claims C start = true) (n : Nat) :
     SafeGraph P (meaning G R) n (ofList []) [] (.at start (fun _ => .nul)) :=
   by
-    simp only [acceptUsing, Bool.and_eq_true] at hc
+    simp only [acceptUsing_eq, Bool.and_eq_true] at hc
     exact accepted_closed_safe hc.2 n
 
 theorem accepted_from_inputs [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {R P claims C start inputs}
@@ -79,7 +95,7 @@ theorem accepted_from_inputs [DecidableEq ι] {G : NormalGraph ι} {images : Ins
     (he : EnvOk G inputs ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h)
     (hcodes : ProgramCertificates.CodesSound G codes := by exact Verification.Model.ProgramCertificates.codesSound_none _) :
     SafeGraph P (meaning G R) n W h (.at start ρ) := by
-  simp only [acceptUsing, Bool.and_eq_true] at hc
+  simp only [acceptUsing_eq, Bool.and_eq_true] at hc
   exact ControlFlow.accepted_inputs_safe hc.2 n W h ρ he hw hh hcodes
 
 /-- Known rows with the instances proving them. -/

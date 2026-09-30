@@ -387,20 +387,75 @@ variable {σ ι : Type} [Labels ι] [StoreView σ ι]
 
 /-- The request's graph code, checked in order against its claims, as a table
 of what was checked (`GraphCode.checkCodes`). -/
+@[nospecialize] def codeTableResult (r : Request σ ι) (c : Response ι) :
+    ProgramCertificates.CheckResult ι (List (CodeEntry ι)) :=
+  (ProgramCertificates.CheckResult.ofBool (r.codes.length == c.codes.length &&
+    (r.codes.zip c.codes).all (fun (q, C) => C.map signature == q.claims))).bind fun _ =>
+  GraphCode.checkCodesResult (graph r) (StoreView.images r.types) ((r.codes.map (·.entry)).zip c.codes)
+
 @[nospecialize] def codeTable (r : Request σ ι) (c : Response ι) : Option (List (CodeEntry ι)) :=
-  if r.codes.length == c.codes.length &&
-      (r.codes.zip c.codes).all (fun (q, C) => C.map signature == q.claims) then
-    GraphCode.checkCodesUsing (graph r) (StoreView.images r.types) ((r.codes.map (·.entry)).zip c.codes)
-  else none
+  (codeTableResult r c).value
+
+theorem codeTable_eq (r : Request σ ι) (c : Response ι) :
+    codeTable r c =
+    if r.codes.length == c.codes.length &&
+        (r.codes.zip c.codes).all (fun (q, C) => C.map signature == q.claims) then
+      GraphCode.checkCodesUsing (graph r) (StoreView.images r.types) ((r.codes.map (·.entry)).zip c.codes)
+    else none := by
+  rw [codeTable, codeTableResult, ProgramCertificates.CheckResult.value_bind_const,
+    ProgramCertificates.CheckResult.accepted_ofBool]
+  rfl
+
+/-- Validate a request and retain its checked code table for supplemental obligations. -/
+@[nospecialize] def verifyResult (r : Request σ ι) (c : Response ι) :
+    ProgramCertificates.CheckResult ι (List (CodeEntry ι)) :=
+  (ProgramCertificates.CheckResult.ofBool (validRequest r && validResponse r c)).bind fun _ =>
+  (codeTableResult r c).bind fun table =>
+    (CertificateProducer.acceptResult (graph r) (StoreView.images r.types) r.result r.program
+      r.claims c.certificate r.start r.inputs (GraphCode.admits table)).map fun _ => table
 
 /-- This check remains independent of the producer and its search settings. -/
 @[nospecialize] def verify (r : Request σ ι) (c : Response ι) : Bool :=
-  validRequest r && validResponse r c &&
-    match codeTable r c with
-    | some table => CertificateProducer.acceptUsing (graph r) (StoreView.images r.types) r.result r.program
-        r.claims c.certificate
-        r.start r.inputs (GraphCode.admits table)
-    | none => false
+  (verifyResult r c).accepted
+
+theorem verify_eq (r : Request σ ι) (c : Response ι) :
+    verify r c = (validRequest r && validResponse r c &&
+      match codeTable r c with
+      | some table => CertificateProducer.acceptUsing (graph r) (StoreView.images r.types) r.result r.program
+          r.claims c.certificate r.start r.inputs (GraphCode.admits table)
+      | none => false) := by
+  rw [verify, verifyResult, ProgramCertificates.CheckResult.accepted_bind,
+    ProgramCertificates.CheckResult.accepted_ofBool]
+  simp only [ProgramCertificates.CheckResult.accepted_bind_value,
+    ProgramCertificates.CheckResult.accepted_map, CertificateProducer.acceptUsing, codeTable]
+  cases (codeTableResult r c).value <;> rfl
+
+/-- Successful request validation retains exactly its independently checked table. -/
+theorem verifyResult_value_eq (r : Request σ ι) (c : Response ι) :
+    (verifyResult r c).value =
+      if validRequest r && validResponse r c then
+        (codeTable r c).bind fun table =>
+          if CertificateProducer.acceptUsing (graph r) (StoreView.images r.types) r.result r.program
+              r.claims c.certificate r.start r.inputs (GraphCode.admits table) then some table else none
+      else none := by
+  rw [verifyResult, ProgramCertificates.CheckResult.value_bind_const,
+    ProgramCertificates.CheckResult.accepted_ofBool]
+  simp only [ProgramCertificates.CheckResult.value_bind,
+    ProgramCertificates.CheckResult.value_map_const, CertificateProducer.acceptUsing, codeTable]
+  rfl
+
+theorem verifyResult_hasTable (r : Request σ ι) (c : Response ι) (table : List (CodeEntry ι)) :
+    (verifyResult r c).value = some table ↔ verify r c = true ∧ codeTable r c = some table := by
+  rw [verifyResult_value_eq, verify_eq]
+  split <;> cases ht : codeTable r c <;> simp_all
+  all_goals split <;> simp_all
+
+theorem codeTable_sound {r : Request σ ι} {c : Response ι} {table : List (CodeEntry ι)}
+    (h : codeTable r c = some table) : ProgramCertificates.CodesSound (graph r) (GraphCode.admits table) := by
+  rw [codeTable_eq] at h
+  split at h
+  · exact GraphCode.checkCodes_sound h
+  · contradiction
 
 @[nospecialize] def verifyJson (σ : Type) [StoreView σ ι] (request evidence : Json) : Except String Unit :=
   match decodeRequest σ request with
@@ -642,15 +697,11 @@ part of the certified request. -/
 theorem verify_safe {r : Request σ ι} {c : Response ι} (hc : verify r c = true) (n W h ρ)
     (he : EnvOk (graph r) r.inputs ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafeGraph r.program (meaning (graph r) r.result) n W h (.at r.start ρ) := by
-  simp only [verify, Bool.and_eq_true] at hc
+  simp only [verify_eq, Bool.and_eq_true] at hc
   have hx := hc.2
   split at hx
   · rename_i table ht
-    have hsound : ProgramCertificates.CodesSound (graph r) (GraphCode.admits table) := by
-      unfold codeTable at ht
-      split at ht
-      · exact GraphCode.checkCodes_sound ht
-      · contradiction
+    have hsound := codeTable_sound ht
     exact CertificateProducer.accepted_from_inputs hx n W h ρ he hw hh hsound
   · contradiction
 
@@ -663,15 +714,12 @@ theorem verify_safe_at {r : Request σ ι} {c : Response ι} (hc : verify r c = 
     (η : MixedAssignment ι) (n W h ρ)
     (he : EnvOk (reassign (graph r) η) r.inputs ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafeGraph r.program (meaning (reassign (graph r) η) r.result) n W h (.at r.start ρ) := by
-  simp only [verify, Bool.and_eq_true] at hc
+  simp only [verify_eq, Bool.and_eq_true] at hc
   have hx := hc.2
   split at hx
   · rename_i table ht
-    have hsound : ProgramCertificates.CodesSound (reassign (graph r) η) (GraphCode.admits table) := by
-      unfold codeTable at ht
-      split at ht
-      · exact fun e he η' => GraphCode.checkCodes_sound ht e he η'
-      · contradiction
+    have hsound : ProgramCertificates.CodesSound (reassign (graph r) η) (GraphCode.admits table) :=
+      fun e he η' => codeTable_sound ht e he η'
     exact Parametricity.accepted_at hx η n W h ρ he hw hh hsound
   · contradiction
 
@@ -686,7 +734,7 @@ theorem verify_closed_safe {r : Request σ ι} {c : Response ι}
 
 theorem verify_claims {r : Request σ ι} {c : Response ι} (hc : verify r c = true) :
     c.certificate.map signature = r.claims := by
-  simp only [verify, Bool.and_eq_true] at hc
+  simp only [verify_eq, Bool.and_eq_true] at hc
   have hx := hc.2
   split at hx
   · exact accept_claims hx
