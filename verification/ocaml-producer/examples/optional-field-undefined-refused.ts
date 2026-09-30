@@ -1,6 +1,6 @@
-// An optional field given `undefined`: the pipeline reads `x?: number`
-// exactly, as absent or a number, where TypeScript's default reading also
-// admits a present `undefined`.
+// A present `undefined` at an optional field: `x?: number` is absent or holds
+// a number, SKJS's exact reading (as `exactOptionalPropertyTypes`), so the
+// literal does not meet it; `x?: number | undefined` would.
 type Opt = { x?: number };
 export function make(): Opt {
   const o: Opt = { x: undefined };
