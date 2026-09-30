@@ -144,19 +144,52 @@ private abbrev Compiler := StateT Built (Except String)
   set { s with types := T }
   return a
 
-/-- Whether a claimed type is within a source annotation's: its rows among the
-annotation's, up to rows with identical clauses, or else its inclusion proved
-by a certificate the proved checker accepts. A generic application with
-methods is one row for the module, the producer's `Values<number>` and the one
-a method annotation names alike, so the first rule relates them; the proof is
-for a claim narrower than its annotation. -/
-@[nospecialize] def within (T : EquationStore.State) (C A : List Tree) : Bool :=
-  (SourceTypes.canonical T C).all (SourceTypes.canonical T A).contains ||
-    (CertificateProducer.comparisonUsing (SourceTypes.graph T) (StoreView.images T) C A).accepted
+/-- Inclusion for source contracts through the common subtype operation,
+retaining the execution outcome. -/
+@[nospecialize] def withinResult (T : EquationStore.State) (C A : List Tree) :
+    PositiveCertificates.ComparisonResult Unit :=
+  (CertificateProducer.comparisonUsing (SourceTypes.graph T) (StoreView.images T) C A).map fun _ => ()
 
-/-- Whether two label lists denote the same type: each within the other. -/
+/-- Optional inference probes use only established inclusion. -/
+@[nospecialize] def within (T : EquationStore.State) (C A : List Tree) : Bool :=
+  (withinResult T C A).accepted
+
 @[nospecialize] def sameMeaning (T : EquationStore.State) (A B : List Tree) : Bool :=
   within T A B && within T B A
+
+/-- A located subtype judgment under the displayed equations. Both occurrences
+of its source span come from `pos`, so transport cannot move the judgment away
+from its location. -/
+@[nospecialize] def subtypeFailure (T : EquationStore.State) (pos : Span)
+    (role : DirectObligation.SourceRole) (A B : Ty Tree) (outcome : DiagnosticOutcome)
+    (reason : String) : String :=
+  let p := StoreView.projection T (A ++ B).eraseDups
+  RequestJson.withDiagnostic s!"source direct obligation at [{pos.1},{pos.2}): {reason}"
+    ([("kind",toJson "direct-obligation"),("phase",toJson "request-validation"),
+      ("outcome",toJson outcome),("id",toJson s!"subtype:{pos.1}:{role.wire}"),
+      ("sourceMap",toJson (SourceMapEntry.mk pos role.wire none [])),
+      ("judgment",(DirectObligation.Judgment.subtyping pos (p.shown A) (p.shown B)).toJson),
+      ("fuel",toJson 0)] ++ p.fields)
+
+/-- A required source comparison retains exhaustion and its judgment. -/
+@[nospecialize] private def requireComparison (T : EquationStore.State) (pos : Span)
+    (role : DirectObligation.SourceRole) (A B : Ty Tree)
+    (result : PositiveCertificates.ComparisonResult Unit) (reason : String) : Except String Unit :=
+  match result with
+  | .established _ => .ok ()
+  | .notEstablished => .error (subtypeFailure T pos role A B .notEstablished reason)
+  | .exhausted rounds visited => .error (subtypeFailure T pos role A B
+      (.exhausted T.subtypeBudget.rounds rounds visited)
+      s!"subtype search exhausted while checking {role.wire}: {SourceTypes.render T A} ≤ {SourceTypes.render T B}")
+
+@[nospecialize] private def requireWithin (T : EquationStore.State) (pos : Span)
+    (role : DirectObligation.SourceRole) (A B : Ty Tree) (reason : String) : Except String Unit :=
+  requireComparison T pos role A B (withinResult T A B) reason
+
+@[nospecialize] private def requireSameMeaning (T : EquationStore.State) (pos : Span)
+    (role : DirectObligation.SourceRole) (A B : Ty Tree) (reason : String) : Except String Unit := do
+  requireWithin T pos role A B reason
+  requireWithin T pos role B A reason
 
 @[nospecialize] private def envCore (T : EquationStore.State) (fc : SourceClaims.Function Tree) (pos : Nat) (scope : List (ScopeBinding Tree)) :
     Except String (List (Ty Tree)) := do
@@ -1434,11 +1467,14 @@ the call's typing. -/
     | throw (refuse "the call's claimed method is not an instance of its member")
   let some c := CertificateProducer.instanceFor G 64 s L Ms
     | throw (refuse "the call's claimed method is not an instance of its member")
-  if !PositiveCertificates.checkInstArrsUsing G (StoreView.images T) S L Ms c then
-    throw (refuse "the call's claimed method is not an instance of its member")
+  match PositiveCertificates.compareInstArrsUsing G (StoreView.images T) S L Ms c with
+  | .established _ => pure ()
+  | .notEstablished => throw (refuse "the call's claimed method is not an instance of its member")
+  | .exhausted rounds visited => throw (subtypeFailure T pos .schemeElimination S M
+      (.exhausted T.subtypeBudget.rounds rounds visited) "subtype search exhausted while checking the method instance")
   for (A, θ) in args.zip c.instances do
-    if !sameMeaning T A θ then
-      throw (refuse "the call's instance is not the one its explicit type arguments state")
+    requireSameMeaning T pos .schemeElimination A θ
+      "the call's instance is not the one its explicit type arguments state"
 
 /-- A plan at a meet row, a bounded binder read as its row met with its bound,
 cast to the bound: the row holding exactly the meet's clauses, which the meet
@@ -2247,16 +2283,19 @@ scheme row's variadic signatures. -/
   let T ← table
   -- A claim may offer more parameters than the closure takes: calls discard
   -- the actuals past them. The ones it takes are the source's.
-  if !rows.all (fun row => arity ≤ row.arguments.length &&
-      ((row.arguments.take arity).zip sourceDs).all (fun (D,B) => within T D B)) then
-    throw (locatedRefusal T pos .bindingAnnotation (match mode with
-      | .ctor _ => "construct signature claim is outside the source annotation"
-      | _ => "closure signature claim is outside the source annotation"))
+  let reason := match mode with
+    | .ctor _ => "construct signature claim is outside the source annotation"
+    | _ => "closure signature claim is outside the source annotation"
+  for row in rows do
+    if arity > row.arguments.length then throw (locatedRefusal T pos .bindingAnnotation reason)
+    for (D, B) in (row.arguments.take arity).zip sourceDs do
+      requireWithin T pos .bindingAnnotation D B reason
   -- An ordinary function may be claimed at fewer receivers than it states,
   -- never at more: its body reads the one it is given.
-  if Rsource != [top] && !rows.all (fun row => row.receiver.all Rsource.contains) then
-    throw (locatedRefusal (← table) pos .bindingAnnotation
-      "closure receiver claim is outside the source annotation")
+  if Rsource != [top] then
+    for row in rows do
+      requireWithin T pos .bindingAnnotation row.receiver Rsource
+        "closure receiver claim is outside the source annotation"
   if !overlays.isEmpty && overlays.length != rows.length then
     throw "per-arrow interior claims do not match the claimed arrows"
   -- The captures: the named bindings in scope the lambda reads (a class's
@@ -5061,13 +5100,12 @@ did not mention grow it, and the request carries the result. -/
       if p.name != name then throw "parameter claim name or order mismatch"
       let B ← SourceClaims.resolve (← table) claimed
       let T ← table
-      if !sameMeaning T A B then
-        throw s!"claimed parameter type differs from the source annotation for '{name}'"
+      requireSameMeaning T f.namePos .entryClaim A B
+        s!"claimed parameter type differs from the source annotation for '{name}'"
     let R ← lower (Fragment.translate f.ret)
     let claimedR ← SourceClaims.resolve (← table) fc.ret
-    if !sameMeaning (← table) R claimedR then
-      throw (locatedRefusal (← table) f.namePos .returnContract
-        "claimed return type differs from the source annotation")
+    requireSameMeaning (← table) f.namePos .returnContract R claimedR
+      "claimed return type differs from the source annotation"
     let stmts ← f.body.mapM (comparisonsStmt fc)
     let paramScope : List (ScopeBinding Tree) ← (scope.zip bindings).mapM fun (pair : ScopeBinding Tree × Ty Tree) => do
       let (b,contract) := pair

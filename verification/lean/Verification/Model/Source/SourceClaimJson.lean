@@ -258,21 +258,14 @@ scheme the call eliminates, and says so. -/
 private def directFailure (T : EquationStore.State) (failure : DirectObligation.Located Tree)
     (outcome : DiagnosticOutcome := .notEstablished) (site : Option String := none) : String :=
   let judgment := failure.judgment
-  let p := StoreView.projection T (match judgment with
-    | .subtyping _ actual expected => (actual ++ expected).eraseDups)
-  let shown : DirectObligation.Judgment Nat := match judgment with
-    | .subtyping subject actual expected => .subtyping subject (p.shown actual) (p.shown expected)
   let message := match outcome with
     | .notEstablished => match site with
       | none => s!"quantified call does not satisfy the closure's bound: cannot establish {failure.judgment.render T}"
       | some site => s!"{site} does not establish its declared bound: {failure.judgment.render T}"
     | .exhausted .. =>
-      s!"subtype search exhausted while checking the declared bound: {failure.judgment.render T}"
-  RequestJson.withDiagnostic s!"source direct obligation at [{failure.pos.1},{failure.pos.2}): {message}"
-    ([("kind",toJson "direct-obligation"),("phase",toJson "request-validation"),
-     ("outcome",toJson outcome),("id",toJson s!"scheme:{failure.pos.1}"),
-     ("sourceMap",toJson (SourceMapEntry.mk failure.pos failure.role.wire none [])),
-     ("judgment",shown.toJson),("fuel",toJson 0)] ++ p.fields)
+      s!"subtype search exhausted: {failure.judgment.render T}"
+  match judgment with
+  | .subtyping _ actual expected => subtypeFailure T failure.pos failure.role actual expected outcome message
 
 private def sourceRefusal (T : EquationStore.State) (pos : Span)
     (role : DirectObligation.SourceRole) (reason : String) : String :=
@@ -372,8 +365,8 @@ is typed at the instance they state, binder by binder in declaration order,
 even where another would fit. `θ` is the claimed instance, ground. -/
 def explicitInstance (T : EquationStore.State) (pos : Span) (binders : List String)
     (written : List Json) (θ : List (String × List Tree)) :
-    Except (DirectObligation.Failure Tree) EquationStore.State := do
-  let refuse (reason : String) := DirectObligation.Failure.refusal pos .schemeElimination reason
+    Except (DirectObligation.Failure Tree × EquationStore.State) EquationStore.State := do
+  let refuse (reason : String) := (DirectObligation.Failure.refusal pos .schemeElimination reason, T)
   if written.length > binders.length then
     throw (refuse "more explicit type arguments than the callee has binders")
   let mut T := T
@@ -381,8 +374,14 @@ def explicitInstance (T : EquationStore.State) (pos : Span) (binders : List Stri
     let (stated, grown) ← ((Fragment.translate annotation).run T).mapError refuse
     T := grown
     let some claimed := θ.lookup binder | throw (refuse s!"no type argument for '{binder}'")
-    unless sameMeaning T stated claimed do
-      throw (refuse "the call's instance is not the one its explicit type arguments state")
+    for (A, B) in [(stated, claimed), (claimed, stated)] do
+      match withinResult T A B with
+      | .established _ => pure ()
+      | .notEstablished =>
+        throw (refuse "the call's instance is not the one its explicit type arguments state")
+      | .exhausted rounds visited =>
+        throw (.exhausted ⟨pos, .schemeElimination, .subtyping pos A B⟩
+          T.subtypeBudget.rounds rounds visited, T)
   return T
 
 /-- A generic module value reached from a unit (a generic module function,
@@ -420,7 +419,7 @@ def moduleInstances (T : EquationStore.State) (g : Instantiable)
   let mut seen : List (List (String × List Tree)) := []
   let mut instances : List Json := []
   for (pos, θ, written) in sites do
-    T ← (explicitInstance T pos g.binders written θ).mapError (·, T)
+    T ← explicitInstance T pos g.binders written θ
     if seen.contains θ then continue
     seen := seen ++ [θ]
     let ((callable, bounds), grown) ← ((g.instantiate (θ.map fun (n, A) => (n, graph A))).run T).mapError (refuse pos)

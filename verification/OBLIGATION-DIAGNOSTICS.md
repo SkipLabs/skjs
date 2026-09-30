@@ -114,6 +114,12 @@ located at the requesting unit. `limit` is the requested
 frontier-round budget, `rounds` is the number of rounds consumed, and `visited`
 is the number of comparison dependencies visited. The runner reports
 `exhausted`; the viewer displays these counts with the located subtype judgment.
+Source signature comparisons use this same record with `entry-claim`,
+`return-contract` or `binding-annotation`. Equality requires two sequential
+inclusions; a failure carries the direction being checked. Explicit instance
+arguments use `scheme-elimination`. Both source spans in the record are derived
+from the located comparison by `SourceExtraction.subtypeFailure`.
+
 Coverage measurements count exhausted attempts separately. Proposal search
 retains this outcome through failed alternatives; an established alternative
 supplies the requested derivation.

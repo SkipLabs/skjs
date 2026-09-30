@@ -143,15 +143,6 @@ parameters `also` (`EquationStore.bounded`). -/
 def bounded (p : Tree) (cs : List (Clause (List Tree))) (also : List Tree := []) : Lowering Tree :=
   modifyGet fun T => let (T, l) := EquationStore.bounded T p cs also; (l, T)
 
-/-- A type with each label replaced by the first label of the same row. Rows
-with identical clauses denote the same type: a declaration's row and an
-annotation's row can coincide without being the same label, for instance when
-a producer interned the annotation before the declaration row was filled. -/
-def canonical (T : State) (A : List Tree) : List Tree :=
-  (A.map fun label => if StoreView.valid T label then
-      ((StoreView.labels T).find? (fun m => StoreView.row T m == StoreView.row T label)).getD label
-    else label)
-    |>.eraseDups.mergeSort Labels.le
 
 end
 

@@ -242,6 +242,43 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     assert.doesNotMatch(view.summary ?? "", /call's type argument/);
   }
 }
+// An equivalent parameter claim must be checked, including when consuming
+// previously produced evidence. A source-side row scan cannot authorize it.
+{
+  const dir = mkdtempSync(join(tmpdir(), "skjs-signature-budget-"));
+  const file = join(dir, "signature.ts");
+  writeFileSync(file, [
+    "interface A { readonly n: number }",
+    "interface B { readonly n: number }",
+    "export function inspect(first: A, second: B): number { return second.n; }",
+  ].join("\n"));
+  const admitted = check(file);
+  assert.equal(admitted.status, "verified", JSON.stringify(admitted));
+  const claims: SourceClaims = JSON.parse(readFileSync(join(admitted.artifacts, "claims.json"), "utf8"));
+  const fn = claims.functions.find(f => f.name === "inspect");
+  assert(fn);
+  const first = fn.params[0], second = fn.params[1];
+  assert(first && second);
+  second.type = structuredClone(first.type);
+  const equalClaims = join(dir, "equal-claims.json");
+  writeFileSync(equalClaims, JSON.stringify(claims));
+  for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
+    const runWith = (n: number): SpawnSyncReturns<string> => spawnSync(verifier, ["--subtype-rounds", String(n), mode,
+      join(admitted.artifacts, "fragment.json"), equalClaims, join(admitted.artifacts, "source.ts"),
+      join(admitted.artifacts, "evidence.json"), ...(mode === "--produce-source-claims" ? ["12"] : [])],
+      {encoding: "utf8", timeout: 30_000});
+    const limited = runWith(0);
+    assert.equal(limited.status, 1, limited.stderr);
+    const diagnostic = readDiagnostic(limited.stderr);
+    assert(diagnostic?.kind === "direct-obligation", limited.stderr);
+    assert.equal(diagnostic.outcome.kind, "exhausted");
+    assert.equal(diagnostic.sourceMap.role, "entry-claim");
+    assert.deepEqual(diagnostic.sourceMap.pos, fn.namePos);
+    assert.equal(diagnostic.judgment.kind, "subtyping");
+    const sufficient = runWith(8);
+    assert.equal(sufficient.status, 0, sufficient.stderr);
+  }
+}
 
 {
   // The upstream `sum.ts`, byte for byte: the census row and the producer's
