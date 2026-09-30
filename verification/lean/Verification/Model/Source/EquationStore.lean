@@ -1,5 +1,4 @@
 import Verification.Model.Source.EquationLowering
-import Verification.Model.Source.SourceExtraction
 
 /-! The label store over recursive equations (RECURSIVE-EQUATIONS §8, §9.2).
 Extraction grows the lowering's heads (`EquationLowering.State`), its labels
@@ -197,14 +196,14 @@ instance : FromJson State where
   fromJson? j := do
     let heads ← (← j.getArr?).mapM fun h => do
       let fields := ["name", "parameters", "body"] ++ if (h.getObjVal? "binders").isOk then ["binders"] else []
-      CellClaims.fieldsExactly h fields
+      fieldsExactly h fields
       let kinds ← (← (← h.getObjVal? "parameters").getArr?).mapM fun p => do
-        CellClaims.fieldsExactly p ["name", "kind"]
+        fieldsExactly p ["name", "kind"]
         let _ ← p.getObjValAs? String "name"
         p.getObjValAs? ParameterKind "kind"
       let binders ← match h.getObjVal? "binders" with
         | .ok bs => (← bs.getArr?).mapM fun b => do
-          CellClaims.fieldsExactly b ["name", "kind"]
+          fieldsExactly b ["name", "kind"]
           return (⟨← b.getObjValAs? String "name", ← b.getObjValAs? ParameterKind "kind"⟩ : Binder)
         | .error _ => pure #[]
       if (h.getObjVal? "binders").isOk && binders.isEmpty then throw "binders are left out when there are none"
@@ -237,7 +236,39 @@ instance : FromJson State where
       | _ => throw "every array views one prototype, a nullary head's application"
     return { doc := #[], heads, keys, arrays, proto, excluded }
 
-instance : Store State Tree where
+/-- A generic unit's binder is read as its unit gives it (`rebind`): the
+source spelling it by its name alone is refused. -/
+def binder (name : String) : Except String Tree :=
+  .error s!"the binder {name} is read as its unit gives it, not by its name alone"
+
+/-- Fresh value parameters, one per name, for a scheme's binders. They stand
+for the scheme's binders until `scheme` binds them: the scheme's own binders
+are its row's (`GraphRow.scheme`), which may be other labels. -/
+def binders (s : State) (names : List String) : State × List Tree :=
+  names.foldl (fun (s, ls) n => let (s, l) := grow s (freshBinder n); (s, ls ++ [l])) (s, [])
+
+/-- A scheme over binders from `binders`: its signatures, its binders' bounds
+and its variadic signatures. -/
+def scheme (s : State) (bs : List Tree) (sigs : List (Arrow (List Tree))) (bounds : List (Tree × List Tree))
+    (rests : List (RestArrow (List Tree))) : State × Tree :=
+  grow s (schemeOver bs sigs bounds rests)
+
+/-- A label with the labels `σ` names read as the labels it pairs them with:
+a scheme's fresh binders read as its own (`scheme`). The union a label
+becomes. -/
+def substitute (σ : List (Tree × Tree)) (t : Tree) : List Tree :=
+  normUnion (treeReplace (fun u => (σ.lookup u).map ([·])) t)
+
+/-- The meet of unions, lowered as a source intersection is: the exact meet
+labels over their product (§3.3); an empty part is the empty intersection,
+refused. -/
+def meet (parts : List (List Tree)) : StateT State (Except String) (List Tree) := do
+  if parts.any List.isEmpty then throw emptyMeet
+  return meetUnions parts
+
+/-- What checking reads of the store. A store only grows: every operation
+above keeps the labels it had and their rows. -/
+instance : StoreView State Tree where
   graph := graph
   row := rowOf
   valid := closedTree
@@ -252,15 +283,6 @@ instance : Store State Tree where
   lookup := lookup
   project s mentioned depth := projectWith (rowOf s) (spell s) mentioned depth
   images s := finiteInstanceImages (graph s)
-  intern := intern
-  binder _ name := .error s!"the binder {name} is read as its unit gives it, not by its name alone"
-  binders s names :=
-    let (s, ls) := names.foldl (fun (s, ls) n => let (s, l) := grow s (freshBinder n); (s, ls ++ [l])) (s, [])
-    (s, ls)
-  bounded := bounded
-  scheme s bs sigs bounds rests := grow s (schemeOver bs sigs bounds rests)
-  rebind := rebind
-  substitute _ σ t := normUnion (treeReplace (fun u => (σ.lookup u).map ([·])) t)
 
 /-! ### Checked requests: the equations, frozen -/
 
@@ -438,37 +460,6 @@ def freeze (s : State) : Except String Frozen := do
   let E := E.memo
   let ⟨p⟩ ← primitive E
   return ⟨E, p, { heads := s }⟩
-
-/-! ### Requests over the frozen equations -/
-
-deriving instance ToJson, FromJson for DirectProof.Plan
-
-/-- A value with tree labels as the same value over `F`'s labels: through
-its spelling, which is the labels' (§9.2), so a label outside the equations
-is refused. -/
-def over {α β : Type} [ToJson α] [FromJson β] [ToJson β] (a : α) : Except String β :=
-  decodeStrict (toJson a)
-
-/-- An extracted unit's request over the frozen equations. The program is
-the extracted one; every label is read as `F`'s. -/
-def SourceRequest.over (F : Frozen) (r : SourceExtraction.SourceRequest State Tree) :
-    Except String (SourceExtraction.SourceRequest (Checked F.equations F.primitive)
-      (CheckedLabel F.equations F.primitive)) := do
-  let obligations ← r.obligations.mapM fun o => do
-    return ({ pos := o.pos, sequent := ← EquationStore.over o.sequent, plan := ← EquationStore.over o.plan,
-              role := o.role, context := o.context } : ExpressionClaims.Required _)
-  let claims ← EquationStore.over r.claims
-  let result ← EquationStore.over r.result
-  let inputs ← EquationStore.over r.inputs
-  let codes ← EquationStore.over r.codes
-  let hints ← EquationStore.over r.hints
-  let nodePlans ← EquationStore.over r.nodePlans
-  let request : RequestJson.Request (Checked F.equations F.primitive) (CheckedLabel F.equations F.primitive) :=
-    { types := F.store, program := r.program, claims := claims, result := result, start := r.start,
-      inputs := inputs, codes := codes }
-  return { toRequest := request, obligations := obligations, sourceMap := r.sourceMap,
-           assertions := r.assertions, cuts := r.cuts, hints := hints, codeSources := r.codeSources,
-           nodePlans := nodePlans }
 
 #print axioms equivalent_sound
 

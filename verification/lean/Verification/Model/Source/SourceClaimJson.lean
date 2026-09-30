@@ -12,6 +12,7 @@ the parser's semantic correctness. Saved statuses are not part of the
 schema. -/
 namespace Verification.Model.SourceClaimJson
 open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore
+open EquationGraphs (Tree)
 
 /-- A rigid name refers to the enclosing source function's binder. It is never
 interpreted as a ground graph label or replaced with its upper bound. -/
@@ -53,16 +54,16 @@ private partial def ClaimType.fromJson [FromJson ι] (j : Json) : Except String 
         throw "invalid unavailable claim"
       return .unavailable reason
     if let .ok _ := j.getObjVal? "union" then
-      CellClaims.fieldsExactly j ["union"]
+      fieldsExactly j ["union"]
       return .union (← (← jArr j "union").mapM ClaimType.fromJson)
     if let .ok e := j.getObjVal? "array" then
-      CellClaims.fieldsExactly j ["array"]
+      fieldsExactly j ["array"]
       return .array (← ClaimType.fromJson e)
     if let .ok s := j.getObjVal? "scheme" then
-      CellClaims.fieldsExactly j ["scheme"]
-      CellClaims.fieldsExactly s ["typeParams", "this", "params", "rest", "result", "effect"]
+      fieldsExactly j ["scheme"]
+      fieldsExactly s ["typeParams", "this", "params", "rest", "result", "effect"]
       let typeParams ← (← jArr s "typeParams").mapM fun p => do
-        CellClaims.fieldsExactly p ["name", "bound"]
+        fieldsExactly p ["name", "bound"]
         let name ← jStr (← jField p "name")
         let bound ← jField p "bound"
         let bound ← if bound == .null then pure none else do
@@ -194,8 +195,38 @@ instance [ToJson σ] [ToJson ι] : ToJson (Document σ ι) where
      | none => []
      | some i => [("init", toJson i)]))
 
+/-- A unit's plan: its graph request. Every unit is one, a generic unit and a
+generic closure included, their binders parameter rows the graph checks at
+every assignment. -/
+inductive FunctionPlan (σ ι : Type) where
+  | graph (name : String) (namePos : Span) (request : SourceRequest σ ι)
+
+/-- A plan admitted by the top-level verified outcome. Graph evidence is
+consumed separately. Adding a source-plan variant cannot silently enter this
+exhaustive boundary through a projection. -/
+inductive CertifiedPlan (σ ι : Type) where
+  | graph (name : String) (namePos : Span) (request : SourceRequest σ ι)
+
+def CertifiedPlan.requests {σ ι : Type} : List (CertifiedPlan σ ι) → List (SourceRequest σ ι)
+  | [] => []
+  | .graph _ _ request :: rest => request :: CertifiedPlan.requests rest
+
+/-- Graph projection for search and inspection. This is intentionally not the
+acceptance boundary. -/
+def FunctionPlan.requests {σ ι : Type} : List (FunctionPlan σ ι) → List (SourceRequest σ ι)
+  | [] => []
+  | .graph _ _ request :: rest => request :: FunctionPlan.requests rest
+
+/-- The sole conversion into the verified-plan type. Exhaustive matching makes
+a new `FunctionPlan` constructor a compile error here. -/
+def FunctionPlan.certify {σ ι : Type} : FunctionPlan σ ι → Except String (CertifiedPlan σ ι)
+  | .graph name pos request => pure (.graph name pos request)
+
+def certifyPlans {σ ι : Type} (plans : List (FunctionPlan σ ι)) : Except String (List (CertifiedPlan σ ι)) :=
+  plans.mapM FunctionPlan.certify
+
 section
-variable {σ ι : Type} [Labels ι] [Store σ ι]
+variable {ι : Type} [Labels ι]
 
 def Function.normalized (f : Function ι) : SourceClaims.Function ι :=
   ⟨f.name,f.namePos,f.params.map (fun b => (b.name,b.type.ground)),f.result.ground,
@@ -224,9 +255,9 @@ ordinary graph sequents, but their failures use the same mandatory located
 diagnostic channel. The viewer consumes this record structurally and derives
 all prose from it. A type argument outside its binder's bound belongs to the
 scheme the call eliminates, and says so. -/
-private def directFailure (T : σ) (failure : DirectObligation.Located ι) : String :=
+private def directFailure (T : EquationStore.State) (failure : DirectObligation.Located Tree) : String :=
   let judgment := failure.judgment
-  let p := Store.projection T (match judgment with
+  let p := StoreView.projection T (match judgment with
     | .subtyping _ actual expected => (actual ++ expected).eraseDups)
   let shown : DirectObligation.Judgment Nat := match judgment with
     | .subtyping subject actual expected => .subtyping subject (p.shown actual) (p.shown expected)
@@ -238,27 +269,27 @@ private def directFailure (T : σ) (failure : DirectObligation.Located ι) : Str
      ("sourceMap",toJson (SourceMapEntry.mk failure.pos failure.role.wire none [])),
      ("judgment",shown.toJson),("fuel",toJson 0)] ++ p.fields)
 
-private def sourceRefusal (T : σ) (pos : Span)
+private def sourceRefusal (T : EquationStore.State) (pos : Span)
     (role : DirectObligation.SourceRole) (reason : String) : String :=
   RequestJson.withDiagnostic s!"source refusal at [{pos.1},{pos.2}): {reason}"
     ([("kind",toJson "source-refusal"),("phase",toJson "request-validation"),
      ("outcome",toJson "not-established"),("id",toJson s!"refusal:{pos.1}"),
      ("sourceMap",toJson (SourceMapEntry.mk pos role.wire none [])),
-     ("reason",toJson reason),("fuel",toJson 0)] ++ (Store.projection T []).fields)
+     ("reason",toJson reason),("fuel",toJson 0)] ++ (StoreView.projection T []).fields)
 
 /-- A generic module value: a generic module function, a generic class or a
 generic imported value. `instantiate` gives, for ground arguments in claim
 form, the value's type at those arguments and each binder's bound at them. -/
-structure Instantiable (σ : Type) where
+structure Instantiable where
   name : String
   pos : Span
   binders : List String
-  instantiate : List (String × Json) → SourceTypes.Lowering σ (Json × List (String × Option Json))
+  instantiate : List (String × Json) → SourceTypes.Lowering (Json × List (String × Option Json))
 
 /-- A claim with the binder names `θ` names read as it gives them: the source
 spells a binder by its name, and a unit or closure decides what the name
-stands for (`Store.rebind`). A nested scheme's own binders shadow. -/
-partial def rebindClaim (T : σ) (θ : List (String × List ι)) : ClaimType ι → ClaimType ι
+stands for (`EquationStore.rebind`). A nested scheme's own binders shadow. -/
+partial def rebindClaim (T : EquationStore.State) (θ : List (String × List Tree)) : ClaimType Tree → ClaimType Tree
   | .labels A => .labels (rebindLabels T θ A)
   | .union ts => .union (ts.map (rebindClaim T θ))
   | .array e => .array (rebindClaim T θ e)
@@ -268,20 +299,20 @@ partial def rebindClaim (T : σ) (θ : List (String × List ι)) : ClaimType ι 
       (ps.map (rebindClaim T θ)) (rest.map (rebindClaim T θ)) (rebindClaim T θ r) effect
   | c => c
 where
-  rebindLabels (T : σ) (θ : List (String × List ι)) (A : List ι) : List ι :=
-    (A.flatMap (Store.rebind T θ)).mergeSort Labels.le |>.eraseDups
+  rebindLabels (T : EquationStore.State) (θ : List (String × List Tree)) (A : List Tree) : List Tree :=
+    (A.flatMap (EquationStore.rebind T θ)).mergeSort Labels.le |>.eraseDups
 
 /-- What a point asserts of each field, its binders read as `θ` gives them. -/
-def rebindCurrent (T : σ) (θ : List (String × List ι)) (c : Option (CurrentFields ι)) :
-    Option (CurrentFields ι) :=
+def rebindCurrent (T : EquationStore.State) (θ : List (String × List Tree)) (c : Option (CurrentFields Tree)) :
+    Option (CurrentFields Tree) :=
   c.map (·.map fun (k, A) => (k, rebindClaim.rebindLabels T θ A))
 
 namespace Scheme
 
 /-- Ground a claim, interning any callable it contains. Only after substitution
 does a rigid arrow such as `() => T` have a graph row. -/
-private partial def groundIn (T : σ) :
-    ClaimType ι → Except String (σ × List ι)
+private partial def groundIn (T : EquationStore.State) :
+    ClaimType Tree → Except String (EquationStore.State × List Tree)
   | .union ts => do
       let (T, arms) ← ts.foldlM (fun (T, acc) t => do
         let (T, A) ← groundIn T t
@@ -290,8 +321,8 @@ private partial def groundIn (T : σ) :
   | .labels A => pure (T, A)
   | .array e => do
       let (T, E) ← groundIn T e
-      let (T, store) := Store.intern T [.list ⟨[], [], some E, false, .readable⟩ []]
-      let (T, array) := Store.intern T [SourceTypes.arrayOf T store false]
+      let (T, store) := EquationStore.intern T [.list ⟨[], [], some E, false, .readable⟩ []]
+      let (T, array) := EquationStore.intern T [SourceTypes.arrayOf T store false]
       pure (T, [array])
   | .scheme [] rc ps rest r effect => do
       let (T, rc) ← groundIn T rc
@@ -304,9 +335,9 @@ private partial def groundIn (T : σ) :
         | some e => do
           -- A rest's type is the pack of any number of actuals at its element.
           let (T, E) ← groundIn T e
-          let (T, pack) := Store.intern T [.pack ⟨[], [], some E, false, .dense⟩ []]
+          let (T, pack) := EquationStore.intern T [.pack ⟨[], [], some E, false, .dense⟩ []]
           pure (T, PositiveNormalization.Clause.arrs [] [⟨rc, (ps, [pack]), r, effect⟩])
-      let (T, l) := Store.intern T [clause]
+      let (T, l) := EquationStore.intern T [clause]
       pure (T, [l])
   | .param name => throw s!"still the rigid parameter '{name}'"
   | .scheme .. => throw "a scheme is not a ground type"
@@ -334,9 +365,9 @@ private partial def subst (θ : List (String × (ClaimType ι))) : ClaimType ι 
 /-- Explicit type arguments are a requirement on a call's instance: the call
 is typed at the instance they state, binder by binder in declaration order,
 even where another would fit. `θ` is the claimed instance, ground. -/
-def explicitInstance (T : σ) (pos : Span) (binders : List String)
-    (written : List Json) (θ : List (String × List ι)) :
-    Except (DirectObligation.Failure ι) σ := do
+def explicitInstance (T : EquationStore.State) (pos : Span) (binders : List String)
+    (written : List Json) (θ : List (String × List Tree)) :
+    Except (DirectObligation.Failure Tree) EquationStore.State := do
   let refuse (reason : String) := DirectObligation.Failure.refusal pos .schemeElimination reason
   if written.length > binders.length then
     throw (refuse "more explicit type arguments than the callee has binders")
@@ -360,14 +391,14 @@ one is assumed at its declared type, so each instance, and their conjunction,
 holds of the value. Returns the grown table, the slot's type in claim form,
 and the spans of the callee reads and of the calls. A failure carries the table
 its labels index: translating a bound may grow it. -/
-def moduleInstances (T : σ) (g : Instantiable σ)
-    (unit : List Fragment.Stmt) (claims : Function ι) :
-    Except ((DirectObligation.Failure ι) × σ)
-      (σ × Json × List Span × List Span) := do
-  let refuse (pos : Span) (reason : String) : DirectObligation.Failure ι × σ :=
+def moduleInstances (T : EquationStore.State) (g : Instantiable)
+    (unit : List Fragment.Stmt) (claims : Function Tree) :
+    Except ((DirectObligation.Failure Tree) × EquationStore.State)
+      (EquationStore.State × Json × List Span × List Span) := do
+  let refuse (pos : Span) (reason : String) : DirectObligation.Failure Tree × EquationStore.State :=
     (.refusal pos .schemeElimination reason, T)
   let calls := (unit.flatMap Fragment.Stmt.callees).filter (·.2.2.1 == g.name)
-  let graph (A : List ι) : Json := Json.mkObj [("top", toJson false),
+  let graph (A : List Tree) : Json := Json.mkObj [("top", toJson false),
     ("atoms", toJson (A.map fun l => Json.mkObj [("a", toJson "graph"), ("label", toJson l)]))]
   let sites ← calls.mapM fun (pos, _, _, written) => do
     let some inst := (claims.expressions.find? (·.pos == pos)).bind (·.instantiate)
@@ -381,7 +412,7 @@ def moduleInstances (T : σ) (g : Instantiable σ)
       pure (i.name, A)
     pure (pos, θ, written)
   let mut T := T
-  let mut seen : List (List (String × List ι)) := []
+  let mut seen : List (List (String × List Tree)) := []
   let mut instances : List Json := []
   for (pos, θ, written) in sites do
     T ← (explicitInstance T pos g.binders written θ).mapError (·, T)
@@ -413,8 +444,8 @@ def moduleInstances (T : σ) (g : Instantiable σ)
 /-- A claim with a generic unit's binders read as their parameter rows, in
 ground form. A claim that does not ground keeps the reason at its site, as
 `ground` does, so only a site the extraction reads refuses. -/
-private def atRows (θ : List (String × (ClaimType ι))) (t : ClaimType ι) :
-    StateM σ (ClaimType ι) := modifyGet fun T =>
+private def atRows (θ : List (String × (ClaimType Tree))) (t : ClaimType Tree) :
+    StateM EquationStore.State (ClaimType Tree) := modifyGet fun T =>
   let named := θ.filterMap fun (n, c) => match c with
     | .labels A => some (n, A)
     | _ => none
@@ -462,27 +493,27 @@ partial def genericClosures : Json → List GenericClosure
 read as rows, with its row and its binders' rows. -/
 abbrev Registry (ι : Type) := List ((ClaimType ι) × ι × List (String × ι))
 
-private abbrev SchemeM (σ ι : Type) := StateT (σ × (Registry ι)) (Except String)
+private abbrev SchemeM := StateT (EquationStore.State × (Registry Tree)) (Except String)
 
-private def internS (c : PositiveNormalization.Clause (List ι)) : SchemeM σ ι ι :=
+private def internS (c : PositiveNormalization.Clause (List Tree)) : SchemeM Tree :=
   modifyGet fun (T, reg) =>
-    let (T, l) := Store.intern T [c]
+    let (T, l) := EquationStore.intern T [c]
     (l, (T, reg))
 
 /-- A parameter row `l` with a bound of rows `B`: the meet of the two when `B`
 is of clause rows, the row itself otherwise. -/
-private def boundedRow (l : ι) (B : List ι) : SchemeM σ ι ι := do
+private def boundedRow (l : Tree) (B : List Tree) : SchemeM Tree := do
   let (T, reg) ← get
   let G := SourceTypes.graph T
   if B.isEmpty || !G.plainTy B then return l
-  let (T, m) := Store.bounded T l (B.flatMap G) []
+  let (T, m) := EquationStore.bounded T l (B.flatMap G) []
   set (T, reg)
   return m
 
 mutual
 /-- A claim, its binders already rows, in ground form: a scheme with binders
 of its own is a scheme row, the same row for the same scheme. -/
-private partial def groundT : ClaimType ι → SchemeM σ ι (List ι)
+private partial def groundT : ClaimType Tree → SchemeM (List Tree)
   | .labels A => pure A
   | .union ts => do
     let arms ← ts.mapM groundT
@@ -508,7 +539,7 @@ private partial def groundT : ClaimType ι → SchemeM σ ι (List ι)
   | .unavailable reason => throw reason
 
 /-- Whether a claim names one of `names` as a binder. -/
-private partial def mentions (names : List String) : ClaimType ι → Bool
+private partial def mentions (names : List String) : ClaimType Tree → Bool
   | .param n => names.contains n
   | .union ts => ts.any (mentions names)
   | .array e => mentions names e
@@ -528,22 +559,22 @@ earlier one of the same scheme, `U extends T`, is the meet of the two
 parameter rows, within `T`'s clauses if it has any (`dependentMeet`), as a
 generic unit's is: its bound reads a binder, which the scheme's bounds do not,
 so the meet alone states it. Returns the row and what each binder is read as. -/
-private partial def schemeRowOf (t : ClaimType ι) : SchemeM σ ι (ι × List (String × ι)) := do
+private partial def schemeRowOf (t : ClaimType Tree) : SchemeM (Tree × List (String × Tree)) := do
   if let some (_, l, rows) := (← get).2.find? (·.1 == t) then return (l, rows)
   let .scheme tps rc ps rest r effect := t | throw "not a scheme"
   let names := tps.map Prod.fst
   let (T, reg) ← get
-  let (T, binders) := Store.binders T names
+  let (T, binders) := EquationStore.binders T names
   set (T, reg)
   let params := names.zip binders
-  let meetRow (p : ι) (cs : List (PositiveNormalization.Clause (List ι))) (also : List ι) :
-      SchemeM σ ι ι := do
+  let meetRow (p : Tree) (cs : List (PositiveNormalization.Clause (List Tree))) (also : List Tree) :
+      SchemeM Tree := do
     let (T, reg) ← get
-    let (T, m) := Store.bounded T p cs also
+    let (T, m) := EquationStore.bounded T p cs also
     set (T, reg)
     return m
-  let mut rows : List (String × ι) := []
-  let mut bounds : List (ι × List ι) := []
+  let mut rows : List (String × Tree) := []
+  let mut bounds : List (Tree × List Tree) := []
   for ((n, l), (_, b)) in params.zip tps do
     match b with
     | none => rows := rows ++ [(n, l)]
@@ -566,7 +597,7 @@ private partial def schemeRowOf (t : ClaimType ι) : SchemeM σ ι (ι × List (
       bounds := bounds ++ [(l, B)]
   let θ := rows.map fun (n, l) => (n, ClaimType.labels [l])
   -- A label the claim spells a binder in reads it as its row.
-  let named (c : ClaimType ι) : SchemeM σ ι (ClaimType ι) := do
+  let named (c : ClaimType Tree) : SchemeM (ClaimType Tree) := do
     return subst θ (rebindClaim (← get).1 (rows.map fun (n, l) => (n, [l])) c)
   let rc ← groundT (← named rc)
   let ps ← ps.mapM fun q => do groundT (← named q)
@@ -579,14 +610,14 @@ private partial def schemeRowOf (t : ClaimType ι) : SchemeM σ ι (ι × List (
       pure ([], [⟨rc, (ps, [pack]), r, effect⟩])
   let boundRows := bounds
   let (T, reg) ← get
-  let (T, label) := Store.scheme T binders sigs boundRows rests
+  let (T, label) := EquationStore.scheme T binders sigs boundRows rests
   -- The scheme binds parameters of its own: its binders, and each row read
   -- at them.
   let own := match StoreView.row T label with
     | .scheme bs .. => bs
     | _ => binders
-  let σ := binders.zip own
-  let bound := rows.map fun (n, l) => (n, ((Store.substitute T σ l).head?).getD l)
+  let ρ := binders.zip own
+  let bound := rows.map fun (n, l) => (n, ((EquationStore.substitute ρ l).head?).getD l)
   set (T, reg ++ [(t, label, bound)])
   return (label, bound)
 end
@@ -606,16 +637,16 @@ claim inside a closure reading the closure's binders as that row's binders,
 and a call of a scheme-typed local claimed at the instance it names. `outer`
 reads the unit's own binders, if any, as their rows. Returns the grown
 table, the claims and the binder scope of each closure. -/
-def closureRows (T : σ) (outer : List (String × ι))
+def closureRows (T : EquationStore.State) (outer : List (String × Tree))
     (closures : List GenericClosure) (calls : List (Span × Span × String × List Json))
-    (c : Function ι) :
-    Except String (σ × (Function ι) × List (Span × List (String × ι))) := do
-  let asClaims (rows : List (String × ι)) : List (String × (ClaimType ι)) :=
+    (c : Function Tree) :
+    Except String (EquationStore.State × (Function Tree) × List (Span × List (String × Tree))) := do
+  let asClaims (rows : List (String × Tree)) : List (String × (ClaimType Tree)) :=
     rows.map fun (n, l) => (n, .labels [l])
-  let run : SchemeM σ ι ((Function ι) × List (Span × List (String × ι))) := do
+  let run : SchemeM ((Function Tree) × List (Span × List (String × Tree))) := do
     -- Each closure's scheme, outer closures first: a closure's binders are
     -- in scope for the closures inside it.
-    let mut scopes : List (Span × List (String × ι)) := []
+    let mut scopes : List (Span × List (String × Tree)) := []
     for gc in closures do
       let enclosing := scopeAt scopes outer gc.span
       let some e := c.expressions.find? (·.pos == gc.span)
@@ -635,7 +666,7 @@ def closureRows (T : σ) (outer : List (String × ι))
       scopes := scopes ++ [(gc.span, rows ++ enclosing)]
     -- A call of a local whose claim is a scheme: its callee is claimed at the
     -- instance the call names.
-    let mut instances : List (Span × (ClaimType ι)) := []
+    let mut instances : List (Span × (ClaimType Tree)) := []
     let mut namedCalls : List Span := []
     for (p, q, _, _) in calls do
       let some e := c.expressions.find? (·.pos == p) | continue
@@ -663,7 +694,7 @@ def closureRows (T : σ) (outer : List (String × ι))
         let some l := rows.lookup n | pure (n, U)
         let .meet b cs also := StoreView.row (← get).1 l | pure (n, U)
         let st ← get
-        let meet : SchemeM σ ι (Option ι) := do
+        let meet : SchemeM (Option Tree) := do
           let Us ← (b :: also).mapM fun q => do
             let some m := nameOf.lookup q | throw "a meet row's parameter is no binder of its scheme"
             let some A := args.lookup m | throw s!"no type argument for '{m}'"
@@ -673,7 +704,7 @@ def closureRows (T : σ) (outer : List (String × ι))
           if !Us.all G.plainTy then return none
           let cs := PositiveRules.meetMany (Us.map (PositiveRules.clausesOf G) ++ [cs])
           if cs.isEmpty then return none
-          let (T, l) := Store.intern T cs
+          let (T, l) := EquationStore.intern T cs
           set (T, reg)
           return some l
         match meet.run st with
@@ -682,17 +713,17 @@ def closureRows (T : σ) (outer : List (String × ι))
       instances := instances ++ [(q, .scheme [] (subst θi rc) (ps.map (subst θi))
         (rest.map (subst θi)) (subst θi r) effect)]
       namedCalls := namedCalls ++ [p]
-    let named (at_ : Span) : List (String × List ι) :=
+    let named (at_ : Span) : List (String × List Tree) :=
       (scopeAt scopes outer at_).map fun (n, l) => (n, [l])
-    let go (at_ : Span) (t : ClaimType ι) : SchemeM σ ι (ClaimType ι) := do
+    let go (at_ : Span) (t : ClaimType Tree) : SchemeM (ClaimType Tree) := do
       let t := ((instances.find? (·.1 == at_)).map (·.2)).getD t
       let st ← get
       match (groundT (subst (asClaims (scopeAt scopes outer at_)) (rebindClaim st.1 (named at_) t))).run st with
       | .ok (A, st) => set st; pure (.labels A)
       | .error reason => pure (.unavailable reason)
-    let current (at_ : Span) (c : Option (CurrentFields ι)) : SchemeM σ ι (Option (CurrentFields ι)) := do
+    let current (at_ : Span) (c : Option (CurrentFields Tree)) : SchemeM (Option (CurrentFields Tree)) := do
       return rebindCurrent (← get).1 (named at_) c
-    let entry (e : Entry ι) : SchemeM σ ι (Entry ι) := do
+    let entry (e : Entry Tree) : SchemeM (Entry Tree) := do
       return { e with bindings := ← e.bindings.mapM fun b => do
         return { b with type := ← go (e.start, e.start + 1) b.type,
                         current := ← current (e.start, e.start + 1) b.current } }
@@ -710,10 +741,10 @@ def closureRows (T : σ) (outer : List (String × ι))
 
 /-- A source annotation in claim form with each binder read as its row: the
 unit's binders by `θ`, a generic closure's, inside it, by its scope. A graph
-atom's label is read so too (`Store.rebind`), becoming as many atoms as the
+atom's label is read so too (`EquationStore.rebind`), becoming as many atoms as the
 union it reads as. -/
-partial def annotationAtScopes (T : σ) (scopes : List (Span × List (String × ι)))
-    (θ : List (String × ι)) : Json → Json
+partial def annotationAtScopes (T : EquationStore.State) (scopes : List (Span × List (String × Tree)))
+    (θ : List (String × Tree)) : Json → Json
   | .arr xs => .arr (xs.map (annotationAtScopes T scopes θ))
   | .obj kvs =>
     let j := Json.obj kvs
@@ -731,9 +762,9 @@ partial def annotationAtScopes (T : σ) (scopes : List (Span × List (String × 
         else θ
       let atom (a : Json) : List Json :=
         match (a.getObjValAs? String "a").toOption, (a.getObjVal? "label").toOption.bind
-            (fun l => (fromJson? l : Except String ι).toOption) with
+            (fun l => (fromJson? l : Except String Tree).toOption) with
         | some "graph", some l =>
-          (Store.rebind T (θ.map fun (n, r) => (n, [r])) l).map fun r =>
+          (EquationStore.rebind T (θ.map fun (n, r) => (n, [r])) l).map fun r =>
             Json.mkObj [("a", toJson "graph"), ("label", toJson r)]
         | _, _ => [annotationAtScopes T scopes θ a]
       Json.mkObj (kvs.toList.map fun (k, v) =>
@@ -752,17 +783,17 @@ the graph checker certifies at every assignment of them
 (`Parametricity.accepted_at`). The instantiations its calls state are read
 the same way, so a call of a generic module function at a binder names the
 instance at that binder's row. -/
-def Function.atRows (c : Function ι) (T : σ) (rows : List (String × ι)) :
-    σ × (Function ι) :=
+def Function.atRows (c : Function Tree) (T : EquationStore.State) (rows : List (String × Tree)) :
+    EquationStore.State × (Function Tree) :=
   let θ := rows.map fun (n, l) => (n, ClaimType.labels [l])
   let named := rows.map fun (n, l) => (n, [l])
   let go := Scheme.atRows θ
-  let current (x : Option (CurrentFields ι)) : StateM σ (Option (CurrentFields ι)) := do
+  let current (x : Option (CurrentFields Tree)) : StateM EquationStore.State (Option (CurrentFields Tree)) := do
     return rebindCurrent (← get) named x
-  let entry (e : Entry ι) : StateM σ (Entry ι) := do
+  let entry (e : Entry Tree) : StateM EquationStore.State (Entry Tree) := do
     return { e with bindings := ← e.bindings.mapM fun b => do
       return { b with type := ← go b.type, current := ← current b.current } }
-  let run : StateM σ (Function ι) := do
+  let run : StateM EquationStore.State (Function Tree) := do
     let params ← c.params.mapM fun b => do return { b with type := ← go b.type }
     let result ← go c.result
     let entries ← c.entries.mapM entry
@@ -783,7 +814,7 @@ def Function.atRows (c : Function ι) (T : σ) (rows : List (String × ι)) :
 
 
 
-private partial def validType (T : σ) : ClaimType ι → Bool
+private partial def validType (T : EquationStore.State) : ClaimType Tree → Bool
   | .union ts => !ts.isEmpty && ts.all (validType T)
   | .array e => validType T e
   | .param name => !name.isEmpty
@@ -800,7 +831,7 @@ private partial def validType (T : σ) : ClaimType ι → Bool
 most once, at a type this table has. The asserted type need not be finite: a
 field the extractor cannot turn into a literal assertion becomes an obligation
 that the storage contract already implies it. -/
-private def validCurrent (T : σ) (A : ClaimType ι) (current : Option (CurrentFields ι)) : Bool :=
+private def validCurrent (T : EquationStore.State) (A : ClaimType Tree) (current : Option (CurrentFields Tree)) : Bool :=
   match current with
   | none => true
   | some fs =>
@@ -813,17 +844,17 @@ private def validCurrent (T : σ) (A : ClaimType ι) (current : Option (CurrentF
         | .refs contract [] vs .. => fs.all (fun p => (contract.lookup p.1).isSome || (vs.lookup p.1).isSome)
         | _ => false) &&
     fs.all (fun p => validType T (.labels p.2))
-private def validBindings (T : σ) (bs : List (Binding ι)) : Bool :=
+private def validBindings (T : EquationStore.State) (bs : List (Binding Tree)) : Bool :=
   (bs.map (·.name)).eraseDups.length == bs.length &&
     bs.all (fun b => !b.name.isEmpty && validType T b.type && validCurrent T b.type b.current)
 private def validSpan (p : Span) : Bool := p.1 < p.2
-private def validInterior (T : σ) (entries : List (Entry ι))
-    (expressions : List (Expression ι)) : Bool :=
+private def validInterior (T : EquationStore.State) (entries : List (Entry Tree))
+    (expressions : List (Expression Tree)) : Bool :=
   (entries.map (·.start)).eraseDups.length == entries.length &&
   (expressions.map (·.pos)).eraseDups.length == expressions.length &&
   entries.all (fun e => validBindings T e.bindings) &&
   expressions.all (fun e => validSpan e.pos && validType T e.type && validCurrent T e.type e.current)
-private def validFunction (T : σ) (f : Function ι) : Bool :=
+private def validFunction (T : EquationStore.State) (f : Function Tree) : Bool :=
   !f.name.isEmpty && validSpan f.namePos && validBindings T f.params &&
   f.params.all (fun b => b.current.isNone) && validType T f.result &&
   validInterior T f.entries f.expressions &&
@@ -838,14 +869,14 @@ private def validFunction (T : σ) (f : Function ι) : Bool :=
 /-- The claims document over a store: its label lists already the store's
 labels. Unknown and missing fields are refused, and every label is one the
 store holds. -/
-def decodeDocument (T : σ) (claims : Json) : Except String (Document σ ι) := do
-  CellClaims.fieldsExactly claims (["file", "sourceSha256", "types", "functions"] ++
+def decodeDocument (T : EquationStore.State) (claims : Json) : Except String (Document EquationStore.State Tree) := do
+  fieldsExactly claims (["file", "sourceSha256", "types", "functions"] ++
     if (claims.getObjVal? "init").isOk then ["init"] else [])
-  let functions : List (Function ι) ← decodeStrict (← jField claims "functions")
-  let init : Option (InitClaims ι) ← match claims.getObjVal? "init" with
+  let functions : List (Function Tree) ← decodeStrict (← jField claims "functions")
+  let init : Option (InitClaims Tree) ← match claims.getObjVal? "init" with
     | .ok j => some <$> decodeStrict j
     | .error _ => pure none
-  let d : Document σ ι := ⟨← jStr (← jField claims "file"), ← jStr (← jField claims "sourceSha256"),
+  let d : Document EquationStore.State Tree := ⟨← jStr (← jField claims "file"), ← jStr (← jField claims "sourceSha256"),
     T, functions, init⟩
   if d.sourceSha256.length != 64 || !d.sourceSha256.toList.all (fun c => c.isDigit || ('a' ≤ c && c ≤ 'f')) then
     throw "invalid source fingerprint"
@@ -951,42 +982,12 @@ def functionSites (f : Fragment.Fn) : List Nat × List Span :=
   let sites := allFunctionSites f
   (sites.1, sites.2.1)
 
-/-- A unit's plan: its graph request. Every unit is one, a generic unit and a
-generic closure included, their binders parameter rows the graph checks at
-every assignment. -/
-inductive FunctionPlan (σ ι : Type) where
-  | graph (name : String) (namePos : Span) (request : SourceRequest σ ι)
-
-/-- A plan admitted by the top-level verified outcome. Graph evidence is
-consumed separately. Adding a source-plan variant cannot silently enter this
-exhaustive boundary through a projection. -/
-inductive CertifiedPlan (σ ι : Type) where
-  | graph (name : String) (namePos : Span) (request : SourceRequest σ ι)
-
-def CertifiedPlan.requests : List (CertifiedPlan σ ι) → List (SourceRequest σ ι)
-  | [] => []
-  | .graph _ _ request :: rest => request :: CertifiedPlan.requests rest
-
-/-- Graph projection for search and inspection. This is intentionally not the
-acceptance boundary. -/
-def FunctionPlan.requests : List (FunctionPlan σ ι) → List (SourceRequest σ ι)
-  | [] => []
-  | .graph _ _ request :: rest => request :: FunctionPlan.requests rest
-
-/-- The sole conversion into the verified-plan type. Exhaustive matching makes
-a new `FunctionPlan` constructor a compile error here. -/
-def FunctionPlan.certify : FunctionPlan σ ι → Except String (CertifiedPlan σ ι)
-  | .graph name pos request => pure (.graph name pos request)
-
-def certifyPlans (plans : List (FunctionPlan σ ι)) : Except String (List (CertifiedPlan σ ι)) :=
-  plans.mapM FunctionPlan.certify
-
 /-- A module constant holds no value until its declaration runs. Walking the
 top-level code in order, a step may reach a module function, directly or
 through the functions that one mentions, only when every module constant those
 functions mention already holds its value. Mentions over-approximate calls, so
 this refuses some safe orders and admits no unsafe one. -/
-private def checkInitializationOrder (T : σ)
+private def checkInitializationOrder (T : EquationStore.State)
     (fns : List (Fragment.Fn × List Fragment.TypeParam)) (init : List Fragment.Stmt) :
     Except String Unit := do
   let constants := init.flatMap fun
@@ -1016,14 +1017,14 @@ number }`, or when the bound is an earlier binder, `U extends T` read as
 `U ⊓ T` (`SourceTypes.dependentMeet`). Every assignment of the parameter is
 an instance: one within the bound is the binder itself, and the body is
 certified at all of them. Any other bound leaves the parameter alone. -/
-private def binderRows (T : σ) (binders : List (String × ι × Option (List ι))) :
-    Except String (σ × List (String × ι)) := do
+private def binderRows (T : EquationStore.State) (binders : List (String × Tree × Option (List Tree))) :
+    Except String (EquationStore.State × List (String × Tree)) := do
   let owner := binders.map fun (n, p, _) => (p, n)
-  let (rows, T) ← (binders.foldlM (fun (rows : List (String × ι)) (n, p, bound) => do
+  let (rows, T) ← (binders.foldlM (fun (rows : List (String × Tree)) (n, p, bound) => do
     let G := SourceTypes.graph (← get)
-    let general (B : List ι) : SourceTypes.Lowering σ ι :=
+    let general (B : List Tree) : SourceTypes.Lowering Tree :=
       if B.isEmpty || !G.plainTy B then pure p else SourceTypes.bounded p (B.flatMap G)
-    let row : ι ← match bound with
+    let row : Tree ← match bound with
       | none => pure p
       | some [q] =>
         match (owner.lookup q).bind fun m => rows.lookup m with
@@ -1090,32 +1091,168 @@ private def classBinders (j : Json) : Except String (List Fragment.TypeParam) :=
 give its units: the source tree with its annotations in claim form, the
 claims over the store's labels, the imported values at their declared types
 and the generic module values. -/
-structure Prepared (σ ι : Type) where
+structure Prepared where
   ast : Json
-  document : Document σ ι
+  document : Document EquationStore.State Tree
   imported : List (String × Span × Json)
-  generics : List (Instantiable σ)
+  generics : List Instantiable
   /-- Each generic function's binders, by its name and position: an owned
   parameter each, with its declared bound. -/
-  units : List ((String × Span) × List (String × ι × Option (List ι)))
+  units : List ((String × Span) × List (String × Tree × Option (List Tree)))
   /-- The module initialization's binders: every generic class's. -/
-  initBinders : List (String × ι × Option (List ι))
-
-/-- How a store is prepared from a source and its claims, for the function
-`only` selects or for every unit. -/
-abbrev Front (σ ι : Type) :=
-  (ast claims : Json) → (fileKey : String) → (only : Option (String × Span)) →
-    Except String (Prepared σ ι)
+  initBinders : List (String × Tree × Option (List Tree))
 
 /-- The claims are about the source: its file and its fingerprint. -/
-def checkIdentity (d : Document σ ι) (ast : Json) (fileKey : String) : Except String Unit := do
+def checkIdentity (d : Document EquationStore.State Tree) (ast : Json) (fileKey : String) : Except String Unit := do
   if d.file != fileKey || (← jStr (← jField ast "file")) != fileKey then throw "source claim file identity mismatch"
   if (← jStr (← jField ast "sourceSha256")) != d.sourceSha256 then throw "source claim fingerprint mismatch"
 
+/-! ### The equation front
+
+The source's declarations, annotations and claims are lowered in one run to
+recursive equations (`EquationLowering.source`, RECURSIVE-EQUATIONS §8): the
+store the units grow. Every annotation becomes its labels as graph atoms, a
+binder its name's placeholder, which the unit or closure reading it binds
+(`annotationAtScopes`, `Function.atRows`, `Scheme.closureRows`). -/
+
+section
+open EquationGraphs EquationLowering EquationStore
+
+/-- A union as a claim: its labels as graph atoms. -/
+def graphClaim (U : List Tree) : Json :=
+  Json.mkObj [("top", toJson false), ("atoms", Json.arr (U.map fun l =>
+    Json.mkObj [("a", toJson "graph"), ("label", Tree.toJson l)]).toArray)]
+
+private def topClaim : Json := Json.mkObj [("top", toJson true), ("atoms", Json.arr #[])]
+
+/-- An array or tuple annotation as the claim of its shape, its parts' labels
+graph atoms: a reader of a rest parameter's reads its element there
+(`Fragment.arrayElement`, `Fragment.tupleRequired`). -/
+def arrayClaim (a : ArrayParts) : Json :=
+  Json.mkObj [("top", toJson false), ("atoms", Json.arr #[Json.mkObj [("a", toJson "array"),
+    ("required", Json.arr (a.required.map graphClaim).toArray),
+    ("optional", Json.arr (a.optional.map graphClaim).toArray),
+    ("rest", (a.rest.map graphClaim).getD .null), ("readonly", toJson a.readonly),
+    ("presence", a.presence)]])]
+
+/-- A claim's graph atoms' labels. -/
+def claimLabels (j : Json) : Except String (List Tree) := do
+  fieldsExactly j ["top", "atoms"]
+  if ← (← jField j "top").getBool? then throw "a type argument is a ground type"
+  (← jArr j "atoms").mapM fun a => do
+    fieldsExactly a ["a", "label"]
+    if (← jStr (← jField a "a")) != "graph" then throw "a type argument is a graph type"
+    Tree.fromJson (← jField a "label")
+
+/-- The source gate: a source states no internal graph label and no claim,
+so the annotations lowering writes are the only ones the tree holds. -/
+partial def sourceGate : Json → Except String Unit
+  | .arr xs => xs.forM sourceGate
+  | j@(.obj kvs) => do
+    if (j.getObjVal? "a").toOption == some (.str "graph") then
+      throw "source cannot state an internal graph label"
+    if (j.getObjVal? "atoms").isOk then throw "a source annotation is a type term, not a claim"
+    kvs.toList.forM fun (_, v) => sourceGate v
+  | _ => pure ()
+
+/-- The tree with the value at `path` (`/functions/0/params/0/type`) set. -/
+partial def setPath (j : Json) (path : List String) (v : Json) : Json :=
+  match path with
+  | [] => v
+  | k :: rest => match j with
+    | .arr xs => match k.toNat? with
+      | some i => if h : i < xs.size then .arr (xs.set i (setPath xs[i] rest v)) else j
+      | none => j
+    | .obj _ => match j.getObjVal? k with
+      | .ok c => j.setObjVal! k (setPath c rest v)
+      | .error _ => j
+    | _ => j
+
+/-- A generic value's type at `θ`: its binders read as `θ` gives them, a
+signature by its parts, so that the instances a unit's calls name conjoin
+as one callable (`Scheme.moduleInstances`). -/
+def genericClaim (T : EquationStore.State) (θ : List (String × List Tree)) : GenericType → Json
+  | .function recv ps rest res =>
+    let c (U : List Tree) : Json := graphClaim (normUnion (U.flatMap (rebind T θ)))
+    Json.mkObj [("top", toJson false), ("atoms", Json.arr #[Json.mkObj ([("a", toJson "function"),
+      ("this", (recv.map c).getD topClaim), ("params", Json.arr (ps.map c).toArray)] ++
+      (match rest with
+        | some e => [("rest", c e)]
+        | none => []) ++
+      [("result", c res), ("construct", toJson "unknown"), ("array", toJson "unknown")])])]
+  | .construct ps res =>
+    let c (U : List Tree) : Json := graphClaim (normUnion (U.flatMap (rebind T θ)))
+    Json.mkObj [("top", toJson false), ("atoms", Json.arr #[Json.mkObj [("a", toJson "constructor"),
+      ("params", Json.arr (ps.map c).toArray), ("result", c res)]])]
+  | .other U => graphClaim (normUnion (U.flatMap (rebind T θ)))
+
+private def emptyDeclarations : Json := Json.mkObj [("roots", Json.arr #[]),
+  ("definitions", Json.arr #[]), ("values", Json.arr #[]), ("symbols", Json.arr #[])]
+
+/-- **The equation front.** The source's declarations, its annotations and
+the claims, lowered to one store; the source tree with its annotations in
+claim form; the imported values at their declared types; the generic values
+at the instances a unit names; and the generic units' binders. A declaration
+the lowering refuses is refused at the unit requiring it, and a claim it
+cannot read is an invalid document. A variance declaration that does not
+check (§7.5) refuses the source at its heads. -/
+def equationFront (ast claims : Json) (fileKey : String) (only : Option (String × Span)) :
+    Except String Prepared := do
+  sourceGate (ast.getObjValD "functions")
+  sourceGate (ast.getObjValD "init")
+  let document ← jField ast "declarations"
+  fieldsExactly document ["roots", "definitions", "values", "symbols"]
+  -- A symbol key `{"symbol": i}` is the i-th listed `unique symbol` constant.
+  let symbols ← jArr document "symbols"
+  if symbols.eraseDups.length != symbols.length then
+    throw "a unique symbol declaration is listed twice"
+  let roots ← (← jArr document "roots").mapM fun root => do jStr (← jField (← jField root "binding") "local")
+  if roots.eraseDups.length != roots.length then throw "duplicate declaration root name"
+  -- A declaration failure belongs to the unit requiring the contract, not to
+  -- an external library's byte offset misread as a span in this file.
+  let firstClaimed := ((claims.getObjValAs? (Array Json) "functions").toOption.bind (·[0]?)).bind
+    fun f => (f.getObjValAs? Span "namePos").toOption
+  let contractSite := only.map Prod.snd |>.getD (firstClaimed.getD (0, 0))
+  let empty : EquationStore.State := { doc := #[] }
+  let L ← (EquationLowering.source ast claims).mapError fun reason =>
+    if reason.startsWith "source claims" || reason.startsWith "invalid source claims" ||
+        reason.startsWith "a label" || reason.startsWith "a producer's row" then
+      s!"invalid source claims: {reason}"
+    else sourceRefusal empty contractSite .bindingAnnotation
+      s!"the declarations required by this unit cannot be interpreted: {reason}"
+  let d ← decodeDocument L.store L.claims
+  checkIdentity d ast fileKey
+  let functions := (ast.getObjValAs? (Array Json) "functions").toOption.getD #[]
+  let ast := L.annotations.foldl (fun j (path, U) =>
+    setPath j ((path.splitOn "/").drop 1) (match L.arrays.lookup path with
+      | some a => arrayClaim a
+      | none => graphClaim U)) ast
+  let ast := ast.setObjVal! "declarations" emptyDeclarations
+  let imported := L.values.map fun (n, sp, U) => (n, sp, graphClaim U)
+  let instantiate (g : GenericValue) (θ : List (String × Json)) (T : EquationStore.State) :
+      Except String ((Json × List (String × Option Json)) × EquationStore.State) := do
+    let θ ← θ.mapM fun (n, j) => do return (n, ← claimLabels j)
+    let t ← g.type
+    let bounds := g.bounds.map fun (n, B) =>
+      (n, B.map fun B => graphClaim (normUnion (B.flatMap (rebind T θ))))
+    return ((genericClaim T θ t, bounds), T)
+  let generics := L.generics.map fun g =>
+    ({ name := g.name, pos := g.pos, binders := g.binders, instantiate := instantiate g } :
+      Instantiable)
+  let units := L.units.filterMap fun (path, bs) => do
+    let i ← (path.dropPrefix? "/functions/").bind (·.toString.toNat?)
+    let f ← functions[i]?
+    let name ← (f.getObjValAs? String "name").toOption
+    let pos ← (f.getObjValAs? Span "namePos").toOption
+    return ((name, pos), bs)
+  return ⟨ast, d, imported, generics, units, L.initBinders⟩
+
+end
+
 /-- `only` selects one function of the file, named with its position: the
 others remain its module, reachable at their signatures, and need no claims. -/
-def extractPlansWith [Meets σ ι] (front : Front σ ι) (ast claims : Json) (fileKey : String)
-    (only : Option (String × Span) := none) : Except String (σ × List (FunctionPlan σ ι)) := do
+def extractPlans (ast claims : Json) (fileKey : String)
+    (only : Option (String × Span) := none) : Except String (EquationStore.State × List (FunctionPlan EquationStore.State Tree)) := do
   -- A source with arrays lists `ArrayProto`: its units see `Array.prototype`.
   let arrays := match (ast.getObjVal? "declarations").toOption.bind
       (fun doc => (doc.getObjVal? "definitions").toOption) with
@@ -1123,7 +1260,7 @@ def extractPlansWith [Meets σ ι] (front : Front σ ι) (ast claims : Json) (fi
         ((d.getObjVal? "declaration").toOption.bind fun i => (i.getObjVal? "module").toOption) ==
           some (Json.str "skjs/array-prototype")
     | _ => false
-  let ⟨ast, d, imported, generics, unitBinders, initBinders⟩ ← front ast claims fileKey only
+  let ⟨ast, d, imported, generics, unitBinders, initBinders⟩ ← equationFront ast claims fileKey only
   let functionJsons := ((ast.getObjVal? "functions").toOption.bind (·.getArr?.toOption)).getD #[]
   let all ← Fragment.decodeAstWithParams ast
   let fs := all.map Prod.fst
@@ -1136,7 +1273,7 @@ def extractPlansWith [Meets σ ι] (front : Front σ ι) (ast claims : Json) (fi
   -- signatures, and a function also reaches the module's constants at their
   -- annotations; each of those is established by its own unit.
   -- Imported values join them at the types their declarations state.
-  let moduleFunctions : List (SourceExtraction.ModuleValue ι) :=
+  let moduleFunctions : List (SourceExtraction.ModuleValue Tree) :=
     (all.filterMap fun (g, tps) => if tps.isEmpty then
       some (g.name, g.namePos, (moduleArrow g).map .written) else none) ++
     (imported.map fun (name, span, ty) => (name, span, .ok (.written ty))) ++
@@ -1149,7 +1286,7 @@ def extractPlansWith [Meets σ ι] (front : Front σ ι) (ast claims : Json) (fi
   -- A generic class is read at the instances its uses name, as a generic
   -- module function is (`generics`), not at its declaring unit's rows.
   let classNames := genericClassNames ((ast.getObjVal? "init").toOption.getD (.arr #[]))
-  let moduleConstants : List (SourceExtraction.ModuleValue ι) := init.flatMap fun
+  let moduleConstants : List (SourceExtraction.ModuleValue Tree) := init.flatMap fun
     | .constants _ bs => (bs.filter fun b => !classNames.contains b.name).map fun b =>
       (b.name, b.namePos, match (d.init.map (·.expressions)).getD [] |>.find? (·.pos == b.init.span) with
         | some e => .ok (.claimed e.type.ground b.annot)
@@ -1161,7 +1298,7 @@ def extractPlansWith [Meets σ ι] (front : Front σ ι) (ast claims : Json) (fi
   -- module value at the class's construct signature, the annotation its
   -- binding is checked at there, as a function reads a module constant. A
   -- generic class's is not one (the parser refuses its self-reads).
-  let classSelves : List (SourceExtraction.ModuleValue ι) := init.flatMap fun
+  let classSelves : List (SourceExtraction.ModuleValue Tree) := init.flatMap fun
     | .constants _ bs =>
       let ctors := bs.filterMap fun b => match b.init with
         | .ctor .. => some b.name
@@ -1176,7 +1313,7 @@ def extractPlansWith [Meets σ ι] (front : Front σ ι) (ast claims : Json) (fi
     | _ => []
   -- The initialization unit: the top-level code, as a body with no
   -- parameters that completes with `undefined`.
-  let initUnit : List (Fragment.Fn × List Fragment.TypeParam × (Function ι)) ← match init, d.init with
+  let initUnit : List (Fragment.Fn × List Fragment.TypeParam × (Function Tree)) ← match init, d.init with
     | [], none => pure []
     | [], some _ => throw "module initialization claims for a source without initialization code"
     | _ :: _, none => throw "missing claims for the module initialization"
@@ -1291,8 +1428,8 @@ def extractPlansWith [Meets σ ι] (front : Front σ ι) (ast claims : Json) (fi
         f := { f with body }
       else
         f := (← Fragment.decodeFn source).1
-    let finish (d : Document σ ι) (module : List (SourceExtraction.ModuleValue ι)) (c : Function ι)
-        (f : Fragment.Fn) : Except String (FunctionPlan σ ι) := do
+    let finish (d : Document EquationStore.State Tree) (module : List (SourceExtraction.ModuleValue Tree)) (c : Function Tree)
+        (f : Fragment.Fn) : Except String (FunctionPlan EquationStore.State Tree) := do
       let mut d := d
       let mut module := module
       let mut c := c
@@ -1334,147 +1471,6 @@ def extractPlansWith [Meets σ ι] (front : Front σ ι) (ast claims : Json) (fi
 
 end
 
-/-! ### The equation front
-
-The source's declarations, annotations and claims are lowered in one run to
-recursive equations (`EquationLowering.source`, RECURSIVE-EQUATIONS §8): the
-store the units grow. Every annotation becomes its labels as graph atoms, a
-binder its name's placeholder, which the unit or closure reading it binds
-(`annotationAtScopes`, `Function.atRows`, `Scheme.closureRows`). -/
-
-section
-open EquationGraphs EquationLowering EquationStore
-
-/-- A union as a claim: its labels as graph atoms. -/
-def graphClaim (U : List Tree) : Json :=
-  Json.mkObj [("top", toJson false), ("atoms", Json.arr (U.map fun l =>
-    Json.mkObj [("a", toJson "graph"), ("label", Tree.toJson l)]).toArray)]
-
-private def topClaim : Json := Json.mkObj [("top", toJson true), ("atoms", Json.arr #[])]
-
-/-- An array or tuple annotation as the claim of its shape, its parts' labels
-graph atoms: a reader of a rest parameter's reads its element there
-(`Fragment.arrayElement`, `Fragment.tupleRequired`). -/
-def arrayClaim (a : ArrayParts) : Json :=
-  Json.mkObj [("top", toJson false), ("atoms", Json.arr #[Json.mkObj [("a", toJson "array"),
-    ("required", Json.arr (a.required.map graphClaim).toArray),
-    ("optional", Json.arr (a.optional.map graphClaim).toArray),
-    ("rest", (a.rest.map graphClaim).getD .null), ("readonly", toJson a.readonly),
-    ("presence", a.presence)]])]
-
-/-- A claim's graph atoms' labels. -/
-def claimLabels (j : Json) : Except String (List Tree) := do
-  CellClaims.fieldsExactly j ["top", "atoms"]
-  if ← (← jField j "top").getBool? then throw "a type argument is a ground type"
-  (← jArr j "atoms").mapM fun a => do
-    CellClaims.fieldsExactly a ["a", "label"]
-    if (← jStr (← jField a "a")) != "graph" then throw "a type argument is a graph type"
-    Tree.fromJson (← jField a "label")
-
-/-- The source gate: a source states no internal graph label and no claim,
-so the annotations lowering writes are the only ones the tree holds. -/
-partial def sourceGate : Json → Except String Unit
-  | .arr xs => xs.forM sourceGate
-  | j@(.obj kvs) => do
-    if (j.getObjVal? "a").toOption == some (.str "graph") then
-      throw "source cannot state an internal graph label"
-    if (j.getObjVal? "atoms").isOk then throw "a source annotation is a type term, not a claim"
-    kvs.toList.forM fun (_, v) => sourceGate v
-  | _ => pure ()
-
-/-- The tree with the value at `path` (`/functions/0/params/0/type`) set. -/
-partial def setPath (j : Json) (path : List String) (v : Json) : Json :=
-  match path with
-  | [] => v
-  | k :: rest => match j with
-    | .arr xs => match k.toNat? with
-      | some i => if h : i < xs.size then .arr (xs.set i (setPath xs[i] rest v)) else j
-      | none => j
-    | .obj _ => match j.getObjVal? k with
-      | .ok c => j.setObjVal! k (setPath c rest v)
-      | .error _ => j
-    | _ => j
-
-/-- A generic value's type at `θ`: its binders read as `θ` gives them, a
-signature by its parts, so that the instances a unit's calls name conjoin
-as one callable (`Scheme.moduleInstances`). -/
-def genericClaim (T : EquationStore.State) (θ : List (String × List Tree)) : GenericType → Json
-  | .function recv ps rest res =>
-    let c (U : List Tree) : Json := graphClaim (normUnion (U.flatMap (rebind T θ)))
-    Json.mkObj [("top", toJson false), ("atoms", Json.arr #[Json.mkObj ([("a", toJson "function"),
-      ("this", (recv.map c).getD topClaim), ("params", Json.arr (ps.map c).toArray)] ++
-      (match rest with
-        | some e => [("rest", c e)]
-        | none => []) ++
-      [("result", c res), ("construct", toJson "unknown"), ("array", toJson "unknown")])])]
-  | .construct ps res =>
-    let c (U : List Tree) : Json := graphClaim (normUnion (U.flatMap (rebind T θ)))
-    Json.mkObj [("top", toJson false), ("atoms", Json.arr #[Json.mkObj [("a", toJson "constructor"),
-      ("params", Json.arr (ps.map c).toArray), ("result", c res)]])]
-  | .other U => graphClaim (normUnion (U.flatMap (rebind T θ)))
-
-private def emptyDeclarations : Json := Json.mkObj [("roots", Json.arr #[]),
-  ("definitions", Json.arr #[]), ("values", Json.arr #[]), ("symbols", Json.arr #[])]
-
-/-- **The equation front.** The source's declarations, its annotations and
-the claims, lowered to one store; the source tree with its annotations in
-claim form; the imported values at their declared types; the generic values
-at the instances a unit names; and the generic units' binders. A declaration
-the lowering refuses is refused at the unit requiring it, and a claim it
-cannot read is an invalid document. A variance declaration that does not
-check (§7.5) refuses the source at its heads. -/
-def equationFront : Front EquationStore.State Tree := fun ast claims fileKey only => do
-  sourceGate (ast.getObjValD "functions")
-  sourceGate (ast.getObjValD "init")
-  let document ← jField ast "declarations"
-  CellClaims.fieldsExactly document ["roots", "definitions", "values", "symbols"]
-  -- A symbol key `{"symbol": i}` is the i-th listed `unique symbol` constant.
-  let symbols ← jArr document "symbols"
-  if symbols.eraseDups.length != symbols.length then
-    throw "a unique symbol declaration is listed twice"
-  let roots ← (← jArr document "roots").mapM fun root => do jStr (← jField (← jField root "binding") "local")
-  if roots.eraseDups.length != roots.length then throw "duplicate declaration root name"
-  -- A declaration failure belongs to the unit requiring the contract, not to
-  -- an external library's byte offset misread as a span in this file.
-  let firstClaimed := ((claims.getObjValAs? (Array Json) "functions").toOption.bind (·[0]?)).bind
-    fun f => (f.getObjValAs? Span "namePos").toOption
-  let contractSite := only.map Prod.snd |>.getD (firstClaimed.getD (0, 0))
-  let empty : EquationStore.State := { doc := #[] }
-  let L ← (EquationLowering.source ast claims).mapError fun reason =>
-    if reason.startsWith "source claims" || reason.startsWith "invalid source claims" ||
-        reason.startsWith "a label" || reason.startsWith "a producer's row" then
-      s!"invalid source claims: {reason}"
-    else sourceRefusal empty contractSite .bindingAnnotation
-      s!"the declarations required by this unit cannot be interpreted: {reason}"
-  let d ← decodeDocument L.store L.claims
-  checkIdentity d ast fileKey
-  let functions := (ast.getObjValAs? (Array Json) "functions").toOption.getD #[]
-  let ast := L.annotations.foldl (fun j (path, U) =>
-    setPath j ((path.splitOn "/").drop 1) (match L.arrays.lookup path with
-      | some a => arrayClaim a
-      | none => graphClaim U)) ast
-  let ast := ast.setObjVal! "declarations" emptyDeclarations
-  let imported := L.values.map fun (n, sp, U) => (n, sp, graphClaim U)
-  let instantiate (g : GenericValue) (θ : List (String × Json)) (T : EquationStore.State) :
-      Except String ((Json × List (String × Option Json)) × EquationStore.State) := do
-    let θ ← θ.mapM fun (n, j) => do return (n, ← claimLabels j)
-    let t ← g.type
-    let bounds := g.bounds.map fun (n, B) =>
-      (n, B.map fun B => graphClaim (normUnion (B.flatMap (rebind T θ))))
-    return ((genericClaim T θ t, bounds), T)
-  let generics := L.generics.map fun g =>
-    ({ name := g.name, pos := g.pos, binders := g.binders, instantiate := instantiate g } :
-      Instantiable EquationStore.State)
-  let units := L.units.filterMap fun (path, bs) => do
-    let i ← (path.dropPrefix? "/functions/").bind (·.toString.toNat?)
-    let f ← functions[i]?
-    let name ← (f.getObjValAs? String "name").toOption
-    let pos ← (f.getObjValAs? Span "namePos").toOption
-    return ((name, pos), bs)
-  return ⟨ast, d, imported, generics, units, L.initBinders⟩
-
-end
-
 /-! ### The entry points -/
 
 open EquationGraphs EquationStore in
@@ -1482,7 +1478,7 @@ open EquationGraphs EquationStore in
 def FunctionPlan.over (F : Frozen) :
     FunctionPlan EquationStore.State Tree → Except String (FunctionPlan (Checked F.equations F.primitive)
       (CheckedLabel F.equations F.primitive))
-  | .graph name pos r => do return .graph name pos (← EquationStore.SourceRequest.over F r)
+  | .graph name pos r => do return .graph name pos (← SourceRequest.over F r)
 
 open EquationGraphs EquationStore in
 /-- The extracted plans over the equations their store presents, validated
@@ -1492,10 +1488,6 @@ def freezePlans (T : EquationStore.State) (plans : List (FunctionPlan EquationSt
       List (FunctionPlan (Checked F.equations F.primitive) (CheckedLabel F.equations F.primitive))) := do
   let F ← freeze T
   return ⟨F, ← plans.mapM (FunctionPlan.over F)⟩
-
-def extractPlans (ast claims : Json) (fileKey : String) (only : Option (String × Span) := none) :
-    Except String (EquationStore.State × List (FunctionPlan EquationStore.State EquationGraphs.Tree)) :=
-  extractPlansWith equationFront ast claims fileKey only
 
 /-- Graph-only projection for proof fixtures that inspect extracted programs. -/
 def extractGraphRequests (ast claims : Json) (fileKey : String) :
@@ -1519,7 +1511,7 @@ def produceJson (ast claims : Json) (fileKey : String) (fuel : Nat)
   let rs := FunctionPlan.requests frozen
   let es ← rs.mapM fun r => ExpressionClaims.produceUsing (RequestJson.graph r.toRequest)
     (StoreView.images r.types) r.searchLabels (StoreView.valid r.types)
-    (Store.projection r.types) fuel r.obligations
+    (StoreView.projection r.types) fuel r.obligations
   let cs ← (rs.zip es).mapM fun (r,proofs) => do
     let known := proofs ++ ExpressionClaims.renderKnownUsing (RequestJson.graph r.toRequest)
       (StoreView.images r.types) r.searchLabels (StoreView.valid r.types) r.nodePlans

@@ -1,13 +1,15 @@
 import Verification.Model.Types.Claim
-import Verification.Model.Source.RequestJson
+import Verification.Model.Source.EquationStore
 
 /-! Source types and the graph they are checked against. A program's types
-are labels of a store (`LabelStore.Store`): extraction interns each compound
+are labels of the store (`EquationStore.State`): extraction interns each compound
 type the program mentions, so a label exists only because something used it,
 and a clause the store lacks has no label rather than a wrong one. Primitive
 unions translate into the four primitive labels. -/
 namespace Verification.Model.SourceTypes
 open ProgramTyping PositiveNormalization PositiveGraphs PositiveRules LabelStore
+open EquationGraphs (Tree)
+open EquationStore (State)
 
 /-- The field an array object holds its store in. No source name spells it. -/
 def storeField : PropKey := CallArguments.arrayStoreField
@@ -69,12 +71,12 @@ theorem arrayExcludedKeys_reserved {G : NormalGraph ι} {proto : ι} {k : PropKe
   split at h <;> exact arrayExcludedKeys_ofKeys_reserved h
 
 section
-variable {σ ι : Type} [Labels ι] [Store σ ι]
+variable {ι : Type} [Labels ι]
 
-def graph (T : σ) : NormalGraph ι := StoreView.graph T
+def graph (T : State) : NormalGraph Tree := StoreView.graph T
 
 /-- The array type over `store` in the store's own graph. -/
-def arrayOf (T : σ) (store : ι) (readonly : Bool) : Clause (List ι) :=
+def arrayOf (T : State) (store : Tree) (readonly : Bool) : Clause (List Tree) :=
   arrayClause (arrayExcludedKeys (graph T) (StoreView.arrayProto T)) store (StoreView.arrayProto T) readonly
 
 /-- The one user-facing rendering boundary for graph types. Labels are
@@ -103,50 +105,49 @@ private def clauseName : Clause (List ι) → String
   | .symbol => "symbol"
   | .ctors .. => "constructor"
 
-def render (T : σ) (A : Ty ι) : String :=
+def render (T : State) (A : Ty Tree) : String :=
   match expand (graph T) A with
   | [] => "never"
   | [.boolLit true, .boolLit false] | [.boolLit false, .boolLit true] => "boolean"
   | cs => String.intercalate " | " (cs.map clauseName).eraseDups
 
 /-- Translation grows the store as it goes. -/
-abbrev Lowering (σ : Type) := StateT σ (Except String)
+abbrev Lowering := StateT State (Except String)
 
 /-- A union of clauses' label, interning it if the store lacks it. It
 remains a union of its clauses; this does not make it an intersection or
 assert a producer equation. -/
-def useRow (row : List (Clause (List ι))) : Lowering σ ι :=
-  modifyGet fun T => let (T, l) := Store.intern T row; (l, T)
+def useRow (row : List (Clause (List Tree))) : Lowering Tree :=
+  modifyGet fun T => let (T, l) := EquationStore.intern T row; (l, T)
 
-def use (c : Clause (List ι)) : Lowering σ ι := useRow [c]
+def use (c : Clause (List Tree)) : Lowering Tree := useRow [c]
 
 /-- The parameter that stands for a generic unit's binder `name`
-(`Store.binder`). -/
-def binderRow (name : String) : Lowering σ ι := fun T => do
-  let (T, l) ← Store.binder T name
-  return (l, T)
+(`EquationStore.binder`). -/
+def binderRow (name : String) : Lowering Tree := fun T => do
+  return (← EquationStore.binder name, T)
 
 /-- What a binder's parameter is met with when its bound is another binder,
 read as `r`: the parameter `r`, within `r`'s clauses and parameters when `r`
 is itself a meet. `U extends T` is `U ⊓ T`, which is below `T`
 (`PositiveRules.meetBelow`): at every instantiation within the bound, the
 meet is the binder. -/
-def dependentMeet (T : σ) (r : ι) : Option (List (Clause (List ι)) × List ι) :=
+def dependentMeet (T : State) (r : Tree) : Option (List (Clause (List Tree)) × List Tree) :=
   match StoreView.row T r with
   | .param _ _ .value => some ([.top], [r])
   | .meet q cs ps => some (cs, q :: ps)
   | _ => none
 
 /-- A bounded binder's label: the parameter `p` within `cs` and the
-parameters `also` (`Store.bounded`). -/
-def bounded (p : ι) (cs : List (Clause (List ι))) (also : List ι := []) : Lowering σ ι :=
-  modifyGet fun T => let (T, l) := Store.bounded T p cs also; (l, T)
+parameters `also` (`EquationStore.bounded`). -/
+def bounded (p : Tree) (cs : List (Clause (List Tree))) (also : List Tree := []) : Lowering Tree :=
+  modifyGet fun T => let (T, l) := EquationStore.bounded T p cs also; (l, T)
 
 /-- A type with each label replaced by the first label of the same row. Rows
 with identical clauses denote the same type: a declaration's row and an
 annotation's row can coincide without being the same label, for instance when
 a producer interned the annotation before the declaration row was filled. -/
-def canonical (T : σ) (A : List ι) : List ι :=
+def canonical (T : State) (A : List Tree) : List Tree :=
   (A.map fun label => if StoreView.valid T label then
       ((StoreView.labels T).find? (fun m => StoreView.row T m == StoreView.row T label)).getD label
     else label)
@@ -182,7 +183,7 @@ partial def binderNames : Lean.Json → List String
 def admits (t : Claim.Ty) (v : Claim.Val) : Bool := t.atoms.any (Claim.inhabits v)
 
 section
-variable {σ ι : Type} [Labels ι] [Store σ ι]
+variable {ι : Type} [Labels ι]
 
 def encode (t : Claim.Ty) : Ty ι :=
   (if admits t .vnull then [Labels.nul] else []) ++
@@ -210,7 +211,7 @@ def value : Claim.Val → Except String Tm
 /-- Numbers, strings, bigints and symbols are interned rather than given fixed
 labels, because their singletons are unbounded; the four fixed labels are the
 primitive values. -/
-def numberLabels (t : Claim.Ty) : Lowering σ (Ty ι) := do
+def numberLabels (t : Claim.Ty) : Lowering (Ty Tree) := do
   let mut out := []
   for a in t.atoms do
     match a with
@@ -238,7 +239,7 @@ def isNumberAtom : Claim.Atom → Bool
 
 /-- One arm of a union: its numbers and strings interned, its fixed
 primitives translated to the four fixed labels (`translate`). -/
-def translateArm (t : Claim.Ty) : Lowering σ (Ty ι) := do
+def translateArm (t : Claim.Ty) : Lowering (Ty Tree) := do
   -- `unknown` is semantic top: every value, and no operation through it.
   if t.top then return [← use .top]
   let numbers ← numberLabels ⟨t.top, t.atoms.filter isNumberAtom⟩

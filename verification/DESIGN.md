@@ -1155,7 +1155,7 @@ unchanged ([design](#recursive-quantified-contracts)).
 | --- | --- | --- |
 | K3. Lowering: a unit bound naming another binder of the unit (`U extends T`). A function's or class's binder is its head's owned binder met with its lowered bound, which names the other owned binder (`EquationLowering.enterUnit`); a declared generic method's bound naming its own binders is refused ([request protocol](REQUEST-PROTOCOL.md)) | done | `generic-dependent-bounds` verifies (a function and a class); `invalid-generic-dependent-bound` and `invalid-generic-dependent-class-bound` are rejected at their own obligations |
 | T. Audit the tests: keep each one that guards something likely to break and important, and is not a restatement of the implementation; record what each guards | open | every test's reason recorded; the rest deleted |
-| C2. Write the source layer directly over its one store: `Store`, `Meets` and `Front` have one instance each; the modules written over them precede `EquationStore`/`EquationLowering` in the import order, which must be inverted first | open | the three classes deleted; `lake build` green |
+| C2. Write the source layer directly over its one store, `EquationStore.State`: `EquationLowering` and `EquationStore` precede the modules written over them in the import order, which call the store's operations and `equationFront` directly. `StoreView` and `Labels` stay classes, each with two instances: the growing store and the frozen equations | done | the three classes deleted; `lake build` green; every `cases.mts` outcome and diagnostic unchanged |
 
 The stages' order and dependencies: S1, S3 and the kernel rows may run in
 parallel; S4 follows S1; S5 follows S3 and S4's interface; S6 needs all of

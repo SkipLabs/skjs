@@ -3627,7 +3627,7 @@ name's placeholder until the unit or closure that binds it is extracted: a
 generic unit's binders are the owned parameters of its head
 (`EquationLowering.enterUnit`), a generic closure's those of the scheme its
 claim states (`Scheme.schemeRowOf`), and each annotation and claim inside
-reads the name as that parameter (`Store.rebind`).
+reads the name as that parameter (`EquationStore.rebind`).
 
 #### Binders met with ground types
 

@@ -6,6 +6,7 @@ inference rule for retaining observations of mutable storage. Every surviving
 record must still have equal read/write meanings at the invariant-cell boundary. -/
 namespace Verification.Model.CellUnion
 open Lean ProgramTyping PositiveRules LabelStore
+open EquationGraphs (Tree)
 
 variable {ι : Type}
 
@@ -87,13 +88,10 @@ theorem normalize_exact [DecidableEq ι] (cs : List (Contract ι)) (Reads Writes
   · rintro ⟨c,hc,hs⟩
     exact ⟨select cs c,List.mem_map.mpr ⟨c,hc,rfl⟩,(select_spec hc).2 _ _ hs⟩
 
-section
-variable {σ : Type} [Labels ι] [Store σ ι]
-
 /-- A record alternative, lowered where the table can grow: a numeric field
 contract is interned rather than refused for being outside the four fixed
 primitive labels. -/
-def decode (atom : Json) : SourceTypes.Lowering σ (Contract ι) := do
+def decode (atom : Json) : SourceTypes.Lowering (Contract Tree) := do
   let fs ← liftM (CellClaims.decode
     (Json.mkObj [("top",toJson false),("atoms",toJson [atom])]) : Except String _)
   fs.mapM fun f => do
@@ -101,7 +99,7 @@ def decode (atom : Json) : SourceTypes.Lowering σ (Contract ι) := do
 
 /-- All arms are validated before absorption, including their field and object
 modes. A remaining non-invariant arm rejects the entire union. -/
-def lower (cs : List (Contract ι)) : SourceTypes.Lowering σ (List (Ty ι)) := do
+def lower (cs : List (Contract Tree)) : SourceTypes.Lowering (List (Ty Tree)) := do
   (normalize cs).mapM fun c => do
     if invariant c then return [← CellClaims.reference (c.map fun f => (f.name, f.read))]
     if viewed c then
@@ -110,10 +108,8 @@ def lower (cs : List (Contract ι)) : SourceTypes.Lowering σ (List (Ty ι)) := 
       return [← CellClaims.viewReference fields views]
     throw "cell read and write types do not describe the same invariant"
 
-def translate (atoms : List Json) : SourceTypes.Lowering σ (List (Ty ι)) := do
+def translate (atoms : List Json) : SourceTypes.Lowering (List (Ty Tree)) := do
   lower (← atoms.mapM decode)
-
-end
 
 #print axioms normalize_exact
 end Verification.Model.CellUnion

@@ -12,6 +12,8 @@ unsupported unused claims do not become invented types. Cell annotations and
 claims use the same bounded contract decoder. -/
 namespace Verification.Model.Fragment
 open Lean ProgramTyping PositiveRules LabelStore
+open EquationGraphs (Tree)
+open EquationStore (State)
 
 /-- Validate a free required-parameter signature without projecting away object
 requirements: the receiver contract, the parameters, the result, and the
@@ -20,7 +22,7 @@ them. Every signature states its receiver; one indifferent to it states
 `unknown`. -/
 private def callableShape (a : Json) : Except String (Json × List Json × Json × Option Json) := do
   let rest := (a.getObjVal? "rest").toOption
-  CellClaims.fieldsExactly a
+  fieldsExactly a
     (["a","this","params","result","construct","array"] ++ (if rest.isSome then ["rest"] else []))
   if (← jStr (← jField a "a")) != "function" then throw "expected a function atom"
   for key in ["construct","array"] do
@@ -34,12 +36,12 @@ tuple contract. A contract with optional or unbounded positions is not a fixed
 number of further arguments, which is what the callable signature has to say,
 so it is refused here rather than approximated. -/
 def tupleRequired (j : Json) : Except String (List Json) := do
-  CellClaims.fieldsExactly j ["top","atoms"]
+  fieldsExactly j ["top","atoms"]
   if ← (← jField j "top").getBool? then
     throw "a rest parameter needs a tuple contract of required positions"
   match ← jArr j "atoms" with
   | [atom] =>
-    CellClaims.fieldsExactly atom ["a","required","optional","rest","readonly","presence"]
+    fieldsExactly atom ["a","required","optional","rest","readonly","presence"]
     if (← jStr (← jField atom "a")) != "array" then
       throw "a rest parameter needs a tuple contract of required positions"
     if !(← jArr atom "optional").isEmpty || (← jField atom "rest") != Json.null then
@@ -69,18 +71,18 @@ private def hasOptional (atom : Json) : Bool :=
   | _ => false
 
 section
-variable {σ ι : Type} [Labels ι] [Store σ ι]
+variable {ι : Type} [Labels ι]
 
 mutual
 /-- Callable operands recursively use the same value contracts as receivers
 and record fields. Every union and overload arm is checked. -/
-partial def callableType (j : Json) : SourceTypes.Lowering σ (Ty ι) := do
-  CellClaims.fieldsExactly j ["top","atoms"]
+partial def callableType (j : Json) : SourceTypes.Lowering (Ty Tree) := do
+  fieldsExactly j ["top","atoms"]
   if ← (← jField j "top").getBool? then return [← SourceTypes.use .top]
   let arms ← (← jArr j "atoms").mapM fun atom => do
     if (← jStr (← jField atom "a")) == "graph" then
-      CellClaims.fieldsExactly atom ["a", "label"]
-      let label : ι ← fromJson? (← jField atom "label")
+      fieldsExactly atom ["a", "label"]
+      let label : Tree ← fromJson? (← jField atom "label")
       if !StoreView.valid (← get) label then throw "graph label is absent"
       return [label]
     else if (← jStr (← jField atom "a")) == "function" then
@@ -100,20 +102,20 @@ partial def callableType (j : Json) : SourceTypes.Lowering σ (Ty ι) := do
       -- A construct signature: what a class meets and no plain function does.
       -- A generic class's instances form one conjunction: each is a signature.
       let signatures ← (← CellClaims.conjuncts atom).mapM fun a => do
-        CellClaims.fieldsExactly a ["a", "params", "result"]
+        fieldsExactly a ["a", "params", "result"]
         return (← (← jArr a "params").mapM callableType, ← callableType (← jField a "result"))
       return [← SourceTypes.use (.ctors signatures)]
     else if ["array", "store"].contains (← jStr (← jField atom "a")) then
       return [← arrayType atom]
     else if (← jStr (← jField atom "a")) == "record" &&
         (atom.getObjVal? "indexSignature").toOption.isSome then
-      CellClaims.fieldsExactly atom
+      fieldsExactly atom
         ["a", "fields", "indexes", "indexSignature", "call", "construct", "array"]
       -- Keep named invariants and readonly views alongside the index view in
       -- one clause. A mutable named field has one lifetime contract; a
       -- readonly named field contributes no write capability.
       let fields ← (← jArr atom "fields").mapM fun field => do
-        CellClaims.fieldsExactly field ["name", "optional", "read", "write"]
+        fieldsExactly field ["name", "optional", "read", "write"]
         let name ← jStr (← jField field "name")
         if name == SourceTypes.storeField then
           throw "the array store is internal, not a source property"
@@ -130,7 +132,7 @@ partial def callableType (j : Json) : SourceTypes.Lowering σ (Ty ι) := do
       if (fields.map fun (name, _, _) => name).eraseDups.length != fields.length then
         throw "duplicate named field in an indexed object"
       let index ← jField atom "indexSignature"
-      CellClaims.fieldsExactly index ["read", "write"]
+      fieldsExactly index ["read", "write"]
       -- A writable index has one fixed contract, as a mutable field has.
       let write ← jField index "write"
       let writable := write != Json.mkObj [("top", toJson false), ("atoms", toJson ([] : List Json))]
@@ -141,7 +143,7 @@ partial def callableType (j : Json) : SourceTypes.Lowering σ (Ty ι) := do
         if mode != "unknown" && mode != "absent" then
           throw "unsupported indexed object mode"
       let indexes ← jField atom "indexes"
-      CellClaims.fieldsExactly indexes ["string", "number", "symbol"]
+      fieldsExactly indexes ["string", "number", "symbol"]
       for key in ["string", "number", "symbol"] do
         let mode ← jStr (← jField indexes key)
         if mode != "absent" && mode != "synthetic" then
@@ -176,8 +178,8 @@ partial def callableType (j : Json) : SourceTypes.Lowering σ (Ty ι) := do
 /-- An array type: a tuple contract on a store, held by an object in its store
 field, invariantly or, for a readonly array, as a view. Element types are
 lowered as callable operands are. -/
-partial def arrayType (atom : Json) : SourceTypes.Lowering σ ι := do
-  CellClaims.fieldsExactly atom ["a","required","optional","rest","readonly","presence"]
+partial def arrayType (atom : Json) : SourceTypes.Lowering Tree := do
+  fieldsExactly atom ["a","required","optional","rest","readonly","presence"]
   let required ← (← jArr atom "required").mapM callableType
   let optional ← (← jArr atom "optional").mapM callableType
   let restJson ← jField atom "rest"
@@ -193,7 +195,7 @@ writable under that one contract; any other is readonly, read at its read
 type, as in a plain record. A required field is an invariant field or a view;
 an optional one constrains its key only where the object has it, writable or
 readonly. Absorption does not apply to these records. -/
-partial def optionalRecord (atom : Json) : SourceTypes.Lowering σ ι := do
+partial def optionalRecord (atom : Json) : SourceTypes.Lowering Tree := do
   let fields ← CellClaims.decodeFields
     (Json.mkObj [("top",toJson false),("atoms",toJson [atom])])
   let lowered ← fields.mapM fun (name, read, write, optional) => do
@@ -202,14 +204,14 @@ partial def optionalRecord (atom : Json) : SourceTypes.Lowering σ ι := do
   let invariant := lowered.filterMap fun (n, t, ro, o) => if o || ro then none else some (n, t)
   let views := lowered.filterMap fun (n, t, ro, o) => if !o && ro then some (n, t) else none
   let optional := lowered.filterMap fun (n, t, ro, o) =>
-    if o then some (⟨n, ro, t⟩ : OptionalField (Ty ι)) else none
+    if o then some (⟨n, ro, t⟩ : OptionalField (Ty Tree)) else none
   SourceTypes.use (.refs invariant [] views optional)
 
 end
 
 /-- Required record fields recursively admit value contracts. Decode both
 capabilities through the same table before checking invariance, field by field. -/
-private def cellContract (atom : Json) : SourceTypes.Lowering σ (CellUnion.Contract ι) := do
+private def cellContract (atom : Json) : SourceTypes.Lowering (CellUnion.Contract Tree) := do
   let fields ← CellClaims.decodeShapes
     (Json.mkObj [("top",toJson false),("atoms",toJson [atom])])
   fields.mapM fun (name, read, write) => do
@@ -226,14 +228,14 @@ readonly fields as views. The conjunction is their meet, the one a
 declaration's intersection gets (`PositiveNormalization.meetLists`, POSITIVE-TYPES.md
 "Conjunction and normalization"): one record operand holding every conjunct's invariant fields, and
 every conjunct's views. -/
-private def cellConjunction (atom : Json) : SourceTypes.Lowering σ ι := do
+private def cellConjunction (atom : Json) : SourceTypes.Lowering Tree := do
   let clauses ← (← CellClaims.conjuncts atom).mapM fun part => do
     let c ← cellContract part
     if !CellUnion.viewed c then
       throw "cell read and write types do not describe the same invariant"
     let fields := (c.filter fun f => !CellUnion.readonly f).map fun f => (f.name, f.read)
     let views := (c.filter CellUnion.readonly).map fun f => (f.name, f.read)
-    return [(.refs fields [] views : PositiveNormalization.Clause (Ty ι))]
+    return [(.refs fields [] views : PositiveNormalization.Clause (Ty Tree))]
   let some last := clauses.getLast? | throw "an empty conjunction is not a contract"
   match clauses.dropLast.foldr PositiveNormalization.meetLists last with
   | [.refs fields [] views [] [] []] =>
@@ -241,8 +243,8 @@ private def cellConjunction (atom : Json) : SourceTypes.Lowering σ ι := do
   | _ => throw "a record conjunction meets as one record"
 
 /-- A callable bag is one value satisfying both contracts, never a union. -/
-private def callableObject (atom : Json) : SourceTypes.Lowering σ ι := do
-  CellClaims.fieldsExactly atom ["a","function","bag"]
+private def callableObject (atom : Json) : SourceTypes.Lowering Tree := do
+  fieldsExactly atom ["a","function","bag"]
   let fn ← jField atom "function"
   let (recv,args,result,rest) ← callableShape fn
   let Rc ← callableType recv
@@ -260,10 +262,10 @@ private def callableObject (atom : Json) : SourceTypes.Lowering σ ι := do
 read/write contract into an existing invariant alternative (CellUnion.normalize_exact).
 Other unsupported arms reject the whole type; no projection is allowed.
 Record fields and arrow operands use the same recursive contract decoder. -/
-def translate (j : Json) : SourceTypes.Lowering σ (Ty ι) := do
+def translate (j : Json) : SourceTypes.Lowering (Ty Tree) := do
   if j == Json.mkObj [("unsupported", toJson true)] then
     throw "type claim unavailable from producer"
-  CellClaims.fieldsExactly j ["top","atoms"]
+  fieldsExactly j ["top","atoms"]
   -- `unknown` is semantic top: every value, and no operation through it.
   if ← (← jField j "top").getBool? then return [← SourceTypes.use .top]
   let atoms ← jArr j "atoms"
@@ -286,8 +288,8 @@ def translate (j : Json) : SourceTypes.Lowering σ (Ty ι) := do
     let single := Json.mkObj [("top",toJson false),("atoms",toJson [atom])]
     match ← jStr (← jField atom "a") with
     | "graph" =>
-      CellClaims.fieldsExactly atom ["a", "label"]
-      let label : ι ← fromJson? (← jField atom "label")
+      fieldsExactly atom ["a", "label"]
+      let label : Tree ← fromJson? (← jField atom "label")
       if !StoreView.valid (← get) label then throw "graph label is absent"
       return [label]
     | "callable" => return [← callableObject atom]
@@ -451,7 +453,7 @@ structure TypeParam where
   bound : Option Json
 
 def decodeTypeParam (j : Json) : Except String TypeParam := do
-  CellClaims.fieldsExactly j ["name", "bound"]
+  fieldsExactly j ["name", "bound"]
   let name ← jStr (← jField j "name")
   if name.isEmpty then throw "empty type-parameter name"
   let b ← jField j "bound"
@@ -839,7 +841,7 @@ def forInName : String := "%ForIn%"
 decoder, since the structure is shared by statements and expressions. -/
 def decodeArrayElem (decodeExpr : Json → Except String Expr) (q : Json) :
     Except String (ArrayElem Expr) := do
-  CellClaims.fieldsExactly q ["index","name","namePos","default_"]
+  fieldsExactly q ["index","name","namePos","default_"]
   let d ← jField q "default_"
   let dflt ← if d == .null then pure none else some <$> decodeExpr d
   return ⟨← (← jField q "index").getNat?, ← jStr (← jField q "name"), ← jSpan q "namePos", dflt⟩
@@ -893,31 +895,31 @@ partial def decodePattern (decodeExpr : Json → Except String Expr) (j : Json) 
     return (← decodePattern decodeExpr (← jField q "target"), dflt)
   match ← jStr (← jField j "k") with
   | "name" =>
-    CellClaims.fieldsExactly j ["k","name","pos"]
+    fieldsExactly j ["k","name","pos"]
     return .name (← jStr (← jField j "name")) (← jSpan j "pos")
   | "object" =>
-    CellClaims.fieldsExactly j ["k","pos","props","rest"]
+    fieldsExactly j ["k","pos","props","rest"]
     let props ← (← jArr j "props").mapM fun q => do
-      CellClaims.fieldsExactly q ["field","target","default_"]
+      fieldsExactly q ["field","target","default_"]
       let (t, d) ← target q
       return (← sourceKey (← jStr (← jField q "field")), t, d)
     let rest ← match ← jField j "rest" with
       | .null => pure none
       | r => do
-        CellClaims.fieldsExactly r ["pos","target"]
+        fieldsExactly r ["pos","target"]
         pure (some (← jSpan r "pos", ← decodePattern decodeExpr (← jField r "target")))
     if props.isEmpty && rest.isNone then throw "an empty pattern binds nothing"
     return .object (← jSpan j "pos") props rest
   | "array" =>
-    CellClaims.fieldsExactly j ["k","pos","elems","rest"]
+    fieldsExactly j ["k","pos","elems","rest"]
     let elems ← (← jArr j "elems").mapM fun q => do
-      CellClaims.fieldsExactly q ["index","target","default_"]
+      fieldsExactly q ["index","target","default_"]
       let (t, d) ← target q
       return (← (← jField q "index").getNat?, t, d)
     let rest ← match ← jField j "rest" with
       | .null => pure none
       | r => do
-        CellClaims.fieldsExactly r ["index","pos","target","slice"]
+        fieldsExactly r ["index","pos","target","slice"]
         pure (some (← (← jField r "index").getNat?, ← jSpan r "pos", ← (← jField r "slice").getBool?,
           ← decodePattern decodeExpr (← jField r "target")))
     let indices := elems.map (·.1) ++ (rest.map (·.1)).toList
@@ -944,10 +946,10 @@ private def decodeSpreads (j : Json) (arity : Nat) (optional : List String) :
     Except String (List Nat) := do
   match (j.getObjVal? "spreads").toOption with
   | none => do
-    CellClaims.fieldsExactly j (["k","pos","callee","args"] ++ optional)
+    fieldsExactly j (["k","pos","callee","args"] ++ optional)
     pure []
   | some marked => do
-    CellClaims.fieldsExactly j (["k","pos","callee","args","spreads"] ++ optional)
+    fieldsExactly j (["k","pos","callee","args","spreads"] ++ optional)
     let spreads ← (← marked.getArr?).toList.mapM fun i => do
       let i ← i.getNat?
       if i ≥ arity then throw "a spread position names no argument"
@@ -970,7 +972,7 @@ partial def decodeExpr (j : Json) : Except String Expr := do
   | "id" => return .var p (← jStr (← jField j "name"))
   -- No declaration can bind the name `this`, so it names the receiver slot.
   | "this" =>
-    CellClaims.fieldsExactly j ["k","pos"]
+    fieldsExactly j ["k","pos"]
     return .var p "this"
   | "lit" => return .lit p (← decodeVal (← jField j "lit"))
   | "bin" =>
@@ -994,7 +996,7 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     | .lit _ .vundef, _ => return .singletonTest p .isUndef (op == "===") false left right
     | _, _ => return .equality p (op == "===") left right
   | "typeofTest" => do
-    CellClaims.fieldsExactly j ["k","pos","shape","equal","e"]
+    fieldsExactly j ["k","pos","shape","equal","e"]
     -- Each `typeof` result names one value shape.
     let tag ← match ← jStr (← jField j "shape") with
       | "number" => pure Tag.isNum | "string" => pure .isStr | "boolean" => pure .isBool
@@ -1004,7 +1006,7 @@ partial def decodeExpr (j : Json) : Except String Expr := do
       | other => throw s!"unsupported typeof test '{other}'"
     return .shapeTest p tag (← (← jField j "equal").getBool?) (← decodeExpr (← jField j "e"))
   | "inTest" => do
-    CellClaims.fieldsExactly j ["k","pos","key","e"]
+    fieldsExactly j ["k","pos","key","e"]
     match ← decodeExpr (← jField j "key") with
     | .lit _ (.vstr key) =>
       if let some reason := inKeyRefusal key then
@@ -1018,7 +1020,7 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     -- (`Tag.hasKey`, which walks the operand's prototype chain). In the
     -- class's own instance members the read is of the class value, its
     -- own binding (`selfBindingOf`): the test is the key's either way.
-    CellClaims.fieldsExactly j ["k","pos","e","proto","key"]
+    fieldsExactly j ["k","pos","e","proto","key"]
     let key ← jStr (← jField j "key")
     let proto ← decodeExpr (← jField j "proto")
     let .var _ binding := proto | throw "`instanceof` reads its class's prototype object"
@@ -1031,25 +1033,25 @@ partial def decodeExpr (j : Json) : Except String Expr := do
   | "arrayTest" => do
     -- `Array.isArray(e)`, which the parser writes only for the standard
     -- library's `Array` through its reviewed overlay entry.
-    CellClaims.fieldsExactly j ["k","pos","e"]
+    fieldsExactly j ["k","pos","e"]
     return .shapeTest p .isArray true (← decodeExpr (← jField j "e"))
   | "coalesce" => return .coalesce p (← decodeExpr (← jField j "left")) (← decodeExpr (← jField j "right"))
   | "optional" => do
-    CellClaims.fieldsExactly j ["k","pos","at","receiver","body"]
+    fieldsExactly j ["k","pos","at","receiver","body"]
     return .optional p (← jSpan j "at") (← decodeExpr (← jField j "receiver")) (← decodeExpr (← jField j "body"))
   | "comma" => do
-    CellClaims.fieldsExactly j ["k","pos","left","right"]
+    fieldsExactly j ["k","pos","left","right"]
     return .comma p (← decodeExpr (← jField j "left")) (← decodeExpr (← jField j "right"))
   | "not" => return .not p (← decodeExpr (← jField j "e"))
   | "unary" => do
-    CellClaims.fieldsExactly j ["k","pos","op","e"]
+    fieldsExactly j ["k","pos","op","e"]
     let op ← match ← jStr (← jField j "op") with
       | "neg" => pure UnaryOp.neg | "plus" => pure .plus | "bitNot" => pure .bitNot
       | "typeof" => pure .typeof
       | other => throw s!"unknown unary operator '{other}'"
     return .unary p op (← decodeExpr (← jField j "e"))
   | "cast" =>
-    CellClaims.fieldsExactly j ["k","pos","cast","annot","e"]
+    fieldsExactly j ["k","pos","cast","annot","e"]
     let kind ← jStr (← jField j "cast")
     if kind != "as" && kind != "satisfies" && kind != "nonNull" && kind != "const" then
       throw "unknown cast kind"
@@ -1073,7 +1075,7 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     -- key, at `undefined`, after its own prototype.
     let brand ← match (j.getObjVal? "brand").toOption with
       | some b => do
-        CellClaims.fieldsExactly b ["key", "pos"]
+        fieldsExactly b ["key", "pos"]
         let key ← jStr (← jField b "key")
         unless key.startsWith "[[" && key.endsWith ".prototype]]" do
           throw s!"'{key}' is not a class's prototype key"
@@ -1089,10 +1091,10 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     let parts ← fields.mapM fun f => do
       match (f.getObjVal? "spread").toOption with
       | some e => do
-        CellClaims.fieldsExactly f ["spread"]
+        fieldsExactly f ["spread"]
         return ((none : Option String), ← decodeExpr e)
       | none => do
-        CellClaims.fieldsExactly f ["name", "e"]
+        fieldsExactly f ["name", "e"]
         return (some (← sourceKey (← jStr (← jField f "name"))), ← decodeExpr (← jField f "e"))
     if !parts.any (·.1.isNone) then throw "an object literal with no spread is an allocation"
     -- A derived class's instance holds its prototype, as a class instance's
@@ -1106,10 +1108,10 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     if let .str s := field then discard <| sourceKey s
     return .read p field (← decodeExpr (← jField j "e"))
   | "arith" => do
-    CellClaims.fieldsExactly j ["k","pos","op","l","r"]
+    fieldsExactly j ["k","pos","op","l","r"]
     return .arith p (← decodeArith (← jField j "op")) (← decodeExpr (← jField j "l")) (← decodeExpr (← jField j "r"))
   | "update" => do
-    CellClaims.fieldsExactly j ["k","pos","op","target","rhs","post"]
+    fieldsExactly j ["k","pos","op","target","rhs","post"]
     let rhs ← jField j "rhs"
     let rhs ← if rhs == .null then pure none else do pure (some (← decodeExpr rhs))
     let op ← decodeArith (← jField j "op")
@@ -1117,15 +1119,15 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     return .update p op (← decodeExpr (← jField j "target"))
       rhs (← (← jField j "post").getBool?)
   | "arrayLit" => do
-    CellClaims.fieldsExactly j ["k","pos","elems"]
+    fieldsExactly j ["k","pos","elems"]
     return .arrayLit p (← (← jArr j "elems").mapM decodeExpr)
   | "arrayAssign" => do
-    CellClaims.fieldsExactly j ["k","pos","targets","rest","rhs"]
+    fieldsExactly j ["k","pos","targets","rest","rhs"]
     let targets ← (← jArr j "targets").mapM (decodeArrayElem decodeExpr)
     let rest ← match ← jField j "rest" with
       | .null => pure none
       | r => do
-        CellClaims.fieldsExactly r ["index","pos","name","namePos","slice"]
+        fieldsExactly r ["index","pos","name","namePos","slice"]
         pure (some (← jSpan r "pos", ← (← jField r "slice").getBool?,
           (⟨← (← jField r "index").getNat?, ← jStr (← jField r "name"), ← jSpan r "namePos", none⟩ : ArrayElem Expr)))
     let indices := targets.map (·.index) ++ (rest.map (·.2.2.index)).toList
@@ -1134,38 +1136,38 @@ partial def decodeExpr (j : Json) : Except String Expr := do
       throw "array pattern positions must increase"
     return .arrayAssign p targets rest (← decodeExpr (← jField j "rhs"))
   | "index" => do
-    CellClaims.fieldsExactly j ["k","pos","e","key"]
+    fieldsExactly j ["k","pos","e","key"]
     return .index p none (← decodeExpr (← jField j "e")) (← decodeExpr (← jField j "key"))
   | "indexWrite" => do
-    CellClaims.fieldsExactly j ["k","pos","receiver","key","rhs"]
+    fieldsExactly j ["k","pos","receiver","key","rhs"]
     return .indexWrite p none (← decodeExpr (← jField j "receiver")) (← decodeExpr (← jField j "key"))
       (← decodeExpr (← jField j "rhs"))
   | "bindWithReceiver" => do
-    CellClaims.fieldsExactly j ["k","pos","callee","receiver","args"]
+    fieldsExactly j ["k","pos","callee","receiver","args"]
     return .bindWithReceiver p (← decodeExpr (← jField j "callee"))
       (← decodeExpr (← jField j "receiver")) (← (← jArr j "args").mapM decodeExpr)
   | "callWithReceiver" => do
-    CellClaims.fieldsExactly j ["k","pos","callee","receiver","args"]
+    fieldsExactly j ["k","pos","callee","receiver","args"]
     return .callWithReceiver p (← decodeExpr (← jField j "callee"))
       (← decodeExpr (← jField j "receiver")) (← (← jArr j "args").mapM decodeExpr)
   | "applyWithReceiver" => do
-    CellClaims.fieldsExactly j ["k","pos","callee","receiver","list"]
+    fieldsExactly j ["k","pos","callee","receiver","list"]
     let list ← match ← jField j "list" with
       | .null => pure none
       | l => some <$> decodeExpr l
     return .applyWithReceiver p (← decodeExpr (← jField j "callee"))
       (← decodeExpr (← jField j "receiver")) list
   | "withValue" => do
-    CellClaims.fieldsExactly j ["k","pos","fn","initial","functionType","bagType"]
+    fieldsExactly j ["k","pos","fn","initial","functionType","bagType"]
     return .withValue p (← decodeExpr (← jField j "fn")) (← decodeExpr (← jField j "initial"))
       (← jField j "functionType") (← jField j "bagType")
   | "objectAssign" => do
-    CellClaims.fieldsExactly j ["k","pos","target","sources"]
+    fieldsExactly j ["k","pos","target","sources"]
     return .objectAssign p (← decodeExpr (← jField j "target")) (← (← jArr j "sources").mapM decodeExpr)
   | "ctor" => do
     -- A generic class's binders are the declaring unit's (`typeParams`);
     -- they are read where the unit's binders are, not here.
-    CellClaims.fieldsExactly j (["k","pos","lambda"] ++
+    fieldsExactly j (["k","pos","lambda"] ++
       (if (j.getObjVal? "typeParams").isOk then ["typeParams"] else []))
     let lam ← decodeExpr (← jField j "lambda")
     let .lambda _ none [] _ [] false _ _ := lam
@@ -1173,7 +1175,7 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     return .ctor p lam
   | "new" => do
     let typeArgs ← decodeTypeArgs j
-    CellClaims.fieldsExactly j (["k","pos","callee","args"] ++ typeArgsField typeArgs)
+    fieldsExactly j (["k","pos","callee","args"] ++ typeArgsField typeArgs)
     return .construct p (← decodeExpr (← jField j "callee")) (← (← jArr j "args").mapM decodeExpr) typeArgs
   | "lambda" => do
     -- Two proof fixtures embed parser snapshots from before quantified lambdas.
@@ -1181,7 +1183,7 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     -- the unique encoding of the former, necessarily empty list.
     let (typeParams, receiver) ← match (j.getObjVal? "typeParams").toOption with
       | some raw => do
-        CellClaims.fieldsExactly j ["k","pos","typeParams","receiver","params","result","body"]
+        fieldsExactly j ["k","pos","typeParams","receiver","params","result","body"]
         -- An ordinary function records its receiver annotation and whether
         -- its code is strict. Its receiver rule is the strict one: sloppy code
         -- substitutes the global object and boxes primitives, which nothing
@@ -1189,11 +1191,11 @@ partial def decodeExpr (j : Json) : Except String Expr := do
         let receiver ← match ← jField j "receiver" with
           | .null => pure none
           | r => do
-            CellClaims.fieldsExactly r ["type","strict"]
+            fieldsExactly r ["type","strict"]
             pure (some (← jField r "type", ← (← jField r "strict").getBool?))
         pure ((← (← raw.getArr?).toList.mapM decodeTypeParam), receiver)
       | none => do
-        CellClaims.fieldsExactly j ["k","pos","params","result","body"]
+        fieldsExactly j ["k","pos","params","result","body"]
         pure ([], none)
     let raw ← jArr j "params"
     let restAt := raw.zipIdx.filterMap fun (param,i) =>
@@ -1204,7 +1206,7 @@ partial def decodeExpr (j : Json) : Except String Expr := do
       let fields := ["name","type"] ++
         (if (param.getObjVal? "default").toOption.isSome then ["default"] else []) ++
         (if (param.getObjVal? "rest").toOption.isSome then ["rest"] else [])
-      CellClaims.fieldsExactly param fields
+      fieldsExactly param fields
       match (param.getObjVal? "rest").toOption with
       | none => pure ()
       | some marked =>
@@ -1229,7 +1231,7 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     return .ifBody p (← decodeExpr (← jField j "cond"))
       (← decodeExpr (← jField j "then")) (← decodeExpr (← jField j "else_"))
   | "blockBody" => do
-    CellClaims.fieldsExactly j ["k","pos","body"]
+    fieldsExactly j ["k","pos","body"]
     return .block p (← (← jArr j "body").mapM decodeStmt)
   | "apply" => do
     let args ← (← jArr j "args").mapM decodeExpr
@@ -1250,7 +1252,7 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     if let .str s := field then discard <| sourceKey s
     return .write p field (← decodeExpr (← jField j "receiver")) (← decodeExpr (← jField j "rhs"))
   | "logicalAssign" => do
-    CellClaims.fieldsExactly j ["k","pos","op","target","rhs"]
+    fieldsExactly j ["k","pos","op","target","rhs"]
     let op ← match ← jStr (← jField j "op") with
       | "nullish" => pure LogicalOp.nullish
       | "or" => pure .orElse
@@ -1258,20 +1260,20 @@ partial def decodeExpr (j : Json) : Except String Expr := do
       | op => throw s!"unknown logical assignment '{op}'"
     return .logicalAssign p op (← decodeExpr (← jField j "target")) (← decodeExpr (← jField j "rhs"))
   | "nullishAssign" => do
-    CellClaims.fieldsExactly j ["k","pos","name","namePos","rhs"]
+    fieldsExactly j ["k","pos","name","namePos","rhs"]
     return .nullishAssign p (← jStr (← jField j "name")) (← jSpan j "namePos")
       (← decodeExpr (← jField j "rhs"))
   | "assign" => do
-    CellClaims.fieldsExactly j ["k","pos","name","namePos","rhs"]
+    fieldsExactly j ["k","pos","name","namePos","rhs"]
     return .assign p (← jStr (← jField j "name")) (← jSpan j "namePos")
       (← decodeExpr (← jField j "rhs"))
   | _ => throw s!"unsupported source expression at [{p.1},{p.2}): expression outside the stateful fragment"
 
 /-- The declarators of a `const` or `let`: at least one, in source order. -/
 partial def decodeBindings (j : Json) : Except String (List Binding) := do
-  CellClaims.fieldsExactly j ["k","pos","bindings"]
+  fieldsExactly j ["k","pos","bindings"]
   let bindings ← (← jArr j "bindings").mapM fun b => do
-    CellClaims.fieldsExactly b ["name","namePos","annot","init"]
+    fieldsExactly b ["name","namePos","annot","init"]
     let a ← jField b "annot"
     return (⟨← jStr (← jField b "name"), ← jSpan b "namePos",
       if a == .null then none else some a, ← decodeExpr (← jField b "init")⟩ : Binding)
@@ -1286,28 +1288,28 @@ partial def decodeStmt (j : Json) : Except String Stmt := do
   | "const" => return .constants p (← decodeBindings j)
   | "let" => return .mutables p (← decodeBindings j)
   | "destructure" =>
-    CellClaims.fieldsExactly j ["k","pos","target","default_","init"]
+    fieldsExactly j ["k","pos","target","default_","init"]
     let d ← jField j "default_"
     let dflt ← if d == .null then pure none else some <$> decodeExpr d
     return .destructure p (← decodePattern decodeExpr (← jField j "target")) dflt
       (← decodeExpr (← jField j "init"))
   | "break" =>
-    CellClaims.fieldsExactly j ["k","pos","label"]
+    fieldsExactly j ["k","pos","label"]
     return .brk p (← decodeLabel j)
   | "continue" => return .cont p
   | "throw" =>
-    CellClaims.fieldsExactly j ["k","pos","e"]
+    fieldsExactly j ["k","pos","e"]
     return .throw p (← decodeExpr (← jField j "e"))
   | "try" =>
-    CellClaims.fieldsExactly j ["k","pos","body","handler","finalizer"]
+    fieldsExactly j ["k","pos","body","handler","finalizer"]
     let handler ← match ← jField j "handler" with
       | .null => pure none
       | h => do
-        CellClaims.fieldsExactly h ["param","body"]
+        fieldsExactly h ["param","body"]
         let param ← match ← jField h "param" with
           | .null => pure none
           | q => do
-            CellClaims.fieldsExactly q ["name","namePos"]
+            fieldsExactly q ["name","namePos"]
             pure (some (← jStr (← jField q "name"), ← jSpan q "namePos"))
         pure (some (param, ← (← jArr h "body").mapM decodeStmt))
     let finalizer ← match ← jField j "finalizer" with
@@ -1317,17 +1319,17 @@ partial def decodeStmt (j : Json) : Except String Stmt := do
     if handler.isNone && finalizer.isNone then throw "a try needs a catch or a finally"
     return .tryStmt p (← (← jArr j "body").mapM decodeStmt) handler finalizer
   | "while" =>
-    CellClaims.fieldsExactly j ["k","pos","cond","body","update"]
+    fieldsExactly j ["k","pos","cond","body","update"]
     return .loop p (← decodeExpr (← jField j "cond")) (← (← jArr j "body").mapM decodeStmt)
       (← (← jArr j "update").mapM decodeStmt)
   | "block" =>
-    CellClaims.fieldsExactly j ["k","pos","label","body"]
+    fieldsExactly j ["k","pos","label","body"]
     return .block p (← decodeLabel j) (← (← jArr j "body").mapM decodeStmt)
   | "closing" =>
-    CellClaims.fieldsExactly j ["k","pos","close","body"]
+    fieldsExactly j ["k","pos","close","body"]
     return .closing p (← (← jArr j "close").mapM decodeStmt) (← (← jArr j "body").mapM decodeStmt)
   | "forOf" =>
-    CellClaims.fieldsExactly j ["k","pos","name","namePos","iterate","iterable","body"]
+    fieldsExactly j ["k","pos","name","namePos","iterate","iterable","body"]
     let iterate ← jStr (← jField j "iterate")
     if !iterateNames.contains iterate then
       throw s!"a for...of loop steps an iteration intrinsic, not {iterate}"
@@ -1357,9 +1359,9 @@ def decodeFn (j : Json) : Except String (Fn × List TypeParam) := do
     ← jField j "retType", ← (← jArr j "body").mapM decodeStmt⟩, typeParams)
 
 def decodeAstWithParams (j : Json) : Except String (List (Fn × List TypeParam)) := do
-  CellClaims.fieldsExactly j ["file", "sourceSha256", "declarations", "init", "functions"]
+  fieldsExactly j ["file", "sourceSha256", "declarations", "init", "functions"]
   let document ← jField j "declarations"
-  CellClaims.fieldsExactly document ["roots", "definitions", "values", "symbols"]
+  fieldsExactly document ["roots", "definitions", "values", "symbols"]
   if !(← jArr document "roots").isEmpty || !(← jArr document "definitions").isEmpty ||
       !(← jArr document "values").isEmpty || !(← jArr document "symbols").isEmpty then
     throw "type declarations have no certified graph interpretation"

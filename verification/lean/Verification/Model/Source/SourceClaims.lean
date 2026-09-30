@@ -52,7 +52,7 @@ def Function.withOverlay (f : Function ι) (row : Overlay ι) : Function ι :=
 
 /-- Labels are checked against the request's own store, so even a direct
 caller cannot turn a label the store lacks into its empty default. -/
-def resolve {σ ι : Type} [Labels ι] [Store σ ι] (T : σ) (c : Candidate ι) : Except String (Ty ι) := do
+def resolve (T : EquationStore.State) (c : Candidate EquationGraphs.Tree) : Except String (Ty EquationGraphs.Tree) := do
   let A ← c
   if RequestJson.validTy (StoreView.valid T) A then pure A
   else throw "source claim contains an out-of-range type label"

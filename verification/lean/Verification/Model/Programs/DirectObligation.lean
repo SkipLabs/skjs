@@ -55,7 +55,7 @@ def Judgment.toJson [ToJson ι] : Judgment ι → Json
       [("kind", Lean.toJson "subtyping"), ("subject", Lean.toJson subject),
        ("actual", Lean.toJson actual), ("expected", Lean.toJson expected)]
 
-def Judgment.render {σ ι : Type} [Labels ι] [Store σ ι] (T : σ) : Judgment ι → String
+def Judgment.render (T : EquationStore.State) : Judgment EquationGraphs.Tree → String
   | .subtyping _ actual expected =>
       s!"{SourceTypes.render T actual} ≤ {SourceTypes.render T expected}"
 

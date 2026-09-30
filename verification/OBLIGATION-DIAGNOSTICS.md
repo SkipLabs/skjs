@@ -108,7 +108,7 @@ is untrusted display data; it cannot establish verification status.
 ### The label projection
 
 A record does not embed the label store; it embeds what the store's projection
-shows of the labels the record mentions (`Store.project`, `Projection` in
+shows of the labels the record mentions (`StoreView.project`, `Projection` in
 [Source/LabelStore.lean](lean/Verification/Model/Source/LabelStore.lean), the label and store interfaces of the source path).
 A projection is a finite table of rows over its own
 positions, the position each mentioned label is shown at, and the `names`

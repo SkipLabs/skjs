@@ -39,4 +39,10 @@ def jSpan (j : Json) (k : String) : Except String Span := do
     return (s, e)
   else .error s!"field '{k}' is not a [start, end] pair"
 
+/-- An object with exactly the fields `keys`, each once. -/
+def fieldsExactly (j : Json) (keys : List String) : Except String Unit := do
+  let fields ← j.getObj?
+  if fields.toList.length != keys.length || !(fields.toList.all (fun p => keys.contains p.1)) then
+    throw s!"unexpected fields: expected {keys}, got {fields.toList.map Prod.fst}"
+
 end Verification

@@ -3,8 +3,7 @@ import Verification.Model.Types.EquationFamilies
 import Verification.Model.Types.EquationValidator
 import Verification.Model.Types.EquationJson
 import Verification.Model.Programs.CertificateProducer
-import Verification.Model.Programs.CellClaims
-import Verification.Model.Source.LabelStore
+import Verification.Model.Source.RequestJson
 
 /-! Lowering source declarations to recursive equations (RECURSIVE-EQUATIONS
 §8). The parser's declaration document, the function tree's annotations and
@@ -154,7 +153,7 @@ private def bool (j : Json) (name : String) : Except String Bool := do (← fiel
 
 private def definitions (document : Json) : Except String (Array Definition) := do
   (← arr document "definitions").mapM fun j => do
-    CellClaims.fieldsExactly j ["declaration", "parameters", "bases", "expression"]
+    fieldsExactly j ["declaration", "parameters", "bases", "expression"]
     let identity ← field j "declaration"
     return ⟨identity, ← str identity "name", ← arr j "parameters", ← arr j "bases", ← field j "expression"⟩
 
@@ -376,7 +375,7 @@ def producerRows (types : Array Json) : Except String ProducerRows := do
   let rows ← types.mapM fun j => (fromJson? j : Except String (GraphRow Json (List Json)))
   let own ← rows.mapM fun r => match r with
     | .scheme bs .. => bs.mapM fun b => do
-      CellClaims.fieldsExactly b ["binder"]
+      fieldsExactly b ["binder"]
       str b "binder"
     | .clauses _ => pure []
     | _ => throw "a producer's row is a clause row or a scheme row; binders and intersections are labels"
@@ -455,7 +454,7 @@ structure State where
   /-- The binder names the source spells, each with its kind: the slots of
   the name placeholders (`placeholder`). -/
   names : Array (String × ParameterKind) := #[]
-  /-- The names of the fresh placeholders `Store.binders` has made, by slot. -/
+  /-- The names of the fresh placeholders `EquationStore.binders` has made, by slot. -/
   fresh : Array String := #[]
   /-- The realm's array prototype head, once lowered. -/
   proto : Option Nat := none
@@ -474,7 +473,7 @@ checked request holds one (`EquationStore.freeze` refuses it). -/
 def nameOwner : Nat := 4000000000
 
 /-- The owner of fresh placeholders: a scheme's binders before its head
-binds them (`Store.binders`, `Store.scheme`). -/
+binds them (`EquationStore.binders`, `EquationStore.scheme`). -/
 def freshOwner : Nat := 4000000001
 
 /-- Whether a tree is a placeholder. -/
@@ -758,13 +757,13 @@ private def unitBinders (names : List String) (packs : List String) : List Binde
 /-- A scheme's binders, their kinds, and the refusals of forms a scheme
 cannot state. -/
 def schemeBinders (site : String) (term : Json) : Except String (List String × List String) := do
-  CellClaims.fieldsExactly term ["k", "binders", "signatures", "span"]
+  fieldsExactly term ["k", "binders", "signatures", "span"]
   let bs ← arr term "binders"
   let sigTerms ← arr term "signatures"
   let refuse (reason : String) : Except String Unit :=
     throw s!"{site}: generic contract at {(term.getObjValD "span").compress}: {reason}; the contract cannot be erased"
   let names ← bs.toList.mapM fun b => do
-    CellClaims.fieldsExactly b ["name", "bound", "default", "span"]
+    fieldsExactly b ["name", "bound", "default", "span"]
     str b "name"
   let own (j : Json) : Bool := names.any fun n => let u := binderUse n j; u.value || u.pack
   if bs.any (fun b => own (b.getObjValD "bound")) then refuse "dependent method bounds are not represented"
@@ -774,7 +773,7 @@ def schemeBinders (site : String) (term : Json) : Except String (List String × 
   return (names, (uses.filter fun (p : String × BinderUse) => p.2.pack).map Prod.fst)
 
 def referenceIndex (term : Json) : M Nat := do
-  CellClaims.fieldsExactly term ["k", "reference", "args", "span"]
+  fieldsExactly term ["k", "reference", "args", "span"]
   let target ← field (← field term "reference") "target"
   let ds := (← get).doc
   match (List.range ds.size).filter fun i => ds[i]!.identity == target with
@@ -785,7 +784,7 @@ def referenceIndex (term : Json) : M Nat := do
 /-- A literal type's labels. A numeric zero is both zeros, as TypeScript's
 literal type `0` is. -/
 def literalLabels (term : Json) : M Union := do
-  CellClaims.fieldsExactly term ["k", "name", "text", "span"]
+  fieldsExactly term ["k", "name", "text", "span"]
   match ← str term "name" with
   | "true" => return [← prim "true" (.boolLit true)]
   | "false" => return [← prim "false" (.boolLit false)]
@@ -827,13 +826,13 @@ partial def lowerType (ctx : Ctx) (term : Json) : M Union := do
   | "union" => return normUnion ((← (← arr term "parts").mapM (lowerType ctx)).toList.flatten)
   | "intersection" => intersect ctx term
   | "parameter" =>
-    CellClaims.fieldsExactly term ["k", "index", "span"]
+    fieldsExactly term ["k", "index", "span"]
     ctxValue ctx (.param (← (← field term "index").getNat?))
   | "self" =>
-    CellClaims.fieldsExactly term ["k", "span"]
+    fieldsExactly term ["k", "span"]
     ctxValue ctx .self
   | "binder" =>
-    CellClaims.fieldsExactly term ["k", "name", "span"]
+    fieldsExactly term ["k", "name", "span"]
     let n ← str term "name"
     match ctx.binders.lookup n with
     | some ⟨false, v⟩ => return v
@@ -848,7 +847,7 @@ partial def lowerType (ctx : Ctx) (term : Json) : M Union := do
   | "function" | "constructor" | "object" =>
     return [← occurrence ctx "literal" term (job := fun h c => .term h c term)]
   | "callable" =>
-    CellClaims.fieldsExactly term ["k", "span"]
+    fieldsExactly term ["k", "span"]
     return normUnion [← prim "function" (.arrs [] []), ← prim "constructor" (.ctors [])]
   | "scheme" =>
     let (names, packs) ← schemeBinders ctx.site term
@@ -860,7 +859,7 @@ partial def lowerType (ctx : Ctx) (term : Json) : M Union := do
 element. -/
 partial def lowerRest (ctx : Ctx) (term : Json) : M Union := do
   if kindOf term == some "pack" then
-    CellClaims.fieldsExactly term ["k", "of", "span"]
+    fieldsExactly term ["k", "of", "span"]
     let operand ← field term "of"
     if kindOf operand != some "binder" then throw s!"{ctx.site}: a pack rest must name a type parameter"
     match ctx.binders.lookup (← str operand "name") with
@@ -900,7 +899,7 @@ partial def application (ctx : Ctx) (i : Nat) (supplied : List Union) : M (List 
   if supplied.length > d.parameters.size then throw s!"{ctx.site}: {d.name} applied to too many type arguments"
   let mut values := supplied.toArray
   for p in d.parameters.toList.drop supplied.length do
-    CellClaims.fieldsExactly p ["name", "span", "bound", "default"]
+    fieldsExactly p ["name", "span", "bound", "default"]
     let default ← field p "default"
     if default == .null then throw s!"{ctx.site}: {d.name} applied without its required argument {← str p "name"}"
     values := values.push (← lowerType { ctx with decl := some i, params := values, self := none, binders := [] } default)
@@ -930,7 +929,7 @@ partial def instantiateDecl (ctx : Ctx) (i : Nat) (values : List Union) : M Unio
 (§3.3). On ground rows only, where TypeScript reads a record met with a
 function as one callable, that row is a literal head of its own. -/
 partial def intersect (ctx : Ctx) (term : Json) : M Union := do
-  CellClaims.fieldsExactly term ["k", "parts", "span"]
+  fieldsExactly term ["k", "parts", "span"]
   let parts := (← (← arr term "parts").mapM (lowerType ctx)).toList
   meetOf ctx.site parts (mentions [] term).isEmpty
 
@@ -997,7 +996,7 @@ partial def heritage (ctx : Ctx) (base : Json) : M (List (Clause (List Tree))) :
 /-- An object type's clause. A
 generic method is a head of its own, owned by the head whose row this is. -/
 partial def objectClause (ctx : Ctx) (term : Json) : M (Clause (List Tree)) := do
-  CellClaims.fieldsExactly term (objectMembers term)
+  fieldsExactly term (objectMembers term)
   let hidden ← match term.getObjVal? "prototype" with
     | .ok t => do
       let P ← lowerType ctx t
@@ -1020,7 +1019,7 @@ partial def objectClause (ctx : Ctx) (term : Json) : M (Clause (List Tree)) := d
       -- member states them once, for all its signatures.
       let mut receivers : Option (List (List Tree)) := none
       for form in forms do
-        CellClaims.fieldsExactly form ["k", "receiver", "params", "rest", "result", "effect", "span"]
+        fieldsExactly form ["k", "receiver", "params", "rest", "result", "effect", "span"]
         let stated ← ((statedReceivers form).getD #[]).mapM (lowerType ctx)
         match receivers with
         | none => receivers := some stated.toList
@@ -1056,7 +1055,7 @@ partial def objectClause (ctx : Ctx) (term : Json) : M (Clause (List Tree)) := d
   let mut indexes : List (IndexKeys × List Tree) := []
   let mut cells : List (IndexKeys × List Tree) := []
   for (_, keys, index) in indexSignatures term do
-    CellClaims.fieldsExactly index ["readonly", "value", "span"]
+    fieldsExactly index ["readonly", "value", "span"]
     let value ← lowerType ctx (← field index "value")
     indexes := indexes ++ [(keys, value)]
     if !(← bool index "readonly") then cells := cells ++ [(keys, value)]
@@ -1067,7 +1066,7 @@ partial def objectClause (ctx : Ctx) (term : Json) : M (Clause (List Tree)) := d
   let mut fixed : List (Arrow (List Tree)) := []
   let mut variadic : List (RestArrow (List Tree)) := []
   for call in ← arr term "calls" do
-    CellClaims.fieldsExactly call ["k", "receiver", "params", "rest", "result", "effect", "span"]
+    fieldsExactly call ["k", "receiver", "params", "rest", "result", "effect", "span"]
     if (← str call "k") != "function" then throw s!"{ctx.site}: call signature is not a function"
     let recv ← field call "receiver"
     let receiver ← if recv == .null then pure [← top] else lowerType ctx recv
@@ -1095,7 +1094,7 @@ partial def objectClause (ctx : Ctx) (term : Json) : M (Clause (List Tree)) := d
 
 /-- A function type's clause. -/
 partial def functionClause (ctx : Ctx) (term : Json) : M (Clause (List Tree)) := do
-  CellClaims.fieldsExactly term ["k", "receiver", "params", "rest", "result", "effect", "span"]
+  fieldsExactly term ["k", "receiver", "params", "rest", "result", "effect", "span"]
   let recv ← field term "receiver"
   let receiver ← if recv == .null then pure [← top] else lowerType ctx recv
   let domains ← (← arr term "params").mapM (lowerType ctx)
@@ -1111,7 +1110,7 @@ partial def termRow (ctx : Ctx) (term : Json) : M (GraphRow Tree (List Tree)) :=
   | "object" => return .clauses [← objectClause ctx term]
   | "function" => return .clauses [← functionClause ctx term]
   | "constructor" =>
-    CellClaims.fieldsExactly term ["k", "params", "rest", "result", "span"]
+    fieldsExactly term ["k", "params", "rest", "result", "span"]
     let ps ← (← arr term "params").mapM (lowerType ctx)
     let restTerm ← field term "rest"
     let result ← lowerType ctx (← field term "result")
@@ -1147,7 +1146,7 @@ partial def schemeRow (ctx : Ctx) (term : Json) : M (GraphRow Tree (List Tree)) 
   let mut fixed : List (Arrow (List Tree)) := []
   let mut rests : List (RestArrow (List Tree)) := []
   for f in ← arr term "signatures" do
-    CellClaims.fieldsExactly f ["k", "receiver", "params", "rest", "result", "effect", "span"]
+    fieldsExactly f ["k", "receiver", "params", "rest", "result", "effect", "span"]
     let recv ← lowerType inner (← field f "receiver")
     let ps ← (← arr f "params").toList.mapM (lowerType inner)
     let restTerm ← field f "rest"
@@ -1271,7 +1270,7 @@ partial def claimLabel (scope : List (String × Binding)) (j : Json) : M Union :
   | .num _ => rowLabel scope (← j.getNat?)
   | .obj _ =>
     if let some k := get? "decl" then
-      CellClaims.fieldsExactly j (if (j.getObjVal? "args").isOk then ["decl", "args"] else ["decl"])
+      fieldsExactly j (if (j.getObjVal? "args").isOk then ["decl", "args"] else ["decl"])
       let i ← k.getNat?
       let ds := (← get).doc
       if i ≥ ds.size then throw s!"source claims: a declaration's label names no declaration: {i}"
@@ -1288,16 +1287,16 @@ partial def claimLabel (scope : List (String × Binding)) (j : Json) : M Union :
       let values ← application ctx i args
       instantiateDecl ctx i values
     else if let some ps := get? "meet" then
-      CellClaims.fieldsExactly j ["meet"]
+      fieldsExactly j ["meet"]
       let parts ← (← ps.getArr?).toList.mapM (claimUnion scope)
       if parts.length < 2 then throw "source claims: a meet has at least two parts"
       meetOf "source claims" parts (parts.all (·.all fun t => !treeOpen t && !hasRigid t))
     else if let some s := get? "array" then
-      CellClaims.fieldsExactly j ["array", "readonly"]
+      fieldsExactly j ["array", "readonly"]
       let store ← claimUnion scope s
       return [mkApp (← arrayHead (← bool j "readonly") (← protoLabel)) [store]]
     else if let some n := get? "binder" then
-      CellClaims.fieldsExactly j ["binder"]
+      fieldsExactly j ["binder"]
       let n ← n.getStr?
       if n.isEmpty then throw "source claims: a binder's label names it"
       match scope.lookup n with
@@ -1325,11 +1324,11 @@ partial def runJob (job : Job) : M Unit := do
       let readonly ← bool term "readonly"
       let presence : ArrayPresence ← fromJson? (← field term "presence")
       if kindOf term == some "array" then
-        CellClaims.fieldsExactly term ["k", "readonly", "presence", "element", "span"]
+        fieldsExactly term ["k", "readonly", "presence", "element", "span"]
         let element ← lowerType ctx (← field term "element")
         pure (.clauses [.list ⟨[], [], some element, readonly, presence⟩ []])
       else
-        CellClaims.fieldsExactly term ["k", "readonly", "presence", "required", "optional", "rest", "span"]
+        fieldsExactly term ["k", "readonly", "presence", "required", "optional", "rest", "span"]
         let required ← (← arr term "required").toList.mapM (lowerType ctx)
         let optional ← (← arr term "optional").toList.mapM (lowerType ctx)
         let restTerm ← field term "rest"
@@ -1793,7 +1792,7 @@ whole. A rest is the pack of its element (`lowerRest`). -/
 def genericType (ctx : Ctx) (term : Json) : M GenericType := do
   match (term.getObjValAs? String "k").toOption with
   | some "function" =>
-    CellClaims.fieldsExactly term ["k", "receiver", "params", "rest", "result", "effect", "span"]
+    fieldsExactly term ["k", "receiver", "params", "rest", "result", "effect", "span"]
     if (← str term "effect") != "unrestricted" then return .other (← lowerType ctx term)
     let recv ← field term "receiver"
     let receiver ← if recv == .null then pure none else some <$> lowerType ctx recv
@@ -1804,7 +1803,7 @@ def genericType (ctx : Ctx) (term : Json) : M GenericType := do
     let rest ← if restTerm == .null then pure none else some <$> lowerType ctx restTerm
     return .function receiver params rest (← lowerType ctx (← field term "result"))
   | some "constructor" =>
-    CellClaims.fieldsExactly term ["k", "params", "rest", "result", "span"]
+    fieldsExactly term ["k", "params", "rest", "result", "span"]
     if (← field term "rest") != .null then return .other (← lowerType ctx term)
     let params ← (← arr term "params").toList.mapM (lowerType ctx)
     return .construct params (← lowerType ctx (← field term "result"))
@@ -1919,9 +1918,9 @@ def lowerSource (ast claims : Json) : M (List (String × Union) × List (String 
   let mut values := []
   let document := ast.getObjValD "declarations"
   for (v, vi) in ((document.getObjValAs? (Array Json) "values").toOption.getD #[]).toList.zipIdx do
-    CellClaims.fieldsExactly v ["binding", "declaration", "construct", "typeParams", "type"]
+    fieldsExactly v ["binding", "declaration", "construct", "typeParams", "type"]
     let binding ← field v "binding"
-    CellClaims.fieldsExactly binding ["local", "imported", "specifier", "span"]
+    fieldsExactly binding ["local", "imported", "specifier", "span"]
     let name ← str binding "local"
     let span ← (fromJson? (← field binding "span") : Except String (Nat × Nat))
     let _ ← bool v "construct"
@@ -2068,32 +2067,11 @@ def source (ast claims : Json) : Except String SourceLowering := do
     initBinders := initBinders.map fun (n, t, B) => (n, treeRename b.rename t, B.map rn)
     claims := ← documentForm rename claims }
 
-/-! ### The label store over equation labels
+/-! ### Equation labels
 
-`LabelStore` (S4) asks for labels apart from any store and a store that only
-grows. Equation labels are closed trees (`Tree`), store-independent: the four
+Equation labels are closed trees (`Tree`), store-independent: the four
 primitive values are the nullary heads 0 to 3, which `primitives` allocates
-first and compaction keeps first. `Labels` and `Meets` are below.
-
-**What S6's `Store` instance must provide.** Its state is this module's
-`State` (the heads under construction), and its operations are functions
-here: `intern` and `lookup` a nullary `ground` head (hash-consed by its
-clauses); `binder` and `binders` a unit head's owned binders (`enterUnit`);
-`bounded` the meet label of a binder and its bound (`meetUnions`); `scheme` a
-scheme head; `arrayProto` the `ArrayProto` head (`protoLabel`). `graph` and
-`row` need the validated equations: `Equations.ofRaw` of the state's heads,
-their rows read by `Equations.row` and carried from `Label E.signature` to
-`Tree` (an empty clause row off the signature). A head added after the
-declarations is nullary, so it changes no older head's row and has no
-variance to compute. It
-must also give the state a JSON spelling (`ToJson σ`, `FromJson σ`). -/
-
-/-- The meet of unions is the exact meet labels over their product (§3.3);
-an empty part is the empty intersection, refused. -/
-instance : LabelStore.Meets State Tree where
-  meet parts := do
-    if parts.any List.isEmpty then throw emptyMeet
-    return meetUnions parts
+first and compaction keeps first. -/
 
 instance : LabelStore.Labels Tree where
   -- An extracted label's store still grows: instances are proposed over the

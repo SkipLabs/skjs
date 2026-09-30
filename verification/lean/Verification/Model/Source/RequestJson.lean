@@ -1,4 +1,5 @@
 import Lean.Data.Json
+import Verification.Model.Types.Claim
 import Verification.Model.Types.GraphRows
 import Verification.Model.Programs.Parametricity
 import Verification.Model.Programs.GraphCode
@@ -28,6 +29,15 @@ instance : FromJson PropKey where
       let fields ← j.getObj?
       if fields.size != 1 then throw "a symbol key has exactly the field 'symbol'"
       return .sym (← (← j.getObjVal? "symbol").getNat?)
+
+/-- A field name: a string key as its JSON string, a symbol key as
+`{"symbol": id}`. -/
+def _root_.Verification.Model.PropKey.decode (j : Json) : Except String PropKey :=
+  match j with
+  | .str name => .ok (.str name)
+  | j => do
+    fieldsExactly j ["symbol"]
+    return .sym (← (← jField j "symbol").getNat?)
 
 deriving instance ToJson, FromJson for Tag
 deriving instance ToJson, FromJson for Arith
@@ -477,7 +487,7 @@ variable {σ ι : Type} [Labels ι] [StoreView σ ι]
     | .expression label => mentionedAt label
     | .edge source destination _ => mentionedAt source ++ mentionedAt destination
     | _ => []
-  let p := Store.projection r.types (r.result ++ mentioned).eraseDups
+  let p := StoreView.projection r.types (r.result ++ mentioned).eraseDups
   let atNode := fun l => Json.mkObj [
     ("label",toJson l), ("sourceMap",toJson ((sourceMap[l]?).bind id)),
     ("node",toJson r.program[l]?), ("claim",toJson ((claimAt l).map (PointClaim.shown p))),

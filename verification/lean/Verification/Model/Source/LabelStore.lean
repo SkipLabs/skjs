@@ -4,12 +4,12 @@ import Verification.Model.Types.PositiveCertificates
 import Verification.Model.Programs.CertificateProducer
 
 /-! What the source path asks of the labels it types a program with, and of
-the store that gives them meaning. Extraction, the source claims' readers and
-the checked requests are written against these two interfaces: extraction
-grows a store over the lowering's heads (`EquationStore.State`, labels `Tree`),
-and a checked request reads the equations those heads present, frozen
-(`EquationStore.Checked`, labels `CheckedLabel`). Neither interface carries a proof obligation: a store's graph is
-what the checked requests are proved safe over, whatever store built it. -/
+the store that gives them meaning. The checked requests are written against
+these two interfaces, which two stores provide: the store extraction grows
+over the lowering's heads (`EquationStore.State`, labels `Tree`), and the
+equations those heads present, frozen (`EquationStore.Checked`, labels
+`CheckedLabel`). Neither interface carries a proof obligation: a store's graph
+is what the checked requests are proved safe over, whatever store built it. -/
 namespace Verification.Model.LabelStore
 open Lean PositiveGraphs PositiveNormalization CallEffects
 
@@ -104,45 +104,9 @@ class StoreView (σ : Type) (ι : outParam Type) [Labels ι] extends ToJson σ, 
   sound, supplied by verified code, never by a certificate. -/
   images : (T : σ) → PositiveCertificates.InstanceImageCheck (graph T)
 
-/-- A store the source path grows: the view, and the ways extraction adds to
-it. A store only grows: every operation keeps the labels it had and their
-rows. -/
-class Store (σ : Type) (ι : outParam Type) [Labels ι] extends StoreView σ ι where
-  /-- The label of a union of clauses, added when the store lacks it. -/
-  intern : σ → List (Clause (List ι)) → σ × ι
-  /-- A generic unit's binder: the store's one value parameter of that name
-  that no scheme binds, or a new one. -/
-  binder : σ → String → Except String (σ × ι)
-  /-- Fresh value parameters, one per name, for a scheme's binders. They
-  stand for the scheme's binders until `scheme` binds them: the scheme's own
-  binders are its row's (`GraphRow.scheme`), which may be other labels. -/
-  binders : σ → List String → σ × List ι
-  /-- A value parameter read within clauses and further parameters,
-  `p ⊓ cs ⊓ also`: a bounded binder. The same label for the same meet. -/
-  bounded : σ → ι → List (Clause (List ι)) → List ι → σ × ι
-  /-- A scheme over binders from `binders`: its signatures, its binders'
-  bounds and its variadic signatures. -/
-  scheme : σ → List ι → List (Arrow (List ι)) → List (ι × List ι) →
-    List (RestArrow (List ι)) → σ × ι
-  /-- A label with the binders named by `θ` read as their types: the source
-  spells a binder by its name, and a unit or closure decides what the name
-  stands for. The union a label becomes. -/
-  rebind : σ → List (String × List ι) → ι → List ι
-  /-- A label with labels `σ` names read as the labels it pairs them with:
-  a scheme's fresh binders read as its own (`scheme`). The union a label
-  becomes. -/
-  substitute : σ → List (ι × ι) → ι → List ι
-
-
 /-- What a diagnostic mentioning `mentioned` shows of the store, to the
 projection's depth. -/
-@[nospecialize] def Store.projection {σ ι : Type} [Labels ι] [StoreView σ ι] (T : σ) (mentioned : List ι) : Projection ι :=
+@[nospecialize] def StoreView.projection {σ ι : Type} [Labels ι] [StoreView σ ι] (T : σ) (mentioned : List ι) : Projection ι :=
   StoreView.project T mentioned Projection.depth
-
-/-- The meet of unions, lowered as a source intersection is. Apart from
-`Store` because a store's intersections are lowered by the pass that lowers
-its declarations, which is itself written over the store. -/
-class Meets (σ : Type) (ι : outParam Type) where
-  meet : List (List ι) → StateT σ (Except String) (List ι)
 
 end Verification.Model.LabelStore

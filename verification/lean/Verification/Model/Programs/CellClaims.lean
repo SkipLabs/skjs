@@ -6,11 +6,7 @@ one side when a claim's read and write types differ. The plain-cell interpretati
 excludes arrays, callable objects, accessors and hidden object behavior. -/
 namespace Verification.Model.CellClaims
 open Lean ProgramTyping PositiveRules SourceTypes LabelStore
-
-def fieldsExactly (j : Json) (keys : List String) : Except String Unit := do
-  let fields ← j.getObj?
-  if fields.toList.length != keys.length || !(fields.toList.all (fun p => keys.contains p.1)) then
-    throw s!"unexpected fields: expected {keys}, got {fields.toList.map Prod.fst}"
+open EquationGraphs (Tree)
 
 private def plainMode (j : Json) (name : String) : Except String Unit := do
   let mode ← jStr (← jField j name)
@@ -29,15 +25,6 @@ structure FieldClaim where
   name : PropKey
   read : Claim.Ty
   write : Claim.Ty
-
-/-- A field name: a string key as its JSON string, a symbol key as
-`{"symbol": id}`. -/
-def _root_.Verification.Model.PropKey.decode (j : Json) : Except String PropKey :=
-  match j with
-  | .str name => .ok (.str name)
-  | j => do
-    fieldsExactly j ["symbol"]
-    return .sym (← (← jField j "symbol").getNat?)
 
 /-- The accepted record is interpreted as one required slot per named field.
 The schema cannot distinguish data properties from accessors; the source gate
@@ -186,14 +173,14 @@ def conjuncts (atom : Json) : Except String (List Json) := do
     return plain :: others.toList
 
 section
-variable {σ ι : Type} [Labels ι] [Store σ ι]
+variable {ι : Type} [Labels ι]
 
 /-- The label of a location under one record contract. -/
-def reference (fs : List (PropKey × Ty ι)) : Lowering σ ι := use (.refs fs [] [])
+def reference (fs : List (PropKey × Ty Tree)) : Lowering Tree := use (.refs fs [] [])
 
 /-- The label of a location under one record contract with readonly views:
 the invariant fields and, separately, the fields read through a capability. -/
-def viewReference (fs vs : List (PropKey × Ty ι)) : Lowering σ ι := use (.refs fs [] vs)
+def viewReference (fs vs : List (PropKey × Ty Tree)) : Lowering Tree := use (.refs fs [] vs)
 
 /-- Field maps compare by name first, then by the labels their contracts got. -/
 def beforeFields : List (PropKey × Ty ι) → List (PropKey × Ty ι) → Bool
@@ -205,7 +192,7 @@ def beforeFields : List (PropKey × Ty ι) → List (PropKey × Ty ι) → Bool
 /-- A location under every contract in the conjunction. Conjunction is
 commutative and idempotent, so the operands are sorted and deduplicated, and a
 conjunction of one contract is the plain cell. -/
-def conjunction (atom : Json) : Lowering σ ι := do
+def conjunction (atom : Json) : Lowering Tree := do
   let parts ← conjuncts atom
   let types ← parts.mapM fun part =>
     translate (Json.mkObj [("top",toJson false),("atoms",toJson [part])])
