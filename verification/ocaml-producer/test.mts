@@ -123,6 +123,30 @@ process.stdout.write(
 /** The artifacts of a case's run. */
 const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'s run`);
 
+// A broad, shallow finite comparison has no semantic dependency-count cap.
+// Distinct child keys keep each comparison necessary; the changed leaf is
+// checked through the same source path as the equivalent pair.
+{
+  const dir = mkdtempSync(join(tmpdir(), "skjs-wide-subtyping-"));
+  const width = 205;
+  const names = Array.from({ length: width }, (_, i) => i);
+  const source = (bad: boolean) => [
+    ...names.flatMap(i => [
+      `interface A${i} { readonly p${i}: number }`,
+      `interface B${i} { readonly p${i}: ${bad && i === width - 1 ? "string" : "number"} }`,
+    ]),
+    `interface A { ${names.map(i => `readonly f${i}: A${i}`).join("; ")} }`,
+    `interface B { ${names.map(i => `readonly f${i}: B${i}`).join("; ")} }`,
+    "export function convert(value: A): B { return value; }",
+  ].join("\n");
+  const positive = join(dir, "positive.ts");
+  const negative = join(dir, "negative.ts");
+  writeFileSync(positive, source(false));
+  writeFileSync(negative, source(true));
+  assert.equal(check(positive).status, "verified", "205 finite readonly dependencies");
+  assert.equal(check(negative).status, "unverified", "the last field's type is incompatible");
+}
+
 {
   // The upstream `sum.ts`, byte for byte: the census row and the producer's
   // README describe this file as the framework's own example.

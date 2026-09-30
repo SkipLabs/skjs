@@ -42,9 +42,34 @@ theorem freeMapOf_reassign (D : List ι) : ∀ fuel (V : FreeMap ι),
 
 theorem expand_reassign (F : List ι) : expand (reassign G η) F = expand G F := rfl
 
+/-- Fixing the assignment erases an earlier reassignment of image metadata. -/
+theorem images_reassign_fixed (images : InstanceImageCheck G) :
+    (images.reassign η).reassign (ParameterAssignment.empty .mixed) =
+      images.reassign (ParameterAssignment.empty .mixed) := by
+  cases hs : images.sub <;>
+    simp only [InstanceImageCheck.reassign, hs, Option.map_none, Option.map_some] <;> rfl
+
+theorem checkStructural_reassign (images : InstanceImageCheck G)
+    (S T : List ι) (known : Known ι) (table : Table ι)
+    (arrows : PositiveCertificates.Evidence ι) :
+    checkStructural (reassign G η) (images.reassign η) S T known table arrows =
+      checkStructural G images S T known table arrows := by
+  simp only [checkStructural, images_reassign_fixed]
+  rfl
+
+/-- Structural comparison uses one fixed parameter assignment. -/
+theorem compareStructural_reassign (images : InstanceImageCheck G) (S T : List ι)
+    (known : Known ι) (budget : SearchBudget) :
+    compareStructural (reassign G η) (images.reassign η) S T known budget =
+      compareStructural G images S T known budget := by
+  simp only [compareStructural, images_reassign_fixed, checkStructural_reassign]
+  rfl
+
 /-- A bound is decided at the graph with its assignment fixed. -/
-theorem boundOk_reassign (binders : List ι) (θs : List (List ι)) (b : ι × List ι) :
-    boundOk (reassign G η) binders θs b = boundOk G binders θs b := rfl
+theorem boundOk_reassign (images : InstanceImageCheck G) (binders : List ι)
+    (θs : List (List ι)) (b : ι × List ι) :
+    boundOk (reassign G η) (images.reassign η) binders θs b = boundOk G images binders θs b := by
+  simp only [boundOk, compareStructural_reassign]
 
 /-! Every checker below takes a proved instance image checker. Its check is
 the same function at every reassignment (`InstanceImageCheck.reassign`). -/
@@ -69,12 +94,19 @@ assignment, the same for the graph and its reassignments. -/
 theorem premAt_reassign (r : Renaming G) (S T : List ι) :
     premAt (reassign G η) (images.reassign η) (r.reassign η) S T = premAt G images r S T := rfl
 
+theorem checkFamilyWith_reassign (sub : Option (Renaming G)) (S T : List ι) (c : FamilyCertificate ι) :
+    checkFamilyWith (reassign G η) (images.reassign η) (sub.map (·.reassign η)) S T c =
+      checkFamilyWith G images sub S T c := by
+  cases sub <;> simp only [checkFamilyWith, checkFamilyUsing, checkInstArrs_reassign] <;> rfl
+
 /-- The fallback searches and checks at the graph with its assignment fixed. -/
 theorem fallbackWith_reassign (sub : Option (Renaming G)) (S T : List ι)
     (ks : List (KnownInstance ι)) :
     fallbackWith (reassign G η) (images.reassign η) (sub.map (·.reassign η)) S T ks =
       fallbackWith G images sub S T ks := by
-  cases sub <;> rfl
+  simp only [fallbackWith, checkInstArrs_reassign]
+  have h := compareStructural_reassign (G := G) (η := η) { images with sub } S T (knownOf ks) {}
+  exact congrArg (fun x => (ks.all (fun k => checkInstArrsUsing G images k.1 k.2.1 k.2.2.1 k.2.2.2)) && x.accepted) h
 
 theorem fallbackAt_reassign (S T : List ι) (ks : List (KnownInstance ι)) :
     fallbackAt (reassign G η) (images.reassign η) S T ks = fallbackAt G images S T ks := by

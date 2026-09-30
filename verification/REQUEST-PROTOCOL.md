@@ -505,7 +505,7 @@ field present:
 | --- | --- |
 | a checker question | `question` (`"subset"`: the premise judgment on a pair, `Var` among its rules; `"family"`: the fallback's pairs checked as a family entry), `source` and `target` (the types' sizes), `holds`, `instances` (`Inst` steps tried), `varSteps` (those that held), `varDepth` (the deepest nesting, for `subset`), `events` (the lines below produced while answering it) |
 | a variance component | `variances` (its heads), `generic` (those with parameters), `polarityRounds`, `checkRounds`, `memberChecks` (`Valid` checks of one member), `weakened` (members made `inv`), `kept` (members with a variance) |
-| a fallback search | `search` (`"fallback"`), `source`, `target`, `rows`, `rounds` (unfoldings of a frontier), `visited` (candidate pairs, before reuse up to renaming), `refused` (`"growth"`, `"limit"` or `null`), `proved` |
+| a fallback search | `search` (`"fallback"`), `source`, `target`, `rows`, `rounds` (unfoldings of a frontier), `visited` (candidate pairs, before reuse up to renaming), `refused` (`"growth"`, `"exhausted"` or `null`), `proved` |
 
 The hooks that write it are, as definitions, the identity on the result they
 observe (`SubtypingTrace.question`, `noteInstance`, `note`), and every

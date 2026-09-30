@@ -1192,11 +1192,141 @@ unchanged ([design](#recursive-quantified-contracts)).
 | O8. Fix: two principled refusals, a method read off its object by a pattern and a position past a mutable tuple's arity, are stated by the producer (`reject:`) with no source location, so the reader has no obligation to show and their cases cannot be negative controls | open | both refusals located at their source span; `pattern-method-refused` and `mutable-tuple-position-refused` negatives, the reader showing each |
 | C2. Write the source layer directly over its one store, `EquationStore.State`: `EquationLowering` and `EquationStore` precede the modules written over them in the import order, which call the store's operations and `equationFront` directly. `StoreView` and `Labels` stay classes, each with two instances: the growing store and the frozen equations | done | the three classes deleted; `lake build` green; every `cases.mts` outcome and diagnostic unchanged |
 | E. Fix: the declaration reader erased a generic method whose signature it could not read to an `unknown` member, so a produced value met the declaration at any field (`return { run: 42 }` as a `Runner` whose `run` takes a type literal with a generic method). The reader refuses the declaration at such a method; a declaration's generic function type, the form behind most such erasures (`EagerCollection.mapReduce`'s result), is a scheme term whose signatures take any receiver ([request protocol](REQUEST-PROTOCOL.md)). The other `unknown` readings in the parser, the OCaml producer and Lean are stated meanings (a declaration's `any`, an ambient class's untyped readonly field, a receiver no signature states), none a fallback for a contract the reader cannot read | done | `invalid-generic-method-nested-scheme` refused at its declaration, and 42 in `run`'s place throws under Node; `generic-method-nested-method` and `generic-function-type-member` verify, `invalid-generic-function-type-member` is rejected at its return contract and returns the unpaired argument under Node; census 2,466 verified (2,466), 110 gaps (110): no unit loses verification; `testUnionWithGenerics` and `testGenericTupleConstraint` stay gaps, blocked at their own generic function values |
+| U1. [Unified subtype engine](#subtype-engine-cleanup-plan): one comparison operation and its soundness boundary | in progress: checked structural kernel and typed resource outcome; full Lean build and six pipeline suites pass | the operation handles the existing subtype rules over equations, with checked internal justification and explicit resource exhaustion |
+| U2. Route subtype consumers through that operation | in progress: bounds and structural coverage share the equation-aware kernel; direct/widened Promise bounds and 205-field records pass with negative controls; public strategy evidence and producer discovery remain | bounds, arguments, results, receiver checks and instance-image equality use the same engine; producers supply inference choices |
+| U3. Resource accounting and diagnostic integration | planned | the 200-comparison acceptance cap is absent; exhausted work is located and visibly inconclusive through the CLI, runner and viewer |
+| U4. Retire superseded paths and validate the cleanup | planned | strategy-selection evidence and duplicate searches are deleted; the closure checks below pass; documentation and coverage measurements agree with the implementation |
 
 The stages' order and dependencies: S1, S3 and the kernel rows may run in
 parallel; S4 follows S1; S5 follows S3 and S4's interface; S6 needs all of
 them and the image-checker row; S7 follows S6; S8 follows S7. K2 and K3
 block the framework cases, not the cutover.
+
+### Subtype engine cleanup plan
+
+**Scope.** This plan concerns subtype checking over the recursive equations
+and its consumers. The equation representation, its interpretation, the
+substitution and congruence theorems, and the guarded family soundness
+argument supply the foundation. Callable/record intersection semantics and
+dependent quantified bounds are separate design work. Execution authorization
+and progress are recorded in U1–U4 in the status table above.
+
+**Producer and verifier responsibilities.** The producer proposes expression
+types, storage contracts, loop invariants and generic instances. Lean derives
+the required comparisons from source contracts and checks them through one
+subtype engine. Type arguments and other instantiation choices are untrusted
+inputs whose bounds and substituted signatures require validation. Program
+evidence search in `CertificateProducer` performs a producer role even though
+it runs in the Lean executable; it and evidence checking use the same subtype
+operation. The source claims and evidence protocols expose the choices needed
+for validation. A producer-selected subtype strategy or a supplied table of
+comparison pairs is outside this interface.
+
+**Target operation.** A comparison asks whether one type is included in
+another under a stated binder context. Identity, validated variance,
+quantified instantiation, binder renaming and structural unfolding are rules
+of this operation. Semantic equality asks for inclusion in both directions.
+The engine maintains a worklist and shared dependencies between comparisons;
+these are internal proof-search state. The type representation remains the
+finite program of recursive equations described in
+[RECURSIVE-EQUATIONS](RECURSIVE-EQUATIONS.md).
+
+The result distinguishes an established comparison, one the supported search
+does not establish, and resource exhaustion. Only the established result
+authorizes a typing step. An unsuccessful search is no claim of semantic
+non-inclusion. Exhaustion identifies the obligation, resource and work
+performed; a program must not become verified through an exhausted branch.
+
+**U1 — Engine and proof boundary.** Define this result and the common
+comparison operation in Lean. Use the existing family-rule soundness theorem
+to validate the engine's internal justification, preserving the theorem for
+every assignment of the parameter meanings. Internal proof constructors may
+name inference rules. Public evidence does not select among `subset`, `inst`
+and `fallback` algorithms.
+
+Each comparison records its dependencies and the alternative ways a rule can
+justify it. A visited pair alone is not a proof: recursive reuse requires the
+guarded coinductive justification. Cache keys account for the equation store,
+binder context and hypotheses on which a result depends. Share work within a
+fixed equation environment; a growing store cannot reuse results whose
+dependencies changed. Binder renaming preserves scope and captured parameters.
+
+Make generic bounds and instance-image equality sub-obligations of the same
+engine. Audit the dependency between instantiation, image validation and
+subtyping before implementing it: a cycle through those operations must not
+discharge itself as though a constructor had guarded it. In particular,
+`imagesUpTo`/`equivalent` and the proved `InstanceImageCheck` interface must
+retain their semantic justification through the migration.
+
+**U2 — Consumers and producer choices.** Route ordinary coercions, generic
+bounds, receiver requirements, fixed and variadic arguments/results,
+annotation/claim comparisons and substituted-image equality through the
+operation. Audit source lowering and extraction as well as the frozen request
+checker: checking before and after freezing must use the same rules for the
+same equations. Preserve the parameter-reassignment laws used by generic
+units and closures.
+
+Consolidate the responsibilities of `CertificateProducer.subtypeUsing`,
+`PositiveCertificates.fallbackWith`, `boundOk` and
+`EquationStore.equivalent`. Instance inference supplies choices; the engine
+checks their bounds and images. Program evidence search must obtain its
+subtyping result without independently reconstructing the same comparison
+graph to discover which choices the checker needs. Memoized results used in
+acceptance carry the checked justification; producer caches carry no authority.
+
+**U3 — Resources and outcomes.** Remove `fallbackLimit = 200` as a fixed
+acceptance restriction. Account for work through an explicit execution budget
+or resumable search state. For a finite reachable comparison graph, sufficient
+resources allow the engine to finish without an arbitrary comparison-count
+ceiling. This is a closure requirement, not a claim of completeness for all
+recursive types. Growing non-regular comparisons may exhaust resources or
+meet a documented algorithmic restriction; neither outcome asserts that the
+subtyping judgment is false.
+
+Carry these outcomes through source obligations, evidence search/checking,
+the runner and the viewer. Preserve the source location and structured
+judgment. Keep exhausted work distinct from a completed search that establishes
+no derivation, and from a source form outside the fragment. Preserve this
+distinction in measurements. Change the shared protocol types and exhaustive
+consumers together.
+
+**U4 — Retirement and closure.** Delete the superseded strategy dispatch,
+separate finite bound-checking path, duplicate comparison discovery and public
+strategy-selection evidence in the same migration. Retain helpers and proofs
+that the common engine uses. A renamed fallback beside the ordinary engine
+does not meet this plan. Review and regenerate the rule inventory after
+checking its affected paragraphs. Update the actual theory, implementation
+and protocol sections in their owning documents when the code changes; the
+plan itself makes no claim that those changes are present.
+
+Use the following independent closure checks:
+
+- A method `accept<T extends Promise<number | string>>(x: T): number`
+  accepts a `Promise<number>` argument, both directly and through an explicitly
+  widened variable. The corresponding argument outside the bound is refused.
+  Exercise the same comparison as an ordinary subtype obligation and as a
+  generic bound.
+- Two equivalent shallow readonly record types with 205 distinct child-type
+  comparisons verify. Generate the source fixture if that keeps the test
+  readable. A changed leaf type is refused at the relevant obligation.
+  A deliberately small execution budget reports exhaustion; sufficient
+  resources establish the original comparison.
+- Keep the growing `Pair`, Promise covariance, generic-method renaming,
+  variadic instantiation and framework cases with their original negative
+  controls. Preserve writable invariance, receiver requirements, capture
+  independence, argument-pack kinds and callback effects.
+- Retain forged-evidence controls for the changed acceptance boundary,
+  particularly a false generic instance and an unjustified recursive
+  dependency. Prefer source cases for ordinary behavior and retire temporary
+  probes once a pipeline case covers their purpose.
+
+Before a migration commit, run the relevant narrow checks, the full Lean
+build and `verification/run.sh`; inspect both the statement and axioms of
+`SourceClaimJson.checkJson_safe`. For closure, rerun the coverage measurement
+and representative subtyping performance measurements, inspecting every
+changed outcome. Update the trust explanation to distinguish equation
+well-formedness and proved inclusion from the trusted interpretation of source
+types. Commit tested stages; pushing requires separate user permission.
 
 ### Open work
 

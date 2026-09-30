@@ -11,8 +11,8 @@ parametric assumptions, for subtyping.
 
 The Lean mechanization (section 8) covers sections 2, 3 and 4.1, and 4.2
 with instance hypotheses discharged by table pairs, subsets and hypotheses.
-The lowering of section 5 is untrusted: the checker validates everything it
-proposes.
+The checker validates equation well-formedness and subtype derivations.
+The interpretation of source declarations in section 5 is trusted.
 
 ## 1. The problem
 
@@ -373,6 +373,19 @@ instance as a known row: a prototype's quantified member, at the object as
 receiver, covering a target's method. Soundness is Lemma 3 with the bound
 premises ([POSITIVE-TYPES](POSITIVE-TYPES.md#instances-of-a-scheme-row)).
 
+The executable structural kernel uses the equation representation's validated
+variance entries and binder renaming for these bound premises. Instantiated
+prototype members are validated before structural coverage uses them. The
+kernel's soundness theorem requires sound member instances; an instance cannot
+justify its own bound through its proposed signatures.
+
+Dependency discovery has an execution budget measured in frontier rounds.
+Each frontier can contain arbitrarily many comparisons. The kernel distinguishes
+established inclusion, an inclusion its search does not establish, and resource
+exhaustion. Its acceptance theorem covers only established inclusion. The
+command-line protocol for resource outcomes is tracked in
+[DESIGN: status](DESIGN.md#status).
+
 ### 4.5 Example
 
 The polarity equations give `Promise` the candidate $`\mathsf{co}`$: its
@@ -500,7 +513,7 @@ to parameters and quantified variables by position.
 | Lemma 3, substitution | [Types/EquationSubstitution.lean](lean/Verification/Model/Types/EquationSubstitution.lean) |
 | Instantiation by substitution in the subtyping checker | [Types/EquationCertificates.lean](lean/Verification/Model/Types/EquationCertificates.lean) |
 | Quantified signatures (4.1), assumptions and Theorem 1 (4.2) | `Types/PositiveRules.lean`, `Types/PositiveCertificates.lean` |
-| The fallback's pairs, decided by the checker from the pair (4.2–4.3) | `Types/PositiveCertificates.lean` (`fallbackPairs`, `fallbackWith`) |
+| Structural comparison and bound checking over the equations (4.2–4.4) | `Types/PositiveCertificates.lean` (`compareStructural`, `compareStructural_sound`) |
 | Soundness of the computed variances and of `Var` (4.3) | [Types/EquationFamilies.lean](lean/Verification/Model/Types/EquationFamilies.lean) |
 | Well-formedness of equations | [Types/EquationValidator.lean](lean/Verification/Model/Types/EquationValidator.lean) |
 | Term spelling of trees | [Types/EquationJson.lean](lean/Verification/Model/Types/EquationJson.lean) |

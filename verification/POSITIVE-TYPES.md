@@ -1292,14 +1292,16 @@ fixed and rest arguments, effects and receiver weakening use this one proof.
 the finite-table checks; the equation checker discharges it by structural
 substitution ([RECURSIVE-EQUATIONS](RECURSIVE-EQUATIONS.md#3-metatheory)).
 
-The checker decides each bound $(p,B)$ itself: by inclusion, or by the pairs
-$\Delta_p$ reachable from $(\theta_p,B)$ without a renaming, the uncovered
-ones deleted, each covered in $\Delta_p$ (`boundOk`, `checkPairs`).
+The checker establishes the bound judgment $`\theta_p \le B`$ through
+`compareStructural`, using the graph representation's validated variance
+entries and binder renaming. Its justification is checked by the guarded
+family rule. Prototype-member instances are validated before structural
+coverage uses them; bound checking has no premise from the instance it checks.
 
 Lean: `entryOk`, `meetOk`, `TableOk`, `instKinds`, `substitutionKind`, `InstArrs`,
 `mixed_assignment_substitution`, `InstanceImages`, `table_instanceImages`,
 `inst_images_sound`, `inst_mixed_sound`, `meet_row_value`, `meet_noArguments`,
-`meetOk_noArguments`, `table_row_mixed`, `InstArrs.mixed_sound`, `checkPairs_sound`,
+`meetOk_noArguments`, `table_row_mixed`, `InstArrs.mixed_sound`, `checkStructural_sound`,
 `boundOk_sound`.
 
 ## Certificates
@@ -1328,10 +1330,11 @@ A checked certificate is a semantic inclusion:
 for both components. The typing theorem that uses it is in
 [PROGRAM-TYPING.md](PROGRAM-TYPING.md).
 
-The search (`growTable`, `gfp`, `fallbackPairs`) decides nothing: soundness
-rests on the check of what it finds.
+The structural engine discovers dependencies (`growTable`), removes unsupported
+alternatives (`gfp`), and validates the resulting justification (`checkStructural`).
+Its soundness is proved by `compareStructural_sound`.
 
-Lean: `checkClauseWith`, `checkPairs`, `checkFamilyWith`, `fallbackWith`,
+Lean: `checkClauseWith`, `checkStructural`, `checkFamilyWith`, `fallbackWith`,
 `fallbackWith_sound`, `checkUsing`, `checkUsing_sound`, `acceptedUsing`
 (`Types/PositiveCertificates.lean`).
 

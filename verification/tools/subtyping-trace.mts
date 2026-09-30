@@ -72,7 +72,7 @@ function decode(text: string): Line {
       memberChecks: nat("memberChecks"), weakened: nat("weakened"), kept: nat("kept") };
   if (search === "fallback" &&
       exactly(o, ["search", "source", "target", "rows", "rounds", "visited", "refused", "proved"]) &&
-      (refused === null || refused === "growth" || refused === "limit") && typeof proved === "boolean")
+      (refused === null || refused === "growth" || refused === "exhausted") && typeof proved === "boolean")
     return { search, source: nat("source"), target: nat("target"), rows: nat("rows"), rounds: nat("rounds"),
       visited: nat("visited"), refused, proved };
   throw new Error(`unknown trace line: ${text}`);
@@ -137,5 +137,5 @@ console.log(`variance components computed: ${components.length}, members ${compo
   `member checks ${components.reduce((n, c) => n + c.memberChecks, 0)}, weakened to inv ${components.reduce((n, c) => n + c.weakened, 0)}, ` +
   `kept ${components.reduce((n, c) => n + c.kept, 0)}`);
 console.log(`fallback searches: ${fallbacks.length}, proved ${fallbacks.filter((f) => f.proved).length}, ` +
-  `refused at growth ${fallbacks.filter((f) => f.refused === "growth").length}, at the limit ${fallbacks.filter((f) => f.refused === "limit").length}, ` +
+  `refused at growth ${fallbacks.filter((f) => f.refused === "growth").length}, at the limit ${fallbacks.filter((f) => f.refused === "exhausted").length}, ` +
   `max rows ${Math.max(0, ...fallbacks.map((f) => f.rows))}, max pairs visited ${Math.max(0, ...fallbacks.map((f) => f.visited))}`);

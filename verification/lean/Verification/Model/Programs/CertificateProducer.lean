@@ -382,7 +382,7 @@ proposal is checked. -/
   let ok p := PositiveCertificates.checkUsing G images A B p
   (if ok .subset then some .subset else none) <|>
     ((instProofUsing G images instanceFuel A B).filter ok) <|>
-    (let fb := PositiveCertificates.growTable G images PositiveCertificates.fallbackLimit
+    (let fb := PositiveCertificates.growTable G images ({} : PositiveCertificates.SearchBudget).rounds
         { table := [(A, B)] } [(A, B)]
      if fb.refused.isSome then none else
      let p := .fallback (rowInstances G images instanceFuel fb.table)

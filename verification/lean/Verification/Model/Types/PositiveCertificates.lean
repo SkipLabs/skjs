@@ -794,26 +794,6 @@ theorem variablesOk_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (R
     · rw [(h f hf).2] at hp; cases hp
     · rw [(h f hf).1] at hx; cases hx
 
-/-- **The fallback's pairs, without a renaming** (RECURSIVE-EQUATIONS §4.2):
-`S ≤ T` as the one variable-free entry of a family, its table the pairs
-reachable from it, each covered with premises read in the entry, arrows by
-the evidence. Checked at the graph with its assignment fixed, as
-`checkFamilyAt`. -/
-@[nospecialize] def checkPairs [DecidableEq ι] (G : NormalGraph ι) (S T : List ι) (table : Table ι)
-    (arrows : Evidence ι) : Bool :=
-  checkEntries (PositiveRules.reassign G (ParameterAssignment.empty .mixed)) none [] (fun _ _ => [])
-    (fun _ => none) [{ source := S, target := T, table }] arrows
-
-theorem checkPairs_sound [DecidableEq ι] {G : NormalGraph ι} {S T : List ι} {table : Table ι}
-    {arrows : Evidence ι} (h : checkPairs G S T table arrows = true) :
-    ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) :=
-  family_closed_sound (G := PositiveRules.reassign G (ParameterAssignment.empty .mixed))
-    (checkEntries_sound h)
-    ⟨fun f hf => by simp only [List.mem_singleton] at hf; subst hf; simp,
-      fun f hf => by simp only [List.mem_singleton] at hf; subst hf; simp⟩
-    (fun _ _ h => by simp at h) (fun _ _ h => by simp at h)
-    List.mem_cons_self rfl List.mem_cons_self
-
 /-- A checked instance of a scheme row's signatures: the instance table, the
 types the binders are instantiated at, the table's domain and the domain's
 free parameter rows. Each bound is decided by the checker (`boundOk`). -/
@@ -946,7 +926,7 @@ serves every reassignment (`Parametricity`). -/
 
 The pairs reachable from a pair, grown on demand, and the uncovered ones
 deleted. The search decides nothing: the pairs it finds are checked
-(`checkPairs`, `fallbackWith`). -/
+(`checkStructural`, `fallbackWith`). -/
 
 /-- Small arrow search: source, receiver and domain union, and pairwise
 compatible codomain combination, with operand premises decided by `rel`.
@@ -1155,8 +1135,29 @@ earlier occurrences, none of which it renames: growth. -/
     same.length ≥ 2 && same.all fun p => size p.1 p.2 < size A B
   | none => false
 
-/-- The most rows the table may hold: search only. -/
-def fallbackLimit : Nat := 200
+/-- Execution resources for dependency discovery. Each round unfolds a frontier;
+its size is unrestricted. -/
+structure SearchBudget where
+  rounds : Nat := 4096
+  deriving Repr
+
+/-- Why dependency discovery stops before its frontier closes. -/
+inductive SearchStop where
+  | growth
+  | exhausted
+  deriving Repr, DecidableEq
+
+/-- An outcome of checked comparison search. Only `established` carries a
+justification. Exhaustion records the work already performed. -/
+inductive ComparisonResult (α : Type) where
+  | established (justification : α)
+  | notEstablished
+  | exhausted (rounds visited : Nat)
+  deriving Repr
+
+@[nospecialize] def ComparisonResult.accepted : ComparisonResult α → Bool
+  | .established _ => true
+  | .notEstablished | .exhausted _ _ => false
 
 /-- How a table's growth ended, with its counts: the rounds of unfolding, the
 candidate pairs visited, and the table. -/
@@ -1164,8 +1165,8 @@ structure Fallback (ι : Type) where
   table : Table ι
   rounds : Nat := 0
   visited : Nat := 0
-  /-- `growth`, `limit`, or none when the table closed. -/
-  refused : Option String := none
+  /-- A closed frontier has no stop reason. -/
+  refused : Option SearchStop := none
 
 /-- The arrow evidence a table's rows ask for, premises decided by `rel`:
 each row's arrow clauses against its target's, and each quantified member
@@ -1214,10 +1215,10 @@ compares (`demandPairs`, and quantified members after renaming), each read
 through `Var` where it applies, that no inclusion, row or renamed row already
 answers. A pair that reaches no further pair and is not covered by itself
 alone is left out: the deletion would remove it. Refuse at growth or past
-the limit. -/
+the execution budget. -/
 @[nospecialize] def growTable [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     : Nat → Fallback ι → Table ι → Fallback ι
-  | 0, fb, _ => { fb with refused := some "limit" }
+  | 0, fb, _ => { fb with refused := some .exhausted }
   | fuel + 1, fb, frontier =>
     let reached (p : List ι × List ι) := demandPairs G p.1 p.2 ++ (match images.sub with
         | some r => renamedPairs G r p.1 p.2
@@ -1226,8 +1227,8 @@ the limit. -/
       (reached p).flatMap fun p => match images.sub with
           | some _ => rowsFor images varDepthDefault p.1 p.2
           | none => if p.1.all (· ∈ p.2) then [] else [p])
-    let step (st : Except String (Table ι × Table ι)) (p : List ι × List ι) :
-        Except String (Table ι × Table ι) := do
+    let step (st : Except SearchStop (Table ι × Table ι)) (p : List ι × List ι) :
+        Except SearchStop (Table ι × Table ι) := do
       let (tbl, fresh) ← st
       let f : Entry ι := { source := [], target := [], table := tbl }
       if premTable G images.sub f p.1 p.2 then return (tbl, fresh)
@@ -1235,8 +1236,7 @@ the limit. -/
           (sourceClauses G p.1).all fun a => (clausesOf G p.2).any fun b =>
             checkClauseWith G images.sub (Rel []) [] [] p.1 a b) then return (tbl, fresh)
       if let some r := images.sub then
-        if grows r tbl p.1 p.2 then throw "growth"
-      if tbl.length ≥ fallbackLimit then throw "limit"
+        if grows r tbl p.1 p.2 then throw .growth
       return (tbl ++ [p], fresh ++ [p])
     let fb := { fb with rounds := fb.rounds + 1, visited := fb.visited + cand.length }
     match cand.foldl step (.ok (fb.table, [])) with
@@ -1258,48 +1258,150 @@ inclusion. The check decides (`fallbackWith`). -/
     let next := table.filter covered
     if next.length = table.length then (table, es) else gfp G images A B known fuel next
 
-/-- The fallback's pairs for `A ≤ B` (RECURSIVE-EQUATIONS §4.2–4.3): the pairs
-reachable from it, grown on demand (`growTable`), the uncovered ones deleted
-(`gfp`), with the arrow evidence their coverage uses. The search decides
-nothing: `fallbackWith` checks what it finds. -/
-@[nospecialize] def fallbackPairs [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (A B : List ι) (known : Known ι) : Option (Table ι × Evidence ι) :=
-  let fb := growTable G images fallbackLimit { table := [(A, B)] } [(A, B)]
-  let result := if fb.refused.isSome then none else
-    let (table, es) := gfp G images A B known (fb.table.length + 1) fb.table
-    if table.contains (A, B) then some (table, es) else none
-  SubtypingTrace.note (fun _ => Lean.Json.mkObj [("search", "fallback"),
-    ("source", Lean.toJson (typeSize images.sub A)), ("target", Lean.toJson (typeSize images.sub B)),
-    ("rows", Lean.toJson fb.table.length), ("rounds", Lean.toJson fb.rounds),
-    ("visited", Lean.toJson fb.visited), ("refused", Lean.toJson fb.refused),
-    ("proved", Lean.toJson result.isSome)]) result
+/-- A closed structural comparison checked with the equation representation's
+renaming and validated base entries. Bound checking uses this same kernel. -/
+@[nospecialize] def checkStructural [DecidableEq ι] (G : NormalGraph ι)
+    (images : InstanceImageCheck G) (S T : List ι) (known : Known ι) (table : Table ι)
+    (arrows : Evidence ι) : Bool :=
+  let e := ParameterAssignment.empty .mixed
+  let images' := images.reassign e
+  let f : Entry ι := { source := S, target := T, table }
+  checkEntries (PositiveRules.reassign G e) images'.sub known images'.gen
+    (images'.base.lookup [f]) [f] arrows
 
-/-- An instance type within one bound: inclusion, or the fallback's pairs
-reachable from the two without a renaming, each covered (`checkPairs`). A
-bound whose binder has no instance is vacuous. -/
-@[nospecialize] def boundOk [DecidableEq ι] (G : NormalGraph ι) (binders : List ι) (θs : List (List ι))
-    (b : ι × List ι) : Bool :=
-  match (binders.zip θs).lookup b.1 with
-  | none => true
-  | some U => decide (∀ l ∈ U, l ∈ b.2) ||
-    let G' := PositiveRules.reassign G (ParameterAssignment.empty .mixed)
-    match fallbackPairs G' (finiteInstanceImages G') U b.2 [] with
-    | some (table, arrows) => checkPairs G U b.2 table arrows
+theorem checkStructural_sound [DecidableEq ι] {G : NormalGraph ι}
+    {images : InstanceImageCheck G} {S T known table arrows}
+    (h : checkStructural G images S T known table arrows = true)
+    (hk : ∀ η : MixedAssignment ι, ∀ k ∈ known,
+      FamLe (mixedValues G η k.1) (mixedSem G η (.arrs k.2.1 k.2.2))) :
+    ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) := by
+  let f : Entry ι := { source := S, target := T, table }
+  exact family_closed_sound (G := PositiveRules.reassign G (ParameterAssignment.empty .mixed))
+    (checkEntries_sound h)
+    ⟨fun g hg => by simp only [List.mem_singleton] at hg; subst hg; simp [f],
+      fun g hg => by simp only [List.mem_singleton] at hg; subst hg; simp [f]⟩
+    ((images.reassign (ParameterAssignment.empty .mixed)).base.lookup_cases [f]) hk
+    List.mem_cons_self rfl List.mem_cons_self
+
+/-- The entry a pair is checked in when no certificate names one: the pair
+itself, with no hypothesis and no table. -/
+@[nospecialize] def pairEntry (S T : List ι) : Entry ι := { source := S, target := T }
+
+/-- **The premise judgment on a pair** (RECURSIVE-EQUATIONS §4.2–4.3): each
+label of `S` in `T`, or below it by `Inst` of a base entry, which is `Var`
+with a computed variance, its per-position premises discharged recursively
+the same way. Checked at the graph with its assignment fixed, as
+`checkFamilyAt`. -/
+@[nospecialize] def premAt [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (r : Renaming G)
+    (S T : List ι) : Bool :=
+  let e := ParameterAssignment.empty .mixed
+  let sub := some (r.reassign (G := G) e)
+  let fuel := typeSize sub S + typeSize sub T + 1
+  SubtypingTrace.question "subset" (typeSize sub S) (typeSize sub T) fuel fun _ =>
+    premB (PositiveRules.reassign G e) sub ((images.base.reassign e).lookup []) images.gen (pairEntry S T)
+      fuel S T
+
+/-- A premise judged in the pair's own entry, citing sound base entries only,
+holds at every assignment. -/
+theorem premAt_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+    {r : Renaming G} {S T : List ι} (h : premAt G images r S T = true) :
+    ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) := by
+  let G' := PositiveRules.reassign G (ParameterAssignment.empty .mixed)
+  unfold premAt SubtypingTrace.question at h
+  have hp := (prem_sound (G := G') _).2 _ _ h
+  intro η n W x hx
+  have hlook := (images.base.reassign (ParameterAssignment.empty .mixed)).lookup_cases
+    (G := G') []
+  refine (prem_mixed (G := G') (n := n + 1) (η := η) (f := pairEntry S T)
+    (fun _ _ h hh => by simp [pairEntry] at hh) (fun h hh => by simp [pairEntry] at hh)
+    (fun k e hl _ => ((hlook k e hl).resolve_left (by simp)).2)
+    (fun _ _ _ _ p hp => by simp [pairEntry] at hp) (fun h hh => by simp [pairEntry] at hh)
+    (fun j _ k e η' hl hh => ((hlook k e hl).resolve_left (by simp)).1.1 j η' hh)).1 hp n
+    (Nat.lt_succ_self n) W x hx
+
+/-- `subset`: each label of `S` among `T`'s, or, with a renaming, the
+premise judgment on the pair (`Var` for two applications of one head). -/
+@[nospecialize] def subsetUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (S T : List ι) : Bool :=
+  decide (∀ i ∈ S, i ∈ T) || match images.sub with
+    | some r => premAt G images r S T
     | none => false
 
-theorem boundOk_sound [DecidableEq ι] {G : NormalGraph ι} {binders θs b}
-    (h : boundOk G binders θs b = true) :
+theorem subsetUsing_sound [DecidableEq ι] {G : NormalGraph ι}
+    {images : InstanceImageCheck G} {S T}
+    (h : subsetUsing G images S T = true) :
+    ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) := by
+  simp only [subsetUsing, Bool.or_eq_true] at h
+  rcases h with h | h
+  · exact fun _ => mixed_subset (of_decide_eq_true h)
+  · split at h
+    · exact premAt_sound h
+    · cases h
+
+/-- Structural comparison over equations: discover shared dependencies, remove
+unsupported alternatives, then validate the guarded family justification.
+Dependency recurrence alone cannot authorize acceptance. -/
+@[nospecialize] def compareStructural [DecidableEq ι] (G : NormalGraph ι)
+    (images : InstanceImageCheck G) (S T : List ι) (known : Known ι := [])
+    (budget : SearchBudget := {}) : ComparisonResult Unit :=
+  let e := ParameterAssignment.empty .mixed
+  let G' := PositiveRules.reassign G e
+  let images' := images.reassign e
+  if subsetUsing G' images' S T then .established () else
+  let fb := growTable G' images' budget.rounds { table := [(S, T)] } [(S, T)]
+  let result :=
+    match fb.refused with
+    | some .exhausted => .exhausted fb.rounds fb.visited
+    | some .growth => .notEstablished
+    | none =>
+      let (table, arrows) := gfp G' images' S T known (fb.table.length + 1) fb.table
+      if checkStructural G images S T known table arrows then .established ()
+      else .notEstablished
+  SubtypingTrace.note (fun _ => Lean.Json.mkObj [
+    ("search", Lean.toJson "fallback"),
+    ("source", Lean.toJson (typeSize images'.sub S)),
+    ("target", Lean.toJson (typeSize images'.sub T)),
+    ("rows", Lean.toJson fb.table.length), ("rounds", Lean.toJson fb.rounds),
+    ("visited", Lean.toJson fb.visited),
+    ("refused", Lean.toJson (fb.refused.map fun reason => match reason with
+      | .growth => "growth" | .exhausted => "exhausted")),
+    ("proved", Lean.toJson result.accepted)]) result
+
+theorem compareStructural_sound [DecidableEq ι] {G : NormalGraph ι}
+    {images : InstanceImageCheck G} {S T known budget}
+    (h : (compareStructural G images S T known budget).accepted = true)
+    (hk : ∀ η : MixedAssignment ι, ∀ k ∈ known,
+      FamLe (mixedValues G η k.1) (mixedSem G η (.arrs k.2.1 k.2.2))) :
+    ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) := by
+  unfold compareStructural SubtypingTrace.note at h
+  simp only at h
+  split at h
+  · exact subsetUsing_sound (G := PositiveRules.reassign G (ParameterAssignment.empty .mixed))
+      (by assumption)
+  · split at h
+    · simp [ComparisonResult.accepted] at h
+    · simp [ComparisonResult.accepted] at h
+    · split at h
+      · exact checkStructural_sound (by assumption) hk
+      · simp [ComparisonResult.accepted] at h
+
+/-- An instance satisfies a binder's bound when the common structural engine
+establishes inclusion under every parameter assignment. An uninstantiated
+binder imposes no additional obligation here. -/
+@[nospecialize] def boundOk [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (binders : List ι) (θs : List (List ι)) (b : ι × List ι) : Bool :=
+  match (binders.zip θs).lookup b.1 with
+  | none => true
+  | some U => (compareStructural G images U b.2).accepted
+
+theorem boundOk_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+    {binders θs b} (h : boundOk G images binders θs b = true) :
     ∀ U, (binders.zip θs).lookup b.1 = some U →
       ∀ η, FamLe (mixedMeaning G η U) (mixedMeaning G η b.2) := by
   intro U hU
   unfold boundOk at h
   rw [hU] at h
-  simp only [Bool.or_eq_true] at h
-  rcases h with h | h
-  · exact fun _ => mixed_subset (by simpa using h)
-  · split at h
-    · exact checkPairs_sound h
-    · cases h
+  exact compareStructural_sound h (fun _ _ h => by simp at h)
 
 /-- `S` is one scheme row, and `L`, `M` arrows whose every signature is an
 image of one of the scheme's under the instance table, each instance within
@@ -1312,7 +1414,7 @@ representation; every other obligation is shared. -/
     match G.schemes i with
     | some s => !G.params i && c.instances.length == s.binders.length &&
         instKinds G s.binders c.instances &&
-        s.bounds.all (fun b => boundOk G s.binders c.instances b) &&
+        s.bounds.all (fun b => boundOk G images s.binders c.instances b) &&
         images.check s.binders c &&
         (L.all fun q => s.signatures.any fun p => instSig G c.table (s.binders.zip c.instances) p q) &&
         M.all fun q => s.variadic.any fun p => instRest G c.table (s.binders.zip c.instances) p q
@@ -1466,79 +1568,27 @@ theorem checkFamilyWith_sound [DecidableEq ι] {G : NormalGraph ι} {images : In
     ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) :=
   checkFamilyUsing_sound (G := PositiveRules.reassign G (ParameterAssignment.empty .mixed)) h
 
-/-- **The fallback, decided** (RECURSIVE-EQUATIONS §4.2–4.3): the pairs
-reachable from `(S, T)`, the uncovered ones deleted (`fallbackPairs`), with
-the known rows `ks`, checked as the one variable-free entry of a family
-certificate, premises read with the renaming `sub`. Search and check run at
-the graph with its assignment fixed. -/
+/-- Instantiated members are validated before the common structural engine
+uses them in guarded coverage. -/
 @[nospecialize] def fallbackWith [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (sub : Option (Renaming G)) (S T : List ι) (ks : List (KnownInstance ι)) : Bool :=
-  let e := ParameterAssignment.empty .mixed
-  let images' : InstanceImageCheck (PositiveRules.reassign G e) :=
-    { images.reassign e with sub := sub.map fun r => r.reassign (G := G) e }
-  match fallbackPairs (PositiveRules.reassign G e) images' S T (knownOf ks) with
-  | some (table, arrows) => checkFamilyWith G images sub S T
-      { entries := [{ source := S, target := T, table }], arrows, instances := ks }
-  | none => false
+  ks.all (fun k => checkInstArrsUsing G images k.1 k.2.1 k.2.2.1 k.2.2.2) &&
+    (compareStructural G { images with sub } S T (knownOf ks)).accepted
 
 theorem fallbackWith_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     {sub : Option (Renaming G)} {S T : List ι} {ks : List (KnownInstance ι)}
     (h : fallbackWith G images sub S T ks = true) :
     ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) := by
-  unfold fallbackWith at h
-  simp only at h
-  split at h
-  · exact checkFamilyWith_sound h
-  · cases h
+  simp only [fallbackWith, Bool.and_eq_true, List.all_eq_true] at h
+  apply compareStructural_sound h.2
+  intro η k hk
+  obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hk
+  exact checkInstArrsUsing_sound (h.1 q hq) η
 
 /-- The fallback, premises read with the representation's renaming. -/
 @[nospecialize] def fallbackAt [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (S T : List ι) (ks : List (KnownInstance ι)) : Bool :=
   fallbackWith G images images.sub S T ks
-
-/-- The entry a pair is checked in when no certificate names one: the pair
-itself, with no hypothesis and no table. -/
-@[nospecialize] def pairEntry (S T : List ι) : Entry ι := { source := S, target := T }
-
-/-- **The premise judgment on a pair** (RECURSIVE-EQUATIONS §4.2–4.3): each
-label of `S` in `T`, or below it by `Inst` of a base entry, which is `Var`
-with a computed variance, its per-position premises discharged recursively
-the same way. Checked at the graph with its assignment fixed, as
-`checkFamilyAt`. -/
-@[nospecialize] def premAt [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (r : Renaming G)
-    (S T : List ι) : Bool :=
-  let e := ParameterAssignment.empty .mixed
-  let sub := some (r.reassign (G := G) e)
-  let fuel := typeSize sub S + typeSize sub T + 1
-  SubtypingTrace.question "subset" (typeSize sub S) (typeSize sub T) fuel fun _ =>
-    premB (PositiveRules.reassign G e) sub ((images.base.reassign e).lookup []) images.gen (pairEntry S T)
-      fuel S T
-
-/-- A premise judged in the pair's own entry, citing sound base entries only,
-holds at every assignment. -/
-theorem premAt_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
-    {r : Renaming G} {S T : List ι} (h : premAt G images r S T = true) :
-    ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) := by
-  let G' := PositiveRules.reassign G (ParameterAssignment.empty .mixed)
-  unfold premAt SubtypingTrace.question at h
-  have hp := (prem_sound (G := G') _).2 _ _ h
-  intro η n W x hx
-  have hlook := (images.base.reassign (ParameterAssignment.empty .mixed)).lookup_cases
-    (G := G') []
-  refine (prem_mixed (G := G') (n := n + 1) (η := η) (f := pairEntry S T)
-    (fun _ _ h hh => by simp [pairEntry] at hh) (fun h hh => by simp [pairEntry] at hh)
-    (fun k e hl _ => ((hlook k e hl).resolve_left (by simp)).2)
-    (fun _ _ _ _ p hp => by simp [pairEntry] at hp) (fun h hh => by simp [pairEntry] at hh)
-    (fun j _ k e η' hl hh => ((hlook k e hl).resolve_left (by simp)).1.1 j η' hh)).1 hp n
-    (Nat.lt_succ_self n) W x hx
-
-/-- `subset`: each label of `S` among `T`'s, or, with a renaming, the
-premise judgment on the pair (`Var` for two applications of one head). -/
-@[nospecialize] def subsetUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (S T : List ι) : Bool :=
-  decide (∀ i ∈ S, i ∈ T) || match images.sub with
-    | some r => premAt G images r S T
-    | none => false
 
 /-- One proof traversal for every proved image-check implementation. Where
 the representation has a renaming, `subset` and `fallback` read premises by
@@ -1585,6 +1635,7 @@ theorem acceptedUsing [DecidableEq ι] {G : NormalGraph ι}
 #print axioms prem_iff
 #print axioms premAt_sound
 #print axioms fallbackWith_sound
-#print axioms checkPairs_sound
+#print axioms checkStructural_sound
+#print axioms compareStructural_sound
 #print axioms boundOk_sound
 end Verification.Model.PositiveCertificates
