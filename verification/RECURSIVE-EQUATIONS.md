@@ -382,7 +382,8 @@ justify its own bound through its proposed signatures.
 Dependency discovery has an execution budget measured in frontier rounds.
 Each frontier can contain arbitrarily many comparisons. The kernel distinguishes
 established inclusion, an inclusion its search does not establish, and resource
-exhaustion. Instance validation retains the outcome of each bound comparison.
+exhaustion. Instance validation retains the outcomes of bound comparisons and
+image equality; equality requires sequential inclusion in both directions.
 Conjunction returns its first unsuccessful premise. Alternative rules return an
 established inclusion when any rule succeeds; if none succeeds, an exhausted
 attempt remains exhausted. Member instances are validated once, and their

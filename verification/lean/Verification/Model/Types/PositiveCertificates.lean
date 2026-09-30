@@ -882,6 +882,93 @@ structure SearchBudget where
   rounds : Nat := 4096
   deriving Repr
 
+/-- An outcome of checked comparison search. Successful search returns its
+result; exhaustion records the work already performed. -/
+inductive ComparisonResult (α : Type) where
+  | established (value : α)
+  | notEstablished
+  | exhausted (rounds visited : Nat)
+  deriving Repr
+
+@[nospecialize] def ComparisonResult.accepted : ComparisonResult α → Bool
+  | .established _ => true
+  | .notEstablished | .exhausted _ _ => false
+
+/-- Conjunction stops at the first unsuccessful premise, retaining its outcome. -/
+@[nospecialize] def ComparisonResult.all (f : β → ComparisonResult Unit) :
+    List β → ComparisonResult Unit
+  | [] => .established ()
+  | x :: xs => match f x with
+    | .established () => all f xs
+    | .notEstablished => .notEstablished
+    | .exhausted rounds visited => .exhausted rounds visited
+
+@[simp] theorem ComparisonResult.accepted_all (f : β → ComparisonResult Unit) (xs : List β) :
+    (all f xs).accepted = xs.all (fun x => (f x).accepted) := by
+  induction xs with
+  | nil => rfl
+  | cons x xs ih =>
+    cases h : f x with
+    | established u => cases u; simpa only [all, h, accepted, List.all_cons, Bool.true_and] using ih
+    | notEstablished => simp only [all, h, accepted, List.all_cons, Bool.false_and]
+    | exhausted rounds visited => simp only [all, h, accepted, List.all_cons, Bool.false_and]
+
+/-- Alternative rules share success; exhaustion survives when neither succeeds. -/
+@[nospecialize] def ComparisonResult.orElse (a : ComparisonResult α)
+    (next : Unit → ComparisonResult α) : ComparisonResult α :=
+  match a with
+  | .established x => .established x
+  | .notEstablished => next ()
+  | .exhausted rounds visited => match next () with
+    | .established x => .established x
+    | .notEstablished | .exhausted _ _ => .exhausted rounds visited
+
+@[simp] theorem ComparisonResult.accepted_orElse (a : ComparisonResult α)
+    (next : Unit → ComparisonResult α) :
+    (a.orElse next).accepted = (a.accepted || (next ()).accepted) := by
+  cases a <;> simp [orElse, accepted] <;> cases next () <;> rfl
+
+/-- An unfinished member rule cannot establish the root comparison. Its
+resource outcome remains relevant if every root rule is unsuccessful. -/
+@[nospecialize] def ComparisonResult.exhaustion : List (ComparisonResult Unit) → ComparisonResult α
+  | [] => .notEstablished
+  | .exhausted rounds visited :: _ => .exhausted rounds visited
+  | .established _ :: xs | .notEstablished :: xs => exhaustion xs
+
+@[simp] theorem ComparisonResult.accepted_exhaustion (xs : List (ComparisonResult Unit)) :
+    (exhaustion xs : ComparisonResult α).accepted = false := by
+  induction xs with
+  | nil => rfl
+  | cons x xs ih => cases x <;> simp only [exhaustion] <;> first | exact ih | rfl
+
+@[nospecialize] def ComparisonResult.map (f : α → β) : ComparisonResult α → ComparisonResult β
+  | .established value => .established (f value)
+  | .notEstablished => .notEstablished
+  | .exhausted rounds visited => .exhausted rounds visited
+
+theorem ComparisonResult.accepted_map (f : α → β) (r : ComparisonResult α) :
+    (r.map f).accepted = r.accepted := by cases r <;> rfl
+
+/-- A decidable validator has no search frontier to exhaust. -/
+@[nospecialize] def ComparisonResult.fromBool (holds : Bool) : ComparisonResult Unit :=
+  if holds then .established () else .notEstablished
+
+@[simp] theorem ComparisonResult.accepted_fromBool (holds : Bool) :
+    (fromBool holds).accepted = holds := by cases holds <;> rfl
+
+/-- Sequential validation retains an unsuccessful prerequisite's outcome. -/
+@[nospecialize] def ComparisonResult.andThen (a : ComparisonResult Unit)
+    (next : Unit → ComparisonResult α) : ComparisonResult α :=
+  match a with
+  | .established _ => next ()
+  | .notEstablished => .notEstablished
+  | .exhausted rounds visited => .exhausted rounds visited
+
+@[simp] theorem ComparisonResult.accepted_andThen (a : ComparisonResult Unit)
+    (next : Unit → ComparisonResult α) :
+    (a.andThen next).accepted = (a.accepted && (next ()).accepted) := by
+  cases a <;> simp only [andThen, accepted, Bool.true_and, Bool.false_and]
+
 /-- The representation-specific checks, with their semantic obligations:
 the image check of instances, and, for a representation with one, the
 renaming, the sound entries instances may cite (a representation's computed
@@ -889,26 +976,31 @@ variances) and the verified proposal of `Var` instances. Supplied by
 verified code, never read from a certificate. Bound, kind, signature and
 effect checks remain in the shared instance checker. -/
 structure InstanceImageCheck [DecidableEq ι] (G : NormalGraph ι) where
-  check : List ι → Instance ι → Bool
+  compare : List ι → Instance ι → ComparisonResult Unit
   sound : ∀ bs c, c.instances.length = bs.length → instKinds G bs c.instances = true →
-    check bs c = true → ∀ η, InstanceImages G η bs c.instances c.table
+    (compare bs c).accepted = true → ∀ η, InstanceImages G η bs c.instances c.table
   sub : Option (Renaming G) := none
   base : Base G := {}
   gen : ι → List ι → List (Nat × List (List ι)) := fun _ _ => []
   /-- Execution policy shared by comparisons and their bound/image obligations. -/
   budget : SearchBudget := {}
 
+/-- The acceptance projection of the representation's image validator. -/
+@[nospecialize] def InstanceImageCheck.check [DecidableEq ι] {G : NormalGraph ι}
+    (images : InstanceImageCheck G) (bs : List ι) (c : Instance ι) : Bool :=
+  (images.compare bs c).accepted
+
 /-- The original finite closed-table implementation. -/
 @[nospecialize] def finiteInstanceImages [DecidableEq ι] (G : NormalGraph ι) : InstanceImageCheck G where
-  check := fun _ c => TableOk G c.table c.domain c.free
-  sound := fun _ _ hlen hkinds hok η => table_instanceImages η hlen hkinds hok
+  compare := fun _ c => ComparisonResult.fromBool (TableOk G c.table c.domain c.free)
+  sound := fun _ _ hlen hkinds hok η => table_instanceImages η hlen hkinds (by simpa only [ComparisonResult.accepted_fromBool] using hok)
 
 /-- The same check at a reassignment of the graph's parameter rows. Its
 obligation quantifies over every assignment and reads no `env`, so one proof
 serves every reassignment (`Parametricity`). -/
 @[nospecialize] def InstanceImageCheck.reassign [DecidableEq ι] {G : NormalGraph ι} (images : InstanceImageCheck G)
     (η : MixedAssignment ι) : InstanceImageCheck (PositiveRules.reassign G η) where
-  check := images.check
+  compare := images.compare
   sound := images.sound
   sub := images.sub.map fun r => r.reassign η
   base := images.base.reassign η
@@ -1134,65 +1226,6 @@ inductive SearchStop where
   | exhausted
   deriving Repr, DecidableEq
 
-/-- An outcome of checked comparison search. Successful search returns its
-result; exhaustion records the work already performed. -/
-inductive ComparisonResult (α : Type) where
-  | established (value : α)
-  | notEstablished
-  | exhausted (rounds visited : Nat)
-  deriving Repr
-
-@[nospecialize] def ComparisonResult.accepted : ComparisonResult α → Bool
-  | .established _ => true
-  | .notEstablished | .exhausted _ _ => false
-
-/-- Conjunction stops at the first unsuccessful premise, retaining its outcome. -/
-@[nospecialize] def ComparisonResult.all (f : β → ComparisonResult Unit) :
-    List β → ComparisonResult Unit
-  | [] => .established ()
-  | x :: xs => match f x with
-    | .established () => all f xs
-    | .notEstablished => .notEstablished
-    | .exhausted rounds visited => .exhausted rounds visited
-
-@[simp] theorem ComparisonResult.accepted_all (f : β → ComparisonResult Unit) (xs : List β) :
-    (all f xs).accepted = xs.all (fun x => (f x).accepted) := by
-  induction xs with
-  | nil => rfl
-  | cons x xs ih =>
-    cases h : f x with
-    | established u => cases u; simpa only [all, h, accepted, List.all_cons, Bool.true_and] using ih
-    | notEstablished => simp only [all, h, accepted, List.all_cons, Bool.false_and]
-    | exhausted rounds visited => simp only [all, h, accepted, List.all_cons, Bool.false_and]
-
-/-- Alternative rules share success; exhaustion survives when neither succeeds. -/
-@[nospecialize] def ComparisonResult.orElse (a : ComparisonResult α)
-    (next : Unit → ComparisonResult α) : ComparisonResult α :=
-  match a with
-  | .established x => .established x
-  | .notEstablished => next ()
-  | .exhausted rounds visited => match next () with
-    | .established x => .established x
-    | .notEstablished | .exhausted _ _ => .exhausted rounds visited
-
-@[simp] theorem ComparisonResult.accepted_orElse (a : ComparisonResult α)
-    (next : Unit → ComparisonResult α) :
-    (a.orElse next).accepted = (a.accepted || (next ()).accepted) := by
-  cases a <;> simp [orElse, accepted] <;> cases next () <;> rfl
-
-/-- An unfinished member rule cannot establish the root comparison. Its
-resource outcome remains relevant if every root rule is unsuccessful. -/
-@[nospecialize] def ComparisonResult.exhaustion : List (ComparisonResult Unit) → ComparisonResult α
-  | [] => .notEstablished
-  | .exhausted rounds visited :: _ => .exhausted rounds visited
-  | .established _ :: xs | .notEstablished :: xs => exhaustion xs
-
-@[simp] theorem ComparisonResult.accepted_exhaustion (xs : List (ComparisonResult Unit)) :
-    (exhaustion xs : ComparisonResult α).accepted = false := by
-  induction xs with
-  | nil => rfl
-  | cons x xs ih => cases x <;> simp only [exhaustion] <;> first | exact ih | rfl
-
 /-- How a table's growth ended, with its counts: the rounds of unfolding, the
 candidate pairs visited, and the table. -/
 structure Fallback (ι : Type) where
@@ -1372,14 +1405,6 @@ theorem subsetUsing_sound [DecidableEq ι] {G : NormalGraph ι}
     · exact premAt_sound h
     · cases h
 
-@[nospecialize] def ComparisonResult.map (f : α → β) : ComparisonResult α → ComparisonResult β
-  | .established value => .established (f value)
-  | .notEstablished => .notEstablished
-  | .exhausted rounds visited => .exhausted rounds visited
-
-theorem ComparisonResult.accepted_map (f : α → β) (r : ComparisonResult α) :
-    (r.map f).accepted = r.accepted := by cases r <;> rfl
-
 /-- Check the shared dependencies discovered for a comparison. The family
 validator checks recurrence through the guarded rule, at a fixed assignment. -/
 @[nospecialize] def comparePrepared [DecidableEq ι] (G : NormalGraph ι)
@@ -1478,10 +1503,11 @@ representation; every other obligation is shared. -/
     match G.schemes i with
     | some s =>
       if !G.params i && c.instances.length == s.binders.length &&
-          instKinds G s.binders c.instances && images.check s.binders c &&
+          instKinds G s.binders c.instances &&
           (L.all fun q => s.signatures.any fun p => instSig G c.table (s.binders.zip c.instances) p q) &&
           (M.all fun q => s.variadic.any fun p => instRest G c.table (s.binders.zip c.instances) p q) then
-        ComparisonResult.all (compareBound G images s.binders c.instances) s.bounds
+        (images.compare s.binders c).andThen fun _ =>
+          ComparisonResult.all (compareBound G images s.binders c.instances) s.bounds
       else .notEstablished
     | none => .notEstablished
   | _ => .notEstablished
@@ -1498,18 +1524,18 @@ theorem checkInstArrsUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : In
       match S with
       | [i] => match G.schemes i with
         | some s => !G.params i && c.instances.length == s.binders.length &&
-            instKinds G s.binders c.instances && images.check s.binders c &&
+            instKinds G s.binders c.instances &&
             (L.all fun q => s.signatures.any fun p => instSig G c.table (s.binders.zip c.instances) p q) &&
             (M.all fun q => s.variadic.any fun p => instRest G c.table (s.binders.zip c.instances) p q) &&
-            s.bounds.all (fun b => boundOk G images s.binders c.instances b)
+            images.check s.binders c && s.bounds.all (fun b => boundOk G images s.binders c.instances b)
         | none => false
       | _ => false := by
   unfold checkInstArrsUsing compareInstArrsUsing
   split <;> try rfl
   split <;> try rfl
   split <;> rename_i h
-  · rw [ComparisonResult.accepted_all]
-    simpa only [boundOk, h, Bool.true_and]
+  · rw [ComparisonResult.accepted_andThen, ComparisonResult.accepted_all]
+    simpa only [boundOk, InstanceImageCheck.check, h, Bool.true_and]
   · simp only [ComparisonResult.accepted, h, Bool.false_and]
 
 /-- Every representation discharges the same semantic elimination rule. -/
@@ -1524,7 +1550,7 @@ theorem checkInstArrsUsing_sound [DecidableEq ι] {G : NormalGraph ι}
     · rename_i s hs
       simp only [Bool.and_eq_true, Bool.not_eq_true', List.all_eq_true, List.any_eq_true,
         beq_iff_eq] at h
-      obtain ⟨⟨⟨⟨⟨⟨hp, hlen⟩, hkinds⟩, hok⟩, hL⟩, hM⟩, hbs⟩ := h
+      obtain ⟨⟨⟨⟨⟨⟨hp, hlen⟩, hkinds⟩, hL⟩, hM⟩, hok⟩, hbs⟩ := h
       intro η n W v hv
       refine ⟨inst_images_sound η hp hs hlen ?_
         (images.sound s.binders c hlen hkinds hok η) hL hM n W v hv,

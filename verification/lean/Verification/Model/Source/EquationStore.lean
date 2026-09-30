@@ -343,9 +343,10 @@ end
 sound. -/
 def eitherImages {ι : Type} [DecidableEq ι] {G : NormalGraph ι} (a b : InstanceImageCheck G) :
     InstanceImageCheck G where
-  check bs c := a.check bs c || b.check bs c
+  compare bs c := (a.compare bs c).orElse fun _ => b.compare bs c
   sound bs c hlen hkinds h η := by
-    cases ha : a.check bs c
+    simp only [ComparisonResult.accepted_orElse] at h
+    cases ha : (a.compare bs c).accepted
     · simp only [ha, Bool.false_or] at h
       exact b.sound bs c hlen hkinds h η
     · exact a.sound bs c hlen hkinds ha η
@@ -358,21 +359,43 @@ def eitherImages {ι : Type} [DecidableEq ι] {G : NormalGraph ι} (a b : Instan
 
 /-- Semantic equality by the common subtype operation in both directions,
 with the equations' validated variances and image checker. -/
+def compareEquivalent (E : Equations) (v : Variances E) (X Y : List (Label E.signature))
+    (budget : SearchBudget := {}) : ComparisonResult Unit :=
+  let I := { E.images v with budget := budget }
+  ((CertificateProducer.comparisonUsing E.graph I X Y).map fun _ => ()).andThen fun _ =>
+    (CertificateProducer.comparisonUsing E.graph I Y X).map fun _ => ()
+
 def equivalent (E : Equations) (v : Variances E) (X Y : List (Label E.signature))
     (budget : SearchBudget := {}) : Bool :=
-  let I := { E.images v with budget := budget }
-  (CertificateProducer.comparisonUsing E.graph I X Y).accepted &&
-    (CertificateProducer.comparisonUsing E.graph I Y X).accepted
+  (compareEquivalent E v X Y budget).accepted
 
 theorem equivalent_sound {E : Equations} {v : Variances E} {X Y : List (Label E.signature)} {budget : SearchBudget}
     (h : equivalent E v X Y budget = true) :
     ∀ η, mixedMeaning E.graph η X = mixedMeaning E.graph η Y := by
-  simp only [equivalent, Bool.and_eq_true] at h
+  simp only [equivalent, compareEquivalent, ComparisonResult.accepted_andThen,
+    ComparisonResult.accepted_map, Bool.and_eq_true] at h
   have l := CertificateProducer.comparisonUsing_sound h.1
   have r := CertificateProducer.comparisonUsing_sound h.2
   intro η
   funext n W x
   exact propext ⟨l η n W x, r η n W x⟩
+
+/-- Structural substitution, with each non-identical image checked up to
+semantic equality by the common comparison operation. -/
+def compareImagesUpTo (E : Equations) (v : Variances E) (budget : SearchBudget)
+    (tbl : InstTable (Label E.signature)) : ComparisonResult Unit :=
+  ComparisonResult.all (fun (l, κ, image) =>
+    if decide (l.substitute (parameterReplacement κ) = image) then .established ()
+    else compareEquivalent E v (l.substitute (parameterReplacement κ)) image budget) tbl
+
+theorem compareImagesUpTo_accepted (E : Equations) (v : Variances E) (budget : SearchBudget)
+    (tbl : InstTable (Label E.signature)) :
+    (compareImagesUpTo E v budget tbl).accepted =
+      substitutionTableOkUpTo (fun X Y => equivalent E v X Y budget) tbl := by
+  simp only [compareImagesUpTo, ComparisonResult.accepted_all, substitutionTableOkUpTo]
+  apply congrArg (List.all tbl)
+  funext ⟨l, κ, image⟩
+  split <;> rename_i h <;> simp only [h, ComparisonResult.accepted, Bool.true_or, Bool.false_or, equivalent]
 
 /-- The equations' checks, an instance's images accepted up to proved
 equivalence: a scheme's result at an instance may be named by an equal type
@@ -381,10 +404,11 @@ of another spelling (`Pair<[number, string]>` for the instance of
 def imagesUpTo (E : Equations) (v : Variances E) (budget : SearchBudget := {}) : InstanceImageCheck E.graph :=
   { E.images v with
     budget := budget
-    check := fun _ c => substitutionTableOkUpTo (fun X Y => equivalent E v X Y budget) c.table
+    compare := fun _ c => compareImagesUpTo E v budget c.table
     sound := fun bs c hlen hkinds checked η =>
       E.substitutionTableUpTo_instanceImages (fun X Y => equivalent E v X Y budget) (fun _ _ h => equivalent_sound h)
-        η bs c.instances c.table hlen hkinds checked }
+        η bs c.instances c.table hlen hkinds
+        (by simpa only [compareImagesUpTo_accepted] using checked) }
 
 /-- The store of a checked request: the extracted heads, whose validated
 equations are `E`, and their variances, computed as checks ask for them and
