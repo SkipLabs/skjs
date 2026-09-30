@@ -1,0 +1,1295 @@
+\documentclass[11pt]{article}
+
+\input{../shared/skjs-macros}
+\input{../shared/pin}
+
+\usepackage{mathpartir}
+
+\newtheorem{finding}[theorem]{Finding}
+
+% Macros copied from the main paper (skjs-type-soundness.tex)
+\newcommand{\SType}{\mathsf{SType}}
+\newcommand{\STypes}{\mathsf{STypes}}
+\newcommand{\TType}{\mathsf{TType}}
+\newcommand{\TInst}{\mathsf{TInst}}
+\newcommand{\TInsts}{\mathsf{TInsts}}
+\newcommand{\TParam}{\mathsf{TParam}}
+\newcommand{\Clauses}{\mathsf{Clauses}}
+\newcommand{\Clause}{\mathsf{Clause}}
+\newcommand{\Subst}{\mathsf{Subst}}
+\newcommand{\SVOpen}{\mathsf{SVOpen}}
+\newcommand{\SVClosed}{\mathsf{SVClosed}}
+\newcommand{\clause}[2]{\langle #1 \mid #2 \rangle}
+
+% Local macros
+\newcommand{\expandop}{\mathsf{expand}}
+\newcommand{\instop}{\mathsf{instantiate}}
+\newcommand{\normop}{\mathsf{normalize}}
+\newcommand{\cstr}{\mathsf{cstr}}
+\newcommand{\Cov}{\mathsf{cov}}
+\newcommand{\Contra}{\mathsf{contra}}
+\newcommand{\NoneM}{\mathsf{none}}
+\newcommand{\getop}{\mathsf{get}}
+\newcommand{\refop}{\mathsf{refine}}
+
+\title{Type Expansion in SKJS:\\
+the Instance Layer, the Expansion Cache, and Axiom \textbf{L-EXP}\\
+{\large Deep Dive C of the SKJS Soundness Series}}
+\author{}
+\date{\skjspin.\\
+Companion to the main soundness paper.}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+The main soundness paper assumes axiom \textbf{L-EXP}: expansion of a type
+to its instance-plus-clauses view preserves or enlarges its semantics, with
+residual instances keeping theirs. We model expansion as a worklist over the
+instance layer and prove
+$\sem{t}_\rho \subseteq \sem{\expandop(t)}_{\rho'}$ for the
+\texttt{None} and covariant modes used by refinement. Contravariant expansion
+does not satisfy this property, so it is excluded from L-EXP.
+
+We also state and check the condition required to reuse entries in
+\texttt{seenExpansion}. Alias normalization does not consult existing
+variable bindings, so an alias expansion depends only on the resolved
+definition and its arguments. Cache reuse among references to the same
+definition is therefore exact. The implemented key, however, stores an
+unqualified name rather than definition identity. Same-named aliases in two
+modules can collide, producing an unsound acceptance in one expansion order
+and a false rejection in the other (\textbf{E-EXPKEY}). Class expansion does
+read existing bindings and remains a separate open obligation
+(\textbf{E-CLASS-SYM}). Finally, we examine recursion-guarded cache entries,
+the opaque type used for unannotated ambient fields
+(\textbf{E-PLACEHOLDER-ATOM}), and normalization of template literal types,
+\texttt{Closed<T>}, and enums.
+\end{abstract}
+
+\tableofcontents
+
+%==========================================================================
+\section{Purpose}
+\label{sec:purpose}
+
+\paragraph{Row addressed.}
+\textbf{L-EXP} (the main paper's Assumptions and
+Proof Obligations table records the mode-scoped \textsc{proved} status
+this paper establishes): ``Expansion preserves or enlarges semantics;
+residual instances keep theirs,'' anchored at \texttt{TType::expand}. Every
+refinement operator of the main paper runs on the expanded view
+(its Definition ``Memberwise Refinement''), and the proof of its
+memberwise-refinement lemma consumes \textbf{L-EXP} in its first step; the
+axiom is therefore necessary for every branch-soundness result.
+
+\paragraph{What this paper does.}
+(i) models $\expandop$ as a function of a type, a substitution state, and a
+variance mode, exactly following \texttt{TType::expandToVectors};
+(ii) proves the containment per instance construct, splitting off two named
+interface assumptions where the argument crosses into \texttt{TEnv}
+(normalization) and array-literal commitment;
+(iii) proves the \texttt{seenExpansion} cache-invariance theorem for the
+type-alias and enum paths, names the class path as an obligation, and
+refutes the cache \emph{key}'s identity premise across modules
+(E-EXPKEY, witnessed);
+(iv) records the state evolutions expansion can cause and defers their
+transport to the main paper's \textbf{L-MONO};
+(v) audits the missing-annotation placeholder atom
+(E-PLACEHOLDER-ATOM) and states precise ledger edits
+(Section~\ref{sec:status}).
+Failed proof attempts are reported as numbered Findings.
+
+\paragraph{Conventions.}
+Notation, semantics, and the status vocabulary
+(\textsc{proved} / \textsc{assumed} / \textsc{open} / \textsc{violated})
+are the main paper's. All code references are against the pinned revision
+\texttt{\skjspinhash}; line numbers are cited where they disambiguate.
+``Paper B'' is the deep dive on union and intersection
+(\textbf{L-UNION}/\textbf{L-INTER}/\textbf{L-INTER-BOT}), which this paper cites and does not
+re-prove.
+
+%==========================================================================
+\section{Minimal Recap}
+\label{sec:recap}
+
+\subsection{Representation and semantics}
+
+A $\TType$ is a pair $(I, C)$ of an instance set $I \in \TInsts$ and
+clauses $C \in \Clauses$, with
+$\sem{(I,C)}_\rho = \sem{I}_\rho \cup \sem{C}_\rho$
+(main paper, Definition ``Clause, Clauses, TType''). A clause
+$\clause{V}{S}$ pairs type parameters with an $\STypes$ union or $\top$;
+the top clause $\clause{\emptyset}{\top}$, if present, is alone. The
+instance layer $\TInst$ has four constructors:
+type variables $\alpha$ (\texttt{TVar}, carrying a finite set of
+\emph{occurrence-level} constraint types — \texttt{TVar::setConstraint} is
+a functional update returning a new \texttt{TVar} value with the same
+identifier — registry row SETCONSTRAINT-FUN, deep dive E), unexpanded
+named instantiations
+\texttt{TSInst}$(n, \bar{a})$, unexpanded intersections
+\texttt{TInter}$(\{t_1,\dots,t_k\})$, and delayed array literals
+\texttt{TArrayLit}$(\alpha, \mathit{elts}, \mathit{fresh})$.
+\impl{TType.sk / TType, TInsts, Clause, Clauses}
+\impl{TType.sk / TVar (2576), TSInst (2626), TArrayLit (2618);
+TTypeInter.sk / TInter (17)}
+
+The main paper gives the instance layer an abstract, state-indexed
+semantics. We spell out the part this paper consumes:
+
+\begin{definition}[Instance Semantics Interface]
+\label{def:inst-sem}
+For a substitution state $\rho$ (Definition~\ref{def:subst-recap}):
+\begin{itemize}
+\item[(V1)] $\sem{\alpha^K}_\rho \subseteq \bigcap_{c \in K}\sem{c}_\rho$
+  for a variable occurrence $\alpha^K$ with constraint set $K$;
+\item[(V2)] if $\rho$ binds $\alpha$ (as $\SVOpen(t)$ or $\SVClosed(t)$),
+  then $\sem{\alpha^K}_\rho \subseteq \sem{t}_\rho$;
+\item[(I1)] $\sem{\mathsf{TInter}(\{t_i\})}_\rho =
+  \bigcap_i \sem{t_i}_\rho$ (an unexpanded intersection \emph{means} the
+  intersection);
+\item[(N1)] $\sem{\mathsf{TSInst}(n,\bar{a})}_\rho$ is the denotation of
+  the named definition $n$ at arguments $\bar{a}$ — related to expansion
+  only through assumption \textbf{E-NORM} below;
+\item[(A1)] $\sem{\mathsf{TArrayLit}(\alpha,\mathit{elts},\_)}_\rho$ is
+  the set of runtime values of the originating array-literal expression —
+  related to expansion only through assumption \textbf{E-ARR} below.
+\end{itemize}
+(V1)/(V2) are the main paper's canonical variable denotation, registry row
+TVAR-SEM: a bound occurrence denotes its envelope intersected with its
+occurrence constraints, and an unbound occurrence denotes $\emptyset$.
+This paper imports that definition.
+\end{definition}
+
+\subsection{The substitution state, condensed}
+\label{sec:subst-recap}
+
+\begin{definition}[State; get transitions used by expansion]
+\label{def:subst-recap}
+$\rho$ maps \texttt{TVarID}s to $\SVOpen(t)$ or $\SVClosed(t)$ and carries
+the flag $\mathsf{freeze}$ (\texttt{freezeCandidates}, \emph{not} part of
+the saved state). Expansion reads variables through
+$\getop(\alpha, \mathit{var})$:
+covariant get on an \emph{unbound} $\alpha$ seals it to top
+($\alpha \mapsto \SVClosed(\top)$, returning $\top$); on $\SVOpen(t)$ it
+seals to $\SVClosed(t)$ and returns $t$ — except under $\mathsf{freeze}$
+for a candidate, where it returns $t$ \emph{without} sealing; on
+$\SVClosed(t)$ it returns $t$. Contravariant get returns $\bot$ on
+unbound (no write) and the bound value otherwise. Both then intersect the
+result with the occurrence's constraint types via \texttt{TType::inter}.
+The full transition table is the main paper's Definition
+``Transitions''.
+\impl{TTypeSubst.sk / Subst::get (188), freezeCandidates (89)}
+\end{definition}
+
+The mutable \texttt{Subst} also carries four memo caches —
+\texttt{seenSub}, \texttt{seenInter}, \texttt{seenUnion}, and this paper's
+subject \texttt{seenExpansion} $:\ \mathsf{ExpansionKey} \to \TType$,
+where $\mathsf{ExpansionKey}(n, \bar{a})$ is the \emph{name text} of a
+named type plus its argument list (Section~\ref{sec:expkey}) — all four
+part of the saved state: \texttt{save}/\texttt{restore} and \texttt{clone}
+copy bindings and caches \emph{together}.
+\impl{TTypeSubst.sk / SubstState (13--49), SavedSubst (51), clone (149)}
+\impl{TType.sk / ExpansionKey (3055), expansionCacheKey (3057)}
+
+\subsection{The axiom under study}
+
+\begin{axiom}[L-EXP, as stated in the main paper]
+\label{ax:lexp}
+Expansion rewrites a type to an instance-plus-clauses view using the
+current substitution state, possibly evolving it ($\rho \to \rho'$, e.g.\
+sealing a fresh covariantly-read variable to top). Then
+$\sem{t}_\rho \subseteq \sem{\expandop(t)}_{\rho'}$, and residual
+instances keep their semantics.
+\end{axiom}
+
+Two things the main paper leaves open, which this paper fixes: expansion
+takes a \emph{mode} argument (\texttt{expandTVars :\ ?Variance}), and the
+containment holds for modes $\NoneM$ and $\Cov$ but \emph{not} for
+$\Contra$ (Section~\ref{sec:tvar}); and ``residual instances'' means
+exactly: unresolved type variables in mode $\NoneM$, plus unexpanded
+recursion cut-offs re-emitted by \texttt{instantiate} and \texttt{TInter}
+cycle guards (Sections~\ref{sec:tsinst}, \ref{sec:tinter},
+\ref{sec:cycles}).
+
+%==========================================================================
+\section{Expansion as a Function}
+\label{sec:model}
+
+\subsection{The worklist}
+
+\begin{definition}[Expansion]
+\label{def:expand}
+For a mode $m \in \{\NoneM, \Cov, \Contra\}$ (the implementation's
+\texttt{expandTVars} $\in$
+\{\texttt{None()}, \texttt{Some(Covariant())},
+\texttt{Some(Contravariant())}\}), define
+$\expandop_m(t, \rho) = (I', C', \rho')$ by the following worklist,
+mirroring \texttt{TType::expandToVectors} line by line. If
+$t$ is top, the result is $\top$ (returned as \texttt{None}). Otherwise
+initialize $C' := t.\mathsf{clauses}$ (as a vector), $I' := \emptyset$,
+$\mathit{todo} := t.\mathsf{insts}$, $\mathit{seen} := t.\mathsf{insts}$.
+While $\mathit{todo}$ is nonempty, pop $i$ and compute a one-step
+expansion $E_m(i)$:
+\begin{itemize}
+\item $i = \mathsf{TSInst}(n,\bar{a})$: let
+  $k = \mathsf{ExpansionKey}(n.\mathsf{text}, \bar{a})$; if cached,
+  $E_m(i) := \rho.\texttt{seenExpansion}(k)$; else
+  $E_m(i) := \instop(n, \bar{a})$ and the cache is extended
+  ($\rho.\texttt{seenExpansion}[k] := E_m(i)$). Mode-independent. The
+  key is the definition's \emph{spelling}, not its resolution — the gap
+  between the two is Section~\ref{sec:expkey}.
+\item $i = \mathsf{TInter}(\{t_j\})$: $E_m(i) :=
+  \mathsf{interN}(\{t_j\})$ with \texttt{tenv.expandInter} set
+  (Section~\ref{sec:tinter}). Mode-independent.
+\item $i = \alpha^K$: in mode $\NoneM$, push $\alpha^K$ onto $I'$
+  (\emph{residual}) and continue; in modes $\Cov$/$\Contra$,
+  $E_m(i) := \getop(\alpha^K, m)$ — the binding read intersected with the
+  occurrence constraints, with the seal side effects of
+  Definition~\ref{def:subst-recap}.
+\item $i = \mathsf{TArrayLit}(\alpha, \mathit{elts}, \_)$: $E_m(i)$ is
+  the committed type $\mathsf{peek}(\alpha)$ if $\alpha$ is bound
+  (no state change), else the mutable tuple type over $\mathit{elts}$
+  (Section~\ref{sec:arraylit}). Mode-independent.
+\end{itemize}
+If $E_m(i)$ is top, the whole expansion returns $\top$. Otherwise extend
+$C'$ with $E_m(i).\mathsf{clauses}$ and push each instance of
+$E_m(i).\mathsf{insts}$ not in $\mathit{seen}$ onto $\mathit{todo}$
+(adding it to $\mathit{seen}$). On termination,
+$\expandop_m(t,\rho) = (I', C', \rho')$ where $\rho'$ is the evolved
+state. \texttt{TType::expand} rebuilds the pair from
+$\TInsts{::}\mathsf{unionN}(I')$ and
+$\Clauses{::}\mathsf{unionN}(C')$;
+\texttt{expandToClauses} does the same in mode
+\texttt{Some(variance)} and returns the clause part. A second site
+performs the same keyed expand-and-cache step outside this worklist:
+\texttt{growTVars}'s \texttt{collectTVars} expands \texttt{TSInst}
+entries one level to find inference variables hidden inside
+head-transparent aliases; it shares the map and the key, so everything
+this paper proves (and refutes) about reuse applies to it verbatim.
+\impl{TType.sk / expandToVectors (680), expand (727), expandToClauses
+(739)}
+\impl{TTypeSubtyping.sk / collectTVars (1508, cache use 1529--1539)}
+\end{definition}
+
+\begin{lemma}[State Evolutions of Expansion]
+\label{lem:evolutions}
+The only substitution evolutions $\expandop_m$ performs are:
+(i) $\getop$ transitions — seal-to-top of unbound variables and
+value-preserving seals $\SVOpen(t) \to \SVClosed(t)$ (modes
+$\Cov$; mode $\Contra$ performs no binding writes); (ii) memo-cache
+extensions (\texttt{seenExpansion} here; \texttt{seenInter} /
+\texttt{seenUnion} inside the invoked operators); (iii) version bumps.
+In particular expansion never executes a $\mathsf{grow}$: no binding
+value is ever unioned or replaced.
+\end{lemma}
+\begin{proof}
+By inspection of Definition~\ref{def:expand} against the code: the
+\texttt{TVar} arm calls \texttt{Subst::get} only; the \texttt{TSInst}
+arm calls \texttt{tenv.instantiate(subst, subst, ...)}, and
+\texttt{instantiate} immediately re-packages the state into a fresh
+\texttt{Subst::mcreate(tcenvb, baseSubst)} \emph{copy} — its binding
+writes (constraint-check clones, class-body expansion) land in the copy
+and are dropped; only the caller's \texttt{seenExpansion} write at
+\texttt{TType.sk:700} touches the live state. The \texttt{TInter} and
+\texttt{TArrayLit} arms call \texttt{interN} (get-transitions inside
+\texttt{inter\_}'s covariant expansions, plus \texttt{seenInter}) and
+\texttt{peek} (read-only). \qedhere
+\impl{TEnv.sk / instantiate (168, 196); TType.sk / expandToVectors (680);
+TTypeSubst.sk / peek (243)}
+\end{proof}
+
+Transport of already-installed types across these evolutions is exactly
+the main paper's axiom \textbf{L-MONO} (whose anchor names the
+\texttt{Subst::get} seal-to-top); we cite it rather than re-prove it.
+Note that the value-preserving seal $\SVOpen(t) \to \SVClosed(t)$ does not
+change any denotation under Definition~\ref{def:inst-sem} — (V2) reads the
+bound value irrespective of open/closed — so among expansion's evolutions
+only seal-to-top has semantic content, and it only \emph{adds} a binding
+of value $\top$.
+
+\subsection{Containment through the worklist}
+
+\begin{lemma}[Worklist Containment]
+\label{lem:plumbing}
+Fix a mode $m$ and suppose the one-step containment
+\[
+\sem{i}_{\hat\rho} \subseteq \sem{E_m(i)}_{\hat\rho'}
+\tag{$\ast$}
+\]
+holds for every instance $i$ popped during the run, where
+$\hat\rho \to \hat\rho'$ is that step's evolution. Then
+$\sem{t}_\rho \subseteq \sem{(I', C')}_{\rho'}$, and residual instances
+appear in $I'$ verbatim.
+\end{lemma}
+\begin{proof}
+Let $v \in \sem{t}_\rho = \sem{t.\mathsf{insts}}_\rho \cup
+\sem{t.\mathsf{clauses}}_\rho$. All later evolutions are those of
+Lemma~\ref{lem:evolutions}, so membership transports forward by
+\textbf{L-MONO}; we may therefore evaluate all containments at the final
+$\rho'$. If $v$ is justified by the clause part, it is in the initial
+$C'$, and $\Clauses{::}\mathsf{unionN}$ only merges clauses keyed by
+their var-sets using $\STypes$/clause union, which over-approximates set
+union by \textbf{L-UNION} (paper B); the constructor invariant that a top
+clause absorbs the rest, and \texttt{TType::create}'s dropping of $I'$
+when $C'$ is top, only enlarge the result. If $v$ is justified by an
+instance $i$, argue by induction on the number of worklist steps after
+$i$ enters $\mathit{seen}$: when $i$ is popped, $(\ast)$ moves $v$ into
+$\sem{E_m(i)}$, i.e.\ into its clauses (already covered) or one of its
+instances $i''$; if $i''$ is fresh it enters the worklist and induction
+applies; if $i'' \in \mathit{seen}$, then $i''$ was either already
+processed (induction applies to its earlier occurrence — one-step
+expansion of the same instance under the evolved state yields the same
+$E_m(i'')$, by cache determinism for \texttt{TSInst}
+(Theorem~\ref{thm:invariance}) and by value determinism of sealed reads
+for the other arms) or is currently queued. The residual \texttt{TVar}
+arm pushes $i$ itself onto $I'$; the top short-circuit returns $\top$
+with $\sem{\top} = \Val \supseteq$ everything. \qedhere
+\end{proof}
+
+One genuine subtlety hides in the ``already processed'' case: a
+\emph{recursive} named type re-emits its own \texttt{TSInst}, which the
+$\mathit{seen}$ check then drops — the recursive occurrence contributes
+nothing new only under a least-fixpoint reading of recursive definitions.
+Section~\ref{sec:cycles} isolates this.
+
+\begin{lemma}[mapSTypes Decomposition]
+\label{lem:mapstypes}
+\texttt{TType::mapSTypes}$(m, f)$ equals: expand in mode $m$; apply $f$
+to each clause's \texttt{?STypes} (with a $\top$ expansion presented to
+$f$ as the single top clause \texttt{None}); drop clauses whose image is
+empty; rebuild with $\Clauses{::}\mathsf{unionN}$ and the untouched
+residual $I'$. Consequently the main paper's refinement primitive
+$\refop^{g,d}$ factors exactly as its Definition ``Memberwise
+Refinement'' describes, with this paper supplying the expansion step and
+paper B the rebuild unions; and \texttt{mapSTypes} with the identity
+mapper is \texttt{expand}.
+\impl{TType.sk / mapSTypes (434--457); TypeCheckRefine.sk /
+setLocalFilterMap (721, 736)}
+\end{lemma}
+\begin{proof}
+By inspection: \texttt{mapSTypes} calls \texttt{expandToVectors}, maps
+$f$ through \texttt{Clause::create} (which returns \texttt{None} exactly
+on an empty $\STypes$ image, implementing the drop), and rebuilds. The
+top case at line 440--445 presents \texttt{None} to $f$ and produces
+either the replacement clauses or $\top$. \texttt{rawMap} is the
+substitution-free analogue used by generic transformers and performs no
+expansion at all (its \texttt{fInsts} may convert instances to clauses
+but has no access to a substitution); no refinement client reaches it,
+so it carries no \textbf{L-EXP} obligation.
+\impl{TType.sk / rawMap (408)}
+\end{proof}
+
+%==========================================================================
+\section{Per-Construct Containment}
+\label{sec:constructs}
+
+\subsection{Type variables}
+\label{sec:tvar}
+
+\begin{lemma}[TVar One-Step Containment, modes $\NoneM$ and $\Cov$]
+\label{lem:tvar}
+For every variable occurrence $\alpha^K$ and state $\rho$:
+\begin{itemize}
+\item[(a)] Mode $\NoneM$: the step is the identity ($\alpha^K$ residual);
+  containment and residual-semantics preservation are trivial.
+\item[(b)] Mode $\Cov$, $\rho$ binds $\alpha$ (open or closed, freeze or
+  not): the step returns $t \sqcap K$ built by \texttt{TType::inter} from
+  the bound value $t$ and the occurrence constraints. By (V2), (V1) and
+  \textbf{L-INTER}/\textbf{L-INTER-BOT} (paper B),
+  $\sem{\alpha^K}_\rho \subseteq \sem{t}_\rho \cap \bigcap_K \sem{c}_\rho
+  \subseteq \sem{t \sqcap K}_{\rho'}$, the last step reading the result
+  at the post-step state via \textbf{L-MONO}. The seal
+  $\SVOpen(t) \to \SVClosed(t)$, when it fires, is value-preserving.
+\item[(c)] Mode $\Cov$, $\alpha$ unbound: the step seals
+  $\alpha \mapsto \SVClosed(\top)$ and returns $\top \sqcap K$. By (V1)
+  and \textbf{L-INTER}/\textbf{L-INTER-BOT},
+  $\sem{\alpha^K}_\rho \subseteq \bigcap_K \sem{c}_\rho \subseteq
+  \sem{\top \sqcap K}_{\rho'}$; the new binding of value $\top$ makes
+  (V2) hold vacuously at $\rho'$.
+\end{itemize}
+\end{lemma}
+
+\begin{finding}[Contravariant expansion does not satisfy L-EXP]
+\label{find:contra}
+We first attempted to prove the one-step containment for all three modes.
+It fails in mode $\Contra$ on an \emph{unbound} variable:
+$\getop(\alpha, \Contra)$ returns $\bot$ (no write), and
+$\sem{\alpha^K}_\rho \subseteq \sem{\bot} = \emptyset$ is false whenever
+the variable's envelope is inhabited. This is not a bug: a contravariant
+read is a deliberate \emph{under}-approximation — ``the lower bound
+gathered so far'' — consumed by the subtyping/growth machinery
+(\texttt{growTVars}, \texttt{maybeGetRestElementType}), where the required
+direction is reversed; that is the main paper's Obligation ``Validation
+Soundness'', not this paper's. For a \emph{bound}
+variable, case (b)'s argument goes through verbatim in mode $\Contra$,
+since $\getop(\Contra)$ then returns the same bound value.
+Consequence: axiom \textbf{L-EXP} must be scoped to modes
+$\NoneM$/$\Cov$ (the mode scoping of Axiom \textbf{L-EXP};
+Section~\ref{sec:status}).
+\impl{TTypeSubst.sk / Subst::get (210--216); TTypeSubtyping.sk /
+growTVars}
+\end{finding}
+
+\begin{lemma}[Refinement Clients Use Only Modes $\NoneM$/$\Cov$]
+\label{lem:clients}
+Every expansion performed by the refinement and constant-removal
+machinery of the main paper uses mode $\Cov$ or mode $\NoneM$:
+\begin{itemize}
+\item \texttt{setLocalFilterMap} maps with \texttt{Some(Covariant())}
+  (\texttt{TypeCheckRefine.sk:736});
+\item the truthiness residues go through \texttt{residuePart} with
+  \texttt{Some(Covariant())} (\texttt{TType.sk:391, 396});
+\item \texttt{conditionVerdict} and \texttt{getSTypes}-based readers use
+  \texttt{expandToClauses} with \texttt{Covariant()}
+  (\texttt{TType.sk:319, 325, 676});
+\item \texttt{removeConstant} expands with \texttt{None()}
+  (\texttt{TType.sk:252, 258}), leaving variables residual and untouched,
+  as its model in the main paper's Definition ``Constant Removal''
+  requires (``the instance layer is unchanged'').
+\end{itemize}
+So the mode scoping of Finding~\ref{find:contra} costs the main paper
+nothing.
+\end{lemma}
+
+\subsection{Named instantiations (\texttt{TSInst})}
+\label{sec:tsinst}
+
+$\instop(n, \bar{a})$ dispatches on the definition of $n$
+(\texttt{TEnv::instantiate}):
+a \texttt{TypeDef} binds each type parameter $P_i$ to the argument
+$a_i$ \emph{as a type term} in the lexical \texttt{bindings} map
+(checking constraints on a throwaway clone, diagnostics only) and
+normalizes the alias body — a reference to $P_i$ in the body resolves to
+the binding by \texttt{boundTy.withPos(pos)}, which changes only the
+position and not the hash, so the argument term is inserted
+\emph{verbatim}; a \texttt{Class} builds the object type via
+\texttt{new}/\texttt{newObject}/\texttt{addFields} with the same
+binding mechanism for field types; an \texttt{Enum} builds the union of
+its member literal types (binding-independent — Lemma~\ref{lem:enum-blind});
+an enum-\emph{member} type reference (\texttt{E.A}) never reaches
+$\instop$ at all (it is resolved inside \texttt{normalize}'s
+\texttt{TAInst} arm, an \texttt{invariant\_violation} guards the
+dispatch). Three early returns produce something other than the
+definition's body: the synthetic missing-annotation placeholder returns
+an opaque atom (Section~\ref{sec:placeholder}); the recursion guard,
+when $n$ is already being expanded (\texttt{seenInstantiate}), and the
+circular-alias guard (\texttt{isCircularTypeDef}, for an alias that
+requires itself) both re-emit the unexpanded $\mathsf{TSInst}$
+(Section~\ref{sec:cycles}).
+\impl{TEnv.sk / instantiate (168--231), instantiateTParams (257),
+normalize TAInst arm (2011--2116), new (842), newObject (901),
+isCircularTypeDef (495)}
+\impl{TypeCheckEnum.sk / enumUnionType (487), enumMemberType (533)}
+
+What normalization computes from the body is \texttt{TEnv} territory:
+this paper does not model \texttt{normalize} and instead names the
+interface assumption that the containment needs.
+
+\begin{axiom}[E-NORM: Instantiation is Semantics-Preserving]
+\label{ax:enorm}
+For every named definition $n$ and arguments $\bar{a}$, and every state
+$\rho$ at which the expansion runs,
+$\sem{\mathsf{TSInst}(n,\bar{a})}_\rho \subseteq
+ \sem{\instop(n,\bar{a})}_\rho$.
+For the two identity early returns (recursion guard, circular alias)
+the result \emph{is} the input, so the axiom is trivially true there
+and the re-emitted instance is a residual that keeps its semantics by
+construction; the placeholder-atom return is tracked separately
+(Section~\ref{sec:placeholder}, registry row E-PLACEHOLDER-ATOM).
+\impl{TEnv.sk / instantiate, normalize}
+\end{axiom}
+
+Under \textbf{E-NORM}, the \texttt{TSInst} one-step containment reduces
+to one further claim: that reusing a \emph{cached} expansion — computed
+at some earlier state $\rho_0$ — denotes at $\rho'$ no less than a fresh
+$\instop$ run at $\rho'$ would. That is the centerpiece
+(Section~\ref{sec:cache}); Theorem~\ref{thm:invariance} discharges it
+for the alias path by showing the cached and fresh values are
+\emph{equal}.
+
+\subsection{Unexpanded intersections (\texttt{TInter})}
+\label{sec:tinter}
+
+The one-step expansion of $\mathsf{TInter}(\{t_1,\dots,t_k\})$ sets
+\texttt{tenv.expandInter} and left-folds \texttt{TType::inter} over the
+members. (That flag selects full over deferred field intersection; its
+path-scoping and the deferred form's containment are registry row
+TENV-EXPANDINTER (\textsc{open}), which this arm's argument imports.) By (I1) and
+\textbf{L-INTER}/\textbf{L-INTER-BOT} (paper B, whose two cases together cover
+\texttt{inter} at every level, including the \texttt{seenInter} cache
+and the cycle guard \texttt{tenv.seenInter}),
+\[
+\sem{\mathsf{TInter}(\{t_i\})}_\rho = \bigcap_i \sem{t_i}_\rho
+\subseteq \sem{\mathsf{interN}(\{t_i\})}_{\rho'},
+\]
+with the fold's intermediate evolutions transported by \textbf{L-MONO}.
+When \texttt{inter\_} hits an in-progress pair it returns the
+\emph{unexpanded} intersection \texttt{unexpandedInter}
+(\texttt{TTypeInter.sk:154--156}); by (I1) that residual keeps its
+semantics exactly. Similarly the bare-variable arms return a variable
+occurrence with an added constraint — a residual whose semantics
+(V1)-intersects the operand, again exact for our direction.
+\impl{TTypeInter.sk / TInter::expand (37), inter (97), inter\_ (129),
+unexpandedInter (82)}
+
+\subsection{Delayed array literals (\texttt{TArrayLit})}
+\label{sec:arraylit}
+
+\texttt{ArrayLitTyping::expand} returns the committed type
+$\mathsf{peek}(\alpha)$ — the binding of the literal's commitment
+variable intersected with its constraints, read \emph{without} any state
+transition — when $\alpha$ is bound, and otherwise the mutable tuple
+type $\mathsf{Tuple}[\mathit{elts}]$ built from the widened element
+types. The containment needs the commitment discipline documented at the
+top of \texttt{TArrayLitTyping.sk} (``every commitment uses the target
+type or the widened element types''), which is array-literal-typing
+territory; we name it:
+
+\begin{axiom}[E-ARR: Array-Literal Commitment Discipline]
+\label{ax:earr}
+For every $\mathsf{TArrayLit}(\alpha, \mathit{elts}, \_)$ and state
+$\rho$: (i) if $\rho$ binds $\alpha$ then
+$\sem{\mathsf{TArrayLit}(\ldots)}_\rho \subseteq
+\sem{\mathsf{peek}(\alpha)}_\rho$ (the committed type contains the
+literal's values); (ii) if $\alpha$ is unbound then
+$\sem{\mathsf{TArrayLit}(\ldots)}_\rho \subseteq
+\sem{\mathsf{Tuple}[\mathit{elts}]}_\rho$ (the literal's element values
+inhabit the widened element types — a well-typedness fact about
+how \texttt{TArrayLit} is constructed). Clause (ii) must hold at every
+state, including states where $\alpha$ later becomes bound: the tuple
+view taken by an early expansion must not be invalidated by a later,
+wider commitment (e.g.\ to \texttt{Array<U>}).
+\impl{TArrayLitTyping.sk / expand (100), arrayLitCommittedType (85)}
+\impl{TArrayLitTyping.sk / arrayLitToTupleType (113); TTypeSubst.sk /
+peek (243)}
+\end{axiom}
+
+\subsection{The containment theorem}
+
+\begin{theorem}[T-EXP]
+\label{thm:texp}
+For $m \in \{\NoneM, \Cov\}$, all $t$, $\rho$: with
+$(I', C', \rho') = \expandop_m(t, \rho)$,
+\[
+\sem{t}_\rho \subseteq \sem{(I', C')}_{\rho'},
+\]
+residual instances appear verbatim in $I'$ and keep their semantics,
+and the state evolution $\rho \to \rho'$ consists only of the
+transitions of Lemma~\ref{lem:evolutions}. The result is conditional on:
+\textbf{L-UNION}/\textbf{L-INTER}/\textbf{L-INTER-BOT} (paper B), \textbf{L-MONO} (main
+paper), \textbf{E-NORM}, \textbf{E-ARR}, and — for reuse of cached
+\texttt{TSInst} expansions — the key-identity premise \textbf{E-EXPKEY}
+(Section~\ref{sec:expkey}; \emph{violated}, see the registry),
+Theorem~\ref{thm:invariance} on the alias path, and
+Obligation~\ref{obl:classsym} on the class path.
+\end{theorem}
+\begin{proof}
+Lemma~\ref{lem:plumbing} reduces the claim to the one-step containment
+$(\ast)$, established per construct: Lemma~\ref{lem:tvar} (variables),
+Axiom~\ref{ax:enorm} plus Theorem~\ref{thm:invariance} (named
+instantiations, cached or fresh), Section~\ref{sec:tinter}
+(intersections), Axiom~\ref{ax:earr} (array literals).
+\end{proof}
+
+%==========================================================================
+\section{Centerpiece: Soundness of the \texttt{seenExpansion} Cache}
+\label{sec:cache}
+
+The cache maps an $\mathsf{ExpansionKey}$ — the name \emph{text} of a
+named type plus its argument list — to the expanded body, and is
+consulted before every $\instop$ call at both expansion sites
+(Definition~\ref{def:expand}). One entry therefore serves \emph{every
+mention} of a named type under a substitution; for the zero-argument
+aliases that dominate real programs, the entry is filled once and hit
+everywhere. Exactness of that reuse rests on two independent claims:
+(i) the cached \emph{value} does not depend on the state at fill time —
+the code comment (\texttt{TTypeSubst.sk:17--31}) argues this holds
+because the cached body substitutes each type parameter
+\emph{symbolically}: arguments appear as free variables, re-resolved at
+every use through \texttt{Subst::get}; and (ii) the \emph{key}
+identifies one definition, so the entry is only ever reused for the
+definition that filled it. This section makes both precise. For (i) it
+proves a strictly stronger statement on the alias path
+(binding independence) and corrects the comment in two places; for (ii) it
+exhibits a refutation — the key's name-text component conflates
+same-named definitions from different modules, witnessed end-to-end
+(Section~\ref{sec:expkey}).
+
+\subsection{The key does not identify a definition (E-EXPKEY)}
+\label{sec:expkey}
+
+$\mathsf{ExpansionKey}(n,\bar{a})$ is built from \texttt{name.value} —
+the \emph{unqualified} name text — and the argument list
+(\texttt{TType.sk:3055--3059}). Name \emph{resolution} is per-module and
+correct: $\instop$ resolves through \texttt{defMap.getType} at the
+expansion site, and diagnostics anchor each reference at its own
+module's definition. The cache, however, is shared across the whole
+substitution, so two \emph{different} definitions with one spelling and
+one argument list share one entry: whichever expands first fills it,
+and every later mention of the other definition reuses it. The
+implementation comment acknowledges the missing module qualifier but
+judges the collision ``not yet triggerable'' (\texttt{TType.sk:3048--3050},
+upstream \#889). That judgement is refuted by execution — registry row
+\textbf{E-EXPKEY}, violated and witnessed end-to-end in both failure
+directions (issue report \texttt{expansion-key-collision.md}):
+
+\begin{itemize}
+\item \emph{Unsound acceptance.} Module \texttt{dep} exports
+  \texttt{type Box = \{ s: string \}} and
+  \texttt{get(b: Box): string \{ return b.s; \}}; the importing module
+  declares its own \texttt{type Box = \{ n: number \}}, binds
+  \texttt{const b: Box = \{ n: 1 \}} (filling the cache under
+  $\mathsf{ExpansionKey}(\texttt{"Box"},[])$), then calls
+  \texttt{get(b)}. The parameter's \texttt{Box} reuses the cached local
+  body, the call is accepted with zero diagnostics, and at runtime
+  \texttt{get} returns \texttt{b.s === undefined} at static type
+  \texttt{string}. tsc rejects the same program (TS2741). Renaming the
+  local alias — the only change — makes SKJS reject the call
+  (``The field 's' is missing''), isolating the collision as the cause.
+\item \emph{False rejection (dual).} Reordering so the imported
+  \texttt{Box} expands first makes the \emph{local} declaration
+  \texttt{const b: Box = \{ n: 1 \}} fail against
+  \texttt{\{ s: string \}} — with the diagnostic anchored at the
+  \emph{other module's} definition, direct evidence that the cached
+  entry crossed definitions.
+\end{itemize}
+
+Order-dependence plus wrong-module diagnostic positions pin the
+mechanism to the shared name-keyed cache rather than name resolution.
+Within a single module the premise holds — every reference to one
+spelling resolves to one definition (resolution takes the first
+matching definition, so even a stub/local name clash picks one winner
+consistently) — so every single-module result below is unaffected;
+the violation requires two modules checked under one substitution.
+The fix is to key by definition identity (module qualifier or defMap
+definition id), as \#889 anticipates. Until then, every use of
+Lemma~\ref{lem:symbolic-suffices} and Theorem~\ref{thm:invariance}
+carries \textbf{E-EXPKEY} as a premise.
+
+One adjacent observation from the refutation search (name resolution,
+not the cache — outside this paper's scope, recorded so it is not
+lost): a module-local \texttt{type Function} does \emph{not} shadow the
+stub-declared global \texttt{Function} — an annotation naming it
+resolves to the stub (``Missing call signature''), where tsc resolves
+to the module-local alias.
+
+\subsection{Symbolic arguments, precisely}
+
+\begin{definition}[Symbolic in the Arguments]
+\label{def:symbolic}
+$\instop(n, \bar{a})$ is \emph{symbolic in the arguments} if there is a
+type-with-holes $B_n[\cdot_1,\dots,\cdot_k]$, determined by the
+definition of $n$ alone, such that for every $\bar{a}$ and every state
+$\rho$, $\instop(n,\bar{a})$ run at $\rho$ returns $B_n[\bar{a}]$ —
+the same $\TType$ \emph{value} — where each hole occurrence is filled by
+the argument term $a_i$ either (i) verbatim (up to
+position, which is not hashed), or (ii) as a variable occurrence of
+$a_i$'s variable with occurrence-level constraints added
+(\texttt{setConstraint} — a functional update, registry row
+SETCONSTRAINT-FUN), or (iii)
+replaced by a \emph{binding-independent} approximation (a fixed type not
+depending on $\rho$). Diagnostics emitted along the way may depend on
+$\rho$; the returned value may not.
+\end{definition}
+
+\begin{lemma}[Symbolic $\Rightarrow$ Cache-Reuse Exactness]
+\label{lem:symbolic-suffices}
+Assume \textbf{E-EXPKEY} for the reuse in question: the fill-site and
+use-site mentions resolve to the \emph{same} definition of $n$. If
+$\instop(n,\bar{a})$ is symbolic in the arguments, then for any states
+$\rho_0$ (cache fill) and $\rho'$ (use), the cached value equals what a
+fresh run at $\rho'$ would return; hence
+$\sem{\text{cached}}_{\rho'} = \sem{\text{fresh}}_{\rho'}$ and the
+\texttt{TSInst} one-step containment under reuse follows from
+\textbf{E-NORM} at $\rho'$ alone.
+\end{lemma}
+\begin{proof}
+Immediate: both runs return the value $B_n[\bar{a}]$ of the shared
+definition. The point of the symbolicity definition is that argument
+\emph{bindings} are never consulted, so the variables inside $\bar{a}$
+remain free in the cached term and are re-resolved through $\getop$ at
+every later expansion step of the \emph{user} of the cached term —
+never frozen into the cache. Without the \textbf{E-EXPKEY} premise the
+conclusion is simply false — the fresh run would expand a different
+$B_{n'}$ (Section~\ref{sec:expkey}).
+\end{proof}
+
+\subsection{The alias path is binding-independent}
+
+The mechanism turns out to be simpler and stronger than the comment's
+operation-by-operation argument: on the \texttt{TypeDef} path,
+normalization \emph{never consults the live substitution at all}.
+
+\begin{definition}[Binding-Independent]
+A computation is \emph{binding-independent} if every \texttt{Subst} whose
+binding map it consults (via \texttt{get}, \texttt{peek},
+\texttt{isUnbound}, \texttt{isOpen}, \texttt{isClosed}) is freshly
+created with the empty state, or is a clone whose results influence
+diagnostics only.
+\end{definition}
+
+\begin{lemma}[normalize is Binding-Independent]
+\label{lem:blind}
+\texttt{TEnv::normalize} and the helpers it reaches on the
+\texttt{TypeDef} path are binding-independent. By arms of the dispatch
+(\texttt{TEnv.sk:1755--2153}):
+\begin{itemize}
+\item \emph{Literals, primitives, top, bottom, tuples-as-names, and the
+  fatal arms}: these construct constants or \texttt{TType::inst}; no
+  substitution is involved.
+\item \emph{\texttt{TAInst}} (2011): resolves through the lexical
+  \texttt{bindings} map — a \texttt{TEnv} field, not a substitution —
+  returning the bound term via \texttt{withPos} (2030; verbatim
+  insertion, case (i) of Definition~\ref{def:symbolic}); or emits an
+  unexpanded \texttt{TType::inst} (2115); the reference-site constraint
+  check (2103--2114) runs on \texttt{Subst::mcreate(tcenvb)} (2105) —
+  \emph{empty state} — and affects diagnostics only. The
+  enum-member sub-arm (2045--2070) returns the member's literal type,
+  computed by pure constant folding (Lemma~\ref{lem:enum-blind}).
+\item \emph{\texttt{TAUnion}/\texttt{TAInter}} (2117--2132): both create
+  a fresh empty \texttt{Subst} (2118, 2126). \texttt{union} never reads
+  bindings at any level (Lemma~\ref{lem:union-blind}). \texttt{inter}
+  under the empty state sees every variable as unbound: bare-variable
+  operands take the \texttt{setConstraint}/\texttt{unexpandedInter} arms
+  (case (ii)); variables nested in compound operands are sealed to top
+  \emph{in the throwaway state} and thus replaced by the
+  binding-independent $\top$ (case (iii)) — see
+  Finding~\ref{find:inter-comment}.
+\item \emph{\texttt{TAKeyOf}} (1823--1826): creates a fresh empty
+  \texttt{Subst} (1824) and expands the operand under it; see
+  Finding~\ref{find:keyof}. The indexed-access element read
+  \texttt{T[number]} (2134--2141) has the same shape: fresh empty
+  \texttt{Subst} (2139), covariant expansion in the throwaway state.
+\item \emph{\texttt{TATemplate}} (1918): \texttt{normalizeTemplate}
+  (2168) creates one fresh empty \texttt{Subst} (2175) and judges every
+  hole by expanding it in mode $\NoneM$ under that state
+  (\texttt{templateHole}, 2277--2278): variables stay \emph{residual}
+  (no read at all — a clause with a nonempty var-set or a residual
+  instance marks the hole irreducible, 2292--2297), and the reduction
+  itself is pure string assembly over the literal sets. Case (iii) of
+  Definition~\ref{def:symbolic} holds with the approximation being the
+  reduced literal union, a function of the hole \emph{types} only.
+\item \emph{\texttt{SKJS\_Closed}} (2002--2010): \texttt{closeObjectType}
+  (3155) creates a fresh empty \texttt{Subst} (3160) and expands the
+  operand covariantly under it (3172); a variable nested in the operand
+  seals to top in the throwaway state, and an \emph{abstract} operand is
+  caught by the nonempty-var-set guard (3182--3190) and returned
+  unclosed (diagnostics only outside definition validation). The
+  closing itself rewrites index fields to $\bot$ — no binding reads.
+\item \emph{\texttt{TAObject}/\texttt{TAFun}/\texttt{TATypeOf}/tuples}:
+  recursive normalization plus fresh empty substitutions at every
+  operation site (\texttt{TEnv.sk:2459, 2472, 2487, 2548, 2681, 2840,
+  2920}); the mapped-type key analysis (\texttt{FNIn}, 2900)
+  expands the key type in mode $\NoneM$ under a fresh empty
+  \texttt{Subst}, leaving variables residual and unread.
+\end{itemize}
+\impl{TEnv.sk / normalize (1755), Subst creation sites (1824, 2105,
+2118, 2126, 2139, 2175, 2459, 2472, 2487, 2548, 2681, 2840, 2920,
+3160)}
+\end{lemma}
+
+\begin{lemma}[The Enum Arm is Binding-Independent]
+\label{lem:enum-blind}
+$\instop$ on an \texttt{Enum} definition returns the union of the
+members' literal types, and an enum-member type reference returns one
+member's literal type. Member values are computed by
+\texttt{enumMembers} — constant folding over the declaration ASTs,
+resolving cross-enum references through \texttt{defMap} with a
+\texttt{visiting} cycle-breaker — which performs no substitution reads
+at all (there is no \texttt{Subst::get}, \texttt{peek}, or expansion
+call anywhere in \texttt{TypeCheckEnum.sk}); the heterogeneous-enum
+join goes through \texttt{TType::union}, binding-free by
+Lemma~\ref{lem:union-blind}. So the arm is symbolic trivially: its
+value is a function of the declarations alone.
+\impl{TypeCheckEnum.sk / enumMembers (201), enumUnionType (487),
+enumMemberType (533)}
+\end{lemma}
+
+\begin{theorem}[Alias-Path Expansion Invariance]
+\label{thm:invariance}
+For a \texttt{TypeDef} or \texttt{Enum} definition $d$ resolved for
+$n$, $\instop(n,\bar{a})$ is symbolic in the arguments
+(Definition~\ref{def:symbolic}); in fact it returns the same $\TType$
+value at every state — a function of the \emph{resolved definition} $d$,
+the argument terms $\bar{a}$, and the compilation unit. Consequently
+(Lemma~\ref{lem:symbolic-suffices}) \texttt{seenExpansion} reuse is
+\emph{exact} on the alias path \emph{among mentions resolving to the
+same definition}; the key's failure to separate definitions is exactly
+\textbf{E-EXPKEY} (Section~\ref{sec:expkey}), not a failure of this
+theorem.
+\end{theorem}
+\begin{proof}
+$\instop$ on the \texttt{TypeDef} arm performs: parameter binding
+(\texttt{instantiateTParams}) — the returned bindings are the argument
+terms themselves, defaults normalized recursively, and the constraint
+check runs on \texttt{subst.clone()} of the state \emph{copy} and is
+discarded (\texttt{TEnv.sk:378}, diagnostics only); then
+\texttt{normalize} of the body, which is binding-independent by
+Lemma~\ref{lem:blind}. The \texttt{Enum} arm is binding-independent by
+Lemma~\ref{lem:enum-blind}. A binding-independent computation's result cannot
+depend on the ambient binding map; the remaining inputs (definition
+ASTs via \texttt{defMap}, the lexical bindings, the argument terms) are
+fixed by $d$, $\bar{a}$, and the compilation unit. The memo caches
+consulted along the way (\texttt{seenInter}/\texttt{seenUnion}) belong
+to the \emph{fresh empty} substitutions of Lemma~\ref{lem:blind} and
+start empty at each site, so they cannot import state-dependence.
+\end{proof}
+
+\begin{corollary}[Immunity to the Freeze-Window Hazard]
+\label{cor:freeze}
+Papers B/E of this series identify a hazard family in the
+\texttt{Subst} memo caches: under \texttt{freezeCandidates},
+\texttt{Subst::get} returns an open candidate's bound \emph{without
+sealing it}, so a cache entry whose value depends on that read
+(\texttt{seenSub}, \texttt{seenInter}) can go stale when the candidate
+later grows. On the alias path, \texttt{seenExpansion} is \emph{immune
+by construction}: by Theorem~\ref{thm:invariance} the cached value does
+not depend on any binding read, frozen or not — the unsealed read can
+return whatever it likes without being able to reach the cached value.
+This immunity is necessary because
+cross-mention keying makes cache hits routine. It is also orthogonal to
+\textbf{E-EXPKEY}: the collision serves a \emph{wrong definition's}
+correct expansion, never a stale one — no binding staleness is
+involved in either direction. (The class path is exactly where the
+immunity argument breaks; Obligation~\ref{obl:classsym}.)
+\end{corollary}
+
+\begin{corollary}[Coherence Under save/restore/clone]
+\label{cor:coherence}
+\texttt{seenExpansion} is part of \texttt{SubstState}: \texttt{save},
+\texttt{restore}, and \texttt{clone} carry bindings and cache
+atomically, so an entry filled on an exploratory path is rolled back
+with that path's bindings, and entries filled in a clone die with the
+clone. On the alias path this atomicity is unnecessary — by
+Theorem~\ref{thm:invariance} even a leaked entry would be correct — but
+it is what keeps the \emph{class-path} exposure — and the
+\textbf{E-EXPKEY} collision exposure — bounded to reuse within one live
+substitution's lifetime.
+\impl{TTypeSubst.sk / SubstState::restore (40), SavedSubst::create (63),
+Subst::clone (149)}
+\end{corollary}
+
+\subsection{Verifying the comment's three claims}
+
+\begin{lemma}[Union Never Resolves a TVar]
+\label{lem:union-blind}
+\texttt{TType::union} and everything it reaches perform no binding
+reads: \texttt{union\_} unions the instance sets verbatim
+(\texttt{TInsts::union}) and merges clauses by var-set key; the
+recursive field/function cases (\texttt{TField::union},
+\texttt{TFun::union}) recurse through \texttt{union} on covariant
+components — and through \texttt{inter} on contravariant ones, which is
+where the next lemma takes over. The \texttt{seenUnion} cache comment
+(``any TVar in the operands passes through unchanged'') is confirmed at
+the \texttt{TType} level.
+\impl{TTypeUnion.sk / union (22), union\_ (42), TInsts::union (167)}
+\end{lemma}
+
+\begin{finding}[The comment's \texttt{inter} claim is imprecise]
+\label{find:inter-comment}
+We attempted to verify ``inter never resolves an unbound TVar''
+verbatim and \emph{failed}: it is true only for \emph{bare} variable
+operands (\texttt{inter\_}'s guard arms, \texttt{TTypeInter.sk:138--153},
+which attach the other operand as an occurrence constraint). A variable
+nested in a \emph{compound} operand — e.g.\
+$(\alpha \mid \texttt{undefined})\ \&\ \texttt{string}$ — falls through
+to \texttt{expandToClauses(Covariant())} on both operands
+(\texttt{TTypeInter.sk:158--159}), which \emph{does} resolve $\alpha$:
+sealing it to top if unbound, reading its value if bound. The claim is
+rescued where the cache needs it by Lemma~\ref{lem:blind}: during alias
+normalization \texttt{inter} runs under a fresh \emph{empty} state, so
+the nested variable is always unbound there, the seal lands in the
+throwaway state, and the substituted $\top$ is binding-independent —
+and replacing a conjunct by $\top$ over-approximates the intersection,
+so \textbf{E-NORM}'s direction is unharmed. Outside normalization (live
+\texttt{inter} during checking) the compound-operand resolution is real
+but is paper B's subject, not the cache's. Suggested action: reword the
+comment's parenthetical to ``union caches independently of growth;
+inter attaches \emph{bare} operand variables as constraints, and during
+normalization runs on an empty substitution, so nested variables are
+top-approximated, never bound-resolved.''
+\end{finding}
+
+\begin{finding}[The \texttt{keyof} claim holds vacuously — it never
+reads]
+\label{find:keyof}
+The comment says \texttt{keyof} ``approximates an abstract or
+unresolved operand identically (\texttt{string | number}) whether or not
+the variable is bound.'' The audit shows something stronger: the
+\texttt{TAKeyOf} arm creates a fresh \emph{empty} \texttt{Subst}
+(\texttt{TEnv.sk:1824}) and \texttt{keyOfType} expands the operand under
+it, so a variable argument is \emph{always} treated as unbound — its
+covariant read seals it to top in the throwaway state, the expansion has
+a top clause, and the guard at \texttt{TEnv.sk:3249--3258} returns
+\texttt{string | number}. The live binding is unreachable, so cached and
+fresh values agree not because the two reads approximate identically but
+because there is no read. (The result also covers rigid parameters,
+whose clauses have nonempty var-sets — the same guard.) Two caveats,
+both outside the cache theorem: \texttt{keyOfType}'s own
+over-approximation contract explicitly excludes validity checking
+(``do not use keyof to check that a key is valid,''
+\texttt{TEnv.sk:3240--3246}), and symbol keys of an unresolved operand
+are not covered by \texttt{string | number} — both are
+\textbf{E-NORM}-side concerns about what the approximation means, not
+about cache invariance.
+\impl{TEnv.sk / normalize TAKeyOf arm (1823--1826), keyOfType (3247)}
+\end{finding}
+
+\subsection{Where the proof stops: the class path}
+
+\begin{obligation}[E-CLASS-SYM: Class Instantiation Symbolicity]
+\label{obl:classsym}
+On the \texttt{Class} arm, $\instop$ calls
+\texttt{new} $\to$ \texttt{newObject} $\to$ \texttt{addFields} passing
+the \emph{copy of the live state} made at \texttt{TEnv.sk:196} — not a
+fresh empty substitution. Field-type normalization inside is
+binding-independent (Lemma~\ref{lem:blind} applies arm by arm), but member
+assembly is not obviously so: any \texttt{TType::inter} reached with
+that substitution — the audited candidates are index merging
+(\texttt{TField::interIndex}, \texttt{TTypeInter.sk:245}, called
+unconditionally on \texttt{TType::inter}, unlike \texttt{TField::inter},
+which defers via \texttt{unexpandedInter} when
+\texttt{tenv.expandInter} is false), constructor assembly
+(\texttt{findConstructor}), and \texttt{TIndexes::create} — can reach
+\texttt{expandToClauses(Covariant())} on a compound operand mentioning a
+type argument's variable and read its \emph{current} binding. Because
+the read happens in the discarded copy, the seal that would normally
+freeze the variable and justify the read (paper's
+never-widen lemma (iii)) is thrown away: the live variable can still
+grow, and the cached class body would then diverge from a fresh
+recomputation — the same staleness family as the freeze-window hazard
+(Corollary~\ref{cor:freeze}), reachable here even without
+\texttt{freezeCandidates}, and additionally through it. \textbf{Status:
+open.} We attempted both directions and completed neither: the proof
+attempt dies at the \texttt{interIndex} chain above, and a concrete
+end-to-end counterexample (a class instantiated at a bound-open
+candidate whose member merge reads the bound, cached, followed by
+observable growth) was not constructed. Discharge either by (a) showing
+the reachable \texttt{inter} operands during \texttt{addFields} never
+nest a live inference variable inside a compound type (targ variables
+occur bare or inside unexpanded \texttt{TSInst}s there), or (b) making
+the class path binding-independent by construction (fresh empty substitution
+in \texttt{newObject}, as the alias path already effectively has), or
+(c) keying \texttt{seenExpansion} entries for class instances by
+substitution version, as \texttt{seenSub} already is for cycles.
+\impl{TEnv.sk / instantiate (196, 224), newObject (901), newObjectOf
+(919), newFieldsOf (952), addFields (1246), findConstructor (1585)}
+\impl{TTypeInter.sk / TField::interIndex (245), inter\_ (158)}
+\end{obligation}
+
+\begin{obligation}[E-GUARD: Identity Returns Must Not Poison
+the Live Cache]
+\label{obl:guard}
+$\instop$ returns the unexpanded $\mathsf{TSInst}$ itself in two cases:
+the recursion guard, when \texttt{seenInstantiate} already contains $n$
+(\texttt{TEnv.sk:189--191}), and the circular-alias guard
+(\texttt{isCircularTypeDef}, \texttt{TEnv.sk:212--214});
+\texttt{expandToVectors} caches whatever $\instop$ returns
+(\texttt{TType.sk:700}). If such an \emph{identity} entry is consulted
+from a long-lived substitution's cache, every later expansion of that
+instance hits the identity, whose sole instance is then dropped by the
+$\mathit{seen}$ check — the named type contributes \emph{nothing}
+(effectively $\bot$) to that expansion. For the \emph{recursion-guard}
+return this is empirically safe: \texttt{seenInstantiate} is nonempty
+only inside an $\instop$ frame using the discarded substitutions of
+Lemma~\ref{lem:blind}, and a recursive alias's inner \texttt{TSInst}
+sits nested in a field/argument the head worklist never processes
+(\texttt{type A = A | number} reads as \texttt{number}). For the
+\emph{circular-alias} return the empty contribution is the intended
+denotation — an alias that requires itself denotes nothing, and the
+declaration is independently reported fatal at its own site (TS2456) —
+so only programs already rejected can observe it. \textbf{Status: open
+(small)} — the safety argument is a call-site audit, not an invariant.
+The recommended cache-write invariant is ``the cached value's insts
+$\neq$ the key'' (asserting \texttt{seenInstantiate} empty at the write
+does not cover the circular-alias return, which fires with it empty).
+\impl{TEnv.sk / instantiate (186--191, 212--214), isCircularTypeDef
+(495); TType.sk / expandToVectors (693--703)}
+\end{obligation}
+
+\subsection{The missing-annotation placeholder atom}
+\label{sec:placeholder}
+
+An un-annotated field of an \emph{ambient} class has no type to
+normalize; the checker creates a synthetic name for it
+(\texttt{Missing\_type\_annotation\_for\_...}) and $\instop$, on seeing
+that prefix, returns not an identity $\mathsf{TSInst}$ but an
+\emph{opaque atom}: a synthetic rigid \texttt{TParam}, ``a subtype of
+nothing but itself and \texttt{unknown}, with nothing but itself a
+subtype of it'' (\texttt{TEnv.sk:183--185};
+\texttt{TType::missingAnnotationPlaceholder}, \texttt{TType.sk:212--217}).
+The atom's identity derives from the placeholder's name and declaration
+file — deliberately \emph{not} from the class's type arguments, so the
+placeholder field of two instantiations of one generic ambient class is
+one atom (structurally identical at runtime, mutually assignable in
+tsc; comment at \texttt{TType.sk:206--211}).
+
+The flows the atom closes are the assignability ones, and those are
+verified at the pin: reading such a field into any concrete annotation
+is rejected on the subtype side (the atom is below nothing but itself),
+and writing anything but the field's own value into it is rejected on
+the supertype side — in both directions the diagnostic surfaces the
+synthetic name. What remains open is the atom's behavior at the
+\emph{membership-consulting} sites: the runtime value of the field is
+arbitrary, so soundness requires every site that asks ``is $v$ in
+$\sem{\text{atom}}$?'' to treat the answer as unknown — the
+clause-with-nonempty-var-set shape the atom expands to must be handled
+as an unanalyzable remainder by truthiness, equality narrowing, and
+\texttt{typeof} refinement, not as empty. That site-by-site audit
+(refinement's residue and verdict paths on abstract clauses) has not
+been done; it is registry row \textbf{E-PLACEHOLDER-ATOM}
+(\textsc{open}). No unsound path is known.
+\impl{TEnv.sk / instantiate (174--185); TType.sk /
+missingAnnotationPlaceholder (212), kMissingTypeAnnotationPrefix (2093)}
+
+%==========================================================================
+\section{Alias Cycles and Termination}
+\label{sec:cycles}
+
+Three guards keep expansion of recursive definitions finite; soundness of
+each cutoff is the point here, termination secondary.
+
+\paragraph{One-level unfolding (\texttt{seenInstantiate}).}
+While expanding $n$, an inner reference to $n$ normalizes to an
+unexpanded \texttt{TSInst} instead of unfolding
+(\texttt{TEnv.sk:79--82, 189--192, 2089--2091}). The cutoff is sound by
+construction: the re-emitted instance denotes the named type ((N1)),
+and nested occurrences sit inside object fields or type arguments, where the
+worklist does not descend — expansion is one level deep by design (the
+main paper's ``expansion rewrites a type to its instance-plus-clauses
+view'' is inherently head expansion).
+
+\paragraph{Self-requiring aliases (\texttt{isCircularTypeDef}).}
+An alias that requires itself to compute — directly or through a
+partner (\texttt{type P<T> = Q<T>; type Q<T> = P<Q<T>>}) — can rewrite
+to a strictly larger instantiation on every unfolding, which no
+per-frame seen-set catches. $\instop$ detects the shape up front and
+hands back the unexpanded instantiation
+(\texttt{TEnv.sk:198--214}); the declaration itself is reported fatal
+(TS2456) at its own site, so the empty contribution is observable only
+in programs already rejected. Two neighbouring guards in parameter
+filling are fatal or top-recovering, hence trivially sound: a cycle
+through a second alias's \emph{default} is refused as excessively deep
+(TS2589, \texttt{TEnv.sk:283--299}), a directly circular default
+resolves to \texttt{unknown}, so it cannot introduce a value at an unsupported type
+(\texttt{TEnv.sk:330--336}), and a self-referential \emph{constraint}
+refuses the instantiation outright (TS2589,
+\texttt{TEnv.sk:360--368}).
+
+\paragraph{The worklist $\mathit{seen}$ set.}
+A \emph{top-level} recursive occurrence — \texttt{type A = A | number}
+normalizes to $(\{\mathsf{TSInst}(A)\}, \{\texttt{number}\})$ — is
+deduplicated: the body's $\mathsf{TSInst}(A)$ equals the instance being
+expanded and is dropped (\texttt{TType.sk:718--722}). The expansion of
+$A$ is then just \texttt{number}. This is sound under a least-fixpoint
+reading of type definitions: the equation
+$X = X \cup \sem{\texttt{number}}$ has least solution
+$\sem{\texttt{number}}$, and any value's membership in a recursively
+defined type must be justified by finite unfolding. We record this
+reading as part of (N1)'s meaning rather than as a separate assumption;
+a definition intended coinductively (values justified only by infinite
+regress) has no inhabitants a program can construct.
+Mutual cycles behave the same: expanding \texttt{type A = B; type B = A}
+yields empty clauses (bottom) after both identities deduplicate — the
+least fixpoint — while the checker independently rejects such
+definitions at validation (TS2456).
+
+\paragraph{Fatal circularity (\texttt{forbiddenInsts}).}
+Within one $\instop$ frame, a \emph{second} reference to the
+in-expansion name is fatal (TS2456, \texttt{TEnv.sk:2032--2036}): the
+first reference marks the name forbidden (2089--2091), the next lookup
+dies. Generative loops (\texttt{type A<T> = A<A<T>> | number}) die the
+same way — normalizing the inner argument \texttt{A<T>} is a second
+reference. A fatal diagnostic ends checking, which is trivially sound.
+Termination of the worklist itself: each iteration either pops a
+$\mathit{seen}$ instance's expansion products (each distinct instance is
+processed at most once) or returns $\top$; non-termination would require
+$\instop$ to keep manufacturing distinct instances at the top level of
+bodies, which the generative-loop fatal and the
+\texttt{isCircularTypeDef} guard cut off on the alias path. We
+have not proved a global termination bound for the class path (chains of
+distinct \texttt{TSInst}s through superclass clauses); termination is
+outside the soundness contract and is left unstated.
+\impl{TEnv.sk / seenInstantiate (82), forbiddenInsts (106), normalize
+TAInst (2032, 2089); TType.sk / expandToVectors (718--722)}
+
+%==========================================================================
+\section{Status and Registry}
+\label{sec:status}
+
+\subsection{Decomposition of L-EXP}
+
+\begingroup
+\renewcommand{\arraystretch}{1.25}
+\small
+\begin{longtable}{@{}p{2.4cm}p{7.8cm}p{3.3cm}@{}}
+\toprule
+\textbf{Item} & \textbf{Statement} & \textbf{Anchor} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Item} & \textbf{Statement} & \textbf{Anchor} \\
+\midrule
+\endhead
+\bottomrule
+\endlastfoot
+E-PLUMB & Worklist, clause rebuild, \texttt{mapSTypes} factoring, top
+  short-circuit, residual pass-through
+  (Lemmas~\ref{lem:plumbing}, \ref{lem:mapstypes}) &
+  \texttt{expandToVectors}, \texttt{mapSTypes} \\
+E-TVAR & Variable one-step containment, modes $\NoneM$/$\Cov$
+  (Lemma~\ref{lem:tvar}); mode $\Contra$ excluded with counterexample
+  (Finding~\ref{find:contra}); refinement clients verified
+  $\NoneM$/$\Cov$-only (Lemma~\ref{lem:clients}) &
+  \texttt{Subst::get} \\
+E-INTER & \texttt{TInter} one-step containment; cycle residual exact
+  (\S\ref{sec:tinter}) & \texttt{TInter::expand} \\
+E-NORM & Instantiation is semantics-preserving at the state of use
+  (Axiom~\ref{ax:enorm}) — the \texttt{TEnv}/normalize interface &
+  \texttt{TEnv::instantiate} \\
+E-ARR & Array-literal commitment discipline (Axiom~\ref{ax:earr}) &
+  \texttt{TArrayLitTyping.sk} \\
+E-SYM-ALIAS & Cache invariance, \texttt{TypeDef}/\texttt{Enum} paths:
+  binding-independent, hence exact reuse among same-definition mentions, and
+  freeze-window immunity
+  (Theorem~\ref{thm:invariance}, Corollary~\ref{cor:freeze}) &
+  \texttt{seenExpansion}; \texttt{TEnv::normalize} \\
+E-EXPKEY & The key identifies one definition — refuted across modules,
+  witnessed both ways (Section~\ref{sec:expkey}) &
+  \texttt{ExpansionKey}; \texttt{expansionCacheKey} \\
+E-CLASS-SYM & Cache invariance, \texttt{Class} path
+  (Obligation~\ref{obl:classsym}) & \texttt{TEnv::newObject};
+  \texttt{TField::interIndex} \\
+E-GUARD & Identity returns (recursion guard; circular alias) never
+  consulted from a long-lived substitution
+  (Obligation~\ref{obl:guard}) &
+  \texttt{expandToVectors} (700) \\
+E-PLACEHOLDER-ATOM & The missing-annotation atom is treated as unknown
+  at every membership-consulting site
+  (Section~\ref{sec:placeholder}) &
+  \texttt{missingAnnotationPlaceholder} \\
+\end{longtable}
+\endgroup
+
+Net effect on \textbf{L-EXP}: \textsc{assumed} $\to$ \textsc{proved}
+for modes $\NoneM$/$\Cov$, conditional on
+\textbf{L-UNION}/\textbf{L-INTER}/\textbf{L-INTER-BOT}, \textbf{L-MONO}, \textbf{E-NORM},
+\textbf{E-ARR}, \textbf{E-CLASS-SYM}, \textbf{E-GUARD},
+\textbf{E-PLACEHOLDER-ATOM}, and — for any reuse crossing modules —
+\textbf{E-EXPKEY}, which is refuted, so cross-module programs sit
+outside the proved region until the key carries definition identity.
+The single-module residue is smaller and sharper than the original
+axiom: two named interface assumptions and three localized open
+obligations.
+
+\subsection{Outstanding recommendations}
+(i) Repair \textbf{E-EXPKEY}: key \texttt{seenExpansion} by definition
+identity (module qualifier or defMap definition id), and correct the
+``not yet triggerable'' judgement in the \texttt{ExpansionKey} comment
+(\texttt{TType.sk:3048--3050}) — the collision is witnessed.
+(ii) Fix the code comment \texttt{TTypeSubst.sk:17--31} per
+Finding~\ref{find:inter-comment} (inter's ``never resolve'' holds for
+bare operands; nested variables are top-approximated because
+normalization substitutions are empty) and Finding~\ref{find:keyof}
+(keyof never reads the live binding).
+(iii) Wire the E-GUARD pinned test with the ``cached insts $\neq$ key''
+invariant; record Lemma~\ref{lem:evolutions}'s inventory (expansion
+performs get-transitions and cache writes only; never a grow) as the
+concrete content behind L-MONO's ``evolutions of the kind covered''.
+(iv) Run the E-PLACEHOLDER-ATOM site audit (refinement's residue and
+verdict paths on abstract clauses).
+
+\subsection{Findings from failed proof attempts (index)}
+
+Finding~\ref{find:contra}: unconditional (all-modes) L-EXP is false;
+counterexample unbound-variable contravariant read returning $\bot$.
+Section~\ref{sec:expkey}: the key-identity premise E-EXPKEY was
+refuted outright — the attempted proof (``name text identifies a
+definition'') fails across modules, and the refutation ran end-to-end
+in both failure directions.
+Finding~\ref{find:inter-comment}: the comment's blanket
+``inter never resolves an unbound TVar'' failed verification; rescued
+only via the binding-independent property.
+Finding~\ref{find:keyof}: the keyof-equal-approximation claim could not
+be proved as stated (a bound variable read \emph{would} produce precise
+keys) — it is true for the vacuous reason that no live read occurs.
+Obligation~\ref{obl:classsym}: class-path symbolicity resisted both
+proof (dies at the \texttt{interIndex} chain) and refutation (no
+end-to-end counterexample constructed).
+Obligation~\ref{obl:guard}: cache poisoning by identity returns could
+not be excluded by a local invariant; global call-site audit only.
+Section~\ref{sec:placeholder}: the placeholder atom's
+membership-consulting sites are unaudited (E-PLACEHOLDER-ATOM).
+
+\subsection{Registry}
+
+The authoritative, current statuses are maintained in the registry
+(\texttt{docs/ledger.yaml}), rendered as the main paper's Assumptions and
+Proof Obligations tables; this paper is cited there as evidence — in
+particular for the mode scoping of Axiom \textbf{L-EXP} (the containment
+holds for modes \texttt{None}/\texttt{Covariant} only,
+Lemma~\ref{lem:clients}) and for the rows E-NORM, E-ARR, E-CLASS-SYM,
+E-GUARD, E-EXPKEY, E-PLACEHOLDER-ATOM. The registry rows this paper
+supports:
+
+\input{../generated/rows-C}
+
+\paragraph{Imports (review contract).}
+The named statements this paper assumes from elsewhere. A reviewer treats
+each as an axiom, checking citations against the registry's canonical
+statement; no other paper's internals are in scope:
+
+\input{../generated/imports-C}
+
+%==========================================================================
+\section*{Implementation Anchors (Summary)}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\footnotesize
+\begin{tabular}{@{}l@{\quad}l@{}}
+\toprule
+\textbf{Model} & \textbf{Implementation (rev.\ \texttt{\skjspinhash})} \\
+\midrule
+$\expandop_m$, worklist & \texttt{TType.sk / expandToVectors (680)} \\
+rebuilds & \texttt{expand (727), expandToClauses (739), mapSTypes (434),
+  rawMap (408)} \\
+$\getop$ transitions, freeze & \texttt{TTypeSubst.sk / Subst::get (207),
+  freezeCandidates (89)} \\
+cache + saved state & \texttt{TTypeSubst.sk / seenExpansion (31),
+  restore (40), clone (149)} \\
+cache key & \texttt{TType.sk / ExpansionKey (3055),
+  expansionCacheKey (3057)} \\
+cache read/write sites & \texttt{TType.sk / expandToVectors (693--703);}
+  \\
+ & \texttt{TTypeSubtyping.sk / collectTVars (1529--1539)} \\
+$\instop$, parameter binding & \texttt{TEnv.sk / instantiate (168),
+  instantiateTParams (257)} \\
+placeholder atom & \texttt{TEnv.sk / 174--185; TType.sk /
+  missingAnnotationPlaceholder (212)} \\
+symbolic resolution & \texttt{TEnv.sk / normalize TAInst arm
+  (2011--2116), bindings (46)} \\
+fresh empty substitutions & \texttt{TEnv.sk / 1824, 2105, 2118, 2126,
+  2139, 2175,} \\
+ & \texttt{2459, 2472, 2487, 2548, 2681, 2840, 2920, 3160} \\
+keyof & \texttt{TEnv.sk / keyOfType (3247)} \\
+template literals & \texttt{TEnv.sk / normalizeTemplate (2168),
+  templateHole (2277)} \\
+\texttt{Closed<T>} & \texttt{TEnv.sk / closeObjectType (3155)} \\
+enums & \texttt{TypeCheckEnum.sk / enumMembers (201),
+  enumUnionType (487)} \\
+mapped types & \texttt{TEnv.sk / FNIn arm (2900)} \\
+class path & \texttt{TEnv.sk / new (842), newObject (901), addFields
+  (1246)} \\
+intersections & \texttt{TTypeInter.sk / TInter (17), expand (37),
+  inter\_ (129), interIndex (245)} \\
+unions & \texttt{TTypeUnion.sk / union (22), union\_ (42)} \\
+array literals & \texttt{TArrayLitTyping.sk / expand (100)} \\
+recursion + circularity guards & \texttt{TEnv.sk / seenInstantiate (82),
+  forbiddenInsts (106), isCircularTypeDef (495)} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\end{document}

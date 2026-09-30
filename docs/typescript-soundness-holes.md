@@ -166,7 +166,7 @@ function go(a: readonly number[]): void {
 
 ### instanceof ignores a custom static [Symbol.hasInstance]
 
-tsc narrows `x instanceof C` to `C` in the then-branch (and subtracts `C` in the else-branch) purely from the nominal class, even when `C` declares or inherits a `static [Symbol.hasInstance]` returning plain `boolean`. That method *is* the runtime membership test and can return `true` for any value, so the branch is entered by a value with none of `C`'s members: `x.a` reads `undefined` at type `number`. The mirror case (`return false`) is equally broken — a real `C` reaches the else-branch, which tsc narrows to `never`, laundering it into any type.
+tsc narrows `x instanceof C` to `C` in the then-branch (and subtracts `C` in the else-branch) purely from the nominal class, even when `C` declares or inherits a `static [Symbol.hasInstance]` returning plain `boolean`. That method *is* the runtime membership test and can return `true` for any value, so the branch is entered by a value with none of `C`'s members: `x.a` reads `undefined` at type `number`. The mirror case (`return false`) is equally broken — a real `C` reaches the else-branch, which tsc narrows to `never`, allowing it to flow into any type.
 
 ```ts
 class C {
@@ -308,7 +308,7 @@ function breakThroughFinally(c: () => boolean, a: "a", b: "b"): void {
 
 ### Writes inside a nested try/catch are invisible to the enclosing catch's entry state
 
-tsc builds a `catch` clause's entry state from the state before the `try` plus the assignments registered while binding the try block — but a nested `try` statement with its own `catch` replaces the exception target, so assignments inside it are registered only with the inner catch. The outer catch is entered with the pre-`try` state. The inner `try` completes normally with `y === "b"`, then `t()` throws, so the outer catch runs with `y === "b"`. The nested-try-with-catch is load-bearing: a plain assignment, a bare block, or a nested `try`/`finally` in its place all make tsc report TS2322, so this is a specific non-compositionality of catch entry states.
+tsc builds a `catch` clause's entry state from the state before the `try` plus the assignments registered while binding the try block — but a nested `try` statement with its own `catch` replaces the exception target, so assignments inside it are registered only with the inner catch. The outer catch is entered with the pre-`try` state. The inner `try` completes normally with `y === "b"`, then `t()` throws, so the outer catch runs with `y === "b"`. The nested-try-with-catch is necessary: a plain assignment, a bare block, or a nested `try`/`finally` in its place all make tsc report TS2322, so this is a specific non-compositionality of catch entry states.
 
 ```ts
 function nestedTryEscapesOuterCatch(a: "a", b: "b", t: () => void): void {
@@ -371,7 +371,7 @@ function probe(): string {
 
 ### Object spread keeps interface methods that live on the prototype
 
-tsc's spread type keeps every property of the source type except class-declared methods and private members. A method declared on an *interface* is kept, so `{ ...g }` for `g: Greeter` is typed `{ greet(): string }`. Spread copies only own enumerable properties, and a class instance inhabiting `Greeter` carries `greet` on its prototype, so the spread result has no `greet` at all: `Object.keys({...new C()})` is `[]` and the call throws. For a class-*typed* source tsc correctly yields `{}` (TS2741), so the carve-out simply does not cover interfaces.
+tsc's spread type keeps every property of the source type except class-declared methods and private members. A method declared on an *interface* is kept, so `{ ...g }` for `g: Greeter` is typed `{ greet(): string }`. Spread copies only own enumerable properties, and a class instance inhabiting `Greeter` carries `greet` on its prototype, so the spread result has no `greet` at all: `Object.keys({...new C()})` is `[]` and the call throws. For a class-*typed* source tsc correctly yields `{}` (TS2741), so the exception simply does not cover interfaces.
 
 ```ts
 interface Greeter {
@@ -448,7 +448,7 @@ function bad(n: { [k: string]: number }): void {
 
 ### `readonly` on an index signature is erased by assignment to a mutable index type
 
-tsc rejects a direct write through a readonly index (TS2542, "Index signature ... only permits reading") but assigns `{ readonly [k: string]: number }` to `{ [k: string]: number }` freely, laundering the modifier away. Because arrays carry a number index, `readonly number[]` is likewise assignable to `{ [k: number]: number }` — so the one special case tsc does have (TS4104 for `readonly T[]` -> `T[]`) is bypassed by a single intermediate annotation, and the write mutates the caller's readonly array. Distinct from the covariance hole above: here the value types are identical and only the modifier changes.
+tsc rejects a direct write through a readonly index (TS2542, "Index signature ... only permits reading") but assigns `{ readonly [k: string]: number }` to `{ [k: string]: number }` freely, discarding the readonly modifier. Because arrays carry a number index, `readonly number[]` is likewise assignable to `{ [k: number]: number }` — so the one special case tsc does have (TS4104 for `readonly T[]` -> `T[]`) is bypassed by a single intermediate annotation, and the write mutates the caller's readonly array. Distinct from the covariance hole above: here the value types are identical and only the modifier changes.
 
 ```ts
 function go(a: readonly number[]): void {
@@ -486,7 +486,7 @@ function f(x: number[] | { [k: number]: string }): void {
 
 ### A read through a `never`-valued index signature is silently typed `never`
 
-Intersecting two index signatures with incompatible value types produces an index whose value type is `never`. tsc still resolves a key through it and types the read `never`, with no diagnostic — and `never` is a subtype of every type, so the result satisfies any annotation. The intersection is inhabited (`{}` satisfies both arms, and tsc accepts `function mk(): A & B { return {}; }`), and no object can hold a key that is both a number and a string, so the read always yields `undefined`. That `undefined` is laundered into an arbitrary annotation with no cast and no error.
+Intersecting two index signatures with incompatible value types produces an index whose value type is `never`. tsc still resolves a key through it and types the read `never`, with no diagnostic — and `never` is a subtype of every type, so the result satisfies any annotation. The intersection is inhabited (`{}` satisfies both arms, and tsc accepts `function mk(): A & B { return {}; }`), and no object can hold a key that is both a number and a string, so the read always yields `undefined`. That `undefined` flows into an arbitrary annotation with no cast and no error.
 
 ```ts
 type A = { [k: string]: number };
@@ -505,7 +505,7 @@ function f(x: A & B): symbol {
 
 ### An optional field is satisfied by a source type that never mentions the key
 
-tsc treats `{ a: number }` as assignable to `{ a: number; b?: string }`: the optional `b` is considered absent because the source type does not declare it, and later reads of `.b` are typed `string | undefined`. The source type is open, so the value may carry an own `b` of an unrelated type — excess properties survive assignment through a variable, which suppresses the freshness check. The optional-field view then reads that value at the wrong type: `string | undefined` holding `42`, so `.toUpperCase()` on the non-undefined branch throws. The intermediate widening is load-bearing: `const foo: { a: number; b?: string } = { a: 1, b: 42 }` directly is correctly rejected with TS2322.
+tsc treats `{ a: number }` as assignable to `{ a: number; b?: string }`: the optional `b` is considered absent because the source type does not declare it, and later reads of `.b` are typed `string | undefined`. The source type is open, so the value may carry an own `b` of an unrelated type — excess properties survive assignment through a variable, which suppresses the freshness check. The optional-field view then reads that value at the wrong type: `string | undefined` holding `42`, so `.toUpperCase()` on the non-undefined branch throws. The intermediate widening is necessary: `const foo: { a: number; b?: string } = { a: 1, b: 42 }` directly is correctly rejected with TS2322.
 
 ```ts
 function widen(x: { a: number }): { a: number; b?: string } {
@@ -599,7 +599,7 @@ function boom(): void {
 
 ### `this` parameters are compared bivariantly in method-syntax members
 
-For a method-syntax member tsc relates the two `this` types in either direction, so `{ m(this: Derived): R }` is assignable to `{ m(this: Base): R }`. The same relation written with property syntax or as a bare function type is correctly rejected as contravariant (TS2322, "The 'this' types of each signature are incompatible"), so this is method-syntax-specific bivariance, not the no-`this` erasure rule below. The narrowed receiver requirement is laundered away: a plain `Base` is accepted as the receiver of a body that reads `this.extra`.
+For a method-syntax member tsc relates the two `this` types in either direction, so `{ m(this: Derived): R }` is assignable to `{ m(this: Base): R }`. The same relation written with property syntax or as a bare function type is correctly rejected as contravariant (TS2322, "The 'this' types of each signature are incompatible"), so this is method-syntax-specific bivariance, not the no-`this` erasure rule below. The narrower receiver requirement is lost: a plain `Base` is accepted as the receiver of a body that reads `this.extra`.
 
 ```ts
 class Base {
@@ -617,11 +617,11 @@ const j: { m(this: Base): number } = i; // tsc: OK — method `this` is bivarian
 const n: number = j.m.call(new Base()); // body reads this.extra; Base has none
 ```
 
-**Test:** [tests/expect-error/this-parameter-subtyping.ts](../tests/expect-error/this-parameter-subtyping.ts) pins the contravariant rejection for a bare function type; the method-syntax bivariance itself has no dedicated pin · **SKJS:** rejects — `Their this parameters are not compatible` / `Type '{ tag: string; }'` / `is not assignable to type '{ extra: number; tag: string; }'` / `The field 'extra' is missing`
+**Test:** [tests/expect-error/this-parameter-subtyping.ts](../tests/expect-error/this-parameter-subtyping.ts) pins the contravariant rejection for a bare function type; the method-syntax bivariance itself has no dedicated pin · **SKJS:** rejects — on this exact spelling SKJS stops earlier at an unrelated restriction (`error: The type of a top-level constant must be a primitive type, not an object`, on `i` and `j`); with the bindings moved into a function body it rejects the assignment itself: `Their this parameters are not compatible` / `Type '{ tag: string; }'` / `is not assignable to type '{ extra: number; tag: string; }'` / `The field 'extra' is missing`
 
 ### A no-`this` target type is a free-call permit, and assignability skips the check
 
-When the target signature declares no `this` parameter, tsc skips the `this`-compatibility comparison entirely, so a function that genuinely requires a receiver is assignable to `() => void` and the result is typed as freely callable. The operative factor is the target's *absence* of a `this` parameter, not its syntax: a bare function type, a property-syntax member and a method-syntax member all accept the same laundering. Free-calling the result runs the body with `this === undefined` (TypeError on the first field read). The erasure also survives *attachment*: laundering into a member slot and calling `s.m()` supplies the carrier object as `this`, which need not satisfy the erased requirement.
+When the target signature declares no `this` parameter, tsc skips the `this`-compatibility comparison entirely, so a function that genuinely requires a receiver is assignable to `() => void` and the result is typed as freely callable. The operative factor is the target's *absence* of a `this` parameter, not its syntax: a bare function type, a property-syntax member and a method-syntax member all accept the same loss of information. Free-calling the result runs the body with `this === undefined` (TypeError on the first field read). The erasure also survives *attachment*: assigning the function into a member slot and calling `s.m()` supplies the carrier object as `this`, which need not satisfy the erased requirement.
 
 ```ts
 declare const fnBase: (this: { tag: string }) => void;
@@ -652,7 +652,7 @@ function f(c: C): number {
 
 ### A `this: undefined` body types `this` as `undefined` although the receiver can be anything
 
-tsc treats `this: void` / `this: undefined` as receiver-less for assignability, so such a function is assignable to `() => R`, yet it still types `this` inside the body as `undefined`/`void`. Nothing then enforces the `undefined` receiver at the call site: once laundered, the value can be installed as an object member and called attached, which supplies the carrier as `this`. A body that returns `this` hands back an object through a slot typed `undefined`, so `u === undefined` is statically always-true and actually false. Not subsumed by the free-call-permit hole — such a function is legitimately receiver-independent as far as assignability goes.
+tsc treats `this: void` / `this: undefined` as receiver-less for assignability, so such a function is assignable to `() => R`, yet it still types `this` inside the body as `undefined`/`void`. Nothing then enforces the `undefined` receiver at the call site: after that assignment, the value can be installed as an object member and called attached, which supplies the carrier as `this`. A body that returns `this` hands back an object through a slot typed `undefined`, so `u === undefined` is statically always-true and actually false. Not subsumed by the free-call-permit hole — such a function is legitimately receiver-independent as far as assignability goes.
 
 ```ts
 function f(this: undefined): undefined {
@@ -667,7 +667,7 @@ const u: undefined = o.m(); // tsc: OK — `u` is the object `o` at runtime
 
 ### Calling a `Function`-typed value yields an implicit `any`
 
-`Function` proves callability without supplying a signature, yet tsc permits `f(...)` on a `Function`-typed value with arbitrary arguments and types the result `any` — silently, under `--strict`, which includes `noImplicitAny`. Neither the arguments nor the result are checked, so whatever the call returns is laundered into any annotation. The same `Function` type is what `typeof x === "function"` narrows `unknown` to, making the hole reachable from a guard alone. The program contains no `any`, `as` or `!`: the implicit `any` is injected by the built-in type itself.
+`Function` proves callability without supplying a signature, yet tsc permits `f(...)` on a `Function`-typed value with arbitrary arguments and types the result `any` — silently, under `--strict`, which includes `noImplicitAny`. Neither the arguments nor the result are checked, so whatever the call returns can flow into any annotation. The same `Function` type is what `typeof x === "function"` narrows `unknown` to, making the hole reachable from a guard alone. The program contains no `any`, `as` or `!`: the implicit `any` is injected by the built-in type itself.
 
 ```ts
 function probe(f: Function): string {
@@ -920,7 +920,7 @@ function boom(): number {
 
 ### A promise resolved with a thenable is typed Promise<Promise<T>>, a type nothing inhabits
 
-The `Promise<T>` constructor's `resolve` parameter is `(value: T | PromiseLike<T>) => void`, so with `T = Promise<number>` tsc accepts resolving with a real promise and hands back `Promise<Promise<number>>`. The ECMAScript resolve function adopts thenables, so the outer promise fulfils with `1`: the `.then` callback parameter typed `Promise<number>` receives a number, and `v.then(...)` is a TypeError. No value of type `Promise<Promise<number>>` can ever exist at runtime, yet tsc mints one with no assertion. `Awaited<T>` closes the sibling routes — both `return Promise.resolve(p)` and the `async function` form annotated `Promise<Promise<number>>` are rejected with TS2322 — but the constructor route stays open.
+The `Promise<T>` constructor's `resolve` parameter is `(value: T | PromiseLike<T>) => void`, so with `T = Promise<number>` tsc accepts resolving with a real promise and hands back `Promise<Promise<number>>`. The ECMAScript resolve function adopts thenables, so the outer promise fulfils with `1`: the `.then` callback parameter typed `Promise<number>` receives a number, and `v.then(...)` is a TypeError. No value of type `Promise<Promise<number>>` can ever exist at runtime, yet tsc creates one with no assertion. `Awaited<T>` closes the sibling routes — both `return Promise.resolve(p)` and the `async function` form annotated `Promise<Promise<number>>` are rejected with TS2322 — but the constructor route stays open.
 
 ```ts
 function boom(p: Promise<number>): void {

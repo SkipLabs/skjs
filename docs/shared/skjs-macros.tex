@@ -1,0 +1,43 @@
+% Shared preamble for the SKJS soundness corpus (main paper + deep dives).
+% Loaded via \input in each document's preamble. Documents may define
+% additional packages, theorem environments, and macros AFTER this input,
+% but must not redefine anything here.
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{mathtools}
+\usepackage{stmaryrd}
+\usepackage[margin=1in]{geometry}
+\usepackage{tcolorbox}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage[hyphens]{url}
+\urlstyle{tt}
+
+% Long typewriter tokens (paths, identifiers) defeat hyphenation;
+% allow inter-word stretch instead of overfull lines.
+\emergencystretch=2em
+
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{axiom}[theorem]{Axiom}
+\newtheorem{obligation}[theorem]{Obligation}
+
+% Summary box for key definitions
+\newtcolorbox{keydef}{
+  colback=gray!5,
+  colframe=gray!50,
+  boxrule=0.5pt,
+  arc=2pt,
+  left=4pt,right=4pt,top=2pt,bottom=2pt
+}
+
+% Core semantic notation shared by every document
+\newcommand{\sem}[1]{\llbracket #1 \rrbracket}
+\newcommand{\Val}{\mathsf{Val}}
+
+% Implementation anchor: file / class / function at the pinned revision
+\newcommand{\impl}[1]{\par\noindent{\footnotesize\textsf{impl:} \texttt{#1}}}

@@ -1,0 +1,9 @@
+.texbuild/
+.DS_Store
+*.aux
+*.log
+*.toc
+*.out
+*.fls
+*.fdb_latexmk
+*.synctex.gz
