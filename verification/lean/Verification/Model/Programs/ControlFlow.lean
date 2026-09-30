@@ -327,12 +327,12 @@ theorem target_state [DecidableEq ι] {G : NormalGraph ι} {Rty C Γ l ρ n W h 
 
 theorem branch_target_state [DecidableEq ι] {G : NormalGraph ι} {Rty C Γ q l ρ n W h facts}
     (ht : BranchTargetOk G C Γ q l facts) (he : EnvOk G Γ ρ (n+1) W) (hh : HeapOk (n+1) W h)
-    (hval : isVal (ρ 0) = true) (hq : q.holds (ρ 0)) (hf : HeapKnowledge.Holds facts ρ h) :
+    (hq : q.holds (ρ 0)) (hf : HeapKnowledge.Holds facts ρ h) :
     StateOk G Rty C n (trunc n (Nat.le_succ n) W) h (.at l.label (mapEnv l.mapping ρ)) := by
   obtain ⟨c,hc,hcov,hfact⟩ := ht
   exact ⟨c,hc,(hcov.env he hq hh (readFields_holds hf) (optionalFields_holds hf)).transfer n
     (Nat.le_succ n) _ (WExt_refl _),
-    HeapKnowledge.check_sound hfact (HeapKnowledge.observe_holds hf hval hq)⟩
+    HeapKnowledge.check_sound hfact (HeapKnowledge.observe_holds hf hq)⟩
 
 /-- One checked graph transition preserves the point assertions. Keeping this
 step lemma separate lets additional postconditions reuse exactly the same
@@ -386,19 +386,19 @@ theorem state_progress [DecidableEq ι] {G : NormalGraph ι} {images : InstanceI
         have hb := onlyBoolean_sound hk.1 ha
         rcases hb with rfl | rfl
         · exact Or.inr ⟨U, h, _, WExt_refl _, hw', .yesBind, hh',
-            (branch_target_state hk.2.1 (he.push ha) hh hv rfl hf)⟩
+            (branch_target_state hk.2.1 (he.push ha) hh rfl hf)⟩
         · exact Or.inr ⟨U, h, _, WExt_refl _, hw', .noBind, hh',
-            (branch_target_state hk.2.2 (he.push ha) hh hv rfl hf)⟩
+            (branch_target_state hk.2.2 (he.push ha) hh rfl hf)⟩
       | tagBind tag y no =>
         cases htag : tagHoldsIn h tag t with
         | true =>
           exact Or.inr ⟨U, h, _, WExt_refl _, hw', .tagBind hv, hh',
             (by
-              simpa [htag] using (branch_target_state hk.1 (he.push ha) hh hv (tagHolds_of_heap htag) hf))⟩
+              simpa [htag] using (branch_target_state hk.1 (he.push ha) hh (tagHolds_of_heap htag) hf))⟩
         | false =>
           exact Or.inr ⟨U, h, _, WExt_refl _, hw', .tagBind hv, hh',
             (by
-              simpa [htag] using (branch_target_state hk.2 (he.push ha) hh hv (tagHolds_of_heap htag) hf))⟩
+              simpa [htag] using (branch_target_state hk.2 (he.push ha) hh (tagHolds_of_heap htag) hf))⟩
     · have he' := he.transfer n (Nat.le_succ n) U (WExt_refl _)
       cases x with
       | none =>

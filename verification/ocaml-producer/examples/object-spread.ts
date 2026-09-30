@@ -17,11 +17,8 @@ function writable(o: { readonly a: number }): number {
   c.a = 2;
   return c.a;
 }
-// An optional field the operand may hold: the result holds one or the other,
-// `undefined` included where the operand holds it.
-function optionalOverlap(o: { a?: number }): {
-  a: string | number | undefined;
-} {
+// An optional field the operand may hold: the result holds one or the other.
+function optionalOverlap(o: { a?: number }): { a: string | number } {
   return { a: "", ...o };
 }
 // A spread of `false` copies nothing; a fresh literal owns exactly its keys.

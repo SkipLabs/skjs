@@ -55,19 +55,14 @@ let assign env name t = List.map (fun (n,b) ->
   else n,b) env
 (* What a field of an immutable binding's object currently holds, where a
    guard found it: an entry named by the object's name and the field joined
-   by a NUL, which no name contains, holding a union of primitive atoms, or,
-   of contents none of which is `undefined`, the field's [contract] less
-   `undefined`, as a cell's. Lean checks it on every edge into a point
-   claiming it, as a current-content fact about the field. *)
+   by a NUL, which no name contains, holding a union of primitive atoms. Lean
+   checks it on every edge into a point claiming it, as a current-content
+   fact about the field. *)
 let field_key name field = name ^ "\000" ^ field
 let field_of n = let i = String.index n '\000' in String.sub n (i+1) (String.length n - i - 1)
-let fact ?contract env key t =
+let fact env key t =
   let rest = List.remove_assoc key env in
-  if knowable t && t <> Atoms [] then rest @ [key,Value t]
-  else match contract with
-    | Some (Atoms xs) when defined_contents t && List.mem Undef xs && not (List.mem Top xs) ->
-      rest @ [key,Value (Atoms (List.filter (fun a -> a <> Undef) xs))]
-    | _ -> rest
+  if knowable t && t <> Atoms [] then rest @ [key,Value t] else rest
 (* Where a step may write cells unseen (a call, a closure run later, a loop's
    other iterations), a cell is known only by its contract, and no field's
    contents are known. A step that assigns only locals keeps the fields. *)

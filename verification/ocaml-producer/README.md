@@ -977,7 +977,7 @@ initialization, receiver, result and forged evidence.
 | Classes, constructors, `new`, field initialization | Additional semantics and certified lowering; construction is not ordinary invocation. |
 | `Mapper<K1, V1, K2, V2>` and bounds such as `K extends Json` | Ground multiple-parameter applications, source bound checking, and disjoint object inheritance work; `Context` first needs a generic method with constructor and variadic tuple contracts. |
 | `new (...params: Params) => Mapper<…>` | Constructor contracts and generic tuple packs; ordinary quantified array-rest support is insufficient. |
-| Recursive `Json`, dictionaries and optional fields | The [cross-file `Json` milestone](#cross-file-recursive-json-milestone) covers the canonical recursive type and indexed reads; a key a guard found present is a field from then on ([guards](../PROGRAM-TYPING.md#guards)), at the [optional field](../PROGRAM-TYPING.md#optional-fields)'s `T \| undefined`. |
+| Recursive `Json`, dictionaries and optional fields | The [cross-file `Json` milestone](#cross-file-recursive-json-milestone) covers the canonical recursive type and indexed reads; a key a guard found present is a field from then on ([guards](../PROGRAM-TYPING.md#guards)), still distinct from present-undefined. |
 | `Iterable`, iteration and array/library methods | Explicit contracts and execution semantics, including callback effects and iterator behavior. |
 | Promises, exceptions and native/Wasm bindings | Further model extensions and explicit external assumptions for the implementation. |
 

@@ -207,14 +207,9 @@ const unwrap = (node: TypeNode): TypeNode => {
   return node;
 };
 
-/** `x?: T` is `T | undefined` where the parameter or the field is read: a
- * parameter holds `undefined` when a call omits its position, and an optional
- * field is TypeScript's `x?: T | undefined`, absent, or present at `T` or at
- * `undefined` ([optional fields](../PROGRAM-TYPING.md#optional-fields)). A
- * type stating `undefined` already is itself. */
+/** `x?: T` is `T | undefined` where the parameter is read: `undefined` is the
+ * value bound when a call omits that position. */
 export function optionalTerm(type: TypeTerm, span: Span): TypeTerm {
-  const isUndefined = (t: TypeTerm) => t.k === "atom" && t.name === "undefined";
-  if (isUndefined(type) || (type.k === "union" && type.parts.some(isUndefined))) return type;
   return { k: "union", parts: [type, { k: "atom", name: "undefined", span }], span };
 }
 
@@ -433,7 +428,7 @@ export function expandMapped(m: Mapped, span: Span, fail: (message: string) => n
   // No key: an object type with no member, which is `{}`.
   if (!names.length && !atom("string") && !atom("number") && !atom("symbol")) return emptyObject(span);
   return { k: "object", fields: names.map(name => ({ name, optional: m.optional, readonly: m.readonly,
-    type: m.optional ? optionalTerm(m.value, span) : m.value, span })), ...indexes, calls: [], span };
+    type: m.value, span })), ...indexes, calls: [], span };
 }
 
 /** `term` with each of its declaration's parameters replaced by the term at
@@ -680,15 +675,14 @@ export function members(scope: TermScope, list: readonly TypeElement[], at: Node
       // A `readonly` member is a read capability: its write contract is
       // `never`, and nothing else about the field changes. A member's `?` is
       // its postfix token: the field constrains its key only where the object
-      // has it, and holds `T | undefined` there (`optionalTerm`).
+      // has it.
       const optional = member.postfixToken?.kind === ts.SyntaxKind.QuestionToken;
       const message = scope.annotation ? "expected a required mutable field" : "unsupported property signature";
       if (!readonlyOnly(member.modifiers) || !member.type)
         scope.fail(member, message);
       const name = named(member, message);
-      const type = typeTerm(scope, member.type, member);
       fields.push({ name, optional, readonly: isReadonly(member.modifiers),
-        type: optional ? optionalTerm(type, memberSpan) : type, span: memberSpan });
+        type: typeTerm(scope, member.type, member), span: memberSpan });
     } else if (ts.isIndexSignatureDeclaration(member)) {
       const parameter = member.parameters[0];
       // A mutable index is a writable one at its read contract; Lean keeps
@@ -743,9 +737,9 @@ export function members(scope: TermScope, list: readonly TypeElement[], at: Node
       const optional = member.postfixToken?.kind === ts.SyntaxKind.QuestionToken;
       if (optional && forms.some(m => m.receiver))
         scope.fail(member, "an optional method with a `this` parameter is outside the fragment: an optional method is an optional field, whose function takes its declaration as receiver");
-      const method = oneTerm(forms.map(m => ({ ...m, receiver: hostReceiver(m, memberSpan) })), memberSpan);
       fields.push({ name, optional, readonly: false,
-        type: optional ? optionalTerm(method, memberSpan) : method, span: memberSpan });
+        type: oneTerm(forms.map(m => ({ ...m, receiver: hostReceiver(m, memberSpan) })), memberSpan),
+        span: memberSpan });
     } else if (ts.isCallSignatureDeclaration(member)) {
       if (member.typeParameters?.length || !member.type)
         scope.fail(member, "generic or incomplete call signature");
@@ -836,10 +830,11 @@ export function classInstance(scope: TermScope, node: ts.ClassDeclaration, span:
     if (ts.isClassStaticBlockDeclaration(member)) continue;
     if (ts.isPropertyDeclaration(member)) {
       only(member, [ts.SyntaxKind.ReadonlyKeyword]);
-      // `x?: T` is the optional field `x?: T | undefined`, as any optional
-      // field is: a class field is defined on every instance its
-      // construction allocates, holding `undefined` where no initializer or
-      // constructor assigns it. `x!: T`
+      // `x?: T` is the optional field `x?: T | undefined` TypeScript
+      // declares, as an optional parameter property is: a class field is
+      // defined on every instance its construction allocates, holding
+      // `undefined` where no initializer or constructor assigns it, and the
+      // exact reading of `f?: T` (absent or a `T`) is false of it. `x!: T`
       // is a required one, whatever TypeScript was promised: the class
       // value's construction decides whether every instance holds a `T`
       // there.

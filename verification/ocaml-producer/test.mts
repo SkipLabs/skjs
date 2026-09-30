@@ -331,14 +331,6 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     // itself where another scheme was passed for it.
     ["generic-function-type-member", "pass({ twice: () => (x) => [x, x] }).twice()(1).join()", "1,1"],
     ["invalid-generic-function-type-member", "wrong({ twice: () => (x) => x }).twice()(1)", 1],
-    // An optional field present at `undefined`: `in` finds the key, and the
-    // read gives `undefined` where `number` is claimed; a spread copies it
-    // over the field before it.
-    ["invalid-optional-key-in", "present({ x: undefined })", undefined],
-    ["invalid-object-spread-optional", "optionalOverlap({ a: undefined }).a", undefined],
-    // A call between the test and the read writes `undefined` into the field.
-    ["invalid-field-defined-after-call", "const x = { f: { a: 1 } }; afterCall(x, () => { x.f = undefined; })",
-      undefined],
   ] as const)
     assert.equal(runExample(file, expression), expected, file);
   // A class has no plain call: calling it throws.

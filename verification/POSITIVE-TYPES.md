@@ -126,10 +126,8 @@ $c_j\equiv T_j$ when $r=\mathsf{w}$ and $c_j\subseteq T_j$ when $r=\mathsf{ro}$
 - **Views** only read: the location's contract implies the view's type, so a
   view grants no write.
 - **Optional fields** constrain a key only where the object has it: a
-  writable one as an invariant field does, a readonly one as a view does, so
-  a readonly optional field is a view that may be absent. A source member
-  `k?: T` is the one at $⟦T⟧\cup\mathsf{Undefined}$
-  ([optional fields](PROGRAM-TYPING.md#optional-fields)).
+  writable one as an invariant field does, a readonly one (`readonly k?: T`)
+  as a view does, so a readonly optional field is a view that may be absent.
   A read gives $T$ or undefined, so an object lacking an optional key has no
   prototype, whose members the read would otherwise reach. No rule writes one
   in place, since an object's keys are fixed at allocation; a write that may
