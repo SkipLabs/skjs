@@ -16,7 +16,7 @@ def Equations.instanceImageCheck (equations : Equations) : InstanceImageCheck eq
     equations.substitutionTable_instanceImages η bs c.instances c.table hlen hkinds checked
 
 /-- The same proof language and traversal, using complete recursive equations
-for instance images. This is not yet a source/JSON acceptance entry point. -/
+for instance images. Equation lowering checks supplied subtype proofs with it. -/
 def Equations.checkSubtype (equations : Equations)
     (S T : List (Label equations.signature)) (proof : Proof (Label equations.signature)) : Bool :=
   checkUsing equations.graph equations.instanceImageCheck S T proof

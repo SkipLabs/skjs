@@ -5,8 +5,8 @@ import Verification.Model.Types.EquationGraphs
 its head's number; every other tree is an object with exactly its own fields,
 one spelling each. Decoding refuses an unknown field, a missing one, and a
 second spelling of the same tree (`{"app": h, "args": []}` for `h`, an owned
-parameter's empty `args`). Both directions are linear in the tree. No request
-reads this spelling yet. -/
+parameter's empty `args`). Both directions are linear in the tree. Source
+claims carry graph labels in this spelling (`SourceClaimJson.graphClaim`). -/
 namespace Verification.Model.EquationGraphs
 open Lean PositiveGraphs
 

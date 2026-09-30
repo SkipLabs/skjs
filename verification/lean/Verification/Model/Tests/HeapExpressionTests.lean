@@ -3,7 +3,7 @@ import Verification.Model.Source.SourceTypes
 
 /-! Execute the checked rules on a primitive/reference graph of the kind the
 source pipeline builds. These exercise evidence validation, not hand-assumed HasTy
-premises. Full source/CFG acceptance still requires checked edge integration. -/
+premises. -/
 namespace Verification.Model.HeapExpressionTests
 open ProgramCertificates HeapExpressionRules HeapKnowledge
 

@@ -2,10 +2,8 @@
 
 Data crosses this pipeline as a sequence of distinct representations, each with
 its own syntax. This file names them, says who owns each one, and records the
-convention their files follow. It exists because they had drifted into being
-named five different ways, and a language whose file cannot be found is a
-language whose cases get missed: the omissions that prompted this list were
-found by writing it, not by a test.
+convention their files follow: a language whose file cannot be found is a
+language whose cases get missed.
 
 ## The convention
 

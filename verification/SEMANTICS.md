@@ -549,8 +549,8 @@ created, from its graph's check at each signature (`GraphCodeSpec`):
 
 ### Effect-qualified call contracts
 
-**Semantic foundation; not yet integrated into source acceptance.**
-[CallEffects.lean](lean/Verification/Model/Semantics/CallEffects.lean) extends exactly the callable equation above.
+[CallEffects.lean](lean/Verification/Model/Semantics/CallEffects.lean) extends exactly the callable equation above;
+graph code, expression effects and equation lowering read its contracts.
 For a signature effect $\epsilon$, replace
 its conclusion `Safe` with
 

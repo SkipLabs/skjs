@@ -1,9 +1,9 @@
 import Verification.Model.Types.EquationValidator
 import Verification.Model.Types.EquationJson
 
-/-! Checks of the equation validator and the tree codec, which no request
-reaches yet: representative round trips, one spelling per tree, and located
-refusals of ill-formed heads and labels. -/
+/-! Checks of the equation validator and the tree codec: representative round
+trips, one spelling per tree, and located refusals of ill-formed heads and
+labels. -/
 namespace Verification.Model.EquationTreeTests
 open Lean Verification.Model.EquationGraphs PositiveGraphs PositiveNormalization CallEffects
 

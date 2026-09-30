@@ -3,15 +3,13 @@ import Verification.Model.Programs.DirectObligation
 import Verification.Model.Source.Fragment
 import Verification.Model.Source.SourceClaims
 
-/-! First source adapter for the stateful consumer. Names are resolved against
-initialized local bindings. Supplied expression types and source annotations
-become distinct obligations. The consumer reconstructs the request from source
-and claims; evidence never supplies the program it is checked against.
+/-! Source extraction for the stateful consumer: it lowers a unit of the
+Fragment AST (`Fragment`) to a calculus program with its point claims. Names
+are resolved against initialized local bindings. Supplied expression types and
+source annotations become distinct obligations. The consumer reconstructs the
+request from source and claims; evidence never supplies the program it is
+checked against.
 
-The currently supported fragment is deliberately small: primitive/callable parameters,
-initialized consts, branches, variables, null/boolean literals and local plain
-cells (allocation, reads and assignments), expression-bodied closures and calls,
-with every path returning. Boolean variable tests, including negations, refine the tested binding.
 Active-name shadowing is refused here: the parser gives a shadowing local a
 name of its own (PROGRAM-TYPING.md, "Shadowing"). This compiler remains a reviewed
 extraction boundary, not a proved TypeScript semantics. Its output is checked by the proved calculus consumer. -/
