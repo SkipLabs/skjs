@@ -47,6 +47,7 @@ const gap = (
   diagnostic: RegExp,
 ): Case => ({ file, area, kind: "gap", status, phase, diagnostic });
 export const cases: Case[] = [
+  gap("generic-callable-bound", "A generic identity passed to a callable-bounded generic needs inference and image coverage through the bounded meet", "unverified", "search", /no derivation of its node-typing claim/),
   positive("generic-bound-covariance", "Generic method bounds use the same checked Promise covariance as ordinary widening"),
   negative("invalid-generic-bound-covariance", "A covariant Promise argument retains the generic method's element bound"),
   { file: "invalid-generic-contract-erasure", area: "An unsupported method contract is refused, never weakened to unknown", kind: "negative",

@@ -486,11 +486,12 @@ applications of one head (`Equations.variances`,
 
 **Subtype choices.** A subtype evidence object has exactly two fields:
 `instantiation`, an instance object or `null`, and `members`, a list of
-prototype-member instance tuples. An instance carries its finite `domain`,
-`table`, `instances` and `free`. Member tuples retain the source type, fixed
-and variadic signatures, and the instance object. The checker selects the rule
-and discovers the comparison dependencies. Candidate instances are validated
-before use.
+supporting instance tuples for bound comparisons and prototype members. An
+instance carries its finite `domain`, `table`, `instances` and `free`. Each tuple
+retains the source type, fixed and variadic signatures, and the instance object.
+The checker selects the rule and discovers the comparison dependencies. A
+nested bound comparison selects its candidate from these tuples and validates
+its kinds, images and bounds before using it. Candidate presence is not a proof.
 
 The source path accepts an instance image when either proved image check
 holds: the finite table check, or the substitution check

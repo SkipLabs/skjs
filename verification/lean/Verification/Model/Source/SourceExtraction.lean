@@ -1445,7 +1445,7 @@ field or view, or, for a key an own-key bound does not admit, its prototype's, a
 /-- A method call's explicit type arguments, `o.m<A₁,…,Aₖ>(…)`, are a
 requirement on the instance the call uses: the member read from `O` is a scheme
 row, the claimed method type `M` is an instance of it by a checked instance map
-(`checkInstArrsUsing`), and that map sends the scheme's first `k` binders to types
+(`compareInstArrsWith`), and that map sends the scheme's first `k` binders to types
 of the same meaning as `A₁,…,Aₖ`. The binders past them are the ones the
 call's receiver and actuals fix, as for a call without type arguments. The
 check only refuses: acceptance still rests on the read's own `inst` proof and
@@ -1467,7 +1467,9 @@ the call's typing. -/
     | throw (refuse "the call's claimed method is not an instance of its member")
   let some c := CertificateProducer.instanceFor G 64 s L Ms
     | throw (refuse "the call's claimed method is not an instance of its member")
-  match PositiveCertificates.compareInstArrsUsing G (StoreView.images T) S L Ms c with
+  let compare := fun U V => (CertificateProducer.comparisonUsing G (StoreView.images T) U V).map
+    (PositiveCertificates.SubtypeChoices.dependencies G U V)
+  match PositiveCertificates.compareInstArrsWith G (StoreView.images T) compare [] S L Ms c with
   | .established _ => pure ()
   | .notEstablished => throw (refuse "the call's claimed method is not an instance of its member")
   | .exhausted rounds visited => throw (subtypeFailure T pos .schemeElimination S M

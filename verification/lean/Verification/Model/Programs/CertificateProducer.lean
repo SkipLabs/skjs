@@ -254,7 +254,7 @@ validates the table. -/
 
 /-- An instance of scheme row `s` whose signatures' images are the arrows
 `L`, `M`: find the binders' instances, then build the table under the context
-giving each binder its instance. Untrusted: `compareInstArrsUsing` validates it. -/
+giving each binder its instance. Untrusted: `compareInstArrsWith` validates it. -/
 @[nospecialize] def instanceForUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (fuel : Nat) (s : SchemeRow ι)
     (L : PositiveRules.Ops ι) (M : List (RestArrow (List ι))) :
     Option (PositiveCertificates.Instance ι) := do
@@ -392,7 +392,7 @@ the instance whose signatures are the method's with the source as receiver. -/
     (G : NormalGraph ι) (images : InstanceImageCheck G) (A B : Ty ι) :
     PositiveCertificates.ComparisonResult (PositiveCertificates.SubtypeChoices ι) :=
   PositiveCertificates.compareUsing G images A B
-    (fun _ => instantiationUsing G images instanceFuel A B)
+    (instantiationUsing G images instanceFuel)
     (rowInstances G images instanceFuel)
 
 theorem comparisonUsing_sound [DecidableEq ι] [Hashable ι] [Instantiates ι]

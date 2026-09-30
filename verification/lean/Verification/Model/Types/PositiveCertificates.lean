@@ -796,7 +796,7 @@ theorem variablesOk_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (R
 
 /-- A checked instance of a scheme row's signatures: the instance table, the
 types the binders are instantiated at, the table's domain and the domain's
-free parameter rows. Each bound is decided by the checker (`boundOk`). -/
+free parameter rows. The common comparison operation discharges each bound. -/
 structure Instance (ι : Type) where
   table : InstTable ι
   instances : List (List ι)
@@ -912,6 +912,30 @@ inductive ComparisonResult (α : Type) where
     | established u => cases u; simpa only [all, h, accepted, List.all_cons, Bool.true_and] using ih
     | notEstablished => simp only [all, h, accepted, List.all_cons, Bool.false_and]
     | exhausted rounds visited => simp only [all, h, accepted, List.all_cons, Bool.false_and]
+
+/-- Validate every premise and retain its proposal data, stopping at the first refusal. -/
+@[nospecialize] def ComparisonResult.collect (f : β → ComparisonResult α) :
+    List β → ComparisonResult (List α)
+  | [] => .established []
+  | x :: xs => match f x with
+    | .established a => match collect f xs with
+      | .established tail => .established (a :: tail)
+      | .notEstablished => .notEstablished
+      | .exhausted rounds visited => .exhausted rounds visited
+    | .notEstablished => .notEstablished
+    | .exhausted rounds visited => .exhausted rounds visited
+
+@[simp] theorem ComparisonResult.accepted_collect (f : β → ComparisonResult α) (xs : List β) :
+    (collect f xs).accepted = xs.all (fun x => (f x).accepted) := by
+  induction xs with
+  | nil => rfl
+  | cons x xs ih =>
+    cases h : f x with
+    | established a =>
+      cases ht : collect f xs <;>
+        simpa only [collect, h, ht, accepted, List.all_cons, Bool.true_and] using ih
+    | notEstablished => simp only [collect, h, accepted, List.all_cons, Bool.false_and]
+    | exhausted rounds visited => simp only [collect, h, accepted, List.all_cons, Bool.false_and]
 
 /-- Alternative rules share success; exhaustion survives when neither succeeds. -/
 @[nospecialize] def ComparisonResult.orElse (a : ComparisonResult α)
@@ -1470,34 +1494,33 @@ theorem compareStructural_sound [DecidableEq ι] {G : NormalGraph ι}
       (by assumption)
   · exact comparePrepared_sound h hk
 
-/-- An instance satisfies a binder's bound when the common structural engine
-establishes inclusion under every parameter assignment. An uninstantiated
-binder imposes no additional obligation here. -/
-@[nospecialize] def compareBound [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (binders : List ι) (θs : List (List ι)) (b : ι × List ι) : ComparisonResult Unit :=
+/-- An instantiated binder's bound is a comparison supplied by the enclosing
+engine. The identity value represents a binder absent from this instance. -/
+@[nospecialize] def compareBoundWith [DecidableEq ι]
+    (compare : List ι → List ι → ComparisonResult α) (empty : α)
+    (binders : List ι) (θs : List (List ι)) (b : ι × List ι) : ComparisonResult α :=
   match (binders.zip θs).lookup b.1 with
-  | none => .established ()
-  | some U => compareStructural G images U b.2
+  | none => .established empty
+  | some U => compare U b.2
 
-@[nospecialize] def boundOk [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (binders : List ι) (θs : List (List ι)) (b : ι × List ι) : Bool :=
-  (compareBound G images binders θs b).accepted
-
-theorem boundOk_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
-    {binders θs b} (h : boundOk G images binders θs b = true) :
+theorem compareBoundWith_sound [DecidableEq ι] {G : NormalGraph ι}
+    {compare : List ι → List ι → ComparisonResult α} {empty binders θs b}
+    (hc : ∀ U V, (compare U V).accepted = true →
+      ∀ η, FamLe (mixedMeaning G η U) (mixedMeaning G η V))
+    (h : (compareBoundWith compare empty binders θs b).accepted = true) :
     ∀ U, (binders.zip θs).lookup b.1 = some U →
       ∀ η, FamLe (mixedMeaning G η U) (mixedMeaning G η b.2) := by
   intro U hU
-  unfold boundOk compareBound at h
+  unfold compareBoundWith at h
   rw [hU] at h
-  exact compareStructural_sound h (fun _ _ h => by simp at h)
+  exact hc U b.2 h
 
-/-- `S` is one scheme row, and `L`, `M` arrows whose every signature is an
-image of one of the scheme's under the instance table, each instance within
-its binder's bounds. Only validation of that image table depends on its
-representation; every other obligation is shared. -/
-@[nospecialize] def compareInstArrsUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (S : List ι) (L : Ops ι) (M : List (RestArrow (List ι))) (c : Instance ι) : ComparisonResult Unit :=
+/-- The instance rule validates kinds, signature images and the representation's
+image table, then asks its enclosing subtype operation to discharge every bound.
+Successful bound comparisons retain their proposal data. -/
+@[nospecialize] def compareInstArrsWith [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (compare : List ι → List ι → ComparisonResult α) (empty : α)
+    (S : List ι) (L : Ops ι) (M : List (RestArrow (List ι))) (c : Instance ι) : ComparisonResult (List α) :=
   match S with
   | [i] =>
     match G.schemes i with
@@ -1507,43 +1530,40 @@ representation; every other obligation is shared. -/
           (L.all fun q => s.signatures.any fun p => instSig G c.table (s.binders.zip c.instances) p q) &&
           (M.all fun q => s.variadic.any fun p => instRest G c.table (s.binders.zip c.instances) p q) then
         (images.compare s.binders c).andThen fun _ =>
-          ComparisonResult.all (compareBound G images s.binders c.instances) s.bounds
+          ComparisonResult.collect (compareBoundWith compare empty s.binders c.instances) s.bounds
       else .notEstablished
     | none => .notEstablished
   | _ => .notEstablished
 
-/-- Instance validation exposes its acceptance projection to Boolean consumers. -/
-@[nospecialize] def checkInstArrsUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (S : List ι) (L : Ops ι) (M : List (RestArrow (List ι))) (c : Instance ι) : Bool :=
-  (compareInstArrsUsing G images S L M c).accepted
-
-/-- Acceptance has the same premises as the semantic instance rule. -/
-theorem checkInstArrsUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+theorem compareInstArrsWith_accepted [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (compare : List ι → List ι → ComparisonResult α) (empty : α)
     (S : List ι) (L : Ops ι) (M : List (RestArrow (List ι))) (c : Instance ι) :
-    checkInstArrsUsing G images S L M c =
+    (compareInstArrsWith G images compare empty S L M c).accepted =
       match S with
       | [i] => match G.schemes i with
         | some s => !G.params i && c.instances.length == s.binders.length &&
             instKinds G s.binders c.instances &&
             (L.all fun q => s.signatures.any fun p => instSig G c.table (s.binders.zip c.instances) p q) &&
             (M.all fun q => s.variadic.any fun p => instRest G c.table (s.binders.zip c.instances) p q) &&
-            images.check s.binders c && s.bounds.all (fun b => boundOk G images s.binders c.instances b)
+            images.check s.binders c &&
+            s.bounds.all (fun b => (compareBoundWith compare empty s.binders c.instances b).accepted)
         | none => false
       | _ => false := by
-  unfold checkInstArrsUsing compareInstArrsUsing
+  unfold compareInstArrsWith
   split <;> try rfl
   split <;> try rfl
   split <;> rename_i h
-  · rw [ComparisonResult.accepted_andThen, ComparisonResult.accepted_all]
-    simpa only [boundOk, InstanceImageCheck.check, h, Bool.true_and]
+  · rw [ComparisonResult.accepted_andThen, ComparisonResult.accepted_collect]
+    simpa only [InstanceImageCheck.check, h, Bool.true_and]
   · simp only [ComparisonResult.accepted, h, Bool.false_and]
 
-/-- Every representation discharges the same semantic elimination rule. -/
-theorem checkInstArrsUsing_sound [DecidableEq ι] {G : NormalGraph ι}
-    {images : InstanceImageCheck G} {S L M c}
-    (h : checkInstArrsUsing G images S L M c = true) :
+theorem compareInstArrsWith_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+    {compare : List ι → List ι → ComparisonResult α} {empty S L M c}
+    (hc : ∀ U V, (compare U V).accepted = true →
+      ∀ η, FamLe (mixedMeaning G η U) (mixedMeaning G η V))
+    (h : (compareInstArrsWith G images compare empty S L M c).accepted = true) :
     ∀ η, FamLe (mixedValues G η S) (mixedSem G η (.arrs L M)) := by
-  rw [checkInstArrsUsing_eq] at h
+  rw [compareInstArrsWith_accepted] at h
   split at h
   · rename_i i
     split at h
@@ -1556,31 +1576,30 @@ theorem checkInstArrsUsing_sound [DecidableEq ι] {G : NormalGraph ι}
         (images.sound s.binders c hlen hkinds hok η) hL hM n W v hv,
         realmInvariant_of_not_record rfl n W v⟩
       intro b hb U hU
-      exact boundOk_sound (hbs b hb) U hU η
+      exact compareBoundWith_sound hc (hbs b hb) U hU η
     · cases h
   · cases h
 
-/-- The shared instance rule against an explicit target arrow type. -/
-@[nospecialize] def compareInstUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (S T : List ι) (c : Instance ι) : ComparisonResult Unit :=
+/-- The instance rule against an explicit target arrow type, using the
+comparison operation supplied for its bounds. -/
+@[nospecialize] def compareInstWith [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (compare : List ι → List ι → ComparisonResult α) (empty : α)
+    (S T : List ι) (c : Instance ι) : ComparisonResult (List α) :=
   match expand G T with
-  | [.arrs L M] => compareInstArrsUsing G images S L M c
+  | [.arrs L M] => compareInstArrsWith G images compare empty S L M c
   | _ => .notEstablished
 
-@[nospecialize] def checkInstUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (S T : List ι) (c : Instance ι) : Bool :=
-  (compareInstUsing G images S T c).accepted
-
-theorem checkInstUsing_sound [DecidableEq ι] {G : NormalGraph ι}
-    {images : InstanceImageCheck G} {S T c}
-    (h : checkInstUsing G images S T c = true) :
+theorem compareInstWith_sound [DecidableEq ι] {G : NormalGraph ι}
+    {images : InstanceImageCheck G} {compare : List ι → List ι → ComparisonResult α} {empty S T c}
+    (hc : ∀ U V, (compare U V).accepted = true →
+      ∀ η, FamLe (mixedMeaning G η U) (mixedMeaning G η V))
+    (h : (compareInstWith G images compare empty S T c).accepted = true) :
     ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) := by
-  unfold checkInstUsing compareInstUsing at h
+  unfold compareInstWith at h
   split at h
   · rename_i L M hT
-    change checkInstArrsUsing G images S L M c = true at h
-    have values := checkInstArrsUsing_sound h
-    rw [checkInstArrsUsing_eq] at h
+    have values := compareInstArrsWith_sound hc h
+    rw [compareInstArrsWith_accepted] at h
     split at h
     · rename_i i
       split at h
@@ -1614,56 +1633,139 @@ theorem checkEntries_entries_sound [DecidableEq ι] {G : NormalGraph ι} {sub : 
   family_entries_sound (checkEntries_sound h) (variablesOk_sound hv) hlook
     (fun _ _ h => by simp at h)
 
-/-- One subtype operation for evidence production and checking. The proposal
-functions choose generic instances; discovery and validation of comparison
-dependencies run once inside this operation. -/
-@[nospecialize] def compareUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (S T : List ι) (instantiation : Unit → Option (Instance ι))
-    (members : Table ι → List (KnownInstance ι)) :
-    ComparisonResult (SubtypeChoices ι) :=
+/-- The instantiation choices used below a comparison, including its root
+instance when its target is an arrow contract. The checker validates every use. -/
+@[nospecialize] def SubtypeChoices.dependencies [DecidableEq ι] (G : NormalGraph ι)
+    (S T : List ι) (p : SubtypeChoices ι) : List (KnownInstance ι) :=
+  p.members ++ match p.instantiation, expand G T with
+    | some c, [.arrs L M] => [(S, L, M, c)]
+    | _, _ => []
+
+/-- One comparison step: select a checked instance or validate the shared
+structural dependencies. Its bound premises use the supplied comparison operation. -/
+@[nospecialize] def compareStep [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (compare : List ι → List ι → ComparisonResult (List (KnownInstance ι)))
+    (S T : List ι) (instantiation : List ι → List ι → Option (Instance ι))
+    (members : Table ι → List (KnownInstance ι)) : ComparisonResult (SubtypeChoices ι) :=
   if subsetUsing G images S T then .established {} else
-  let candidate := instantiation ()
-  let root := match candidate with
-    | some c => compareInstUsing G images S T c
+  let candidate := instantiation S T
+  let root : ComparisonResult (SubtypeChoices ι) := match candidate with
+    | some c => (compareInstWith G images compare [] S T c).map fun dependencies =>
+        { instantiation := candidate, members := dependencies.flatten }
     | none => .notEstablished
-  (root.map fun _ => { instantiation := candidate }).orElse fun _ =>
+  root.orElse fun _ =>
     let e := ParameterAssignment.empty .mixed
     let fb := growTable (PositiveRules.reassign G e) (images.reassign e) images.budget.rounds
       { table := [(S, T)] } [(S, T)]
-    let tested := (members fb.table).map fun k =>
-      (k, compareInstArrsUsing G images k.1 k.2.1 k.2.2.1 k.2.2.2)
-    let ks := (tested.filter fun k => k.2.accepted).map Prod.fst
-    ((comparePrepared G images S T (knownOf ks) fb).map fun _ => { members := ks }).orElse
-      fun _ => ComparisonResult.exhaustion (tested.map Prod.snd)
+    let tested : List (KnownInstance ι × ComparisonResult (List (List (KnownInstance ι)))) :=
+      (members fb.table).map fun k =>
+      (k, compareInstArrsWith G images compare [] k.1 k.2.1 k.2.2.1 k.2.2.2)
+    let accepted := tested.filter fun k => k.2.accepted
+    let ks := accepted.map Prod.fst
+    let dependencies : List (KnownInstance ι) := accepted.flatMap fun k => match k.2 with
+      | .established ds => ds.flatten
+      | .notEstablished | .exhausted _ _ => []
+    ((comparePrepared G images S T (knownOf ks) fb).map fun _ => { members := ks ++ dependencies }).orElse
+      fun _ => ComparisonResult.exhaustion (tested.map fun k => k.2.map fun _ => ())
+
+theorem compareStep_sound [DecidableEq ι] {G : NormalGraph ι}
+    {images : InstanceImageCheck G} {compare : List ι → List ι → ComparisonResult (List (KnownInstance ι))}
+    {S T instantiation members}
+    (hc : ∀ A B, (compare A B).accepted = true →
+      ∀ η, FamLe (mixedMeaning G η A) (mixedMeaning G η B))
+    (h : (compareStep G images compare S T instantiation members).accepted = true) :
+    ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) := by
+  unfold compareStep at h
+  split at h
+  · exact subsetUsing_sound (by assumption)
+  · dsimp only at h
+    simp only [ComparisonResult.accepted_orElse, ComparisonResult.accepted_map,
+      ComparisonResult.accepted_exhaustion, Bool.or_false] at h
+    rcases Bool.or_eq_true_iff.mp h with h | h
+    · cases hi : instantiation S T with
+      | none => simp [hi, ComparisonResult.accepted] at h
+      | some c =>
+        exact compareInstWith_sound (images := images) (empty := []) hc
+          (by simpa only [hi, ComparisonResult.accepted_map] using h)
+    · apply comparePrepared_sound h
+      intro η k hm
+      simp only [knownOf, List.mem_map, List.mem_filter] at hm
+      obtain ⟨q, ⟨pair, ⟨⟨w, _, hw⟩, checked⟩, hq⟩, hk⟩ := hm
+      subst pair
+      subst q
+      subst k
+      exact compareInstArrsWith_sound hc checked η
+
+/-- Instance bounds recursively use the common operation. A repeated bound query
+may use structural evidence but cannot assume its unfinished instance. -/
+@[nospecialize] def compareUsingCore [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (instantiation : List ι → List ι → Option (Instance ι))
+    (members : Table ι → List (KnownInstance ι))
+    (depth : Nat) (path : Table ι) (S T : List ι) : ComparisonResult (SubtypeChoices ι) :=
+  let compare : List ι → List ι → ComparisonResult (List (KnownInstance ι)) := fun A B =>
+    if (A, B) ∈ (S, T) :: path then
+      (compareStructural G images A B).map fun _ => []
+    else match depth with
+      | 0 => ((compareStructural G images A B).map fun _ => []).orElse
+          fun _ => .exhausted images.budget.rounds 0
+      | remaining + 1 =>
+          (compareUsingCore G images instantiation members remaining ((S, T) :: path) A B).map
+            (SubtypeChoices.dependencies G A B)
+  compareStep G images compare S T instantiation members
+termination_by depth
+
+theorem compareUsingCore_sound [DecidableEq ι] {G : NormalGraph ι}
+    {images : InstanceImageCheck G} {instantiation members depth path S T}
+    (h : (compareUsingCore G images instantiation members depth path S T).accepted = true) :
+    ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) := by
+  induction depth generalizing path S T with
+  | zero =>
+    unfold compareUsingCore at h
+    dsimp only at h
+    apply compareStep_sound ?_ h
+    intro A B hab
+    split at hab
+    · rw [ComparisonResult.accepted_map] at hab
+      exact compareStructural_sound hab (fun _ _ hm => by simp at hm)
+    · rw [ComparisonResult.accepted_orElse, ComparisonResult.accepted_map] at hab
+      simp only [ComparisonResult.accepted, Bool.or_false] at hab
+      exact compareStructural_sound hab (fun _ _ hm => by simp at hm)
+  | succ remaining ih =>
+    unfold compareUsingCore at h
+    dsimp only at h
+    apply compareStep_sound ?_ h
+    intro A B hab
+    split at hab
+    · rw [ComparisonResult.accepted_map] at hab
+      exact compareStructural_sound hab (fun _ _ hm => by simp at hm)
+    · rw [ComparisonResult.accepted_map] at hab
+      exact ih hab
+
+/-- One subtype operation for evidence production and checking. Proposal functions
+choose instances for the comparisons requested by the engine. -/
+@[nospecialize] def compareUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (S T : List ι) (instantiation : List ι → List ι → Option (Instance ι))
+    (members : Table ι → List (KnownInstance ι)) : ComparisonResult (SubtypeChoices ι) :=
+  compareUsingCore G images instantiation members images.budget.rounds [] S T
 
 theorem compareUsing_sound [DecidableEq ι] {G : NormalGraph ι}
     {images : InstanceImageCheck G} {S T instantiation members}
     (h : (compareUsing G images S T instantiation members).accepted = true) :
-    ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) := by
-  unfold compareUsing at h
-  split at h
-  · exact subsetUsing_sound (by assumption)
-  · simp only [ComparisonResult.accepted_orElse, ComparisonResult.accepted_map,
-      ComparisonResult.accepted_exhaustion, Bool.or_false] at h
-    rw [Bool.or_eq_true] at h
-    rcases h with h | h
-    · cases hc : instantiation () with
-      | none => simp [hc, ComparisonResult.accepted] at h
-      | some c => exact checkInstUsing_sound (images := images) (by simpa [checkInstUsing, hc] using h)
-    · apply comparePrepared_sound h
-      intro η k hm
-      obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hm
-      obtain ⟨pair, hpair, rfl⟩ := List.mem_map.mp hq
-      obtain ⟨w, _, hw⟩ := List.mem_map.mp (List.mem_filter.mp hpair).1
-      have checked := (List.mem_filter.mp hpair).2
-      rw [← hw] at checked ⊢
-      exact checkInstArrsUsing_sound checked η
+    ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) :=
+  compareUsingCore_sound h
+
+/-- Find a supplied instance for the comparison the engine requests. Root choices
+and supporting choices carry the same instance data and receive the same validation. -/
+@[nospecialize] def SubtypeChoices.proposal [DecidableEq ι] (G : NormalGraph ι)
+    (S T : List ι) (p : SubtypeChoices ι) (A B : List ι) : Option (Instance ι) :=
+  (if A == S && B == T then p.instantiation else none) <|>
+    (p.members.find? fun k => k.1 == A && expand G B == [.arrs k.2.1 k.2.2.1]).map (·.2.2.2)
 
 /-- Public evidence carries instantiation choices. The common operation
 selects and validates the subtype rule. -/
 @[nospecialize] def checkUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (S T : List ι) (p : SubtypeChoices ι) : Bool :=
-  (compareUsing G images S T (fun _ => p.instantiation) (fun _ => p.members)).accepted
+  (compareUsing G images S T (p.proposal G S T) (fun _ => p.members)).accepted
 
 theorem checkUsing_sound [DecidableEq ι] {G : NormalGraph ι}
     {images : InstanceImageCheck G} {S T proof}
@@ -1681,7 +1783,7 @@ theorem acceptedUsing [DecidableEq ι] {G : NormalGraph ι}
     (h : checkUsing G images S T proof = true) : FamLe (meaning G S) (meaning G T) :=
   fun n W v hv => checkUsing_sound h G.env n W (.inl v) hv
 
-#print axioms checkInstUsing_sound
+#print axioms compareInstWith_sound
 #print axioms checkUsing_sound
 #print axioms checkEntries_sound
 #print axioms checkEntries_complete
@@ -1693,5 +1795,7 @@ theorem acceptedUsing [DecidableEq ι] {G : NormalGraph ι}
 #print axioms comparePrepared_sound
 #print axioms checkStructural_sound
 #print axioms compareStructural_sound
-#print axioms boundOk_sound
+#print axioms compareBoundWith_sound
+#print axioms compareInstArrsWith_sound
+#print axioms compareUsingCore_sound
 end Verification.Model.PositiveCertificates

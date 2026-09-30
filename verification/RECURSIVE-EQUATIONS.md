@@ -373,14 +373,21 @@ instance as a known row: a prototype's quantified member, at the object as
 receiver, covering a target's method. Soundness is Lemma 3 with the bound
 premises ([POSITIVE-TYPES](POSITIVE-TYPES.md#instances-of-a-scheme-row)).
 
-The executable structural kernel uses the equation representation's validated
-variance entries and binder renaming for these bound premises. Instantiated
-prototype members are validated before structural coverage uses them. The
-kernel's soundness theorem requires sound member instances; an instance cannot
-justify its own bound through its proposed signatures.
+The executable comparison operation discharges bound premises with the same
+rules as its enclosing comparison, including quantified instantiation. The
+structural kernel uses the equation representation's validated variance entries
+and binder renaming. `compareInstArrsWith_sound` proves the instance rule from
+sound bound comparisons; `compareUsingCore_sound` proves those comparisons at
+every parameter assignment. Instantiated prototype members are validated before
+structural coverage uses them. A bound query repeated on the current instance
+path may use a checked structural derivation; it cannot assume its unfinished
+instance. Its structural recurrence requires the guarded family rule.
 
 Dependency discovery has an execution budget measured in frontier rounds.
-Each frontier can contain arbitrarily many comparisons. The kernel distinguishes
+Each frontier can contain arbitrarily many comparisons. The same budget bounds
+descent through instance-bound comparisons. At the descent boundary, a
+structural derivation can establish the premise; otherwise the unsearched
+instance alternatives report exhaustion. The kernel distinguishes
 established inclusion, an inclusion its search does not establish, and resource
 exhaustion. Instance validation retains the outcomes of bound comparisons and
 image equality; equality requires sequential inclusion in both directions.
@@ -525,7 +532,7 @@ to parameters and quantified variables by position.
 | Lemma 3, substitution | [Types/EquationSubstitution.lean](lean/Verification/Model/Types/EquationSubstitution.lean) |
 | Instantiation by substitution in the subtyping checker | [Types/EquationCertificates.lean](lean/Verification/Model/Types/EquationCertificates.lean) |
 | Quantified signatures (4.1), assumptions and Theorem 1 (4.2) | `Types/PositiveRules.lean`, `Types/PositiveCertificates.lean` |
-| Structural comparison and bound checking over the equations (4.2–4.4) | `Types/PositiveCertificates.lean` (`compareStructural`, `compareStructural_sound`) |
+| Comparison and instance bounds over the equations (4.2–4.4) | `Types/PositiveCertificates.lean` (`compareUsingCore_sound`, `compareInstArrsWith_sound`, `compareStructural_sound`) |
 | Soundness of the computed variances and of `Var` (4.3) | [Types/EquationFamilies.lean](lean/Verification/Model/Types/EquationFamilies.lean) |
 | Well-formedness of equations | [Types/EquationValidator.lean](lean/Verification/Model/Types/EquationValidator.lean) |
 | Term spelling of trees | [Types/EquationJson.lean](lean/Verification/Model/Types/EquationJson.lean) |

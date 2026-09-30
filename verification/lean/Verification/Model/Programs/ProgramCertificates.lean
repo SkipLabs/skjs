@@ -235,7 +235,7 @@ theorem CheckResult.accepted_fromComparison (limit : Nat) (A B : Ty ι)
     (images : PositiveCertificates.InstanceImageCheck G) (A B : Ty ι)
     (choices : PositiveCertificates.SubtypeChoices ι) : CheckResult ι Unit :=
   CheckResult.fromComparison images.budget.rounds A B
-    ((PositiveCertificates.compareUsing G images A B (fun _ => choices.instantiation)
+    ((PositiveCertificates.compareUsing G images A B (choices.proposal G A B)
       (fun _ => choices.members)).map fun _ => ())
 
 theorem checkSubtypeUsing_accepted [DecidableEq ι] (G : NormalGraph ι)
