@@ -119,8 +119,8 @@ structure InstState (ι : Type) where
 to `T` (recorded as its instance), a row free of the context to itself, a
 clause row to a clause row matched operand by operand, a meet row to the meet
 row or clause row its binder's image makes it, and a scheme row to a
-scheme row, its binders standing for the other's. Untrusted: `checkInst`
-validates the table. -/
+scheme row, its binders standing for the other's. Untrusted:
+`compareInstancesWith` validates the candidate's images and bounds. -/
 @[nospecialize] def matchRow [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (bs : List ι) (V : FreeMap ι) :
     Nat → InstState ι → Ctx ι → List ι → List ι → Option (InstState ι)
   | 0, _, _, _, _ => none
@@ -252,63 +252,10 @@ validates the table. -/
   pairs.foldlM (fun st xy => matchRow G bs V fuel st κ xy.1 xy.2) st
 
 
-/-- An instance of scheme row `s` whose signatures' images are the arrows
-`L`, `M`: find the binders' instances, then build the table under the context
-giving each binder its instance. Untrusted: `compareInstArrsWith` validates it. -/
-@[nospecialize] def instanceForUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (fuel : Nat) (s : SchemeRow ι)
-    (L : PositiveRules.Ops ι) (M : List (RestArrow (List ι))) :
-    Option (PositiveCertificates.Instance ι) := do
-  -- Where the target's operands are other spellings of the instance's (a
-  -- result `Pair<[number, string]>` for `Pair<[T, U]>`), the binders are
-  -- found from the signatures without their results, and the instance's own
-  -- signatures, by the renaming's substitution, are proposed instead.
-  let exact : Option (PositiveRules.Ops ι) := do
-    let r ← images.sub
-    let noResult (a : Arrow (List ι)) : Arrow (List ι) := { a with result := [] }
-    let (θs, _) ← Instantiates.propose { s with signatures := s.signatures.map noResult }
-      (L.map noResult) []
-    some (s.signatures.map (Arrow.map (r.substitute (s.binders.zip θs))))
-  let proposal := (Instantiates.propose s L M).orElse fun _ => do
-    let L' ← exact
-    let (θs, table) ← Instantiates.propose s L' M
-    some (θs, table)
-  -- The representation's own proposal first: images by its syntax need no
-  -- table closed under rows, which a recursive family has none of.
-  if let some (θs, table) := proposal then
-    do
-      let c : PositiveCertificates.Instance ι := ⟨table, θs, [], []⟩
-      let κ₀ := s.binders.zip θs
-      if images.check s.binders c && L.all (fun q => s.signatures.any fun p => instSig G table κ₀ p q) &&
-          M.all (fun q => s.variadic.any fun p => instRest G table κ₀ p q) then return c
-      -- An operand whose image is another spelling of the target's (a
-      -- result `Pair<[number, string]>` for `Pair<[T, U]>` at `string`, a
-      -- callback the target states as a definition of its own): the
-      -- target's as the image of the one label whose image is not among the
-      -- target's, which the image check accepts only when the two are
-      -- proved equal.
-      let respell (P Q : List ι) : InstTable ι :=
-        match tyImg table κ₀ P with
-        | some img =>
-          if PositiveRules.sameLabels img Q then [] else
-          let open_ := if P.length == 1 then P
-            else P.filter fun l => !((entryImg table κ₀ l).getD []).all (· ∈ Q)
-          match open_ with
-          | [l] =>
-            let others := (P.filter (· != l)).flatMap fun m => (entryImg table κ₀ m).getD []
-            [(l, κ₀, Q.filter (!others.contains ·))]
-          | _ => []
-        | none => []
-      let patch : InstTable ι := L.flatMap fun q => s.signatures.flatMap fun p =>
-        if p.arguments.length != q.arguments.length then [] else
-        ((p.result :: p.arguments).zip (q.result :: q.arguments)).flatMap fun (P, Q) => respell P Q
-      let patch := patch ++ M.flatMap fun q => s.variadic.flatMap fun p =>
-        if p.arguments.1.length != q.arguments.1.length then [] else
-        ((p.arguments.2 :: p.result :: p.arguments.1).zip (q.arguments.2 :: q.result :: q.arguments.1)).flatMap
-          fun (P, Q) => respell P Q
-      if !patch.isEmpty then
-        let c : PositiveCertificates.Instance ι := ⟨patch.eraseDups ++ table, θs, [], []⟩
-        if images.check s.binders c && L.all (fun q => s.signatures.any fun p => instSig G c.table κ₀ p q) &&
-            M.all (fun q => s.variadic.any fun p => instRest G c.table κ₀ p q) then return c
+/-- Propose a substitution by matching the rows read by a scheme and its target. -/
+@[nospecialize] def matchedInstance [DecidableEq ι] [Hashable ι] [Instantiates ι]
+    (G : NormalGraph ι) (fuel : Nat) (s : SchemeRow ι)
+    (L : PositiveRules.Ops ι) (M : List (RestArrow (List ι))) : Option (PositiveCertificates.Instance ι) := do
   let roots := (s.signatures.flatMap Arrow.operands ++ s.variadic.flatMap RestArrow.operands ++
     L.flatMap Arrow.operands ++ M.flatMap RestArrow.operands).flatten
   let D := searchReads G roots
@@ -351,18 +298,71 @@ giving each binder its instance. Untrusted: `compareInstArrsWith` validates it. 
   let final ← each κ₀ {}
   some ⟨final.table, θs, D, V⟩
 
+
+/-- Untrusted instance alternatives from syntax, equivalent spellings and row
+matching. Only the common comparison operation validates these choices. -/
+@[nospecialize] def instanceCandidates [DecidableEq ι] [Hashable ι] [Instantiates ι]
+    (G : NormalGraph ι) (sub : Option (Renaming G)) (fuel : Nat) (s : SchemeRow ι)
+    (L : PositiveRules.Ops ι) (M : List (RestArrow (List ι))) : List (PositiveCertificates.Instance ι) :=
+  -- Where the target's operands are other spellings of the instance's (a
+  -- result `Pair<[number, string]>` for `Pair<[T, U]>`), the binders are
+  -- found from the signatures without their results, and the instance's own
+  -- signatures, by the renaming's substitution, are proposed instead.
+  let exact : Option (PositiveRules.Ops ι) := do
+    let r ← sub
+    let noResult (a : Arrow (List ι)) : Arrow (List ι) := { a with result := [] }
+    let (θs, _) ← Instantiates.propose { s with signatures := s.signatures.map noResult }
+      (L.map noResult) []
+    some (s.signatures.map (Arrow.map (r.substitute (s.binders.zip θs))))
+  let proposal := (Instantiates.propose s L M).orElse fun _ => do
+    let L' ← exact
+    let (θs, table) ← Instantiates.propose s L' M
+    some (θs, table)
+  let syntactic : List (PositiveCertificates.Instance ι) := match proposal with
+    | none => []
+    | some (θs, table) =>
+      let c : PositiveCertificates.Instance ι := ⟨table, θs, [], []⟩
+      let κ₀ := s.binders.zip θs
+      -- An operand whose image is another spelling of the target's (a
+      -- result `Pair<[number, string]>` for `Pair<[T, U]>` at `string`, a
+      -- callback the target states as a definition of its own): the
+      -- target's as the image of the one label whose image is not among the
+      -- target's, which the image check accepts only when the two are
+      -- proved equal.
+      let respell (P Q : List ι) : InstTable ι :=
+        match tyImg table κ₀ P with
+        | some img =>
+          if PositiveRules.sameLabels img Q then [] else
+          let open_ := if P.length == 1 then P
+            else P.filter fun l => !((entryImg table κ₀ l).getD []).all (· ∈ Q)
+          match open_ with
+          | [l] =>
+            let others := (P.filter (· != l)).flatMap fun m => (entryImg table κ₀ m).getD []
+            [(l, κ₀, Q.filter (!others.contains ·))]
+          | _ => []
+        | none => []
+      let patch : InstTable ι := L.flatMap fun q => s.signatures.flatMap fun p =>
+        if p.arguments.length != q.arguments.length then [] else
+        ((p.result :: p.arguments).zip (q.result :: q.arguments)).flatMap fun (P, Q) => respell P Q
+      let patch := patch ++ M.flatMap fun q => s.variadic.flatMap fun p =>
+        if p.arguments.1.length != q.arguments.1.length then [] else
+        ((p.arguments.2 :: p.result :: p.arguments.1).zip (q.arguments.2 :: q.result :: q.arguments.1)).flatMap
+          fun (P, Q) => respell P Q
+      c :: (if patch.isEmpty then [] else [⟨patch.eraseDups ++ table, θs, [], []⟩])
+  syntactic ++ (matchedInstance G fuel s L M).toList
+
 /-- How deep instance matching follows a type's rows: search only. -/
 def instanceFuel : Nat := 64
 
 /-- A scheme row below an arrow type. -/
 @[nospecialize] def instantiationUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (fuel : Nat) (A B : Ty ι) :
-    Option (PositiveCertificates.Instance ι) :=
+    List (PositiveCertificates.Instance ι) :=
   match A, PositiveCertificates.instanceTarget G B with
   | [i], some (L, M, _) =>
     match G.schemes i with
-    | some s => instanceForUsing G images fuel s L M
-    | none => none
-  | _, _ => none
+    | some s => instanceCandidates G images.sub fuel s L M
+    | none => []
+  | _, _ => []
 
 /-- Instances of prototype members a table's rows ask for: for a row whose
 source's prototype chain holds, under a target method's key, a scheme row,
@@ -376,15 +376,15 @@ the instance whose signatures are the method's with the source as receiver. -/
     (expand G A).flatMap fun c => match c with
       | .refs a bs vs _ _ _ =>
         match ((a :: bs).flatten ++ vs).lookup CallArguments.protoField with
-        | some P => (PositiveCertificates.protoChain G PositiveRules.protoChainDepth P).flatMap fun P => methods.filterMap fun q =>
+        | some P => (PositiveCertificates.protoChain G PositiveRules.protoChainDepth P).flatMap fun P => methods.flatMap fun q =>
             match PositiveRules.viewOf G P q.key with
             | some [i] => match G.schemes i with
               | some s =>
                 let L := q.calls.map (·.withReceiver A)
                 let M := q.rests.map (·.withReceiver A)
-                (instanceForUsing G images fuel s L M).map fun c => ([i], L, M, c)
-              | none => none
-            | _ => none
+                (instanceCandidates G images.sub fuel s L M).map fun c => ([i], L, M, c)
+              | none => []
+            | _ => []
         | none => []
       | _ => [])
 
@@ -1172,7 +1172,6 @@ theorem produce_checked [DecidableEq ι] [Hashable ι] [Instantiates ι] {G : No
 /-! Search proposes, and acceptance decides, with one proved instance image
 checker. The finite one is the default of the existing entry points. -/
 abbrev accept [DecidableEq ι] (G : NormalGraph ι) := @acceptUsing _ _ G (finiteInstanceImages G)
-abbrev instanceFor [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) := @instanceForUsing _ _ _ _ G (finiteInstanceImages G)
 abbrev subtype [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) := @subtypeUsing _ _ _ _ G (finiteInstanceImages G)
 abbrev memberProofs [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) := @memberProofsUsing _ _ _ _ G (finiteInstanceImages G)
 abbrev expressionWith [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) :=

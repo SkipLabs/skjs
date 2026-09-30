@@ -115,15 +115,15 @@ theorem proposal_reassign (S T : List ι) (p : SubtypeChoices ι) :
     p.proposal (reassign G η) S T = p.proposal G S T := rfl
 
 theorem compareStep_reassign (compare : List ι → List ι → ComparisonResult (List (KnownInstance ι)))
-    (S T : List ι) (instantiation : List ι → List ι → Option (Instance ι))
+    (S T : List ι) (instantiation : List ι → List ι → List (Instance ι))
     (members : Table ι → List (KnownInstance ι)) :
     compareStep (reassign G η) (images.reassign η) compare S T instantiation members =
       compareStep G images compare S T instantiation members := by
-  simp only [compareStep, subsetUsing_reassign, compareInstWith_reassign, compareInstArrsWith_reassign,
+  simp only [compareStep, compareInstancesWith, subsetUsing_reassign, compareInstWith_reassign, compareInstArrsWith_reassign,
     images_reassign_fixed, comparePrepared_reassign, budget_reassign]
   rfl
 
-theorem compareUsingCore_reassign (instantiation : List ι → List ι → Option (Instance ι))
+theorem compareUsingCore_reassign (instantiation : List ι → List ι → List (Instance ι))
     (members : Table ι → List (KnownInstance ι)) (depth : Nat) (path : Table ι) (S T : List ι) :
     compareUsingCore (reassign G η) (images.reassign η) instantiation members depth path S T =
       compareUsingCore G images instantiation members depth path S T := by
@@ -146,7 +146,7 @@ theorem compareUsingCore_reassign (instantiation : List ι → List ι → Optio
     · rw [ih]
       rfl
 
-theorem compareUsing_reassign (S T : List ι) (instantiation : List ι → List ι → Option (Instance ι))
+theorem compareUsing_reassign (S T : List ι) (instantiation : List ι → List ι → List (Instance ι))
     (members : Table ι → List (KnownInstance ι)) :
     compareUsing (reassign G η) (images.reassign η) S T instantiation members =
       compareUsing G images S T instantiation members := by

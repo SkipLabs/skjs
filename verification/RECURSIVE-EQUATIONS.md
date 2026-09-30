@@ -394,6 +394,14 @@ structural coverage uses them. A bound query repeated on the current instance
 path may use a checked structural derivation; it cannot assume its unfinished
 instance. Its structural recurrence requires the guarded family rule.
 
+Instance inference supplies alternatives from syntactic substitution,
+equivalent spellings and structural matching. Its constructor receives the
+substitution operation and constructs choices. `compareInstancesWith` validates
+those choices, selecting a successful one and retaining exhaustion when no
+alternative succeeds. This selection serves ordinary subtype comparisons and
+explicit method type arguments. `compareInstancesWith_sound` reduces its
+acceptance to a checked instance at every parameter assignment.
+
 Dependency and arrow-evidence discovery read quantified rows directly and
 through their opaque intersection components. Dependency discovery has an
 execution budget measured in frontier rounds.

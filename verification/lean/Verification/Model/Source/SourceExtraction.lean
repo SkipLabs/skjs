@@ -1465,15 +1465,15 @@ the call's typing. -/
     throw (refuse "more explicit type arguments than the member has binders")
   let [.arrs L Ms] := PositiveRules.expand G M
     | throw (refuse "the call's claimed method is not an instance of its member")
-  let some c := CertificateProducer.instanceFor G 64 s L Ms
-    | throw (refuse "the call's claimed method is not an instance of its member")
-  let compare := fun U V => (CertificateProducer.comparisonUsing G (StoreView.images T) U V).map
+  let images := StoreView.images T
+  let candidates := CertificateProducer.instanceCandidates G images.sub 64 s L Ms
+  let compare := fun U V => (CertificateProducer.comparisonUsing G images U V).map
     (PositiveCertificates.SubtypeChoices.dependencies G U V)
-  match PositiveCertificates.compareInstArrsWith G (StoreView.images T) compare [] S L Ms c with
-  | .established _ => pure ()
-  | .notEstablished => throw (refuse "the call's claimed method is not an instance of its member")
-  | .exhausted rounds visited => throw (subtypeFailure T pos .schemeElimination S M
-      (.exhausted T.subtypeBudget.rounds rounds visited) "subtype search exhausted while checking the method instance")
+  let c ← match PositiveCertificates.compareInstancesWith G images compare [] S M candidates with
+    | .established (c, _) => pure c
+    | .notEstablished => throw (refuse "the call's claimed method is not an instance of its member")
+    | .exhausted rounds visited => throw (subtypeFailure T pos .schemeElimination S M
+        (.exhausted T.subtypeBudget.rounds rounds visited) "subtype search exhausted while checking the method instance")
   for (A, θ) in args.zip c.instances do
     requireSameMeaning T pos .schemeElimination A θ
       "the call's instance is not the one its explicit type arguments state"

@@ -952,6 +952,17 @@ inductive ComparisonResult (α : Type) where
     (a.orElse next).accepted = (a.accepted || (next ()).accepted) := by
   cases a <;> simp [orElse, accepted] <;> cases next () <;> rfl
 
+/-- Try proposed alternatives in order; preserve exhaustion if no alternative succeeds. -/
+@[nospecialize] def ComparisonResult.first (f : β → ComparisonResult α) : List β → ComparisonResult α
+  | [] => .notEstablished
+  | x :: xs => (f x).orElse fun _ => first f xs
+
+@[simp] theorem ComparisonResult.accepted_first (f : β → ComparisonResult α) (xs : List β) :
+    (first f xs).accepted = xs.any (fun x => (f x).accepted) := by
+  induction xs with
+  | nil => rfl
+  | cons x xs ih => simp only [first, accepted_orElse, List.any_cons, ih]
+
 /-- An unfinished member rule cannot establish the root comparison. Its
 resource outcome remains relevant if every root rule is unsuccessful. -/
 @[nospecialize] def ComparisonResult.exhaustion : List (ComparisonResult Unit) → ComparisonResult α
@@ -1680,6 +1691,24 @@ theorem compareInstWith_sound [DecidableEq ι] {G : NormalGraph ι}
       · cases ha
   · cases h
 
+/-- Candidate construction supplies choices; this operation selects an instance
+only after checking its images, bounds and every target component. -/
+@[nospecialize] def compareInstancesWith [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (compare : List ι → List ι → ComparisonResult α) (empty : α)
+    (S T : List ι) (candidates : List (Instance ι)) : ComparisonResult (Instance ι × List α) :=
+  ComparisonResult.first (fun c => (compareInstWith G images compare empty S T c).map (c, ·)) candidates
+
+theorem compareInstancesWith_sound [DecidableEq ι] {G : NormalGraph ι}
+    {images : InstanceImageCheck G} {compare : List ι → List ι → ComparisonResult α}
+    {empty S T candidates}
+    (hc : ∀ U V, (compare U V).accepted = true →
+      ∀ η, FamLe (mixedMeaning G η U) (mixedMeaning G η V))
+    (h : (compareInstancesWith G images compare empty S T candidates).accepted = true) :
+    ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) := by
+  simp only [compareInstancesWith, ComparisonResult.accepted_first, ComparisonResult.accepted_map] at h
+  obtain ⟨c, _, checked⟩ := List.any_eq_true.mp h
+  exact compareInstWith_sound hc checked
+
 /-- The rows a family certificate's instances prove. -/
 @[nospecialize] def knownOf (ks : List (KnownInstance ι)) :
     Known ι := ks.map fun k => (k.1, k.2.1, k.2.2.1)
@@ -1707,14 +1736,12 @@ instance when its target is an arrow contract. The checker validates every use. 
 structural dependencies. Its bound premises use the supplied comparison operation. -/
 @[nospecialize] def compareStep [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (compare : List ι → List ι → ComparisonResult (List (KnownInstance ι)))
-    (S T : List ι) (instantiation : List ι → List ι → Option (Instance ι))
+    (S T : List ι) (instantiation : List ι → List ι → List (Instance ι))
     (members : Table ι → List (KnownInstance ι)) : ComparisonResult (SubtypeChoices ι) :=
   if subsetUsing G images S T then .established {} else
-  let candidate := instantiation S T
-  let root : ComparisonResult (SubtypeChoices ι) := match candidate with
-    | some c => (compareInstWith G images compare [] S T c).map fun dependencies =>
-        { instantiation := candidate, members := dependencies.flatten }
-    | none => .notEstablished
+  let root : ComparisonResult (SubtypeChoices ι) :=
+    (compareInstancesWith G images compare [] S T (instantiation S T)).map fun (c, dependencies) =>
+      { instantiation := some c, members := dependencies.flatten }
   root.orElse fun _ =>
     let e := ParameterAssignment.empty .mixed
     let fb := growTable (PositiveRules.reassign G e) (images.reassign e) images.budget.rounds
@@ -1744,11 +1771,7 @@ theorem compareStep_sound [DecidableEq ι] {G : NormalGraph ι}
     simp only [ComparisonResult.accepted_orElse, ComparisonResult.accepted_map,
       ComparisonResult.accepted_exhaustion, Bool.or_false] at h
     rcases Bool.or_eq_true_iff.mp h with h | h
-    · cases hi : instantiation S T with
-      | none => simp [hi, ComparisonResult.accepted] at h
-      | some c =>
-        exact compareInstWith_sound (images := images) (empty := []) hc
-          (by simpa only [hi, ComparisonResult.accepted_map] using h)
+    · exact compareInstancesWith_sound (images := images) (empty := []) hc h
     · apply comparePrepared_sound h
       intro η k hm
       simp only [knownOf, List.mem_map, List.mem_filter] at hm
@@ -1761,7 +1784,7 @@ theorem compareStep_sound [DecidableEq ι] {G : NormalGraph ι}
 /-- Instance bounds recursively use the common operation. A repeated bound query
 may use structural evidence but cannot assume its unfinished instance. -/
 @[nospecialize] def compareUsingCore [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (instantiation : List ι → List ι → Option (Instance ι))
+    (instantiation : List ι → List ι → List (Instance ι))
     (members : Table ι → List (KnownInstance ι))
     (depth : Nat) (path : Table ι) (S T : List ι) : ComparisonResult (SubtypeChoices ι) :=
   let compare : List ι → List ι → ComparisonResult (List (KnownInstance ι)) := fun A B =>
@@ -1806,7 +1829,7 @@ theorem compareUsingCore_sound [DecidableEq ι] {G : NormalGraph ι}
 /-- One subtype operation for evidence production and checking. Proposal functions
 choose instances for the comparisons requested by the engine. -/
 @[nospecialize] def compareUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (S T : List ι) (instantiation : List ι → List ι → Option (Instance ι))
+    (S T : List ι) (instantiation : List ι → List ι → List (Instance ι))
     (members : Table ι → List (KnownInstance ι)) : ComparisonResult (SubtypeChoices ι) :=
   compareUsingCore G images instantiation members images.budget.rounds [] S T
 
@@ -1819,9 +1842,9 @@ theorem compareUsing_sound [DecidableEq ι] {G : NormalGraph ι}
 /-- Find a supplied instance for the comparison the engine requests. Root choices
 and supporting choices carry the same instance data and receive the same validation. -/
 @[nospecialize] def SubtypeChoices.proposal [DecidableEq ι] (G : NormalGraph ι)
-    (S T : List ι) (p : SubtypeChoices ι) (A B : List ι) : Option (Instance ι) :=
-  (if A == S && B == T then p.instantiation else none) <|>
-    (p.members.find? fun k => k.1 == A &&
+    (S T : List ι) (p : SubtypeChoices ι) (A B : List ι) : List (Instance ι) :=
+  (if A == S && B == T then p.instantiation.toList else []) ++
+    (p.members.filter fun k => k.1 == A &&
       ((instanceTarget G B).map fun target => (target.1, target.2.1)) == some (k.2.1, k.2.2.1)).map (·.2.2.2)
 
 /-- Public evidence carries instantiation choices. The common operation

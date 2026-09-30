@@ -124,6 +124,35 @@ process.stdout.write(
 /** The artifacts of a case's run. */
 const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'s run`);
 
+// Candidate alternatives retain substituted-type exhaustion in both CLI modes.
+// Reuse the source case's accepted artifact bundle and its selected instance.
+{
+  const settled = outcomes[cases.findIndex(c => c.file === "generic-callable-bound")];
+  assert(settled?.status === "fulfilled");
+  const result = settled.value;
+  assert.equal(result.status, "verified");
+  const at = (name: string) => join(result.artifacts, name);
+  const source = readFileSync(at("source.ts"), "utf8");
+  for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
+    const evidence = mode === "--produce-source-claims" ? at("budget-evidence.json") : at("evidence.json");
+    const runWith = (rounds: number) => spawnSync(verifier,
+      ["--subtype-rounds", String(rounds), mode, at("fragment.json"), at("claims.json"),
+        at("source.ts"), evidence, ...(mode === "--produce-source-claims" ? ["12"] : [])],
+      { encoding: "utf8", timeout: 30_000 });
+    const limited = runWith(0);
+    assert.ifError(limited.error);
+    assert.equal(limited.status, 1, limited.stdout + limited.stderr);
+    const diagnostic = readDiagnostic(limited.stderr);
+    assert(diagnostic, limited.stderr);
+    assert.equal(diagnostic.outcome.kind, "exhausted");
+    assert.match(presentObligation(diagnostic, source).searchOutcome, /exhausted.*inconclusive/);
+    const sufficient = runWith(8);
+    assert.ifError(sufficient.error);
+    assert.equal(sufficient.status, 0, sufficient.stdout + sufficient.stderr);
+  }
+  process.stdout.write("instance alternatives retain substituted-type exhaustion in both CLI modes\n");
+}
+
 // A broad, shallow finite comparison has no semantic dependency-count cap.
 // Distinct child keys keep each comparison necessary; the changed leaf is
 // checked through the same source path as the equivalent pair.
