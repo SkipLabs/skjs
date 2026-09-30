@@ -449,8 +449,6 @@ environment: `GraphCode.Sim` relates the two, and `GraphCode.safe_of_sim`
 carries the graph's safety to the run, so a checked graph code is safe at its
 signature (`GraphCode.goto_safe`).
 
-[GraphCodeFixtures.lean](lean/Verification/Model/Tests/GraphCodeFixtures.lean) builds graph code for hand-written test programs: one node returning an expression.
-
 ## One meaning for callable contracts
 
 The core equation is a behavioral promise, shared by fixed signatures, rest

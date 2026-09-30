@@ -530,8 +530,9 @@ safety, including cycles, heap changes and explicit slot maps.
 consumer before returning it. The safety theorem does not require using this
 producer. Search is incomplete; failure is not a proof of untypability.
 
-[RequestJsonTests.lean](lean/Verification/Model/Tests/RequestJsonTests.lean) checks the property-key spelling and that strict decoding refuses a
-document missing a field.
+`ocaml-producer/test.mts` checks the spellings on tampered evidence: a string
+key is not a symbol key, and strict decoding refuses a symbol key with another
+field and a destination missing its map.
 
 ## Source mode
 

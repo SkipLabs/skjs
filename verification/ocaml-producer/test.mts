@@ -931,6 +931,13 @@ let restKeys = "";
 let variadicOffer = "";
 let explicitCalls = "";
 let classGeneric = "";
+let knownCondition = "";
+let staleCondition = "";
+let cellUnion = "";
+let callableUnion = "";
+let nonRegular = "";
+let schemeHost = "";
+let wireCase = "";
 let verifiedFunctions = 0;
 const outcomes = await pooled(cases, runCase);
 for (const [i, test] of cases.entries()) {
@@ -972,6 +979,13 @@ for (const [i, test] of cases.entries()) {
   if (test.file === "variadic-offer-sync") variadicOffer = result.artifacts;
   if (test.file === "explicit-type-arguments") explicitCalls = result.artifacts;
   if (test.file === "class-generic-method") classGeneric = result.artifacts;
+  if (test.file === "known-condition") knownCondition = result.artifacts;
+  if (test.file === "invalid-known-condition") staleCondition = result.artifacts;
+  if (test.file === "cell-union-capture") cellUnion = result.artifacts;
+  if (test.file === "callable-union-capture") callableUnion = result.artifacts;
+  if (test.file === "non-regular-alias") nonRegular = result.artifacts;
+  if (test.file === "scheme-binder-roles") schemeHost = result.artifacts;
+  if (test.file === "pattern-program-iterable") wireCase = result.artifacts;
 }
 process.stdout.write(
   `${verifiedFunctions} functions verified; ${cases.filter((c) => c.kind === "negative").length} negative controls; ${cases.filter((c) => c.kind === "gap").length} named gaps\n`,
@@ -1143,6 +1157,235 @@ const badEvidence = join(good, "bad-evidence.json");
 writeFileSync(badEvidence, "{}");
 invoke(join(good, "claims.json"), badEvidence);
 process.stdout.write("tampered evidence: refused\n");
+
+/** Search for evidence of forged claims, or of a forged parser document. */
+const produceWith = (artifacts: string, claims: string, name: string,
+    fragmentPath = join(artifacts, "fragment.json")): SpawnSyncReturns<string> =>
+  spawnSync(verifier, ["--produce-source-claims", fragmentPath, claims, join(artifacts, "source.ts"),
+    join(artifacts, `${name}-evidence.json`), "12"], { encoding: "utf8", timeout: 30_000 });
+/** An example run as JavaScript, then `expression` evaluated after it. */
+const runExample = (file: string, expression: string): unknown =>
+  vm.runInNewContext(`${stripTypes(readFileSync(join(here, "examples", `${file}.ts`), "utf8"))
+    .replace(/^export /gm, "")}\n${expression}`, {}, { timeout: 1000 });
+/** The label of the one-clause row `clause`, added to the claims' rows when
+ * they lack it. */
+const rowOf = (claims: SourceClaims, clause: Row[number]): number => {
+  const i = claims.types.findIndex((row) => row.length === 1 && JSON.stringify(row[0]) === JSON.stringify(clause));
+  return i >= 0 ? i : claims.types.push([clause]) - 1;
+};
+
+// A condition of a Boolean literal type takes one arm (`ifKnown`): claimed at
+// that arm alone, `ready || zs[0]` is `true`, as Node computes. The same claim
+// is refused at that expression where the condition is a binding a closure
+// resets before the arm is chosen, and Node finds `undefined` there.
+for (const [artifacts, file, call, expected] of [
+  [knownCondition, "known-condition", "known([])", true],
+  [staleCondition, "invalid-known-condition", "stale([])", undefined],
+] as const) {
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const claims: SourceClaims = JSON.parse(readFileSync(join(artifacts, "claims.json"), "utf8"));
+  const condition = "ready || zs[0]";
+  const at = source.lastIndexOf(condition);
+  const claim = must(claims.functions.flatMap((f) => f.expressions)
+    .find((e) => e.pos[0] === at && e.pos[1] === at + condition.length), "the condition's claim");
+  claim.type = [rowOf(claims, { boolLit: { value: true } })];
+  const forged = join(artifacts, "forged-known-arm.json");
+  writeFileSync(forged, JSON.stringify(claims));
+  const searched = produceWith(artifacts, forged, "forged-known-arm");
+  const detail = searched.stdout + searched.stderr;
+  if (expected) assert.equal(searched.status, 0, detail);
+  else {
+    assert.equal(searched.status, 1, detail);
+    assert.ok(detail.includes(`closure expression claim at [${at},${at + condition.length})`), detail);
+  }
+  assert.equal(runExample(file, call), expected);
+}
+process.stdout.write("a known condition's arm: claimed alone, and refused where the condition may be false\n");
+
+// Which program point a claim is attached to is unproved (DESIGN.md, the
+// trusted tools): a contents observation added to the producer's claims is
+// checked at its own point. On `cell-union-capture`, whose captured cell is
+// of a union of a `null | boolean` arm and a `null` arm, an observation every
+// arm implies holds where the closure reads the cell, and a null-only one is
+// refused there, as one arm admits later Boolean writes; the observed claims
+// with the evidence of the unobserved ones are refused. A statement entry's
+// null-only observation holds after the closure writes `null` into the cell,
+// and not where nothing wrote it; an entry narrowing the cell to its null arm
+// is refused at the read, though its observation holds.
+{
+  const source = readFileSync(join(cellUnion, "source.ts"), "utf8");
+  const original = readFileSync(join(cellUnion, "claims.json"), "utf8");
+  const within = (fn: string, text: string): number => {
+    const start = source.indexOf(`function ${fn}(`);
+    const at = source.indexOf(text, start);
+    assert.ok(start >= 0 && at > start && at < source.indexOf("\n}", start), `${text} in ${fn}`);
+    return at;
+  };
+  const labels = (claims: SourceClaims) => ({
+    nul: rowOf(claims, "nul"),
+    every: [rowOf(claims, "nul"), rowOf(claims, { boolLit: { value: true } }), rowOf(claims, { boolLit: { value: false } })],
+    nullArm: rowOf(claims, { refs: { first: [["value", [rowOf(claims, "nul")]]], rest: [], views: [] } }),
+  });
+  /** The claims with the captured cell observed at `pick`'s labels, at the
+   * expression or statement entry starting at `at`. */
+  const observed = (fn: string, at: number, name: string,
+      pick: (l: ReturnType<typeof labels>) => number[], narrowed = false): string => {
+    const claims: SourceClaims = JSON.parse(original);
+    const l = labels(claims);
+    const f = must(claims.functions.find((g) => g.name === fn), fn);
+    const points = [...f.expressions.filter((e) => e.pos[0] === at && e.pos[1] === at + "cell".length),
+      ...f.entries.filter((e) => e.start === at).flatMap((e) => e.bindings.filter((b) => b.name === "cell"))];
+    assert.equal(points.length, 1, `one point observed in ${fn} at ${at}`);
+    for (const p of points) {
+      p.current = [["value", pick(l)]];
+      if (narrowed) p.type = [l.nullArm];
+    }
+    const path = join(cellUnion, `${name}.json`);
+    writeFileSync(path, JSON.stringify(claims));
+    return path;
+  };
+  const read = within("readLater", "=> cell.value") + "=> ".length;
+  const every = observed("readLater", read, "observed-every", (l) => l.every);
+  assert.equal(produceWith(cellUnion, every, "observed-every").status, 0);
+  const refusedAt = (claims: string, name: string, span: [number, number]) => {
+    const searched = produceWith(cellUnion, claims, name);
+    const detail = searched.stdout + searched.stderr;
+    assert.equal(searched.status, 1, detail);
+    assert.ok(detail.includes(`source incoming edge obligation at [${span[0]},${span[1]})`), detail);
+  };
+  refusedAt(observed("readLater", read, "observed-null", (l) => [l.nul]), "observed-null", [read, read + 4]);
+  assert.match(invoke(every, join(cellUnion, "evidence.json"), cellUnion), /does not justify/);
+  const written = within("writeThenRead", "return cell.value;");
+  assert.equal(produceWith(cellUnion, observed("writeThenRead", written, "entry-written", (l) => [l.nul]),
+    "entry-written").status, 0);
+  const unwritten = within("readBlock", "return cell.value;");
+  refusedAt(observed("readBlock", unwritten, "entry-unwritten", (l) => [l.nul]), "entry-unwritten",
+    [unwritten, unwritten + "return cell.value;".length]);
+  const cellRead = written + "return ".length;
+  refusedAt(observed("writeThenRead", written, "entry-null-arm", (l) => [l.nul], true), "entry-null-arm",
+    [cellRead, cellRead + 4]);
+  process.stdout.write("contents observations on a captured cell: each checked at its own point\n");
+}
+// The result of a call through a captured union of functions is not narrowed
+// to one alternative's: claimed `true`, the call is refused where it is.
+{
+  const source = readFileSync(join(callableUnion, "source.ts"), "utf8");
+  const claims: SourceClaims = JSON.parse(readFileSync(join(callableUnion, "claims.json"), "utf8"));
+  const at = source.indexOf("f(unit)");
+  must(claims.functions.flatMap((f) => f.expressions).find((e) => e.pos[0] === at && e.pos[1] === at + 7),
+    "the call's claim").type = [rowOf(claims, { boolLit: { value: true } })];
+  const forged = join(callableUnion, "forged-one-arm.json");
+  writeFileSync(forged, JSON.stringify(claims));
+  const searched = produceWith(callableUnion, forged, "forged-one-arm");
+  assert.equal(searched.status, 1);
+  assert.ok((searched.stdout + searched.stderr).includes(`source expression obligation at [${at},${at + 7})`),
+    searched.stdout + searched.stderr);
+  process.stdout.write("a union call's result narrowed to one alternative: refused at the call\n");
+}
+
+// Each tree, key and destination of the evidence has one spelling, and the
+// decoder refuses every other; a string key is never a symbol key.
+{
+  const evidence = readFileSync(join(wireCase, "evidence.json"), "utf8");
+  const once = (pattern: RegExp, spell: (...groups: string[]) => string): string => {
+    const found = must(pattern.exec(evidence), `evidence holding ${pattern}`);
+    return evidence.slice(0, found.index) + spell(...found.slice(1)) + evidence.slice(found.index + found[0].length);
+  };
+  for (const [name, text, refusal] of [
+    ["destination-without-map", once(/\{"label":(\d+),"mapping":null\}/, (l) => `{"label":${l}}`),
+      /unknown fields or missing explicit fields/],
+    ["symbol-key-extra-field", once(/"field":\{"symbol":(\d+)\}/, (s) => `"field":{"symbol":${s},"x":null}`),
+      /a symbol key has exactly the field 'symbol'/],
+    ["symbol-key-as-string", once(/"field":\{"symbol":(\d+)\}/, (s) => `"field":"${s}"`),
+      /does not justify/],
+    ["nullary-application-args", once(/"type":\[(\d+)\]/, (l) => `"type":[{"app":${l},"args":[]}]`),
+      /a nullary application is spelled as its head's number/],
+    ["application-without-args", once(/"type":\[(\d+)\]/, (l) => `"type":[{"app":${l}}]`),
+      /a tree with fields \[app\]: expected exactly \[app, args\]/],
+    ["bound-nullary-args", once(/\{"bound":(\d+),"slot":(\d+)\}/, (b, s) => `{"bound":${b},"args":[],"slot":${s}}`),
+      /an owned parameter with no arguments leaves out 'args'/],
+    ["argument-extra-field", once(/"type":\[(\d+)\]/, () => `"type":[{"arg":0,"extra":1}]`),
+      /a tree with fields \[arg, extra\]: expected exactly \[arg\]/],
+    ["unknown-parameter-kind", once(/"type":\[(\d+)\]/, () => `"type":[{"var":0,"owner":1,"kind":"pack"}]`),
+      /unknown parameter kind 'pack'/],
+    ["negative-head", once(/"type":\[(\d+)\]/, () => `"type":[-1]`), /a head is a natural number/],
+    ["array-tree", once(/"type":\[(\d+)\]/, (l) => `"type":[[${l}]]`), /a tree is a head number or an object/],
+    ["nested-meet", once(/\{"meet":\[(\{"app":\d+,"args":\[\[\d+\]\]\}),/, (a) => `{"meet":[{"meet":[${a},${a}]},`),
+      /meet with a meet as a part: parts are flat/],
+  ] as const) {
+    const path = join(wireCase, `tampered-${name}.json`);
+    writeFileSync(path, text);
+    assert.match(invoke(join(wireCase, "claims.json"), path, wireCase), refusal, name);
+  }
+  process.stdout.write("evidence spellings other than the one: refused by the decoder\n");
+}
+
+// Lowering declarations to equations, on parser documents the parser does not
+// write. A generic method's argument pack `P` beside a nested generic method
+// binding its own `P` is a pack: the inner `P` is that method's value binder.
+// The outer `P` used also as a value inside a nested method binding only `Q`
+// is refused, as no scheme states such a binder. An alias reaching itself
+// under no object, array, tuple or function type is refused where it is used.
+{
+  const span: [number, number] = [0, 0];
+  const binder = (name: string): TypeTerm => ({ k: "binder", name, span });
+  const method = (params: TypeTerm[], rest: TypeTerm | null, result: TypeTerm): Extract<TypeTerm, { k: "function" }> =>
+    ({ k: "function", effect: "unrestricted", receiver: { k: "self", span }, params, rest, result, span });
+  const scheme = (name: string, signature: Extract<TypeTerm, { k: "function" }>,
+      bound: TypeTerm | null = null): TypeTerm =>
+    ({ k: "scheme", binders: [{ name, bound, default: null, span }], signatures: [signature], span });
+  const run = (inner: TypeTerm): TypeTerm => scheme("P", method(
+    [{ k: "object", fields: [{ name: "id", optional: false, readonly: true, type: inner, span }],
+      stringIndex: null, calls: [], span }],
+    { k: "pack", of: binder("P"), span }, { k: "atom", name: "number", span }),
+    { k: "array", presence: "readable", readonly: false, element: { k: "atom", name: "unknown", span }, span });
+  const forgeDefinition = (artifacts: string, name: string, file: string, change: (d: TypeDefinition) => void) => {
+    const fragment: Ast = JSON.parse(readFileSync(join(artifacts, "fragment.json"), "utf8"));
+    change(must(fragment.declarations.definitions.find((d) => d.declaration.name === name), name));
+    const path = join(artifacts, `${file}.json`);
+    writeFileSync(path, JSON.stringify(fragment));
+    const searched = produceWith(artifacts, join(artifacts, "claims.json"), file, path);
+    return { status: searched.status, detail: searched.stdout + searched.stderr };
+  };
+  const withRun = (inner: TypeTerm) => (d: TypeDefinition) => {
+    assert(d.expression.k === "object");
+    must(d.expression.fields[0], "Runner's method").type = run(inner);
+  };
+  const shadowed = forgeDefinition(schemeHost, "Runner", "forged-shadowed-pack",
+    withRun(scheme("P", method([binder("P")], null, binder("P")))));
+  assert.equal(shadowed.status, 0, shadowed.detail);
+  const mixed = forgeDefinition(schemeHost, "Runner", "forged-mixed-pack",
+    withRun(scheme("Q", method([binder("Q"), binder("P")], null, binder("Q")))));
+  assert.equal(mixed.status, 1);
+  assert.match(mixed.detail, /Runner: generic contract at \[0,0\]: a binder used as both a value and an argument pack is not represented/);
+  const unguarded = forgeDefinition(nonRegular, "Box", "forged-unguarded-alias", (d) => {
+    assert(d.expression.k === "object");
+    const next = must(d.expression.fields.find((f) => f.name === "next"), "Box's next").type;
+    assert(next.k === "union");
+    d.expression = { k: "union", parts: [{ k: "parameter", index: 0, span }, must(next.parts[0], "Box<[T]>")], span };
+  });
+  assert.equal(unguarded.status, 1);
+  assert.match(unguarded.detail, /unguarded alias cycle through Box: a recursive alias must reach itself through an object, array, tuple or function type/);
+  process.stdout.write("binder roles and unguarded aliases in forged declarations: lowered or refused by name\n");
+}
+
+// What the pipeline's outcomes above say, run as JavaScript: each positive's
+// result meets its claim, and each negative's contradicts it, or throws.
+for (const [file, expression, expected] of [
+  ["callable-bag-union", "[readWrite(true, true), readWrite(false, true)].join()", "false,false"],
+  ["invalid-callable-bag-union", "wrong(false, true)", false],
+  ["recursive-callable", "selfLoop()", false],
+  ["invalid-recursive-callable", "wrong()", true],
+  ["non-regular-alias", "first({ v: 1, next: null })", 1],
+  ["invalid-non-regular-alias", "wrong({ v: 1, next: null })", null],
+  ["assertion-snapshot", "assertedSnapshot({ value: 3 })", 3],
+  // A closure reads a captured cell when it runs, and sees its own write.
+  ["invalid-closure-graph-captured-cell", "counter()", null],
+] as const)
+  assert.equal(runExample(file, expression), expected, file);
+// A class has no plain call: calling it throws.
+assert.throws(() => runExample("invalid-class-as-function", "go()"), /cannot be invoked without 'new'/);
+process.stdout.write("examples run as JavaScript: results as their outcomes say\n");
 
 // The dynamic-key rule is bound to the actual indexed term, not interchangeable
 // with the static-field rule, even when both promise T | undefined.

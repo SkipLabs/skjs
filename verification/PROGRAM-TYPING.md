@@ -521,9 +521,8 @@ Here $\lambda\vec x.t$ denotes source function creation, graph code whose
 body is $t$'s graph (`funGraph`): it allocates an object before any invocation. `let` has its own operational constructor, `letE a b`. It evaluates `a`,
 then substitutes the resulting value into `b` in one nonallocating step.
 Neither a function value nor a function-type graph label is needed. The
-producer and consumer use this constructor directly; lambda application no
-longer has a special binding-certificate route.
-[LetTests.lean](lean/Verification/Model/Tests/LetTests.lean) guards the let rule: binding is nonallocating, scopes only its body, and has its own certificate rule.
+producer and consumer use this constructor directly. [ExecutionModelTests.lean](lean/Verification/Model/Tests/ExecutionModelTests.lean) shows the machine
+taking no step of the body while the initializer is stuck.
 
 A class value is construct-only code: JavaScript gives a function object
 `[[Call]]` and `[[Construct]]` separately, and a class has only the second,
@@ -551,7 +550,10 @@ construct-only graph code:
      {\Gamma\vdash_G \mathsf{new}\ f(\vec a):B}
 ```
 
-[ConstructTests.lean](lean/Verification/Model/Tests/ConstructTests.lean) guards the split: `new` runs a class and not an arrow, and a plain call runs no class.
+A plain call of a class throws in JavaScript: `ocaml-producer/test.mts` runs
+`invalid-class-as-function` under Node beside the pipeline's refusal of it.
+[ExecutionModelTests.lean](lean/Verification/Model/Tests/ExecutionModelTests.lean) shows the model's `new` running no call-only code, as JavaScript's `new`
+of an arrow throws.
 
 These are `ctorGraph` (`ctorsT_of_graph`) and `construct`. As a call may,
 `new` may omit trailing positions $\vec U$ whose contracts admit `undefined`:
@@ -1818,7 +1820,8 @@ closure control-flow slice. It does not retain observations of mutable propertie
 The finite-label split is a source-profile strategy, not a new semantic rule for
 arbitrary mixed-shape type labels.
 
-[BranchRefinementTests.lean](lean/Verification/Model/Tests/BranchRefinementTests.lean) guards tag slices and observed refinement: mixed labels stay intact, and only an existing slot is refined.
+[ExecutionModelTests.lean](lean/Verification/Model/Tests/ExecutionModelTests.lean) shows the model's `in` finding a key on the prototype chain, which an
+instance does not own.
 
 #### Statement forms as graphs
 
@@ -1856,8 +1859,9 @@ kind, continuation or rule; each is a shape of ordinary nodes and edges.
   has given it a name of its own ([shadowing](#derived-source-forms)), so
   the lowering never meets two bindings of one name.
 
-[WhileSourceTests.lean](lean/Verification/Model/Tests/WhileSourceTests.lean) traces a lowered `while` loop: the back edge drops the alias local and keeps the closure and cell in place.
-[LoopTransferTests.lean](lean/Verification/Model/Tests/LoopTransferTests.lean) traces lowered `break` and `continue`: the nearest loop's exit, and the retest after the body's write.
+[LoweringTraceTests.lean](lean/Verification/Model/Tests/LoweringTraceTests.lean) runs lowered loops: a `while` loop's back edge drops the alias local
+and keeps the closure and cell in place, `break` reaches the nearest loop's
+exit, and `continue` retests the condition after the body's write.
 
 ## State
 
@@ -2276,28 +2280,17 @@ so the read is of a location of the object whichever arm it has, and its link
 names that location.
 The same allocation proof frames old facts and records the fresh bag, and the
 read proof records links with the object's actual descriptor.
-[CallableMutationTests.lean](lean/Verification/Model/Tests/CallableMutationTests.lean) adds an actual mutating invocation: a closure captures a neutral bag and writes
-`true` after a `false` read has been saved. The saved value still verifies as
-`false`; a fresh read verifies as Boolean and executes to `true`, while a
-requested `false` contract fails. Both plain and callable allocations follow
-this path. Forged call outputs retaining old cell facts or read links are
-rejected by the consumer. Exact execution proofs distinguish the changed heap
-from the unchanged saved value.
-[CallableReentryTests.lean](lean/Verification/Model/Tests/CallableReentryTests.lean) checks an active function calling a callback that mutates its bag and reenters
-that same function. A terminating inner callback ends the nesting. The outer
-frame can return its saved `false` or reread the changed `true`; exact execution
-proofs cover both choices and both bag descriptors. The graph producer and JSON
-consumer accept the Boolean contracts and reject incompatible callbacks and
-unjustified singleton contracts. Nested invocation uses the existing closure,
-let-binding, and heap rules without a separate reentry mechanism.
-[CallableOrderTests.lean](lean/Verification/Model/Tests/CallableOrderTests.lean) checks effectful creation followed by invocation. The initializer writes a
-captured bag and allocates an intermediate object before the callable is
-allocated; the argument then overwrites the bag before the body reads it.
-The exact execution and heap order are proved for both captured-object
-shapes. A stuck initializer blocks argument effects, and a stuck argument
-blocks the body. Effectful creation cannot reuse value-slot allocation,
-ordinary function-creation, or purity evidence to retain stale heap facts.
-The existing JSON pipeline checks the complete expressions.
+Nested invocation uses the existing closure, let-binding and heap rules, with
+no separate reentry mechanism. [ExecutionModelTests.lean](lean/Verification/Model/Tests/ExecutionModelTests.lean) runs the machine on these calls, for a
+plain and a callable bag: a closure writes `true` into a captured bag after a
+`false` read was saved, and the saved value stays `false` while a fresh read
+gives `true`; an active function's callback mutates its bag and reenters it,
+and the outer frame keeps its saved read; an initializer's write and
+allocation precede the callable's allocation, and the argument's write
+precedes the body's read, a stuck initializer blocking the argument and a
+stuck argument the body. Under Node, `invalid-closure-graph-captured-cell`
+returns the `null` its closure wrote, where the pipeline refuses its number
+claim.
 
 `pureTerm` includes values, variables, tests of pure terms, and conditionals
 whose condition and both arms are pure. It excludes calls, reads, writes and
@@ -2356,7 +2349,7 @@ the key is present (`linkFacts_holds`):
 \qquad
 \frac{y=\mathsf{string}\quad y\equiv s}{y=\{s\}}.
 ```
-[NumericEqualityTests.lean](lean/Verification/Model/Tests/NumericEqualityTests.lean) compares `numberEqual` with IEEE equality on NaN, infinities and adjacent doubles.
+[ExecutionModelTests.lean](lean/Verification/Model/Tests/ExecutionModelTests.lean) compares `numberEqual` with IEEE equality on NaN, infinities and adjacent doubles.
 A slot equality $x=y$ permits a checked write through either alias to
 establish the new contents for both, as the
 [write rule](#the-reference-operations) above states; every other cell
@@ -2534,12 +2527,13 @@ extended source claims are outside these results.
 
 ### Derived source forms
 
-[BooleanConditionalTests.lean](lean/Verification/Model/Tests/BooleanConditionalTests.lean) checks the ordinary conditional through direct
-recipes. Its execution traces cover both outcomes after an
-alias write and a condition that writes then reads a cell. Invalid condition
-types, invalid arms, omitted premises and exchanged arms are rejected. This is
-calculus coverage. Source closure blocks now support terminal branches with both
-arms returning, including nested branches and checked entry refinements.
+A condition of a Boolean literal type takes only its arm (`ifKnown`): the
+pipeline case `known-condition` reaches the rule, and `ocaml-producer/test.mts`
+claims its result at that arm alone, a claim refused for
+`invalid-known-condition`, whose condition a closure resets. [ExecutionModelTests.lean](lean/Verification/Model/Tests/ExecutionModelTests.lean) shows the
+machine keeping a known condition's write. Source closure blocks support
+terminal branches with both arms returning, including nested branches and
+checked entry refinements.
 Source ternaries reuse these rules and the existing primitive-tag union elimination.
 Their own expression claim supplies the result type; both arm claims are checked
 under the corresponding refined context. This introduces no additional rule or
@@ -3070,7 +3064,7 @@ where $h_i$'s type admits $\mathsf{Undef}$ when there is a default, so a
 caller may omit it. A closure parameter's default stays the closure's own
 (`parameterOrder`), and its pattern is a `destructure` first in the body.
 
-[ObjectPatternTests.lean](lean/Verification/Model/Tests/ObjectPatternTests.lean) traces a lowered object pattern: the initializer held once, properties read in order, defaults run in pattern order.
+[LoweringTraceTests.lean](lean/Verification/Model/Tests/LoweringTraceTests.lean) runs a lowered object pattern: the initializer held once, properties read in order, defaults run in pattern order for missing properties only.
 
 ### Mutable bindings and module constants
 
@@ -4604,40 +4598,39 @@ fields. A quantified ordinary function may name its binder as its receiver; its
 body is checked once under the binder and each call is an instance at the
 receiver it passes. The witnesses are `tests/callables/methods.ts`,
 `call-objects.ts`, `apply.ts` and `generic-receivers.ts`.
-[CallableRecursiveTests.lean](lean/Verification/Model/Tests/CallableRecursiveTests.lean) checks the recursive contract `R = callable(null | R; Boolean → Boolean)`:
-a function is written into its own bag, read back, narrowed, and invoked.
-A second graph captures the object before that write and calls the getter
-afterward, exercising a higher-order result and a delayed heap read. Both graphs
-use the existing JSON producer and consumer. The first has kernel-checked
-certificate acceptance, safety at every budget, descriptor coherence for every
-finite run, and an exact terminating execution. Independent recursive labels
-can be related by cyclic subtype evidence, while invariant widening and an
-unguarded nullable call are rejected. These are regressions over the existing
-rules; no recursive-callable special case or additional semantic axiom is needed.
+The pipeline case `recursive-callable` holds the recursive contract
+`R = callable(null | R; Boolean → Boolean)`: a function is written into its
+own bag, read back, narrowed and called, and passed and returned at `R`;
+`invalid-recursive-callable` refuses a view of the bag that also admits
+`true`, as the bag's field is invariant. These use the existing rules; no
+recursive-callable special case or additional semantic axiom is needed.
 The safety contract guarantees progress, not termination.
 The existing
 `refT` and graph reference clauses still mean plain objects. A callability-neutral
 bag view can be expressed as `refs P Ps | callable P Ps []` using two graph
 labels. `CallableConjunctions.neutral_iff` proves that this union is precisely
 the bag conjunction on scoped values, whatever code they carry; it forgets
-invocation promises without changing the object. [NeutralBagTests.lean](lean/Verification/Model/Tests/NeutralBagTests.lean) supplies checked `unionVar` derivations
-for reads and writes through this view. Proof search first tries a single
+invocation promises without changing the object. The pipeline case
+`callable-bag-union` reads and writes a field through a union of a record and
+a function carrying it, and `invalid-callable-bag-union` refuses a write the
+function's bag does not admit. Proof search first tries a single
 constructor view, then splits an explicitly union-typed receiver variable for
 reads, writes, and calls, using the existing `unionVar` evidence. Every alternative
 must check; a null alternative cannot be ignored. Both allocation shapes run
 through the same read/write graph and JSON protocol without a runtime tag
 branch. The view makes no invocation promise.
-[CallableUnionTests.lean](lean/Verification/Model/Tests/CallableUnionTests.lean) checks calls through unions of known signatures with different bags and result
-types, including erased property views. Every alternative must accept the
-actual argument and produce a result covered by the requested type. This does
+A call through a union of known signatures needs every alternative to accept
+the actual argument and produce a result covered by the requested type. The
+producer states no claim for a call through a union of functions carrying
+different fields (`callable-bag-union-call-refused`). This does
 not invent a signature from `typeof`, pick a successful alternative, or require
 a common arrow label in the graph. The producer emits ordinary `unionVar`
 evidence; the consumer and wire format are unchanged.
-[SourceCallableUnionTests.lean](lean/Verification/Model/Tests/SourceCallableUnionTests.lean) checks the corresponding source-closure path for unions of primitive-only
-function signatures, on the pipeline case `callable-union-capture`. The direct
-recipe saves the callee and argument in order, then checks each alternative at
-the saved callee slot and joins the signature results. The source consumer
-checks supplied result claims and refuses a narrowed one.
+The pipeline case `callable-union-capture` is the source-closure path for
+unions of primitive-only function signatures. The direct recipe saves the
+callee and argument in order, then checks each alternative at the saved
+callee slot and joins the signature results; `ocaml-producer/test.mts`
+refuses a result claim narrowed to one alternative at the call.
 Single-arrow call recipes keep their existing form.
 Explicit normalized source claims also exercise unions of overloaded functions:
 the applicable signature occurs at different positions in the two alternatives,
@@ -4691,19 +4684,19 @@ RHS at the shifted position, writes once, and returns that saved RHS. Corrupting
 the evidence to use the Boolean seed capture instead of the Boolean parameter
 fails, even though their types agree. Wrong receiver and narrowed RHS/result
 claims also fail production and independent consumption.
-[SourceCellUnionTests.lean](lean/Verification/Model/Tests/SourceCellUnionTests.lean), on the pipeline cases `cell-union-capture` and
-`invalid-cell-union-write`, checks reads and writes through unions of locally
+The pipeline cases `cell-union-capture` and `invalid-cell-union-write` check
+reads and writes through unions of locally
 allocated invariant cells inside source closures. Reads join possible contents. Writes check the saved
 RHS against every alternative, evaluate each operand once, and return that RHS
 as the source assignment value. Direct recipes need no expression-search fuel.
-A write accepted by only one alternative and an unjustifiably narrow read
-claim fail the source consumer. Captured current-content assertions produce a
-located obligation over the union of invariant contents; broad observations
-verify, while narrowing to the allocation's initial value fails. The external-cell
-parameter restriction remains in force. Statement-entry regressions cover nested
-closures after writes, preserving named captures alongside anonymous evaluation
-slots. An entry environment that narrows the captured storage contract fails its
-own obligation even when its separate contents observation is provable.
+A write accepted by only one alternative fails the source consumer.
+`ocaml-producer/test.mts` adds current-content assertions to the producer's
+claims, each a located obligation over the union of invariant contents: a
+broad observation verifies at the closure's read, one narrowed to the
+allocation's initial value fails there, a null-only statement-entry
+observation holds after the closure writes `null` and fails where nothing
+wrote it, and an entry environment that narrows the captured storage contract
+fails its own obligation even when its contents observation holds.
 Typed reads retain current heap
 facts and read links when every alternative has the same invariant operand.
 The regression keeps a known `false` fact about another cell across a neutral

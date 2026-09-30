@@ -505,9 +505,14 @@ to parameters and quantified variables by position.
 | Well-formedness of equations | [Types/EquationValidator.lean](lean/Verification/Model/Types/EquationValidator.lean) |
 | Term spelling of trees | [Types/EquationJson.lean](lean/Verification/Model/Types/EquationJson.lean) |
 | Lowering source declarations (5) | [Source/EquationLowering.lean](lean/Verification/Model/Source/EquationLowering.lean) |
-| Validator refusals and tree round trips | [Tests/EquationTreeTests.lean](lean/Verification/Model/Tests/EquationTreeTests.lean) |
-| Lowering on parser output, with its controls (5) | [Tests/EquationLoweringTests.lean](lean/Verification/Model/Tests/EquationLoweringTests.lean) |
-| Binder roles in lowering (5) | [Tests/DeclarationBinderTests.lean](lean/Verification/Model/Tests/DeclarationBinderTests.lean) |
+
+The pipeline cases `non-regular-alias` and `invalid-non-regular-alias` lower an
+alias applied to a longer tuple at each level to one invariant head.
+`ocaml-producer/test.mts` refuses by name what the parser does not write: every
+spelling of a tree but its one and a nested meet, in tampered evidence; a
+binder used both as an argument pack and as a value, and an unguarded alias,
+in forged declarations, where a nested method's own binder of the same name
+is accepted.
 
 The wire spellings are in [SOURCE-CLAIMS](SOURCE-CLAIMS.md#encoding) and
 [REQUEST-PROTOCOL](REQUEST-PROTOCOL.md). Progress is recorded in
