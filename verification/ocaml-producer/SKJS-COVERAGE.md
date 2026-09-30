@@ -10,7 +10,7 @@ confirmation).
 **2,466 of 2,674 SKJS-accepted units verify (92.2%); 1,836 of 2,026
 accepted functions (90.6%).** 295 of the 377 files with an accepted unit
 verify entirely. There are 88 principled refusals, 10 registered SKJS-unsound
-units and 110 gaps (3 of them under reasons no class entry matches,
+units and 110 gaps (2 of them under reasons no class entry matches,
 `summary.unmatchedReasons`); no refusal is unexplained by the automatic
 classifier.
 

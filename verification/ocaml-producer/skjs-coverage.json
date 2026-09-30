@@ -245,6 +245,7 @@
    "files": 1
   }
  },
+ "exhausted": 0,
  "reachedButRefused": 105,
  "byClass": {
   "verified": 2466,
