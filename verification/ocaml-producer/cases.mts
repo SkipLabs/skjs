@@ -768,6 +768,8 @@ export const cases: Case[] = [
     /source expression obligation at \[342,373\)/),
   { ...negative("invalid-explicit-type-args-value-import", "`new` constructs the instance its explicit type arguments name"),
     project: "verification/ocaml-producer/imports-project" },
+  { ...negative("invalid-sum-record-collection", "a record-valued EagerCollection is outside its V extends Json bound, located at the requesting annotation", /source direct obligation at \[377,406\):.*does not establish its declared bound/),
+    project: "verification/ocaml-producer/upstream" },
   negative("invalid-explicit-type-argument-bound", "an explicit type argument must satisfy its bound",
     /cannot establish number ≤ string/),
   negative("invalid-tuple-constraint", "a tuple literal built at a binder's tuple bound must meet it",

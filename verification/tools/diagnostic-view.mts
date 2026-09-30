@@ -190,7 +190,7 @@ const recordType = (table: Table, labels: unknown) => typeText(table.types, labe
 function directView(ob: Table, judgment: DirectJudgment) {
   const conclusion = `${recordType(ob,judgment.actual)} ≤ ${recordType(ob,judgment.expected)}`;
   const assumptions: string[] = [];
-  return {title:"Subtype obligation", assumptions, conclusion,
+  return {assumptions, conclusion,
     summary:`The required subtype relation was not established: ${conclusion}.`};
 }
 

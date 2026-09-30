@@ -369,7 +369,7 @@ function readOutcome(value: unknown): Outcome {
       value.functions.every((f) => typeof f === "string") && "initialization" in value &&
       Array.isArray(value.initialization) && value.initialization.every(isSpan))
     return { status, artifacts, phase, functions: value.functions, initialization: value.initialization };
-  if ((status === "unsupported" || status === "unverified" || status === "error") &&
+  if ((status === "unsupported" || status === "unverified" || status === "exhausted" || status === "error") &&
       "detail" in value && typeof value.detail === "string")
     return { status, artifacts, phase, detail: value.detail };
   throw Error("not an outcome");

@@ -11,7 +11,7 @@ import { overlay as arrayOverlay } from "../tools/array-prototype.mts";
 import type { Ast } from "../tools/fragment.mts";
 import type { TypeDefinition, TypeTerm } from "../tools/declaration-types.mts";
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
-import { check, verifier } from "./check.mts";
+import { check, checkApart, verifier } from "./check.mts";
 import { cases } from "./cases.mts";
 import { expectOutcome, pooled, runCase } from "./run-cases.mts";
 import type { Row, SourceClaims } from "../tools/source-claims.mts";
@@ -206,6 +206,8 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   }
   assert.equal(check(positive, undefined, false, "ocaml", 0).status, "exhausted",
     "the source runner distinguishes exhausted work from a completed refusal");
+  assert.equal((await checkApart(positive, undefined, false, "ocaml", 0)).status, "exhausted",
+    "the subprocess outcome decoder preserves exhaustion");
   assert.equal(check(negative).status, "unverified", "the last field's type is incompatible");
 }
 // An instance bound cannot cite the comparison currently being established.
@@ -486,18 +488,6 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   assert.throws(() => parseFile(changedCopy, false, upstreamConfig, jsonPath),
     /gate:.*TypeScript client source bytes differ/);
   process.stdout.write("a snapshot other than the file TypeScript resolves: refused\n");
-}
-
-{
-  const recordCollection = check(join(here, "examples/invalid-sum-record-collection.ts"), upstreamConfig);
-  assert.equal(recordCollection.status, "unverified", JSON.stringify(recordCollection));
-  assert.match(recordCollection.detail, /the type argument for EagerCollection's "V" .* does not establish its declared bound/);
-  const failedBound = readDiagnostic(recordCollection.detail);
-  assert(failedBound?.kind === "direct-obligation", recordCollection.detail);
-  assert.equal(failedBound.outcome.kind, "not-established");
-  assert.equal(failedBound.sourceMap.role, "binding-annotation");
-  assert.equal(failedBound.judgment.kind, "subtyping");
-  process.stdout.write("an imported declaration applied outside its bound: refused\n");
 }
 
 {

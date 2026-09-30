@@ -107,7 +107,7 @@ function examine(file: string) {
       const read = (name: string) => fs.readFileSync(at(name), "utf8");
       if (fs.existsSync(at("tsc-verdicts.json")))
         accepted = new Map(Object.entries(JSON.parse(read("tsc-verdicts.json"))));
-      if (outcome.status === "verified" || outcome.status === "unverified") {
+      if (outcome.status === "verified" || outcome.status === "unverified" || outcome.status === "exhausted") {
         // The run named its snapshot; these name the file it is a snapshot of.
         const claims: SourceClaims = { ...JSON.parse(read("claims.json")), file };
         const results = outcome.status === "verified" ? null
