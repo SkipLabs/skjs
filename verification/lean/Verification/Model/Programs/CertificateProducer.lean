@@ -236,7 +236,7 @@ validates the table. -/
 @[nospecialize] def matchSig [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (bs : List ι) (V : FreeMap ι) (fuel : Nat)
     (st : InstState ι) (κ : Ctx ι) (p q : Arrow (List ι)) :
     Option (InstState ι) := do
-  if p.effect != q.effect || p.arguments.length != q.arguments.length then none
+  if !p.effect.covers q.effect || p.arguments.length != q.arguments.length then none
   -- A scheme receiver admitting every value admits the target's
   -- (`instSig`): it is not matched.
   let pairs := if expand G p.receiver = [.top] then (p.result :: p.arguments).zip (q.result :: q.arguments)
@@ -246,7 +246,7 @@ validates the table. -/
 @[nospecialize] def matchRest [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (bs : List ι) (V : FreeMap ι) (fuel : Nat)
     (st : InstState ι) (κ : Ctx ι) (p q : RestArrow (List ι)) :
     Option (InstState ι) := do
-  if p.effect != q.effect || p.arguments.1.length != q.arguments.1.length then none
+  if !p.effect.covers q.effect || p.arguments.1.length != q.arguments.1.length then none
   let pairs := if expand G p.receiver = [.top] then (p.arguments.2 :: p.result :: p.arguments.1).zip (q.arguments.2 :: q.result :: q.arguments.1)
     else (p.receiver :: p.arguments.2 :: p.result :: p.arguments.1).zip (q.receiver :: q.arguments.2 :: q.result :: q.arguments.1)
   pairs.foldlM (fun st xy => matchRow G bs V fuel st κ xy.1 xy.2) st
@@ -322,8 +322,9 @@ giving each binder its instance. Untrusted: `compareInstArrsWith` validates it. 
       s.variadic.findSome? fun p => matchRest G s.binders V fuel st κ p q) st
   let first ← each [] {}
   -- A binder read only through meet rows: an instance whose meet with the
-  -- other parameters' instances and the row's clauses is the clause row it
-  -- was matched to, among that row and the target's operands.
+  -- other parameters' instances and the row's clauses is the target row.
+  -- The target itself is a candidate even when it is opaque; image equality
+  -- and bound validation decide whether that proposal establishes inclusion.
   let targetOps := (L.flatMap Arrow.operands ++ M.flatMap RestArrow.operands).eraseDups
   let throughMeet (b : ι) : Option (Ty ι) := first.meets.findSome? fun (qs, cs, j) =>
     if !qs.contains b then none else ([j] :: targetOps).find? fun U =>
@@ -331,9 +332,9 @@ giving each binder its instance. Untrusted: `compareInstArrsWith` validates it. 
           (first.found.lookup q).orElse fun _ => if s.binders.contains q then none else some [q]) with
       | some Us =>
         let Ls := Us.map (PositiveRules.clausesOf G) ++ [cs]
-        Us.all G.plainTy &&
+        U == [j] || (Us.all G.plainTy &&
           (PositiveRules.sameClauses (G j) (PositiveRules.meetMany Ls) ||
-            PositiveRules.sameClauses (G j) (PositiveRules.meetMany Ls.reverse) || U == [j])
+            PositiveRules.sameClauses (G j) (PositiveRules.meetMany Ls.reverse)))
       | none => false
   let θs := s.binders.map fun b => ((first.found.lookup b).orElse fun _ => throughMeet b).getD [b]
   let κ₀ := s.binders.zip θs
@@ -356,8 +357,8 @@ def instanceFuel : Nat := 64
 /-- A scheme row below an arrow type. -/
 @[nospecialize] def instantiationUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (fuel : Nat) (A B : Ty ι) :
     Option (PositiveCertificates.Instance ι) :=
-  match A, expand G B with
-  | [i], [.arrs L M] =>
+  match A, PositiveCertificates.instanceTarget G B with
+  | [i], some (L, M, _) =>
     match G.schemes i with
     | some s => instanceForUsing G images fuel s L M
     | none => none

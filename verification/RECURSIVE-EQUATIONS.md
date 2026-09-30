@@ -373,17 +373,30 @@ instance as a known row: a prototype's quantified member, at the object as
 receiver, covering a target's method. Soundness is Lemma 3 with the bound
 premises ([POSITIVE-TYPES](POSITIVE-TYPES.md#instances-of-a-scheme-row)).
 
+[Instance elimination and effect subsumption](POSITIVE-TYPES.md#instances-of-a-scheme-row)
+compose with intersection introduction. A target intersection requires inclusion in each of
+its components, so instantiating its arrow component also requires inclusion
+in every opaque component. This is the usual intersection introduction rule:
+
+```math
+\frac{S\le A\qquad S\le P_1\qquad\cdots\qquad S\le P_k}
+     {S\le A\cap P_1\cap\cdots\cap P_k}
+```
+
 The executable comparison operation discharges bound premises with the same
 rules as its enclosing comparison, including quantified instantiation. The
 structural kernel uses the equation representation's validated variance entries
-and binder renaming. `compareInstArrsWith_sound` proves the instance rule from
-sound bound comparisons; `compareUsingCore_sound` proves those comparisons at
+and binder renaming. `instanceTarget_value` proves intersection introduction
+for an instantiated arrow and its opaque parts. `compareInstArrsWith_sound`
+proves the instance rule from sound bound comparisons; `compareUsingCore_sound` proves those comparisons at
 every parameter assignment. Instantiated prototype members are validated before
 structural coverage uses them. A bound query repeated on the current instance
 path may use a checked structural derivation; it cannot assume its unfinished
 instance. Its structural recurrence requires the guarded family rule.
 
-Dependency discovery has an execution budget measured in frontier rounds.
+Dependency and arrow-evidence discovery read quantified rows directly and
+through their opaque intersection components. Dependency discovery has an
+execution budget measured in frontier rounds.
 Each frontier can contain arbitrarily many comparisons. The same budget bounds
 descent through instance-bound comparisons. At the descent boundary, a
 structural derivation can establish the premise; otherwise the unsearched

@@ -1175,11 +1175,16 @@ and the target's receivers, its signatures against the target's schemes'). -/
       (pos p).flatMap fun x => (pos q).flatMap fun y => [(x, y), (y, x)]
   | _, _ => []
 
+/-- Quantified rows supplied directly or as opaque components of a meet.
+Dependency and arrow discovery read the same components as `MeetOpaque`. -/
+@[nospecialize] def schemeComponents [DecidableEq ι] (G : NormalGraph ι) (X : List ι) : List ι :=
+  (X ++ (X.filter G.meetRow).flatMap (meetParts G)).filter (fun i => (G.schemes i).isSome) |>.eraseDups
+
 /-- The pairs a row's coverage compares: its clauses' against the target's,
 and a scheme's signatures against a target scheme's binding the same rows. -/
 @[nospecialize] def demandPairs [DecidableEq ι] (G : NormalGraph ι) (X Y : List ι) : List (List ι × List ι) :=
   (clausesOf G X).flatMap (fun a => (clausesOf G Y).flatMap (clausePairs G X a)) ++
-  X.flatMap fun i => Y.flatMap fun j => match G.schemes i, G.schemes j with
+  (schemeComponents G X).flatMap fun i => (schemeComponents G Y).flatMap fun j => match G.schemes i, G.schemes j with
     | some s, some s' => if s.binders = s'.binders then
         signaturePairs s.signatures s'.signatures ++ restPairs s.variadic s'.variadic else []
     | _, _ => []
@@ -1223,7 +1228,7 @@ through `Var`, else the pair itself. -/
 renaming the target's binders to the source's. -/
 @[nospecialize] def renamedPairs [DecidableEq ι] (G : NormalGraph ι) (r : Renaming G) (X Y : List ι) :
     List (List ι × List ι) :=
-  X.flatMap fun i => Y.flatMap fun j => match G.schemes i, G.schemes j with
+  (schemeComponents G X).flatMap fun i => (schemeComponents G Y).flatMap fun j => match G.schemes i, G.schemes j with
     | some s, some s' =>
       if s.binders = s'.binders || s.binders.length != s'.binders.length then [] else
       let σ := s'.binders.zip (s.binders.map fun p => [p])
@@ -1274,7 +1279,7 @@ the source's. -/
       | .arrs L S, .arrs M _ | .callable _ _ L S, .arrs M _ | .callable _ _ L S, .callable _ _ M _ =>
         arrows L S M
       | _, _ => []) ++
-    (X.flatMap fun i => Y.flatMap fun j => match G.schemes i, G.schemes j with
+    ((schemeComponents G X).flatMap fun i => (schemeComponents G Y).flatMap fun j => match G.schemes i, G.schemes j with
       | some s, some s' =>
         let renamed := match sub with
           | some r =>
@@ -1580,14 +1585,61 @@ theorem compareInstArrsWith_sound [DecidableEq ι] {G : NormalGraph ι} {images 
     · cases h
   · cases h
 
-/-- The instance rule against an explicit target arrow type, using the
-comparison operation supplied for its bounds. -/
+/-- An arrow contract, together with every opaque part of its target meet. -/
+@[nospecialize] def instanceTarget (G : NormalGraph ι) (T : List ι) :
+    Option (Ops ι × List (RestArrow (List ι)) × List ι) :=
+  match expand G T with
+  | [.arrs L M] => some (L, M, [])
+  | _ => match T with
+    | [j] =>
+      if G.meetRow j && (meetParts G j).all G.partRow then
+        match meetClauses G j with
+        | [.arrs L M] => some (L, M, meetParts G j)
+        | _ => none
+      else none
+    | _ => none
+
+/-- The target is established by its arrow contract and each opaque meet part. -/
+theorem instanceTarget_value [DecidableEq ι] {G : NormalGraph ι} {T L M parts}
+    (h : instanceTarget G T = some (L, M, parts)) (η : MixedAssignment ι) (n : Nat) (W : WorldT n) (v : Val)
+    (ha : mixedSem G η (.arrs L M) n W v)
+    (hp : ∀ q ∈ parts, mixedMeaning G η [q] n W (.inl v)) :
+    mixedMeaning G η T n W (.inl v) := by
+  unfold instanceTarget at h
+  split at h
+  · cases h
+    exact mixed_of_expand (by assumption) ha
+  · split at h
+    · rename_i j hT
+      split at h
+      · rename_i hm
+        split at h
+        · rename_i L' M' hclauses
+          cases h
+          simp only [Bool.and_eq_true, List.all_eq_true] at hm
+          refine ⟨j, List.mem_singleton_self _, (meet_row_iff hm.1).mpr ⟨?_, ?_⟩⟩
+          · intro q hq
+            obtain ⟨r, hr, hv⟩ := hp q hq
+            cases List.mem_singleton.mp hr
+            exact (part_denote (hm.2 q hq)).mp hv
+          · exact ⟨.arrs L M, by rw [hclauses]; exact List.mem_singleton_self _, ha⟩
+        · cases h
+      · cases h
+    · cases h
+
+/-- Instantiate the arrow portion of a target and independently establish every
+opaque meet part through the enclosing comparison operation. -/
 @[nospecialize] def compareInstWith [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (compare : List ι → List ι → ComparisonResult α) (empty : α)
     (S T : List ι) (c : Instance ι) : ComparisonResult (List α) :=
-  match expand G T with
-  | [.arrs L M] => compareInstArrsWith G images compare empty S L M c
-  | _ => .notEstablished
+  match instanceTarget G T with
+  | some (L, M, parts) =>
+    match compareInstArrsWith G images compare empty S L M c with
+    | .established bounds =>
+      (ComparisonResult.collect (fun q => compare S [q]) parts).map fun partials => bounds ++ partials
+    | .notEstablished => .notEstablished
+    | .exhausted rounds visited => .exhausted rounds visited
+  | none => .notEstablished
 
 theorem compareInstWith_sound [DecidableEq ι] {G : NormalGraph ι}
     {images : InstanceImageCheck G} {compare : List ι → List ι → ComparisonResult α} {empty S T c}
@@ -1597,25 +1649,35 @@ theorem compareInstWith_sound [DecidableEq ι] {G : NormalGraph ι}
     ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) := by
   unfold compareInstWith at h
   split at h
-  · rename_i L M hT
-    have values := compareInstArrsWith_sound hc h
-    rw [compareInstArrsWith_accepted] at h
-    split at h
-    · rename_i i
-      split at h
-      · rename_i s hs
-        have hp : G.params i = false := by
-          simp only [Bool.and_eq_true, Bool.not_eq_true'] at h
-          exact h.1.1.1.1.1.1
-        intro η n W x hx
-        cases x with
-        | inl v => exact mixed_of_expand hT (values η n W v hx)
-        | inr vs =>
-          have hk : G.parameterKinds i = none := by simpa [NormalGraph.params] using hp
-          have hc : G i = [] := by simp [NormalGraph.clauses, NormalGraph.plain, hs]
-          simp [mixedMeaning, mixedParameters, graphArguments, hk, hc] at hx
-      · cases h
-    · cases h
+  · rename_i L M parts htarget
+    cases checked : compareInstArrsWith G images compare empty S L M c with
+    | notEstablished => simp only [checked, ComparisonResult.accepted] at h; cases h
+    | exhausted rounds visited => simp only [checked, ComparisonResult.accepted] at h; cases h
+    | established bounds =>
+      rw [checked, ComparisonResult.accepted_map, ComparisonResult.accepted_collect] at h
+      have ha : (compareInstArrsWith G images compare empty S L M c).accepted = true := by
+        rw [checked]; rfl
+      have values := compareInstArrsWith_sound hc ha
+      rw [compareInstArrsWith_accepted] at ha
+      split at ha
+      · rename_i i
+        split at ha
+        · rename_i s hs
+          have hi : G.params i = false := by
+            simp only [Bool.and_eq_true, Bool.not_eq_true'] at ha
+            exact ha.1.1.1.1.1.1
+          intro η n W x hx
+          cases x with
+          | inl v =>
+            apply instanceTarget_value htarget η n W v (values η n W v hx)
+            intro q hq
+            exact hc [i] [q] (List.all_eq_true.mp h q hq) η n W (.inl v) hx
+          | inr vs =>
+            have hk : G.parameterKinds i = none := by simpa [NormalGraph.params] using hi
+            have hcs : G i = [] := by simp [NormalGraph.clauses, NormalGraph.plain, hs]
+            simp [mixedMeaning, mixedParameters, graphArguments, hk, hcs] at hx
+        · cases ha
+      · cases ha
   · cases h
 
 /-- The rows a family certificate's instances prove. -/
@@ -1637,8 +1699,8 @@ theorem checkEntries_entries_sound [DecidableEq ι] {G : NormalGraph ι} {sub : 
 instance when its target is an arrow contract. The checker validates every use. -/
 @[nospecialize] def SubtypeChoices.dependencies [DecidableEq ι] (G : NormalGraph ι)
     (S T : List ι) (p : SubtypeChoices ι) : List (KnownInstance ι) :=
-  p.members ++ match p.instantiation, expand G T with
-    | some c, [.arrs L M] => [(S, L, M, c)]
+  p.members ++ match p.instantiation, instanceTarget G T with
+    | some c, some (L, M, _) => [(S, L, M, c)]
     | _, _ => []
 
 /-- One comparison step: select a checked instance or validate the shared
@@ -1759,7 +1821,8 @@ and supporting choices carry the same instance data and receive the same validat
 @[nospecialize] def SubtypeChoices.proposal [DecidableEq ι] (G : NormalGraph ι)
     (S T : List ι) (p : SubtypeChoices ι) (A B : List ι) : Option (Instance ι) :=
   (if A == S && B == T then p.instantiation else none) <|>
-    (p.members.find? fun k => k.1 == A && expand G B == [.arrs k.2.1 k.2.2.1]).map (·.2.2.2)
+    (p.members.find? fun k => k.1 == A &&
+      ((instanceTarget G B).map fun target => (target.1, target.2.1)) == some (k.2.1, k.2.2.1)).map (·.2.2.2)
 
 /-- Public evidence carries instantiation choices. The common operation
 selects and validates the subtype rule. -/

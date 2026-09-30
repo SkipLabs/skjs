@@ -3502,12 +3502,16 @@ the member bound to its host meets whatever receiver it is given, at a call
 whose receiver is the host. -/
 @[nospecialize] def instSig [DecidableEq ι] (G : NormalGraph ι) (tbl : InstTable ι) (κ : Ctx ι)
     (p q : Arrow (List ι)) : Bool :=
-  sigMatch tbl κ p q || (expand G p.receiver == [.top] && sigBodyMatch tbl κ p q)
+  (sigMatch tbl κ p { q with effect := p.effect } ||
+    (expand G p.receiver == [.top] && sigBodyMatch tbl κ p { q with effect := p.effect })) &&
+      p.effect.covers q.effect
 
 /-- The same, for a variadic signature. -/
 @[nospecialize] def instRest [DecidableEq ι] (G : NormalGraph ι) (tbl : InstTable ι) (κ : Ctx ι)
     (p q : RestArrow (List ι)) : Bool :=
-  restMatch tbl κ p q || (expand G p.receiver == [.top] && restBodyMatch tbl κ p q)
+  (restMatch tbl κ p { q with effect := p.effect } ||
+    (expand G p.receiver == [.top] && restBodyMatch tbl κ p { q with effect := p.effect })) &&
+      p.effect.covers q.effect
 
 /-- The context `κ` on the rows `ps` outside `src`, in the order of `ps`. -/
 @[nospecialize] def keep [DecidableEq ι] (κ : Ctx ι) (src ps : List ι) : Ctx ι :=
@@ -5208,20 +5212,24 @@ theorem inst_images_sound [DecidableEq ι] {G : NormalGraph ι} (η : MixedAssig
     change PromiseWith p.effect (ArgsShort (p.arguments.map (mixedValues G (assign η s.binders As))))
       (mixedValues G (assign η s.binders As) p.receiver)
       (mixedValues G (assign η s.binders As) p.result) n W v at hpr
+    obtain ⟨hsig, heffect⟩ := Bool.and_eq_true_iff.mp hsig
     rcases Bool.or_eq_true_iff.mp hsig with hsig | hbody
     · obtain ⟨q', hq', s1, s2, s3, se⟩ := sigMatch_some hsig
       obtain ⟨h1, h2, h3, he⟩ := sigImg_some hq'
       have e1 := (hfam _ _ h1).trans (sameLabels_values s1)
       have e3 := (hfam _ _ h3).trans (sameLabels_values s3)
       have e2 := (hargs _ _ h2).trans (sameLabelLists_values s2)
-      simp only [e1, e2, e3, he, se] at hpr
-      exact hpr
+      simp only [e1, e2, e3] at hpr
+      exact hpr.weaken (Effect.covers_sound heffect) (fun _ _ _ _ h => h)
+        (fun _ _ _ _ h => h) (fun _ _ _ _ h => h)
     · simp only [Bool.and_eq_true, beq_iff_eq] at hbody
       obtain ⟨ps, r, h2, h3, s2, s3, he⟩ := sigBodyMatch_some hbody.2
       have e3 := (hfam _ _ h3).trans (sameLabels_values s3)
       have e2 := (hargs _ _ h2).trans (sameLabelLists_values s2)
-      simp only [e2, e3, he] at hpr
-      exact hpr.weaken_recv (anyRecv p.receiver q.receiver hbody.1)
+      simp only [e2, e3] at hpr
+      exact (hpr.weaken_recv (anyRecv p.receiver q.receiver hbody.1)).weaken
+        (Effect.covers_sound heffect) (fun _ _ _ _ h => h)
+        (fun _ _ _ _ h => h) (fun _ _ _ _ h => h)
   · obtain ⟨q, hqM, rfl⟩ := List.mem_map.mp hr'
     obtain ⟨p, hps, hsig⟩ := hM q hqM
     have hpr := hc.2.2 _ (List.mem_map_of_mem hps)
@@ -5230,6 +5238,7 @@ theorem inst_images_sound [DecidableEq ι] {G : NormalGraph ι} (η : MixedAssig
     change PromiseWith p.effect (ArgsRest (p.arguments.1.map (mixedValues G (assign η s.binders As)))
       (graphArguments G (assign η s.binders As) (mixedValues G (assign η s.binders As)) p.arguments.2))
       (mixedValues G (assign η s.binders As) p.receiver) (mixedValues G (assign η s.binders As) p.result) n W v at hpr
+    obtain ⟨hsig, heffect⟩ := Bool.and_eq_true_iff.mp hsig
     rcases Bool.or_eq_true_iff.mp hsig with hsig | hbody
     · obtain ⟨q', hq', s1, s2, s3, s4, se⟩ := restMatch_some hsig
       obtain ⟨h1, h2, h3, h4, he⟩ := restImg_some hq'
@@ -5237,15 +5246,18 @@ theorem inst_images_sound [DecidableEq ι] {G : NormalGraph ι} (η : MixedAssig
       have e3 := (hpack _ _ h3).trans (sameLabels_arguments s3)
       have e4 := (hfam _ _ h4).trans (sameLabels_values s4)
       have e2 := (hargs _ _ h2).trans (sameLabelLists_values s2)
-      simp only [e1, e2, e3, e4, he, se] at hpr
-      exact hpr
+      simp only [e1, e2, e3, e4] at hpr
+      exact hpr.weaken (Effect.covers_sound heffect) (fun _ _ _ _ h => h)
+        (fun _ _ _ _ h => h) (fun _ _ _ _ h => h)
     · simp only [Bool.and_eq_true, beq_iff_eq] at hbody
       obtain ⟨ps, e, r, h2, h3, h4, s2, s3, s4, he⟩ := restBodyMatch_some hbody.2
       have e3 := (hpack _ _ h3).trans (sameLabels_arguments s3)
       have e4 := (hfam _ _ h4).trans (sameLabels_values s4)
       have e2 := (hargs _ _ h2).trans (sameLabelLists_values s2)
-      simp only [e2, e3, e4, he] at hpr
-      exact hpr.weaken_recv (anyRecv p.receiver q.receiver hbody.1)
+      simp only [e2, e3, e4] at hpr
+      exact (hpr.weaken_recv (anyRecv p.receiver q.receiver hbody.1)).weaken
+        (Effect.covers_sound heffect) (fun _ _ _ _ h => h)
+        (fun _ _ _ _ h => h) (fun _ _ _ _ h => h)
 
 /-- The executable finite-table path uses the same semantic elimination
 rule, after proving its image obligation by checking the whole table. -/

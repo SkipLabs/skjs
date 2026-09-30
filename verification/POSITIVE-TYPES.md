@@ -1253,8 +1253,8 @@ i\ \text{a scheme row}\ (\vec p;\Sigma;\beta;\Sigma_\ldots)\quad
 \forall(p,B)\in\beta.\;\theta_p\subseteq B\lor\Delta_p\vdash(\theta_p,B)\ \mathsf{covered}\\
 \text{a checked table}\quad
 T\equiv_G\mathsf{arrs}(L;M)\quad
-\forall\tau\in L.\;\exists\sigma\in\Sigma.\;\tau\doteq\sigma[\kappa_0]\quad
-\forall\tau\in M.\;\exists\sigma\in\Sigma_\ldots.\;\tau\doteq\sigma[\kappa_0]
+\forall\tau\in L.\;\exists\sigma\in\Sigma.\;\tau\doteq\sigma[\kappa_0]\land\varepsilon_\sigma\succeq\varepsilon_\tau\quad
+\forall\tau\in M.\;\exists\sigma\in\Sigma_\ldots.\;\tau\doteq\sigma[\kappa_0]\land\varepsilon_\sigma\succeq\varepsilon_\tau
 \end{array}}
      {G\vdash\{i\}\le T}\ \textsf{inst}
 ```
@@ -1270,6 +1270,14 @@ every receiver is safe at a narrower one, every receiver being a closed value
 its object as the receiver. The
 premises other than $T\equiv_G\mathsf{arrs}(L;M)$ are $G\vdash\{i\}\le_{\mathsf{inst}}\mathsf{arrs}(L;M)$
 (`InstArrs`).
+
+The order $`\varepsilon_\sigma\succeq\varepsilon_\tau`$ means that the
+source effect guarantees the target effect. Signature images retain their
+effects. Instance elimination composes image equality with arrow subsumption: the source effect must cover the target
+effect. A preserving signature therefore supplies an unrestricted instance;
+an unrestricted signature cannot supply a preserving instance. The argument,
+receiver and result images keep their equality obligations. The proof
+`inst_images_sound` applies `PromiseWith.weaken` after substitution.
 
 The semantic proof of `inst` separates **image correctness** from universal
 elimination. Let $\eta_\theta$ assign each scheme binder the mixed meaning

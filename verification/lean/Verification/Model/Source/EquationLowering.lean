@@ -1609,9 +1609,18 @@ partial def unifyTree (unfold : Unfold) (fuel : Nat) (bs : List Tree) (θ : List
   | .bound h a _, .bound h' a' _ =>
     if h != h' || a.toList.length != a'.toList.length then none
     else (a.toList.zip a'.toList).foldlM (fun θ (x, y) => unifyUnion unfold fuel bs θ x.toList y.toList) θ
-  | .meet ps, .meet qs =>
-    if ps.toList.length != qs.toList.length then none
-    else (ps.toList.zip qs.toList).foldlM (fun θ (x, y) => unifyTree unfold fuel bs θ x y) θ
+  | .meet ps, _ =>
+    let matched := match t with
+      | .meet qs =>
+        if ps.toList.length != qs.toList.length then none
+        else (ps.toList.zip qs.toList).foldlM (fun θ (x, y) => unifyTree unfold fuel bs θ x y) θ
+      | .app .. | .bound .. | .local .. | .argument .. | .var .. => none
+    matched.orElse fun _ =>
+      -- Propose the actual type for a single binder observed through a meet.
+      -- The checker retains the other parts in the image and checks the bound.
+      match ps.toList.filter (mentionsAny bs ·) with
+      | [b] => if bs.contains b then unifyUnion unfold fuel bs θ [b] [t] else none
+      | _ => none
   | _, _ => none
 end
 
@@ -1628,9 +1637,9 @@ def unifyScheme (unfold : Unfold) (s : SchemeRow Tree) (L : PositiveRules.Ops Tr
   -- (`Promise<T | TResult>` at `Promise<number>`) then checks their choice.
   let body (a : Arrow (List Tree)) := a.arguments ++ [a.result]
   let θ ← L.foldlM (fun θ q => s.signatures.findSome? fun p =>
-    if p.effect != q.effect then none else unifyArrow θ (body p) (body q)) []
+    if !p.effect.covers q.effect then none else unifyArrow θ (body p) (body q)) []
   M.foldlM (fun θ q => s.variadic.findSome? fun p =>
-    if p.effect != q.effect then none
+    if !p.effect.covers q.effect then none
     else unifyArrow θ (p.arguments.2 :: p.result :: p.arguments.1) (q.arguments.2 :: q.result :: q.arguments.1)) θ
 
 /-- An equation graph's proposal: instances by matching, images by

@@ -85,11 +85,14 @@ theorem compareInstArrsWith_reassign (compare : List ι → List ι → Comparis
     compareInstArrsWith (reassign G η) (images.reassign η) compare empty S L M c =
       compareInstArrsWith G images compare empty S L M c := rfl
 
+theorem instanceTarget_reassign (T : List ι) :
+    instanceTarget (reassign G η) T = instanceTarget G T := rfl
+
 theorem compareInstWith_reassign (compare : List ι → List ι → ComparisonResult α) (empty : α)
     (S T : List ι) (c : Instance ι) :
     compareInstWith (reassign G η) (images.reassign η) compare empty S T c =
       compareInstWith G images compare empty S T c := by
-  simp only [compareInstWith, expand_reassign, compareInstArrsWith_reassign]
+  simp only [compareInstWith, instanceTarget_reassign, compareInstArrsWith_reassign]
 
 theorem sub_reassign : (images.reassign η).sub = images.sub.map (·.reassign η) := rfl
 
