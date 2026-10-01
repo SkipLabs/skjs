@@ -31,9 +31,9 @@ for (let i = 2; i < process.argv.length; i++) {
 }
 const work = fs.mkdtempSync(path.join(os.tmpdir(), "examples-"));
 process.on("exit", () => fs.rmSync(work, { recursive: true, force: true }));
-function run(command: string, args: string[]) {
+function run(command: string, args: string[], cwd = root) {
   const r = spawnSync(command, args, {
-    cwd: root,
+    cwd,
     encoding: "utf8",
     timeout: 120000,
     maxBuffer: 32 * 1024 * 1024,
@@ -144,7 +144,7 @@ function examine(file: string) {
 try {
   if (build) {
     console.log("Building verifier for examples...");
-    const r = run("lake", ["-d", "verification/lean", "build"]);
+    const r = run("lake", ["build"], path.join(__dirname, "lean"));
     if (r.status !== 0) throw Error(r.stderr + r.stdout);
     if (verbose) process.stdout.write(r.stdout);
     console.log(color(32, "✓ Lean build passed"));
