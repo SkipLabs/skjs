@@ -20,9 +20,6 @@ class CheckerConfig{
   errorDetailConfig: ErrorDetailConfig = ErrorDetailConfig(Array[]),
   verbose: Bool = false,
   buildCfg: Bool = false,
-  // Record SKJS type claims for every checked function
-  // (verification/DESIGN.md). Emission is pure recording; see SkjsTypeClaims.sk.
-  emitSkjsTypeClaims: Bool = false,
 } extends SKStore.File
 
 // Write the run's effective config. Must be called once per run, before any

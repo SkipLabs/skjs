@@ -185,58 +185,10 @@ mutable class Subst private {
   // of output only -- nothing reads it back into typing, and save/restore
   // never touch it.
   mutable ppNames: ?mutable PpNames = None(),
-  // Closed subtype/expansion judgments recorded for --emit-skjs-type-claims.
-  // One frame per function body; clones start empty, so speculative checks
-  // are discarded. Not part of SubstState: save/restore must not rewind it.
-  mutable opFrames: mutable Vector<
-    mutable Vector<(String, String, String)>,
-  > = mutable Vector[],
 } extends TCEnvBase, SubstState {
   /* To ensure consistency in type variable identifiers, use mcreate only
      in functions that take no argument containing type variables and whose
      return value does not contain type variables. */
-  mutable fun pushClaimedOpFrame(): void {
-    this.opFrames.push(mutable Vector[])
-  }
-
-  mutable fun popClaimedOpFrame(): Array<(String, String, String)> {
-    if (this.opFrames.size() == 0) return Array[];
-    this.opFrames.pop().toArray()
-  }
-
-  // Ordinary candidate rollback does not rewind already-published judgments.
-  // An enclosing failed call additionally abandons its own speculative output.
-  readonly fun claimedOpCheckpoint(): Array<Int> {
-    this.opFrames.values().map(frame -> frame.size()).collect(Array)
-  }
-
-  mutable fun restoreClaimedOps(checkpoint: Array<Int>): void {
-    invariant(this.opFrames.size() == checkpoint.size());
-    for (i => size in checkpoint) {
-      frame = this.opFrames[i];
-      while (frame.size() > size) {
-        _ = frame.pop();
-      }
-    }
-  }
-
-  mutable fun recordClaimedOp(
-    kind: String,
-    sourceJson: String,
-    targetJson: String,
-  ): void {
-    n = this.opFrames.size();
-    if (n == 0) return void;
-    frame = this.opFrames[n - 1];
-    for (op in frame) {
-      if (op.i0 == kind && op.i1 == sourceJson && op.i2 == targetJson) {
-        return void
-      }
-    };
-    frame.push((kind, sourceJson, targetJson));
-    this.opFrames![n - 1] = frame
-  }
-
   // Only a fresh source-checking root owns a witness namespace. A light
   // environment carries no existing candidate owner or rollback state.
   static fun createCheckingOwner(tcenvl: mutable TCEnvLight): mutable Subst {

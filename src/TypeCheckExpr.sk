@@ -2053,9 +2053,6 @@ extension class TypeChecker {
     mostPrecise: Bool,
     isLValue: Bool = false,
   ): TType {
-    if (getConfig(tcenv.context).emitSkjsTypeClaims && !isLValue) {
-      tcenv.claimedExprVisits.push(e.pos)
-    };
     key = (e.pos, mostPrecise, isLValue);
     tcenv.exprTypes.maybeGet(key) match {
     | Some(_ty) ->
@@ -5155,11 +5152,6 @@ extension class TypeChecker {
     // Same-frame writes may initialize new fields. A captured write may run
     // later, so it must establish the receiver's lasting contents contract.
     if (tcenv.scope.isThroughFunction(local)) tcenv.markLocalObjectUsed(local);
-    // This optimized write bypasses expr(); record its pre-write receiver type.
-    if (getConfig(tcenv.context).emitSkjsTypeClaims) {
-      tcenv.claimedExprVisits.push(local.pos);
-      tcenv.!exprTypes[(local.pos, false, false)] = tcenv.scope.get(local)
-    };
     // The computed key runs before the RHS, including any writes that affect
     // the RHS's type. Keep the optimized local-object path in source order.
     keyType = this.expr(tcenv, keyExpr, true);
@@ -5623,7 +5615,6 @@ extension class TypeChecker {
   ): TType {
     saved = tcenv.subst.save();
     publication = tcenv.results.savePublication();
-    claimedOps = tcenv.subst.claimedOpCheckpoint();
     entryErrors = tcenv.results.errors.size();
     result = try {
       this.proposeAndValidateCall(
@@ -5641,13 +5632,11 @@ extension class TypeChecker {
     | exn ->
       tcenv.subst.restore(saved);
       tcenv.results.restorePublication(publication);
-      tcenv.subst.restoreClaimedOps(claimedOps);
       throw exn
     };
     if (tcenv.results.errors.size() != entryErrors) {
       tcenv.subst.restore(saved);
-      tcenv.results.restorePublication(publication);
-      tcenv.subst.restoreClaimedOps(claimedOps)
+      tcenv.results.restorePublication(publication)
     };
     result
   }

@@ -1885,7 +1885,6 @@ extension class TType {
     // needed. This is the same restricted proof used after inference, never a
     // solver-cache shortcut. Failed observations publish no commitments.
     if (subst.proveEstablishedSubtype(tenv, u1, u2) is TRReady _) {
-      recordClosedClaimedOp(subst, "subtype", u1, u2);
       return STOk()
     };
     saved = subst.save();
@@ -1896,9 +1895,7 @@ extension class TType {
       | SubtypeProposed() ->
         proof = subst.proveSubtype(tenv, u1, u2);
         proof match {
-        | TRReady _ ->
-          recordClosedClaimedOp(subst, "subtype", u1, u2);
-          STOk()
+        | TRReady _ -> STOk()
         | TRUnavailable() -> STUnvalidatedType(SVFUnproved(), u1, u2)
         | TRBlocked() -> STUnvalidatedType(SVFUnresolved(), u1, u2)
         }

@@ -7,27 +7,6 @@ extension class TypeChecker {
   // diagnostic owned by the walk (SKJS 2056) is reported once, and a switch
   // knows its own exhaustiveness at the moment it answers (no side-channel).
   fun stmt(tcenv: mutable TCEnv, st: Stmt): StmtTermination {
-    if (getConfig(tcenv.context).emitSkjsTypeClaims) {
-      vars = mutable Vector<TypeClaimVar>[];
-      for (kv in tcenv.scope.visibleRefs().items()) {
-        // Reservations establish lexical identity, not an available value.
-        // Keep internal TDZ placeholders out of source typing environments.
-        pending = tcenv.scope
-          .bindingPos(Name(st.pos, kv.i0))
-          .map(pos -> tcenv.pendingBindings.contains(pos))
-          .default(false);
-        if (!pending) {
-          ref = kv.i1;
-          // The declared type is worth a separate claim only when a write has
-          // narrowed away from it; otherwise it says nothing `type` does not.
-          declared = if (ref.declaredType == ref.type) None() else {
-            Some(ref.declaredType)
-          };
-          vars.push(TypeClaimVar(kv.i0, ref.type, ref.isMutable, declared))
-        }
-      };
-      tcenv.claimedEnvs.push(TypeClaimEnv(st.pos, vars.toArray()))
-    };
     term = st.value match {
     | Break() ->
       tcenv.recordBreak(st.pos);

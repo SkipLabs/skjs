@@ -514,7 +514,7 @@ mutable class Scope{
   }
 
   // Every binding visible from this scope, innermost shadowing outer, as a
-  // flat map for claim recording and refinement invalidation.
+  // flat map for refinement invalidation.
   readonly fun visibleRefs(): SortedMap<String, LocalRef> {
     acc = this.up match {
     | None() -> SortedMap[]

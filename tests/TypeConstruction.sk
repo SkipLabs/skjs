@@ -456,11 +456,6 @@ fun testCallPlanRetainsEarlierObligations(): void {
   assumed = tenv with {
     seenSub => SortedSet[(owner.inferenceVersion(), original, num)],
   };
-  SKJS.writeConfig(
-    owner.context,
-    SKJS.getConfig(owner.context) with {emitSkjsTypeClaims => true},
-  );
-  owner.pushClaimedOpFrame();
   plan = SKJS.CallSubtypePlan::mcreate();
   messages = Array[(pos, "Argument is not assignable to the parameter's type")];
   plan.propose(tcenv, assumed, original, num, messages, SKJS.TSCode(2345));
@@ -480,11 +475,6 @@ fun testCallPlanRetainsEarlierObligations(): void {
     !accepted = plan.validate(tcenv, assumed)
   });
   SKTest.expectEq(accepted, false);
-  SKTest.expectEq(
-    owner.popClaimedOpFrame().isEmpty(),
-    true,
-    "failed call proposals must not publish accepted subtype claims",
-  );
   SKTest.expectEq(
     error match {
     | Some(SKJS.SubtypingError(_, _, _, stErr, _)) ->

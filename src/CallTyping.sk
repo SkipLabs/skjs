@@ -56,11 +56,7 @@ mutable class CallSubtypePlan private {
         .map(o -> (o.source, o.target))
         .collect(Array);
       tcenv.subst.proveSubtypes(tenv, operands) match {
-      | SubtypesProved() ->
-        for (o in this.obligations) {
-          recordClosedClaimedOp(tcenv.subst, "subtype", o.source, o.target)
-        };
-        true
+      | SubtypesProved() -> true
       | SubtypesUnproved(index, why) ->
         obligation = this.obligations[index];
         tcenv.subtypingError(

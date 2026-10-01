@@ -322,7 +322,6 @@ extension class TypeChecker {
     fd: FunDefWithModifiers<SimpleFieldName>,
     cgNode: CGNode,
   ): void {
-    claimErrorsBefore = subst.results.errors.size();
     for (modifier in fd.modifiers.modifiers) {
       modifier match {
       | ModAsync(pos) -> !fd.isAsync = Some(pos)
@@ -351,20 +350,6 @@ extension class TypeChecker {
       cgNode,
     );
     funSig = this.getFunSig(subst.context, fd);
-    // Read the already-installed declaration bindings only when exporting.
-    // Do not normalize again or consult a later inference state.
-    claimRigidTypes = mutable Vector<(TParam, TType)>[];
-    if (getConfig(tcenv.context).emitSkjsTypeClaims) {
-      for (tp in funSig.tparams) {
-        this.bindings.maybeGet(tp.name.value) match {
-        | Some(ty) ->
-          claimRigidTypes.push(
-            (TParam(tp.name.value, tp.name.pos.fileName, tp.id), ty),
-          )
-        | None() -> void
-        }
-      }
-    };
     if (this.retType is None()) {
       subst.error(
         Array[
@@ -477,44 +462,7 @@ extension class TypeChecker {
             tcenv.results.!cfgs[cgNode] = cfg
           };
         };
-        if (getConfig(tcenv.context).emitSkjsTypeClaims) {
-          // Preserve the first-error snapshot, then rethrow: this is recording,
-          // not recovery. Non-typing exceptions retain their ordinary behavior.
-          // The operation frame is the body's closed judgments only; clones
-          // of this substitution start empty and cannot write it.
-          tcenv.subst.pushClaimedOpFrame();
-          try {
-            checkBody()
-          } catch {
-          | exn @ ErrorExn(_) ->
-            tcenv.results.!typeClaims[cgNode] = buildFunTypeClaims(
-              fd.name.getName(),
-              fdPos,
-              typedParams,
-              retType,
-              claimRigidTypes.toArray(),
-              tcenv,
-              true,
-              claimErrorsBefore,
-            );
-            throw exn
-          | exn -> throw exn
-          }
-        } else {
-          checkBody()
-        };
-        if (getConfig(tcenv.context).emitSkjsTypeClaims) {
-          tcenv.results.!typeClaims[cgNode] = buildFunTypeClaims(
-            fd.name.getName(),
-            fdPos,
-            typedParams,
-            retType,
-            claimRigidTypes.toArray(),
-            tcenv,
-            false,
-            claimErrorsBefore,
-          )
-        }
+        checkBody()
       }
     };
   }

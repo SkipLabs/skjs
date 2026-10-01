@@ -210,11 +210,6 @@ mutable class TCEnv private {
   mutable loopWriteBounds: mutable Vector<
     mutable Map<String, TType>,
   > = mutable Vector[],
-  // Type-claim recording (--emit-skjs-type-claims): the environment held on
-  // entry to each statement, in check order. Empty unless emitSkjsTypeClaims is set.
-  claimedEnvs: mutable Vector<TypeClaimEnv> = mutable Vector[],
-  // Visits survive an aborted expression whose result was never cached.
-  claimedExprVisits: mutable Vector<PosRange> = mutable Vector[],
   private mutable counter: Int = 0,
 } extends TCEnvBase {
   static fun mcreate(
@@ -639,14 +634,12 @@ class TCResults private {
   classHierarchy: SortedMap<CHNode, SortedSet<CHNode>>,
   subtypingEdges: SortedSet<(CGNode, CGNode)>,
   cfgs: SortedMap<CGNode, CFG>,
-  typeClaims: SortedMap<CGNode, FunTypeClaims>,
 } {
   static fun ofAccs(accs: readonly Vector<readonly TCResultsAcc>): TCResults {
     callgraph = mutable Map[];
     classHierarchy = SortedMap<CHNode, SortedSet<CHNode>>[];
     subtypingEdges = SortedSet[];
     cfgs = SortedMap<CGNode, CFG>[];
-    typeClaims = SortedMap<CGNode, FunTypeClaims>[];
     errors = mutable Vector<Error>[];
     warnings = mutable Vector<Error>[];
     for (acc in accs) {
@@ -672,10 +665,6 @@ class TCResults private {
       for (kv in acc.cfgs.items()) {
         (cgNode, cfg) = kv;
         !cfgs = cfgs.set(cgNode, cfg)
-      };
-      for (kv in acc.typeClaims.items()) {
-        (cgNode, funTypeClaims) = kv;
-        !typeClaims = typeClaims.set(cgNode, funTypeClaims)
       }
     };
     TCResults{
@@ -687,7 +676,6 @@ class TCResults private {
       classHierarchy,
       subtypingEdges,
       cfgs,
-      typeClaims,
     }
   }
 }
@@ -698,7 +686,6 @@ class TypePublicationState{
   callCount: Int,
   subtypingEdges: SortedSet<(CGNode, CGNode)>,
   cfgs: SortedMap<CGNode, CFG>,
-  typeClaims: SortedMap<CGNode, FunTypeClaims>,
 }
 
 mutable class TCResultsAcc private {
@@ -709,7 +696,6 @@ mutable class TCResultsAcc private {
   classHierarchy: mutable Vector<(Class, Class)> = mutable Vector[],
   mutable subtypingEdges: SortedSet<(CGNode, CGNode)> = SortedSet[],
   mutable cfgs: SortedMap<CGNode, CFG> = SortedMap[],
-  mutable typeClaims: SortedMap<CGNode, FunTypeClaims> = SortedMap[],
 } {
   static fun mcreate{errorHandling: ErrorHandling}: mutable this {
     mutable static{errorHandling}
@@ -720,7 +706,6 @@ mutable class TCResultsAcc private {
       callCount => this.callgraph.size(),
       subtypingEdges => this.subtypingEdges,
       cfgs => this.cfgs,
-      typeClaims => this.typeClaims,
     }
   }
 
@@ -729,8 +714,7 @@ mutable class TCResultsAcc private {
       _ = this.callgraph.pop();
     };
     this.!subtypingEdges = saved.subtypingEdges;
-    this.!cfgs = saved.cfgs;
-    this.!typeClaims = saved.typeClaims
+    this.!cfgs = saved.cfgs
   }
 
   // Preserve diagnostics from a failed isolated proof without publishing facts.
@@ -746,10 +730,7 @@ mutable class TCResultsAcc private {
     for (edge in other.subtypingEdges) {
       this.!subtypingEdges = this.subtypingEdges.set(edge)
     };
-    for ((node, cfg) in other.cfgs.items()) this.!cfgs[node] = cfg;
-    for ((node, claims) in other.typeClaims.items()) {
-      this.!typeClaims[node] = claims
-    }
+    for ((node, cfg) in other.cfgs.items()) this.!cfgs[node] = cfg
   }
 
   readonly fun chill(): this {
@@ -761,7 +742,6 @@ mutable class TCResultsAcc private {
       classHierarchy => this.classHierarchy.chill(),
       subtypingEdges => this.subtypingEdges,
       cfgs => this.cfgs,
-      typeClaims => this.typeClaims,
     }
   }
 
@@ -774,7 +754,6 @@ mutable class TCResultsAcc private {
       classHierarchy => Vector::mcreateFromItems(this.classHierarchy),
       subtypingEdges => this.subtypingEdges,
       cfgs => this.cfgs,
-      typeClaims => this.typeClaims,
     }
   }
 
