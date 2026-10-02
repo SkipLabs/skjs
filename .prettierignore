@@ -8,7 +8,7 @@
 !**/*.ts
 tests/ts-conformance/**/*.ts
 *-prettier-ignore.*
-verification/ocaml-producer/upstream/**
+verification/pipeline/skip-runtime-snapshot/**
 generated-examples
 
 # lake regenerates this on every build; leave its formatting alone
@@ -19,4 +19,4 @@ verification/lean/lake-manifest.json
 **/*.annotated.ts
 
 # the census writes this on every run; leave its formatting alone
-verification/ocaml-producer/skjs-coverage.json
+verification/pipeline/skjs-coverage.json

@@ -7,8 +7,8 @@
 // The trace format is in REQUEST-PROTOCOL ("Subtyping traces").
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { cases } from "../ocaml-producer/cases.mts";
-import { pooled, runCase } from "../ocaml-producer/run-cases.mts";
+import { cases } from "../pipeline/cases.mts";
+import { pooled, runCase } from "../pipeline/run-cases.mts";
 
 /** One checker question: `subset` (the premise judgment on a pair, `Var`)
  * or `family` (the fallback's pairs checked as a family entry). */

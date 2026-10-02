@@ -238,7 +238,7 @@ class TypeSyntaxError extends Error {}
 // A normalized claim (SOURCE-CLAIMS.md) indexes a table of type rows. It is
 // lifted into the structural encoding above to be printed.
 
-/** A type as the reader shows it, which is not a `ClaimType`: lifting stops
+/** A type as the report viewer shows it, which is not a `ClaimType`: lifting stops
  * at a depth cut and names an intersection, or a clause it does not know, as
  * text where an atom belongs. The printers above take that in stride. */
 interface Shown {
@@ -562,7 +562,7 @@ function liftType(types: Table, labels: unknown, depth: number): Shown {
   )
     return { top: true, atoms: [] };
   // Recognize literals by their definitions, not their row numbers: native
-  // request graphs need not use the source sidecar's primitive prefix.
+  // request graphs need not use the claims document's primitive prefix.
   const literalLabel = (value: boolean): unknown =>
     labels.find((label: unknown) => {
       const row = rowAt(types, label);

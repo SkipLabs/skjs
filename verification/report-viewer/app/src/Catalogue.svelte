@@ -1,6 +1,6 @@
 <script lang="ts">
   /*
-   * The catalogue: every source the reader offers, laid out to be read.
+   * The catalogue: every source the report viewer offers, laid out to be read.
    *
    * It replaces a dropdown of ninety-eight basenames. A dropdown answers
    * "which one was it called", which can only be asked about a file already

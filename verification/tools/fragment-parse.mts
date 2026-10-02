@@ -4383,7 +4383,7 @@ function literalExpr(value: string | number, pos: Span): Expr {
  * the command report one wording.
  *
  * `carriesContext` is for a caller that assembled the file itself and put
- * declarations beside the function it is asking about — the census does, so
+ * declarations beside the function it is asking about — the coverage run does, so
  * that a function is typed with the names its own file declares rather than
  * failing for what extracting it left behind. Those declarations are then not
  * the subject: they are skipped rather than rejected, and nothing about them

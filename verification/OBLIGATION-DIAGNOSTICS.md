@@ -17,7 +17,7 @@ The human sentence of a failed graph search names the obligation: `source
 expression obligation at [s,e): evidence search failed: no derivation of its
 <role> claim` for a node, `source incoming edge obligation at [s,e): … the
 edge from node N does not establish the claims at this point` for an edge.
-`check.mts` then adds one line, `obligation: <summary>`, the reader's
+`verify-source.mts` then adds one line, `obligation: <summary>`, the
 source-term account of the record below (which claim was available and what
 was required, or, for a term that is not a slot, its form and the claims of
 the slots it reads), so a refusal read in a log or a coverage row says why
@@ -25,7 +25,7 @@ without opening the record.
 
 ### A failed search refused by name
 
-Where the cause of a failed search is known, `check.mts` puts it first, as a
+Where the cause of a failed search is known, `verify-source.mts` puts it first, as a
 line `reject: <reason>` before the verifier's own, which follow unchanged.
 The outcome stays the unverified search Lean decided on the ordinary
 proposal; the line only names why it found no derivation. Two sources give
@@ -58,7 +58,7 @@ it, in this order:
   a dictionary, a read of a key `in` found in a dictionary; an optional key
   found `undefined` read at `undefined`; a non-null assertion on a read at
   a `for...in` key.
-- With `check.mts --typescript-errors` (the coverage run passes it; it loads
+- With `verify-source.mts --typescript-errors` (the coverage run passes it; it loads
   the project again), for code TypeScript refuses, the TypeScript error
   nearest the failed obligation: `reject: TypeScript refuses this code too
   (line L, col C: <message>); the pipeline follows TypeScript's types`. SKJS
@@ -113,7 +113,7 @@ application uses its span; a bound originating in an imported declaration is
 located at the requesting unit. `limit` is the requested
 frontier-round budget, `rounds` is the number of rounds consumed, and `visited`
 is the number of comparison dependencies visited. The runner reports
-`exhausted`; the viewer displays these counts with the located subtype judgment.
+`exhausted`; the report viewer displays these counts with the located subtype judgment.
 Source signature comparisons use this same record with `entry-claim`,
 `return-contract` or `binding-annotation`. Equality requires two sequential
 inclusions; a failure carries the direction being checked. Explicit instance
@@ -128,7 +128,7 @@ supplies the requested derivation.
 
 A record does not embed the label store; it embeds what the store's projection
 shows of the labels the record mentions (`StoreView.project`, `Projection` in
-[Source/LabelStore.lean](lean/Verification/Model/Source/LabelStore.lean), the label and store interfaces of the source path).
+[Source/LabelStore.lean](lean/Verification/Source/LabelStore.lean), the label and store interfaces of the source path).
 A projection is a finite table of rows over its own
 positions, the position each mentioned label is shown at, and the `names`
 entries. The record's type lists are those positions, so a reader renders
@@ -175,11 +175,11 @@ diagnostics render ground types only through `SourceTypes.render`; numeric
 labels remain references inside the graph document and never become type names
 in user-facing judgments.
 
-[DirectObligation.lean](lean/Verification/Model/Programs/DirectObligation.lean) represents this closed judgment form, with no prose field.
+[DirectObligation.lean](lean/Verification/Programs/DirectObligation.lean) represents this closed judgment form, with no prose field.
 
 The decoder checks the record rather than trusting it: the labels lie in the
 record's graph, and the source map has exactly the judgment's span and no
-context. An unknown judgment variant is rejected. Viewer text, including the
+context. An unknown judgment variant is rejected. Report viewer text, including the
 turnstile, is derived by one printer from the structured sides; no producer or
 call site can store arbitrary prose as a judgment. Unsupported source remains a
 separate `source-refusal`, with a mandatory source map and reason, and cannot be
@@ -284,7 +284,7 @@ because the producer just emitted evidence that its consumer rejects. A source m
 does not identify every contributing source claim or prove any premise separately.
 There are no retained mutable-heap observations. Generics added their own
 obligation roles this way; overloads must do the same, rather than be forced
-into an `in / claim / out` triple or have their roles inferred in the viewer.
+into an `in / claim / out` triple or have their roles inferred in the report viewer.
 
 ## Source-extraction failures
 
@@ -333,7 +333,7 @@ Every graph row is shown once in `graph`, with labels in the judgement referring
 to these definitions. Cycles and overloads are preserved without recursive
 unfolding or a depth limit. The compact type summaries elsewhere in the report
 are conveniences; this graph legend and the native term in the judgement give
-the exact language. See [VIEWER-LANGUAGE](VIEWER-LANGUAGE.md) for the typed codecs
+the exact language. See [REPORT-VIEWER-LANGUAGE](REPORT-VIEWER-LANGUAGE.md) for the typed codecs
 and their consistency tests. Search failure continues to mean not established,
 not refuted.
 

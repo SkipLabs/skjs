@@ -95,7 +95,7 @@ application aux équations intégrales.* Fundamenta Mathematicae 3:133–181,
 **Used for** the fixed-point theorem behind recursive types: a contractive
 operator, with distance the first budget at which two families disagree, has
 a unique fixed point.
-**Discussed in** `lean/Verification/Model/Types/Types.lean` (module comment),
+**Discussed in** `lean/Verification/Types/Types.lean` (module comment),
 [SEMANTICS: computations and recursive types](SEMANTICS.md#computations-and-recursive-types).
 
 ### Jung et al. 2018 (Iris)
@@ -157,7 +157,7 @@ The development takes the self-application semantics, not the book's Self
 types or its object subtyping.
 **Discussed in** [DESIGN: method members are host-relative](DESIGN.md#method-members-are-host-relative),
 [POSITIVE-TYPES: records](POSITIVE-TYPES.md#records) (`methodT`, uncited),
-`lean/Verification/Model/Types/MethodMembers.lean` (module comment). Designed
+`lean/Verification/Types/MethodMembers.lean` (module comment). Designed
 in `6a823646` and `d6645444`.
 
 ### Smith, Walker and Morrisett 2000
@@ -324,7 +324,7 @@ target's binders rigidly and the source's at them only where the binder
 counts are equal and the bounds identical, a decidable check.
 **Discussed in** [DESIGN: method members are host-relative](DESIGN.md#method-members-are-host-relative),
 [POSITIVE-TYPES: covered pairs](POSITIVE-TYPES.md#covered-pairs),
-`lean/Verification/Model/Types/PositiveRules.lean`.
+`lean/Verification/Types/PositiveRules.lean`.
 
 ## JavaScript and ECMAScript
 
@@ -561,7 +561,7 @@ on. Its soundness corpus and ledger (the issue reports
 under `docs/deep-dives/issues/` and `docs/ledger.yaml` at `bf20814b`, and the
 mathematical audit `docs/skjs-type-soundness.tex`) supplied the witnesses the
 calculus reproduces.
-**Discussed in** [SKJS-COVERAGE](ocaml-producer/SKJS-COVERAGE.md),
+**Discussed in** [SKJS-COVERAGE](pipeline/SKJS-COVERAGE.md),
 [skjs-improvement](../docs/skjs-improvement.md),
 [TypeScript soundness holes](../docs/typescript-soundness-holes.md); the
 corpus table in DESIGN before `6ee739f8` (`355a9ecb`).

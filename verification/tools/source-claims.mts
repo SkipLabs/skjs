@@ -1,5 +1,5 @@
 /*
- * The producer-independent source sidecar, described once.
+ * The producer-independent claims document, described once.
  *
  * A producer states, for one source file, what it believes at every site the
  * lowering visits; the verifier asks whether those beliefs are derivable.

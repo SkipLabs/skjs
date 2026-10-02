@@ -1,6 +1,6 @@
 <script lang="ts">
   /*
-   * The reader.
+   * The report viewer.
    *
    * One line of status, the functions down the left, the source in the middle,
    * and the selected claim beneath it. Everything on screen is a view of one
@@ -22,7 +22,7 @@
   import Provenance from "./Provenance.svelte";
   import Selection from "./Selection.svelte";
   import SourceView from "./SourceView.svelte";
-  import { reader } from "./state.svelte.ts";
+  import { viewer } from "./state.svelte.ts";
   import type { Producer } from "../../types.ts";
 
   const PRODUCERS: { value: Producer; label: string }[] = [
@@ -34,7 +34,7 @@
     // Read the link before opening anything: opening selects afresh, and the
     // address bar follows the selection, so the hash is gone by then.
     const [fnName, at] = (location.hash.slice(1) || "").split(":");
-    await reader.start();
+    await viewer.start();
     const params = new URLSearchParams(location.search);
     const wanted = params.get("file");
     // A link names a producer, and the link may be older than this list, so
@@ -44,34 +44,34 @@
       PRODUCERS.find((p) => p.value === asked)?.value ?? "ocaml";
     // A link that names a file opens it; one that does not shows what there
     // is, rather than opening whichever source happens to be listed first.
-    if (wanted) await reader.open(wanted, producer);
-    else reader.browsing = true;
+    if (wanted) await viewer.open(wanted, producer);
+    else viewer.browsing = true;
     // A link may name a claim. It names a record of one snapshot, so it is
     // honoured where it still resolves and dropped where it does not.
-    const fn = reader.functions.find((f) => f.name === fnName);
+    const fn = viewer.functions.find((f) => f.name === fnName);
     const site = Number(at);
     if (fn && Number.isInteger(site) && site >= 0 && site < fn.sites.length)
-      reader.select(fn.id, site);
+      viewer.select(fn.id, site);
   });
 
   function choose(path: string) {
-    reader.open(path);
+    viewer.open(path);
   }
 
   /*
    * The address bar follows the view: the file, the producer, and the selected
    * claim. Reopening the link restores the same view. Ids identify records
    * within one snapshot, not the same claim across collections, so a link into
-   * a report that has changed may name nothing — and then the reader leaves the
+   * a report that has changed may name nothing — and then the report viewer leaves the
    * selection alone rather than guessing.
    */
   $effect(() => {
-    if (!reader.path) return;
+    if (!viewer.path) return;
     const url = new URL(location.href);
-    url.searchParams.set("file", reader.path);
-    url.searchParams.set("producer", reader.producer);
-    const fn = reader.selected;
-    const site = reader.selection?.site;
+    url.searchParams.set("file", viewer.path);
+    url.searchParams.set("producer", viewer.producer);
+    const fn = viewer.selected;
+    const site = viewer.selection?.site;
     url.hash = fn && site !== null && site !== undefined ? `${fn.name}:${site}` : "";
     history.replaceState(null, "", url.toString());
   });
@@ -82,7 +82,7 @@
    * Option composes characters on macOS and would otherwise arrive as ∆ and ˚.
    */
   function onkeydown(event: KeyboardEvent) {
-    if (!reader.report) return;
+    if (!viewer.report) return;
     if (event.altKey && !event.metaKey && !event.ctrlKey) {
       const by =
         event.key === "ArrowDown" || event.code === "KeyJ"
@@ -92,7 +92,7 @@
             : 0;
       if (by) {
         event.preventDefault();
-        reader.step(by as 1 | -1);
+        viewer.step(by as 1 | -1);
       }
       return;
     }
@@ -104,13 +104,13 @@
     )
       return;
     const moves: Record<string, () => void> = {
-      j: () => reader.step(1),
-      ArrowDown: () => reader.step(1),
-      k: () => reader.step(-1),
-      ArrowUp: () => reader.step(-1),
-      "]": () => reader.stepFunction(1),
-      "[": () => reader.stepFunction(-1),
-      Escape: () => reader.selection && reader.select(reader.selection.functionId),
+      j: () => viewer.step(1),
+      ArrowDown: () => viewer.step(1),
+      k: () => viewer.step(-1),
+      ArrowUp: () => viewer.step(-1),
+      "]": () => viewer.stepFunction(1),
+      "[": () => viewer.stepFunction(-1),
+      Escape: () => viewer.selection && viewer.select(viewer.selection.functionId),
     };
     const move = moves[event.key];
     if (move) {
@@ -119,7 +119,7 @@
     }
   }
 
-  const name = $derived(reader.path.split("/").pop() ?? "");
+  const name = $derived(viewer.path.split("/").pop() ?? "");
 </script>
 
 <svelte:window {onkeydown} />
@@ -130,61 +130,61 @@
          be read, and this returns to it. -->
     <button
       class="plain"
-      aria-pressed={reader.browsing}
-      onclick={() => (reader.browsing = !reader.browsing)}
-      disabled={reader.busy || (!reader.report && !reader.browsing)}
-      >{reader.browsing && reader.report ? "back to the report" : "browse sources"}</button
+      aria-pressed={viewer.browsing}
+      onclick={() => (viewer.browsing = !viewer.browsing)}
+      disabled={viewer.busy || (!viewer.report && !viewer.browsing)}
+      >{viewer.browsing && viewer.report ? "back to the report" : "browse sources"}</button
     >
 
     <select
       aria-label="Claim producer"
-      value={reader.producer}
+      value={viewer.producer}
       onchange={(e) =>
-        reader.open(reader.path, e.currentTarget.value as Producer)}
-      disabled={reader.busy || !reader.path}
+        viewer.open(viewer.path, e.currentTarget.value as Producer)}
+      disabled={viewer.busy || !viewer.path}
     >
       {#each PRODUCERS as p (p.value)}
         <option value={p.value}>{p.label}</option>
       {/each}
     </select>
 
-    <OpenPath busy={reader.busy} onopen={choose} />
+    <OpenPath busy={viewer.busy} onopen={choose} />
 
     <!-- What the source view draws beyond the claims themselves. Both are off
          by default: they answer questions about the producer's run, not about
          what it claims. -->
     <label class="tick">
-      <input type="checkbox" bind:checked={reader.showProducerErrors} />
+      <input type="checkbox" bind:checked={viewer.showProducerErrors} />
       producer diagnostics
     </label>
     <label class="tick">
-      <input type="checkbox" bind:checked={reader.showUnsupported} />
+      <input type="checkbox" bind:checked={viewer.showUnsupported} />
       undecoded bindings
     </label>
 
-    <span class="path" title={reader.path}>{name}</span>
+    <span class="path" title={viewer.path}>{name}</span>
 
     <span class="spacer"></span>
 
-    {#if reader.busy}
+    {#if viewer.busy}
       <span class="note">collecting…</span>
-    {:else if reader.collection}
+    {:else if viewer.collection}
       <span class="note">
-        {reader.collection.producer} · {Math.round(
-          reader.collection.durationMs,
+        {viewer.collection.producer} · {Math.round(
+          viewer.collection.durationMs,
         )}ms
-        {#if !reader.collection.verified}· not checked{/if}
+        {#if !viewer.collection.verified}· not checked{/if}
       </span>
     {/if}
-    {#if !reader.hasVerifier}
+    {#if !viewer.hasVerifier}
       <span class="warn">no verifier built — nothing can be checked</span>
     {/if}
   </header>
 
-  {#if reader.report?.outcome && !reader.browsing}
+  {#if viewer.report?.outcome && !viewer.browsing}
     <!-- What the pipeline decided about this file, in its own words: the
-         reader shows it and never reaches one of its own. -->
-    {@const outcome = reader.report.outcome}
+         report viewer shows it and never reaches one of its own. -->
+    {@const outcome = viewer.report.outcome}
     <p class="outcome" role="status">
       <strong>Pipeline: {outcome.status}</strong>
       at {outcome.phase}
@@ -196,65 +196,65 @@
     </p>
   {/if}
 
-  {#if reader.showProducerErrors && !reader.browsing}
+  {#if viewer.showProducerErrors && !viewer.browsing}
     <section class="producer-diagnostics" aria-label="Producer diagnostics">
       <strong>Producer diagnostics</strong>
-      {#if reader.report?.diagnostics?.trim()}
-        <pre>{reader.report.diagnostics}</pre>
+      {#if viewer.report?.diagnostics?.trim()}
+        <pre>{viewer.report.diagnostics}</pre>
       {:else}
         <p>No producer diagnostics were recorded for this report.</p>
       {/if}
     </section>
   {/if}
 
-  {#if reader.error}
-    <p class="error" role="status">{reader.error}</p>
+  {#if viewer.error}
+    <p class="error" role="status">{viewer.error}</p>
   {/if}
 
-  {#if reader.browsing}
+  {#if viewer.browsing}
     <Catalogue
-      groups={reader.groups}
-      busy={reader.busy}
-      current={reader.path}
+      groups={viewer.groups}
+      busy={viewer.busy}
+      current={viewer.path}
       onopen={choose}
     />
-  {:else if reader.report && reader.selected}
-    {@const report = reader.report}
-    {@const fn = reader.selected}
+  {:else if viewer.report && viewer.selected}
+    {@const report = viewer.report}
+    {@const fn = viewer.selected}
     <div class="body">
       <FunctionList
-        functions={reader.functions}
-        collection={reader.collection}
+        functions={viewer.functions}
+        collection={viewer.collection}
         selectedId={fn.id}
-        onselect={(id) => reader.select(id)}
+        onselect={(id) => viewer.select(id)}
       />
       <div class="centre">
         <div class="scroll">
           <SourceView
             {report}
             {fn}
-            selected={reader.selection?.site ?? null}
-            unsupported={reader.showUnsupported}
-            producerErrors={reader.showProducerErrors}
-            onselect={(site) => reader.select(fn.id, site)}
+            selected={viewer.selection?.site ?? null}
+            unsupported={viewer.showUnsupported}
+            producerErrors={viewer.showProducerErrors}
+            onselect={(site) => viewer.select(fn.id, site)}
           />
         </div>
         <div class="dock">
           <Selection
             {report}
             {fn}
-            site={reader.selection?.site ?? null}
+            site={viewer.selection?.site ?? null}
           />
           <Obligation
             {fn}
-            onselect={(offset) => reader.selectAt(fn, offset)}
+            onselect={(offset) => viewer.selectAt(fn, offset)}
           />
-          <Provenance bundle={reader.bundle} collection={reader.collection} />
+          <Provenance bundle={viewer.bundle} collection={viewer.collection} />
         </div>
         <div class="rest"></div>
       </div>
     </div>
-  {:else if !reader.busy && !reader.error}
+  {:else if !viewer.busy && !viewer.error}
     <p class="empty">Choose a source to collect and check its claims.</p>
   {/if}
 </div>

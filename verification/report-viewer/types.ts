@@ -2,23 +2,23 @@ import type { ObligationView } from "../tools/diagnostic-view.mts";
 import type { ObligationDiagnostic } from "../tools/diagnostic.mts";
 import type { Span } from "../tools/span.mts";
 import type { RigidParameter } from "../tools/rigid.mts";
-/* Declared where it is computed: the reader prints the bound, it does not
+/* Declared where it is computed: the report viewer prints the bound, it does not
  * work one out. */
 export type { RigidParameter } from "../tools/rigid.mts";
-// The report the reader displays.
+// The report the report viewer displays.
 //
 // One description of the shape that `tools/annotate-source.js` writes, the
 // tests read, and the page renders. It is a display format: nothing here is
 // proof evidence, and a field's presence says a tool recorded something, never
 // that a claim is true. The wire formats these are derived from are specified
-// in ../SOURCE-CLAIMS.md and ../REQUEST-PROTOCOL.md; this file is the reader's
+// in ../SOURCE-CLAIMS.md and ../REQUEST-PROTOCOL.md; this file is the report viewer's
 // view of them.
 //
 // Node runs this directly (type stripping, Node 23.6+), so the modules that
 // import it need no build. The browser gets the compiled bundle. Keep the
 // syntax erasable: no `enum`, no `namespace`, no parameter properties.
 
-/** One source the reader offers, with a required one-line description.
+/** One source the report viewer offers, with a required one-line description.
  * A name alone answers "which one was it called", which is a question about a
  * file already seen; the description is what makes an unseen one findable. */
 export interface GroupFile {
@@ -37,7 +37,7 @@ export interface ExampleGroup {
 /** Which checker supplied the claims a report displays. */
 export type Producer = "tsc" | "ocaml";
 
-/** How a code unit is named to a reader: a function by its name, the module's
+/** How a code unit is named to a report viewer: a function by its name, the module's
  * top-level code, which has none, as its initialization. */
 export const unitLabel = (unit: { name: string }): string =>
   unit.name === "" ? "module initialization" : unit.name;
@@ -54,7 +54,7 @@ export type Status =
   | "not-run";
 
 /**
- * Where verification stopped. The reader takes the place and the role from
+ * Where verification stopped. The report viewer takes the place and the role from
  * this record rather than inferring either from a span: a return contract and
  * the returned expression's own claim share a span and are different
  * obligations.
@@ -101,7 +101,7 @@ export interface DisplayClaim {
   raw?: unknown;
   /** Present when the producer could not decode a type here. */
   unavailable?: boolean;
-  /** Set by the reader when a failure attaches here. */
+  /** Set by the report viewer when a failure attaches here. */
   failure?: string;
   failureKind?: FailureKind;
   failureRole?: string;
@@ -137,8 +137,8 @@ export interface MissingSite {
 /**
  * The signature a report carries for a function. The two writers state it
  * differently and both are read the same way: converting a producer's export
- * keeps that producer's own encoding, and converting the normalized sidecar
- * has already printed its surface text. So a reader prints an encoding and
+ * keeps that producer's own encoding, and converting the normalized claims document
+ * has already printed its surface text. So a report viewer prints an encoding and
  * shows text as it stands.
  */
 export interface Signature {
@@ -209,7 +209,7 @@ interface ResultFields {
   detail?: string;
   /** Explanatory metadata about an unsuccessful attempt. Never evidence: the
    * writer attaches the record the verifier's own decoder read back, and what
-   * the reader makes of it changes no outcome. */
+   * the report viewer makes of it changes no outcome. */
   obligation?: ObligationDiagnostic;
   obligationView?: ObligationView;
   /** What a successful check covers, in the verifier's own words. */
@@ -257,10 +257,10 @@ export interface CollectionRun {
   verified: boolean;
 }
 
-/** What a pipeline run decided (`ocaml-producer/check.mts`), as the page shows
+/** What a pipeline run decided (`pipeline/verify-source.mts`), as the page shows
  * it: the outcome and the phase that reached it, with the functions a verified
  * run covers or the reason one stopped. It is the pipeline's verdict, never the
- * reader's. */
+ * report viewer's. */
 export type PipelineOutcome =
   | { status: "verified"; phase: string; functions: string[] }
   | {

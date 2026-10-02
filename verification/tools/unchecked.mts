@@ -96,7 +96,7 @@ export function writtenAny(file: string): Written[] {
 }
 
 // The node side: every directory tools/tsconfig.json includes.
-const roots = ["verification", "verification/tools", "verification/tests", "verification/ocaml-producer", "verification/report-viewer"];
+const roots = ["verification", "verification/tools", "verification/tests", "verification/pipeline", "verification/report-viewer"];
 const files = roots.flatMap((dir) =>
   fs
     .readdirSync(dir)

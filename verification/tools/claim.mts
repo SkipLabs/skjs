@@ -1,5 +1,5 @@
 import { isArrayPresence, type ArrayPresence } from "./type-graph.mts";
-/** Structural claim language at the producer/viewer boundary, mirroring
+/** Structural claim language at the producer/report-viewer boundary, mirroring
  * Claim.lean. Source annotations are type terms (declaration-types.mts); Lean
  * converts them to these types for its source readers. Runtime data is decoded
  * before it is printed as text; unsupported producer shapes are shown as

@@ -11,8 +11,8 @@ import { execFile as execFileCb } from "node:child_process";
 import { promisify } from "node:util";
 import type { Bundle, PipelineOutcome } from "./types.ts";
 import { fieldOf, messageOf, outputOf } from "../tools/thrown.mts";
-import { cases } from "../ocaml-producer/cases.mts";
-import { checkApart, isProducer, searchDepth, type Producer } from "../ocaml-producer/check.mts";
+import { cases } from "../pipeline/cases.mts";
+import { checkApart, isProducer, searchDepth, type Producer } from "../pipeline/verify-source.mts";
 import type { SeenDiagnostic } from "../tools/declaration-graph.mts";
 
 /** What the child processes below are run with, decided once. */
@@ -30,7 +30,7 @@ const REPO = path.resolve(
 );
 const VERIFIER = "verification/lean/.lake/build/bin/verifier";
 const PORT = Number(process.env.PORT || 8731);
-const EXAMPLES = "./examples.mts";
+const EXAMPLES = "./corpus-index.mts";
 // Read the example groups per request: editing that list should show up on the
 // next page load, not only after restarting this server. A module is cached by
 // its specifier, so a fresh one is asked for each time.
@@ -93,7 +93,7 @@ async function repositoryPath(relative: string) {
 }
 
 /**
- * The producers the reader can ask for, those the pipeline's one entry runs.
+ * The producers the report viewer can ask for, those the pipeline entry point runs.
  * A query string arrives from a browser, so a name that is not one of these
  * names nothing to run and reads as the default rather than being passed on.
  */
@@ -108,7 +108,7 @@ async function hasVerifier() {
 }
 
 /*
- * What the reader shows is one run of the pipeline, `check.mts`, the same run
+ * What the report viewer shows is one run of the pipeline, `verify-source.mts`, the same run
  * its suites and the corpus judge, with the producer asked for: the OCaml
  * producer, an independent implementation of claim inference, or TypeScript's
  * own checker, stating what it believes at the source's sites
@@ -116,7 +116,7 @@ async function hasVerifier() {
  * that run left in its artifacts — the source snapshot, the Fragment the shared
  * parser wrote, the claims the producer proposed, the evidence the verifier
  * checked, and the TypeScript errors the parser's gate read. Nothing is parsed
- * or proposed again here, so a file the pipeline runs is a file the reader
+ * or proposed again here, so a file the pipeline runs is a file the report viewer
  * shows, and what it shows as the outcome is the pipeline's.
  * Verification is not an option the caller turns on: if a verifier is present
  * it runs, so what is displayed is always checked against the claims on screen.
@@ -180,7 +180,7 @@ async function pipelineAnalyse(
   // A fixture that names its project is run in it, as its case is. The
   // TypeScript producer reads every source in the project that claims it.
   const project = producer === "ocaml" ? cases.find(
-    (c) => relative === `verification/ocaml-producer/examples/${c.file}.ts`,
+    (c) => relative === `verification/pipeline/examples/${c.file}.ts`,
   )?.project : undefined;
   const outcome = await checkApart(
     relative,
@@ -211,7 +211,7 @@ async function pipelineAnalyse(
       producer,
       producerRun: true,
       command:
-        "check.mts " + relative + (project ? " --project " + project : "") +
+        "verify-source.mts " + relative + (project ? " --project " + project : "") +
         (producer === "ocaml" ? "" : " --producer " + producer),
       ranAt: new Date(startedAt).toISOString(),
       durationMs: Date.now() - startedAt,
@@ -311,12 +311,12 @@ async function analyse(relative: string, producer: Producer = "ocaml"): Promise<
 
 // app/index.html is the page the bundle is built from, which loads the application.
 // app/vite.config.ts builds that page into `app/dist` under the stable names this table serves.
-// The reader is a built bundle in `app/dist`, which exists only after
+// The report viewer is a built bundle in `app/dist`, which exists only after
 // `npm --prefix app run build`; `make viewer` builds before it serves.
 const assets = new Map([
   ["/", ["app/dist/index.html", "text/html"]],
-  ["/reader.js", ["app/dist/reader.js", "text/javascript"]],
-  ["/reader.css", ["app/dist/reader.css", "text/css"]],
+  ["/viewer.js", ["app/dist/viewer.js", "text/javascript"]],
+  ["/viewer.css", ["app/dist/viewer.css", "text/css"]],
 ]);
 const send = (
   res: http.ServerResponse,
@@ -395,7 +395,7 @@ const server = http.createServer(async (req, res) => {
 // Only a direct run serves: importing this module for `analyse` must not take
 // the port.
 if (process.argv[1] && import.meta.filename === path.resolve(process.argv[1])) {
-  // A port already taken usually means a reader is up from an earlier run.
+  // A port already taken usually means a report viewer is up from an earlier run.
   // Say so, with what to do about it, rather than a stack trace.
   server.on("error", (error) => {
     if (fieldOf(error, "code") !== "EADDRINUSE") throw error;
@@ -407,11 +407,11 @@ if (process.argv[1] && import.meta.filename === path.resolve(process.argv[1])) {
   });
   server.listen(PORT, "127.0.0.1", () => {
     const url = `http://localhost:${PORT}`;
-    console.log(`Claim report reader on ${url}`);
+    console.log(`Claim report viewer on ${url}`);
     // `--open` hands the page to the browser once the socket is actually
     // listening, so nothing races the server's start.
     if (process.argv.includes("--open")) {
-      // An argument after `--open` names the page to open, so the reader being
+      // An argument after `--open` names the page to open, so the report viewer being
       // rebuilt can be asked for without a second flag.
       const at = process.argv.indexOf("--open");
       const page = (process.argv[at + 1] || "").startsWith("/")

@@ -113,7 +113,7 @@ such as `%Await%`, `%Iterate%`, `%ForIn%`, `Array.prototype`'s members,
 
 **End to end.** Composing [`checkJson_safe`](DESIGN.md#what-verified-means)
 with faithfulness and the host lemmas gives: for a source unit that
-`check.mts` verifies, run in M from any state whose environment values are in
+`verify-source.mts` verifies, run in M from any state whose environment values are in
 the M-meanings of the unit's declared inputs, every value observed at a
 claimed program point is in the M-meaning of its claim, and every run
 returns, throws, or continues. Its remaining premises are about code outside

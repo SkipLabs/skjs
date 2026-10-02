@@ -1,5 +1,5 @@
 /*
- * What the reader is looking at.
+ * What the report viewer is looking at.
  *
  * One object, because the views are all views of the same thing: a file, read
  * through one producer, with one claim selected. Nothing here decides an
@@ -19,11 +19,11 @@ export interface Selection {
   site: number | null;
 }
 
-export class Reader {
+export class Viewer {
   /** The repository-relative source being read. */
   path = $state("");
   producer = $state<Producer>("ocaml");
-  /** True while the catalogue is up instead of a report. Opening the reader
+  /** True while the catalogue is up instead of a report. Opening the report viewer
    * without a file in the link starts here: what can be read is the first
    * thing to find out, and a file chosen for you answers a question nobody
    * asked. */
@@ -117,7 +117,7 @@ export class Reader {
   /**
    * Select whatever claim sits at a source offset, for following a failure to
    * one end of its edge. Nothing is selected where nothing is claimed there:
-   * the reader points at a record, it does not invent one.
+   * the report viewer points at a record, it does not invent one.
    */
   selectAt(fn: ShownFunction, offset: number) {
     let best = -1;
@@ -134,4 +134,4 @@ export class Reader {
   }
 }
 
-export const reader = new Reader();
+export const viewer = new Viewer();

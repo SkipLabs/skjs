@@ -9,7 +9,7 @@
 import type { ShownFunction, ShownReport, Site } from "./model.mts";
 
 /** What a mark is drawn against: the report's own text, and the producer's
- * diagnostics where it carried any. Both kinds of report the reader builds
+ * diagnostics where it carried any. Both kinds of report the report viewer builds
  * satisfy it. */
 export type MarkedReport = {
   source: string;
@@ -268,7 +268,7 @@ const gapLabel = (g: { reason: string; detail: string }) =>
 
 function shortType(type: string) {
   // Surface syntax reads as a type; a raw producer encoding does not, and only
-  // appears when this reader cannot name it.
+  // appears when this report viewer cannot name it.
   if (/^\{\s*"/.test(type)) return "structured type — inspect";
   return type.length > 64 ? type.slice(0, 61) + "…" : type;
 }

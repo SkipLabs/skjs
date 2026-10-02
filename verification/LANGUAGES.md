@@ -25,16 +25,16 @@ missing key is a type error rather than a run-time refusal.
 
 | Language | Lean | TypeScript | Produced by |
 | --- | --- | --- | --- |
-| **Fragment** — the subset of TypeScript this pipeline accepts, as a tree; its required `declarations` slot is emptied once Lean has interpreted its equations | [Fragment.lean](lean/Verification/Model/Source/Fragment.lean) | [fragment.mts](tools/fragment.mts), parsed by [fragment-parse.mts](tools/fragment-parse.mts) | the parser |
-| **Declaration graph** — the source type equations of every local and imported declaration a file reaches, with the declaration TypeScript binds each name to; function annotations are written in the same source type terms | [EquationLowering.lean](lean/Verification/Model/Source/EquationLowering.lean) | [declaration-types.mts](tools/declaration-types.mts), read by [type-term.mts](tools/type-term.mts) and collected by [declaration-graph.mts](tools/declaration-graph.mts) | the parser, with TypeScript's checker |
-| **Claim** — what a producer says a type is; source readers in Lean take annotations converted to it | [Claim.lean](lean/Verification/Model/Types/Claim.lean) | [claim.mts](tools/claim.mts), printed by [claim-text.mts](tools/claim-text.mts) | `tsc-claims.mts`, [OCaml prototype](ocaml-producer/README.md) |
-| **SourceClaims** — claims attached to source spans, producer-independent | [SourceClaims.lean](lean/Verification/Model/Source/SourceClaims.lean) | [source-claims.mts](tools/source-claims.mts) | `tsc-claims.mts`, [OCaml prototype](ocaml-producer/README.md) |
-| **Calculus** — terms, tags, call codes: the operational language | [Calculus.lean](lean/Verification/Model/Semantics/Calculus.lean) | [calculus.mts](tools/calculus.mts) | extraction |
-| **ControlFlow** — the program graph over those terms | [ControlFlow.lean](lean/Verification/Model/Programs/ControlFlow.lean) | [control-flow.mts](tools/control-flow.mts) | extraction |
-| **TypeGraph** — positive types as labelled rows | [PositiveNormalization.lean](lean/Verification/Model/Types/PositiveNormalization.lean) | [type-graph.mts](tools/type-graph.mts) | extraction |
-| **Request** — the whole verification request | [RequestJson.lean](lean/Verification/Model/Source/RequestJson.lean) | — | extraction |
-| **Evidence** — certificates the checker validates | [ProgramCertificates.lean](lean/Verification/Model/Programs/ProgramCertificates.lean), [PositiveCertificates.lean](lean/Verification/Model/Types/PositiveCertificates.lean) | — | proof search |
-| **Diagnostic** — why an attempt did not succeed | in [RequestJson.lean](lean/Verification/Model/Source/RequestJson.lean) | [diagnostic.mts](tools/diagnostic.mts), rendered by [diagnostic-view.mts](tools/diagnostic-view.mts) | the verifier |
+| **Fragment** — the subset of TypeScript this pipeline accepts, as a tree; its required `declarations` slot is emptied once Lean has interpreted its equations | [Fragment.lean](lean/Verification/Source/Fragment.lean) | [fragment.mts](tools/fragment.mts), parsed by [fragment-parse.mts](tools/fragment-parse.mts) | the parser |
+| **Declaration graph** — the source type equations of every local and imported declaration a file reaches, with the declaration TypeScript binds each name to; function annotations are written in the same source type terms | [EquationLowering.lean](lean/Verification/Source/EquationLowering.lean) | [declaration-types.mts](tools/declaration-types.mts), read by [type-term.mts](tools/type-term.mts) and collected by [declaration-graph.mts](tools/declaration-graph.mts) | the parser, with TypeScript's checker |
+| **Claim** — what a producer says a type is; source readers in Lean take annotations converted to it | [Claim.lean](lean/Verification/Types/Claim.lean) | [claim.mts](tools/claim.mts), printed by [claim-text.mts](tools/claim-text.mts) | `tsc-claims.mts`, [OCaml prototype](ocaml-producer/README.md) |
+| **SourceClaims** — claims attached to source spans, producer-independent | [SourceClaims.lean](lean/Verification/Source/SourceClaims.lean) | [source-claims.mts](tools/source-claims.mts) | `tsc-claims.mts`, [OCaml prototype](ocaml-producer/README.md) |
+| **Calculus** — terms, tags, call codes: the operational language | [Calculus.lean](lean/Verification/Semantics/Calculus.lean) | [calculus.mts](tools/calculus.mts) | extraction |
+| **ControlFlow** — the program graph over those terms | [ControlFlow.lean](lean/Verification/Programs/ControlFlow.lean) | [control-flow.mts](tools/control-flow.mts) | extraction |
+| **TypeGraph** — positive types as labelled rows | [PositiveNormalization.lean](lean/Verification/Types/PositiveNormalization.lean) | [type-graph.mts](tools/type-graph.mts) | extraction |
+| **Request** — the whole verification request | [RequestJson.lean](lean/Verification/Source/RequestJson.lean) | — | extraction |
+| **Evidence** — certificates the checker validates | [ProgramCertificates.lean](lean/Verification/Programs/ProgramCertificates.lean), [PositiveCertificates.lean](lean/Verification/Types/PositiveCertificates.lean) | — | proof search |
+| **Diagnostic** — why an attempt did not succeed | in [RequestJson.lean](lean/Verification/Source/RequestJson.lean) | [diagnostic.mts](tools/diagnostic.mts), rendered by [diagnostic-view.mts](tools/diagnostic-view.mts) | the verifier |
 
 Named fields cut across most of these at once, and they are named the same way
 everywhere. An object is a finite map from field names to locations, fixed at
@@ -55,7 +55,7 @@ Host-relative methods use the same record with an empty receiver object.
 Effects are `unrestricted` or `preservesInputHeap`; no missing-effect default or
 legacy tuple encoding is accepted. Source annotations produce unrestricted
 contracts. A qualified producer claim additionally requires checked definition
-evidence. The viewer currently preserves qualified signatures as exact editable
+evidence. The report viewer currently preserves qualified signatures as exact editable
 JSON; the ordinary arrow text syntax cannot silently erase their effect.
 
 Declaration-graph function terms also require `effect`: source TypeScript
@@ -63,7 +63,7 @@ annotations state `unrestricted`, while the reviewed native overlay can demand
 a qualified callback. Graph lowering retains the field; conversion to the older
 unqualified `Claim` arrow refuses a stronger effect rather than forgetting it.
 
-Defining no language, and saying so: [Decode.lean](lean/Verification/Model/Types/Decode.lean)
+Defining no language, and saying so: [Decode.lean](lean/Verification/Types/Decode.lean)
 (source spans and JSON accessors several decoders share),
 [span.mts](tools/span.mts) (the source span the fragment, the claims and the reports all carry)
 and [thrown.mts](tools/thrown.mts) (the one reading of a caught value, which every tool reports the same way).

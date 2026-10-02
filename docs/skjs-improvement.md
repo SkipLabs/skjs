@@ -701,8 +701,8 @@ update error annotations or snapshots until the actual difference is understood.
 At coherent checkpoints, and on the final A4 code, run:
 
 ```sh
-verification/run.sh
-node verification/examples.mts
+verification/test-all.sh
+node verification/corpus-report.mts
 make check-fmt
 ```
 

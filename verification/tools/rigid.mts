@@ -6,11 +6,11 @@
  * bound. That bound is not in the claim — it is in the Fragment, which the
  * verifier reads beside the claims, and it is what discharges `T ≤ boolean`
  * when a function returns `value: T` at `boolean`. Drop `extends boolean` from
- * the source and the identical claim is refused, so a reader that draws the
+ * the source and the identical claim is refused, so a report viewer that draws the
  * claim and not the bound is showing one premise of a check and hiding the
  * other.
  *
- * Everything here happens once, at report generation. What reaches the reader
+ * Everything here happens once, at report generation. What reaches the report viewer
  * is already printed: it has a name and a line of surface syntax to draw, and
  * nothing to work out.
  */
@@ -95,7 +95,7 @@ export function rigidOf(
 /**
  * Every function's parameters, read from the Fragment. The bound is printed
  * here, in the same surface syntax every other type in the report is printed
- * in, because the reader prints nothing of its own.
+ * in, because the report viewer prints nothing of its own.
  */
 export function rigidScopes(ast: Ast): RigidScopes {
   const scopes: RigidScopes = new Map();

@@ -8,7 +8,7 @@ proof rules; it has no separate acceptance calculus.
 
 ## Documents
 
-- [SKJS-COVERAGE](SKJS-COVERAGE.md): the census of how much of SKJS's own test suite the pipeline verifies, and what stops the rest.
+- [SKJS-COVERAGE](../pipeline/SKJS-COVERAGE.md): the measurement of how much of SKJS's own test suite the pipeline verifies, and what stops the rest.
 
 ## Try it
 
@@ -16,21 +16,21 @@ From the repository root, with OCaml 5 and Dune 3 installed:
 
 ```sh
 npm ci --prefix verification/tools
-npm ci --prefix verification/ocaml-producer/upstream
+npm ci --prefix verification/pipeline/skip-runtime-snapshot
 (cd verification/lean && lake build verifier)
 dune build --root verification/ocaml-producer
-node verification/ocaml-producer/check.mts verification/ocaml-producer/examples/callbacks.ts
-node verification/ocaml-producer/check.mts verification/ocaml-producer/examples/recursive-json.ts \
-  --project verification/ocaml-producer/upstream
-node verification/ocaml-producer/check.mts verification/ocaml-producer/examples/recursive-json-variants.ts \
-  --project verification/ocaml-producer/upstream
-node verification/ocaml-producer/test.mts
+node verification/pipeline/verify-source.mts verification/pipeline/examples/callbacks.ts
+node verification/pipeline/verify-source.mts verification/pipeline/examples/recursive-json.ts \
+  --project verification/pipeline/skip-runtime-snapshot
+node verification/pipeline/verify-source.mts verification/pipeline/examples/recursive-json-variants.ts \
+  --project verification/pipeline/skip-runtime-snapshot
+node verification/pipeline/test.mts
 ```
 
 The `--project` argument reads TypeScript files, package exports, workspace
 symlinks, and a `tsconfig.json` that includes the client. The checked-in
-`upstream` directory is a small source-tree snapshot with that project setup;
-`upstream-sound` is the same snapshot with a sound service binding, holding
+`skip-runtime-snapshot` directory is a small source-tree snapshot with that project setup;
+`skip-runtime-sound-binding` is the same snapshot with a sound service binding, holding
 only the files that binding changes
 ([reactive-runtime integration](#after-callable-part-5-reactive-runtime-integration)).
 A full Skip checkout needs an equivalent client project before its imports can
@@ -44,13 +44,13 @@ Skip toolchain or Docker. Install Dune with `opam install dune` if needed.
 
 [dune](dune) declares the producer's library and its executable;
 [dune-project](dune-project) makes this directory a dune root of its
-own, which `--root` builds into the `_build/` the reader and `check.mts` run.
+own, which `--root` builds into the `_build/` the report viewer and `verify-source.mts` run.
 [`../dune`](../dune) limits the repository's dune workspace, which an editor's
 OCaml language server needs at the root, to this directory.
-[examples/tsconfig.json](examples/tsconfig.json) is the strict project an
+[examples/tsconfig.json](../pipeline/examples/tsconfig.json) is the strict project an
 example is checked under when no `--project` names another, and
-[examples/package.json](examples/package.json) makes the examples ES modules,
-as the `upstream` project's Node16 resolution requires of the examples it
+[examples/package.json](../pipeline/examples/package.json) makes the examples ES modules,
+as the `skip-runtime-snapshot` project's Node16 resolution requires of the examples it
 includes.
 
 The checker prints `verified`, `unverified`, `unsupported`, or `error`, with an
@@ -68,23 +68,23 @@ Its successful exit is never a type-checking verdict.
 ## Reading its claims
 
 `make viewer` offers this producer beside `tsc`: select **OCaml
-claims**, and the reader runs `check.mts` on the file — the same run as the
+claims**, and the report viewer runs `verify-source.mts` on the file — the same run as the
 command line, in a process of its own — and builds its page from that run's
 outcome and artifacts: the Fragment, this producer's own claims, and the
 evidence the verifier checked. What it shows is that document, claim by claim
 at the spans it is about, the run's outcome, and the verdict beside each
 function; where the run did not verify, each function is checked alone over the
 same Fragment and claims to say where it stopped. Its examples above are in the
-picker, negative controls and named gaps included. The reader displays outcomes
+picker, negative controls and named gaps included. The report viewer displays outcomes
 and never reaches one, so an outcome there means what it means here: `✗` is no
 derivation found, never a disproof. A source the run refuses before proposing
 a claim — the parser's gate, or this producer's own `unsupported:` — is shown
 whole under that outcome, with the TypeScript errors the gate read
-(`typescript-diagnostics.json` among the artifacts) at their spans. The reader
+(`typescript-diagnostics.json` among the artifacts) at their spans. The report viewer
 runs the executable `dune build` leaves in `_build/`; it does not build it.
 
-`node verification/ocaml-producer/test.mts` checks that correspondence: that
-the claims the reader carries are the ones this producer wrote, that its
+`node verification/pipeline/test.mts` checks that correspondence: that
+the claims the report viewer carries are the ones this producer wrote, that its
 verdicts are the verifier's, and that a source the run refuses is shown under
 that outcome, in its words.
 
@@ -237,7 +237,7 @@ language. The boundaries are:
    read of an intersection is proposed at the first operand that has the
    member, which Lean checks. Graph interning is local to one
    document. Graph labels are an export detail, not type-variable identities.
-6. `check.mts` freezes source bytes, runs the parser and OCaml producer, asks Lean
+6. `verify-source.mts` freezes source bytes, runs the parser and OCaml producer, asks Lean
    to reconstruct obligations and produce evidence, then invokes the independent
    evidence consumer. Every source function must be covered. Acceptance is
    printed only after that final check succeeds.
@@ -294,8 +294,8 @@ Every row runs these steps. Each names the document that owns the rule it
 applies; this file records only what is specific to this producer.
 
 1. Add the motivating positive and negative sources without simplifying away
-   the feature. Add them to [`cases.mts`](cases.mts) with their expected phase
-   and diagnostic; that file is the executable source of truth, and the reader
+   the feature. Add them to [`cases.mts`](../pipeline/cases.mts) with their expected phase
+   and diagnostic; that file is the executable source of truth, and the report viewer
    lists its cases without further registration.
 2. Run the case once and identify the first honest boundary: shared parsing,
    OCaml proposal, Lean obligation reconstruction, evidence production, or
@@ -319,15 +319,15 @@ applies; this file records only what is specific to this producer.
    mutation showing that valid evidence cannot certify a forged claim or
    substitution.
 6. While iterating, run only the cases the change touches:
-   `node verification/ocaml-producer/run-cases.mts <pattern>` after
+   `node verification/pipeline/run-cases.mts <pattern>` after
    `dune build --root verification/ocaml-producer` (and
    `lake -d verification/lean build` when Lean changed). Before committing,
-   run `node verification/ocaml-producer/test.mts`, and the
+   run `node verification/pipeline/test.mts`, and the
    wider tiers in [AGENTS.md](../AGENTS.md#iterating-run-what-the-change-touches)
    when Lean, the parser or a wire format changed.
 7. Update the documents that own what changed, per
    [documentation ownership](../README.md#documentation-ownership) — wire
-   fields in the protocol documents, the notation in the viewer language, the
+   fields in the protocol documents, the notation in the report report viewer language, the
    decision in DESIGN — then the queue below from the final test output. Name any remaining blocked witness; passing adjacent
    examples does not complete its row. Do not create a handoff or checkpoint
    file.
@@ -339,10 +339,10 @@ smallest source that forces the final architecture to represent it honestly.
 Small examples are intentional; subset-specific representations are not. A row
 is complete only when its positive witness reaches `verified`, its relevant bad
 program reaches validation and is rejected there, and any new evidence field is
-covered by a tampering test. [`cases.mts`](cases.mts) is the executable source of
+covered by a tampering test. [`cases.mts`](../pipeline/cases.mts) is the executable source of
 truth for outcomes; the queue below records why the open rows matter.
 
-Complete, with their witnesses in [`cases.mts`](cases.mts): primitive values and
+Complete, with their witnesses in [`cases.mts`](../pipeline/cases.mts): primitive values and
 fixed local storage; branches, nullish flow and loops; multi-field objects and
 aliases; arrays, tuples and readonly views; higher-order callbacks and variance;
 closure scope and partial application; callable objects with fields; omitted
@@ -432,12 +432,12 @@ survive those extensions rather than being replaced by subset shortcuts.
 
 ## What works and what the tests establish
 
-[cases.mts](cases.mts) is the executable inventory, including expected phase
+[cases.mts](../pipeline/cases.mts) is the executable inventory, including expected phase
 and diagnostic for every negative control and known gap.
-[test.mts](test.mts) runs every case against it, then the checks no case can
+[test.mts](../pipeline/test.mts) runs every case against it, then the checks no case can
 make, in groups each justified by the requirement it guards: pinned trusted
 inputs, import resolution and declaration refusals, forged parser documents
-and claims, Node runs of the examples, and the reader's correspondence. It
+and claims, Node runs of the examples, and the report viewer's correspondence. It
 prints what the suite verifies, refuses and keeps visible; the numbers live in
 its output, not here.
 
@@ -535,7 +535,7 @@ construction and the runtime's generic API are not yet certified.
 The target is Skip's `skipruntime-ts` TypeScript API and implementation, not
 the native runtime written in Skip. The initial assessment inspected
 `skipruntime-ts/core/src/api.ts` and `skipruntime-ts/examples/sum.ts` in the
-sibling `skip` checkout; it is not a coverage census.
+sibling `skip` checkout; it is not a coverage run.
 
 The integration target is `sum.ts` as a sound client of the runtime's
 type-safe API. Preserve its classes, signatures and library interactions: do
@@ -555,8 +555,8 @@ parameter positions, so it is not a subtype of `EagerCollection<Json, Json>`
 under sound subtyping, and nothing requires it to be. SKJS's
 [`@skipruntime/core` stubs](../../import-stubs/@skipruntime/core/index.d.ts)
 describe the same API. The byte-for-byte upstream
-[`sum.ts`](examples/reactive-sum-prettier-ignore.ts) and
-[`api.ts`](upstream/skipruntime-ts/core/src/api.ts) snapshots are checked by
+[`sum.ts`](../pipeline/examples/reactive-sum-prettier-ignore.ts) and
+[`api.ts`](../pipeline/skip-runtime-snapshot/skipruntime-ts/core/src/api.ts) snapshots are checked by
 SHA-256 in `test.mts`.
 
 The upstream `sum.ts` is not a sound client of that API, and SKJS rejects it:
@@ -565,7 +565,7 @@ loose `==`, a statement starting with `[`, and a plain object type
 index-signature type, so it does not meet `SharedCollections` (TypeScript
 accepts it only by its unsound implicit index rule). It stays as provenance,
 with its first parser refusal recorded. The target is
-[`reactive-sum-sound.ts`](examples/reactive-sum-sound.ts), the same program
+[`reactive-sum-sound.ts`](../pipeline/examples/reactive-sum-sound.ts), the same program
 corrected as a client, which SKJS accepts with no errors and TypeScript accepts
 against the pinned API and Node's declarations (`@types/node` at the version
 Skip's lock pins, which the fixture project installs as Skip's build does).
@@ -583,7 +583,7 @@ Its whole declaration graph is read: the runtime API, the standard
 library's `Promise`, `Iterable` and `Iterator`, and `ResourceClass` as a
 construct signature. Before the contract-erasure repair, every class
 (`AddIndex`, `Plus`, `Minus`, `Add`, `Sub`, `Service`) and `main`, given an
-`AnySkipService`, verified; the `sum-*` cases in [`cases.mts`](cases.mts)
+`AnySkipService`, verified; the `sum-*` cases in [`cases.mts`](../pipeline/cases.mts)
 retain those targets. Promise-dependent units now stop earlier: recursive
 quantified contracts need an exact representation. Beyond that gap, the module
 also has a service-binding refusal, `runService(new Service(), …)`: sum.ts's `Service`
@@ -598,27 +598,27 @@ receives, which no trusted contract states yet
 but now fails at the unsupported full recursive Promise contract. The binding
 work below remains useful; its earlier successful verification relied on the
 contract erasure that has been removed.
-[`upstream-sound`](upstream-sound/tsconfig.json) is the pinned snapshot with
+[`skip-runtime-sound-binding`](../pipeline/skip-runtime-sound-binding/tsconfig.json) is the pinned snapshot with
 that link stated: a second project that holds only the three files the
-binding changes and reuses every other file of `upstream` through symlinks
+binding changes and reuses every other file of `skip-runtime-snapshot` through symlinks
 and an `extends` of its configuration (the package entries point at the
-patched files; `npm ci --prefix verification/ocaml-producer/upstream` still
+patched files; `npm ci --prefix verification/pipeline/skip-runtime-snapshot` still
 installs Node's declarations for both). In
-[`api.ts`](upstream-sound/skipruntime-ts/core/src/api.ts), `createGraph`
+[`api.ts`](../pipeline/skip-runtime-sound-binding/skipruntime-ts/core/src/api.ts), `createGraph`
 receives `InputCollections`, whose `get<K, V>(definition: InputDefinition<K,
 V>): EagerCollection<K, V>` hands out each input collection through the
 definition that declared it, so `SkipService` loses its free `Inputs`
 parameter; resources are `ResourceClass<ResourceInputs, Json>`, since the
 runtime constructs them with the request's parameters (`never` stated
-nothing true). [`server.ts`](upstream-sound/skipruntime-ts/server/src/server.ts)
+nothing true). [`server.ts`](../pipeline/skip-runtime-sound-binding/skipruntime-ts/server/src/server.ts)
 makes `runService` generic over the concrete service,
 `SkipService<InputDefs, ResourceInputs>`, which needs no method bivariance,
 and the runtime's `createGraph` in
-[`index.ts`](upstream-sound/skipruntime-ts/core/src/index.ts) builds `get` from
+[`index.ts`](../pipeline/skip-runtime-sound-binding/skipruntime-ts/core/src/index.ts) builds `get` from
 the service's own definitions, throwing for any other (a trust note:
 [trust surface](../DESIGN.md#trust-surface)). Under `tsc` the
 patched tree reports the same errors as the snapshot and no new one.
-[`sum-sound-binding.ts`](examples/sum-sound-binding.ts) is
+[`sum-sound-binding.ts`](../pipeline/examples/sum-sound-binding.ts) is
 `reactive-sum-sound.ts` as a client of it, changed only where the binding
 changed: `SkipService<Inputs, Collections>`, `ResourceClass<Collections,
 Json>`, and `createGraph(inputs: InputCollections, …)` returning
@@ -752,11 +752,11 @@ TypeScript read the same client bytes it parsed. Function annotations are
 source type terms like declaration bodies, and a reference in one names the
 declaration TypeScript resolved; the producer decodes both with one decoder. Exported source functions are accepted as strict
 module code. With that project, both `nest` and `lookup` in
-[`recursive-json.ts`](examples/recursive-json.ts) now reach Lean evidence
+[`recursive-json.ts`](../pipeline/examples/recursive-json.ts) now reach Lean evidence
 production and checking and verify. In
-[`recursive-json-values.ts`](examples/recursive-json-values.ts), Boolean,
+[`recursive-json-values.ts`](../pipeline/examples/recursive-json-values.ts), Boolean,
 number, string, array and object values pass to a `Json` consumer. In
-[`recursive-json-variants.ts`](examples/recursive-json-variants.ts), those
+[`recursive-json-variants.ts`](../pipeline/examples/recursive-json-variants.ts), those
 kinds of values pass to a universally checked `<T extends Json>` closure.
 At each call OCaml proposes the imported `Json` bound as a widened
 instantiation of `T`; Lean checks the concrete argument and the bound. These
@@ -789,7 +789,7 @@ refused by the OCaml proposal path. The suite refuses producer-filled rows and s
 graph labels. The CLI accepts `--project` with a source checkout containing the
 TypeScript files, package manifests and workspace symlinks; the test and command
 above read the same checked-in source snapshot. All intermediate JSON is
-generated from that source tree. The viewer uses the same project mapping from
+generated from that source tree. The report viewer uses the same project mapping from
 the executable case inventory; a bare CLI invocation still needs `--project`.
 This is conditional verification relative to the trusted declaration document, not
 closure of the full milestone.
@@ -827,7 +827,7 @@ becoming a second implementation of the imported type's meaning.
 
 The declaration document contains the collected declaration equations. Resolution
 is TypeScript's, under the snapshot's dedicated
-[`upstream/tsconfig.json`](upstream/tsconfig.json), which includes the
+[`skip-runtime-snapshot/tsconfig.json`](../pipeline/skip-runtime-snapshot/tsconfig.json), which includes the
 imported-`Json` clients and mirrors upstream's strict Node16 resolution and
 its `types: ["node"]`;
 `--project` names it explicitly, leaving the other OCaml examples' TypeScript
@@ -956,7 +956,7 @@ bound-instantiation case verify against the canonical declaration, the negative
 and forged controls fail at their intended obligations, the recursive graph is
 accepted through the soundness theorem, and the reader states any remaining
 external assumptions. Check that all new cases are counted by the OCaml suite
-and viewer; report verified, rejected and unsupported outcomes separately.
+and report viewer; report verified, rejected and unsupported outcomes separately.
 
 For classes, preserve separate `[[Call]]` and `[[Construct]]` capabilities on
 one function object. `new` allocates an instance, runs its constructor with
@@ -1010,7 +1010,7 @@ extension is not shaped around `sum.ts`, and progress toward the milestones is
 reported from measured first blockers, not from the extension landing.
 
 The target is the corrected client
-[`reactive-sum-sound.ts`](examples/reactive-sum-sound.ts). Required for the
+[`reactive-sum-sound.ts`](../pipeline/examples/reactive-sum-sound.ts). Required for the
 first milestone, in order of how much each gates:
 
 1. **Module-level code and value imports.** Done: module functions reachable
@@ -1254,9 +1254,9 @@ list is not an array, and such a declaration is refused. Rerun the original clie
 independently: its array-library and asynchronous-startup gaps are separate.
 
 **A tight service binding, verified with its use.**
-[`framework-binding-sound.ts`](examples/framework-binding-sound.ts) is the
+[`framework-binding-sound.ts`](../pipeline/examples/framework-binding-sound.ts) is the
 first framework binding verified together with a client, beside
-[`framework-binding-unsound.ts`](examples/framework-binding-unsound.ts),
+[`framework-binding-unsound.ts`](../pipeline/examples/framework-binding-unsound.ts),
 today's binding in one file, under which a service reading an undeclared
 input verifies and crashes: the unsoundness is the binding's, not a checker's.
 In the sound binding, a service's
@@ -1272,7 +1272,7 @@ reads the same one. Its negative, `invalid-framework-binding-sound.ts`, is
 a service taking more than the framework passes, which TypeScript accepts by
 method bivariance. The matching change to Skip's API (`InputCollections`,
 `runService` generic over the concrete service, `ResourceClass<R, Json>`) is
-checked in as [`upstream-sound`](upstream-sound/tsconfig.json), and sum.ts on
+checked in as [`skip-runtime-sound-binding`](../pipeline/skip-runtime-sound-binding/tsconfig.json), and sum.ts on
 it verifies end to end (`sum-sound-binding.ts`, above). It needed two proposal
 changes and no new rule: a class whose constructor takes fewer parameters
 than the construct signature it meets is claimed there
@@ -1379,7 +1379,7 @@ Serializable<Todo>>.getUnique(key).title`, through `V extends Json` and
 `EagerCollection`'s bound, which `tsc` accepts and the application's bound
 check refuses — that refusal is the request's, not located at the annotation,
 as every application bound's is, so `test.mts` checks it rather than the
-reader's controls.
+report viewer's controls.
 
 *Left.*
 - `sum-serializable-map` now verifies: the exact meet of a type parameter

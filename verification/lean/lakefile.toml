@@ -4,11 +4,11 @@ defaultTargets = ["verifier", "Verification"]
 [[lean_lib]]
 name = "Verification"
 globs = [
-  "Verification.Model.Semantics.+",
-  "Verification.Model.Types.+",
-  "Verification.Model.Programs.+",
-  "Verification.Model.Source.+",
-  "Verification.Model.Tests.+",
+  "Verification.Semantics.+",
+  "Verification.Types.+",
+  "Verification.Programs.+",
+  "Verification.Source.+",
+  "Verification.Tests.+",
 ]
 
 [[lean_exe]]

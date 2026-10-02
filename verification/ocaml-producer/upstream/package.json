@@ -1,8 +1,0 @@
-{
-  "name": "skip-upstream-snapshot",
-  "private": true,
-  "description": "The Node declarations Skip's build checks against (its tsconfig's types: [\"node\"]), at the version Skip's lock file pins at the snapshot's commit.",
-  "devDependencies": {
-    "@types/node": "22.10.7"
-  }
-}

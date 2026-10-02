@@ -16,7 +16,7 @@ import type { Span } from "../tools/span.mts";
 import type { RigidParameter } from "../tools/rigid.mts";
 
 /*
- * What the reader shows for one function: the places it can point at, and the
+ * What the report viewer shows for one function: the places it can point at, and the
  * one failure the verifier reported, if it did. Every field here is read by a
  * view or a suite; the manifest keeps everything else.
  */
@@ -33,7 +33,7 @@ export interface ShownBinding {
   rigid?: RigidParameter[];
 }
 
-/** A place in the function the reader can point at. */
+/** A place in the function the report viewer can point at. */
 export type Site =
   | {
       /** The result the function must establish, at the source's annotation. */
@@ -533,7 +533,7 @@ function fromBundle(bundle: Bundle): ShownReport {
             : location.kind === "environment-obligation"
               ? first(is("environment", startsAt(location.start)))
               : // A parameter claim contradicting its annotation: the first
-                // environment that names the parameter is where the reader sees it.
+                // environment that names the parameter is where the report viewer sees it.
                 location.kind === "parameter-claim"
                 ? first(
                     (s) => s.kind === "environment" && s.bindings.some((b) => b.name === location.binding),

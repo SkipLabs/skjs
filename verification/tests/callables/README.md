@@ -63,7 +63,7 @@ Not supported, with the refusal each one meets:
 | Form                                                                                         | Where it stops                                                                                                                                                                                                                           |
 | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `arguments`, argument-count introspection                                                    | the protocol excludes argument-count introspection                                                                                                                                                                                       |
-| A spread of an array that may have holes into a rest whose element type lacks `undefined`    | named refusal: a hole spreads `undefined`, which the rest would hold; TypeScript accepts the call ([witness](../../ocaml-producer/examples/spread-holes.ts))                                                                                                         |
+| A spread of an array that may have holes into a rest whose element type lacks `undefined`    | named refusal: a hole spreads `undefined`, which the rest would hold; TypeScript accepts the call ([witness](../../pipeline/examples/spread-holes.ts))                                                                                                         |
 | A spread into fixed parameters other than a last tuple spread                                | named refusal                                                                                                                                                                                                                            |
 | Construct signatures, `new`, classes, accessors                                              | `function-constructible`; accessor execution is a separate semantic obligation                                                                                                                                                           |
 | Index signatures and array brands on functions                                               | `function-index-signature`, `function-is-array`                                                                                                                                                                                          |
@@ -93,7 +93,7 @@ accepts this contract violation; the pipeline refuses the write.
    forward capture; the latter checks a capture chain across effectful defaults.
    Early invocation and a Boolean initializer falsely claimed at arbitrary `T`
    are negative controls. Both verifier entry points reject early invocation,
-   and the viewer receives a located refusal.
+   and the report viewer receives a located refusal.
 
 A default is an entry node of the code's graph: a tag dispatch on
 `undefined` at the parameter's slot, the default's evaluation on one arm. The
@@ -135,14 +135,14 @@ the code's check at each variadic signature to the variadic contract; over a
 binder, at every assignment of it. Both declarations and closures are
 consumed by `SourceClaimJson.checkJson_safe` as graph requests.
 
-The OCaml producer's [`generic-rest.ts`](../../ocaml-producer/examples/generic-rest.ts)
+The OCaml producer's [`generic-rest.ts`](../../pipeline/examples/generic-rest.ts)
 checks a returned `T[]`, independent Boolean and numeric uses of one closure,
 a fixed prefix with empty rest and tuple spread, a universal default,
 a possibly sparse spread, and a variadic callback inside a generic body.
 The negative controls reject a captured Boolean array as arbitrary `T[]` and a
 Boolean actual sent to a rest callback at arbitrary `T`. Both CLI entry points
 reject altered rest contracts, substitutions, source binding flags and operand
-claims; the viewer renders the types and located failures. These are universal
+claims; the report viewer renders the types and located failures. These are universal
 certificates plus ground consequences, never observed-call monomorphization.
 
 Tuple packs and argument-sequence inference remain later work, as planned.
@@ -394,7 +394,7 @@ not implied by it.
 
 The corpus checks each file's TypeScript claims through the same extraction
 and independent consumer; the OCaml producer's own cases cover the same
-features end to end ([`cases.mts`](../../ocaml-producer/cases.mts)).
+features end to end ([`cases.mts`](../../pipeline/cases.mts)).
 
 [factories.ts](factories.ts) contrasts factories allocating a private cell per
 invocation with a control sharing a cell outside the factory.
@@ -418,7 +418,7 @@ parameter and a multi-argument union callee.
 `typeof ... === "function"` and `!==` guards.
 
 Overloaded closures are the OCaml producer's
-[`overloads.ts`](../../ocaml-producer/examples/overloads.ts), with
+[`overloads.ts`](../../pipeline/examples/overloads.ts), with
 `invalid-overload.ts` claiming a signature its body does not implement. The
 claims carry one interior set per signature, the same mechanism compiled scheme
 eliminations use, and a block body is checked at each signature's own result

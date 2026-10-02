@@ -1,0 +1,25 @@
+{
+  // The environment SKJS's test harness checks a test in, as the pipeline
+  // reads it (DESIGN.md, "Trust surface"). SKJS runs with
+  // `--import-stubs import-stubs`: a bare import specifier resolves in that
+  // directory, and its builtins stub declares the host's globals, of which
+  // `skjs-environment.d.ts` restates those the ECMAScript library lacks. The
+  // compiler options are otherwise those `verify-source.mts` gives a lone file.
+  // `skjs-coverage.mts` extends this project once per derived file, with
+  // that file and the environment as its `files`.
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "target": "es2022",
+    // The ECMAScript library alone: SKJS's host has no DOM, whose globals
+    // (`Event`, `Response`) would collide with a test's own declarations.
+    "lib": ["es2022"],
+    "types": [],
+    "paths": { "*": ["../../../import-stubs/*"] }
+  },
+  "files": [
+    "skjs-environment.d.ts",
+    "../examples/skjs-environment.ts",
+    "../examples/invalid-skjs-environment.ts"
+  ]
+}

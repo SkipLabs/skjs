@@ -1,15 +1,15 @@
 /*
  * What the server offers, as functions.
  *
- * The reader runs against `serve.mts`, which collects a producer's claims for a
+ * The report viewer runs against `serve.mts`, which collects a producer's claims for a
  * repository source and has the verifier check them. Every call here is a read:
- * the reader asks for a report and displays it. It never decides an outcome —
+ * the report viewer asks for a report and displays it. It never decides an outcome —
  * an outcome in a bundle was reached by the verifier, and a bundle that carries
  * none says so rather than being filled in.
  */
 import type { Bundle, ExampleGroup, Producer } from "../../types.ts";
 
-/* What the picker lists, declared where the reader's other documents are so
+/* What the picker lists, declared where the report viewer's other documents are so
  * the server and the page cannot drift apart over it. */
 export type { ExampleGroup as Group } from "../../types.ts";
 

@@ -11,13 +11,13 @@ without breaking the suite's shape.
 ## Commands
 
 ```sh
-verification/run.sh              # the pipeline's suites
+verification/test-all.sh              # the pipeline's suites
 make verify                      # from the repo root: build, suites, then the corpus
 make verify-test                 # the suites only
 make verify-examples             # the corpus only
 (cd verification/lean && lake build)  # the verifier alone
-node verification/examples.mts    # the corpus alone
-make viewer                      # the claim report reader on http://localhost:8731
+node verification/corpus-report.mts    # the corpus alone
+make viewer                      # the claim report viewer on http://localhost:8731
 ```
 
 ### Iterating: run what the change touches
@@ -27,11 +27,11 @@ that covers what changed, and the wider tier once before committing:
 
 | Changed | While iterating | Before committing |
 | --- | --- | --- |
-| OCaml producer (`ocaml-producer/*.ml`) | `dune build --root verification/ocaml-producer`, then `node verification/ocaml-producer/run-cases.mts <pattern>` (cases whose file names contain the pattern; about a second for a handful) | `node verification/ocaml-producer/test.mts` (all cases, then the checks no case can make: pinned inputs, imports, forged documents and claims, Node runs, reader) |
-| One source file | `node verification/ocaml-producer/check.mts <file.ts> [--project dir]` | — |
-| Lean | `(cd verification/lean && lake build)`, then `run-cases.mts` for the affected cases | `verification/run.sh` |
-| Parser, Fragment or SourceClaims wire, shared tools | `(cd verification/tools && npx tsc -p tsconfig.json)`, `node verification/tests/json-field-names.mts` (instant: TypeScript, Lean and OCaml use the same JSON field names), then `run-cases.mts` | `verification/run.sh` |
-| Viewer | `(cd verification/report-viewer/app && npm run check)` | `test.mts` (its reader section) |
+| OCaml producer (`ocaml-producer/*.ml`) | `dune build --root verification/ocaml-producer`, then `node verification/pipeline/run-cases.mts <pattern>` (cases whose file names contain the pattern; about a second for a handful) | `node verification/pipeline/test.mts` (all cases, then the checks no case can make: pinned inputs, imports, forged documents and claims, Node runs, reader) |
+| One source file | `node verification/pipeline/verify-source.mts <file.ts> [--project dir]` | — |
+| Lean | `(cd verification/lean && lake build)`, then `run-cases.mts` for the affected cases | `verification/test-all.sh` |
+| Parser, Fragment or SourceClaims wire, shared tools | `(cd verification/tools && npx tsc -p tsconfig.json)`, `node verification/tests/json-field-names.mts` (instant: TypeScript, Lean and OCaml use the same JSON field names), then `run-cases.mts` | `verification/test-all.sh` |
+| Viewer | `(cd verification/report-viewer/app && npm run check)` | `test.mts` (its report-viewer section) |
 
 `run-cases.mts` with no pattern runs every case (~15 s) and is the first part
 of `test.mts`, through the same check.
@@ -66,7 +66,7 @@ before running it.
 One file end to end, with `$F` a repository-relative path:
 
 ```sh
-node verification/ocaml-producer/check.mts $F
+node verification/pipeline/verify-source.mts $F
 ```
 
 It prints the outcome and the directory holding what the run wrote: the
@@ -76,7 +76,7 @@ and the verifier's `evidence.json`.
 ## Which tests to keep
 
 The end-to-end pipeline cases are the primary signal: a source file through
-the parser, the OCaml producer and Lean (`ocaml-producer/cases.mts`, run by
+the parser, the OCaml producer and Lean (`pipeline/cases.mts`, run by
 `run-cases.mts`). They exercise the unproved parts together (parser,
 extraction, producer, wire), and what Lean proves needs no test.
 
@@ -97,7 +97,7 @@ extraction, producer, wire), and what Lean proves needs no test.
 
 ## The suite's shape, and the rules that keep it
 
-`run.sh` keeps the suites fast by one decision, a rule for anything added; the
+`test-all.sh` keeps the suites fast by one decision, a rule for anything added; the
 runner summary reports the current suite count.
 
 - **Suites start together.** A suite is `run_test "Name" command args…`; its
@@ -106,7 +106,7 @@ runner summary reports the current suite count.
   run the corpus. The OCaml suite also builds its Dune executable before its
   tests.
 
-`examples.mts` spreads the corpus over one worker per core, and decides colour
+`corpus-report.mts` spreads the corpus over one worker per core, and decides colour
 once in the parent.
 
 ## What a result means
@@ -131,7 +131,7 @@ for every extracted function. Preserve this by construction:
   required statement. Review the theorem's premise and conclusion whenever the
   accepted plan type or CLI path changes.
 - Search output, direct-check success and compiled ground consequences are
-  intermediate artifacts. The runner and viewer must not label them verified
+  intermediate artifacts. The runner and report viewer must not label them verified
   before the corresponding plan reaches `CertifiedPlan`.
 
 - The corpus prints, per function, `tsc ✓→✗`: TypeScript's own verdict on the
@@ -234,17 +234,17 @@ fragment; do not restore acceptance by increasing trust silently.
 ## Conventions
 
 - Formatting: everything is prettier-formatted (`make fmt` at the root).
-- The reader is a Svelte application in `report-viewer/app`, built by Vite and
+- The report viewer is a Svelte application in `report-viewer/app`, built by Vite and
   served by `report-viewer/serve.mts`. `npm run check` there is svelte-check,
   not `tsc`: `tsc` does not look inside a component's template, which is
   exactly where a wrong property name hides. `make viewer` builds and serves.
 - Every module the node side runs is `.mts`, and `tools/tsconfig.json` covers
   all of them — the trusted front end, the corpus driver and the suites — under
   one fully strict configuration, `noImplicitAny` and `strictNullChecks`
-  included, as well as the reader's own model and server. A new file lands in that project by being
+  included, as well as the report viewer's own model and server. A new file lands in that project by being
   where it belongs; nothing is exempt.
-- `tools/source-claims.mts` describes the source sidecar wire format, and
-  `report-viewer/types.ts` the report the reader displays. A tool that writes
+- `tools/source-claims.mts` describes the claims document wire format, and
+  `report-viewer/types.ts` the report the report viewer displays. A tool that writes
   or reads one of those documents is typed against that description rather
   than against its own idea of the shape, so producer and consumer cannot
   drift apart silently. That typing is the whole consistency mechanism: adding
@@ -266,7 +266,7 @@ fragment; do not restore acceptance by increasing trust silently.
   a type predicate, a `typeof` before a comparison, a case table keyed by the
   language's own union. `node verification/tools/unchecked.mts` ([source](tools/unchecked.mts)) reports every written `any`, `as`
   and `!` in the node side, and fails on one without a reason, a comment
-  `// asserted: REASON` at the end of its line or alone on the line above; `run.sh`
+  `// asserted: REASON` at the end of its line or alone on the line above; `test-all.sh`
   runs it as a suite. The assertion that has its reason is an `as` at the last
   line of a decoder, where the checks it just ran become the type it returns.
   An assertion anywhere else is standing in for a check that is missing; where
@@ -287,7 +287,7 @@ fragment; do not restore acceptance by increasing trust silently.
   outside reads them, and there is no older document to keep working.
 - Lean: no `sorry`, no project axioms; `#print axioms` on every soundness
   theorem stays in the file. Build only the module you changed while
-  iterating (`lake build Verification.Model.<Layer>.<Module>` from `verification/lean`).
+  iterating (`lake build Verification.<Layer>.<Module>` from `verification/lean`).
   Run Lake from that directory so elan selects its pinned `lean-toolchain`;
   `lake -d` from the repository root can select a different compiler before
   changing directories. Never run simultaneous builds against the same cache.

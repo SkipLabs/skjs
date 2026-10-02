@@ -7,8 +7,8 @@ same source adapter and independently checked certificates. Neither a producer
 nor proof search is assumed sound.
 
 There is one maintained calculus and verifier. Its implementation lives in
-`lean/Verification/Model/`, organized by semantics, types, program rules,
-source integration, and tests. Declarations share the `Verification.Model`
+`lean/Verification/`, organized by semantics, types, program rules,
+source integration, and tests. Declarations live under the `Verification`
 namespace; module paths identify their topic. These folders aid navigation,
 not an enforced dependency order: some derived semantic lemmas depend on
 program rules.
@@ -34,7 +34,7 @@ tools once:
 
 ```sh
 (cd verification/tools && npm install)
-npm ci --prefix verification/ocaml-producer/upstream   # the fixture's @types/node
+npm ci --prefix verification/pipeline/skip-runtime-snapshot   # the fixture's @types/node
 make verify
 ```
 
@@ -53,13 +53,13 @@ while researching a feature retire once a pipeline case covers it
 The commands separate regression testing from inspecting example outcomes:
 
 - `make verify-test` builds Lean and runs the pipeline's suites
-  ([run.sh](run.sh) starts them together and reports them in order): the
+  ([test-all.sh](test-all.sh) starts them together and reports them in order): the
   OCaml producer's cases, front-end types, JSON field names, documents, the
   rule inventory and the source boundaries. Its summary counts test executables,
   not functions or assertions, and marks an incomplete run after an early
   failure.
 - `make verify-examples` builds Lean and checks TypeScript's own claims for
-  the viewer's example corpus ([examples.mts](examples.mts);
+  the report viewer's example corpus ([corpus-report.mts](corpus-report.mts);
   [tsc claims](tests/tsc-claims/README.md)).
   Each function shows TypeScript's verdict and whether the verifier derives
   its claims: proof `✓` means independently verified, `✗` means proof search
@@ -73,11 +73,15 @@ colors. Use `VERBOSE=1` for build details and example diagnostics. Without
 rebuilding Lean:
 
 ```sh
-verification/run.sh
-node verification/examples.mts
+verification/test-all.sh
+node verification/corpus-report.mts
 ```
 
 ## Current source fragment
+
+The *fragment* is the subset of TypeScript the verifier accepts; a *Fragment*
+document is the parser's tree of one source in it
+([LANGUAGES](LANGUAGES.md#the-languages)).
 
 A source file is a module, checked per code unit: each function, and the
 module's initialization, which runs its constants, classes, enums and
@@ -123,7 +127,7 @@ Everything else is refused with a located reason. The fragment is smaller
 than the calculus, and the parser can represent syntax the Lean adapter then
 rejects: such a rejection is a limitation, never evidence that a producer
 claim is false. How much of SKJS's own test suite this covers, and what stops
-the rest, is measured in [SKJS-COVERAGE](ocaml-producer/SKJS-COVERAGE.md).
+the rest, is measured in [SKJS-COVERAGE](pipeline/SKJS-COVERAGE.md).
 
 [Design](DESIGN.md#fragment-boundary) owns what
 is refused and why, and [PROGRAM-TYPING](PROGRAM-TYPING.md#reading-the-source)
@@ -137,17 +141,17 @@ the order in which they are to be taken.
 
 ## Reports and examples
 
-Start the local viewer with:
+Start the local report viewer with:
 
 ```sh
 node verification/report-viewer/serve.mts
 ```
 
-[report-viewer/serve.mts](report-viewer/serve.mts) is the reader's server: it
+[report-viewer/serve.mts](report-viewer/serve.mts) is the report viewer's server: it
 runs the chosen source through the pipeline and serves the built page.
 Open the printed URL. The groups hold the corpus examples, the OCaml
 producer's fixtures and explicitly unsupported examples. Arbitrary repository source can be selected with `?file=relative/path.ts`.
-See the [reader guide](report-viewer/README.md) and
+See the [report viewer guide](report-viewer/README.md) and
 [annotated report format](ANNOTATED-SOURCE.md).
 
 ## What is established
@@ -173,16 +177,16 @@ owner; other documents link to them and give only the context their readers need
 | This README | Commands, a concise supported-fragment overview, and navigation. |
 | [DESIGN](DESIGN.md) | Principles, architecture, the model in brief, the trust surface, the fragment boundary, lasting decisions and next steps. |
 | [SEMANTICS](SEMANTICS.md) | The term and value grammar, execution, worlds, heap satisfaction, membership and safety predicates. |
-| [POSITIVE-TYPES](POSITIVE-TYPES.md) | Type and state-assertion grammars, normalization, declarative subtyping and subtype certificates. |
+| [POSITIVE-TYPES](POSITIVE-TYPES.md) | Types as positive formulas (clauses under union and intersection, no negation): type and state-assertion grammars, normalization, declarative subtyping and subtype certificates. |
 | [RECURSIVE-EQUATIONS](RECURSIVE-EQUATIONS.md) | Generic declarations as parameterized equations: labels, unfolding, substitution, family subtyping, lowering, wire format and acceptance statement. |
 | [PROGRAM-TYPING](PROGRAM-TYPING.md) | The graph program syntax, program/graph rules and their mathematics, side conditions, soundness, derived forms and evidence construction. |
 | [REQUEST-PROTOCOL](REQUEST-PROTOCOL.md) | Request/evidence JSON, the verifier CLI, and the source AST encoding. |
-| [SOURCE-CLAIMS](SOURCE-CLAIMS.md) | The independent sidecar schemas and source identity. |
+| [SOURCE-CLAIMS](SOURCE-CLAIMS.md) | The independent claims document schemas and source identity. |
 | [LANGUAGES](LANGUAGES.md) | Every representation data crosses, which file owns each on both sides, the naming convention, and where it does not hold. |
 | [ANNOTATED-SOURCE](ANNOTATED-SOURCE.md) | Report output, manifest, annotations, provenance and freshness. |
 | [OBLIGATION-DIAGNOSTICS](OBLIGATION-DIAGNOSTICS.md) | Failure records, source maps, outcome classification and reason vocabulary. |
-| [VIEWER-LANGUAGE](VIEWER-LANGUAGE.md) | The viewer's claim language and its boundaries: what it displays and its two typed representations. |
-| [Viewer README](report-viewer/README.md) | The claim report reader, display-only: its use, local server, implementation structure and browser integration. |
+| [REPORT-VIEWER-LANGUAGE](REPORT-VIEWER-LANGUAGE.md) | The report viewer's claim language and its boundaries: what it displays and its two typed representations. |
+| [Viewer README](report-viewer/README.md) | The claim report viewer, display-only: its use, local server, implementation structure and browser integration. |
 | [Test index](tests/README.md) and linked corpus READMEs | Regression coverage, the corpus and its runnable witnesses. |
 | [REFERENCES](REFERENCES.md) | Every cited paper, specification, tool and issue, with what the project uses from it and where. Other documents link to its anchors. |
 | [TRUST-REDUCTION](TRUST-REDUCTION.md) | The bridges between source and theorem that rest on review, the options for narrowing or proving each, and host lemmas against a mechanized ECMA-262. |
@@ -209,22 +213,22 @@ justifies it — the compiled derivations are consequences, never the reason for
 acceptance — and one interface so a later certificate can replace it.
 
 The source boundary starts in
-[Fragment.lean](lean/Verification/Model/Source/Fragment.lean) and
-[SourceExtraction.lean](lean/Verification/Model/Source/SourceExtraction.lean);
-[RequestJson.lean](lean/Verification/Model/Source/RequestJson.lean) checks the
+[Fragment.lean](lean/Verification/Source/Fragment.lean) and
+[SourceExtraction.lean](lean/Verification/Source/SourceExtraction.lean);
+[RequestJson.lean](lean/Verification/Source/RequestJson.lean) checks the
 resulting requests and evidence.
 
 The main Lean entry points are:
 
 | Area | Entry points |
 | --- | --- |
-| Operational semantics and worlds | [Calculus](lean/Verification/Model/Semantics/Calculus.lean), [Worlds](lean/Verification/Model/Semantics/Worlds.lean), [ObjectCoherence](lean/Verification/Model/Semantics/ObjectCoherence.lean) |
-| Semantic families and graph types | [Types](lean/Verification/Model/Types/Types.lean), [PositiveGraphs](lean/Verification/Model/Types/PositiveGraphs.lean), [PositiveRules](lean/Verification/Model/Types/PositiveRules.lean) |
-| Program typing and checked evidence | [ProgramTyping](lean/Verification/Model/Programs/ProgramTyping.lean), [ProgramCertificates](lean/Verification/Model/Programs/ProgramCertificates.lean), [CertificateProducer](lean/Verification/Model/Programs/CertificateProducer.lean) |
-| Source boundary and CLI | [Fragment](lean/Verification/Model/Source/Fragment.lean), [SourceExtraction](lean/Verification/Model/Source/SourceExtraction.lean), [SourceClaimJson](lean/Verification/Model/Source/SourceClaimJson.lean), [RequestCli](lean/Verification/Model/Source/RequestCli.lean) |
+| Operational semantics and worlds | [Calculus](lean/Verification/Semantics/Calculus.lean), [Worlds](lean/Verification/Semantics/Worlds.lean), [ObjectCoherence](lean/Verification/Semantics/ObjectCoherence.lean) |
+| Semantic families and graph types | [Types](lean/Verification/Types/Types.lean), [PositiveGraphs](lean/Verification/Types/PositiveGraphs.lean), [PositiveRules](lean/Verification/Types/PositiveRules.lean) |
+| Program typing and checked evidence | [ProgramTyping](lean/Verification/Programs/ProgramTyping.lean), [ProgramCertificates](lean/Verification/Programs/ProgramCertificates.lean), [CertificateProducer](lean/Verification/Programs/CertificateProducer.lean) |
+| Source boundary and CLI | [Fragment](lean/Verification/Source/Fragment.lean), [SourceExtraction](lean/Verification/Source/SourceExtraction.lean), [SourceClaimJson](lean/Verification/Source/SourceClaimJson.lean), [RequestCli](lean/Verification/Source/RequestCli.lean) |
 | Other code and tests | [OCaml producer](ocaml-producer/README.md), [Node tools](tools/), [report viewer](report-viewer/README.md), [regression index](tests/README.md) |
 
-Sidecars preserve current-content assertions such as
+Claims documents preserve current-content assertions such as
 `{ value: boolean = (true) }`, separately from the storage invariant. Supplied
 observations are checked obligations: every incoming edge, including loop
 backedges, must establish the assertions claimed at a statement entry. See

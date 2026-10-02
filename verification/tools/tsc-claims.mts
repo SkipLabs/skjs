@@ -7,13 +7,13 @@
  * Sites come from the trusted parser's own AST (fragment-parse.mts), walked with
  * the same rule the verifier uses to decide what is an entry and what is an
  * expression (SourceClaimJson.functionSites / exprSites, in
- * verification/lean/Verification/Model/Source/SourceClaimJson.lean). A site
+ * verification/lean/Verification/Source/SourceClaimJson.lean). A site
  * is matched to a real TypeScript node by exact [start,end) span, and its type
  * comes from the checker. A type this tool cannot state as a calculus label is
  * omitted, never guessed: the omission, with the reason and the checker's own
  * rendering, is returned beside the claims, and the whole function is left out
  * of the claims document, since one missing site would fail extraction anyway.
- * It runs through the pipeline's one entry, `ocaml-producer/check.mts
+ * It runs through the pipeline entry point, `pipeline/verify-source.mts
  * --producer tsc`, which parses the source and passes its Fragment here.
  *
  * This producer is UNTRUSTED. The verifier checks what it claims.

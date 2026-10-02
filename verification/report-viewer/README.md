@@ -1,8 +1,8 @@
-# Claim report reader
+# Claim report viewer
 
 A source-centred inspector for producer claims and what the verifier made of
 them. It is display-only: nothing it shows is proof evidence, and an outcome it
-displays was reached by the verifier, never by the reader.
+displays was reached by the verifier, never by the report viewer.
 
 ## Use
 
@@ -18,7 +18,7 @@ sites and the same verifier adjudicates any of them, so switching re-reads the
 open file through another one. Each implements its own fragment of the
 language, and one that does not implement the open file says so in its own
 words rather than showing a report with nothing in it. Either producer's claims
-are one run of the pipeline, `ocaml-producer/check.mts` (`--producer tsc` for
+are one run of the pipeline, `pipeline/verify-source.mts` (`--producer tsc` for
 TypeScript's) — the run its suites and the corpus judge, so any file it runs
 opens here, with no setup of its own — and the page is built from that run's
 artifacts. Its outcome is the line under the bar. A
@@ -29,7 +29,7 @@ TypeScript gives them: those the gate read, for the OCaml claims, and the
 checker's own messages, for TypeScript's. The OCaml claims need
 `dune build --root verification/ocaml-producer` to have been run.
 
-Opening the reader without a file in the link shows the **catalogue** ([Catalogue.svelte](app/src/Catalogue.svelte)) — every
+Opening the report viewer without a file in the link shows the **catalogue** ([Catalogue.svelte](app/src/Catalogue.svelte)) — every
 source it offers, laid out to be read — and **browse sources** returns to it.
 Or type any repository-relative path into **Open any repository path…** ([OpenPath.svelte](app/src/OpenPath.svelte)); it
 suggests matching `.ts` sources as you type, and a full path works whether or
@@ -123,22 +123,22 @@ unaffected and builds against 7 alone.
 
 The view is the only part that is Svelte. Everything it reasons with is a
 module beside it, checked by `tools/tsconfig.json` like the rest of the front
-end and exercised by the reader section of `ocaml-producer/test.mts` without a
+end and exercised by the report viewer section of `pipeline/test.mts` without a
 browser:
 
-- [`model.mts`](model.mts) — what a bundle means, as the reader displays it: for each
+- [`model.mts`](model.mts) — what a bundle means, as the report viewer displays it: for each
   function, its sites in source order — an expression claim, an environment, or
   a place with nothing claimed — and its one failure, with the site it attached
   to.
 - [`marks.mts`](marks.mts) — what the source view draws: which claims at what position, the
   outcome symbols, how marks pack onto rows without overlapping.
-- [`types.ts`](types.ts) — the report the reader displays and the catalogue's
+- [`types.ts`](types.ts) — the report the report viewer displays and the catalogue's
   groups: the report writer, the server and the page are typed against it.
 - `../tools/diagnostic-view.mts` — builds a typed obligation presentation when the report is generated; the panel renders it.
 - `../tools/claim-text.mts` — claim types in surface syntax, and the lift from
   the normalized encoding into the structural one the surface prints.
-- [`serve.mts`](serve.mts) — the reader's server: runs the pipeline with the producer asked
-  for and the report writer. A run is one `check.mts` run, ending at
+- [`serve.mts`](serve.mts) — the report viewer's server: runs the pipeline with the producer asked
+  for and the report writer. A run is one `verify-source.mts` run, ending at
   `annotate-source.mts --format source-claims --verify` over its Fragment and,
   where it verified, its evidence (`--fragment` and `--evidence`), and a producer the
   address bar names but this list does not is read as the default rather than
@@ -161,23 +161,23 @@ draws every claim.
 
 A group says what it is, because a label states an outcome and a heading read
 as a promise is worse than no heading: **Unsupported examples** carries
-"listing one never implies it verifies". **Current verifier examples** are the
+"listing one never implies it verifies". **Stateful source** examples are the
 sources the corpus's tsc column checks; the two **OCaml producer** groups are that producer's own fixtures, its negative controls and named gaps
 listed beside its verified ones.
 
 A file always says what it demonstrates — `callbacks.ts ·
 higher-order calls / variance / capture`. Those come from the `area` field of
-`ocaml-producer/cases.mts`, the inventory that already decides what each case
+`pipeline/cases.mts`, the inventory that already decides what each case
 must do; writing them again here would be a second opinion about the same
 fixture. Other
 examples pair their paths with descriptions in the catalogue. `GroupFile.about`
 is required, and catalogue construction rejects empty or multiline text, even
 when loaded by Node without type checking. The page renders it unconditionally.
 
-The groups come from `examples.mts`, re-read for each page load, so adding an
+The groups come from `corpus-index.mts`, re-read for each page load, so adding an
 example needs no restart. It exports two lists, because they answer different
-questions: `groups` is the corpus, which `verification/examples.mts` runs the
-tsc producer over, reading its `files` as paths; `viewerGroups` is what the reader lists, carrying the notes and
+questions: `groups` is the corpus, which `verification/corpus-report.mts` runs the
+tsc producer over, reading its `files` as paths; `viewerGroups` is what the report viewer lists, carrying the notes and
 descriptions and reaching another producer's fixtures. `ExampleGroup` in
 `types.ts` declares that shape for both the server and the page.
 

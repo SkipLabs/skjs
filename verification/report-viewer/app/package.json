@@ -1,8 +1,8 @@
 {
-  "name": "skjs-claim-reader",
+  "name": "skjs-report-viewer",
   "private": true,
   "type": "module",
-  "description": "The claim report reader: its build and its checks, apart from the trusted tools' dependencies.",
+  "description": "The claim report viewer: its build and its checks, apart from the trusted tools' dependencies.",
   "scripts": {
     "build": "vite build",
     "dev": "vite",

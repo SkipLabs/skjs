@@ -59,8 +59,8 @@ const expectSubset = (what: string, names: Set<string>, from: Set<string>, allow
 // The Fragment AST and its declaration document.
 {
   const ts = declared(["tools/fragment.mts", "tools/declaration-types.mts", "tools/claim.mts"]);
-  const leanNames = lean(["lean/Verification/Model/Source/Fragment.lean",
-    "lean/Verification/Model/Source/EquationLowering.lean"]);
+  const leanNames = lean(["lean/Verification/Source/Fragment.lean",
+    "lean/Verification/Source/EquationLowering.lean"]);
   expectSubset("Lean reads of the Fragment", leanNames, ts, {
     decl: "a source-claims label, lowered in EquationLowering.lean",
     binder: "a source-claims label, lowered in EquationLowering.lean",
@@ -79,8 +79,8 @@ const expectSubset = (what: string, names: Set<string>, from: Set<string>, allow
 // The SourceClaims document and its type table.
 {
   const ts = declared(["tools/source-claims.mts", "tools/type-graph.mts"]);
-  const leanNames = lean(["lean/Verification/Model/Source/SourceClaimJson.lean",
-    "lean/Verification/Model/Source/EquationLowering.lean"], true);
+  const leanNames = lean(["lean/Verification/Source/SourceClaimJson.lean",
+    "lean/Verification/Source/EquationLowering.lean"], true);
   expectSubset("OCaml writes of SourceClaims", ocamlWrites("ocaml-producer/claims.ml"), ts, {});
   expectSubset("SourceClaims fields Lean ignores", declared(["tools/source-claims.mts"]), leanNames, {
     labels: "a tuple element's label, not a field",

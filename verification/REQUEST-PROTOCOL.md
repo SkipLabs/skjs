@@ -242,7 +242,7 @@ Tests are `isNul`, `isUndef`, `isNullish`, `isBool`, `isRef` and `isFun`.
 `isNullish` accepts null and undefined; false takes its negative branch. A location never appears
 in a supplied program: it arises only during execution. These are Lean's derived
 codecs, so the field names are the constructor's own; they live in
-[RequestJson.lean](lean/Verification/Model/Source/RequestJson.lean), the JSON boundary of the stateful consumer.
+[RequestJson.lean](lean/Verification/Source/RequestJson.lean), the JSON boundary of the stateful consumer.
 
 A request may add `"codes"`: the graph code its program creates, one
 `{"entry": {"arity","exprs","conts","start","captures","row","store"}, "claims": [...]}`
@@ -529,7 +529,7 @@ observe (`SubtypingTrace.question`, `noteInstance`, `note`), and every
 theorem reads those definitions; only their compiled implementations write
 the file. So a traced run accepts exactly what an untraced one does.
 `node verification/tools/subtyping-trace.mts [pattern …]` ([source](tools/subtyping-trace.mts)) runs the pipeline
-cases with tracing (`SUBTYPING_TRACE=1` for `check.mts`) and reports the work
+cases with tracing (`SUBTYPING_TRACE=1` for `verify-source.mts`) and reports the work
 per question against the size of the types compared.
 
 ## Proved boundary and validation
@@ -549,7 +549,7 @@ producer. Search is incomplete; failure is not a proof of untypability.
 
 ## Source mode
 
-[SourceExtraction.lean](lean/Verification/Model/Source/SourceExtraction.lean) is the source adapter: it rebuilds the calculus request from the Fragment tree and the claims.
+[SourceExtraction.lean](lean/Verification/Source/SourceExtraction.lean) is the source adapter: it rebuilds the calculus request from the Fragment tree and the claims.
 
 The adapter accepts primitive or bounded callable parameters, initialized
 `const` and `let` declarations, assignment to a `let` as an expression, nested boolean branches and returns, using variable
@@ -617,12 +617,12 @@ of it names its instance, below the scheme by a checked instance
 (`InstArrs`). A call of a generic module value names its instance: each type
 argument must lie within its binder's bound by the graph's certified
 subtyping, a failure being a located direct obligation. The neutral source
-sidecar's function-scoped `{ "param": "T" }` claims are read the same way,
+claims document's function-scoped `{ "param": "T" }` claims are read the same way,
 each binder as its row.
 
 Generate an AST with `tools/fragment-parse.mts` and claims with a producer,
 then run the two commands of [Run the verifier](#run-the-verifier).
-[RequestCli.lean](lean/Verification/Model/Source/RequestCli.lean) implements
+[RequestCli.lean](lean/Verification/Source/RequestCli.lean) implements
 them: it reads the files and hands them on.
 
 The file key must match both inputs. Evidence is a strict object
@@ -747,7 +747,7 @@ the same write invariant. Remaining arms must satisfy the invariant-cell check;
 exact normalization law and its proof scope. This is not a widening
 of a standalone refined cell claim.
 
-[CellClaims.lean](lean/Verification/Model/Programs/CellClaims.lean) validates each single-record shape (`decodeShape`). `Fragment`
+[CellClaims.lean](lean/Verification/Programs/CellClaims.lean) validates each single-record shape (`decodeShape`). `Fragment`
 lowers read and write operands, including callables, to the same graph table and
 requires equal invariant label lists after union absorption. Unknown fields and
 unsupported operands reject the whole contract. `CellClaims.translate` retains
@@ -1081,7 +1081,7 @@ chosen by the certificate. See
 
 The source bundle carries these supplemental proofs alongside the graph
 certificates. The consumer checks their syntax, scope, exact root judgment and
-rule derivation using `checkAll` in [ExpressionClaims.lean](lean/Verification/Model/Programs/ExpressionClaims.lean). Dropping a proof, adding a
+rule derivation using `checkAll` in [ExpressionClaims.lean](lean/Verification/Programs/ExpressionClaims.lean). Dropping a proof, adding a
 proof or substituting a valid proof of a different judgment is rejected.
 The whole lambda is also checked by the ordinary program certificate.
 Callable parameters are admitted at their source annotations; named top-level

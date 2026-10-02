@@ -51,11 +51,11 @@ prose as text that may be reworded.
 Manifest records carry the same `id`, so a tool can display a mark and look up
 its exact producer payload without matching on positions or prose.
 
-Types use the self-contained [viewer language](VIEWER-LANGUAGE.md): primitive
+Types use the self-contained [report viewer language](REPORT-VIEWER-LANGUAGE.md): primitive
 names, literals, unions, records with optional fields, function signatures, and
 callable objects. `{ value: boolean = (true) }` states both a storage invariant
 and current contents. Nondefault object modes appear explicitly after `@`.
-`tools/claim-text.mts` prints this language for reports and the reader;
+`tools/claim-text.mts` prints this language for reports and the report viewer;
 `tools/claim.mts` declares and validates its types. A claim outside the
 language is shown as its exact JSON; it is never approximated into a supported
 shape.
@@ -113,7 +113,7 @@ creates no files, for callers that render a report without keeping one.
 
 ## Reading a report
 
-The reader in `report-viewer/` draws each claim as a bracket under the span it
+The report viewer (`report-viewer/`) draws each claim as a bracket under the span it
 is about, with the bindings an entry carries beside it. It has the same
 standing as this format: display only. It reads the structured manifest rather
 than these comments — `report-viewer/serve.mts` runs the producer and this
@@ -177,7 +177,7 @@ node verification/tools/annotate-source.mts input.ts \
 
 Generic report inputs are claims-only. Their stored status fields are ignored;
 `--verify` is rejected until that producer has a verification adapter. This
-display format is distinct from the [source-claim sidecar](SOURCE-CLAIMS.md).
+display format is distinct from the [claims document](SOURCE-CLAIMS.md).
 It is not a shortcut around normalizing and checking a new producer's types.
 
 ## Freshness and source preservation
@@ -210,6 +210,6 @@ proof of the separate source-to-calculus lowering.
 ## Calculus-label claim inputs
 
 `--format source-claims` accepts the strict bounded
-[producer-independent sidecar](SOURCE-CLAIMS.md), including fresh verification.
+[producer-independent claims document](SOURCE-CLAIMS.md), including fresh verification.
 Unlike `--format report`, this is an input to the Lean
 consumer, with its own schema and source fingerprint.

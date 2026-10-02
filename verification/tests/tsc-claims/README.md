@@ -3,11 +3,11 @@
 `../../tools/tsc-claims.mts` states what the TypeScript compiler's own checker
 believes at every site of a corpus file, as a source-claims document, so that
 `tsc` is a claim producer the same verifier adjudicates. It runs through the
-pipeline's one entry, which the corpus (`examples.mts`) calls on every corpus
-file and the reader on the file it opens:
+pipeline entry point, which the corpus (`corpus-report.mts`) calls on every corpus
+file and the report viewer on the file it opens:
 
 ```sh
-node verification/ocaml-producer/check.mts verification/tests/stateful-source/cells.ts --producer tsc
+node verification/pipeline/verify-source.mts verification/tests/stateful-source/cells.ts --producer tsc
 ```
 
 Sites come from the trusted parser's AST and mirror `SourceClaimJson`'s
@@ -26,7 +26,7 @@ must be established by the verifier; no protocol or proof rule is added.
 
 ## Reading the corpus column
 
-`examples.mts` shows `tsc accepted→derived` per function. Exporter coverage
+`corpus-report.mts` shows `tsc accepted→derived` per function. Exporter coverage
 and proof-search limits are not separated from unsoundness findings, so a
 `✗` on the right is no verdict about TypeScript. Where `tsc` rejects the
 program outright, its claims describe something it does not accept, and the
@@ -38,5 +38,5 @@ The corpus configuration uses `moduleDetection: "force"`: separate examples are
 independent modules, so repeated function names do not create cross-file overloads
 or duplicate implementations. TS acceptance is recorded per function separately
 from claim-export availability and proof outcomes. The run writes it to
-`tsc-verdicts.json`, which the corpus and the viewer read; it is not admitted as
+`tsc-verdicts.json`, which the corpus and the report viewer read; it is not admitted as
 verification evidence.

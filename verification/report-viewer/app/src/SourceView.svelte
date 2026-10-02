@@ -38,7 +38,7 @@
     onselect: (site: number) => void;
   } = $props();
 
-  // Every claim, always. The old reader had a density switch; a claim that is
+  // Every claim, always. The old report viewer had a density switch; a claim that is
   // hidden is one you cannot tell is missing, and weight does the work the
   // switch was for.
   const drawn = $derived(

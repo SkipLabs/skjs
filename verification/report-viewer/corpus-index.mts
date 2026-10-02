@@ -1,0 +1,262 @@
+import type { Case } from "../pipeline/cases.mts";
+import { cases } from "../pipeline/cases.mts";
+import type { ExampleGroup, GroupFile } from "./types.ts";
+
+// Paths and descriptions are authored together. The corpus's path-only view
+// is derived below, so adding a path cannot bypass the required description.
+const examples = (
+  directory: string,
+  entries: [string, string][],
+): GroupFile[] =>
+  entries.map(([name, about]) => ({ path: `${directory}/${name}.ts`, about }));
+
+const stateful = [
+  ...examples("verification/tests/stateful-source", [
+    [
+      "basic",
+      "Widen a singleton while checking initializer and binding claims separately.",
+    ],
+    [
+      "undefined",
+      "Keep undefined distinct at function boundaries and in unions.",
+    ],
+    [
+      "cells",
+      "Write through an alias and read through the original cell reference.",
+    ],
+    [
+      "records",
+      "Track independent fields, initializer order, and captured field guards.",
+    ],
+    ["closures", "Read live captured storage after an alias writes to it."],
+    ["loops", "Preserve loop invariants without requiring termination."],
+    [
+      "loop-transfers",
+      "Preserve storage contracts across break and continue edges.",
+    ],
+    [
+      "primitive-callbacks",
+      "Check callback argument and result contracts for primitive values.",
+    ],
+    ["cell-conjunction", "Combine invariant contracts on the same location."],
+    ["negation", "Reverse Boolean refinements under negation."],
+    ["null-tests", "Test null membership in primitive unions."],
+    [
+      "named-unit-comparisons",
+      "Refine against null and undefined singletons obtained through bindings.",
+    ],
+    [
+      "null-guards",
+      "Eliminate absent alternatives before using a guarded value.",
+    ],
+    ["numbers", "Pass and store numbers with family and singleton contracts."],
+    [
+      "numeric-comparisons",
+      "Refine numeric unions by comparing stable snapshots.",
+    ],
+    [
+      "mutable-locals",
+      "Keep fixed storage contracts while captured locals change contents.",
+    ],
+    [
+      "mutable-parameters",
+      "Assign parameters without losing unrelated refinements.",
+    ],
+    [
+      "captured-local-guards",
+      "Retain guarded captured reads only across paths that preserve storage.",
+    ],
+    [
+      "mutable-locals-guard",
+      "Guard a live captured local when its reader is invoked.",
+    ],
+    [
+      "mutable-locals-numeric",
+      "Separate numeric storage contracts from current-content facts.",
+    ],
+    [
+      "nullish-assignment",
+      "Assign a fallback only when a local is null or undefined.",
+    ],
+    [
+      "declaration-list",
+      "Evaluate declarators left to right in one statement.",
+    ],
+    [
+      "object-patterns",
+      "Destructure fields in order and evaluate defaults only for undefined.",
+    ],
+    [
+      "casts",
+      "Check type assertions as obligations rather than assuming them.",
+    ],
+    ["strings", "Pass, store, and compare string families and singletons."],
+    [
+      "distinct-cells",
+      "Preserve facts about distinct storage while allowing parameter aliases.",
+    ],
+    [
+      "singleton-operands",
+      "Refine reads against named or field-held singleton operands.",
+    ],
+    [
+      "computed-keys",
+      "Read and write a field named by a checked singleton key.",
+    ],
+    [
+      "arithmetic",
+      "Check numeric operations and evaluate compound-write targets once.",
+    ],
+    [
+      "logical-assignments",
+      "Conditionally write fields while evaluating their targets once.",
+    ],
+    [
+      "void-results",
+      "Discard callback result guarantees while retaining their effects.",
+    ],
+    [
+      "readonly-views",
+      "Read through covariant views without granting write access.",
+    ],
+  ]),
+];
+const callables = examples("verification/tests/callables", [
+  [
+    "unions",
+    "Guard callable alternatives and preserve their argument and result contracts.",
+  ],
+  [
+    "factories",
+    "Distinguish private per-call storage from storage shared by closures.",
+  ],
+  [
+    "arguments",
+    "Pass and return callbacks that observe live captured storage.",
+  ],
+  [
+    "cells",
+    "Replace and recursively invoke callbacks stored in mutable cells.",
+  ],
+  ["thunks", "Create, return, and replace zero-argument closures."],
+  ["arity", "Check multiple arguments and their evaluation order."],
+  ["guards", "Refine callable values before invocation."],
+  [
+    "function-field",
+    "Use one object through both its fields and its call signature.",
+  ],
+  ["receiver-call", "Check explicit .call receivers and forwarded arguments."],
+  [
+    "methods",
+    "Pass a method's object as its receiver; keep a copied method's plain call apart.",
+  ],
+  [
+    "call-objects",
+    "Rebind an ordinary method with .call while an arrow keeps its lexical receiver.",
+  ],
+  [
+    "apply",
+    "Read an .apply list's length and indices after its receiver, in order.",
+  ],
+  [
+    "generic-receivers",
+    "Instantiate one quantified method at two receiver contracts.",
+  ],
+  [
+    "optional-arguments",
+    "Omit, write, or pass undefined for an optional trailing parameter.",
+  ],
+  [
+    "rest-arguments",
+    "Collect a tuple rest, spread one in place of arguments, and read it after an effect.",
+  ],
+  [
+    "variadic-arguments",
+    "Collect any number of arguments into an array rest, and spread arrays among them.",
+  ],
+  [
+    "default-arguments",
+    "Replace an omitted argument with a default, including one reading an earlier parameter.",
+  ],
+]);
+const generics = examples("verification/tests/stateful-source", [
+  ["generic-identity", "Check identity once under a rigid type parameter."],
+  [
+    "generic-aliases",
+    "Substitute generic aliases without introducing another type identity.",
+  ],
+  [
+    "generic-extends",
+    "Use upper bounds in their declared direction, never in reverse.",
+  ],
+  [
+    "generic-bodies",
+    "Preserve rigid types through local copies and multiple parameters.",
+  ],
+]);
+const supported = [...stateful, ...callables, ...generics].map(
+  (file) => file.path,
+);
+
+// The producer inventory owns each fixture's description and expected boundary.
+// The viewer groups reuse it rather than maintaining another description.
+const ocamlExample = (c: Case): GroupFile => ({
+  path: `verification/pipeline/examples/${c.file}.ts`,
+  about: c.area,
+});
+const ocamlExamples = (kinds: Case["kind"][]): GroupFile[] =>
+  cases.filter((c) => kinds.includes(c.kind)).map(ocamlExample);
+
+const corpusGroups: ExampleGroup[] = [
+  {
+    label: "Stateful source",
+    note: "sources the corpus's tsc column checks",
+    files: stateful,
+  },
+  {
+    label: "Callables",
+    note: "call signatures, callable objects, arity",
+    files: callables,
+  },
+  {
+    label: "Generics · rigid parameters and bounds",
+    note: "type parameters under the source generic rules",
+    files: generics,
+  },
+];
+
+const viewerGroups: ExampleGroup[] = [
+  ...corpusGroups,
+  {
+    label: "OCaml producer · verified fixtures",
+    note: "checked end to end by pipeline/test.mts",
+    files: ocamlExamples(["positive"]),
+  },
+  {
+    label: "OCaml producer · negative controls and named gaps",
+    note: "expected not to verify — each names the boundary it stops at",
+    files: ocamlExamples(["negative", "gap"]),
+  },
+];
+
+// Type checking rejects omissions. Validate at the common export boundary too:
+// Node's type stripping and an empty string must not bypass the contract.
+for (const group of viewerGroups) {
+  for (const file of group.files) {
+    if (
+      typeof file.about !== "string" ||
+      !file.about.trim() ||
+      /[\r\n]/u.test(file.about)
+    )
+      throw Error(
+        `Example needs a non-empty, one-line description: ${file.path}`,
+      );
+  }
+}
+
+// Corpus execution needs paths only; it cannot define another, undescribed list.
+const groups = corpusGroups.map(({ label, files }) => ({
+  label,
+  files: files.map((file) => file.path),
+}));
+export { supported, groups, viewerGroups };

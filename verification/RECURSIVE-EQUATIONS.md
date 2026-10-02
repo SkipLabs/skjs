@@ -175,7 +175,7 @@ We further conjecture that on the examples this work is linear per question
 in the size of the types compared. On the pipeline cases the ratio of
 $`\textsf{Inst}`$ steps to size is at most 8.2 over the 169 questions the
 check step asks
-([measurement](ocaml-producer/SKJS-COVERAGE.md#performance-on-the-pipeline-cases)),
+([measurement](pipeline/SKJS-COVERAGE.md#performance-on-the-pipeline-cases)),
 which is consistent with a linear bound but does not establish one. The
 steps are not one per argument: five questions of size 5 to 8 take 19 to 48
 steps, all by $`\textsf{Var}`$, while variances of components of 8 to 36
@@ -558,22 +558,22 @@ to parameters and quantified variables by position.
 
 | Concept | Lean |
 | --- | --- |
-| Definitions, types and unfolding (2) | [Types/EquationGraphs.lean](lean/Verification/Model/Types/EquationGraphs.lean) |
-| A meet label means the intersection of its parts (2, 3.3) | [Types/EquationMeets.lean](lean/Verification/Model/Types/EquationMeets.lean) |
-| Lemma 1, support | [Types/EquationSupport.lean](lean/Verification/Model/Types/EquationSupport.lean) |
-| Lemma 2, congruence of applications | [Types/EquationCongruence.lean](lean/Verification/Model/Types/EquationCongruence.lean) |
-| Lemma 3, substitution | [Types/EquationSubstitution.lean](lean/Verification/Model/Types/EquationSubstitution.lean) |
-| Instantiation by substitution in the subtyping checker | [Types/EquationCertificates.lean](lean/Verification/Model/Types/EquationCertificates.lean) |
+| Definitions, types and unfolding (2) | [Types/EquationGraphs.lean](lean/Verification/Types/EquationGraphs.lean) |
+| A meet label means the intersection of its parts (2, 3.3) | [Types/EquationMeets.lean](lean/Verification/Types/EquationMeets.lean) |
+| Lemma 1, support | [Types/EquationSupport.lean](lean/Verification/Types/EquationSupport.lean) |
+| Lemma 2, congruence of applications | [Types/EquationCongruence.lean](lean/Verification/Types/EquationCongruence.lean) |
+| Lemma 3, substitution | [Types/EquationSubstitution.lean](lean/Verification/Types/EquationSubstitution.lean) |
+| Instantiation by substitution in the subtyping checker | [Types/EquationCertificates.lean](lean/Verification/Types/EquationCertificates.lean) |
 | Quantified signatures (4.1), assumptions and Theorem 1 (4.2) | `Types/PositiveRules.lean`, `Types/PositiveCertificates.lean` |
 | Comparison and instance bounds over the equations (4.2–4.4) | `Types/PositiveCertificates.lean` (`compareUsingCore_sound`, `compareInstArrsState_sound`, `compareStructural_sound`) |
-| Soundness of the computed variances and of `Var` (4.3) | [Types/EquationFamilies.lean](lean/Verification/Model/Types/EquationFamilies.lean) |
-| Well-formedness of equations | [Types/EquationValidator.lean](lean/Verification/Model/Types/EquationValidator.lean) |
-| Term spelling of trees | [Types/EquationJson.lean](lean/Verification/Model/Types/EquationJson.lean) |
-| Lowering source declarations (5) | [Source/EquationLowering.lean](lean/Verification/Model/Source/EquationLowering.lean) |
+| Soundness of the computed variances and of `Var` (4.3) | [Types/EquationFamilies.lean](lean/Verification/Types/EquationFamilies.lean) |
+| Well-formedness of equations | [Types/EquationValidator.lean](lean/Verification/Types/EquationValidator.lean) |
+| Term spelling of trees | [Types/EquationJson.lean](lean/Verification/Types/EquationJson.lean) |
+| Lowering source declarations (5) | [Source/EquationLowering.lean](lean/Verification/Source/EquationLowering.lean) |
 
 The pipeline cases `non-regular-alias` and `invalid-non-regular-alias` lower an
 alias applied to a longer tuple at each level to one invariant head.
-`ocaml-producer/test.mts` refuses by name, in forged declarations the parser
+`pipeline/test.mts` refuses by name, in forged declarations the parser
 does not write, a binder used both as an argument pack and as a value and an
 unguarded alias, where a nested method's own binder of the same name is
 accepted.

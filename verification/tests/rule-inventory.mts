@@ -28,7 +28,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 
-const LEAN = "verification/lean/Verification/Model";
+const LEAN = "verification/lean/Verification";
 const DOCS = "verification";
 
 /** A rule-bearing inductive: the acceptance language the docs describe. */

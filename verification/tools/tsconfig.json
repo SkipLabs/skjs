@@ -16,9 +16,9 @@
   },
   "include": [
     "*.mts",
-    "../examples.mts",
+    "../corpus-report.mts",
     "../tests/*.mts",
-    "../ocaml-producer/*.mts",
+    "../pipeline/*.mts",
     "../report-viewer/*.mts"
   ]
 }

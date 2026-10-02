@@ -23,7 +23,7 @@ import type {
   SourceClaims,
 } from "./source-claims.mts";
 import type { Span } from "./span.mts";
-// ../report-viewer/types.ts declares the report this writer emits, which the server and the reader are typed against.
+// ../report-viewer/types.ts declares the report this writer emits, which the server and the report viewer are typed against.
 import type { Failure, Result } from "../report-viewer/types.ts";
 import { messageOf } from "./thrown.mts";
 // rigid.mts: the type parameters a report shows with their declared bounds, worked out here.
@@ -46,8 +46,8 @@ const isRecord = (v: unknown): v is Record<string, unknown> =>
 /* ------------------------------------------------------------- the shapes -- */
 // A report is built in two steps: a converter turns a producer's claims into
 // the fields below, and `main` attaches the positional ids and declaration
-// spans the reader indexes by (report-viewer/types.ts describes what the
-// reader then sees). These are the intermediate, and the producer inputs they
+// spans the report viewer indexes by (report-viewer/types.ts describes what the
+// report viewer then sees). These are the intermediate, and the producer inputs they
 // are built from. A `--format report` document another producer wrote arrives
 // in the same shape and is rendered by the same code, so these describe both.
 // Spans are number lists here because that is what a document carries:
@@ -225,7 +225,7 @@ function comment(x: Annotation) {
   return `/* @verify-report ${safeText(fields(x)+text)} */ `;
 }
 
-// The same printer the reader uses, so a comment and a panel say the same thing.
+// The same printer the report viewer uses, so a comment and a panel say the same thing.
 // The manifest keeps the producer's encoding; this is a readable view of it.
 
 // An atom is a record of its own fields. What arrives may not be one, and the
@@ -320,7 +320,7 @@ function fromSourceClaims(
       return A.param;
     }
     // Rows of the table, ascending, then label trees, which the verifier
-    // checks and the reader shows by what they name.
+    // checks and the report viewer shows by what they name.
     if(!Array.isArray(A)||A.some((i,k)=>{
       if(typeof i!=="number")return !i||typeof i!=="object";
       const previous=A[k-1];
@@ -698,7 +698,7 @@ function verifyClaims(
   claims: SourceClaims,
   file: string,
   // Only the function identities are read here. Writing that types the results
-  // this returns as the reader's own `Result`, minus the `function` id `main`
+  // this returns as the report viewer's own `Result`, minus the `function` id `main`
   // attaches afterwards.
   report: { functions: { name: string; namePos: number[] }[] },
   verifier: string,
@@ -836,7 +836,7 @@ function verifyClaims(
 
 /** Each claimed function of a pipeline run whose whole file did not verify,
  * checked alone over the run's Fragment and claims at `depth`, as `--verify
- * --fragment` checks it for the reader: where the run's search stopped, for
+ * --fragment` checks it for the report viewer: where the run's search stopped, for
  * the corpus. The Fragment and claims name `file`, the source they read. A
  * function whose check this writer cannot report (a failure the verifier
  * left unlocated) is its error, beside the others' results. */
@@ -957,7 +957,7 @@ export function main(args: string[]) {
     ...(options.verify ? {verifierPath:path.resolve(options.verify)} : {}),
     ...identity,source:report.source,annotatedSha256:hash(annotated),producer:report.producer,
     ...(options.diagnostics ? {diagnosticsPath:path.resolve(options.diagnostics),diagnostics} : {}),
-    // A declaration the report says nothing about: named, so the reader can
+    // A declaration the report says nothing about: named, so the report viewer can
     // offer its contract. One without a name or a body is not a declaration
     // this report is about.
     missingFunctions:functionNodes.flatMap(n=>{
@@ -968,7 +968,7 @@ export function main(args: string[]) {
     }),
     gaps:coverage(source,report),
     functions:report.functions.map((f,i)=>({id:`f${i}`,...f,
-      // The declared result's annotation, where the source writes one: the reader
+      // The declared result's annotation, where the source writes one: the report viewer
       // shows the claimed result there, and a return contract points at it.
       // The initialization unit spans the module's top-level code and has no
       // declared result.

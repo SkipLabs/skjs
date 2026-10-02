@@ -1,5 +1,8 @@
 # Positive types
 
+The types are *positive*: each is a formula over clauses built with union and
+intersection only, never negation.
+
 This document specifies the types the verifier uses: how a type graph is
 written, what each type means, how conjunctions are normalized, which
 subtyping rules hold, and how a subtyping certificate is checked. Lean proves
@@ -1471,16 +1474,16 @@ Lean: `Types/PositiveGraphs.lean` (`schemeSemWithArgs`), `Source/GenericAlias.le
 
 ## Lean files and validation
 
-- [Types/ReferenceConjunctions.lean](lean/Verification/Model/Types/ReferenceConjunctions.lean): proves that a read of a nonempty conjunction of record contracts meets every operand, and a write at the first operand preserves every alias's contract
-- [Types/MethodMembers.lean](lean/Verification/Model/Types/MethodMembers.lean): host-relative method members
-- [Types/CallableConjunctions.lean](lean/Verification/Model/Types/CallableConjunctions.lean): proves that bag conjunctions and overloads on one callable value merge into one contract (`merge`, `calls_merge`)
-- [Types/PositiveNormalization.lean](lean/Verification/Model/Types/PositiveNormalization.lean): the clause language and its finite normalization
-- [Types/PositiveGraphs.lean](lean/Verification/Model/Types/PositiveGraphs.lean): normalization of recursive graphs and the rows' denotation
-- [Types/PositiveRules.lean](lean/Verification/Model/Types/PositiveRules.lean): the declarative subtyping rules and their soundness
-- [Types/PositiveCertificates.lean](lean/Verification/Model/Types/PositiveCertificates.lean): the certificate checker and its soundness
-- [Types/GraphRows.lean](lean/Verification/Model/Types/GraphRows.lean): the label-independent row representation
+- [Types/ReferenceConjunctions.lean](lean/Verification/Types/ReferenceConjunctions.lean): proves that a read of a nonempty conjunction of record contracts meets every operand, and a write at the first operand preserves every alias's contract
+- [Types/MethodMembers.lean](lean/Verification/Types/MethodMembers.lean): host-relative method members
+- [Types/CallableConjunctions.lean](lean/Verification/Types/CallableConjunctions.lean): proves that bag conjunctions and overloads on one callable value merge into one contract (`merge`, `calls_merge`)
+- [Types/PositiveNormalization.lean](lean/Verification/Types/PositiveNormalization.lean): the clause language and its finite normalization
+- [Types/PositiveGraphs.lean](lean/Verification/Types/PositiveGraphs.lean): normalization of recursive graphs and the rows' denotation
+- [Types/PositiveRules.lean](lean/Verification/Types/PositiveRules.lean): the declarative subtyping rules and their soundness
+- [Types/PositiveCertificates.lean](lean/Verification/Types/PositiveCertificates.lean): the certificate checker and its soundness
+- [Types/GraphRows.lean](lean/Verification/Types/GraphRows.lean): the label-independent row representation
 - `Types/EquationGraphs.lean`, `Types/EquationSupport.lean`, `Types/EquationCongruence.lean`
 
-All under `lean/Verification/Model/`. `lake -d verification/lean build`
+All under `lean/Verification/`. `lake -d verification/lean build`
 checks the whole library; it contains no `sorry` or custom axioms. Semantic
 soundness uses `propext`, `Quot.sound` and `Classical.choice`.

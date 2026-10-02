@@ -1,6 +1,6 @@
-# Producer-independent source sidecars
+# Producer-independent claims documents
 
-The sidecar supplies ground types as calculus labels into a type table the
+The claims document supplies ground types as calculus labels into a type table the
 document carries, and type parameters as function-scoped references. It contains no inferred bounds or stored
 proof results. A human or another producer can write it. This is a bounded
 interface for the existing source fragment, not support for arbitrary graphs,
@@ -15,12 +15,12 @@ verification/lean/.lake/build/bin/verifier --check-source-claims \
 ```
 
 The consumer reconstructs the calculus requests and required claim obligations
-from the AST and sidecar. It checks evidence using `checkRequests` and its soundness theorems.
+from the AST and claims document. It checks evidence using `checkRequests` and its soundness theorems.
 `SourceClaimJson.checkJson_safe` states that every accepted plan first becomes
 a `CertifiedPlan` and that every such function has the calculus safety
 guarantee, at every assignment of its parameter rows.
 
-Generic functions use the same sidecar: any `type` or `result` may be
+Generic functions use the same claims document: any `type` or `result` may be
 `{"param":"T"}`, referring to that function's source type parameter, which
 Lean reads as the binder's parameter row (a bounded one as its meet with the
 bound) before the unit is extracted as an ordinary graph request, certified at
@@ -86,8 +86,8 @@ is read there, below the scheme by a checked instance table (`InstArrs`).
 Nested generic closures, generic closures in generic bodies, rests, defaults
 and receivers over a binder are all graph code the same way.
 
-Both producers feed this format into [SourceClaimJson.lean](lean/Verification/Model/Source/SourceClaimJson.lean), its strict decoder and checked consumer.
-The viewer collects and edits this format for both producers.
+Both producers feed this format into [SourceClaimJson.lean](lean/Verification/Source/SourceClaimJson.lean), its strict decoder and checked consumer.
+The report viewer collects and edits this format for both producers.
 
 ## Encoding
 
@@ -278,7 +278,7 @@ bindings and function identities are rejected. All source functions must have
 matching claim records. Missing required claims fail extraction or checking;
 unrelated bindings at a valid environment site remain subject to the existing
 export policy and need not be consumed. A successful function result establishes
-the modeled obligations, not every candidate in its environment. This sidecar
+the modeled obligations, not every candidate in its environment. This claims document
 therefore does not yet implement the proposed comment frontend's stricter
 requirement to consume every directive.
 
@@ -325,7 +325,7 @@ like a generic call's.
 ## Current-content assertions
 
 The [assertion grammar](POSITIVE-TYPES.md#state-assertion-grammar) defines the
-combined notation; this section specifies its sidecar encoding.
+combined notation; this section specifies its claims document encoding.
 
 Bindings and expressions have a required `current` field: `null` means no
 additional assertion; otherwise it is a nonempty list of distinct `[field, labels]` pairs. Each field
@@ -348,7 +348,7 @@ Numbers, nested predicates, and correlated unions of differently refined
 references remain outside this profile.
 
 A supported standalone record refinement is its write-invariant reference plus
-its read-content predicate. The sidecar consumer binds current predicates to statement-entry or expression-result graph checkpoints.
+its read-content predicate. The claims document consumer binds current predicates to statement-entry or expression-result graph checkpoints.
 Every statement entry resets to exactly its supplied types and current predicates;
 extra derived facts and links cannot cross it. All incoming edges must justify
 that interface, including loop backedges. Expression claims are local obligations
@@ -364,7 +364,7 @@ located proof obligation, not an unavailable-type or unsupported-format result.
 
 ## Record alternative absorption
 
-Before ordinary invariant-cell translation, `translate` in [CellUnion.lean](lean/Verification/Model/Types/CellUnion.lean) validates every
+Before ordinary invariant-cell translation, `translate` in [CellUnion.lean](lean/Verification/Types/CellUnion.lean) validates every
 record alternative. It may absorb an arm only into an existing invariant arm,
 with a weaker read requirement and **the same** write invariant. Writing `C(R,W)`
 for the schema's read/write requirements, the sufficient rule is:
@@ -389,7 +389,7 @@ counterexample is `observation_does_not_narrow_invariant` in `ModelBoundaries.le
 
 ## Source identity and trust
 
-The external parser now includes `sourceSha256` in its AST output. The sidecar's
+The external parser now includes `sourceSha256` in its AST output. The claims document's
 file identity and digest must match that AST. The report command additionally
 checks the digest against the actual source text. Hashing and parsing remain
 part of the reviewed source boundary; Lean checks agreement of the supplied
@@ -408,7 +408,7 @@ node verification/tools/annotate-source.mts input.ts \
 ```
 
 Producer names are display provenance;
-they are not sidecar proof assumptions. Claims-only reports are displays, not
+they are not claims document proof assumptions. Claims-only reports are displays, not
 schema certification: `--verify` invokes the authoritative strict Lean decoder.
 
 The generic `--format report` is a separate display-only format.

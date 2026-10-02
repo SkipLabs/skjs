@@ -95,14 +95,14 @@ check-file-in-docker:
 # Use VERBOSE=1 for detailed diagnostics and build output.
 .PHONY: verify verify-test verify-examples
 verify:
-	@./verification/run.sh --build $(if $(filter 1,$(VERBOSE)),--verbose) && \
-	  node verification/examples.mts $(if $(filter 1,$(VERBOSE)),--verbose)
+	@./verification/test-all.sh --build $(if $(filter 1,$(VERBOSE)),--verbose) && \
+	  node verification/corpus-report.mts $(if $(filter 1,$(VERBOSE)),--verbose)
 
 verify-test:
-	@./verification/run.sh --build $(if $(filter 1,$(VERBOSE)),--verbose)
+	@./verification/test-all.sh --build $(if $(filter 1,$(VERBOSE)),--verbose)
 
 verify-examples:
-	@node verification/examples.mts --build $(if $(filter 1,$(VERBOSE)),--verbose)
+	@node verification/corpus-report.mts --build $(if $(filter 1,$(VERBOSE)),--verbose)
 
 # The claim report reader, on loopback. It runs a producer on whatever source
 # is opened and shows the verifier's verdict beside each claim.

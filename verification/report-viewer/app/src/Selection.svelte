@@ -2,7 +2,7 @@
   /*
    * The selected claim, docked under the source it came from.
    *
-   * The old reader put this in a side rail, far from the thing clicked. A claim
+   * The old report viewer put this in a side rail, far from the thing clicked. A claim
    * and its detail belong together, so this sits directly beneath the line it
    * is about and the source keeps the full width.
    *

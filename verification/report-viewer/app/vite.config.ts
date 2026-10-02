@@ -14,8 +14,8 @@ export default {
     emptyOutDir: true,
     rollupOptions: {
       output: {
-        entryFileNames: "reader.js",
-        assetFileNames: "reader[extname]",
+        entryFileNames: "viewer.js",
+        assetFileNames: "viewer[extname]",
       },
     },
   },
