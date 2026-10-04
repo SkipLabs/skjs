@@ -2683,18 +2683,9 @@ class Gate {
         node,
         `binary operator outside the fragment (${this.text(node.operatorToken)})`,
       );
-    // Loose equality with `null` or `undefined` holds exactly of the two
-    // (`IsLooseEquallyEqual` converts nothing there); against anything else
-    // it converts its operands (`ToNumber`, `ToPrimitive`, which may run code).
-    if (op === "==" || op === "!=") {
-      const nullish = (e: Expression): boolean => {
-        const u = ts.isParenthesizedExpression(e) ? e.expression : e;
-        return u.kind === ts.SyntaxKind.NullKeyword || (ts.isIdentifier(u) && u.text === "undefined");
-      };
-      if (!nullish(node.left) && !nullish(node.right))
-        this.fail(node, `loose equality converts its operands; only \`${op} null\` and \`${op} undefined\` are exact`);
-    }
-    if (op === "===" || op === "!==") {
+    if (op === "===" || op === "!==" || op === "==" || op === "!=") {
+      // Both operands of a typeof/literal test are strings, so loose equality
+      // has the same result as strict equality and runs no conversion hook.
       const unwrap = (e: Expression): Expression =>
         ts.isParenthesizedExpression(e) ? unwrap(e.expression) : e;
       const left = unwrap(node.left),
@@ -2713,7 +2704,7 @@ class Gate {
           k: "typeofTest",
           pos: this.span(node),
           shape: pair.shape,
-          equal: op === "===",
+          equal: op === "===" || op === "==",
           e: this.expr(pair.operand.expression),
         };
     }

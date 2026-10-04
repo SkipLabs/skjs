@@ -347,7 +347,8 @@ Language Specification* as of this writing). Sections relied on by name:
   and [slice](https://tc39.es/ecma262/multipage/indexed-collections.html#sec-array.prototype.slice)
   to consult the receiver's constructor and its `Symbol.species`;
 - [Number::equal](https://tc39.es/ecma262/multipage/ecmascript-data-types-and-values.html#sec-numeric-types-number-equal),
-  `IsStrictlyEqual`, `ToString`/`Number::toString`, `ToPropertyKey`,
+  `IsStrictlyEqual`, [IsLooselyEqual](https://tc39.es/ecma262/multipage/abstract-operations.html#sec-islooselyequal),
+  `StringToNumber`, `StringToBigInt`, `ToString`/`Number::toString`, `ToPropertyKey`,
   `ToBoolean`, `typeof`;
 - [OrdinaryCallBindThis](https://tc39.es/ecma262/#sec-ordinarycallbindthis),
   [EvaluateCall](https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-evaluatecall),

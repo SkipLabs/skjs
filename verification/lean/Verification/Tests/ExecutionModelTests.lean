@@ -77,6 +77,50 @@ infinities compare by sign, and distinct finite doubles stay distinct. -/
 #guard !(numberEqual 0x7ff0000000000000 0xfff0000000000000)
 #guard !(numberEqual 0x3ff0000000000000 0x3ff0000000000001)
 
+/-! ## Primitive loose equality -/
+
+#guard primitiveEquals .nul .undef
+#guard !(primitiveEquals .nul (.num 0))
+#guard primitiveEquals .fls (.str "")
+#guard primitiveEquals .tru (.str "1")
+#guard primitiveEquals (.num 0) (.num 0x8000000000000000)
+#guard !(primitiveEquals (.num 0x7ff8000000000000) (.num 0x7ff8000000000000))
+#guard primitiveEquals (.num 0) (.str " \t")
+#guard primitiveEquals (.num (16.0 : Float).toBits) (.str "0x10")
+#guard primitiveEquals (.str "0b10") (.num (2.0 : Float).toBits)
+#guard primitiveEquals (.str "0o10") (.num (8.0 : Float).toBits)
+#guard primitiveEquals (.str "+.5") (.num (0.5 : Float).toBits)
+#guard primitiveEquals (.str "01.") (.num (1.0 : Float).toBits)
+#guard primitiveEquals (.str "1e2") (.num (100.0 : Float).toBits)
+#guard primitiveEquals (.str "Infinity") (.num 0x7ff0000000000000)
+#guard primitiveEquals (.str "-Infinity") (.num 0xfff0000000000000)
+#guard primitiveEquals (.str "1e309") (.num 0x7ff0000000000000)
+#guard primitiveEquals (.str "5e-324") (.num 1)
+#guard primitiveEquals (.str "2.2250738585072014e-308") (.num 0x0010000000000000)
+#guard primitiveEquals (.str "1.7976931348623157e308") (.num 0x7fefffffffffffff)
+#guard primitiveEquals (.str "0e9999") (.num 0)
+#guard primitiveEquals (.str "1e-400") (.num 0)
+#guard stringNumber "1e1000000000" == 0x7ff0000000000000
+#guard stringNumber "-1e-1000000000" == 0x8000000000000000
+#guard stringNumber "0e1000000000" == 0
+#guard stringNumber "-0" == 0x8000000000000000
+#guard ["1n", "1_0", "+0x10", "-0b1", "1e", ".", "infinity"].all fun s =>
+  let n := stringNumber s; !(numberEqual n n)
+#guard primitiveEquals (.bigint 0) (.str "")
+#guard primitiveEquals (.str "0x10") (.bigint 16)
+#guard primitiveEquals (.str "+01") (.bigint 1)
+#guard !(primitiveEquals (.str "1.0") (.bigint 1))
+#guard !(primitiveEquals (.str "1e2") (.bigint 100))
+#guard !(primitiveEquals (.bigint 9007199254740993) (.num (9007199254740993.0 : Float).toBits))
+#guard primitiveEquals (.bigint 9007199254740992) (.num (9007199254740992.0 : Float).toBits)
+#guard !(primitiveEquals (.bigint 1) (.num (1.5 : Float).toBits))
+#guard !(primitiveEquals (.bigint 0) (.num 0x7ff0000000000000))
+#guard primitiveEquals (.sym 1) (.sym 1)
+#guard !(primitiveEquals (.sym 1) (.sym 2))
+#guard !(primitiveEquals (.sym 1) (.str "1"))
+#guard primitiveEquals (.str (String.ofList [Char.ofNat 0xFEFF, '1', Char.ofNat 0x2028])) (.num (1.0 : Float).toBits)
+#guard !(numericSpace (Char.ofNat 0x0085))
+
 /-! ## Conditions and `let` -/
 
 namespace KnownCondition

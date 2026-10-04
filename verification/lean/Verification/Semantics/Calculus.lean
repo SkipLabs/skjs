@@ -109,6 +109,8 @@ inductive Arith where
   /-- Strict equality, `===`: a Boolean, where one operand is a primitive
   (`strictEquals`). -/
   | eq
+  /-- Abstract equality on primitives, nullish values and identified objects. -/
+  | looseEq
   deriving Repr, DecidableEq, BEq
 
 /-- Whether an operator compares rather than computes. -/
@@ -396,7 +398,7 @@ def arithBits (op : Arith) (x y : UInt64) : UInt64 :=
     | .pow => (jsPow a b).toBits
     | .xor => int32Bits (intXor (toInt32 x) (toInt32 y))
     | .rem => remBits x y
-    | .lt | .le | .gt | .ge | .eq => (0.0 / 0.0 : Float).toBits
+    | .lt | .le | .gt | .ge | .eq | .looseEq => (0.0 / 0.0 : Float).toBits
 
 /-- Arithmetic on two bigints: JavaScript's integer operations. Division
 truncates toward zero, and the remainder is the one it leaves, with the
@@ -410,7 +412,7 @@ def bigintArith : Arith → Int → Int → Option Int
   | .pow, x, y => if y < 0 then none else some (x ^ y.toNat)
   | .xor, x, y => some (intXor x y)
   | .rem, x, y => if y = 0 then none else some (x.tmod y)
-  | .lt, _, _ | .le, _, _ | .gt, _, _ | .ge, _, _ | .eq, _, _ => none
+  | .lt, _, _ | .le, _, _ | .gt, _, _ | .ge, _, _ | .eq, _, _ | .looseEq, _, _ => none
 
 /-- The order of two doubles: none when either is NaN, and the two zeros
 equal, as IEEE comparison has them. -/
@@ -582,6 +584,83 @@ def isSym : Tm → Bool
   | .sym _ => true
   | _ => false
 
+/-- ECMAScript WhiteSpace and LineTerminator code points used by numeric strings. -/
+def numericSpace (c : Char) : Bool :=
+  let n := c.toNat
+  n == 0x9 || n == 0xA || n == 0xB || n == 0xC || n == 0xD || n == 0x20 ||
+  n == 0xA0 || n == 0x1680 || (0x2000 ≤ n && n ≤ 0x200A) || n == 0x2028 ||
+  n == 0x2029 || n == 0x202F || n == 0x205F || n == 0x3000 || n == 0xFEFF
+
+def trimNumeric (s : String) : List Char :=
+  ((s.toList.dropWhile numericSpace).reverse.dropWhile numericSpace).reverse
+
+/-- A nonempty sequence of digits in the specified radix. Separators are invalid. -/
+def radixDigits (radix : Nat) (cs : List Char) : Option Nat := do
+  if cs.isEmpty then none else
+  cs.foldlM (fun n c => do
+    let d := if '0' ≤ c && c ≤ '9' then c.toNat - '0'.toNat
+      else if 'a' ≤ c && c ≤ 'f' then c.toNat - 'a'.toNat + 10
+      else if 'A' ≤ c && c ≤ 'F' then c.toNat - 'A'.toNat + 10 else radix
+    if d < radix then some (n * radix + d) else none) 0
+
+def prefixedInteger : List Char → Option Nat
+  | '0' :: 'x' :: cs | '0' :: 'X' :: cs => radixDigits 16 cs
+  | '0' :: 'o' :: cs | '0' :: 'O' :: cs => radixDigits 8 cs
+  | '0' :: 'b' :: cs | '0' :: 'B' :: cs => radixDigits 2 cs
+  | _ => none
+
+/-- `StringToBigInt`: an invalid integer string has no value, rather than throwing. -/
+def stringBigInt (s : String) : Option Int :=
+  match trimNumeric s with
+  | [] => some 0
+  | '+' :: cs => (radixDigits 10 cs).map Int.ofNat
+  | '-' :: cs => (radixDigits 10 cs).map (fun n => -(Int.ofNat n))
+  | cs => (prefixedInteger cs <|> radixDigits 10 cs).map Int.ofNat
+
+/-- Normalize StringNumericLiteral's decimal grammar to a JSON number.
+Decimal order bounds overflow and underflow before expanding an exponent. -/
+def decimalNumeric (cs : List Char) : Option String := do
+  let (sign, cs) := match cs with
+    | '+' :: rest => ("", rest)
+    | '-' :: rest => ("-", rest)
+    | _ => ("", cs)
+  let whole := cs.takeWhile Char.isDigit
+  let rest := cs.drop whole.length
+  let (fraction, rest) := match rest with
+    | '.' :: rest => let ds := rest.takeWhile Char.isDigit; (ds, rest.drop ds.length)
+    | _ => ([], rest)
+  if whole.isEmpty && fraction.isEmpty then none else do
+    let exponent : Int ← match rest with
+      | [] => some 0
+      | 'e' :: rest | 'E' :: rest => do
+        let (negative, digits) := match rest with
+          | '+' :: ds => (false, ds)
+          | '-' :: ds => (true, ds)
+          | _ => (false, rest)
+        let n ← radixDigits 10 digits
+        some (if negative then -(Int.ofNat n) else Int.ofNat n)
+      | _ => none
+    let digits := (whole ++ fraction).dropWhile (· == '0')
+    if digits.isEmpty then return sign ++ "0"
+    let exponent := exponent - Int.ofNat fraction.length
+    let order := Int.ofNat digits.length - 1 + exponent
+    if order ≥ 309 then return sign ++ "1e309"
+    if order ≤ -325 then return sign ++ "0"
+    return sign ++ String.ofList digits ++ "e" ++ toString exponent
+
+/-- `ToNumber` for strings, including whitespace, radices, Infinity and invalid text. -/
+def stringNumber (s : String) : UInt64 :=
+  let cs := trimNumeric s
+  let nan := (0.0 / 0.0 : Float).toBits
+  if cs.isEmpty then 0 else
+  if cs == "Infinity".toList || cs == "+Infinity".toList then (1.0 / 0.0 : Float).toBits else
+  if cs == "-Infinity".toList then (-1.0 / 0.0 : Float).toBits else
+  match prefixedInteger cs with
+  | some n => n.toFloat.toBits
+  | none => match decimalNumeric cs with
+    | some n => (literalBits n).toOption.getD nan
+    | none => nan
+
 /-- A primitive value: one no conversion runs code on. -/
 def isPrim : Tm → Bool
   | .nul | .undef | .tru | .fls | .num _ | .str _ | .bigint _ | .sym _ => true
@@ -599,6 +678,25 @@ def sameValue : Tm → Tm → Bool
   | .sym i, .sym j => i == j
   | _, _ => false
 
+def isNullish : Tm → Bool
+  | .nul | .undef => true
+  | _ => false
+
+/-- Abstract equality of primitive values. Boolean conversion precedes numeric comparison. -/
+def primitiveEquals (a b : Tm) : Bool :=
+  let numberBool : Tm → Tm
+    | .tru => .num (1.0 : Float).toBits
+    | .fls => .num 0
+    | v => v
+  let a := numberBool a
+  let b := numberBool b
+  if isNullish a && isNullish b then true else
+  match a, b with
+  | .num n, .str s | .str s, .num n => numberEqual n (stringNumber s)
+  | .bigint n, .str s | .str s, .bigint n => stringBigInt s == some n
+  | .num n, .bigint i | .bigint i, .num n => doubleIntOrder n i == some .eq
+  | _, _ => sameValue a b
+
 /-- Strict equality (`===`) of two values, as JavaScript's `IsStrictlyEqual`.
 A primitive compares by content (`sameValue`), and differs from every
 object. Two objects are equal when they are one object: an object value is the
@@ -614,6 +712,16 @@ def strictEquals (a b : Tm) : Option Bool :=
     | .objAt fs _, .arr _ | .arr _, .objAt fs _ => if fs.isEmpty then none else some false
     | _, _ => none
 
+/-- Loose equality runs no client code on primitive pairs, nullish comparisons,
+or object identity comparisons. Object-to-primitive conversion has no rule here. -/
+def looseEquals (a b : Tm) : Option Bool :=
+  if !(isVal a && isVal b) then none
+  else if isPrim a && isPrim b then some (primitiveEquals a b)
+  else if isNullish a || isNullish b then some false
+  else match a, b with
+    | .objAt _ _, .objAt _ _ => strictEquals a b
+    | _, _ => none
+
 /-- **What a binary operator does on two values**, as JavaScript's does on
 them, where that is a value. Arithmetic combines two numbers or two bigints,
 never one of each (JavaScript throws a `TypeError`: `binopThrows`), and not a
@@ -627,6 +735,7 @@ runs no code. Strict equality compares where one operand is a primitive
 coercions not modelled here, and has no answer: the term is stuck. -/
 def binop (op : Arith) (a b : Tm) : Option Tm :=
   if op = .eq then (strictEquals a b).map boolVal else
+  if op = .looseEq then (looseEquals a b).map boolVal else
   match a, b with
   | .num x, .num y =>
     some (if op.relational then boolVal (relationHolds op (doubleOrder x y)) else .num (arithBits op x y))
@@ -655,7 +764,7 @@ operand converts through its own code first, which is not modelled: that
 combination stays stuck. Disjoint from `binop`
 (`binop_not_throws`). -/
 def binopThrows : Arith → Tm → Tm → Bool
-  | .eq, _, _ => false
+  | .eq, _, _ | .looseEq, _, _ => false
   | op, .bigint _, .bigint y => match op with
     | .div | .rem => y == 0
     | .pow => decide (y < 0)
@@ -1054,6 +1163,14 @@ theorem binop_result {op : Arith} {a b v : Tm} (h : binop op a b = some v) :
     · rename_i hv
       simp only [Bool.not_eq_true', Bool.and_eq_false_iff, not_or, Bool.not_eq_false] at hv
       exact ⟨hv.1, hv.2, by rcases hb q with h | h <;> rw [h] <;> simp⟩
+  split at h
+  · obtain ⟨q, hq, rfl⟩ := Option.map_eq_some_iff.mp h
+    unfold looseEquals at hq
+    split at hq
+    · cases hq
+    · rename_i hv
+      simp only [Bool.not_eq_true', Bool.and_eq_false_iff, not_or, Bool.not_eq_false] at hv
+      exact ⟨hv.1, hv.2, by rcases hb q with h | h <;> rw [h] <;> simp⟩
   repeat' split at h
   all_goals first
     | (simp at h; done)
@@ -1080,6 +1197,7 @@ theorem binopThrows_values {op : Arith} {a b : Tm} (h : binopThrows op a b = tru
     isVal a = true ∧ isVal b = true := by
   unfold binopThrows at h
   split at h
+  · cases h
   · cases h
   · exact ⟨rfl, rfl⟩
   · exact ⟨rfl, rfl⟩

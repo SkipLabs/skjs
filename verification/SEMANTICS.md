@@ -192,6 +192,38 @@ records) would be the same value here though JavaScript tells them apart, so
 they have no answer, and the typing rule refuses them. Strict equality converts nothing, so it never
 throws ($\mathsf{binopThrows}$ is false for $\equiv$).
 
+Loose equality (`==`, `Arith.looseEq`; `looseEquals`) follows
+[ECMA-262's `IsLooselyEqual`](REFERENCES.md#ecma-262) on these operand pairs;
+`!=` negates its Boolean result. Both operands execute once, left to right,
+before comparison.
+
+| Operands, in either order | Meaning |
+| --- | --- |
+| Two primitives of the same kind | Strict equality, including symbol identity, NaN unequal to itself and the two zeros equal |
+| `null` and `undefined` | Equal |
+| A nullish value and anything else | Unequal; no conversion hook runs |
+| A Boolean and a non-nullish primitive | Convert the Boolean to 0 or 1, then compare |
+| A string and a number | Convert the string by `ToNumber`, then compare numbers |
+| A string and a bigint | Parse by `StringToBigInt`; invalid integer text compares unequal |
+| A number and a bigint | Compare the double's exact mathematical value with the integer; NaN and infinities compare unequal |
+| A symbol and a different primitive kind | Unequal |
+| Two objects, at least one carrying a field location | Compare their field locations, as strict equality does |
+
+Numeric strings admit ECMAScript whitespace, empty text, decimal fractions and
+exponents, unsigned binary/octal/hexadecimal prefixes and signed `Infinity`.
+Separators and trailing text are invalid. Bigint strings admit signed decimal
+integers and unsigned radix prefixes, without fractional or exponent syntax.
+`stringNumber` uses the same IEEE conversion as runtime literals;
+`doubleIntOrder` compares mixed numeric kinds without rounding the bigint.
+The execution-model controls check conversion answers independently of typing:
+a Boolean result alone cannot establish the correct truth value.
+
+Object-to-primitive conversion has no operator rule. It may call
+`Symbol.toPrimitive`, `valueOf` or `toString`, mutate aliases or throw.
+Arrays need that audit too: default-hint conversion tries `valueOf` before
+standard string conversion. The host boundary excludes `document.all` and
+its browser-only `[[IsHTMLDDA]]` behavior.
+
 $\mathsf{str}(v)$ (`primString`) is JavaScript's `ToString` of a primitive
 other than a symbol, which runs no code: a string is itself, `true`, `false`,
 `null` and `undefined` their names, a bigint its decimal integer with a leading

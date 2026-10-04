@@ -965,10 +965,19 @@ def primitiveClause : Clause α → Bool
   | .bigint | .bigintLit _ | .symbol => true
   | _ => false
 
-/-- A record clause with an invariant field: its members are objects with a
-field location, which strict equality compares by identity. -/
+@[nospecialize] def nullishClause : Clause α → Bool
+  | .nul | .undef => true
+  | _ => false
+
+/-- A required invariant or readonly field supplies an object location for identity. -/
 def identityClause : Clause α → Bool
   | .refs (_ :: _) _ _ _ _ _ | .dict (_ :: _) _ _ _ _ _ _ _ => true
+  | .refs _ _ (_ :: _) _ _ _ | .dict _ _ (_ :: _) _ _ _ _ _ => true
+  | _ => false
+
+/-- Clauses whose members are JavaScript objects, including callable objects. -/
+@[nospecialize] def objectClause : Clause α → Bool
+  | .refs .. | .dict .. | .arrs .. | .callable .. | .ctors .. => true
   | _ => false
 
 /-- What an operator yields on members of two clauses, when it answers or
@@ -978,7 +987,11 @@ operator: a division or remainder by zero or a negative exponent throws a `Range
 (`binopThrows`), which is an outcome, not a wrong value, so no divisor or
 exponent condition is needed. -/
 def opResult (op : Arith) (c d : Clause α) : Option OpResult :=
-  if op = .eq then
+  if op = .looseEq then
+    (if primitiveClause c && primitiveClause d || nullishClause c || nullishClause d ||
+       (objectClause c && objectClause d && (identityClause c || identityClause d))
+     then some .bool else none)
+  else if op = .eq then
     (if primitiveClause c || primitiveClause d || identityClause c || identityClause d
      then some .bool else none)
   else if op.relational then
@@ -1036,6 +1049,21 @@ theorem primitiveClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause 
     | (simp only [nulT, undefT, boolT, numT, strT, bigintT, symbolT] at hv;
        first | (subst hv; rfl) | (rcases hv with rfl | rfl <;> rfl) | (obtain ⟨_, rfl⟩ := hv; rfl))
 
+theorem nullishClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
+    (hc : nullishClause c = true) (hv : semWithArgs X P c n W v) : isNullish v = true := by
+  cases c <;> simp [nullishClause] at hc <;> simp only [semWithArgs] at hv
+  all_goals subst hv; rfl
+
+theorem looseEquals_some {v w : Tm} (hv : isVal v = true) (hw : isVal w = true)
+    (h : (isPrim v && isPrim w || isNullish v || isNullish w) = true) :
+    ∃ q, looseEquals v w = some q := by
+  unfold looseEquals
+  simp only [hv, hw, Bool.and_self, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
+  by_cases hp : (isPrim v && isPrim w) = true
+  · exact ⟨primitiveEquals v w, by simp [hp]⟩
+  · have hn : (isNullish v || isNullish w) = true := by simpa [hp] using h
+    exact ⟨false, by simp [hp, hn]⟩
+
 theorem identityClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
     (hc : identityClause c = true) (hv : semWithArgs X P c n W v) :
     ∃ fs code, v = .objAt fs code ∧ fs ≠ [] := by
@@ -1047,16 +1075,38 @@ theorem identityClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause �
     refine ⟨flds, .absent, rfl, ?_⟩
     rintro rfl
     simp at hl
+  have view : ∀ {p : PropKey × α} {ps : List (PropKey × α)},
+      viewT (ReferenceConjunctions.famsOf X (p :: ps)) n W v → ∃ fs code, v = .objAt fs code ∧ fs ≠ [] := by
+    intro p ps hr
+    obtain ⟨flds, l, _, rfl, hl, _⟩ := hr p.1 (X p.2) (by simp [ReferenceConjunctions.famsOf])
+    refine ⟨flds, .absent, rfl, ?_⟩
+    rintro rfl
+    simp at hl
   cases c with
   | refs a bs vs os ms ks =>
     cases a with
-    | nil => simp [identityClause] at hc
+    | nil =>
+      cases vs with
+      | nil => simp [identityClause] at hc
+      | cons p ps => exact view hv.2.1
     | cons p ps => exact field hv.1.1
   | dict a bs vs ds os ms ks cs =>
     cases a with
-    | nil => simp [identityClause] at hc
+    | nil =>
+      cases vs with
+      | nil => simp [identityClause] at hc
+      | cons p ps => exact view hv.2.1
     | cons p ps => exact field hv.1.1
   | _ => simp [identityClause] at hc
+
+theorem objectClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
+    (hc : objectClause c = true) (hv : semWithArgs X P c n W v) :
+    ∃ fs code, v = .objAt fs code := by
+  cases c with
+  | refs | dict => obtain ⟨fs, h, _⟩ := hv.1.1; exact ⟨fs, .absent, h⟩
+  | callable => obtain ⟨fs, code, h, _⟩ := hv.1.1.1; exact ⟨fs, code, h⟩
+  | arrs | ctors => obtain ⟨fs, code, h, _⟩ := hv.1.1; exact ⟨fs, code, h⟩
+  | _ => simp [objectClause] at hc
 
 /-- Strict equality answers when one operand is a primitive or an object
 with a field. -/
@@ -1097,6 +1147,37 @@ theorem opResult_sound {X : α → Fam} {P : α → ArgFam} {op : Arith} {c d : 
     · exact .inl (numberClause_member he hu)
     · exact .inr (bigintClause_member he hu)
   unfold opResult at h
+  by_cases hloose : op = .looseEq
+  · subst hloose
+    simp only [↓reduceIte] at h
+    split at h
+    · rename_i hp
+      cases h
+      have answer : ∃ q, looseEquals v w = some q := by
+        rcases Bool.or_eq_true_iff.mp hp with hp | ho
+        · apply looseEquals_some (semWithArgs_value hv).1 (semWithArgs_value hw).1
+          simp only [Bool.or_eq_true, Bool.and_eq_true] at hp ⊢
+          rcases hp with (⟨hc, hd⟩ | hc) | hd
+          · exact .inl (.inl ⟨primitiveClause_member hc hv, primitiveClause_member hd hw⟩)
+          · exact .inl (.inr (nullishClause_member hc hv))
+          · exact .inr (nullishClause_member hd hw)
+        · simp only [Bool.and_eq_true, Bool.or_eq_true] at ho
+          obtain ⟨⟨hc, hd⟩, hi⟩ := ho
+          obtain ⟨fs, code, rfl⟩ := objectClause_member hc hv
+          obtain ⟨gs, other, rfl⟩ := objectClause_member hd hw
+          have hi' : fs ≠ [] ∨ gs ≠ [] := by
+            rcases hi with hi | hi
+            · obtain ⟨_, _, he, hn⟩ := identityClause_member hi hv
+              cases he; exact .inl hn
+            · obtain ⟨_, _, he, hn⟩ := identityClause_member hi hw
+              cases he; exact .inr hn
+          refine ⟨decide (fs = gs), ?_⟩
+          rcases hi' with hf | hg <;>
+            simp [looseEquals, strictEquals, isVal, isPrim, isNullish, List.isEmpty_iff, *]
+      obtain ⟨q, hq⟩ := answer
+      exact .inl ⟨boolVal q, by simp [binop, hq], boolVal_holds _⟩
+    · cases h
+  simp only [hloose, ↓reduceIte] at h
   by_cases heq : op = .eq
   · subst heq
     simp only [↓reduceIte] at h
@@ -1124,16 +1205,16 @@ theorem opResult_sound {X : α → Fam} {P : α → ArgFam} {op : Arith} {c d : 
       · rcases Bool.and_eq_true_iff.mp hops with ⟨hc, hd⟩
         rcases numeric hc hv with ⟨x, rfl⟩ | ⟨x, rfl⟩ <;>
           rcases numeric hd hw with ⟨y, rfl⟩ | ⟨y, rfl⟩
-        · exact .inl ⟨boolVal (relationHolds op (doubleOrder x y)), by simp [binop, hrel, heq], boolVal_holds _⟩
-        · exact .inl ⟨boolVal (relationHolds op (doubleIntOrder x y)), by simp [binop, hrel, heq], boolVal_holds _⟩
+        · exact .inl ⟨boolVal (relationHolds op (doubleOrder x y)), by simp [binop, hloose, hrel, heq], boolVal_holds _⟩
+        · exact .inl ⟨boolVal (relationHolds op (doubleIntOrder x y)), by simp [binop, hloose, hrel, heq], boolVal_holds _⟩
         · exact .inl ⟨boolVal (relationHolds op ((doubleIntOrder y x).map Ordering.swap)),
-            by simp [binop, hrel, heq], boolVal_holds _⟩
-        · exact .inl ⟨boolVal (relationHolds op (some (compare x y))), by simp [binop, hrel, heq], boolVal_holds _⟩
+            by simp [binop, hloose, hrel, heq], boolVal_holds _⟩
+        · exact .inl ⟨boolVal (relationHolds op (some (compare x y))), by simp [binop, hloose, hrel, heq], boolVal_holds _⟩
       · rcases Bool.and_eq_true_iff.mp hops with ⟨hc, hd⟩
         obtain ⟨x, rfl⟩ := stringClause_member hc hv
         obtain ⟨y, rfl⟩ := stringClause_member hd hw
         exact .inl ⟨boolVal (relationHolds op (some (unitsOrder (utf16Units x) (utf16Units y)))),
-          by simp [binop, hrel, heq], boolVal_holds _⟩
+          by simp [binop, hloose, hrel, heq], boolVal_holds _⟩
     · cases h
   · simp only [hrel, Bool.false_eq_true, ↓reduceIte] at h
     split at h
@@ -1154,7 +1235,7 @@ theorem opResult_sound {X : α → Fam} {P : α → ArgFam} {op : Arith} {c d : 
       rcases Bool.and_eq_true_iff.mp hops with ⟨hc, hd⟩
       obtain ⟨x, rfl⟩ := numberClause_member hc hv
       obtain ⟨y, rfl⟩ := numberClause_member hd hw
-      exact .inl ⟨.num (arithBits op x y), by simp [binop, hrel, heq], _, rfl⟩
+      exact .inl ⟨.num (arithBits op x y), by simp [binop, hloose, hrel, heq], _, rfl⟩
     · split at h
       · rename_i _ hops
         cases h
@@ -1163,10 +1244,10 @@ theorem opResult_sound {X : α → Fam} {P : α → ArgFam} {op : Arith} {c d : 
         obtain ⟨x, rfl⟩ := bigintClause_member hc hv
         obtain ⟨y, rfl⟩ := bigintClause_member hd hw
         cases hz : bigintArith op x y with
-        | some z => exact .inl ⟨.bigint z, by simp [binop, hrel, heq, hz], z, rfl⟩
+        | some z => exact .inl ⟨.bigint z, by simp [binop, hloose, hrel, heq, hz], z, rfl⟩
         | none =>
           refine .inr ?_
-          cases op <;> simp [Arith.relational] at hrel heq <;> simp [bigintArith] at hz <;>
+          cases op <;> simp [Arith.relational] at hrel heq hloose <;> simp [bigintArith] at hz <;>
             simp [binopThrows, hz]
       · cases h
 

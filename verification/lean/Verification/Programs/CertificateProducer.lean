@@ -718,7 +718,7 @@ came from a different context. No execution budget is inspected. -/
       -- requested type when it holds the result's kind, else coerced.
       let operands := pool.filter fun R => G.plainTy R && !(expand G R).isEmpty &&
         (expand G R).all fun c => numberClause c || bigintClause c || (op.relational && stringClause c)
-          || (op == .add && printableClause c) || op == .eq
+          || (op == .add && printableClause c) || op == .eq || op == .looseEq
       return operands.findCheck? fun R => do
         let ea ← recur Γ a R
         (operands.filter fun S => (operandsResult G op R S).isSome).findCheck? fun S => do

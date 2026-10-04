@@ -310,7 +310,7 @@ program mentions. -/
 expression's claim: both Booleans for a comparison, strings for `+` with a
 string operand, else the numeric family of its operands. -/
 @[nospecialize] private def operatorResult (op : Arith) (A B : Ty Tree) : Compiler (Ty Tree) := do
-  if op.relational || op == .eq then return [Labels.tru, Labels.fls]
+  if op.relational || op == .eq || op == .looseEq then return [Labels.tru, Labels.fls]
   let G := SourceTypes.graph (← table)
   let strings := fun (T : Ty Tree) =>
     let cs := PositiveRules.expand G T

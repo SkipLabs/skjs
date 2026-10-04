@@ -990,7 +990,9 @@ partial def decodeExpr (j : Json) : Except String Expr := do
       match left, right with
       | _, .lit _ .vnull | _, .lit _ .vundef => return .singletonTest p .isNullish (op == "==") true left right
       | .lit _ .vnull, _ | .lit _ .vundef, _ => return .singletonTest p .isNullish (op == "==") false left right
-      | _, _ => throw s!"unsupported source expression at [{p.1},{p.2}): loose equality converts its operands; only == null and == undefined are exact"
+      | _, _ =>
+        let same := Expr.arith p .looseEq left right
+        return if op == "==" then same else .not p same
     if op != "===" && op != "!==" then
       throw s!"unsupported source expression at [{p.1},{p.2}): binary operator outside the fragment ({op})"
     match left, right with

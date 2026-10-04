@@ -955,7 +955,8 @@ obstacle named. A search failure is neither.
 | An async function returning an object other than a promise of a primitive, a void async function returning a value, `await` of a non-promise object at its own type | JavaScript adopts thenables, and a record type does not rule out a `then`. |
 | An object literal, class or parameter property the source builds with a `then` member, which could be claimed as a `Promise` | A value of type `Promise<T>` is assumed a realm promise; the source must not forge one. |
 | `String(o)`, `o + ""`, `new Date(o)`, `new Set(it)` of a non-array iterable, `JSON.parse` with a reviver, `JSON.stringify` with a replacer, of an array or an open record; a relational comparison with an object operand | The host runs client code (`toString`, `valueOf`, an iterator, a callback, a `toJSON`). |
-| `==` other than `== null`; `+` on a bigint, number–bigint arithmetic, a symbol in a concatenation; a relational comparison of a string with a number | `==` converts its operands; TypeScript refuses the rest. |
+| `+` on a bigint, number–bigint arithmetic, a symbol in a concatenation; a relational comparison of a string with a number | TypeScript refuses these operations. |
+| `==` or `!=` that may convert an object to a primitive, including an array | Conversion may invoke client hooks and mutate aliases. Standard array string conversion does not justify default-hint conversion, which calls `valueOf` first. |
 | `this` before `super(...)` | TypeScript rejects it, and JavaScript throws. |
 | A read of a local above its declaration or in its own initializer; a parameter default reading a later parameter | JavaScript throws there (the temporal dead zone), and TypeScript rejects it (TS2448, TS2373). |
 | An assignment to a module function's binding | TypeScript rejects it (TS2630). |
@@ -981,7 +982,7 @@ representation cannot state it yet; the paths are in
 | A write at a string key known only at run time (`d[k] = v`), even on a local's own dictionary | The string may spell a key the model keeps for itself (`[]`, `[[proto]]`), which JavaScript owns as an ordinary property. |
 | A write of `__proto__`; adding a symbol key | The first runs the prototype's setter and adds no key; the copy that adds a key copies string keys only. |
 | `Object.assign` onto an object other than a fresh literal or, as a statement, a local's own object; from a source whose type does not rule out an own `__proto__` | Its value is its target, and another reference would see the keys it adds; it sets `__proto__` through the prototype's setter, which replaces the prototype. |
-| `===` between two operands that may both be objects without a field (functions, records of optional fields, `unknown`, a type parameter's value); narrowing by object identity | Such values carry no location to compare in the model; a statement entry states no slot equality. |
+| `===`, `==` or `!=` between two operands that may both be objects without a field (functions, records of optional fields, `unknown`, a type parameter's value); narrowing by object identity | Such values carry no location to compare in the model; a statement entry states no slot equality. |
 | A relational comparison converting a primitive (`undefined`, a Boolean) | The model's comparison is of two numbers or two strings; the refusal does not tell this conversion, which runs no code, from an object's. |
 | `keyof T`, `T[K]` over a function's own type parameter (an alias computed from its parameters is evaluated at each application) | They are functions of the type an instance names (its declared, optional and readonly keys); a parameter row denotes a value set, which does not determine a key set. |
 | A template literal type with a `${string}` hole; `keyof` with a unique-symbol key; `typeof` of a binding whose inferred type is not an object literal's record of literals and primitives, or of a class with statics | No term of the fragment states it exactly. |
@@ -1131,6 +1132,7 @@ only through its members).
 
 | Step | State | Closed when |
 | --- | --- | --- |
+| Loose equality coverage | Primitive pairs, named nullish operands and identity-bearing object pairs have a proved operator rule. Fieldless object identity requires a model extension; array-to-primitive conversion requires a `valueOf` contract and effect-aware lowering. The original service reaches a contextual `number & Managed` closure-parameter refusal. | Function and fieldless-record identity have a faithful allocation model; bounded array conversion has checked hook/effect obligations; the original service has its actual outcome recorded |
 | 1. Explicit-comparator sorting | done | `native-sort-contracts` and the tuple-valued sorts verify; the optional-comparator negative is rejected |
 | 2. Sparse results | done | `native-map-sparse`, `testTupleArrayMethod` and `isarray-record-array` verify; `invalid-map-hole-coalescing` is rejected |
 | 3. Density-sensitive calls | done | `array-methods`, `array-library`, `array-generic-name`, `closure-contextual-parameters`, `testArrowOptional` and `testMapReturnsArray` verify; `mapArr`/`testMapCallback` stay refused, their written contract being false |

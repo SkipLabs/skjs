@@ -916,7 +916,7 @@ and owning no other key, and `readProto` reads the member there. A method call
 the member's signature names (`this: string`).
 
 Every binary operator has one rule, `arith`, for arithmetic on numbers and on
-bigints, for string concatenation, relational comparison and strict equality alike ([its
+bigints, for string concatenation, relational comparison and equality alike ([its
 meaning](SEMANTICS.md#operational-language), `binop`). A clause pair
 classifies the operation, $\mathrm{op}(op,c,d)$ (`opResult`), where
 $\mathsf{N}$ is `num` or `numLit`, $\mathsf{Z}$ is `bigint` or `bigintLit`,
@@ -924,8 +924,8 @@ $\mathsf{S}$ is `str` or `strLit`, and $\mathsf{P}$, the printable clauses
 (`printableClause`), is $\mathsf N\cup\mathsf Z\cup\mathsf S$ with `bool`,
 `boolLit`, `nul` and `undef`: every primitive but a symbol. $\mathsf{Pr}$
 (`primitiveClause`) is $\mathsf P$ with `symbol`, and $\mathsf{O}$
-(`identityClause`) the record clauses, `refs` or `dict`, with an invariant
-field: their members are objects with a field location, whose identity
+(`identityClause`) the record clauses, `refs` or `dict`, with a required invariant
+or readonly field: their members are objects with a field location, whose identity
 strict equality compares:
 
 ```math
@@ -957,9 +957,9 @@ The result is never a singleton, since its value is not typed. `opResult_sound`
 proves the classification: on members of the two clauses $\mathsf{binop}$
 answers, with a value of the kind, or $\mathsf{binopThrows}$ holds, and the
 term steps to a throw (`arith_throw_safe`). So a number never meets a bigint in
-arithmetic (a `TypeError`), a string is compared only with a string and
+arithmetic (a `TypeError`), a string is relationally compared only with a string and
 concatenated only with a primitive whose `ToString` runs no code, and a
-Boolean or object operand of arithmetic or comparison, and an object or symbol
+Boolean or object operand of arithmetic or relational comparison, and an object or symbol
 concatenated, which JavaScript would convert through code or by throwing, has
 no rule, though TypeScript admits comparing two Booleans and concatenating an
 object. An operand whose clauses classify differently, a `string | number`
@@ -970,6 +970,26 @@ Strict equality answers for any pair but two objects that may lack a field (a
 function, a record of optional fields only, `unknown`): those carry no identity
 in the model ([its meaning](SEMANTICS.md#operational-language)), and the source
 lowering refuses the comparison with that reason.
+
+For loose equality, `opResult` gives `bool` when every operand-clause pair
+meets one of three conditions: both are primitive; one is `null` or
+`undefined`; or both are object clauses and at least one has a required
+field location. Object clauses include records, dictionaries, callables and
+constructors. Mutable and readonly arrays are object records with required
+store locations. A union must satisfy the condition for every pair, so
+`number[] | null` can compare with `number[] | undefined`, while
+`number[] | number` compared with `number` needs an object-conversion rule.
+The proof `opResult_sound` establishes that each admitted pair computes a
+Boolean without invoking client code. The coercions and numeric corner cases
+are specified in [the operational semantics](SEMANTICS.md#operational-language).
+
+A successful coercive comparison establishes no cross-kind type refinement:
+`x == n` can hold when `x` is the string `"1"` and `n` is the number `1`.
+Literal nullish comparisons retain their nullish branch test; named nullish
+operands use the Boolean operator rule. A `typeof` result compared loosely
+with a supported string literal uses the same shape test as strict equality:
+both operands are strings. Neither operand's inferred type is
+trusted without its expression obligation.
 
 The unary numeric operators are derived: the operand's claimed type fixes its
 family, all numbers or all bigints, and the operator is the binary one with a

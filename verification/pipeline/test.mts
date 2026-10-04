@@ -606,6 +606,11 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
 
 {
   for (const [file, expression, expected] of [
+    ["loose-equality", "[samePrimitive(false, ''), samePrimitive(null, undefined), samePrimitive(9007199254740993n, 9007199254740992), platform('native')].join()", "true,true,false,native"],
+    ["loose-equality", "const box = {value: 0}; const result = evaluatedOperands(box, '1'); JSON.stringify([result, box.value])", "[true,1]"],
+    ["loose-equality", "const xs = []; [differentArrays(xs, xs), readonlyIdentity(xs, []), namedNullish({valueOf(){throw Error('called')}}, null)].join()", "false,false,false"],
+    ["invalid-loose-equality-narrowing", "typeof wrongNumber('1', 1)", "string"],
+    ["loose-equality-array-conversion-refused", "const xs = [1]; let calls = 0; xs.valueOf = () => { calls++; return 2; }; JSON.stringify([arrayConversion(xs, 2), calls])", "[true,1]"],
     ["callable-bag-union", "[readWrite(true, true), readWrite(false, true)].join()", "false,false"],
     ["invalid-callable-bag-union", "wrong(false, true)", false],
     ["recursive-callable", "selfLoop()", false],
