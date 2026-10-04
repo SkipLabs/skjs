@@ -1235,20 +1235,20 @@ def tagHolds : Tag → Val → Bool
   | .bigintEq i, .bigint j => i == j
   | .isBigint, .bigint _ => true
   | .isSymbol, .sym _ => true
-  | .isRef, .objAt _ .absent oid => true
-  | .isFun, .objAt _ (.bound _ _ _) oid => true
-  | .isFun, .objAt _ (.graph ..) oid => true
+  | .isRef, .objAt _ .absent _ => true
+  | .isFun, .objAt _ (.bound _ _ _) _ => true
+  | .isFun, .objAt _ (.graph ..) _ => true
   | .truthy, .tru => true
   | .truthy, .num b => numberTruthy b
   | .truthy, .str s => s != ""
   | .truthy, .bigint i => i != 0
   | .truthy, .sym _ => true
-  | .truthy, .objAt _ _ oid => true
+  | .truthy, .objAt _ _ _ => true
   | .truthy, .arr _ => true
-  | .isArray, .objAt fs .absent oid => (fs.lookup arrayStoreKey).isSome
+  | .isArray, .objAt fs .absent _ => (fs.lookup arrayStoreKey).isSome
   | .typeofObject, .nul => true
-  | .typeofObject, .objAt _ .absent oid => true
-  | .hasKey k, .objAt fs _ oid => (fs.lookup k).isSome
+  | .typeofObject, .objAt _ .absent _ => true
+  | .hasKey k, .objAt fs _ _ => (fs.lookup k).isSome
   | _, _ => false
 
 mutual
@@ -1366,7 +1366,7 @@ does, as far as the heap reaches. A chain longer than the heap has a cycle,
 which no JavaScript object has; it answers `false`. -/
 def keyInChain (h : List Tm) (k : PropKey) : Nat → Tm → Bool
   | 0, _ => false
-  | fuel + 1, .objAt fs _ oid => (fs.lookup k).isSome ||
+  | fuel + 1, .objAt fs _ _ => (fs.lookup k).isSome ||
       match fs.lookup CallArguments.protoField with
       | some l => keyInChain h k fuel (heapVal h l)
       | none => false
@@ -1382,7 +1382,7 @@ def tagHoldsIn (h : List Tm) : Tag → Tm → Bool
 /-- A test that needs no prototype: every one but `key in o` on an object
 lacking the key and holding a prototype. -/
 def protoFree : Tag → Tm → Bool
-  | .hasKey k, .objAt fs _ oid => (fs.lookup k).isSome || (fs.lookup CallArguments.protoField).isNone
+  | .hasKey k, .objAt fs _ _ => (fs.lookup k).isSome || (fs.lookup CallArguments.protoField).isNone
   | _, _ => true
 
 /-- Where no prototype is read, the heap does not matter. -/
@@ -1436,7 +1436,7 @@ nothing from `null`, `undefined`, a Boolean, a number, a bigint or a symbol,
 whose wrappers own no enumerable property. A string (its code units) is not
 copied here: the copy is stuck, and no typing rule admits one. -/
 def ownData (h : List Tm) : Tm → Option (List (PropKey × Tm))
-  | .objAt fs _ oid => some (firstKeys
+  | .objAt fs _ _ => some (firstKeys
       ((fs.filter (copiedKey ·.1)).map (fun p => (p.1, heapVal h p.2)) ++ storeData h fs))
   | .nul | .undef | .tru | .fls | .num _ | .bigint _ | .sym _ => some []
   | _ => none
@@ -1444,7 +1444,7 @@ def ownData (h : List Tm) : Tm → Option (List (PropKey × Tm))
 /-- The fields of the accumulator a copy is made onto: all of a plain
 object's own fields, its prototype included, but its store. -/
 def ownAll (h : List Tm) : Tm → Option (List (PropKey × Tm))
-  | .objAt fs .absent oid => some (firstKeys
+  | .objAt fs .absent _ => some (firstKeys
       ((fs.filter (·.1 != arrayStoreKey)).map (fun p => (p.1, heapVal h p.2))))
   | _ => none
 

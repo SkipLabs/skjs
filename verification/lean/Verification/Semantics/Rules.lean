@@ -293,7 +293,7 @@ theorem make_fields_rule {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A)
         (As.map (fun A => (res A : Ctr (q + 1))) ++ [res nulT]) (i := i) (by simp; omega)
       rw [← hlen] at this
       rw [this]
-      simp [contracts, List.getElem?_append_left hib, List.getElem?_map, List.getElem?_eq_getElem (show i < As.length by omega)]
+      simp [List.getElem?_append_left hib, List.getElem?_map, List.getElem?_eq_getElem (show i < As.length by omega)]
 
 /-- **Allocating an object with no named field**, as `.bind` does: the
 result meets `Q` at whatever identity the allocation gives it. -/

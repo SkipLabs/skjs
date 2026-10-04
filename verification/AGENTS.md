@@ -286,7 +286,10 @@ fragment; do not restore acceptance by increasing trust silently.
   every producer and consumer of these documents is in this repository, nothing
   outside reads them, and there is no older document to keep working.
 - Lean: no `sorry`, no project axioms; `#print axioms` on every soundness
-  theorem stays in the file. Build only the module you changed while
+  theorem stays in the file. No warnings: `lakefile.toml` sets
+  `warningAsError`, so a warning fails the build; fix it (a deprecated name's
+  replacement, an unused variable as `_`, an unused simp argument dropped)
+  rather than silencing it. Build only the module you changed while
   iterating (`lake build Verification.<Layer>.<Module>` from `verification/lean`).
   Run Lake from that directory so elan selects its pinned `lean-toolchain`;
   `lake -d` from the repository root can select a different compiler before

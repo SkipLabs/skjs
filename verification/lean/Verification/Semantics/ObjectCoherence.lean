@@ -59,8 +59,8 @@ theorem mem_slots {base : Nat} {ns : List PropKey} {p : PropKey × Nat}
 /-! Every object occurrence agrees with its allocation, including inside code. -/
 mutual
 def Names (D : Registry) : Tm → Prop
-  | .objAt fs .absent oid => ∀ l ∈ locs fs, D[l]? = some .absent
-  | .objAt fs (.bound t r pre) oid =>
+  | .objAt fs .absent _ => ∀ l ∈ locs fs, D[l]? = some .absent
+  | .objAt fs (.bound t r pre) _ =>
       (∀ l ∈ locs fs, D[l]? = some (.bound t r pre)) ∧
         (Scoped 0 t ∧ Scoped 0 r ∧ ScopedArgs 0 pre) ∧ Names D t ∧ Names D r ∧ NamesArgs D pre
   | .makeAt (.bound t r pre) _ args =>
@@ -75,7 +75,7 @@ def Names (D : Registry) : Tm → Prop
   | .arrLit args => NamesArgs D args
   | .arr ls => ∀ l ∈ ls.filterMap id, D[l]? = some .absent
   | .ite c a b => Names D c ∧ Names D a ∧ Names D b
-  | .objAt fs (.graph n E K st caps k r) oid =>
+  | .objAt fs (.graph n E K st caps k r) _ =>
       (∀ l ∈ locs fs, D[l]? = some (.graph n E K st caps k r)) ∧ ScopedArgs 0 caps ∧
         NamesArgs D E ∧ NamesArgs D caps
   | .makeAt (.graph _ E _ _ caps _ _) _ args => NamesArgs D E ∧ NamesArgs D caps ∧ NamesArgs D args

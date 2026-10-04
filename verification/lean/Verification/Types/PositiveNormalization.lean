@@ -275,9 +275,9 @@ def shape : Clause α → Nat
   | .pack .. => 12
 
 def valueShape : Val → Nat
-  | .nul => 0 | .tru | .fls => 1 | .objAt _ .absent oid => 2 | .undef => 4
-  | .objAt _ (.bound _ _ _) oid | .objAt _ (.graph _ _ _ _ _ .call _) oid => 3
-  | .objAt _ (.graph _ _ _ _ _ .construct _) oid => 11
+  | .nul => 0 | .tru | .fls => 1 | .objAt _ .absent _ => 2 | .undef => 4
+  | .objAt _ (.bound _ _ _) _ | .objAt _ (.graph _ _ _ _ _ .call _) _ => 3
+  | .objAt _ (.graph _ _ _ _ _ .construct _) _ => 11
   | .num _ => 5
   | .str _ => 6
   | .arr _ => 8

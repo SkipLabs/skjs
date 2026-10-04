@@ -13,8 +13,8 @@ namespace Verification
 mutual
 def Scoped (d : Nat) : Tm → Prop
   | .var i => i < d
-  | .objAt _ .absent oid => True
-  | .objAt _ (.bound t r pre) oid => Scoped d t ∧ Scoped d r ∧ ScopedArgs d pre
+  | .objAt _ .absent _ => True
+  | .objAt _ (.bound t r pre) _ => Scoped d t ∧ Scoped d r ∧ ScopedArgs d pre
   | .makeAt (.bound t r pre) _ args =>
       Scoped d t ∧ Scoped d r ∧ ScopedArgs d pre ∧ ScopedArgs d args
   | .makeAt .absent _ args => ScopedArgs d args
@@ -32,7 +32,7 @@ def Scoped (d : Nat) : Tm → Prop
   | .merge _ a b => Scoped d a ∧ Scoped d b
   -- Graph code's node expressions are scoped by its own environment, which
   -- invocation supplies whole; only the captures are scoped here.
-  | .objAt _ (.graph _ _ _ _ caps _ _) oid => ScopedArgs d caps
+  | .objAt _ (.graph _ _ _ _ caps _ _) _ => ScopedArgs d caps
   | .makeAt (.graph _ _ _ _ caps _ _) _ args => ScopedArgs d caps ∧ ScopedArgs d args
   | .goto _ _ _ L x => ScopedArgs d L ∧ Scoped d x
   | .frame _ _ t L x _ _ => Scoped d t ∧ ScopedArgs d L ∧ Scoped d x

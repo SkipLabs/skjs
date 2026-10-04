@@ -1119,7 +1119,7 @@ theorem opResult_sound {X : α → Fam} {P : α → ArgFam} {op : Arith} {c d : 
           · exact .inl (.inl ⟨primitiveClause_member hc hv, primitiveClause_member hd hw⟩)
           · exact .inl (.inr (nullishClause_member hc hv))
           · exact .inr (nullishClause_member hd hw)
-        · simp only [Bool.and_eq_true, Bool.or_eq_true] at ho
+        · simp only [Bool.and_eq_true] at ho
           obtain ⟨hc, hd⟩ := ho
           obtain ⟨fs, code, oid, rfl⟩ := objectClause_member hc hv
           obtain ⟨gs, other, oid', rfl⟩ := objectClause_member hd hw
