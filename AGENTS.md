@@ -11,13 +11,13 @@ TypeScript type checker implemented in the Skip language. It aims to check a sou
 ```bash
 make build-in-docker                   # Build the skjs binary
 make check-file-in-docker FILE=tmp.ts  # Run skjs check on one file (fast iteration)
-make test-in-docker                    # Run all tests — every commit must pass this
+make test-in-docker                    # Run the SKJS checker suites
 make check-in-docker                   # Type-check the Skip code without building (fast incremental)
 make fmt                               # Format all code (skfmt for .sk, prettier for .ts/.json)
 make clean-in-docker                   # Clean build artifacts
 ```
 
-The `*-in-docker` targets run inside the Skip docker image (directly when in a devcontainer). With a local Skip toolchain, the native equivalents work too: `make build`, `make test`, `make check`, or `skargo` directly. For comment-only changes, `make check-in-docker` / `skargo check` is sufficient verification — comments cannot affect behavior, and it is much faster than the full test run.
+The `*-in-docker` targets run inside the Skip docker image (directly when in a devcontainer). With a local Skip toolchain, the native equivalents work too: `make build`, `make test`, `make check`, or `skargo` directly. Select checks by the affected subsystem using [Test scope](docs/testing.md#test-scope).
 
 ## Fast Iteration (Single File + Binary Variants)
 
@@ -51,14 +51,14 @@ cp target/host/dev/skjs target/host/dev/skjs.<label>
 | `tests/*.sk` | Test harness (Skip test files) |
 | `tests/expect-error/*.ts` | Negative + positive type-checking tests with error annotations |
 | `examples/src/*.ts` | Working example programs demonstrating supported features |
-| `tests/projects/*/` | Multi-file test projects (auto-discovered — all must pass at every commit) |
+| `tests/projects/*/` | Multi-file test projects (auto-discovered by the SKJS suite) |
 | `import-stubs/` | Stub type declarations for built-in modules |
 
 ## Key Conventions
 
 - **Utility justifies complexity**: Prefer simple support for useful programs over disproportionate machinery for rarely useful corner cases. A deliberate restriction is acceptable when it is documented and enforced, including assumptions on external code. Never ignore behavior of accepted code or erase a contract to avoid the work. See the verifier's [design principles](verification/DESIGN.md#principles) for the semantic boundary.
 - **Push permission**: Always ask the user for explicit permission before each push. Commit, integration, or PR preparation requests do not authorize pushing. A readiness question such as "Ready to push?" is not permission; report readiness and ask before running the push. Do not reuse approval from an earlier push.
-- **Green commits**: Every intermediate commit must pass `make test-in-docker`
+- **Green commits**: Every intermediate commit passes the checks required by [Test scope](docs/testing.md#test-scope). A commit request does not expand the test scope.
 - **SKJS is a typechecker, not a runtime**: Tests exercise type-checking only — no `console.log()` calls or function invocations
 - **One error per definition**: SKJS reports only the first type error per function/definition unless passing `--keep-going` (best-effort — fatal errors may still hide subsequent ones)
 - **Match TypeScript**: SKJS should not be more permissive than TypeScript, but must not follow TypeScript when TypeScript is unsound. When in doubt, verify with `npx tsc --strict --noEmit`

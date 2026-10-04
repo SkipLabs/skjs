@@ -4,18 +4,37 @@
 
 - **Runnable examples**: `examples/src/*.ts` — demonstrate working features and patterns
 - **Unit tests**: `tests/expect-error/*.ts` — both positive (valid code) and negative (invalid code with error annotations) tests
-- **Test projects**: `tests/projects/*/` — multi-file projects, auto-discovered (all must pass at every commit)
+- **Test projects**: `tests/projects/*/` — multi-file projects, auto-discovered by the SKJS suite
 
 ## Running Tests
 
 ```bash
 make build-in-docker    # Build
-make test-in-docker     # Run all tests (every commit must pass)
+make test-in-docker     # Run the SKJS checker suites
 make check-in-docker    # Type-check Skip code without building
 make fmt                # Format code (skfmt for .sk, prettier for .ts/.json)
 ```
 
-The `*-in-docker` targets run inside the Skip docker image (directly when in a devcontainer). With a local Skip toolchain, use the native `make test` / `make check` (or `skargo test` / `skargo check`) directly. For comment-only changes, a compilation check (`make check-in-docker` / `skargo check`) is sufficient — comments cannot affect behavior.
+The `*-in-docker` targets run inside the Skip docker image (directly when in a devcontainer). With a local Skip toolchain, use the native `make test` / `make check` (or `skargo test` / `skargo check`) directly.
+
+## Test scope
+
+Choose checks by the behavior and subsystem a change can affect. Each commit
+passes those checks. For a change spanning subsystems, combine their required
+checks; a request to commit alone does not require broader testing.
+
+| Change | Required checks |
+| --- | --- |
+| SKJS checker behavior, its test harness, fixtures, import stubs or build configuration | `make test-in-docker` |
+| Comments only in Skip code | `make check-in-docker` |
+| Other verifier changes | The subsystem tiers in [verification/AGENTS.md](../verification/AGENTS.md#iterating-run-what-the-change-touches) |
+| Documentation or agent instructions only | Check changed links, commands and consistency; for changes under `verification/`, run `node verification/tests/docs.mts` |
+| Other tooling | Its focused tests and affected integration checks |
+
+Verifier-only changes do not require the SKJS suite.
+Run it when a change also affects SKJS behavior or its build/test machinery.
+Apply the configured formatters to changed files of the relevant kinds;
+repository-wide `make fmt` is for repository-wide formatting work.
 
 ## Critical Rules
 
