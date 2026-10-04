@@ -72,7 +72,7 @@ const server = await runService(service, {
   platform,
 });
 
-async function shutdown() {
+async function shutdown(): Promise<void> {
   await server.close();
 }
 

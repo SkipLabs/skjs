@@ -554,8 +554,9 @@ API avoids the variance problem: `EagerCollection<K, V>` uses `K` and `V` in
 parameter positions, so it is not a subtype of `EagerCollection<Json, Json>`
 under sound subtyping, and nothing requires it to be. SKJS's
 [`@skipruntime/core` stubs](../../import-stubs/@skipruntime/core/index.d.ts)
-describe the same API. The byte-for-byte upstream
-[`sum.ts`](../pipeline/examples/reactive-sum-prettier-ignore.ts) and
+describe the same API. The upstream
+[`sum.ts`](../pipeline/examples/reactive-sum-prettier-ignore.ts), byte for byte
+but the result annotation `Promise<void>` on `shutdown`, and
 [`api.ts`](../pipeline/skip-runtime-snapshot/skipruntime-ts/core/src/api.ts) snapshots are checked by
 SHA-256 in `test.mts`.
 
@@ -564,7 +565,7 @@ loose `==`, a statement starting with `[`, and a plain object type
 `Collections` passed as `Resource<Collections>` — a named-field type is not an
 index-signature type, so it does not meet `SharedCollections` (TypeScript
 accepts it only by its unsound implicit index rule). It stays as provenance,
-with its first parser refusal recorded. The target is
+with its first parser refusal recorded: its loose `==`. The target is
 [`reactive-sum-sound.ts`](../pipeline/examples/reactive-sum-sound.ts), the same program
 corrected as a client, which SKJS accepts with no errors and TypeScript accepts
 against the pinned API and Node's declarations (`@types/node` at the version

@@ -440,10 +440,10 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
 }
 
 {
-  // The upstream `sum.ts`, byte for byte: the coverage row and the producer's
+  // The upstream `sum.ts`, byte for byte but `shutdown`'s result annotation: the coverage row and the producer's
   // README describe this file as the framework's own example.
   assert.equal(createHash("sha256").update(readFileSync(join(here, "examples/reactive-sum-prettier-ignore.ts"))).digest("hex"),
-    "8c10ace97b50d5a3521626fe569fcfe87034a48424f84f2d2aeb970eba161efe",
+    "1184968c9608c8ddb157442736af1654a3ba4bae9559936e8811de2c45bec6cb",
     "update the upstream provenance and coverage results before replacing this fixture");
   const snapshotSha = (path: string) =>
     createHash("sha256").update(readFileSync(resolve(here, "skip-runtime-snapshot", path))).digest("hex");
