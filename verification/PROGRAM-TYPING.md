@@ -923,14 +923,16 @@ $\mathsf{N}$ is `num` or `numLit`, $\mathsf{Z}$ is `bigint` or `bigintLit`,
 $\mathsf{S}$ is `str` or `strLit`, and $\mathsf{P}$, the printable clauses
 (`printableClause`), is $\mathsf N\cup\mathsf Z\cup\mathsf S$ with `bool`,
 `boolLit`, `nul` and `undef`: every primitive but a symbol. $\mathsf{Pr}$
-(`primitiveClause`) is $\mathsf P$ with `symbol`, and $\mathsf{O}$
-(`identityClause`) the record clauses, `refs` or `dict`, with a required invariant
-or readonly field: their members are objects, whose identities strict equality
-compares:
+(`primitiveClause`) is $\mathsf P$ with `symbol`, $\mathsf{O}$
+(`objectClause`) the object clauses, `refs`, `dict`, `arrs`, `callable` and
+`ctors`, whose members are objects, compared by identity, and $\mathsf{Nl}$
+(`nullishClause`) is `nul` and `undef`; $\equiv$ is strict equality (`===`)
+and $\approx$ loose equality (`==`):
 
 ```math
 \mathrm{op}(op,c,d)=\begin{cases}
 \mathsf{bool} & op={\equiv},\ c\in\mathsf{Pr}\cup\mathsf O\ \text{or}\ d\in\mathsf{Pr}\cup\mathsf O\\
+\mathsf{bool} & op={\approx},\ c,d\in\mathsf{Pr}\ \text{or}\ c\in\mathsf{Nl}\ \text{or}\ d\in\mathsf{Nl}\ \text{or}\ c,d\in\mathsf O\\
 \mathsf{bool} & op\ \text{relational},\ c,d\in\mathsf N\cup\mathsf Z\ \text{or}\ c,d\in\mathsf S\\
 \mathsf{str} & op={+},\ c\in\mathsf S,\ d\in\mathsf P\ \text{or}\ c\in\mathsf P,\ d\in\mathsf S\\
 \mathsf{num} & op\ \text{arithmetic},\ c,d\in\mathsf N\\
@@ -947,9 +949,24 @@ classify as $r$, and the result type must hold every value of the kind
 ($\mathrm{covers}$): the number, bigint or string family exactly, or both
 Boolean literals:
 
+One operand also decides an equality alone: $\mathrm{Decided}_G(op,X)$
+(`EqualityDecided`) holds when $X$ is of clause rows each of which, for
+$\equiv$, is in $\mathsf{Pr}\cup\mathsf O$, or, for $\approx$, in
+$\mathsf{Nl}$. Its members compared with any value, a type parameter's
+included, in either order, give a Boolean (`decidingClause_sound`). The
+premise $\mathrm{OpTypes}_G(op,A,B,N)$ (`OperatorTypes`) is either:
+
+```math
+\frac{\mathrm{Operands}_G(op,A,B,r)\quad\mathrm{covers}_G(N,r)}
+     {\mathrm{OpTypes}_G(op,A,B,N)}
+\qquad
+\frac{\mathrm{Decided}_G(op,A)\ \text{or}\ \mathrm{Decided}_G(op,B)\quad\mathrm{covers}_G(N,\mathsf{bool})}
+     {\mathrm{OpTypes}_G(op,A,B,N)}
+```
+
 ```math
 \frac{\Gamma\vdash_G a:A\quad\Gamma\vdash_G b:B\quad
-      \mathrm{Operands}_G(op,A,B,r)\quad\mathrm{covers}_G(N,r)}
+      \mathrm{OpTypes}_G(op,A,B,N)}
      {\Gamma\vdash_G a\mathbin{op}b:N}\ \textsf{arith}
 ```
 
@@ -965,18 +982,15 @@ no rule, though TypeScript admits comparing two Booleans and concatenating an
 object. An operand whose clauses classify differently, a `string | number`
 added to a number, has none either: its result is a string or a number by the
 value. The certificate premise
-(`OperatorTypes`) reads $r$ off the first clause pair and checks the rest.
-Strict equality answers for any pair but two objects that may lack a field (a
-function, a record of optional fields only, `unknown`): those carry no identity
-in the model ([its meaning](SEMANTICS.md#operational-language)), and the source
-lowering refuses the comparison with that reason.
+(`ClauseOperatorTypes`) reads $r$ off the first clause pair and checks the rest.
+Strict equality answers for any pair with a primitive or an object
+([its meaning](SEMANTICS.md#operational-language)); the source lowering
+refuses two operands that may both be of neither kind (`unknown`, a store).
 
 For loose equality, `opResult` gives `bool` when every operand-clause pair
 meets one of three conditions: both are primitive; one is `null` or
-`undefined`; or both are object clauses and at least one has a required
-field location. Object clauses include records, dictionaries, callables and
-constructors. Mutable and readonly arrays are object records with required
-store locations. A union must satisfy the condition for every pair, so
+`undefined`; or both are object clauses. Mutable and readonly arrays are
+object records with required store locations. A union must satisfy the condition for every pair, so
 `number[] | null` can compare with `number[] | undefined`, while
 `number[] | number` compared with `number` needs an object-conversion rule.
 The proof `opResult_sound` establishes that each admitted pair computes a

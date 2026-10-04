@@ -730,7 +730,8 @@ let forgotten_cell_reason =
    location its operands reach, as the model states no reachability; a closure run later; a throw from \
    anywhere in a `try`)"
 let equality_reason =
-  "the value may be an object without a field, and the model states no object identity"
+  "neither operand is known to be a primitive or an object, the kinds strict equality decides, and \
+   a value of a type parameter may be of any kind"
 let dictionary_spread_reason =
   "the copy owns the keys the dictionary holds when it runs, which no type states: the result is a \
    dictionary only where every part says what it gives under the index's keys, by an index or its \
@@ -1803,7 +1804,9 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       actual
     | Equality (op,l,r) ->
       let lt = expr env l and rt = expr env r in
-      if (op = StrictEqual || op = StrictUnequal) && (rigid_arm lt || rigid_arm rt) then
+      let undecided t = rigid_arm t || t = top in
+      if (op = StrictEqual || op = StrictUnequal) && undecided lt && undecided rt
+         && (rigid_arm lt || rigid_arm rt) then
         explain site ("strict equality with a value of a type parameter: " ^ equality_reason);
       bool
     | Alloc fs ->

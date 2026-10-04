@@ -969,12 +969,6 @@ def primitiveClause : Clause α → Bool
   | .nul | .undef => true
   | _ => false
 
-/-- A required invariant or readonly field supplies an object location for identity. -/
-def identityClause : Clause α → Bool
-  | .refs (_ :: _) _ _ _ _ _ | .dict (_ :: _) _ _ _ _ _ _ _ => true
-  | .refs _ _ (_ :: _) _ _ _ | .dict _ _ (_ :: _) _ _ _ _ _ => true
-  | _ => false
-
 /-- Clauses whose members are JavaScript objects, including callable objects. -/
 @[nospecialize] def objectClause : Clause α → Bool
   | .refs .. | .dict .. | .arrs .. | .callable .. | .ctors .. => true
@@ -982,17 +976,17 @@ def identityClause : Clause α → Bool
 
 /-- What an operator yields on members of two clauses, when it answers or
 throws for every pair of them. Strict equality answers where either clause
-is of primitives or of objects with a field. Two bigints give a bigint for every arithmetic
+is of primitives or of objects, which carry their identity. Two bigints give a bigint for every arithmetic
 operator: a division or remainder by zero or a negative exponent throws a `RangeError`
 (`binopThrows`), which is an outcome, not a wrong value, so no divisor or
 exponent condition is needed. -/
 def opResult (op : Arith) (c d : Clause α) : Option OpResult :=
   if op = .looseEq then
     (if primitiveClause c && primitiveClause d || nullishClause c || nullishClause d ||
-       (objectClause c && objectClause d && (identityClause c || identityClause d))
+       objectClause c && objectClause d
      then some .bool else none)
   else if op = .eq then
-    (if primitiveClause c || primitiveClause d || identityClause c || identityClause d
+    (if primitiveClause c || primitiveClause d || objectClause c || objectClause d
      then some .bool else none)
   else if op.relational then
     if (numberClause c || bigintClause c) && (numberClause d || bigintClause d)
@@ -1064,41 +1058,6 @@ theorem looseEquals_some {v w : Tm} (hv : isVal v = true) (hw : isVal w = true)
   · have hn : (isNullish v || isNullish w) = true := by simpa [hp] using h
     exact ⟨false, by simp [hp, hn]⟩
 
-theorem identityClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
-    (hc : identityClause c = true) (hv : semWithArgs X P c n W v) :
-    ∃ fs code oid, v = .objAt fs code oid ∧ fs ≠ [] := by
-  have field : ∀ {p : PropKey × α} {ps : List (PropKey × α)},
-      recT (ReferenceConjunctions.famsOf X (p :: ps)) n W v → ∃ fs code oid, v = .objAt fs code oid ∧ fs ≠ [] := by
-    intro p ps hr
-    obtain ⟨flds, oid, rfl, hall⟩ := hr
-    obtain ⟨l, _, hl, _⟩ := hall p.1 (X p.2) (by simp [ReferenceConjunctions.famsOf])
-    refine ⟨flds, .absent, oid, rfl, ?_⟩
-    rintro rfl
-    simp at hl
-  have view : ∀ {p : PropKey × α} {ps : List (PropKey × α)},
-      viewT (ReferenceConjunctions.famsOf X (p :: ps)) n W v → ∃ fs code oid, v = .objAt fs code oid ∧ fs ≠ [] := by
-    intro p ps hr
-    obtain ⟨flds, l, _, oid, rfl, hl, _⟩ := hr p.1 (X p.2) (by simp [ReferenceConjunctions.famsOf])
-    refine ⟨flds, .absent, oid, rfl, ?_⟩
-    rintro rfl
-    simp at hl
-  cases c with
-  | refs a bs vs os ms ks =>
-    cases a with
-    | nil =>
-      cases vs with
-      | nil => simp [identityClause] at hc
-      | cons p ps => exact view hv.2.1
-    | cons p ps => exact field hv.1.1
-  | dict a bs vs ds os ms ks cs =>
-    cases a with
-    | nil =>
-      cases vs with
-      | nil => simp [identityClause] at hc
-      | cons p ps => exact view hv.2.1
-    | cons p ps => exact field hv.1.1
-  | _ => simp [identityClause] at hc
-
 theorem objectClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
     (hc : objectClause c = true) (hv : semWithArgs X P c n W v) :
     ∃ fs code oid, v = .objAt fs code oid := by
@@ -1108,11 +1067,10 @@ theorem objectClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause α}
   | arrs | ctors => obtain ⟨fs, code, oid, h, _⟩ := hv.1.1; exact ⟨fs, code, oid, h⟩
   | _ => simp [objectClause] at hc
 
-/-- Strict equality answers when one operand is a primitive or an object
-with a field. -/
+/-- Strict equality answers when one operand is a primitive or an object. -/
 theorem strictEquals_some {v w : Tm} (hv : isVal v = true) (hw : isVal w = true)
-    (h : (isPrim v || isPrim w) = true ∨ (∃ fs code oid, v = .objAt fs code oid ∧ fs ≠ []) ∨
-      (∃ fs code oid, w = .objAt fs code oid ∧ fs ≠ [])) :
+    (h : (isPrim v || isPrim w) = true ∨ (∃ fs code oid, v = .objAt fs code oid) ∨
+      (∃ fs code oid, w = .objAt fs code oid)) :
     ∃ q, strictEquals v w = some q := by
   unfold strictEquals
   simp only [hv, hw, Bool.and_self, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
@@ -1120,7 +1078,7 @@ theorem strictEquals_some {v w : Tm} (hv : isVal v = true) (hw : isVal w = true)
   · exact ⟨sameValue v w, by simp [hp]⟩
   simp only [hp, Bool.false_eq_true, ↓reduceIte]
   have hp' : isPrim v = false ∧ isPrim w = false := by simpa using hp
-  rcases h with h | ⟨fs, code, oid, rfl, hfs⟩ | ⟨fs, code, oid, rfl, hfs⟩
+  rcases h with h | ⟨fs, code, oid, rfl⟩ | ⟨fs, code, oid, rfl⟩
   · exact absurd h hp
   · cases w <;> simp_all [isPrim, isVal]
   · cases v <;> simp_all [isPrim, isVal]
@@ -1162,7 +1120,7 @@ theorem opResult_sound {X : α → Fam} {P : α → ArgFam} {op : Arith} {c d : 
           · exact .inl (.inr (nullishClause_member hc hv))
           · exact .inr (nullishClause_member hd hw)
         · simp only [Bool.and_eq_true, Bool.or_eq_true] at ho
-          obtain ⟨⟨hc, hd⟩, hi⟩ := ho
+          obtain ⟨hc, hd⟩ := ho
           obtain ⟨fs, code, oid, rfl⟩ := objectClause_member hc hv
           obtain ⟨gs, other, oid', rfl⟩ := objectClause_member hd hw
           exact ⟨oid == oid', by simp [looseEquals, strictEquals, isVal, isPrim, isNullish]⟩
@@ -1183,8 +1141,8 @@ theorem opResult_sound {X : α → Fam} {P : α → ArgFam} {op : Arith} {c d : 
         rcases hp with ((hp | hp) | hp) | hp
         · exact .inl (by simp [primitiveClause_member hp hv])
         · exact .inl (by simp [primitiveClause_member hp hw])
-        · exact .inr (.inl (identityClause_member hp hv))
-        · exact .inr (.inr (identityClause_member hp hw)))
+        · exact .inr (.inl (objectClause_member hp hv))
+        · exact .inr (.inr (objectClause_member hp hw)))
       exact .inl ⟨boolVal q, by simp [binop, hq], boolVal_holds _⟩
     · cases h
   simp only [heq, ↓reduceIte] at h
@@ -1271,16 +1229,69 @@ def operandsResult (G : NormalGraph ι) (op : Arith) (A B : Ty ι) : Option OpRe
   | c :: _, d :: _ => opResult op c d
   | _, _ => none
 
-/-- The operator rule's premise on the types: the operand types give one kind
-of result, pair by pair, and the result type holds every value of it. -/
-def OperatorTypes (G : NormalGraph ι) (op : Arith) (A B N : Ty ι) : Prop :=
+/-- The operand types give one kind of result, pair by pair, and the result
+type holds every value of it. -/
+def ClauseOperatorTypes (G : NormalGraph ι) (op : Arith) (A B N : Ty ι) : Prop :=
   match operandsResult G op A B with
   | some r => Operands G op A B r ∧ r.covers G N
   | none => False
 
 instance [DecidableEq ι] (G : NormalGraph ι) (op : Arith) (A B N : Ty ι) :
-    Decidable (OperatorTypes G op A B N) := by
-  unfold OperatorTypes; split <;> infer_instance
+    Decidable (ClauseOperatorTypes G op A B N) := by
+  unfold ClauseOperatorTypes; split <;> infer_instance
+
+/-- A clause whose members decide an equality operator against any value:
+primitives or objects for strict equality, nullish values for loose. -/
+def decidingClause (op : Arith) (c : Clause α) : Bool :=
+  (decide (op = .eq) && (primitiveClause c || objectClause c)) ||
+    (decide (op = .looseEq) && nullishClause c)
+
+/-- An operand type every clause of which decides the equality operator. -/
+def EqualityDecided (G : NormalGraph ι) (op : Arith) (X : Ty ι) : Prop :=
+  G.plainTy X = true ∧ ∀ c ∈ expand G X, decidingClause op c = true
+
+instance [DecidableEq ι] (G : NormalGraph ι) (op : Arith) (X : Ty ι) :
+    Decidable (EqualityDecided G op X) := by unfold EqualityDecided; infer_instance
+
+/-- A member of a deciding clause compared with any value, in either order,
+gives a Boolean. -/
+theorem decidingClause_sound {X : α → Fam} {P : α → ArgFam} {op : Arith} {c : Clause α} {n W v w}
+    (hc : decidingClause op c = true) (hv : semWithArgs X P c n W v) (hw : isVal w = true) :
+    (∃ z, binop op v w = some z ∧ OpResult.bool.holds z) ∧
+      (∃ z, binop op w v = some z ∧ OpResult.bool.holds z) := by
+  have hval := (semWithArgs_value hv).1
+  simp only [decidingClause, Bool.or_eq_true, Bool.and_eq_true, decide_eq_true_eq] at hc
+  rcases hc with ⟨rfl, hc⟩ | ⟨rfl, hc⟩
+  · have hk : (isPrim v = true) ∨ ∃ fs code oid, v = .objAt fs code oid := by
+      rcases hc with hc | hc
+      · exact .inl (primitiveClause_member hc hv)
+      · exact .inr (objectClause_member hc hv)
+    obtain ⟨q, hq⟩ := strictEquals_some hval hw (by
+      rcases hk with hk | hk
+      · exact .inl (by simp [hk])
+      · exact .inr (.inl hk))
+    obtain ⟨q', hq'⟩ := strictEquals_some hw hval (by
+      rcases hk with hk | hk
+      · exact .inl (by simp [hk])
+      · exact .inr (.inr hk))
+    exact ⟨⟨boolVal q, by simp [binop, hq], boolVal_holds _⟩,
+      ⟨boolVal q', by simp [binop, hq'], boolVal_holds _⟩⟩
+  · have hn := nullishClause_member hc hv
+    obtain ⟨q, hq⟩ := looseEquals_some hval hw (by simp [hn])
+    obtain ⟨q', hq'⟩ := looseEquals_some hw hval (by simp [hn])
+    exact ⟨⟨boolVal q, by simp [binop, hq], boolVal_holds _⟩,
+      ⟨boolVal q', by simp [binop, hq'], boolVal_holds _⟩⟩
+
+/-- The operator rule's premise on the types: the operand types give one kind
+of result, pair by pair; or one operand's type decides the equality operator
+whatever the other's value, a type parameter's included. The result type
+holds every value of the kind. -/
+def OperatorTypes (G : NormalGraph ι) (op : Arith) (A B N : Ty ι) : Prop :=
+  ClauseOperatorTypes G op A B N ∨
+    ((EqualityDecided G op A ∨ EqualityDecided G op B) ∧ OpResult.bool.covers G N)
+
+instance [DecidableEq ι] (G : NormalGraph ι) (op : Arith) (A B N : Ty ι) :
+    Decidable (OperatorTypes G op A B N) := by unfold OperatorTypes; infer_instance
 
 /-! ## Variadic functions
 
@@ -3047,12 +3058,25 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     apply bind (.arith op av) (Step.arithC2 hav) (Raises.arithC2 hav) j U heap _ hu hok
       (ihb j U heap ρ (he.transfer j hj U hx) hu hok)
     intro k hk V hy hv heap' bv hok' hbval hb'
-    unfold OperatorTypes at hopt
+    have ha'' := (meaning_adm G A).mono k _ V hy av ((meaning_adm G A).down_le j k hk U av ha')
+    rcases hopt with hopt | ⟨hdec, hn⟩
+    case inr =>
+      have hres : ∃ z, binop op av bv = some z ∧ OpResult.bool.holds z := by
+        rcases hdec with ⟨hp, hall⟩ | ⟨hp, hall⟩
+        · obtain ⟨c, hc, hca, -⟩ := (expand_sem G A hp k V av).mp ha''
+          exact (decidingClause_sound (hall c hc) hca hbval).1
+        · obtain ⟨d, hd, hdb, -⟩ := (expand_sem G B hp k V bv).mp hb'
+          exact (decidingClause_sound (hall d hd) hdb hav).2
+      obtain ⟨z, hz, hr⟩ := hres
+      refine arith_value_safe op av bv z hz k V heap' hv hok' (fun m U => ?_)
+      rcases hr with rfl | rfl
+      · exact expand_sem_mpr ⟨_, expand_sub hn.1, rfl, realmInvariant_of_not_record rfl _ _ _⟩
+      · exact expand_sem_mpr ⟨_, expand_sub hn.2, rfl, realmInvariant_of_not_record rfl _ _ _⟩
+    unfold ClauseOperatorTypes at hopt
     split at hopt
     case h_2 => exact hopt.elim
     rename_i r _
     obtain ⟨hops, hn⟩ := hopt
-    have ha'' := (meaning_adm G A).mono k _ V hy av ((meaning_adm G A).down_le j k hk U av ha')
     obtain ⟨c, hc, hca, -⟩ := (expand_sem G A hops.1 k V av).mp ha''
     obtain ⟨d, hd, hdb, -⟩ := (expand_sem G B hops.2.1 k V bv).mp hb'
     rcases opResult_sound (hops.2.2 c hc d hd) hca hdb with ⟨z, hz, hr⟩ | hthrow

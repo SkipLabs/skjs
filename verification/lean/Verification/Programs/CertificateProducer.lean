@@ -713,15 +713,18 @@ came from a different context. No execution budget is inspected. -/
     | .arith op a b =>
       -- Each operand at a pool type of the operand clauses the operator
       -- takes (numbers and bigints; strings too for a comparison, every
-      -- printable primitive for `+`, and any for `===`), the right one only where the pair
-      -- classifies; the rule then checks every pair and the result, at the
+      -- printable primitive for `+`), or any pool type for an equality, the
+      -- right one only where the pair classifies or one operand decides the
+      -- equality; the rule then checks every pair and the result, at the
       -- requested type when it holds the result's kind, else coerced.
-      let operands := pool.filter fun R => G.plainTy R && !(expand G R).isEmpty &&
+      let equality := op == .eq || op == .looseEq
+      let operands := pool.filter fun R => equality || G.plainTy R && !(expand G R).isEmpty &&
         (expand G R).all fun c => numberClause c || bigintClause c || (op.relational && stringClause c)
-          || (op == .add && printableClause c) || op == .eq || op == .looseEq
+          || (op == .add && printableClause c)
       return operands.findCheck? fun R => do
         let ea ← recur Γ a R
-        (operands.filter fun S => (operandsResult G op R S).isSome).findCheck? fun S => do
+        (operands.filter fun S => (operandsResult G op R S).isSome ||
+            decide (EqualityDecided G op R) || decide (EqualityDecided G op S)).findCheck? fun S => do
           let eb ← recur Γ b S
           (A :: pool).findCheck? fun N =>
             let e := ProgramCertificates.Evidence.node ⟨Γ,t,N⟩ .arith [ea,eb]
