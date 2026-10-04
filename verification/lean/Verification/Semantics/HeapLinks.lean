@@ -36,11 +36,11 @@ abbrev Links := List Link
 def Holds (ls : Links) (ρ : Env) (h : Heap) : Prop :=
   ∀ g ∈ ls,
     if g.distinct then
-      ∀ flds c l flds' c' l', ρ g.cell = .objAt flds c → flds.lookup g.field = some l →
-        ρ g.value = .objAt flds' c' → flds'.lookup g.other = some l' → l ≠ l'
+      ∀ flds c oid l flds' c' oid' l', ρ g.cell = .objAt flds c oid → flds.lookup g.field = some l →
+        ρ g.value = .objAt flds' c' oid' → flds'.lookup g.other = some l' → l ≠ l'
     else if g.alias then ρ g.cell = ρ g.value
-    else if g.optional then ∃ flds c, ρ g.cell = .objAt flds c ∧ ReadGave flds g.field h (ρ g.value)
-    else ∃ flds c l, ρ g.cell = .objAt flds c ∧ flds.lookup g.field = some l ∧
+    else if g.optional then ∃ flds c oid, ρ g.cell = .objAt flds c oid ∧ ReadGave flds g.field h (ρ g.value)
+    else ∃ flds c oid l, ρ g.cell = .objAt flds c oid ∧ flds.lookup g.field = some l ∧
       h[l]? = some (ρ g.value)
 
 /-- Pull back through a finite selection of aliases for each old slot. -/
@@ -76,8 +76,8 @@ theorem check_sound {a b m ρ h} (hc : check a b m = true) (hh : Holds a ρ h) :
   · have hf := hh f hf
     simp only [hfd,ite_true] at hf
     simp only [hgd,ite_true,PointClaims.mapEnv,← h1,← h2,← h3,← h4]
-    intro flds c l flds' c' l' e1 e2 e3 e4 heq
-    exact hf flds' c' l' flds c l e3 e4 e1 e2 heq.symm
+    intro flds c oid l flds' c' oid' l' e1 e2 e3 e4 heq
+    exact hf flds' c' oid' l' flds c oid l e3 e4 e1 e2 heq.symm
 
 /-- What a read gave stays what it would give after an allocation: the
 location it read is not a fresh one. -/
@@ -93,10 +93,10 @@ theorem alloc_frames {ls ρ h} (vs : List Val) (hh : Holds ls ρ h) : Holds ls �
   have hh := hh g hg
   cases hd : g.distinct <;> cases ha : g.alias <;> cases ho : g.optional <;>
     simp only [hd,ha,ho,Bool.false_eq_true,ite_false,ite_true] at hh ⊢
-  · obtain ⟨flds,c,l,hl,hfd,hv⟩ := hh
-    exact ⟨flds,c,l,hl,hfd,HeapObservations.alloc_frames vs hv⟩
-  · obtain ⟨flds,c,hl,hr⟩ := hh
-    exact ⟨flds,c,hl,hr.alloc_frames vs⟩
+  · obtain ⟨flds,c,oid,l,hl,hfd,hv⟩ := hh
+    exact ⟨flds,c,oid,l,hl,hfd,HeapObservations.alloc_frames vs hv⟩
+  · obtain ⟨flds,c,oid,hl,hr⟩ := hh
+    exact ⟨flds,c,oid,hl,hr.alloc_frames vs⟩
   all_goals exact hh
 
 theorem alloc_frame {ls ρ h v} (hh : Holds ls ρ h) : Holds ls ρ (h ++ [v]) :=
@@ -137,8 +137,8 @@ def distinctFrom (ls : Links) (i : Nat) (fld : PropKey) : List (Nat × PropKey) 
     else none
 
 theorem distinct_sound {ls ρ h i fld s f'} (hh : Holds ls ρ h) (hm : (s, f') ∈ distinctFrom ls i fld)
-    {flds c l flds' c' l'} (hi : ρ i = .objAt flds c) (hl : flds.lookup fld = some l)
-    (hs : ρ s = .objAt flds' c') (hl' : flds'.lookup f' = some l') : l ≠ l' := by
+    {flds c oid l flds' c' oid' l'} (hi : ρ i = .objAt flds c oid) (hl : flds.lookup fld = some l)
+    (hs : ρ s = .objAt flds' c' oid') (hl' : flds'.lookup f' = some l') : l ≠ l' := by
   obtain ⟨g,hg,hsel⟩ := List.mem_filterMap.mp hm
   have hh := hh g hg
   split at hsel
@@ -148,12 +148,12 @@ theorem distinct_sound {ls ρ h i fld s f'} (hh : Holds ls ρ h) (hm : (s, f') �
     · rename_i hc
       simp only [Bool.and_eq_true,beq_iff_eq] at hc
       cases hsel
-      exact hh flds c l flds' c' l' (by rw [hc.1]; exact hi) (by rw [hc.2]; exact hl) hs hl'
+      exact hh flds c oid l flds' c' oid' l' (by rw [hc.1]; exact hi) (by rw [hc.2]; exact hl) hs hl'
     · split at hsel
       · rename_i hv
         simp only [Bool.and_eq_true,beq_iff_eq] at hv
         cases hsel
-        exact fun heq => hh flds' c' l' flds c l hs hl' (by rw [hv.1]; exact hi) (by rw [hv.2]; exact hl) heq.symm
+        exact fun heq => hh flds' c' oid' l' flds c oid l hs hl' (by rw [hv.1]; exact hi) (by rw [hv.2]; exact hl) heq.symm
       · contradiction
   · contradiction
 

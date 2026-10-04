@@ -91,7 +91,7 @@ structure Fact where
 abbrev Facts := List Fact
 
 def Holds (facts : Facts) (ρ : Env) (h : Heap) : Prop :=
-  ∀ f ∈ facts, ∃ flds c l v, ρ f.slot = .objAt flds c ∧ flds.lookup f.field = some l ∧
+  ∀ f ∈ facts, ∃ flds c oid l v, ρ f.slot = .objAt flds c oid ∧ flds.lookup f.field = some l ∧
     h[l]? = some v ∧ ∃ a ∈ f.contents, a.holds v
 
 theorem holds_nil (ρ h) : Holds [] ρ h := by simp [Holds]
@@ -109,8 +109,8 @@ theorem check_sound {source target mapping ρ h}
   intro f hmem
   obtain ⟨g,hg,hc⟩ := List.any_eq_true.mp (List.all_eq_true.mp hc f hmem)
   simp only [Bool.and_eq_true, beq_iff_eq] at hc
-  obtain ⟨flds,c,l,v,hl,hfd,hv,hm⟩ := hs g hg
-  refine ⟨flds,c,l,v,?_,?_,hv,covers_sound hc.2 hm⟩
+  obtain ⟨flds,c,oid,l,v,hl,hfd,hv,hm⟩ := hs g hg
+  refine ⟨flds,c,oid,l,v,?_,?_,hv,covers_sound hc.2 hm⟩
   · simpa [PointClaims.mapEnv,hc.1.1] using hl
   · rw [← hc.1.2]; exact hfd
 
@@ -129,7 +129,7 @@ theorem read {facts ρ h i fld R n W}
     (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafePost (fun _ _ v => ∃ a ∈ R, a.holds v)
       (fun h' _ => Holds facts ρ h') n W h (.readAt fld (ρ i)) := by
-  obtain ⟨flds,c,l,v,hl,hfd,hv,a,ha,hav⟩ := hf _ hm
+  obtain ⟨flds,c,oid,l,v,hl,hfd,hv,a,ha,hav⟩ := hf _ hm
   rw [hl]
   apply consequence _ _ (read_observed hw hh hfd (Atom.isValue hav) hv)
   · intro _ _ u hu; subst u; exact ⟨a,ha,hav⟩
@@ -142,15 +142,15 @@ theorem write {A : Fam} (ha : Adm A) {ρ h i a v n W}
     (hv : a.holds v) (ht : A n W v) :
     SafePost nulT (fun h' _ => Holds [⟨i,[a],valueField⟩] ρ h') n W h
       (.write (ρ i) v) := by
-  obtain ⟨flds,l,c,he,hfd,hl,hc⟩ := refT_iff.mp hr
-  have hrec : recT [(valueField, A)] n W (.objAt flds .absent) :=
-    recT_single.mpr ⟨flds,l,c,rfl,hfd,hl,hc⟩
+  obtain ⟨flds,l,c,oid,he,hfd,hl,hc⟩ := refT_iff.mp hr
+  have hrec : recT [(valueField, A)] n W (.objAt flds .absent oid) :=
+    recT_single.mpr ⟨flds,l,c,oid,rfl,hfd,hl,hc⟩
   rw [he]
   apply weaken _ (write_observed ha hw hh hrec hfd (Atom.isValue hv) ht)
   intro h' _ hp f hmem
   simp only [List.mem_singleton] at hmem
   subst f
-  refine ⟨flds,.absent,l,v,he,hfd,?_,a,by simp,hv⟩
+  refine ⟨flds,.absent,oid,l,v,he,hfd,?_,a,by simp,hv⟩
   rw [hp.1]
   apply write_new
   rw [hh.1]
@@ -168,11 +168,11 @@ theorem alloc {A : Fam} (ha : Adm A) {facts ρ h a v n W}
   intro h' result hp f hm
   rw [hp.1,hp.2]
   rcases List.mem_cons.mp hm with rfl | hm
-  · exact ⟨[(valueField,h.length)],.absent,h.length,v,rfl,lookup_value _,
-      alloc_new h v,a,by simp,hv⟩
+  · exact ⟨[(valueField,h.length)],.absent,h.length + 1,h.length,v,rfl,lookup_value _,
+      alloc_frame (alloc_new h v),a,by simp,hv⟩
   · obtain ⟨g,hg,rfl⟩ := List.mem_map.mp hm
-    obtain ⟨flds,c,l,u,hl,hfd,hu,b,hb,he⟩ := hf g hg
-    exact ⟨flds,c,l,u,hl,hfd,alloc_frame hu,b,hb,he⟩
+    obtain ⟨flds,c,oid,l,u,hl,hfd,hu,b,hb,he⟩ := hf g hg
+    exact ⟨flds,c,oid,l,u,hl,hfd,alloc_frame (alloc_frame hu),b,hb,he⟩
 
 #print axioms Atom.sem
 #print axioms Atom.isValue

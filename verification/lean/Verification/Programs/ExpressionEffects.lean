@@ -14,7 +14,7 @@ theorem valueTerm_instantiate {G : NormalGraph ι} {Γ t ρ n W}
     (hv : valueTerm t = true) (hc : checkScope Γ.length t = true)
     (he : EnvOk G Γ ρ n W) : isVal (instantiate 0 ρ t) = true := by
   cases t <;> simp_all [valueTerm, isVal, instantiate, checkScope]
-  case objAt fs code => cases code <;> rfl
+  case objAt fs code oid => cases code <;> rfl
   case var i =>
     exact (meaning_value (he.2 i Γ[i] (List.getElem?_eq_some_iff.mpr ⟨hc, rfl⟩))).1
 
@@ -42,12 +42,12 @@ theorem readable_value {G : NormalGraph ι} {Ref fld n W h v}
       subst f
       have hfields := namedMembers_sem hc hm hv
       rcases List.mem_append.mp hf with hf | hf
-      · obtain ⟨fields,l,ctr,rfl,hfield,hlookup,hagree⟩ :=
+      · obtain ⟨fields,l,ctr,oid',rfl,hfield,hlookup,hagree⟩ :=
           recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A,hf,rfl⟩) hfields.1
         obtain ⟨u,hu,ht⟩ := hh.2 l ctr hlookup
         exact ⟨u,.readField hfield hu, meaning_valOnly G A 0 _ u
           ((hagree 0 (by omega) _ u).mp (ht 0 (by omega)))⟩
-      · obtain ⟨fields,l,ctr,rfl,hfield,hlookup,hbound⟩ :=
+      · obtain ⟨fields,l,ctr,oid',rfl,hfield,hlookup,hbound⟩ :=
           viewT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A,hf,rfl⟩) hfields.2
         obtain ⟨u,hu,ht⟩ := hh.2 l ctr hlookup
         exact ⟨u,.readField hfield hu, meaning_valOnly G A 0 _ u
@@ -81,7 +81,7 @@ theorem make_preserves {T n W h code fields xs}
       | makeArg hg _ st => exact False.elim (value_no_step (hv _ (List.mem_of_getElem? hg)) st)
       | makeFields hvs hlen =>
         exact .inr ⟨U,_,_,hx,hu,.makeFields hvs hlen,hh,
-          refine_value rfl ⟨xs,rfl⟩ hs⟩
+          refine_value rfl ⟨xs ++ [.nul], by simp⟩ hs⟩
 
 theorem array_preserves {T n W h xs}
     (hv : ∀ v ∈ xs, isVal v = true)

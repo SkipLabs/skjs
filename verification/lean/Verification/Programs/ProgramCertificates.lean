@@ -994,8 +994,8 @@ theorem checkTreeUsing_eq [DecidableEq ι] (G : NormalGraph ι)
 mutual
 def checkScope (d : Nat) : Tm → Bool
   | .var i => decide (i < d)
-  | .objAt _ .absent => true
-  | .objAt _ (.bound t r pre) => checkScope d t && checkScope d r && checkScopes d pre
+  | .objAt _ .absent oid => true
+  | .objAt _ (.bound t r pre) oid => checkScope d t && checkScope d r && checkScopes d pre
   | .makeAt (.bound t r pre) _ args =>
       checkScope d t && checkScope d r && checkScopes d pre && checkScopes d args
   | .makeAt .absent _ args => checkScopes d args
@@ -1008,7 +1008,7 @@ def checkScope (d : Nat) : Tm → Bool
   | .setElem a b c => checkScope d a && checkScope d b && checkScope d c
   | .arrLit args => checkScopes d args
   | .ite c a b => checkScope d c && checkScope d a && checkScope d b
-  | .objAt _ (.graph _ _ _ _ caps _ _) => checkScopes d caps
+  | .objAt _ (.graph _ _ _ _ caps _ _) oid => checkScopes d caps
   | .makeAt (.graph _ _ _ _ caps _ _) _ args => checkScopes d caps && checkScopes d args
   | .goto _ _ _ L x => checkScopes d L && checkScope d x
   | .frame _ _ t L x _ _ => checkScope d t && checkScopes d L && checkScope d x

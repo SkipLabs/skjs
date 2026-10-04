@@ -275,9 +275,9 @@ def shape : Clause α → Nat
   | .pack .. => 12
 
 def valueShape : Val → Nat
-  | .nul => 0 | .tru | .fls => 1 | .objAt _ .absent => 2 | .undef => 4
-  | .objAt _ (.bound _ _ _) | .objAt _ (.graph _ _ _ _ _ .call _) => 3
-  | .objAt _ (.graph _ _ _ _ _ .construct _) => 11
+  | .nul => 0 | .tru | .fls => 1 | .objAt _ .absent oid => 2 | .undef => 4
+  | .objAt _ (.bound _ _ _) oid | .objAt _ (.graph _ _ _ _ _ .call _) oid => 3
+  | .objAt _ (.graph _ _ _ _ _ .construct _) oid => 11
   | .num _ => 5
   | .str _ => 6
   | .arr _ => 8
@@ -296,8 +296,8 @@ theorem semWithArgs_value {X : α → Fam} {P : α → ArgFam} {c : Clause α} {
   | boolLit b => cases b <;> cases h <;> exact ⟨rfl, trivial⟩
   | num => obtain ⟨b, rfl⟩ := h; exact ⟨rfl, trivial⟩
   | numLit b => subst v; exact ⟨rfl, trivial⟩
-  | refs a rest => obtain ⟨flds, rfl, _⟩ := h.1.1; exact ⟨rfl, trivial⟩
-  | dict a rest vs ds os ms ks cs => obtain ⟨flds, rfl, _⟩ := h.1.1; exact ⟨rfl, trivial⟩
+  | refs a rest => obtain ⟨flds, _, rfl, _⟩ := h.1.1; exact ⟨rfl, trivial⟩
+  | dict a rest vs ds os ms ks cs => obtain ⟨flds, _, rfl, _⟩ := h.1.1; exact ⟨rfl, trivial⟩
   | arrs L S => exact ⟨h.1.1.val, h.1.1.scoped⟩
   | callable a bs L S => exact ⟨h.1.2.1.val, h.1.2.1.scoped⟩
   | undef => subst v; exact ⟨rfl, trivial⟩
@@ -306,7 +306,7 @@ theorem semWithArgs_value {X : α → Fam} {P : α → ArgFam} {c : Clause α} {
   | bigint => obtain ⟨i, rfl⟩ := h; exact ⟨rfl, trivial⟩
   | bigintLit i => subst v; exact ⟨rfl, trivial⟩
   | symbol => obtain ⟨i, rfl⟩ := h; exact ⟨rfl, trivial⟩
-  | ctors L S => obtain ⟨fs, c, rfl, -, hs⟩ := h.1.1; exact ⟨rfl, hs⟩
+  | ctors L S => obtain ⟨fs, c, _, rfl, -, hs⟩ := h.1.1; exact ⟨rfl, hs⟩
   | pack a bs => exact h.elim
 
 
@@ -321,16 +321,16 @@ theorem semWithArgs_shape {X : α → Fam} {P : α → ArgFam} {c : Clause α} {
   | boolLit b => cases b <;> cases h <;> rfl
   | num => obtain ⟨b, rfl⟩ := h; rfl
   | numLit b => cases h; rfl
-  | refs a bs => obtain ⟨flds, rfl, _⟩ := h.1.1; rfl
-  | dict a bs vs ds os ms ks cs => obtain ⟨flds, rfl, _⟩ := h.1.1; rfl
+  | refs a bs => obtain ⟨flds, _, rfl, _⟩ := h.1.1; rfl
+  | dict a bs vs ds os ms ks cs => obtain ⟨flds, _, rfl, _⟩ := h.1.1; rfl
   | arrs L S =>
-    obtain ⟨fs, code, rfl, hc, -⟩ := h.1.1
+    obtain ⟨fs, code, _, rfl, hc, -⟩ := h.1.1
     cases code
     case graph kind _ => cases kind <;> simp_all [valueShape, shape, CallCode.callable]
     all_goals simp_all [valueShape, shape, CallCode.callable]
   | undef => cases h; rfl
   | callable a bs L S =>
-    obtain ⟨fs, code, rfl, hc, -⟩ := h.1.2.1
+    obtain ⟨fs, code, _, rfl, hc, -⟩ := h.1.2.1
     cases code
     case graph kind _ => cases kind <;> simp_all [valueShape, shape, CallCode.callable]
     all_goals simp_all [valueShape, shape, CallCode.callable]
@@ -340,7 +340,7 @@ theorem semWithArgs_shape {X : α → Fam} {P : α → ArgFam} {c : Clause α} {
   | bigintLit i => cases h; rfl
   | symbol => obtain ⟨i, rfl⟩ := h; rfl
   | ctors L S =>
-    obtain ⟨fs, c, rfl, hc, -⟩ := h.1.1
+    obtain ⟨fs, c, _, rfl, hc, -⟩ := h.1.1
     unfold CallArguments.construction at hc
     split at hc <;> simp_all [valueShape, shape]
   | pack a bs => exact h.elim
@@ -510,7 +510,7 @@ theorem semWithArgs_consistent {X : α → Fam} {P : α → ArgFam} {c : Clause 
     intro a bs vs ks hr hw hk
     simp only [List.all_eq_true, List.mem_map]
     rintro k ⟨p, hp, rfl⟩ K hK
-    have hat : ∃ (flds : List (PropKey × Nat)) (l : Nat), v = .objAt flds .absent ∧
+    have hat : ∃ (flds : List (PropKey × Nat)) (l : Nat) (oid : Nat), v = .objAt flds .absent oid ∧
         flds.lookup p.1 = some l := by
       rcases List.mem_append.mp hp with hp | hp
       · obtain ⟨L, hL, hpL⟩ := List.mem_flatten.mp hp
@@ -518,11 +518,11 @@ theorem semWithArgs_consistent {X : α → Fam} {P : α → ArgFam} {c : Clause 
           rcases List.mem_cons.mp hL with rfl | hL
           · exact hr.1
           · exact hr.2 _ (List.mem_map_of_mem hL)
-        obtain ⟨flds, l, -, he, hl, -⟩ := recT_at (mem_famsOf.mpr ⟨p.2, hpL, rfl⟩) hrec
-        exact ⟨flds, l, he, hl⟩
-      · obtain ⟨flds, l, -, he, hl, -⟩ := viewT_at (mem_famsOf.mpr ⟨p.2, hp, rfl⟩) hw
-        exact ⟨flds, l, he, hl⟩
-    obtain ⟨flds, l, rfl, hl⟩ := hat
+        obtain ⟨flds, l, -, oid, he, hl, -⟩ := recT_at (mem_famsOf.mpr ⟨p.2, hpL, rfl⟩) hrec
+        exact ⟨flds, l, oid, he, hl⟩
+      · obtain ⟨flds, l, -, oid, he, hl, -⟩ := viewT_at (mem_famsOf.mpr ⟨p.2, hp, rfl⟩) hw
+        exact ⟨flds, l, oid, he, hl⟩
+    obtain ⟨flds, l, oid, rfl, hl⟩ := hat
     exact ownKeysT_admits (hk K hK) hl
   cases c with
   | refs a bs vs os ms ks => exact present a bs vs ks h.1 h.2.1 h.2.2.2.2
@@ -532,12 +532,12 @@ theorem semWithArgs_consistent {X : α → Fam} {P : α → ArgFam} {c : Clause 
 /-- A member of an object clause owns every key the clause says it owns. -/
 theorem semWithArgs_owns {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v} {k : PropKey}
     (h : semWithArgs X P c n W v) (hk : k ∈ c.presentKeys) :
-    ∃ (flds : List (PropKey × Nat)) (l : Nat), v = .objAt flds .absent ∧ flds.lookup k = some l := by
+    ∃ (flds : List (PropKey × Nat)) (l : Nat) (oid : Nat), v = .objAt flds .absent oid ∧ flds.lookup k = some l := by
   have present : ∀ (a : List (PropKey × α)) (bs : List (List (PropKey × α)))
       (vs : List (PropKey × α)),
       ReferenceConjunctions.refsT (famsOf X a) (bs.map (famsOf X)) n W v →
       viewT (famsOf X vs) n W v → k ∈ ((a :: bs).flatten ++ vs).map (·.1) →
-      ∃ (flds : List (PropKey × Nat)) (l : Nat), v = .objAt flds .absent ∧ flds.lookup k = some l := by
+      ∃ (flds : List (PropKey × Nat)) (l : Nat) (oid : Nat), v = .objAt flds .absent oid ∧ flds.lookup k = some l := by
     intro a bs vs hr hw hk
     obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hk
     rcases List.mem_append.mp hp with hp | hp
@@ -546,10 +546,10 @@ theorem semWithArgs_owns {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n
         rcases List.mem_cons.mp hL with rfl | hL
         · exact hr.1
         · exact hr.2 _ (List.mem_map_of_mem hL)
-      obtain ⟨flds, l, -, he, hl, -⟩ := recT_at (mem_famsOf.mpr ⟨p.2, hpL, rfl⟩) hrec
-      exact ⟨flds, l, he, hl⟩
-    · obtain ⟨flds, l, -, he, hl, -⟩ := viewT_at (mem_famsOf.mpr ⟨p.2, hp, rfl⟩) hw
-      exact ⟨flds, l, he, hl⟩
+      obtain ⟨flds, l, -, oid, he, hl, -⟩ := recT_at (mem_famsOf.mpr ⟨p.2, hpL, rfl⟩) hrec
+      exact ⟨flds, l, oid, he, hl⟩
+    · obtain ⟨flds, l, -, oid, he, hl, -⟩ := viewT_at (mem_famsOf.mpr ⟨p.2, hp, rfl⟩) hw
+      exact ⟨flds, l, oid, he, hl⟩
   cases c with
   | refs a bs vs os ms ks => exact present a bs vs h.1 h.2.1 hk
   | dict a bs vs ds os ms ks cs => exact present a bs vs h.1 h.2.1 hk

@@ -225,7 +225,7 @@ contract. Reading preserves the whole heap, so all current observations remain. 
 theorem read_observed {n W h l v} {c : CallCode} {flds : List (PropKey × Nat)} {f : PropKey}
     (hw : WorldAdm W) (hh : HeapOk n W h) (hf : flds.lookup f = some l)
     (hv : isVal v = true) (ho : Observes h l v) :
-    SafePost (exact v) (fun h' u => h' = h ∧ u = v) n W h (.readAt f (.objAt flds c)) := by
+    SafePost (exact v) (fun h' u => h' = h ∧ u = v) n W h (.readAt f (.objAt flds c oid)) := by
   cases n with
   | zero => trivial
   | succ p =>
@@ -237,7 +237,7 @@ theorem read_contents {n W h l P} {c : CallCode} {flds : List (PropKey × Nat)} 
     (hw : WorldAdm W) (hh : HeapOk n W h) (hf : flds.lookup f = some l)
     (hval : ∀ v, P v → isVal v = true) (ho : Contents h l P) :
     SafePost (fun _ _ v => P v) (fun h' u => h' = h ∧ Observes h' l u) n W h
-      (.readAt f (.objAt flds c)) := by
+      (.readAt f (.objAt flds c oid)) := by
   obtain ⟨v,hread,hp⟩ := ho
   apply consequence _ _ (read_observed hw hh hf (hval v hp) hread)
   · intro _ _ u he; cases he; exact hp
@@ -249,11 +249,11 @@ from the invariant reference, and the postcondition records the new contents. -/
 theorem write_observed {A : Fam} (ha : Adm A) {n W h l v}
     {flds : List (PropKey × Nat)} {f : PropKey}
     (hw : WorldAdm W) (hh : HeapOk n W h)
-    (hr : recT [(f, A)] n W (.objAt flds .absent)) (hf : flds.lookup f = some l)
+    (hr : recT [(f, A)] n W (.objAt flds .absent oid)) (hf : flds.lookup f = some l)
     (hv : isVal v = true) (ht : A n W v) :
     SafePost nulT (fun h' u => h' = h.set l v ∧ u = .nul) n W h
-      (.writeAt f (.objAt flds .absent) v) := by
-  obtain ⟨flds',l',c,he,hf',hl,hc⟩ := recT_single.mp hr
+      (.writeAt f (.objAt flds .absent oid) v) := by
+  obtain ⟨flds',l',c,oid',he,hf',hl,hc⟩ := recT_single.mp hr
   cases he
   cases Option.some.inj (hf'.symm.trans hf)
   have hlt : l < h.length := by
@@ -264,7 +264,7 @@ theorem write_observed {A : Fam} (ha : Adm A) {n W h l v}
 
 theorem alloc_observed {A : Fam} (ha : Adm A) {n W h v}
     (hw : WorldAdm W) (hh : HeapOk n W h) (hv : isVal v = true) (ht : A n W v) :
-    SafePost (refT A) (fun h' u => h' = h ++ [v] ∧ u = .obj h.length .absent) n W h (.alloc v) :=
+    SafePost (refT A) (fun h' u => h' = h ++ [v] ++ [.nul] ∧ u = .obj h.length .absent) n W h (.alloc v) :=
   one_step rfl rfl (.makeV hv) ⟨rfl,rfl⟩ (alloc_rule ha n W h v hv hw hh ht)
 
 /-- A same-location alias shares the observation; variable names do not matter. -/
@@ -301,7 +301,7 @@ theorem write_then_read {A : Fam} (ha : Adm A) {n W h l v}
     SafePost (exact v) (fun h' u => Observes h' l v ∧ u = v) n W h
       (.letE (.write (.obj l .absent) v) (.read (.obj l .absent))) := by
   have hlt : l < h.length := by
-    obtain ⟨flds,l',c,he,hf,hl,_⟩ := refT_iff.mp hr
+    obtain ⟨flds,l',c,oid,he,hf,hl,_⟩ := refT_iff.mp hr
     cases he
     rw [lookup_value] at hf
     cases hf

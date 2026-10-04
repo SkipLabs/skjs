@@ -189,7 +189,7 @@ inductive Tm where
   | sym (id : Nat)
   /-- An object identity: the locations its named fields stand for, fixed at
   allocation, with an optional immutable invocation descriptor. -/
-  | objAt (fields : List (PropKey × Nat)) (call : CallCode)
+  | objAt (fields : List (PropKey × Nat)) (call : CallCode) (identity : Nat)
   /-- Allocate one object with immutable call code, one fresh location per
   named field, holding the values of `inits` in order. Only the initializers
   are evaluated; code binds its declared parameter count. -/
@@ -708,8 +708,8 @@ def strictEquals (a b : Tm) : Option Bool :=
   if !(isVal a && isVal b) then none
   else if isPrim a || isPrim b then some (sameValue a b)
   else match a, b with
-    | .objAt fs _, .objAt gs _ => if fs.isEmpty && gs.isEmpty then none else some (decide (fs = gs))
-    | .objAt fs _, .arr _ | .arr _, .objAt fs _ => if fs.isEmpty then none else some false
+    | .objAt _ _ i, .objAt _ _ j => some (i == j)
+    | .objAt .., .arr _ | .arr _, .objAt .. => some false
     | _, _ => none
 
 /-- Loose equality runs no client code on primitive pairs, nullish comparisons,
@@ -719,7 +719,7 @@ def looseEquals (a b : Tm) : Option Bool :=
   else if isPrim a && isPrim b then some (primitiveEquals a b)
   else if isNullish a || isNullish b then some false
   else match a, b with
-    | .objAt _ _, .objAt _ _ => strictEquals a b
+    | .objAt .., .objAt .. => strictEquals a b
     | _, _ => none
 
 /-- **What a binary operator does on two values**, as JavaScript's does on
@@ -776,7 +776,7 @@ def binopThrows : Arith → Tm → Tm → Bool
 takes no location, as `{}` allocates. It stands for the `TypeError` or
 `RangeError` instance JavaScript allocates; a handler binds it at `unknown`,
 and nothing typed reads more of it. -/
-def thrownError : Tm := .objAt [] .absent
+def thrownError (oid : Nat) : Tm := .objAt [] .absent oid
 
 /-- The array index a number denotes, when it is one: a finite integer in the
 index range, the property name it would spell. Any other number names an
@@ -902,9 +902,9 @@ def tmDecEq (a b : Tm) : Decidable (a = b) := by
     exact decidable_of_iff (a0 = b0) (by simp only [Tm.bigint.injEq])
   case sym.sym a0 b0 =>
     exact decidable_of_iff (a0 = b0) (by simp only [Tm.sym.injEq])
-  case objAt.objAt a0 a1 b0 b1 =>
+  case objAt.objAt a0 a1 a2 b0 b1 b2 =>
     haveI : Decidable (a1 = b1) := callCodeDecEq a1 b1
-    exact decidable_of_iff (a0 = b0 ∧ a1 = b1) (by simp only [Tm.objAt.injEq])
+    exact decidable_of_iff (a0 = b0 ∧ a1 = b1 ∧ a2 = b2) (by simp only [Tm.objAt.injEq])
   case makeAt.makeAt a0 a1 a2 b0 b1 b2 =>
     haveI : Decidable (a0 = b0) := callCodeDecEq a0 b0
     haveI : Decidable (a2 = b2) := argsDecEq a2 b2
@@ -1017,7 +1017,7 @@ or `write` is speaking about that one field. -/
 
 /-- An already allocated one-field object. -/
 @[match_pattern] abbrev Tm.obj (l : Nat) (call : CallCode) : Tm :=
-  .objAt [(valueField, l)] call
+  .objAt [(valueField, l)] call (l + 1)
 
 /-- Allocation of a one-field object. -/
 @[match_pattern] abbrev Tm.make (call : CallCode) (a : Tm) : Tm :=
@@ -1037,7 +1037,7 @@ def codeField : PropKey := "[[code]]"
 
 /-- An already allocated function object the program created. -/
 @[match_pattern] abbrev Tm.fnObj (l : Nat) (call : CallCode) : Tm :=
-  .objAt [(codeField, l)] call
+  .objAt [(codeField, l)] call (l + 1)
 
 /-- The creation of a function object: its code, with its one field. -/
 @[match_pattern] abbrev Tm.makeFn (call : CallCode) (a : Tm) : Tm :=
@@ -1086,8 +1086,8 @@ theorem lookup_slots {ns : List PropKey} (hnd : ns.Nodup) {base i : Nat}
     (num : ∀ v, P (.num v))
     (str : ∀ s, P (.str s))
     (bigint : ∀ i, P (.bigint i)) (sym : ∀ i, P (.sym i))
-    (objAbsent : ∀ fs, P (.objAt fs .absent))
-    (objBound : ∀ fs t r pre, P t → P r → (∀ a ∈ pre, P a) → P (.objAt fs (.bound t r pre)))
+    (objAbsent : ∀ fs oid, P (.objAt fs .absent oid))
+    (objBound : ∀ fs oid t r pre, P t → P r → (∀ a ∈ pre, P a) → P (.objAt fs (.bound t r pre) oid))
     (makeBound : ∀ t r pre ns args, P t → P r → (∀ a ∈ pre, P a) → (∀ a ∈ args, P a) →
       P (.makeAt (.bound t r pre) ns args))
     (alloc : ∀ ns args, (∀ a ∈ args, P a) → P (.makeAt .absent ns args))
@@ -1105,8 +1105,8 @@ theorem lookup_slots {ns : List PropKey} (hnd : ns.Nodup) {base i : Nat}
     (spread : ∀ a, P a → P (.spread a))
     (throw : ∀ a, P a → P (.throw a))
     (merge : ∀ d a b, P a → P b → P (.merge d a b))
-    (objGraph : ∀ fs n E K s caps k r, (∀ e ∈ E, P e) → (∀ a ∈ caps, P a) →
-      P (.objAt fs (.graph n E K s caps k r)))
+    (objGraph : ∀ fs oid n E K s caps k r, (∀ e ∈ E, P e) → (∀ a ∈ caps, P a) →
+      P (.objAt fs (.graph n E K s caps k r) oid))
     (makeGraph : ∀ n E K s caps k r ns args, (∀ e ∈ E, P e) → (∀ a ∈ caps, P a) →
       (∀ a ∈ args, P a) → P (.makeAt (.graph n E K s caps k r) ns args))
     (goto : ∀ E K l L d, (∀ e ∈ E, P e) → (∀ a ∈ L, P a) → P d → P (.goto E K l L d))
@@ -1128,11 +1128,11 @@ theorem lookup_slots {ns : List PropKey} (hnd : ns.Nodup) {base i : Nat}
       rcases List.mem_cons.mp hv with rfl | hv
       · exact ha
       · exact ih v hv) t
-  · intro fs c ih
+  · intro fs c oid ih
     cases c with
-    | absent => exact objAbsent fs
-    | bound t r pre => exact objBound fs t r pre ih.1 ih.2.1 ih.2.2
-    | graph n E K s caps k r => exact objGraph fs n E K s caps k r ih.1 ih.2
+    | absent => exact objAbsent fs oid
+    | bound t r pre => exact objBound fs oid t r pre ih.1 ih.2.1 ih.2.2
+    | graph n E K s caps k r => exact objGraph fs oid n E K s caps k r ih.1 ih.2
   · intro c ns args ihc iha
     cases c with
     | absent => exact alloc ns args iha
@@ -1235,20 +1235,20 @@ def tagHolds : Tag → Val → Bool
   | .bigintEq i, .bigint j => i == j
   | .isBigint, .bigint _ => true
   | .isSymbol, .sym _ => true
-  | .isRef, .objAt _ .absent => true
-  | .isFun, .objAt _ (.bound _ _ _) => true
-  | .isFun, .objAt _ (.graph ..) => true
+  | .isRef, .objAt _ .absent oid => true
+  | .isFun, .objAt _ (.bound _ _ _) oid => true
+  | .isFun, .objAt _ (.graph ..) oid => true
   | .truthy, .tru => true
   | .truthy, .num b => numberTruthy b
   | .truthy, .str s => s != ""
   | .truthy, .bigint i => i != 0
   | .truthy, .sym _ => true
-  | .truthy, .objAt _ _ => true
+  | .truthy, .objAt _ _ oid => true
   | .truthy, .arr _ => true
-  | .isArray, .objAt fs .absent => (fs.lookup arrayStoreKey).isSome
+  | .isArray, .objAt fs .absent oid => (fs.lookup arrayStoreKey).isSome
   | .typeofObject, .nul => true
-  | .typeofObject, .objAt _ .absent => true
-  | .hasKey k, .objAt fs _ => (fs.lookup k).isSome
+  | .typeofObject, .objAt _ .absent oid => true
+  | .hasKey k, .objAt fs _ oid => (fs.lookup k).isSome
   | _, _ => false
 
 mutual
@@ -1265,8 +1265,8 @@ def subst (j : Nat) (a : Tm) : Tm → Tm
   | .str s => .str s
   | .bigint i => .bigint i
   | .sym i => .sym i
-  | .objAt fs .absent => .objAt fs .absent
-  | .objAt fs (.bound t r pre) => .objAt fs (.bound (subst j a t) (subst j a r) (substArgs j a pre))
+  | .objAt fs .absent oid => .objAt fs .absent oid
+  | .objAt fs (.bound t r pre) oid => .objAt fs (.bound (subst j a t) (subst j a r) (substArgs j a pre)) oid
   | .makeAt (.bound t r pre) ns xs =>
       .makeAt (.bound (subst j a t) (subst j a r) (substArgs j a pre)) ns (substArgs j a xs)
   | .makeAt .absent ns xs => .makeAt .absent ns (substArgs j a xs)
@@ -1284,7 +1284,7 @@ def subst (j : Nat) (a : Tm) : Tm → Tm
   | .spread x => .spread (subst j a x)
   | .throw x => .throw (subst j a x)
   | .merge d x y => .merge d (subst j a x) (subst j a y)
-  | .objAt fs (.graph n E K s caps k r) => .objAt fs (.graph n E K s (substArgs j a caps) k r)
+  | .objAt fs (.graph n E K s caps k r) oid => .objAt fs (.graph n E K s (substArgs j a caps) k r) oid
   | .makeAt (.graph n E K s caps k r) ns xs =>
       .makeAt (.graph n E K s (substArgs j a caps) k r) ns (substArgs j a xs)
   | .goto E K l L d => .goto E K l (substArgs j a L) (subst j a d)
@@ -1366,7 +1366,7 @@ does, as far as the heap reaches. A chain longer than the heap has a cycle,
 which no JavaScript object has; it answers `false`. -/
 def keyInChain (h : List Tm) (k : PropKey) : Nat → Tm → Bool
   | 0, _ => false
-  | fuel + 1, .objAt fs _ => (fs.lookup k).isSome ||
+  | fuel + 1, .objAt fs _ oid => (fs.lookup k).isSome ||
       match fs.lookup CallArguments.protoField with
       | some l => keyInChain h k fuel (heapVal h l)
       | none => false
@@ -1382,7 +1382,7 @@ def tagHoldsIn (h : List Tm) : Tag → Tm → Bool
 /-- A test that needs no prototype: every one but `key in o` on an object
 lacking the key and holding a prototype. -/
 def protoFree : Tag → Tm → Bool
-  | .hasKey k, .objAt fs _ => (fs.lookup k).isSome || (fs.lookup CallArguments.protoField).isNone
+  | .hasKey k, .objAt fs _ oid => (fs.lookup k).isSome || (fs.lookup CallArguments.protoField).isNone
   | _, _ => true
 
 /-- Where no prototype is read, the heap does not matter. -/
@@ -1436,7 +1436,7 @@ nothing from `null`, `undefined`, a Boolean, a number, a bigint or a symbol,
 whose wrappers own no enumerable property. A string (its code units) is not
 copied here: the copy is stuck, and no typing rule admits one. -/
 def ownData (h : List Tm) : Tm → Option (List (PropKey × Tm))
-  | .objAt fs _ => some (firstKeys
+  | .objAt fs _ oid => some (firstKeys
       ((fs.filter (copiedKey ·.1)).map (fun p => (p.1, heapVal h p.2)) ++ storeData h fs))
   | .nul | .undef | .tru | .fls | .num _ | .bigint _ | .sym _ => some []
   | _ => none
@@ -1444,7 +1444,7 @@ def ownData (h : List Tm) : Tm → Option (List (PropKey × Tm))
 /-- The fields of the accumulator a copy is made onto: all of a plain
 object's own fields, its prototype included, but its store. -/
 def ownAll (h : List Tm) : Tm → Option (List (PropKey × Tm))
-  | .objAt fs .absent => some (firstKeys
+  | .objAt fs .absent oid => some (firstKeys
       ((fs.filter (·.1 != arrayStoreKey)).map (fun p => (p.1, heapVal h p.2))))
   | _ => none
 
@@ -1575,11 +1575,11 @@ mutual
 def instantiate (d : Nat) (ρ : Env) : Tm → Tm
   | .var i => if i < d then .var i else ρ (i - d)
   | .letE a b => .letE (instantiate d ρ a) (instantiate (d + 1) ρ b)
-  | .objAt fs .absent => .objAt fs .absent
+  | .objAt fs .absent oid => .objAt fs .absent oid
   | .invoke f r args => .invoke (instantiate d ρ f) (instantiate d ρ r) (instantiateArgs d ρ args)
   | .construct f args => .construct (instantiate d ρ f) (instantiateArgs d ρ args)
-  | .objAt fs (.bound t r pre) =>
-      .objAt fs (.bound (instantiate d ρ t) (instantiate d ρ r) (instantiateArgs d ρ pre))
+  | .objAt fs (.bound t r pre) oid =>
+      .objAt fs (.bound (instantiate d ρ t) (instantiate d ρ r) (instantiateArgs d ρ pre)) oid
   | .makeAt (.bound t r pre) ns args =>
       .makeAt (.bound (instantiate d ρ t) (instantiate d ρ r) (instantiateArgs d ρ pre)) ns
         (instantiateArgs d ρ args)
@@ -1597,7 +1597,7 @@ def instantiate (d : Nat) (ρ : Env) : Tm → Tm
   | .spread a => .spread (instantiate d ρ a)
   | .throw a => .throw (instantiate d ρ a)
   | .merge dr a b => .merge dr (instantiate d ρ a) (instantiate d ρ b)
-  | .objAt fs (.graph n E K s caps k r) => .objAt fs (.graph n E K s (instantiateArgs d ρ caps) k r)
+  | .objAt fs (.graph n E K s caps k r) oid => .objAt fs (.graph n E K s (instantiateArgs d ρ caps) k r) oid
   | .makeAt (.graph n E K s caps k r) ns args =>
       .makeAt (.graph n E K s (instantiateArgs d ρ caps) k r) ns (instantiateArgs d ρ args)
   | .goto E K l L x => .goto E K l (instantiateArgs d ρ L) (instantiate d ρ x)
@@ -1711,7 +1711,7 @@ inductive Step : Heap → Tm → Heap → Tm → Prop where
   /-- A bound function forwards in one step: the receiver of this call is
   dropped, the saved one used, and the prefix goes before the actuals. -/
   | callBound : isVal r = true → (∀ a ∈ args, isVal a = true) →
-      Step h (.invoke (.objAt fs (.bound t r₀ pre)) r args) h (.invoke t r₀ (pre ++ args))
+      Step h (.invoke (.objAt fs (.bound t r₀ pre) oid) r args) h (.invoke t r₀ (pre ++ args))
   /-- A spread actual whose store is ready is replaced by the store's elements
   once every earlier actual is a value, so later actuals run after the read. -/
   | spreadC : Step h a h' a' → Step h (.spread a) h' (.spread a')
@@ -1727,21 +1727,21 @@ inductive Step : Heap → Tm → Heap → Tm → Prop where
   /-- Allocation takes one fresh location per named field, in order. -/
   | makeFields {c : CallCode} {ns : List PropKey} {vs : List Tm} {h : Heap} :
       (∀ v ∈ vs, isVal v = true) → ns.length = vs.length →
-      Step h (.makeAt c ns vs) (h ++ vs) (.objAt (slots h.length ns) c)
+      Step h (.makeAt c ns vs) (h ++ vs ++ [.nul]) (.objAt (slots h.length ns) c (h.length + vs.length))
   | readC : Step h a h' a' → Step h (.readAt f a) h' (.readAt f a')
   /-- Reading and writing a field go to its location, whatever the object's code. -/
   | readField {f : PropKey} {fs : List (PropKey × Nat)} {c : CallCode} {l : Nat}
       {h : Heap} {v : Val} : fs.lookup f = some l → h[l]? = some v →
-      Step h (.readAt f (.objAt fs c)) h v
+      Step h (.readAt f (.objAt fs c oid)) h v
   /-- A key the object lacks is read from its prototype, when it has one. -/
   | readProto {f : PropKey} {fs : List (PropKey × Nat)} {c : CallCode} {l : Nat}
       {h : Heap} {p : Val} : fs.lookup f = none → fs.lookup CallArguments.protoField = some l →
-      h[l]? = some p → Step h (.readAt f (.objAt fs c)) h (.readAt f p)
+      h[l]? = some p → Step h (.readAt f (.objAt fs c oid)) h (.readAt f p)
   /-- JavaScript property lookup produces undefined when the name is absent
   and there is no prototype to continue at. -/
   | readMissing {f : PropKey} {fs : List (PropKey × Nat)} {c : CallCode} {h : Heap} :
       fs.lookup f = none → fs.lookup CallArguments.protoField = none →
-      Step h (.readAt f (.objAt fs c)) h .undef
+      Step h (.readAt f (.objAt fs c oid)) h .undef
   | indexC1 : Step h a h' a' → Step h (.indexAt a key) h' (.indexAt a' key)
   | indexC2 : isVal a = true → Step h key h' key' →
       Step h (.indexAt a key) h' (.indexAt a key')
@@ -1749,19 +1749,19 @@ inductive Step : Heap → Tm → Heap → Tm → Prop where
   string, a symbol, or a number, which names the key its `ToString` spells. -/
   | indexField {key : Tm} {f : PropKey} {fs : List (PropKey × Nat)} {c : CallCode} {l : Nat}
       {h : Heap} {v : Val} : propertyKey key = some f → fs.lookup f = some l → h[l]? = some v →
-      Step h (.indexAt (.objAt fs c) key) h v
+      Step h (.indexAt (.objAt fs c oid) key) h v
   | indexProto {key : Tm} {f : PropKey} {fs : List (PropKey × Nat)} {c : CallCode} {l : Nat}
       {h : Heap} {p : Val} : propertyKey key = some f → fs.lookup f = none →
       fs.lookup CallArguments.protoField = some l →
-      h[l]? = some p → Step h (.indexAt (.objAt fs c) key) h (.indexAt p key)
+      h[l]? = some p → Step h (.indexAt (.objAt fs c oid) key) h (.indexAt p key)
   | indexMissing {key : Tm} {f : PropKey} {fs : List (PropKey × Nat)} {c : CallCode} {h : Heap} :
       propertyKey key = some f → fs.lookup f = none → fs.lookup CallArguments.protoField = none →
-      Step h (.indexAt (.objAt fs c) key) h .undef
+      Step h (.indexAt (.objAt fs c oid) key) h .undef
   | writeC1 : Step h a h' a' → Step h (.writeAt f a b) h' (.writeAt f a' b)
   | writeC2 : isVal a = true → Step h b h' b' → Step h (.writeAt f a b) h' (.writeAt f a b')
   | writeField {f : PropKey} {fs : List (PropKey × Nat)} {c : CallCode} {l : Nat}
       {h : Heap} {v : Val} : isVal v = true → fs.lookup f = some l → l < h.length →
-      Step h (.writeAt f (.objAt fs c) v) (h.set l v) .nul
+      Step h (.writeAt f (.objAt fs c oid) v) (h.set l v) .nul
   | testC : Step h a h' a' → Step h (.test k a) h' (.test k a')
   | testV : isVal v = true →
       Step h (.test k v) h (if tagHoldsIn h k v then .tru else .fls)
@@ -1816,7 +1816,7 @@ inductive Step : Heap → Tm → Heap → Tm → Prop where
   /-- A throw's operand is evaluated first. -/
   | throwC : Step h a h' a' → Step h (.throw a) h' (.throw a')
   /-- Two values an operator throws on step to throwing a fresh error object. -/
-  | arithThrow : binopThrows op a b = true → Step h (.arith op a b) h (.throw thrownError)
+  | arithThrow : binopThrows op a b = true → Step h (.arith op a b) (h ++ [.nul]) (.throw (thrownError h.length))
   /-- A merge evaluates its accumulator, then its source. -/
   | mergeC1 : Step h a h' a' → Step h (.merge d a b) h' (.merge d a' b)
   | mergeC2 : isVal a = true → Step h b h' b' → Step h (.merge d a b) h' (.merge d a b')
@@ -1829,12 +1829,12 @@ inductive Step : Heap → Tm → Heap → Tm → Prop where
   then the captures, after collecting the rest's store when it has one
   (`CallArguments.graphEntry`). -/
   | callGraph : isVal r = true → (∀ a ∈ args, isVal a = true) →
-      Step h (.invoke (.objAt fs (.graph n E K s caps .call rest)) r args) h
+      Step h (.invoke (.objAt fs (.graph n E K s caps .call rest) oid) r args) h
         (CallArguments.graphEntry n E K s caps rest r args)
   /-- `new` on construct-only graph code enters it as a call does, with
   `undefined` for the receiver. -/
   | constructGraph : (∀ a ∈ args, isVal a = true) →
-      Step h (.construct (.objAt fs (.graph n E K s caps .construct rest)) args) h
+      Step h (.construct (.objAt fs (.graph n E K s caps .construct rest) oid) args) h
         (CallArguments.graphEntry n E K s caps rest .undef args)
   /-- Entering a node instantiates its expression in the run's environment. -/
   | gotoEnter : E[l]? = some e → K[l]? = some (k, x) →
@@ -1881,14 +1881,14 @@ theorem Step.makeC (hs : Step h a h' a') : Step h (.make c a) h' (.make c a') :=
   .makeArg (i := 0) rfl (by intro j hj; omega) hs
 
 theorem Step.makeV (hv : isVal v = true) :
-    Step h (.make c v) (h ++ [v]) (.obj h.length c) :=
+    Step h (.make c v) (h ++ [v] ++ [.nul]) (.obj h.length c) :=
   .makeFields (by simpa using hv) rfl
 
 theorem Step.makeFnC (hs : Step h a h' a') : Step h (.makeFn c a) h' (.makeFn c a') :=
   .makeArg (i := 0) rfl (by intro j hj; omega) hs
 
 theorem Step.makeFnV (hv : isVal v = true) :
-    Step h (.makeFn c v) (h ++ [v]) (.fnObj h.length c) :=
+    Step h (.makeFn c v) (h ++ [v] ++ [.nul]) (.fnObj h.length c) :=
   .makeFields (by simpa using hv) rfl
 
 theorem Step.readV (he : h[l]? = some v) : Step h (.read (.obj l c)) h v :=
@@ -1979,7 +1979,7 @@ theorem split_unique {pre post pre' post' : List Tm} {x x' : Tm}
 theorem nul_no_step {h h' t} : ¬ Step h .nul h' t := by intro s; cases s
 theorem tru_no_step {h h' t} : ¬ Step h .tru h' t := by intro s; cases s
 theorem fls_no_step {h h' t} : ¬ Step h .fls h' t := by intro s; cases s
-theorem obj_no_step {h fs c h' t} : ¬ Step h (.objAt fs c) h' t := by intro s; cases s
+theorem obj_no_step {h fs c h' t} : ¬ Step h (.objAt fs c oid) h' t := by intro s; cases s
 
 /-! ### Closed values and operational inversion lemmas -/
 
@@ -2864,7 +2864,7 @@ theorem Raises.appL {f a v : Tm} (h : Raises f v) : Raises (.app f a) v := .call
 #print axioms Raises_det
 
 theorem make_step_inv {c : CallCode} {v : Val} (hv : isVal v = true) {h h' t}
-    (hs : Step h (.make c v) h' t) : h' = h ++ [v] ∧ t = .obj h.length c := by
+    (hs : Step h (.make c v) h' t) : h' = h ++ [v] ++ [.nul] ∧ t = .obj h.length c := by
   cases hs with
   | makeArg hg _ hs =>
     obtain ⟨rfl, rfl⟩ := singleton_get hg
@@ -2872,7 +2872,7 @@ theorem make_step_inv {c : CallCode} {v : Val} (hv : isVal v = true) {h h' t}
   | makeFields => exact ⟨rfl, rfl⟩
 
 theorem makeFn_step_inv {c : CallCode} {v : Val} (hv : isVal v = true) {h h' t}
-    (hs : Step h (.makeFn c v) h' t) : h' = h ++ [v] ∧ t = .fnObj h.length c := by
+    (hs : Step h (.makeFn c v) h' t) : h' = h ++ [v] ++ [.nul] ∧ t = .fnObj h.length c := by
   cases hs with
   | makeArg hg _ hs =>
     obtain ⟨rfl, rfl⟩ := singleton_get hg

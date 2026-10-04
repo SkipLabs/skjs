@@ -27,10 +27,11 @@ theorem pure_subst {t a : Tm} {j : Nat}
     · exact ha
     · split <;> rfl
 
-/-- Purity is closed under actual reduction and rules out every heap change.
-Stored closure bodies need not be pure: observing an object does not invoke it. -/
+/-- Purity is closed under actual reduction and keeps the heap as a prefix:
+the one allocation is the identity of an error an operator throws. Stored
+closure bodies need not be pure: observing an object does not invoke it. -/
 theorem pure_step {h t h' t'} (hs : Step h t h' t') (hp : pureTerm t = true) :
-    h' = h ∧ pureTerm t' = true := by
+    h.IsPrefix h' ∧ pureTerm t' = true := by
   induction hs <;> simp_all [pureTerm,isVal]
   case testV => split <;> simp [pureTerm,isVal]
   case arithV hb =>
@@ -91,47 +92,47 @@ private theorem mapped_goto {E : List Tm} {K : List (ControlFlow.Continuation ×
   exact .goto hE hL' hd'
 
 theorem PureRun.step {h t h' t'} (hp : PureRun t) (hs : Step h t h' t') :
-    h' = h ∧ PureRun t' := by
+    h.IsPrefix h' ∧ PureRun t' := by
   cases hp with
   | term hp =>
-    obtain ⟨rfl, hp'⟩ := pure_step hs hp
-    exact ⟨rfl, .term hp'⟩
+    obtain ⟨hpre, hp'⟩ := pure_step hs hp
+    exact ⟨hpre, .term hp'⟩
   | goto hE hL hd =>
     cases hs with
     | gotoEnter he hk =>
-      exact ⟨rfl, .frame hE hL hd
+      exact ⟨List.prefix_refl _, .frame hE hL hd
         (pure_instantiate_values (hE _ (List.mem_of_getElem? he)) (env_values hL hd))⟩
   | frame hE hL hd ht =>
     cases hs with
     | frameC st =>
-      obtain ⟨rfl, ht'⟩ := pure_step st ht
-      exact ⟨rfl, .frame hE hL hd ht'⟩
-    | frameRet hv => exact ⟨rfl, .term (pure_value hv)⟩
+      obtain ⟨hpre, ht'⟩ := pure_step st ht
+      exact ⟨hpre, .frame hE hL hd ht'⟩
+    | frameRet hv => exact ⟨List.prefix_refl _, .term (pure_value hv)⟩
     | frameBind hv =>
-      refine ⟨rfl, ?_⟩
+      refine ⟨List.prefix_refl _, ?_⟩
       apply mapped_goto hE (hd := hd)
       simp_all
     | frameEffect hv =>
-      refine ⟨rfl, ?_⟩
+      refine ⟨List.prefix_refl _, ?_⟩
       exact mapped_goto hE hL hd
     | frameYes | frameNo =>
-      refine ⟨rfl, ?_⟩
+      refine ⟨List.prefix_refl _, ?_⟩
       exact mapped_goto hE hL hd
     | frameYesBind | frameNoBind =>
-      refine ⟨rfl, ?_⟩
+      refine ⟨List.prefix_refl _, ?_⟩
       apply mapped_goto hE (hd := hd)
       simp_all [isVal]
     | frameTag hv =>
-      refine ⟨rfl, ?_⟩
+      refine ⟨List.prefix_refl _, ?_⟩
       apply mapped_goto hE (hd := hd)
       simp_all
     | frameHandle hr =>
       have hv := raises_val hr
-      refine ⟨rfl, ?_⟩
+      refine ⟨List.prefix_refl _, ?_⟩
       apply mapped_goto hE (hd := hd)
       simp_all
     | frameRaise hr =>
-      exact ⟨rfl, .term (by simpa [pureTerm] using pure_value (raises_val hr))⟩
+      exact ⟨List.prefix_refl _, .term (by simpa [pureTerm] using pure_value (raises_val hr))⟩
 
 /-- A rest-collecting entry allocates a fresh store before running the
 body. This is compatible with preserving the input heap: fresh locations are
@@ -151,8 +152,8 @@ theorem CollectingRun.step {h t h' t'} (hp : CollectingRun t) (hs : Step h t h' 
     h.IsPrefix h' ∧ CollectingRun t' := by
   cases hp with
   | pure hp =>
-    obtain ⟨rfl, hp'⟩ := hp.step hs
-    exact ⟨⟨[], by simp⟩, .pure hp'⟩
+    obtain ⟨hpre, hp'⟩ := hp.step hs
+    exact ⟨hpre, .pure hp'⟩
   | collect hE hL hsc hvs =>
     obtain ⟨rfl, rfl⟩ := Step_det hs (.letC (.arrAlloc hvs))
     exact ⟨⟨_, rfl⟩, .collected hE hL hsc⟩

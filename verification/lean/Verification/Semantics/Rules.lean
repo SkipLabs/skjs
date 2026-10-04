@@ -41,7 +41,7 @@ theorem read_rule {code : CallCode} {flds : List (PropKey × Nat)} {f : PropKey}
     (hadm : WorldAdm W) (hok : HeapOk n W h) (hf : flds.lookup f = some l)
     {c : Ctr n} (hl : lookup W l = some c)
     (hag : ∀ (j : Nat) (hj : j < n) (U : WorldT j) (u : Val), c j hj U u ↔ A j U u) :
-    Safe A n W h (.readAt f (.objAt flds code)) := by
+    Safe A n W h (.readAt f (.objAt flds code oid)) := by
   cases n with
   | zero => trivial
   | succ p =>
@@ -60,7 +60,7 @@ theorem read_view_rule {code : CallCode} {flds : List (PropKey × Nat)} {f : Pro
     (hadm : WorldAdm W) (hok : HeapOk n W h) (hf : flds.lookup f = some l)
     {c : Ctr n} (hl : lookup W l = some c)
     (hag : ∀ (j : Nat) (hj : j < n) (U : WorldT j) (u : Val), c j hj U u → A j U u) :
-    Safe A n W h (.readAt f (.objAt flds code)) := by
+    Safe A n W h (.readAt f (.objAt flds code oid)) := by
   cases n with
   | zero => trivial
   | succ p =>
@@ -80,7 +80,7 @@ theorem read_view_rule_ext {code : CallCode} {flds : List (PropKey × Nat)} {f :
     {c : Ctr n} (hl : lookup W l = some c)
     (hag : ∀ (j : Nat) (hj : j < n) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
       ∀ (u : Val), c j hj U u → A j U u) :
-    Safe A n W h (.readAt f (.objAt flds code)) := by
+    Safe A n W h (.readAt f (.objAt flds code oid)) := by
   cases n with
   | zero => trivial
   | succ p =>
@@ -105,7 +105,7 @@ theorem read_proto_rule {code : CallCode} {flds : List (PropKey × Nat)} {f : Pr
     (hag : ∀ (j : Nat) (hj : j < n) (U : WorldT j) (u : Val), c j hj U u → P j U u)
     (hP : ∀ j (U : WorldT j) (h' : Heap), WorldAdm U → HeapOk j U h' →
       ∀ u, P j U u → Safe A j U h' (.readAt f u)) :
-    Safe A n W h (.readAt f (.objAt flds code)) := by
+    Safe A n W h (.readAt f (.objAt flds code oid)) := by
   cases n with
   | zero => trivial
   | succ p =>
@@ -123,8 +123,8 @@ alternative. -/
 theorem read_dict_rule {flds : List (PropKey × Nat)} {f : PropKey} {K : IndexKeys} {A : Fam}
     (hA : ValOnly A) (n : Nat) (W : WorldT n) (h : Heap)
     (hadm : WorldAdm W) (hok : HeapOk n W h) (hk : K.Admits f)
-    (hd : dictViewT K A n W (.objAt flds .absent)) :
-    Safe (unionT A undefT) n W h (.readAt f (.objAt flds .absent)) := by
+    (hd : dictViewT K A n W (.objAt flds .absent oid)) :
+    Safe (unionT A undefT) n W h (.readAt f (.objAt flds .absent oid)) := by
   cases hlook : flds.lookup f with
   | some l =>
     obtain ⟨c, hc, hag⟩ := dictViewT_present hd hk hlook
@@ -151,7 +151,7 @@ theorem read_optional_rule {flds : List (PropKey × Nat)} {f : PropKey} {A : Fam
     (hp : flds.lookup f = none → flds.lookup CallArguments.protoField = none)
     (ho : ∀ l, flds.lookup f = some l → ∃ c : Ctr n, lookup W l = some c ∧
       ∀ (j : Nat) (hj : j < n) (U : WorldT j) (u : Val), c j hj U u → A j U u) :
-    Safe (unionT A undefT) n W h (.readAt f (.objAt flds .absent)) := by
+    Safe (unionT A undefT) n W h (.readAt f (.objAt flds .absent oid)) := by
   cases hlook : flds.lookup f with
   | some l =>
     obtain ⟨c, hc, hag⟩ := ho l hlook
@@ -173,8 +173,8 @@ separately prove the key's value is one. -/
 theorem index_dict_rule {flds : List (PropKey × Nat)} {key : Tm} {f : PropKey} {K : IndexKeys}
     {A : Fam} (hA : ValOnly A) (n : Nat) (W : WorldT n) (h : Heap)
     (hadm : WorldAdm W) (hok : HeapOk n W h) (hkey : propertyKey key = some f) (hk : K.Admits f)
-    (hd : dictViewT K A n W (.objAt flds .absent)) :
-    Safe (unionT A undefT) n W h (.indexAt (.objAt flds .absent) key) := by
+    (hd : dictViewT K A n W (.objAt flds .absent oid)) :
+    Safe (unionT A undefT) n W h (.indexAt (.objAt flds .absent oid) key) := by
   cases hlook : flds.lookup f with
   | some l =>
     obtain ⟨c, hc, hag⟩ := dictViewT_present hd hk hlook
@@ -208,7 +208,7 @@ theorem write_rule {code : CallCode} {flds : List (PropKey × Nat)} {f : PropKey
     {c : Ctr n} (hl : lookup W l = some c)
     (hag : ∀ (j : Nat) (hj : j < n) (U : WorldT j) (u : Val), c j hj U u ↔ A j U u)
     (hv : A n W v) :
-    Safe nulT n W h (.writeAt f (.objAt flds code) v) := by
+    Safe nulT n W h (.writeAt f (.objAt flds code oid) v) := by
   cases n with
   | zero => trivial
   | succ p =>
@@ -226,41 +226,6 @@ theorem write_rule {code : CallCode} {flds : List (PropKey × Nat)} {f : PropKey
     rw [trunc_trunc]
     exact this
 
-/-- **Object allocation.** Both descriptor shapes allocate through this rule.
-The world grows by the stored contract; the result obligation supplies the
-descriptor-specific view of the fresh object in that future world. -/
-theorem make_rule {A Q : Fam} (hA : Adm A) (n : Nat) (W : WorldT n) (h : Heap) (code : CallCode) (v : Tm)
-    (hval : isVal v = true) (hadm : WorldAdm W) (hok : HeapOk n W h) (hv : A n W v)
-    (result : ∀ j (hj : j < n) (U : WorldT j),
-      WExt (trunc j (Nat.le_of_lt hj) W) U →
-      refT A j U (.obj h.length .absent) → Q j U (.obj h.length code)) :
-    Safe Q n W h (.make code v) := by
-  cases n with
-  | zero => trivial
-  | succ p =>
-    have hcadm : CtrAdm (res A : Ctr p) := fun i _ U U' hx w hw => hA.mono i U U' hx w hw
-    have hlen : h.length = (toList (trunc p (Nat.le_succ p) W)).length := by
-      have := hok.1; simp [trunc] at this ⊢; omega
-    have hcont : ∀ (i : Nat) (hi : i < p),
-        (res A : Ctr p) i hi
-          (trunc i (Nat.le_of_lt hi) (appendW (trunc p (Nat.le_succ p) W) (res A))) v := by
-      intro i hi
-      show A i _ v
-      rw [trunc_appendW, trunc_trunc]
-      exact hA.mono i _ _ (WExt_appendW _ _) v (hA.down_le (p + 1) i (by omega) W v hv)
-    refine Or.inr ⟨appendW (trunc p (Nat.le_succ p) W) (res A), h ++ [v], .obj h.length code,
-      WExt_appendW _ _, WorldAdm_append (WorldAdm_trunc _ hadm) hcadm, .makeV hval,
-      heap_alloc p _ h (res A) v (HeapOk_trunc p W h hok) (WorldAdm_trunc _ hadm) hcont,
-      ?_⟩
-    cases p with
-    | zero => trivial
-    | succ q =>
-      refine Or.inl (Or.inl ⟨rfl, result (q + 1) (by omega) _ (WExt_appendW _ _) ?_⟩)
-      refine refT_cell (c := res A) ?_ (fun _ _ _ _ => Iff.rfl)
-      simp only [lookup, appendW, toList_ofList]
-      rw [List.getElem?_append_right (by omega)]
-      simp [hlen]
-
 /-- **Allocating an object with named fields.** One step takes one fresh
 location per field, so the world grows by one contract per field and the result
 sees the whole record. The single-cell rule above is the one-field case. -/
@@ -273,8 +238,8 @@ theorem make_fields_rule {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A)
     (hv : ∀ p ∈ As.zip vs, p.1 n W p.2)
     (result : ∀ j (hj : j < n) (U : WorldT j),
       WExt (trunc j (Nat.le_of_lt hj) W) U →
-      recT (ns.zip As) j U (.objAt (slots h.length ns) .absent) →
-      Q j U (.objAt (slots h.length ns) code)) :
+      recT (ns.zip As) j U (.objAt (slots h.length ns) .absent (h.length + vs.length)) →
+      Q j U (.objAt (slots h.length ns) code (h.length + vs.length))) :
     Safe Q n W h (.makeAt code ns vs) := by
   cases n with
   | zero => trivial
@@ -293,12 +258,29 @@ theorem make_fields_rule {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A)
       show A j _ v
       rw [trunc_trunc]
       exact (hA A (List.of_mem_zip hm).1).down_le (p + 1) j (by omega) W v (hv (A, v) hm)
-    refine Or.inr ⟨appendWs (trunc p (Nat.le_succ p) W) (As.map (fun A => (res A : Ctr p))),
-      h ++ vs, .objAt (slots h.length ns) code,
-      WExt_appendWs _ _, WorldAdm_appendWs (WorldAdm_trunc _ hadm) hcadm,
+    let contracts := As.map (fun A => (res A : Ctr p)) ++ [res nulT]
+    have hcadm' : ∀ c ∈ contracts, CtrAdm c := by
+      intro c hc
+      rcases List.mem_append.mp hc with hc | hc
+      · exact hcadm c hc
+      · simp only [List.mem_singleton] at hc; subst c
+        exact fun _ _ _ _ _ _ h => h
+    have hcont' : ∀ q ∈ contracts.zip (vs ++ [.nul]), ∀ (j : Nat) (hj : j < p),
+        q.1 j hj (trunc j (Nat.le_of_lt hj) (trunc p (Nat.le_succ p) W)) q.2 := by
+      intro q hq
+      simp only [contracts] at hq
+      rw [List.zip_append (by simpa using hAs)] at hq
+      rcases List.mem_append.mp hq with hq | hq
+      · exact hcont q hq
+      · simp only [List.zip_cons_cons, List.zip_nil_left, List.mem_singleton] at hq
+        subst q; exact fun _ _ => rfl
+    refine Or.inr ⟨appendWs (trunc p (Nat.le_succ p) W) contracts,
+      h ++ vs ++ [.nul], .objAt (slots h.length ns) code (h.length + vs.length),
+      WExt_appendWs _ _, WorldAdm_appendWs (WorldAdm_trunc _ hadm) hcadm',
       .makeFields hvals hns,
-      heap_allocs p _ (trunc p (Nat.le_succ p) W) h vs (HeapOk_trunc p W h hok)
-        (WorldAdm_trunc _ hadm) hcadm (by simp [hAs]) hcont, ?_⟩
+      by simpa only [List.append_assoc] using
+        heap_allocs p contracts (trunc p (Nat.le_succ p) W) h (vs ++ [.nul]) (HeapOk_trunc p W h hok)
+          (WorldAdm_trunc _ hadm) hcadm' (by simp [contracts, hAs]) hcont', ?_⟩
     cases p with
     | zero => trivial
     | succ q =>
@@ -308,10 +290,33 @@ theorem make_fields_rule {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A)
       have hib : i < (As.map (fun A => (res A : Ctr (q + 1)))).length := by
         simp; omega
       have := lookup_appendWs (trunc (q + 1) (Nat.le_succ (q + 1)) W)
-        (As.map (fun A => (res A : Ctr (q + 1)))) hib
+        (As.map (fun A => (res A : Ctr (q + 1))) ++ [res nulT]) (i := i) (by simp; omega)
       rw [← hlen] at this
       rw [this]
-      simp [List.getElem?_map, List.getElem?_eq_getElem (show i < As.length by omega)]
+      simp [contracts, List.getElem?_append_left hib, List.getElem?_map, List.getElem?_eq_getElem (show i < As.length by omega)]
+
+/-- **Allocating an object with no named field**, as `.bind` does: the
+result meets `Q` at whatever identity the allocation gives it. -/
+theorem make_empty_rule {Q : Fam} (hQ : Adm Q) (n : Nat) (W : WorldT n) (h : Heap)
+    (code : CallCode) (hadm : WorldAdm W) (hok : HeapOk n W h)
+    (hv : ∀ oid, Q n W (.objAt [] code oid)) : Safe Q n W h (.makeAt code [] []) :=
+  make_fields_rule (As := []) (fun _ h => by simp at h) n W h code [] [] List.nodup_nil rfl rfl
+    (by simp) hadm hok (by simp) fun j hj U hx _ =>
+      hQ.mono j _ U hx _ (hQ.down_le n j (Nat.le_of_lt hj) W _ (hv _))
+
+/-- **Object allocation.** Both descriptor shapes allocate through this rule.
+The world grows by the stored contract; the result obligation supplies the
+descriptor-specific view of the fresh object in that future world. -/
+theorem make_rule {A Q : Fam} (hA : Adm A) (n : Nat) (W : WorldT n) (h : Heap) (code : CallCode) (v : Tm)
+    (hval : isVal v = true) (hadm : WorldAdm W) (hok : HeapOk n W h) (hv : A n W v)
+    (result : ∀ j (hj : j < n) (U : WorldT j),
+      WExt (trunc j (Nat.le_of_lt hj) W) U →
+      refT A j U (.obj h.length .absent) → Q j U (.obj h.length code)) :
+    Safe Q n W h (.make code v) :=
+  make_fields_rule (As := [A]) (by intro B hB; rw [List.mem_singleton.mp hB]; exact hA) n W h code
+    [valueField] [v] (by simp) rfl rfl
+    (by simpa using hval) hadm hok (by simpa using hv)
+    (fun j hj U hx hr => result j hj U hx (by simpa [refT, slots] using hr))
 
 /-- **Creating a function object.** Its one field, which gives it a location
 and so an identity, holds the value; the result obligation supplies the view
@@ -578,9 +583,12 @@ theorem arith_throw_safe {S : Fam} (op : Arith) (a b : Tm) (ht : binopThrows op 
   cases n with
   | zero => trivial
   | succ p =>
-    refine Or.inr ⟨trunc p (Nat.le_succ p) W, h, _, WExt_refl _, WorldAdm_trunc _ hadm,
-      .arithThrow ht, HeapOk_trunc p W h hok, ?_⟩
-    exact thrown_safe _ _ _ _ ⟨thrownError, .throwV rfl, by simp [thrownError, Scoped]⟩
+    have hcadm : CtrAdm (res nulT : Ctr p) := fun _ _ _ _ _ _ h => h
+    refine Or.inr ⟨appendW (trunc p (Nat.le_succ p) W) (res nulT), h ++ [.nul], _,
+      WExt_appendW _ _, WorldAdm_append (WorldAdm_trunc _ hadm) hcadm, .arithThrow ht,
+      heap_alloc p _ h (res nulT) .nul (HeapOk_trunc p W h hok) (WorldAdm_trunc _ hadm)
+        (fun _ _ => rfl), ?_⟩
+    exact thrown_safe _ _ _ _ ⟨thrownError h.length, .throwV rfl, by simp [thrownError, Scoped]⟩
 
 /-- **Branching on a shape test.** The two branches are checked under the answer
 they run in, which is what makes this narrowing rather than a plain conditional:

@@ -13,8 +13,8 @@ namespace Verification
 mutual
 def Scoped (d : Nat) : Tm → Prop
   | .var i => i < d
-  | .objAt _ .absent => True
-  | .objAt _ (.bound t r pre) => Scoped d t ∧ Scoped d r ∧ ScopedArgs d pre
+  | .objAt _ .absent oid => True
+  | .objAt _ (.bound t r pre) oid => Scoped d t ∧ Scoped d r ∧ ScopedArgs d pre
   | .makeAt (.bound t r pre) _ args =>
       Scoped d t ∧ Scoped d r ∧ ScopedArgs d pre ∧ ScopedArgs d args
   | .makeAt .absent _ args => ScopedArgs d args
@@ -32,7 +32,7 @@ def Scoped (d : Nat) : Tm → Prop
   | .merge _ a b => Scoped d a ∧ Scoped d b
   -- Graph code's node expressions are scoped by its own environment, which
   -- invocation supplies whole; only the captures are scoped here.
-  | .objAt _ (.graph _ _ _ _ caps _ _) => ScopedArgs d caps
+  | .objAt _ (.graph _ _ _ _ caps _ _) oid => ScopedArgs d caps
   | .makeAt (.graph _ _ _ _ caps _ _) _ args => ScopedArgs d caps ∧ ScopedArgs d args
   | .goto _ _ _ L x => ScopedArgs d L ∧ Scoped d x
   | .frame _ _ t L x _ _ => Scoped d t ∧ ScopedArgs d L ∧ Scoped d x
@@ -56,7 +56,7 @@ theorem Scoped.mono {t : Tm} {d e : Nat} (h : Scoped d t) (hde : d ≤ e) :
   case construct f args ihf iha =>
     exact ⟨ihf h.1 hde, fun a ha => iha a ha (h.2 a ha) hde⟩
   case letE a b iha ihb => exact ⟨iha h.1 hde, ihb h.2 (by omega)⟩
-  case objBound fs t r pre iht ihr ihp =>
+  case objBound fs oid t r pre iht ihr ihp =>
     exact ⟨iht h.1 hde, ihr h.2.1 hde, fun a ha => ihp a ha (h.2.2 a ha) hde⟩
   case makeBound t r pre ns args iht ihr ihp ihargs =>
     exact ⟨iht h.1 hde, ihr h.2.1 hde, fun a ha => ihp a ha (h.2.2.1 a ha) hde,
@@ -75,7 +75,7 @@ theorem Scoped.mono {t : Tm} {d e : Nat} (h : Scoped d t) (hde : d ≤ e) :
   case merge dr a b iha ihb => exact ⟨iha h.1 hde, ihb h.2 hde⟩
   case read f a ih => exact ih h hde
   case test k a ih => exact ih h hde
-  case objGraph fs n E K st caps _ _ _ ihc => exact fun a ha => ihc a ha (h a ha) hde
+  case objGraph fs oid n E K st caps _ _ _ ihc => exact fun a ha => ihc a ha (h a ha) hde
   case makeGraph n E K st caps _ _ ns args _ ihc iha =>
     exact ⟨fun a ha => ihc a ha (h.1 a ha) hde, fun a ha => iha a ha (h.2 a ha) hde⟩
   case goto E K l L x _ ihL ihx => exact ⟨fun a ha => ihL a ha (h.1 a ha) hde, ihx h.2 hde⟩
@@ -96,7 +96,7 @@ theorem subst_above {t : Tm} {d j : Nat} (h : Scoped d t) (hj : d ≤ j) (a : Tm
     congr 1
     simpa using (List.map_congr_left (g := id) (fun a ha => iha a ha (h.2 a ha) hj))
   case letE x b ihx ihb => rw [ihx h.1 hj, ihb h.2 (by omega)]
-  case objBound fs t r pre iht ihr ihp =>
+  case objBound fs oid t r pre iht ihr ihp =>
     have hmap : pre.map (subst j a) = pre := by
       simpa using (List.map_congr_left (g := id) (fun x hx => ihp x hx (h.2.2 x hx) hj))
     rw [iht h.1 hj, ihr h.2.1 hj, hmap]
@@ -126,7 +126,7 @@ theorem subst_above {t : Tm} {d j : Nat} (h : Scoped d t) (hj : d ≤ j) (a : Tm
   case read f b ih => rw [ih h hj]
   case index b key ihb ihkey => rw [ihb h.1 hj, ihkey h.2 hj]
   case test k b ih => rw [ih h hj]
-  case objGraph fs n E K st caps _ _ _ ihc =>
+  case objGraph fs oid n E K st caps _ _ _ ihc =>
     have hmap : caps.map (subst j a) = caps := by
       simpa using (List.map_congr_left (g := id) (fun x hx => ihc x hx (h x hx) hj))
     rw [hmap]
@@ -169,7 +169,7 @@ theorem subst_scoped {t a : Tm} {d j : Nat} (ht : Scoped (d + 1) t)
     obtain ⟨a, ha, rfl⟩ := List.mem_map.mp hv
     exact iha a ha (ht.2 a ha) hj
   case letE x b ihx ihb => exact ⟨ihx ht.1 hj, ihb ht.2 (by omega)⟩
-  case objBound fs t r pre iht ihr ihp =>
+  case objBound fs oid t r pre iht ihr ihp =>
     refine ⟨iht ht.1 hj, ihr ht.2.1 hj, ?_⟩
     intro v hv
     obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hv
@@ -202,7 +202,7 @@ theorem subst_scoped {t a : Tm} {d j : Nat} (ht : Scoped (d + 1) t)
   case merge dr b c ihb ihc => exact ⟨ihb ht.1 hj, ihc ht.2 hj⟩
   case read f b ih => exact ih ht hj
   case test k b ih => exact ih ht hj
-  case objGraph fs n E K st caps _ _ _ ihc =>
+  case objGraph fs oid n E K st caps _ _ _ ihc =>
     intro v hv
     obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hv
     exact ihc x hx (ht x hx) hj
@@ -242,7 +242,7 @@ theorem instantiate_scoped (ρ : Env) (hρ : ∀ i, Scoped 0 (ρ i)) (t : Tm) (d
     obtain ⟨a, ha, rfl⟩ := List.mem_map.mp hv
     exact iha a ha d
   case letE a b iha ihb => exact ⟨iha _, ihb _⟩
-  case objBound fs t r pre iht ihr ihp =>
+  case objBound fs oid t r pre iht ihr ihp =>
     refine ⟨iht _, ihr _, ?_⟩
     intro v hv
     obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hv
@@ -275,7 +275,7 @@ theorem instantiate_scoped (ρ : Env) (hρ : ∀ i, Scoped 0 (ρ i)) (t : Tm) (d
   case merge dr a b iha ihb => exact ⟨iha _, ihb _⟩
   case read f a ih => exact ih d
   case test k a ih => exact ih d
-  case objGraph fs n E K st caps _ _ _ ihc =>
+  case objGraph fs oid n E K st caps _ _ _ ihc =>
     intro v hv
     obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hv
     exact ihc x hx d
@@ -325,7 +325,7 @@ theorem instantiate_beta (ρ : Env) (hρ : ∀ i, Scoped 0 (ρ i)) (a t : Tm) (d
     intro a ha
     exact iha a ha d
   case letE a b iha ihb => rw [iha, ihb]
-  case objBound fs t r pre iht ihr ihp =>
+  case objBound fs oid t r pre iht ihr ihp =>
     have hmap : List.map (subst d a ∘ instantiate (d + 1) ρ) pre =
         List.map (instantiate d (push a ρ)) pre :=
       List.map_congr_left (fun x hx => ihp x hx d)
@@ -362,7 +362,7 @@ theorem instantiate_beta (ρ : Env) (hρ : ∀ i, Scoped 0 (ρ i)) (a t : Tm) (d
   case read f b ih => rw [ih]
   case index b key ihb ihkey => rw [ihb, ihkey]
   case test k b ih => rw [ih]
-  case objGraph fs n E K st caps _ _ _ ihc =>
+  case objGraph fs oid n E K st caps _ _ _ ihc =>
     rw [List.map_map]
     congr 2
     exact List.map_congr_left (fun x hx => ihc x hx d)
@@ -401,7 +401,7 @@ theorem instantiate_above {t : Tm} {d : Nat} (ht : Scoped d t) (ρ : Env) :
     congr 1
     simpa using (List.map_congr_left (g := id) (fun a ha => iha a ha (ht.2 a ha)))
   case letE a b iha ihb => rw [iha ht.1, ihb ht.2]
-  case objBound fs t r pre iht ihr ihp =>
+  case objBound fs oid t r pre iht ihr ihp =>
     have hmap : pre.map (instantiate d ρ) = pre := by
       simpa using (List.map_congr_left (g := id) (fun x hx => ihp x hx (ht.2.2 x hx)))
     rw [iht ht.1, ihr ht.2.1, hmap]
@@ -431,7 +431,7 @@ theorem instantiate_above {t : Tm} {d : Nat} (ht : Scoped d t) (ρ : Env) :
   case merge dr a b iha ihb => rw [iha ht.1, ihb ht.2]
   case read f a ih => rw [ih ht]
   case test k a ih => rw [ih ht]
-  case objGraph fs n E K st caps _ _ _ ihc =>
+  case objGraph fs oid n E K st caps _ _ _ ihc =>
     have hmap : caps.map (instantiate d ρ) = caps := by
       simpa using (List.map_congr_left (g := id) (fun x hx => ihc x hx (ht x hx)))
     rw [hmap]

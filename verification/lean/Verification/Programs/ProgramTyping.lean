@@ -203,8 +203,8 @@ theorem allocRealm_sound [DecidableEq ι] {G : NormalGraph ι} {parts : List (Pr
     (hok : allocRealm G parts = true) (_hnd : (parts.map Prod.fst).Nodup) (c : Clause (Ty ι))
     {k : Nat} {V : WorldT k} {base : Nat}
     (hrec : recT ((parts.map Prod.fst).zip (parts.map fun p => meaning G p.2)) k V
-      (.objAt (slots base (parts.map Prod.fst)) .absent)) :
-    realmInvariant G (realmValues G) c k V (.objAt (slots base (parts.map Prod.fst)) .absent) := by
+      (.objAt (slots base (parts.map Prod.fst)) .absent oid)) :
+    realmInvariant G (realmValues G) c k V (.objAt (slots base (parts.map Prod.fst)) .absent oid) := by
   have hmem : ∀ p ∈ parts, (p.1, meaning G p.2) ∈ (parts.map Prod.fst).zip (parts.map fun p => meaning G p.2) := by
     intro p hp
     rw [List.zip_map']
@@ -229,16 +229,16 @@ theorem allocRealm_sound [DecidableEq ι] {G : NormalGraph ι} {parts : List (Pr
       rw [hr]
       cases c.record
       · trivial
-      · intro flds he _
+      · intro flds oid he _
         cases he
-        refine ⟨fun f T hm => ?_, ⟨_, rfl, fun q hq => ?_⟩⟩
+        refine ⟨fun f T hm => ?_, ⟨_, _, rfl, fun q hq => ?_⟩⟩
         · simp only [List.mem_cons, Prod.mk.injEq, List.not_mem_nil, or_false] at hm
           rcases hm with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
-          · obtain ⟨flds, l, c, he, hl, hw, hag⟩ := recT_at (hmem ps hps) hrec
-            refine ⟨flds, l, c, he, by rw [← hsk]; exact hl, hw, fun j hj W' u hu => ?_⟩
+          · obtain ⟨flds, l, c, oid', he, hl, hw, hag⟩ := recT_at (hmem ps hps) hrec
+            refine ⟨flds, l, c, oid', he, by rw [← hsk]; exact hl, hw, fun j hj W' u hu => ?_⟩
             exact storeTy_sound hst ((hag j hj W' u).mp hu)
-          · obtain ⟨flds, l, c, he, hl, hw, hag⟩ := recT_at (hmem pp hpp) hrec
-            refine ⟨flds, l, c, he, by rw [← hpk]; exact hl, hw, fun j hj W' u hu => ?_⟩
+          · obtain ⟨flds, l, c, oid', he, hl, hw, hag⟩ := recT_at (hmem pp hpp) hrec
+            refine ⟨flds, l, c, oid', he, by rw [← hpk]; exact hl, hw, fun j hj W' u hu => ?_⟩
             rw [← hpr]
             exact (realmFree_meaning (hpr ▸ hfree) j W' u).mp ((hag j hj W' u).mp hu)
         · obtain ⟨p, hp, hq1⟩ := List.mem_map.mp (ObjectMerge.slots_fst_mem hq)
@@ -390,8 +390,8 @@ theorem callsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W}
     (hs : ∀ p ∈ L, GraphCodeSpec G arity E K start Cs p) (hvs : EnvOk G Cs (envOf vs .nul) n W)
     (hsc : ∀ v ∈ vs, Scoped 0 v) (hvalues : CallArguments.Values vs) :
     CallEffects.callsT (L.map (Arrow.map (meaning G))) n W
-      (.objAt fs (.graph arity E K start vs)) := by
-  refine ⟨⟨fs, _, rfl, rfl, by simpa [Scoped] using hsc⟩, ?_⟩
+      (.objAt fs (.graph arity E K start vs) oid) := by
+  refine ⟨⟨fs, _, _, rfl, rfl, by simpa [Scoped] using hsc⟩, ?_⟩
   intro q hq j hj U hx hu heap hh r hrv hr args hvals ha
   obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hq
   exact ⟨_, .graph hrv hvals, graph_invoke (hs p hp) hvs hvalues hj hx hu hh hr ha⟩
@@ -403,8 +403,8 @@ theorem restsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W}
     {S : List (RestArrow (Ty ι))} (fs : List (PropKey × Nat))
     (hs : ∀ s ∈ S, GraphCodeSpec G arity E K start Cs s.fixed)
     (hvs : EnvOk G Cs (envOf vs .nul) n W) (hsc : ∀ v ∈ vs, Scoped 0 v) (hvalues : CallArguments.Values vs) :
-    CallEffects.restsT (S.map (RestArrow.mapWith (meaning G) (argMeaning G))) n W (.objAt fs (.graph arity E K start vs)) := by
-  refine ⟨⟨fs, _, rfl, rfl, by simpa [Scoped] using hsc⟩, ?_⟩
+    CallEffects.restsT (S.map (RestArrow.mapWith (meaning G) (argMeaning G))) n W (.objAt fs (.graph arity E K start vs) oid) := by
+  refine ⟨⟨fs, _, _, rfl, rfl, by simpa [Scoped] using hsc⟩, ?_⟩
   intro q hq j hj U hx hu heap hh r hrv hr args hvals ha
   obtain ⟨s, hsm, rfl⟩ := List.mem_map.mp hq
   have hspec := hs s hsm
@@ -550,7 +550,7 @@ theorem construct_safe {B : Fam} (xs : List (Fam × Tm)) (Us : List Fam)
       rcases List.mem_append.mp h with h | h
       · exact hvals a h
       · rw [hpad a h]; rfl
-    obtain ⟨result, ⟨fs, c, enter, rfl, hc', rfl⟩, hsafe⟩ :=
+    obtain ⟨result, ⟨fs, c, enter, oid, rfl, hc', rfl⟩, hsafe⟩ :=
       hc.2 _ (List.mem_singleton_self _) k (Nat.lt_succ_self k) (trunc k (Nat.le_succ k) V)
         (WExt_refl _) (WorldAdm_trunc _ hv') heap3 (HeapOk_trunc k V heap3 hok3) _ hpvals
         (ArgsT_transfer hAm hall k (Nat.le_succ k) _ (WExt_refl _))
@@ -702,28 +702,28 @@ def tagClause (tag : Tag) (c : Clause α) : Option Bool :=
 object, owning the key exactly as the answer says. -/
 theorem keyAnswer_sound {S : α → Fam} {P : α → ArgFam} {c : Clause α} {k : PropKey} {q n W v}
     (hq : keyAnswer k c = some q) (hv : semWithArgs S P c n W v) :
-    ∃ flds, v = .objAt flds .absent ∧ (flds.lookup k).isSome = q := by
+    ∃ flds oid, v = .objAt flds .absent oid ∧ (flds.lookup k).isSome = q := by
   unfold keyAnswer at hq
   by_cases hp : c.presentKeys.contains k = true
   · simp only [hp, ↓reduceIte, Option.some.injEq] at hq
     subst q
-    obtain ⟨flds, l, rfl, hl⟩ := semWithArgs_owns hv (List.contains_iff_mem.mp hp)
-    exact ⟨flds, rfl, by simp [hl]⟩
+    obtain ⟨flds, l, oid, rfl, hl⟩ := semWithArgs_owns hv (List.contains_iff_mem.mp hp)
+    exact ⟨flds, oid, rfl, by simp [hl]⟩
   · simp only [hp, Bool.false_eq_true, ↓reduceIte] at hq
     by_cases hb : c.keyBounds.any (fun K => !K.admits k) = true
     · simp only [hb, ↓reduceIte, Option.some.injEq] at hq
       subst q
       obtain ⟨K, hK, hadm⟩ := List.any_eq_true.mp hb
-      obtain ⟨flds, rfl, hk⟩ := semWithArgs_bounded hv hK
+      obtain ⟨flds, oid, rfl, hk⟩ := semWithArgs_bounded hv hK
       have hl : flds.lookup k = none :=
-        ownKeysT_lookup (b := K) (k := n) (W := W) ⟨flds, rfl, hk⟩ (f := k) (by simpa using hadm)
-      exact ⟨flds, rfl, by simp [hl]⟩
+        ownKeysT_lookup (b := K) (k := n) (W := W) ⟨flds, oid, rfl, hk⟩ (f := k) (by simpa using hadm)
+      exact ⟨flds, oid, rfl, by simp [hl]⟩
     · simp [hb] at hq
 
 /-- An object clause's `Array.isArray` answer is its members'. -/
 theorem arrayAnswer_sound {S : α → Fam} {P : α → ArgFam} {c : Clause α} {q n W v}
     (hq : arrayAnswer c = some q) (hv : semWithArgs S P c n W v) : tagHolds .isArray v = q := by
-  obtain ⟨flds, rfl, h⟩ := keyAnswer_sound hq hv
+  obtain ⟨flds, oid, rfl, h⟩ := keyAnswer_sound hq hv
   simpa [tagHolds, CallArguments.arrayStoreField] using h
 
 /-- A finite syntactic check; unknown numeric answers cannot establish either
@@ -814,7 +814,7 @@ theorem tagClause_sound {S : α → Fam} {P : α → ArgFam} {c tag q n W v}
       simp [tagClause, tagShape, shape] at hq
       subst q
       cases v <;> simp_all [valueShape, tagHolds, shape]
-      all_goals try (rename_i code; cases code with
+      all_goals try (rename_i code _; cases code with
         | graph _ _ _ _ _ kind _ => cases kind <;> simp_all []
         | _ => simp_all [])
   | hasKey k =>
@@ -824,10 +824,10 @@ theorem tagClause_sound {S : α → Fam} {P : α → ArgFam} {c tag q n W v}
     cases c
     case top => exact absurd rfl hc
     case refs =>
-      obtain ⟨flds, rfl, h⟩ := keyAnswer_sound (inAnswer_keyAnswer (by simpa [tagClause] using hq)) hv
+      obtain ⟨flds, oid, rfl, h⟩ := keyAnswer_sound (inAnswer_keyAnswer (by simpa [tagClause] using hq)) hv
       simpa [tagHolds] using h
     case dict =>
-      obtain ⟨flds, rfl, h⟩ := keyAnswer_sound (inAnswer_keyAnswer (by simpa [tagClause] using hq)) hv
+      obtain ⟨flds, oid, rfl, h⟩ := keyAnswer_sound (inAnswer_keyAnswer (by simpa [tagClause] using hq)) hv
       simpa [tagHolds] using h
     -- Another object clause's answer is unknown; a primitive owns no key.
     all_goals
@@ -836,7 +836,7 @@ theorem tagClause_sound {S : α → Fam} {P : α → ArgFam} {c tag q n W v}
     all_goals
       subst q
       cases v with
-      | objAt fs code =>
+      | objAt fs code _ =>
         cases code with
         | graph _ _ _ _ _ kind _ => cases kind <;> simp_all [valueShape, shape]
         | _ => simp_all [valueShape, shape]
@@ -847,7 +847,7 @@ theorem tagClause_sound {S : α → Fam} {P : α → ArgFam} {c tag q n W v}
     · subst hc; simp [tagClause] at hq
     have htag : some (tagHolds tag v) = tagShape tag (valueShape v) := by
       rw [ht]
-      cases v <;> first | rfl | (rename_i fs code; cases code <;> first | rfl | (rename_i kind; cases kind <;> rfl) | (rename_i kind _; cases kind <;> rfl))
+      cases v <;> first | rfl | (rename_i fs code _; cases code <;> first | rfl | (rename_i kind; cases kind <;> rfl) | (rename_i kind _; cases kind <;> rfl))
     rw [semWithArgs_shape hc hv, ht] at htag
     exact Option.some.inj (htag.trans (by simpa only [ht,tagClause] using hq))
 
@@ -860,16 +860,16 @@ theorem inAnswer_protoFree {S : α → Fam} {P : α → ArgFam} {c : Clause α} 
     (hin : inAnswer k c = some q) (hv : semWithArgs S P c n W v) : protoFree (.hasKey k) v = true := by
   unfold inAnswer at hin
   by_cases hp : c.presentKeys.contains k = true
-  · obtain ⟨flds, l, rfl, hl⟩ := semWithArgs_owns hv (List.contains_iff_mem.mp hp)
+  · obtain ⟨flds, l, oid, rfl, hl⟩ := semWithArgs_owns hv (List.contains_iff_mem.mp hp)
     simp [protoFree, hl]
   · rw [if_neg hp] at hin
     by_cases hb : ((c.keyBounds.any fun K => !K.admits k) &&
         c.keyBounds.any fun K => !K.admits CallArguments.protoField) = true
     · simp only [Bool.and_eq_true] at hb
       obtain ⟨K, hK, hadm⟩ := List.any_eq_true.mp hb.2
-      obtain ⟨flds, rfl, hk⟩ := semWithArgs_bounded hv hK
+      obtain ⟨flds, oid, rfl, hk⟩ := semWithArgs_bounded hv hK
       have hl : flds.lookup CallArguments.protoField = none :=
-        ownKeysT_lookup (b := K) (k := n) (W := W) ⟨flds, rfl, hk⟩ (by simpa using hadm)
+        ownKeysT_lookup (b := K) (k := n) (W := W) ⟨flds, oid, rfl, hk⟩ (by simpa using hadm)
       simp [protoFree, hl]
     · rw [if_neg hb] at hin; cases hin
 
@@ -1066,20 +1066,20 @@ theorem looseEquals_some {v w : Tm} (hv : isVal v = true) (hw : isVal w = true)
 
 theorem identityClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
     (hc : identityClause c = true) (hv : semWithArgs X P c n W v) :
-    ∃ fs code, v = .objAt fs code ∧ fs ≠ [] := by
+    ∃ fs code oid, v = .objAt fs code oid ∧ fs ≠ [] := by
   have field : ∀ {p : PropKey × α} {ps : List (PropKey × α)},
-      recT (ReferenceConjunctions.famsOf X (p :: ps)) n W v → ∃ fs code, v = .objAt fs code ∧ fs ≠ [] := by
+      recT (ReferenceConjunctions.famsOf X (p :: ps)) n W v → ∃ fs code oid, v = .objAt fs code oid ∧ fs ≠ [] := by
     intro p ps hr
-    obtain ⟨flds, rfl, hall⟩ := hr
+    obtain ⟨flds, oid, rfl, hall⟩ := hr
     obtain ⟨l, _, hl, _⟩ := hall p.1 (X p.2) (by simp [ReferenceConjunctions.famsOf])
-    refine ⟨flds, .absent, rfl, ?_⟩
+    refine ⟨flds, .absent, oid, rfl, ?_⟩
     rintro rfl
     simp at hl
   have view : ∀ {p : PropKey × α} {ps : List (PropKey × α)},
-      viewT (ReferenceConjunctions.famsOf X (p :: ps)) n W v → ∃ fs code, v = .objAt fs code ∧ fs ≠ [] := by
+      viewT (ReferenceConjunctions.famsOf X (p :: ps)) n W v → ∃ fs code oid, v = .objAt fs code oid ∧ fs ≠ [] := by
     intro p ps hr
-    obtain ⟨flds, l, _, rfl, hl, _⟩ := hr p.1 (X p.2) (by simp [ReferenceConjunctions.famsOf])
-    refine ⟨flds, .absent, rfl, ?_⟩
+    obtain ⟨flds, l, _, oid, rfl, hl, _⟩ := hr p.1 (X p.2) (by simp [ReferenceConjunctions.famsOf])
+    refine ⟨flds, .absent, oid, rfl, ?_⟩
     rintro rfl
     simp at hl
   cases c with
@@ -1101,18 +1101,18 @@ theorem identityClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause �
 
 theorem objectClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
     (hc : objectClause c = true) (hv : semWithArgs X P c n W v) :
-    ∃ fs code, v = .objAt fs code := by
+    ∃ fs code oid, v = .objAt fs code oid := by
   cases c with
-  | refs | dict => obtain ⟨fs, h, _⟩ := hv.1.1; exact ⟨fs, .absent, h⟩
-  | callable => obtain ⟨fs, code, h, _⟩ := hv.1.1.1; exact ⟨fs, code, h⟩
-  | arrs | ctors => obtain ⟨fs, code, h, _⟩ := hv.1.1; exact ⟨fs, code, h⟩
+  | refs | dict => obtain ⟨fs, oid, h, _⟩ := hv.1.1; exact ⟨fs, .absent, oid, h⟩
+  | callable => obtain ⟨fs, code, oid, h, _⟩ := hv.1.1.1; exact ⟨fs, code, oid, h⟩
+  | arrs | ctors => obtain ⟨fs, code, oid, h, _⟩ := hv.1.1; exact ⟨fs, code, oid, h⟩
   | _ => simp [objectClause] at hc
 
 /-- Strict equality answers when one operand is a primitive or an object
 with a field. -/
 theorem strictEquals_some {v w : Tm} (hv : isVal v = true) (hw : isVal w = true)
-    (h : (isPrim v || isPrim w) = true ∨ (∃ fs code, v = .objAt fs code ∧ fs ≠ []) ∨
-      (∃ fs code, w = .objAt fs code ∧ fs ≠ [])) :
+    (h : (isPrim v || isPrim w) = true ∨ (∃ fs code oid, v = .objAt fs code oid ∧ fs ≠ []) ∨
+      (∃ fs code oid, w = .objAt fs code oid ∧ fs ≠ [])) :
     ∃ q, strictEquals v w = some q := by
   unfold strictEquals
   simp only [hv, hw, Bool.and_self, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
@@ -1120,7 +1120,7 @@ theorem strictEquals_some {v w : Tm} (hv : isVal v = true) (hw : isVal w = true)
   · exact ⟨sameValue v w, by simp [hp]⟩
   simp only [hp, Bool.false_eq_true, ↓reduceIte]
   have hp' : isPrim v = false ∧ isPrim w = false := by simpa using hp
-  rcases h with h | ⟨fs, code, rfl, hfs⟩ | ⟨fs, code, rfl, hfs⟩
+  rcases h with h | ⟨fs, code, oid, rfl, hfs⟩ | ⟨fs, code, oid, rfl, hfs⟩
   · exact absurd h hp
   · cases w <;> simp_all [isPrim, isVal]
   · cases v <;> simp_all [isPrim, isVal]
@@ -1163,17 +1163,9 @@ theorem opResult_sound {X : α → Fam} {P : α → ArgFam} {op : Arith} {c d : 
           · exact .inr (nullishClause_member hd hw)
         · simp only [Bool.and_eq_true, Bool.or_eq_true] at ho
           obtain ⟨⟨hc, hd⟩, hi⟩ := ho
-          obtain ⟨fs, code, rfl⟩ := objectClause_member hc hv
-          obtain ⟨gs, other, rfl⟩ := objectClause_member hd hw
-          have hi' : fs ≠ [] ∨ gs ≠ [] := by
-            rcases hi with hi | hi
-            · obtain ⟨_, _, he, hn⟩ := identityClause_member hi hv
-              cases he; exact .inl hn
-            · obtain ⟨_, _, he, hn⟩ := identityClause_member hi hw
-              cases he; exact .inr hn
-          refine ⟨decide (fs = gs), ?_⟩
-          rcases hi' with hf | hg <;>
-            simp [looseEquals, strictEquals, isVal, isPrim, isNullish, List.isEmpty_iff, *]
+          obtain ⟨fs, code, oid, rfl⟩ := objectClause_member hc hv
+          obtain ⟨gs, other, oid', rfl⟩ := objectClause_member hd hw
+          exact ⟨oid == oid', by simp [looseEquals, strictEquals, isVal, isPrim, isNullish]⟩
       obtain ⟨q, hq⟩ := answer
       exact .inl ⟨boolVal q, by simp [binop, hq], boolVal_holds _⟩
     · cases h
@@ -1412,9 +1404,9 @@ implies `A`. -/
 theorem along_read_safe {A : Fam} (hval : ValOnly A) (key : PropKey) :
     ∀ (d : Nat) {n : Nat} {W : WorldT n} {h : Heap} {v : Val}, WorldAdm W → HeapOk n W h →
       MethodMembers.along key A d n W v → Safe A n W h (.readAt key v)
-  | 0, n, W, h, _, hw, hh, ⟨flds, l, c, rfl, hf, hl, hag⟩ => read_view_rule_ext hval n W h l hw hh hf hl hag
-  | d + 1, n, W, h, _, hw, hh, ⟨flds, rfl, hmiss, hp⟩ => by
-    obtain ⟨pf, lp, cp, hρ, hpf, hlp, hpag⟩ := hp
+  | 0, n, W, h, _, hw, hh, ⟨flds, l, c, oid, rfl, hf, hl, hag⟩ => read_view_rule_ext hval n W h l hw hh hf hl hag
+  | d + 1, n, W, h, _, hw, hh, ⟨flds, oid, rfl, hmiss, hp⟩ => by
+    obtain ⟨pf, lp, cp, oid', hρ, hpf, hlp, hpag⟩ := hp
     cases hρ
     cases n with
     | zero => trivial
@@ -1672,8 +1664,8 @@ theorem restsT_of_graphRest {G : NormalGraph ι} {arity E K start Cs vs n W}
       GraphCodeSpec G arity E K start Cs q.1.fixed (some q.2))
     (hlen : S.length = As.length)
     (hvs : EnvOk G Cs (envOf vs .nul) n W) (hsc : ∀ v ∈ vs, Scoped 0 v) (hvalues : CallArguments.Values vs) :
-    CallEffects.restsT (S.map (RestArrow.mapWith (meaning G) (argMeaning G))) n W (.objAt fs (.graph arity E K start vs .call true)) := by
-  refine ⟨⟨fs, _, rfl, rfl, by simpa [Scoped] using hsc⟩, ?_⟩
+    CallEffects.restsT (S.map (RestArrow.mapWith (meaning G) (argMeaning G))) n W (.objAt fs (.graph arity E K start vs .call true) oid) := by
+  refine ⟨⟨fs, _, _, rfl, rfl, by simpa [Scoped] using hsc⟩, ?_⟩
   intro q hq j hj U hx hu heap hh r hrv hr args hvals ha
   obtain ⟨s, hsm, rfl⟩ := List.mem_map.mp hq
   obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hsm
@@ -1707,8 +1699,8 @@ theorem offers_sem {G : NormalGraph ι} {arity E K start Cs rest vs n W}
     (ho : CodeOffers G arity E K start Cs rest L S As)
     (hvs : EnvOk G Cs (envOf vs .nul) n W) (hsc : ∀ v ∈ vs, Scoped 0 v) (hvalues : CallArguments.Values vs) :
     CallEffects.callsT (L.map (Arrow.map (meaning G))) n W
-        (.objAt fs (.graph arity E K start vs .call rest)) ∧
-      CallEffects.restsT (S.map (RestArrow.mapWith (meaning G) (argMeaning G))) n W (.objAt fs (.graph arity E K start vs .call rest)) := by
+        (.objAt fs (.graph arity E K start vs .call rest) oid) ∧
+      CallEffects.restsT (S.map (RestArrow.mapWith (meaning G) (argMeaning G))) n W (.objAt fs (.graph arity E K start vs .call rest) oid) := by
   cases rest with
   | false =>
     exact ⟨callsT_of_graph _ (fun p hp => ho p (List.mem_append_left _ hp)) hvs hsc hvalues,
@@ -1716,7 +1708,7 @@ theorem offers_sem {G : NormalGraph ι} {arity E K start Cs rest vs n W}
         (List.mem_append_right _ (List.mem_map.mpr ⟨s, hs, rfl⟩))) hvs hsc hvalues⟩
   | true =>
     obtain ⟨rfl, hlen, hs⟩ := ho
-    exact ⟨⟨⟨fs, _, rfl, rfl, by simpa [Scoped] using hsc⟩, by simp⟩,
+    exact ⟨⟨⟨fs, _, _, rfl, rfl, by simpa [Scoped] using hsc⟩, by simp⟩,
       restsT_of_graphRest fs hs hlen hvs hsc hvalues⟩
 
 /-- **A class value's graph code** meets each construct signature it was
@@ -1727,11 +1719,11 @@ theorem ctorsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {U : Ty
     (hu : Represents G U .undef)
     (hvs : EnvOk G Cs (envOf vs .nul) n W) (hsc : ∀ v ∈ vs, Scoped 0 v) (hvalues : CallArguments.Values vs) :
     ctorsT (L.map fun p => (p.1.map (meaning G), meaning G p.2)) n W
-      (.objAt fs (.graph arity E K start vs .construct)) := by
-  refine ⟨⟨fs, _, rfl, rfl, by simpa [Scoped] using hsc⟩, ?_⟩
+      (.objAt fs (.graph arity E K start vs .construct) oid) := by
+  refine ⟨⟨fs, _, _, rfl, rfl, by simpa [Scoped] using hsc⟩, ?_⟩
   intro q hq j hj V hx hv heap hh args _ ha
   obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hq
-  refine ⟨_, ⟨fs, _, _, rfl, rfl, rfl⟩, ?_⟩
+  refine ⟨_, ⟨fs, _, _, _, rfl, rfl, rfl⟩, ?_⟩
   exact HeapObservations.erase (graph_invoke (row := ⟨U, p.1, p.2, .unrestricted⟩) (hs p hp) hvs hvalues hj hx hv hh
     ((represents_back hu j V _) rfl) (ArgsShort_of_exact ha))
 
@@ -2392,7 +2384,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     intro j hj V hx
     obtain ⟨hsc, henv, hcapv⟩ := captures_sem he hlt
       (fun c hc => by simpa [instantiate] using ih c hc n W h ρ he hw hh) hj hx
-    have ho := offers_sem [(codeField, h.length)] hspec henv hsc (by
+    have ho := offers_sem (oid := h.length + 1) [(codeField, h.length)] hspec henv hsc (by
       intro v hv
       obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hv
       exact (meaning_value (hcapv c hc)).1)
@@ -2423,7 +2415,8 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         instanceTWithArgs (fun η S => mixedValues G η S) G.env s As (graphArguments G) j U
           (Tm.fnObj h.length (.graph arity E K start vs .call rest)) := by
       intro As
-      have ho := offers_sem (G := reassign G (assign G.env s.binders As)) [(codeField, h.length)]
+      have ho := offers_sem (G := reassign G (assign G.env s.binders As)) (oid := h.length + 1)
+        [(codeField, h.length)]
         (hspec _) (henv As) hsc (by
       intro v hv
       obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hv
@@ -2441,7 +2434,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     intro j hj V hx
     obtain ⟨hsc, henv, hcapv⟩ := captures_sem he hlt
       (fun c hc => by simpa [instantiate] using ih c hc n W h ρ he hw hh) hj hx
-    have hc := ctorsT_of_graph [(codeField, h.length)] hspec hu henv hsc (by
+    have hc := ctorsT_of_graph (oid := h.length + 1) [(codeField, h.length)] hspec hu henv hsc (by
       intro v hv
       obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hv
       exact (meaning_value (hcapv c hc)).1)
@@ -2482,7 +2475,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       simpa only [trunc_trunc] using WExt_trunc (Nat.le_of_lt hk') hx
     obtain ⟨hsc, henv, hcapv⟩ := captures_sem he hlt
       (fun c hc => by simpa [instantiate] using ihc c hc n W h ρ he hw hh) (by omega) hWV
-    have ho := offers_sem (slots heap.length (parts.map Prod.fst)) hspec henv hsc (by
+    have ho := offers_sem (oid := heap.length + args.length) (slots heap.length (parts.map Prod.fst)) hspec henv hsc (by
       intro v hv
       obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hv
       exact (meaning_value (hcapv c hc)).1)
@@ -2490,7 +2483,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         = (parts.map Prod.fst).zip (parts.map fun p => meaning G p.2.1) := by
       simp [ReferenceConjunctions.famsOf, List.map_map, Function.comp_def, List.zip_map']
     exact (represents_back hr k' V _)
-      ⟨⟨⟨⟨_, _, rfl, rfl, by rw [hfam]; exact hrec⟩, by simp⟩, ho.1⟩, ho.2⟩
+      ⟨⟨⟨⟨_, _, _, rfl, rfl, by rw [hfam]; exact hrec⟩, by simp⟩, ho.1⟩, ho.2⟩
   | @construct Γ f F B L xs Us hf hr hp hx hu ihf ihx ihu =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
@@ -2686,7 +2679,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         rw [← hfam]; exact List.mem_map.mpr ⟨(p.1, p.2.1), List.mem_map_of_mem hp, rfl⟩⟩
     have hnp := slots_lookup_none (base := heap.length) hproto
     have hcell : ∀ y ∈ ix ++ cs,
-        dictCellT y.1 (meaning G y.2) k V (.objAt (slots heap.length (parts.map Prod.fst)) .absent) := by
+        dictCellT y.1 (meaning G y.2) k V (.objAt (slots heap.length (parts.map Prod.fst)) .absent (heap.length + args.length)) := by
       intro y hy
       refine dictCellT_of_recT hrec hown hnp fun f T hT hk => ?_
       rw [← hfam] at hT
@@ -2701,7 +2694,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       fun f T hm => by simp [ReferenceConjunctions.famsOf] at hm,
       ⟨fun y hy => dictCellT_view (hcell y (List.mem_append_left _ hy)),
         fun y hy => hcell y (List.mem_append_right _ hy)⟩,
-      ⟨_, rfl, fun _ _ _ => hnp, fun o ho l hl => by
+      ⟨_, _, rfl, fun _ _ _ => hnp, fun o ho l hl => by
         obtain ⟨o', ho', rfl⟩ := List.mem_map.mp ho
         rw [show (OptionalField.map (meaning G) o').key = o'.key from rfl,
           slots_lookup_none (habs o' ho')] at hl
@@ -2711,14 +2704,14 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     intro n W h ρ he hw hh
     apply bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj U hx hu heap v hok hv ha'
-    obtain ⟨flds, l, c, rfl, hf, hl, hag⟩ :=
+    obtain ⟨flds, l, c, oid', rfl, hf, hl, hag⟩ :=
       recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) (namedMembers_sem hr hc ha').1
     exact read_rule (meaning_valOnly G A) j U heap l hu hok hf hl hag
   | @readView Γ a Ref c fs vs f A ha hr hc hm ih =>
     intro n W h ρ he hw hh
     apply bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj U hx hu heap v hok hv ha'
-    obtain ⟨flds, l, c, rfl, hf, hl, hag⟩ :=
+    obtain ⟨flds, l, c, oid', rfl, hf, hl, hag⟩ :=
       viewT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) (namedMembers_sem hr hc ha').2
     exact read_view_rule (meaning_valOnly G A) j U heap l hu hok hf hl hag
   | @readProto Γ a Ref P fs vs os ms ks K gs ws os' ms' ks' f A ha hr hK hf hpr hP hm ih =>
@@ -2726,24 +2719,24 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     apply bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj U hx hu heap v hok hv ha'
     have hs := (represents_raw hr j U v) ha'
-    have hloc : ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr j), v = .objAt flds .absent ∧
+    have hloc : ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr j) (oid : Nat), v = .objAt flds .absent oid ∧
         flds.lookup CallArguments.protoField = some l ∧ lookup U l = some c ∧
         ∀ (i : Nat) (hi : i < j) (V : WorldT i) (u : Val), c i hi V u → meaning G P i V u := by
       rcases List.mem_append.mp hpr with hpr | hpr
-      · obtain ⟨flds, l, c, he, hf', hl, hag⟩ :=
+      · obtain ⟨flds, l, c, oid', he, hf', hl, hag⟩ :=
           recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨P, hpr, rfl⟩) hs.1.1
-        exact ⟨flds, l, c, he, hf', hl, fun i hi V u hu => (hag i hi V u).mp hu⟩
+        exact ⟨flds, l, c, oid', he, hf', hl, fun i hi V u hu => (hag i hi V u).mp hu⟩
       · exact viewT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨P, hpr, rfl⟩) hs.2.1
-    obtain ⟨flds, l, c, rfl, hpf, hl, hag⟩ := hloc
+    obtain ⟨flds, l, c, oid, rfl, hpf, hl, hag⟩ := hloc
     have hmiss := ownKeysT_lookup (hs.2.2.2.2 K hK) hf
     apply read_proto_rule j U heap l hu hok hmiss hpf hl hag
     intro i V h' hV hh' u hu
     have hp := (represents_raw hP i V u) hu
     rcases List.mem_append.mp hm with hm | hm
-    · obtain ⟨flds', l', c', rfl, hf', hl', hag'⟩ :=
+    · obtain ⟨flds', l', c', oid'', rfl, hf', hl', hag'⟩ :=
         recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) hp.1.1
       exact read_rule (meaning_valOnly G A) i V h' l' hV hh' hf' hl' hag'
-    · obtain ⟨flds', l', c', rfl, hf', hl', hag'⟩ :=
+    · obtain ⟨flds', l', c', oid'', rfl, hf', hl', hag'⟩ :=
         viewT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) hp.2.1
       exact read_view_rule (meaning_valOnly G A) i V h' l' hV hh' hf' hl' hag'
   | @readOptional Γ a Ref fs vs os ms ks f r A U ha hr hm hUnd ih =>
@@ -2751,7 +2744,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     apply bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj V hx hv heap v hok hval ha'
     have hs := (represents_raw hr j V v) ha'
-    obtain ⟨flds, rfl, _⟩ := hs.1.1
+    obtain ⟨flds, oid, rfl, _⟩ := hs.1.1
     apply Safe_mono j (fun k _ X u hu => (meaning_append G A U k X u).mpr
       (hu.elim Or.inl (fun h => Or.inr ((represents_back hUnd k X u) h)))) V heap _
       (read_optional_rule (meaning_valOnly G A) j V heap hv hok
@@ -2765,7 +2758,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     apply bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj V hx hv heap v hok hval ha'
     have hd := ((represents_raw hr j V v) ha').2.2.1.1 (K, A) hm
-    obtain ⟨flds, rfl, _⟩ := ((represents_raw hr j V v) ha').1.1
+    obtain ⟨flds, oid, rfl, _⟩ := ((represents_raw hr j V v) ha').1.1
     apply Safe_mono j (fun k _ X u hu => (meaning_append G A U k X u).mpr
       (hu.elim Or.inl (fun h => Or.inr ((represents_back hUnd k X u) h)))) V heap _
       (read_dict_rule (meaning_valOnly G A) j V heap hv hok (IndexKeys.surely_admits hsure) hd)
@@ -2781,7 +2774,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       ((meaning_adm G Ref).down_le j k hk V av ha')
     obtain ⟨f, hkey, hadmits⟩ := keyClause_admits ((represents_raw hStr k X kv) hk')
     have hd := dictViewT_within hwithin (((represents_raw hr k X av) ha'').2.2.1.1 (K, A) hm)
-    obtain ⟨flds, rfl, _⟩ := ((represents_raw hr k X av) ha'').1.1
+    obtain ⟨flds, oid, rfl, _⟩ := ((represents_raw hr k X av) ha'').1.1
     apply Safe_mono k (fun i _ Y u hu => (meaning_append G A U i Y u).mpr
       (hu.elim Or.inl (fun h => Or.inr ((represents_back hUnd i Y u) h)))) X heap' _
       (index_dict_rule (meaning_valOnly G A) k X heap' hX hok' hkey hadmits hd)
@@ -3082,7 +3075,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       (ihb j U heap ρ (he.transfer j hj U hx) hu hok)
     intro k hk V hy hv heap' bv hok' hbval hb'
     have ha'' := (meaning_adm G Ref).mono k _ V hy av ((meaning_adm G Ref).down_le j k hk U av ha')
-    obtain ⟨flds, l, c, rfl, hf, hl, hag⟩ :=
+    obtain ⟨flds, l, c, oid', rfl, hf, hl, hag⟩ :=
       recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) ((represents_raw hr k V av) ha'').1.1
     apply Safe_mono k (fun i _ X v hval => (represents_back hn i X v) hval)
     exact write_rule (meaning_adm G A) k V heap' l bv hbval hv hok' hf hl hag hb'
@@ -3312,19 +3305,15 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       have hcall := callsT_of_callSigs hsig (he.2 t T ht)
       simp only [Arrow.map, Contract.map, List.map_append] at hcall
       have hpv := ArgsT_slots he hpre
-      have hbound := CallEffects.callsT_bound (Rc := meaning G Rc) (fs := [])
+      apply make_empty_rule (meaning_adm G F) (m + 1) W h _ hw hh
+      intro oid
+      have hbound := CallEffects.callsT_bound (Rc := meaning G Rc) (fs := []) (oid := oid)
         (meaning_adm G Rt) (by intro A hA; obtain ⟨q, _, rfl⟩ := List.mem_map.mp hA; exact meaning_adm G q)
         (by intro A hA; obtain ⟨q, _, rfl⟩ := List.mem_map.mp hA; exact meaning_adm G q)
         hcall (meaning_value (he.2 r Rt hr)).1 (he.1 r) (he.2 r Rt hr) hpv
         (ArgsT_values (by intro A hA; obtain ⟨q, _, rfl⟩ := List.mem_map.mp hA; exact meaning_valOnly G q) hpv)
         (by intro a ha; obtain ⟨q, _, rfl⟩ := List.mem_map.mp ha; exact he.1 q)
-      have hdown := (CallEffects.callsT_adm _).down m W _ hbound
-      refine Or.inr ⟨trunc m (Nat.le_succ m) W, h,
-        .objAt [] (.bound (ρ t) (ρ r) (saved.map ρ)), WExt_refl _, WorldAdm_trunc _ hw, ?_,
-        HeapOk_trunc m W h hh, value_safe _ _ _ _ _ rfl ?_⟩
-      · simpa [Verification.slots] using (Step.makeFields (h := h) (ns := []) (vs := [])
-          (c := .bound (ρ t) (ρ r) (saved.map ρ)) (by simp) rfl)
-      · exact (represents_back hF m _ _) ⟨by simpa [Arrow.map, RestArrow.mapWith, Contract.map] using hdown, hdown.1, by simp⟩
+      exact (represents_back hF (m + 1) _ _) ⟨by simpa [Arrow.map, RestArrow.mapWith, Contract.map] using hbound, hbound.1, by simp⟩
   | @bindRestE effect Γ F T Rt E El R Rc t r saved Ps Qs ht hsig hel hr hpre hQs hF =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def,
@@ -3351,18 +3340,14 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         refine mixed_restElem_append hel (fun u hu => ?_) hy
         have hu' := ArgsT_replicate_all hsplit.2 u (by simpa using hu)
         exact (meaning_adm G El).transfer hu' j hj U hx
-      have hbound := CallEffects.restsT_bound (Rc := meaning G Rc) (fs := [])
+      apply make_empty_rule (meaning_adm G F) (m + 1) W h _ hw hh
+      intro oid
+      have hbound := CallEffects.restsT_bound (Rc := meaning G Rc) (fs := []) (oid := oid)
         (meaning_adm G Rt) (by intro A hA; obtain ⟨q, _, rfl⟩ := List.mem_map.mp hA; exact meaning_adm G q)
         (argMeaning_adm G E) hrest (meaning_value (he.2 r Rt hr)).1 (he.1 r) (he.2 r Rt hr) hpv'
         hext hvals (by intro a ha; obtain ⟨q, _, rfl⟩ := List.mem_map.mp ha; exact he.1 q)
-      have hdown := (CallEffects.restsT_adm _).down m W _ hbound
-      refine Or.inr ⟨trunc m (Nat.le_succ m) W, h,
-        .objAt [] (.bound (ρ t) (ρ r) (saved.map ρ)), WExt_refl _, WorldAdm_trunc _ hw, ?_,
-        HeapOk_trunc m W h hh, value_safe _ _ _ _ _ rfl ?_⟩
-      · simpa [Verification.slots] using (Step.makeFields (h := h) (ns := []) (vs := [])
-          (c := .bound (ρ t) (ρ r) (saved.map ρ)) (by simp) rfl)
-      · refine (represents_back hF m _ _) ⟨⟨hdown.1, by simp⟩, ?_⟩
-        simpa [RestArrow.mapWith, Contract.map, List.map_drop, hlen] using hdown
+      refine (represents_back hF (m + 1) _ _) ⟨⟨hbound.1, by simp⟩, ?_⟩
+      simpa [RestArrow.mapWith, Contract.map, List.map_drop, hlen] using hbound
   | @bindMember Γ F O i k m L S hi hmo hF hL hS hR =>
     intro n W h ρ he hw hh
     obtain ⟨hkey, hmem⟩ := memberOf_at hmo (he.2 i O hi)
@@ -3402,10 +3387,14 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         have hRadm : Adm (MethodMembers.hostIn (ρ i) (m.receivers.map (meaning G))) :=
           MethodMembers.hostIn_adm _ fun A hA => by
             obtain ⟨b, -, rfl⟩ := List.mem_map.mp hA; exact meaning_adm G b
-        have hinv : Invocable (.objAt [] (.bound u (ρ i) [])) :=
-          ⟨[], _, rfl, rfl, by simp only [Scoped, scopedArgs_iff]; exact ⟨hon.1.1.scoped, hscope, by simp⟩⟩
+        apply make_empty_rule (meaning_adm G F) (q + 1) _ h' _ (WorldAdm_trunc _ hu)
+          (HeapOk_trunc (q + 1) U h' hok)
+        intro oid
+        refine (meaning_adm G F).down_le (q + 2) (q + 1) (by omega) U _ ?_
+        have hinv : Invocable (.objAt [] (.bound u (ρ i) []) oid) :=
+          ⟨[], _, _, rfl, rfl, by simp only [Scoped, scopedArgs_iff]; exact ⟨hon.1.1.scoped, hscope, by simp⟩⟩
         have hcalls : CallEffects.callsT (L.map (Arrow.map (meaning G)))
-            (q + 2) U (.objAt [] (.bound u (ρ i) [])) := by
+            (q + 2) U (.objAt [] (.bound u (ρ i) []) oid) := by
           refine CallEffects.callsT_of_signatures hinv fun x hx => ?_
           obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hx
           obtain ⟨c, hc, hlen, hps, ⟨pr, hpr⟩, heff⟩ := hL y hy
@@ -3418,10 +3407,10 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
               exact (hc'.2 _ (List.mem_singleton_self _)).weaken (Effect.covers_sound heff) (fun _ _ _ r h => h)
                 (fun _ _ _ args ha => ArgsShort_mono hle ha)
                 (fun m _ V w hw => PositiveCertificates.acceptedUsing hpr m V w hw)⟩
-          exact CallEffects.callsT_bound (Ps := []) hRadm (by simp)
+          exact CallEffects.callsT_bound (Ps := []) (oid := oid) hRadm (by simp)
             (fun A hA => by obtain ⟨b, -, rfl⟩ := List.mem_map.mp hA; exact meaning_adm G b)
             ht hvalρ hscope hhost trivial (by simp [CallArguments.Values]) (by simp)
-        have hrests : CallEffects.restsT (S.map (RestArrow.mapWith (meaning G) (argMeaning G))) (q + 2) U (.objAt [] (.bound u (ρ i) [])) := by
+        have hrests : CallEffects.restsT (S.map (RestArrow.mapWith (meaning G) (argMeaning G))) (q + 2) U (.objAt [] (.bound u (ρ i) []) oid) := by
           refine CallEffects.restsT_of_signatures hinv fun x hx => ?_
           obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hx
           obtain ⟨c, hc, hlen, hps, ⟨pe, hpe⟩, ⟨pr, hpr⟩, heff⟩ := hS y hy
@@ -3434,7 +3423,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
               exact (hc'.2 _ (List.mem_singleton_self _)).weaken (Effect.covers_sound heff) (fun _ _ _ r h => h)
                 (fun _ _ _ args ha => ArgsRest_mono hle (fun vs hv => argsAcceptedUsing hpe _ _ vs hv) ha)
                 (fun m _ V w hw => PositiveCertificates.acceptedUsing hpr m V w hw)⟩
-          have hb := CallEffects.restsT_bound (Rc := meaning G y.receiver) (pre := []) (fs := [])
+          have hb := CallEffects.restsT_bound (Rc := meaning G y.receiver) (pre := []) (fs := []) (oid := oid)
             hRadm
             (fun A hA => by obtain ⟨b, -, rfl⟩ := List.mem_map.mp hA; exact meaning_adm G b)
             (argMeaning_adm G _)
@@ -3444,16 +3433,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
             (fun _ _ _ _ ys hys => by simpa using hys)
             (by simp [CallArguments.Values]) (by simp)
           simpa [RestArrow.mapWith, Contract.map] using hb
-        have hmem : meaning G F (q + 2) U (.objAt [] (.bound u (ρ i) [])) :=
-          represents_back hF (q + 2) U _ rfl ⟨hcalls, hrests⟩
-        have hdown := (meaning_adm G F).down_le (q + 2) q (by omega) U _ hmem
-        refine Or.inr ⟨trunc q (Nat.le_succ q) (trunc (q + 1) (Nat.le_succ (q + 1)) U), h',
-          .objAt [] (.bound u (ρ i) []), WExt_refl _, WorldAdm_trunc _ (WorldAdm_trunc _ hu), ?_,
-          HeapOk_trunc q _ h' (HeapOk_trunc (q + 1) U h' hok), value_safe _ _ _ _ _ rfl ?_⟩
-        · simpa [Verification.slots] using (Step.makeFields (h := h') (ns := []) (vs := [])
-            (c := .bound u (ρ i) []) (by simp) rfl)
-        · rw [trunc_trunc]
-          exact hdown
+        exact represents_back hF (q + 2) U _ rfl ⟨hcalls, hrests⟩
   | @bindScheme Γ F O i k m hi hmo hF _ =>
     intro n W h ρ he hw hh
     obtain ⟨hkey, hmem⟩ := memberOf_at hmo (he.2 i O hi)
@@ -3482,16 +3462,11 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       | zero => trivial
       | succ q =>
         -- The member bound to its host meets each of its schemes.
-        have hmem : meaning G F (q + 2) U (.objAt [] (.bound u (ρ i) [])) :=
-          hon.2.2 _ (List.mem_map_of_mem hF)
-        have hdown := (meaning_adm G F).down_le (q + 2) q (by omega) U _ hmem
-        refine Or.inr ⟨trunc q (Nat.le_succ q) (trunc (q + 1) (Nat.le_succ (q + 1)) U), h',
-          .objAt [] (.bound u (ρ i) []), WExt_refl _, WorldAdm_trunc _ (WorldAdm_trunc _ hu), ?_,
-          HeapOk_trunc q _ h' (HeapOk_trunc (q + 1) U h' hok), value_safe _ _ _ _ _ rfl ?_⟩
-        · simpa [Verification.slots] using (Step.makeFields (h := h') (ns := []) (vs := [])
-            (c := .bound u (ρ i) []) (by simp) rfl)
-        · rw [trunc_trunc]
-          exact hdown
+        apply make_empty_rule (meaning_adm G F) (q + 1) _ h' _ (WorldAdm_trunc _ hu)
+          (HeapOk_trunc (q + 1) U h' hok)
+        intro oid
+        exact (meaning_adm G F).down_le (q + 2) (q + 1) (by omega) U _
+          (hon.2.2 oid _ (List.mem_map_of_mem hF))
   | throw ha iha =>
     intro n W h ρ he hw hh
     apply bind Tm.throw Step.throwC Raises.throwC n W h _ hw hh (iha n W h ρ he hw hh)

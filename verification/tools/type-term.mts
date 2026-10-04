@@ -13,6 +13,59 @@ import type { PropertyKey, TypeTerm } from "./declaration-types.mts";
 // its integer, whatever its spelling (`bigintText`).
 const DECIMAL = /^[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?$/;
 
+/** Visit every source type constructor, with the generic method binders in scope.
+ * Readers use the same walk for annotation admissibility and name checking. */
+export function visitType(term: TypeTerm, visit: (term: TypeTerm, bound: ReadonlySet<string>) => void,
+    bound: ReadonlySet<string> = new Set()): void {
+  visit(term, bound);
+  const go = (part: TypeTerm): void => visitType(part, visit, bound);
+  switch (term.k) {
+    case "atom": case "literal": case "callable": case "self": case "parameter": case "binder": return;
+    case "union": case "intersection": term.parts.forEach(go); return;
+    case "array": go(term.element); return;
+    case "tuple":
+      term.required.forEach(go); term.optional.forEach(go); if (term.rest) go(term.rest); return;
+    case "object":
+      term.fields.forEach(field => go(field.type)); term.calls.forEach(go);
+      if (term.stringIndex) go(term.stringIndex.value);
+      if (term.numberIndex) go(term.numberIndex.value);
+      if (term.symbolIndex) go(term.symbolIndex.value);
+      if (term.prototype) go(term.prototype);
+      return;
+    case "function": if (term.receiver) go(term.receiver);
+      term.params.forEach(go); if (term.rest) go(term.rest); go(term.result); return;
+    case "constructor":
+      term.params.forEach(go); if (term.rest) go(term.rest); go(term.result); return;
+    case "pack": go(term.of); return;
+    case "reference": term.args.forEach(go); return;
+    case "scheme": {
+      const inner = new Set([...bound, ...term.binders.map(binder => binder.name)]);
+      const scoped = (part: TypeTerm): void => visitType(part, visit, inner);
+      term.binders.forEach(binder => {
+        if (binder.bound) scoped(binder.bound);
+        if (binder.default) scoped(binder.default);
+      });
+      term.signatures.forEach(scoped); return;
+    }
+    default: { const exhaustive: never = term; return exhaustive; }
+  }
+}
+
+/** Admissibility of a source annotation, independent of its input representation. */
+export function validateAnnotation(term: TypeTerm, fail: (span: Span, message: string) => never): void {
+  visitType(term, part => {
+    if (part.k !== "intersection") return;
+    const binder = (t: TypeTerm): boolean => t.k === "binder" || (t.k === "union" && t.parts.some(binder));
+    for (const operand of part.parts) {
+      if (operand.k === "atom" && (operand.name === "unknown" || operand.name === "never"))
+        fail(operand.span, "an intersection operand must be a single type");
+      if (operand.k === "union" && binder(operand))
+        fail(part.span, "an intersection with a union holding a type parameter distributes into meets known " +
+          "only at an instance: its meet has no representation");
+    }
+  });
+}
+
 /** A numeric literal's decimal lexeme: TypeScript's text of it, which
  * spells a hexadecimal, octal or binary literal and one with separators in
  * decimal, or, where that text is `Infinity` (a literal past the largest
@@ -227,6 +280,14 @@ export function restPositions(type: TypeTerm): { positions: TypeTerm[] } | { ele
 }
 
 export function typeTerm(scope: TermScope, node: TypeNode | undefined, at: Node | null = null): TypeTerm {
+  const term = readTypeTerm(scope, node, at);
+  const location = node ?? at;
+  if (scope.annotation && location)
+    validateAnnotation(term, (_span, message) => scope.fail(location, message));
+  return term;
+}
+
+function readTypeTerm(scope: TermScope, node: TypeNode | undefined, at: Node | null): TypeTerm {
   if (!node) return scope.fail(at, "missing type annotation");
   const span = spanOf(scope, node);
   const atom = (name: Extract<TypeTerm, { k: "atom" }>["name"]): TypeTerm => ({ k: "atom", name, span });
@@ -497,18 +558,6 @@ function intersection(scope: TermScope, node: ts.IntersectionTypeNode, span: Spa
     return scope.computed(node, span, part => typeTerm(scope, part));
   const operands = intersectionOperands(node);
   const parts = operands.map(operand => typeTerm(scope, operand));
-  if (scope.annotation) {
-    // A union operand distributes, `(A | B) & C`; `unknown` and `never` are
-    // not written as operands.
-    const binder = (part: TypeTerm): boolean => part.k === "binder" || (part.k === "union" && part.parts.some(binder));
-    parts.forEach((part, i) => {
-      if (part.k === "atom" && (part.name === "unknown" || part.name === "never"))
-        scope.fail(operands[i] ?? node, "an intersection operand must be a single type");
-    });
-    if (parts.some(part => part.k === "union" && binder(part)))
-      scope.fail(node, "an intersection with a union holding a type parameter distributes into meets known " +
-        "only at an instance: its meet has no representation");
-  }
   return { k: "intersection", parts, span };
 }
 

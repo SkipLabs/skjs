@@ -299,15 +299,15 @@ at once. -/
 
 /-- Values with invocation code: closed objects whose descriptor is not absent. -/
 def Invocable (v : Val) : Prop :=
-  ∃ fs code, v = .objAt fs code ∧ code.callable = true ∧ Scoped 0 v
+  ∃ fs code oid, v = .objAt fs code oid ∧ code.callable = true ∧ Scoped 0 v
 
 theorem Invocable.val {v : Val} (h : Invocable v) : isVal v = true := by
-  obtain ⟨fs, code, rfl, -, -⟩ := h; rfl
+  obtain ⟨fs, code, oid, rfl, -, -⟩ := h; rfl
 
 /-- Code with `[[Call]]` has a call for every ready receiver and list. -/
 theorem Invocable.invoke {v r : Tm} {args : List Tm} (h : Invocable v) (hr : isVal r = true)
     (ha : CallArguments.Values args) : ∃ result, CallArguments.Invoke ⟨v, r, args⟩ result := by
-  obtain ⟨fs, code, rfl, hc, -⟩ := h
+  obtain ⟨fs, code, oid, rfl, hc, -⟩ := h
   cases code with
   | absent => simp [CallCode.callable] at hc
   | bound target r₀ pre => exact ⟨_, .bound hr ha⟩
@@ -317,7 +317,7 @@ theorem Invocable.invoke {v r : Tm} {args : List Tm} (h : Invocable v) (hr : isV
     · simp [CallCode.callable] at hc
 
 theorem Invocable.scoped {v : Val} (h : Invocable v) : Scoped 0 v := by
-  obtain ⟨fs, code, rfl, -, hs⟩ := h; exact hs
+  obtain ⟨fs, code, oid, rfl, -, hs⟩ := h; exact hs
 
 /-- The actual lists a fixed signature admits: a prefix of its positions, each
 written at its contract, every omitted position admitting `undefined`. -/
@@ -367,12 +367,12 @@ def restsT (S : List (Fam × List Fam × ArgFam × Fam)) : Fam := fun k W v =>
 /-- A class value: an object whose code is construct-only, without a rest,
 and closed. -/
 def Constructible (v : Val) : Prop :=
-  ∃ fs c, v = .objAt fs c ∧ (CallArguments.construction c).isSome ∧ Scoped 0 v
+  ∃ fs c oid, v = .objAt fs c oid ∧ (CallArguments.construction c).isSome ∧ Scoped 0 v
 
 /-- What `new v(args)` runs, in one step: a class value's body, with
 `undefined` for its receiver and the actuals for its parameters. -/
 def ConstructsTo (v : Val) (args : List Tm) (result : Tm) : Prop :=
-  ∃ fs c enter, v = .objAt fs c ∧ CallArguments.construction c = some enter ∧ result = enter args
+  ∃ fs c enter oid, v = .objAt fs c oid ∧ CallArguments.construction c = some enter ∧ result = enter args
 
 /-- The common constructor promise, independent of argument-list syntax. -/
 def ConstructPromise (P : ArgFam) (R : Fam) (k : Nat) (W : WorldT k) (v : Val) : Prop :=

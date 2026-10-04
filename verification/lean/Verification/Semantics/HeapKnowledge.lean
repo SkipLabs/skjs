@@ -24,15 +24,15 @@ theorem empty (ρ h) : Holds ⟨[],[],[]⟩ ρ h := ⟨holds_nil ρ h,by simp [V
 theorem alloc_frame {k ρ h v} (hk : Holds k ρ h) : Holds k ρ (h ++ [v]) := by
   refine ⟨?_, hk.2.1, HeapLinks.alloc_frame hk.2.2⟩
   intro f hf
-  obtain ⟨flds,c,l,u,he,hfd,hu,a,ha,hv⟩ := hk.1 f hf
-  exact ⟨flds,c,l,u,he,hfd,HeapObservations.alloc_frame hu,a,ha,hv⟩
+  obtain ⟨flds,c,oid,l,u,he,hfd,hu,a,ha,hv⟩ := hk.1 f hf
+  exact ⟨flds,c,oid,l,u,he,hfd,HeapObservations.alloc_frame hu,a,ha,hv⟩
 
 /-- The same across a whole object's worth of fresh locations. -/
 theorem alloc_frames {k ρ h} (vs : List Val) (hk : Holds k ρ h) : Holds k ρ (h ++ vs) := by
   refine ⟨?_, hk.2.1, HeapLinks.alloc_frames vs hk.2.2⟩
   intro f hf
-  obtain ⟨flds,c,l,u,he,hfd,hu,a,ha,hv⟩ := hk.1 f hf
-  exact ⟨flds,c,l,u,he,hfd,HeapObservations.alloc_frames vs hu,a,ha,hv⟩
+  obtain ⟨flds,c,oid,l,u,he,hfd,hu,a,ha,hv⟩ := hk.1 f hf
+  exact ⟨flds,c,oid,l,u,he,hfd,HeapObservations.alloc_frames vs hu,a,ha,hv⟩
 
 /-- What every one of several states establishes: a fact about a slot and
 field each of them states, holding what any of them says it holds; the first's
@@ -172,10 +172,10 @@ theorem linkFacts_holds {k slot R ρ h} (hk : Holds k ρ h) (hv : ∃ a ∈ R, a
   simp only [hg2.1.1.1,hg2.1.1.2,Bool.false_eq_true,ite_false] at hl
   cases ho : g.optional
   · simp only [ho,Bool.false_eq_true,ite_false] at hl
-    obtain ⟨flds,c,l,hl,hfd,hh⟩ := hl
-    exact ⟨flds,c,l,ρ g.value,hl,hfd,hh,a,ha,by simpa [hg2.1.2] using hav⟩
+    obtain ⟨flds,c,oid,l,hl,hfd,hh⟩ := hl
+    exact ⟨flds,c,oid,l,ρ g.value,hl,hfd,hh,a,ha,by simpa [hg2.1.2] using hav⟩
   · simp only [ho,ite_true] at hl
-    obtain ⟨flds,c,hl,hr⟩ := hl
+    obtain ⟨flds,c,oid,hl,hr⟩ := hl
     have hnu : R.contains .undef = false := by
       rcases hg2.2 with h | h
       · simp [ho] at h
@@ -190,7 +190,7 @@ theorem linkFacts_holds {k slot R ρ h} (hk : Holds k ρ h) (hv : ∃ a ∈ R, a
       exact absurd ha hnu
     | some l =>
       rw [hfd] at hr
-      exact ⟨flds,c,l,ρ g.value,hl,hfd,hr,a,ha,by simpa [hg2.1.2] using hav⟩
+      exact ⟨flds,c,oid,l,ρ g.value,hl,hfd,hr,a,ha,by simpa [hg2.1.2] using hav⟩
 
 /-- An observed Boolean outcome refines cells only through current read links.
 The ordinary value fact is useful even when no cell link exists. -/

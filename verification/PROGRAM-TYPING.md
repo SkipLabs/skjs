@@ -925,8 +925,8 @@ $\mathsf{S}$ is `str` or `strLit`, and $\mathsf{P}$, the printable clauses
 `boolLit`, `nul` and `undef`: every primitive but a symbol. $\mathsf{Pr}$
 (`primitiveClause`) is $\mathsf P$ with `symbol`, and $\mathsf{O}$
 (`identityClause`) the record clauses, `refs` or `dict`, with a required invariant
-or readonly field: their members are objects with a field location, whose identity
-strict equality compares:
+or readonly field: their members are objects, whose identities strict equality
+compares:
 
 ```math
 \mathrm{op}(op,c,d)=\begin{cases}
@@ -2350,13 +2350,15 @@ claim.
 whose condition and both arms are pure. It excludes calls, reads, writes and
 allocation, including function creation. A checked creation effect separately
 preserves old facts while allocating the function's bag; the body may have
-effects because creation does not run it. `pure_step` and `pure_frame` prove:
+effects because creation does not run it. A pure step changes no existing
+cell; an operator that throws appends its error's identity cell. `pure_step`
+and `pure_frame` prove, with $h\sqsubseteq h'$ for $h$ a prefix of $h'$:
 
 ```math
 \frac{\mathrm{Pure}(t)\quad(h,t)\longrightarrow(h',t')}
- {h'=h\quad\land\quad\mathrm{Pure}(t')},
+ {h\sqsubseteq h'\quad\land\quad\mathrm{Pure}(t')},
 \qquad
-\frac{\mathrm{Pure}(t)\quad\mathrm{Safe}(A,n,W,h,t)\quad\forall v.\,Q(h,v)}
+\frac{\mathrm{Pure}(t)\quad\mathrm{Safe}(A,n,W,h,t)\quad\forall h'\sqsupseteq h.\,\forall v.\,Q(h',v)}
  {\mathrm{SafePost}(A,Q,n,W,h,t)}.
 ```
 
@@ -3323,6 +3325,13 @@ keeping each claimed parameter within its annotation:
 \frac{\lambda(\vec x{:}\vec D).t\ \text{flows to a position expecting}\ (R;\vec A)\to B\quad |\vec x|<|\vec A|}
      {(R,\vec A,B)\in L}\ \textsf{offer}
 ```
+
+Written and contextual parameter types use the same source type language and
+annotation admissibility checks. Scope checking traverses every type
+constructor, including reference arguments and generic method binders. Named
+contextual types enter the declaration graph by declaration identity, with the
+same dependency collection and declaration validation as written references.
+Intersection meaning belongs to the shared semantic lowering.
 
 A closure is offered a variadic signature too, `process.on(sig, shutdown)`
 at `(...args: unknown[]) => void`, when its parameters are among the
@@ -4786,14 +4795,14 @@ class constructor's `[[Call]]` always throws, and a value of TypeScript's
 
 The original [operational language](SEMANTICS.md#operational-language) separated
 lambdas from locations. The Lean runtime now has only object values for both
-plain objects (`objAt fields absent`) and functions (`objAt fields code`, graph
+plain objects (`objAt fields absent identity`) and functions (`objAt fields code identity`, graph
 code for every source function), where `fields` is the finite map from field names to the locations
-they stand for, fixed at allocation. `CallCode` is a separate descriptor type;
+they stand for and `identity` the object's identity cell, both fixed at allocation. `CallCode` is a separate descriptor type;
 its body is not a runtime value. `makeAt code names inits` takes one fresh
-location per named field; a source function is the one-field case,
+location per named field, then the identity cell; a source function is the one-field case,
 `makeFn code null`, a null-initialized bag under the key `[[code]]`, which no
-source key spells and a copy does not take — a function has no properties of
-its own, and that one location is what gives it an identity to compare.
+source key spells and a copy does not take: a function has no properties of
+its own.
 `letE` binds without allocation. Plain allocation and one-field function
 creation are abbreviations of `makeAt`, with one congruence rule, one
 allocation step, and the shared semantic proofs `make_rule`, `makeFn_rule`

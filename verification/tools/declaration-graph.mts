@@ -18,7 +18,7 @@ import type { ClassDeclaration, ExportDeclaration, Identifier, ImportDeclaration
 import type { Span } from "./span.mts";
 import { nameOf } from "./syntax.mts";
 import { classInstance, computedAlias, computedForm, expandMapped, mapped, members, oneTerm, optionalTerm, signature, signatures, substitute,
-  typeTerm, type Mapped, type TermScope } from "./type-term.mts";
+  typeTerm, validateAnnotation, type Mapped, type TermScope } from "./type-term.mts";
 import { arrayPrototype, interfaceOverlay, overlay, primitiveKinds, primitivePrototype, primitivePrototypeName, type OverlayEntry,
   type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
 import { intrinsics, intrinsicModule, iterateIteratorName, iterateMapName, iterateSetName, iterateStringName,
@@ -484,8 +484,7 @@ export function collectDeclarations(file: string, options: {
     const aliasNodes = new Map<string, ts.TypeAliasDeclaration>();
     const aliasKey = (identity: DeclarationIdentity) =>
       `${identity.module}#${identity.name}@${identity.span[0]}:${identity.span[1]}`;
-    const lookup = (identifier: Identifier, what: string): TypeDeclaration => {
-      const nodes = resolveDeclarations(identifier, what);
+    const declarationOf = (nodes: readonly Node[], what: string): TypeDeclaration => {
       const types = nodes.filter(isTypeDeclaration);
       const [node] = types;
       if (!node || nodes.some(n => !isTypeDeclaration(n) && !ts.isVariableDeclaration(n) &&
@@ -505,6 +504,8 @@ export function collectDeclarations(file: string, options: {
       if (ts.isTypeAliasDeclaration(node)) aliasNodes.set(aliasKey(identityOf(node)), node);
       return node;
     };
+    const lookup = (identifier: Identifier, what: string): TypeDeclaration =>
+      declarationOf(resolveDeclarations(identifier, what), what);
     // The type alias a reference names, if it names one the program declares.
     const aliasOf = (reference: ts.TypeReferenceNode): TypeAliasDeclaration | null => {
       if (!ts.isIdentifier(reference.typeName)) return null;
@@ -1288,18 +1289,24 @@ export function collectDeclarations(file: string, options: {
         options.bindingRead?.(span, [declared.getStart(client), declared.end]);
     }
     // A closure parameter without a type is at the type TypeScript gives it
-    // from its context: stated as a term of primitives, literals, arrays,
-    // type parameters and declarations by name, or refused.
+    // from its context: a source type term whose names enter the same
+    // declaration graph as written references.
+    const contextualStarts: { node: TypeDeclaration; span: Span }[] = [];
     const contextualTerm = (type: Type, span: Span): TypeTerm => {
+      const term = readContextualTerm(type, span);
+      validateAnnotation(term, (_span, message) => { throw Error(message); });
+      return term;
+    };
+    const readContextualTerm = (type: Type, span: Span): TypeTerm => {
       if (type.flags & TypeFlags.Any)
         throw Error("TypeScript types this unannotated closure parameter from its context as `any`, which states no contract");
       const literals = literalUnion(type, span);
       if (literals) return literals;
       const text = () => checker.typeToString(type);
-      if (type.isUnionType()) {
+      if (type.isUnionType() || type.isIntersectionType()) {
         const parts = (type.getTypes() ?? []).map(part => contextualTerm(part, span));
         const [only] = parts;
-        return parts.length === 1 && only ? only : { k: "union", parts, span };
+        return parts.length === 1 && only ? only : { k: type.isUnionType() ? "union" : "intersection", parts, span };
       }
       if (type.isTypeParameter()) {
         const name = type.getSymbol()?.name;
@@ -1313,12 +1320,19 @@ export function collectDeclarations(file: string, options: {
       const symbol = type.getAliasSymbol() ?? type.getSymbol();
       const nodes = (symbol?.declarations ?? []).map(d => d.resolve());
       const [node] = nodes;
-      if (nodes.length === 1 && node && isTypeDeclaration(node) && node.name && !node.typeParameters?.length &&
-          !type.getAliasTypeArguments().length && !isLibraryModule(idOf(node.getSourceFile())))
-        return { k: "reference", reference: { name: node.name.text, span, arguments: [], target: identityOf(node) },
-          args: [], span };
+      if (nodes.length === 1 && node && isTypeDeclaration(node) && node.name && !isLibraryModule(idOf(node.getSourceFile()))) {
+        const arguments_ = type.getAliasTypeArguments();
+        const actuals = arguments_.length ? arguments_ : isTypeReference(type) ? checker.getTypeArguments(type) : [];
+        const args = actuals.map(argument => contextualTerm(argument, span));
+        if (args.length !== (node.typeParameters?.length ?? 0))
+          throw Error(`the contextual type ${text()} does not state every declaration argument`);
+        const declared = declarationOf([node], text());
+        contextualStarts.push({ node: declared, span });
+        return { k: "reference", reference: { name: node.name.text, span, arguments: args.map(() => span), target: identityOf(node) },
+          args, span };
+      }
       throw Error(`TypeScript types this unannotated closure parameter from its context as ${text()}, which is ` +
-        "not stated by primitives, literals, arrays, type parameters and declarations by name");
+        "not stated by primitives, literals, unions, intersections, arrays, type parameters and declarations by name");
     };
     const parameterAt = (span: Span): ts.ParameterDeclaration | null => {
       const visit = (node: Node): ts.ParameterDeclaration | null => {
@@ -1433,24 +1447,19 @@ export function collectDeclarations(file: string, options: {
     }
     const seen = new Set<string>();
     const definitions: TypeDefinition[] = [];
-    for (const { root, node: start } of roots) {
+    const starts = [
+      ...roots.map(({ root, node }) => ({ node, span: root.binding.span })),
+      ...valueStarts.map((node, index): { node: TypeDeclaration; span: Span } =>
+        ({ node, span: values[Math.min(index, values.length - 1)]?.binding.span ?? [0, 0] })),
+      ...contextualStarts,
+    ];
+    for (const { node: start, span } of starts) {
       try {
         collect(start, seen, definitions, { lookup, identityOf, symbol: symbolOf, privateName: privateNameOf, partners, library, equation,
           libraryInterface, computed: (node, span, read) => computedType(computedContext, node, span, read),
           keys: keyTypeOf, alias: aliasOf });
       } catch (error) {
-        throw new DeclarationError(root.binding.span,
-          error instanceof Error ? error.message : String(error));
-      }
-    }
-    for (const [index, start] of valueStarts.entries()) {
-      try {
-        collect(start, seen, definitions, { lookup, identityOf, symbol: symbolOf, privateName: privateNameOf, partners, library, equation,
-          libraryInterface, computed: (node, span, read) => computedType(computedContext, node, span, read),
-          keys: keyTypeOf, alias: aliasOf });
-      } catch (error) {
-        throw new DeclarationError(values[Math.min(index, values.length - 1)]?.binding.span ?? [0, 0],
-          error instanceof Error ? error.message : String(error));
+        throw new DeclarationError(span, error instanceof Error ? error.message : String(error));
       }
     }
     definitions.push(...selections, ...primitiveProtos);

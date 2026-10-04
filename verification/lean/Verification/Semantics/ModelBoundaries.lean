@@ -47,7 +47,7 @@ not by the program. -/
 theorem allocFn_typed {Rc B : Fam} (hB : Adm B)
     (hnul : ∀ (j : Nat) (W : WorldT j), B j W .nul) (k : Nat) (W : WorldT k) :
     callsT [(Rc, [nulT], refT B)] k W allocFn := by
-  refine ⟨⟨_, _, rfl, rfl, by simp [Scoped, allocFn, oneNode]⟩, ?_⟩
+  refine ⟨⟨_, _, _, rfl, rfl, by simp [Scoped, allocFn, oneNode]⟩, ?_⟩
   intro p hp j hj U hx hu heap hh r hrv hr args hvals ha
   cases List.mem_singleton.mp hp
   refine ⟨_, .graph hrv hvals, ?_⟩
@@ -66,8 +66,8 @@ cell has one contract. -/
 theorem ref_inter_empty (j : Nat) (hj : 0 < j) (W : WorldT j) (u : Val) :
     ¬ interT (refT nulT) (refT (unionT nulT boolT)) j W u := by
   rintro ⟨h1, h2⟩
-  obtain ⟨flds, l, c, he, hf, hl, hc⟩ := refT_iff.mp h1
-  obtain ⟨flds', l', c', he', hf', hl', hc'⟩ := refT_iff.mp h2
+  obtain ⟨flds, l, c, oid, he, hf, hl, hc⟩ := refT_iff.mp h1
+  obtain ⟨flds', l', c', oid', he', hf', hl', hc'⟩ := refT_iff.mp h2
   subst he
   cases he'
   cases Option.some.inj (hf.symm.trans hf')
@@ -112,15 +112,15 @@ theorem arrow_inter_codomain_fails :
   obtain ⟨rfl, rfl⟩ := Step_det s1 st
   -- the allocation
   have s2 : Step [] (.frame [.alloc .nul] [(.ret, none)] (.alloc .nul) [.undef, .nul] .nul .ret none)
-      [.nul] (.frame [.alloc .nul] [(.ret, none)] (.obj 0 .absent) [.undef, .nul] .nul .ret none) :=
+      [.nul, .nul] (.frame [.alloc .nul] [(.ret, none)] (.obj 0 .absent) [.undef, .nul] .nul .ret none) :=
     .frameC (.makeV rfl)
   rcases hs with (⟨hv, -⟩ | hr) | ⟨_, _, _, _, _, st, _, hs⟩
   · simp [isVal] at hv
   · exact hr.no_step s2
   obtain ⟨rfl, rfl⟩ := Step_det s2 st
   -- the return
-  have s3 : Step [.nul] (.frame [.alloc .nul] [(.ret, none)] (.obj 0 .absent) [.undef, .nul] .nul .ret none)
-      [.nul] (.obj 0 .absent) := .frameRet rfl
+  have s3 : Step [.nul, .nul] (.frame [.alloc .nul] [(.ret, none)] (.obj 0 .absent) [.undef, .nul] .nul .ret none)
+      [.nul, .nul] (.obj 0 .absent) := .frameRet rfl
   rcases hs with (⟨hv, -⟩ | hr) | ⟨_, _, _, _, _, st, _, hs⟩
   · simp [isVal] at hv
   · exact hr.no_step s3
@@ -157,7 +157,7 @@ two levels below the call. Distinct eventual contracts remain
 indistinguishable at these budgets. -/
 theorem constant_nested_calls (Rc A : Fam) :
     callsT [(Rc, [nulT], nestedRef 2 A)] 4 (ofList [res R]) constFn := by
-  refine ⟨⟨_, _, rfl, rfl, by simp [Scoped, constFn, oneNode]⟩, ?_⟩
+  refine ⟨⟨_, _, _, rfl, rfl, by simp [Scoped, constFn, oneNode]⟩, ?_⟩
   intro p hp j hj U hx hu heap hh r hrv hr args hvals ha
   cases List.mem_singleton.mp hp
   refine ⟨_, .graph hrv hvals, ?_⟩
@@ -301,7 +301,7 @@ theorem observation_does_not_narrow_invariant :
     Observes [.tru] 0 .tru ∧ ¬ refT (exact .tru) 1 (boolWorld 1) (.obj 0 .absent) := by
   refine ⟨boolWorld_heap 1 .tru (Or.inl rfl),boolWorld_ref 1,rfl,?_⟩
   intro hr
-  obtain ⟨flds,l,c,he,hf,hl,hc⟩ := refT_iff.mp hr
+  obtain ⟨flds,l,c,oid,he,hf,hl,hc⟩ := refT_iff.mp hr
   cases he
   simp at hf
   subst l

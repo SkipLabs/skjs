@@ -1007,30 +1007,30 @@ abbrev CoversBounds (source target : List KeyBound) : Prop :=
 
 /-- A record's member is an object. -/
 theorem recT_obj {fs : Fields} {n : Nat} {W : WorldT n} {v : Val} (h : recT fs n W v) :
-    ∃ flds : List (PropKey × Nat), v = .objAt flds .absent := by
-  obtain ⟨flds, he, -⟩ := h
-  exact ⟨flds, he⟩
+    ∃ (flds : List (PropKey × Nat)) (oid : Nat), v = .objAt flds .absent oid := by
+  obtain ⟨flds, oid, he, -⟩ := h
+  exact ⟨flds, oid, he⟩
 
 theorem covers_bounds_sound {source target : List KeyBound} (hc : CoversBounds source target)
-    {n : Nat} {W : WorldT n} {v : Val} (hobj : ∃ flds : List (PropKey × Nat), v = .objAt flds .absent)
+    {n : Nat} {W : WorldT n} {v : Val} (hobj : ∃ (flds : List (PropKey × Nat)) (oid : Nat), v = .objAt flds .absent oid)
     (hv : ∀ K ∈ source, ownKeysT K n W v) :
     ∀ K ∈ target, ownKeysT K n W v := by
-  obtain ⟨flds, rfl⟩ := hobj
+  obtain ⟨flds, oid, rfl⟩ := hobj
   -- A key some source bound excludes is not the object's own.
   have excluded : ∀ {k}, Excludes source k → ∀ p ∈ flds, p.1 ≠ k := by
     rintro k ⟨K, hK, hk⟩ p hp rfl
-    obtain ⟨flds', he, hall⟩ := hv K hK
+    obtain ⟨flds', oid', he, hall⟩ := hv K hK
     cases he
     have := hall p hp
     simp_all
   intro T hT
   have hc := hc T hT
   unfold CoversBound at hc
-  refine ⟨flds, rfl, fun p hp => ?_⟩
+  refine ⟨flds, oid, rfl, fun p hp => ?_⟩
   split at hc
   · rename_i hamong
     obtain ⟨K, hK, hKa, hsub⟩ := hc
-    obtain ⟨flds', he, hk⟩ := hv K hK
+    obtain ⟨flds', oid', he, hk⟩ := hv K hK
     cases he
     have hp' := hk p hp
     simp only [KeyBound.admits, hKa, beq_true, List.contains_iff_mem] at hp'
@@ -1336,10 +1336,10 @@ theorem covers_writable_bounds_grow [DecidableEq ι] {G : NormalGraph ι} {sub :
     {ms : List (MethodMembers.Sig (List ι))} {ls : List KeyBound}
     (h : CoversWith G sub R known arrows self c (.dict a bs vs ix os ms ls cy))
     {y : IndexKeys × List ι} (hy : y ∈ cy) {n : Nat} {W : WorldT n}
-    {flds : List (PropKey × Nat)} (hb : ∀ K ∈ c.keyBounds, ownKeysT K n W (.objAt flds .absent))
+    {flds : List (PropKey × Nat)} (hb : ∀ K ∈ c.keyBounds, ownKeysT K n W (.objAt flds .absent oid))
     {f : PropKey} (hf : y.1.Admits f) (hm : modelKey f = false) (l : Nat)
     {j : Nat} {U : WorldT j} {u : Val} (hu : mixedValues G η y.2 j U u) :
-    ∀ K ∈ c.keyBounds, ownKeysT K n W (.objAt ((f, l) :: flds) .absent) := by
+    ∀ K ∈ c.keyBounds, ownKeysT K n W (.objAt ((f, l) :: flds) .absent oid) := by
   rcases covers_writable_keeps h y hy with he | hk
   · exact absurd hu he.empty
   · exact fun K hK => ownKeysT_keeps (hk K hK) (hb K hK) hf hm
@@ -1352,17 +1352,17 @@ theorem covers_recs {G : NormalGraph ι} {η : MixedAssignment ι} {R : List ι 
     (hc : CoversFields R (a :: bs) (c :: ds)) (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j)
     (W : WorldT n) (flds : List (PropKey × Nat))
-    (hsrc : ∀ x ∈ a :: bs, recT (famsOf (mixedValues G η) x) n W (.objAt flds .absent)) :
-    ∀ b ∈ c :: ds, recT (famsOf (mixedValues G η) b) n W (.objAt flds .absent) := by
+    (hsrc : ∀ x ∈ a :: bs, recT (famsOf (mixedValues G η) x) n W (.objAt flds .absent oid)) :
+    ∀ b ∈ c :: ds, recT (famsOf (mixedValues G η) b) n W (.objAt flds .absent oid) := by
   intro b hb
-  refine ⟨flds, rfl, ?_⟩
+  refine ⟨flds, oid, rfl, ?_⟩
   intro f T hm
   obtain ⟨y, hy, rfl⟩ := mem_famsOf.mp hm
   obtain ⟨⟨pf, pl⟩, hp, hpf, hpy, hyp⟩ := hc b hb (f, y) hy
   simp only at hpf
   subst hpf
   obtain ⟨L, hL, hpL⟩ := List.mem_flatten.mp hp
-  obtain ⟨flds', l, c0, he', hf, hl, hag⟩ :=
+  obtain ⟨flds', l, c0, oid'', he', hf, hl, hag⟩ :=
     recT_at (mem_famsOf.mpr ⟨pl, hpL, rfl⟩) (hsrc L hL)
   cases he'
   exact ⟨l, c0, hf, hl, fun j hj W' u =>
@@ -1375,9 +1375,9 @@ theorem covers_fields_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : 
     (W : WorldT n) (v : Val)
     (hv : refsT (famsOf (mixedValues G η) a) (bs.map (famsOf (mixedValues G η))) n W v) :
     refsT (famsOf (mixedValues G η) c) (ds.map (famsOf (mixedValues G η))) n W v := by
-  obtain ⟨flds, he, -⟩ := hv.1
+  obtain ⟨flds, oid, he, -⟩ := hv.1
   subst he
-  have hsrc : ∀ x ∈ a :: bs, recT (famsOf (mixedValues G η) x) n W (.objAt flds .absent) := by
+  have hsrc : ∀ x ∈ a :: bs, recT (famsOf (mixedValues G η) x) n W (.objAt flds .absent oid) := by
     intro x hx
     rcases List.mem_cons.mp hx with rfl | hx
     · exact hv.1
@@ -1409,10 +1409,10 @@ theorem covers_views_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : L
       rcases List.mem_cons.mp hL with rfl | hL
       · exact hv.1.1
       · exact hv.1.2 _ (List.mem_map_of_mem hL)
-    obtain ⟨flds, l, c0, he, hf, hl, hag⟩ := recT_at (mem_famsOf.mpr ⟨pl, hpL, rfl⟩) hsrc
-    exact ⟨flds, l, c0, he, hf, hl, fun j hj W' u hu => hr j hj pl y hpy W' u ((hag j hj W' u).mp hu)⟩
-  · obtain ⟨flds, l, c0, he, hf, hl, hag⟩ := viewT_at (mem_famsOf.mpr ⟨pl, hp, rfl⟩) hv.2
-    exact ⟨flds, l, c0, he, hf, hl, fun j hj W' u hu => hr j hj pl y hpy W' u (hag j hj W' u hu)⟩
+    obtain ⟨flds, l, c0, oid, he, hf, hl, hag⟩ := recT_at (mem_famsOf.mpr ⟨pl, hpL, rfl⟩) hsrc
+    exact ⟨flds, l, c0, oid, he, hf, hl, fun j hj W' u hu => hr j hj pl y hpy W' u ((hag j hj W' u).mp hu)⟩
+  · obtain ⟨flds, l, c0, oid, he, hf, hl, hag⟩ := viewT_at (mem_famsOf.mpr ⟨pl, hp, rfl⟩) hv.2
+    exact ⟨flds, l, c0, oid, he, hf, hl, fun j hj W' u hu => hr j hj pl y hpy W' u (hag j hj W' u hu)⟩
 
 /-- A covered optional field. Where the key is present, the location is the
 one the source slot names, whose contract is within the target's type, and
@@ -1430,9 +1430,9 @@ theorem covers_optional_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R 
       optT (os.map (·.map (mixedValues G η))) n W v)
     (hks : ∀ K ∈ ks, ownKeysT K n W v) :
     optT (ps.map (·.map (mixedValues G η))) n W v := by
-  obtain ⟨flds, he, -⟩ := hv.1.1
+  obtain ⟨flds, oid, he, -⟩ := hv.1.1
   subst he
-  have hsrc : ∀ L ∈ a :: bs, recT (famsOf (mixedValues G η) L) n W (.objAt flds .absent) := by
+  have hsrc : ∀ L ∈ a :: bs, recT (famsOf (mixedValues G η) L) n W (.objAt flds .absent oid) := by
     intro L hL
     rcases List.mem_cons.mp hL with rfl | hL
     · exact hv.1.1
@@ -1450,13 +1450,13 @@ theorem covers_optional_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R 
     rcases List.mem_append.mp hp with hp | hp
     all_goals try obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
     · obtain ⟨L, hL, hqL⟩ := List.mem_flatten.mp hq
-      obtain ⟨flds', l, c, he', hf, hw, hag⟩ := recT_at (mem_famsOf.mpr ⟨q.2, hqL, rfl⟩) (hsrc L hL)
+      obtain ⟨flds', l, c, oid'', he', hf, hw, hag⟩ := recT_at (mem_famsOf.mpr ⟨q.2, hqL, rfl⟩) (hsrc L hL)
       cases he'
       refine ⟨(fun hl => by simp [hl] at hf), fun l' hl' => ?_⟩
       rw [hl'] at hf
       cases hf
       exact ⟨c, hw, fun j hj W' u => ⟨(hag j hj W' u).mp, fun _ => (hag j hj W' u).mpr⟩⟩
-    · obtain ⟨flds', l, c, he', hf, hw, hag⟩ := viewT_at (mem_famsOf.mpr ⟨q.2, hq, rfl⟩) hv.2.1
+    · obtain ⟨flds', l, c, oid'', he', hf, hw, hag⟩ := viewT_at (mem_famsOf.mpr ⟨q.2, hq, rfl⟩) hv.2.1
       cases he'
       refine ⟨(fun hl => by simp [hl] at hf), fun l' hl' => ?_⟩
       rw [hl'] at hf
@@ -1464,7 +1464,7 @@ theorem covers_optional_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R 
       exact ⟨c, hw, fun j hj W' u => ⟨hag j hj W' u, fun h => nomatch h⟩⟩
     · have hm : p.map (mixedValues G η) ∈ os.map (·.map (mixedValues G η)) := List.mem_map_of_mem hp
       exact ⟨fun hl => optT_no_proto hm hv.2.2 hl, fun l hl => optT_present hm hv.2.2 hl⟩
-  refine ⟨flds, rfl, fun o hm hl => ?_, fun o hm l hl => ?_⟩
+  refine ⟨flds, oid, rfl, fun o hm hl => ?_, fun o hm l hl => ?_⟩
   · obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hm
     rcases hc q hq with ⟨p, hp, hk, -, -, -⟩ | ⟨-, K, hK, hpK⟩
     · exact (slot p hp).1 (by rw [hk]; exact hl)
@@ -1501,13 +1501,13 @@ theorem covers_sig_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : Lis
     obtain ⟨t, ht, rfl⟩ := List.mem_map.mp hT
     obtain ⟨t', ht', hR⟩ := hrecv t ht
     exact hr j hj _ _ hR U r (hq _ (List.mem_map_of_mem ht'))
-  refine ⟨⟨hinv, fun x hx => ?_⟩, ⟨hinv, fun x hx => ?_⟩, fun F hF => ?_⟩
+  refine ⟨⟨hinv, fun x hx => ?_⟩, ⟨hinv, fun x hx => ?_⟩, fun oid F hF => ?_⟩
   rotate_left 2
   · -- A quantified signature: the member bound to the host meets a source
     -- scheme within the target's.
     obtain ⟨t, ht, rfl⟩ := List.mem_map.mp hF
     obtain ⟨s, hs, hst⟩ := hschemes t ht
-    exact hrn _ _ hst W _ (hB _ (List.mem_map_of_mem hs))
+    exact hrn _ _ hst W _ (hB oid _ (List.mem_map_of_mem hs))
   · obtain ⟨t', ht', rfl⟩ := List.mem_map.mp hx
     obtain ⟨t, ht, rfl⟩ := List.mem_map.mp ht'
     obtain ⟨s, hs, hd, hres, heff⟩ := hcalls t ht
@@ -2075,7 +2075,7 @@ theorem covers_arrows_sound {G : NormalGraph ι} {η : MixedAssignment ι}
       exact hr j' (by omega) _ _ hs U' _ (hself j' (by omega) U' hx)
     · exact hr j' (by omega) _ _ hs U' r (hq _ (List.mem_map_of_mem hT))
   obtain ⟨hsem, -⟩ := hsem
-  refine ⟨⟨hsem.1.1, fun x hx => ?_⟩, ⟨hsem.1.1, fun x hx => ?_⟩, fun F hF => ?_⟩
+  refine ⟨⟨hsem.1.1, fun x hx => ?_⟩, ⟨hsem.1.1, fun x hx => ?_⟩, fun _ F hF => ?_⟩
   rotate_left 2
   · simp [MethodMembers.Member.of, hnone] at hF
   · obtain ⟨t', ht', rfl⟩ := List.mem_map.mp hx
@@ -2147,8 +2147,8 @@ theorem bound_sigs_sound [DecidableEq ι] {G : NormalGraph ι} {θ : MixedAssign
     (hi : semWithArgs (mixedValues G θ) (mixedArgs G θ) (.arrs s.signatures s.variadic) j U u)
     (hval : isVal v = true ∧ Scoped 0 v)
     (hrv : ∀ r ∈ s.signatures.map (·.receiver) ++ s.variadic.map (·.receiver), mixedValues G θ r j U v)
-    (hinvB : Invocable (.objAt [] (.bound u v []))) :
-    semWithArgs (mixedValues G θ) (mixedArgs G θ) (.arrs L M) j U (.objAt [] (.bound u v [])) := by
+    (hinvB : Invocable (.objAt [] (.bound u v []) oid)) :
+    semWithArgs (mixedValues G θ) (mixedArgs G θ) (.arrs L M) j U (.objAt [] (.bound u v []) oid) := by
   have hadm : ∀ (S : List ι), Adm (mixedValues G θ S) :=
     fun S => setSem_adm (fun i => qDenoteWithArgs_adm G (mixedParameters G) (θ, i)) S
   have hargsAdm : ∀ (S : List ι), Adm (mixedArgs G θ S) :=
@@ -2162,7 +2162,7 @@ theorem bound_sigs_sound [DecidableEq ι] {G : NormalGraph ι} {θ : MixedAssign
     have hbd := CallEffects.callsT_bound (Ps := []) (Rc := mixedValues G θ t.receiver)
       (Ds := p.arguments.map (mixedValues G θ))
       (R := mixedValues G θ p.result)
-      (fs := []) (pre := []) (hadm p.receiver) (by simp)
+      (fs := []) (oid := oid) (pre := []) (hadm p.receiver) (by simp)
       (fun A hA => by obtain ⟨b, -, rfl⟩ := List.mem_map.mp hA; exact hadm b)
       (by simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using hc) hval.1 hval.2 hrv trivial (by simp [CallArguments.Values]) (by simp)
     refine ⟨hbd.1, fun y hy => ?_⟩
@@ -2179,7 +2179,7 @@ theorem bound_sigs_sound [DecidableEq ι] {G : NormalGraph ι} {θ : MixedAssign
       (Ps := p.arguments.1.map (mixedValues G θ))
       (E := mixedArgs G θ p.arguments.2)
       (R := mixedValues G θ p.result)
-      (fs := []) (pre := []) (hadm p.receiver)
+      (fs := []) (oid := oid) (pre := []) (hadm p.receiver)
       (fun A hA => by obtain ⟨b, -, rfl⟩ := List.mem_map.mp hA; exact hadm b)
       (hargsAdm p.arguments.2) hc hval.1 hval.2 hrv
       (by simp only [List.take_nil, List.take_zero, List.length_nil]; exact trivial)
@@ -2249,21 +2249,21 @@ theorem covers_by_scheme_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Opti
             exact .inr ⟨p, hp, hl⟩
         rw [bindersFree_values hfree η As hsub]
         exact hr j hj self r (hrecv r hrm) U v hvself
-      have hinvB : Invocable (.objAt [] (.bound u v [])) :=
-        ⟨[], _, rfl, rfl, by simp only [Scoped, scopedArgs_iff]; exact ⟨hinv.scoped, hval.2, by simp⟩⟩
+      have hinvB : ∀ oid, Invocable (.objAt [] (.bound u v []) oid) := fun oid =>
+        ⟨[], _, oid, rfl, rfl, by simp only [Scoped, scopedArgs_iff]; exact ⟨hinv.scoped, hval.2, by simp⟩⟩
       -- At each instance of the source's binders within its bounds, the
       -- bound function meets every signature the source's cover.
-      have hat : ∀ As : List MixedFamily, As.length = s.binders.length →
+      have hat : ∀ oid, ∀ As : List MixedFamily, As.length = s.binders.length →
           Bounded (fun θ S => (mixedParameters G).bound θ
             (setSem (fun l => qDenoteWithArgs G (mixedParameters G) (θ, l))) S) η s As j →
           ∀ L M, BoundSigsCover G R s L M →
           semWithArgs (mixedValues G (assign η s.binders As)) (mixedArgs G (assign η s.binders As))
-            (.arrs L M) j U (.objAt [] (.bound u v [])) := by
-        intro As hl hb' L M hc
+            (.arrs L M) j U (.objAt [] (.bound u v []) oid) := by
+        intro oid As hl hb' L M hc
         exact bound_sigs_sound hc (fun k hk => (hre i s As hs).1 k (by omega))
           (fun k hk => (hre i s As hs).2 k (by omega)) (hall As hl hb') hval
-          (fun r hrm => hhost r hrm As) hinvB
-      refine ⟨⟨hinv, fun p hp => ?_⟩, ⟨hinv, fun p hp => ?_⟩, fun B hB => ?_⟩
+          (fun r hrm => hhost r hrm As) (hinvB oid)
+      refine ⟨⟨hinv, fun p hp => ?_⟩, ⟨hinv, fun p hp => ?_⟩, fun oid B hB => ?_⟩
       · simp [MethodMembers.Member.of, hcalls] at hp
       · simp [MethodMembers.Member.of, hrests] at hp
       obtain ⟨S', hS', rfl⟩ := List.mem_map.mp hB
@@ -2278,9 +2278,9 @@ theorem covers_by_scheme_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Opti
           show qDenoteWithArgs G (mixedParameters G) (η, j') j U _
           rw [qDenoteWithArgs_unfold]
           simp only [qLayerWithArgs, hpj, hs', Bool.false_eq_true, if_false]
-          refine ⟨hinvB, fun As hl hbd => ?_⟩
+          refine ⟨hinvB oid, fun As hl hbd => ?_⟩
           show semWithArgs (mixedValues G (assign η s'.binders As)) (mixedArgs G (assign η s'.binders As))
-              (.arrs s'.signatures s'.variadic) j U (.objAt [] (.bound u v []))
+              (.arrs s'.signatures s'.variadic) j U (.objAt [] (.bound u v []) oid)
           rcases hcase with ⟨hbs, hbnd, hcov⟩ | hren
           · have hb' : Bounded (fun θ S => (mixedParameters G).bound θ
                 (setSem (fun l => qDenoteWithArgs G (mixedParameters G) (θ, l))) S) η s As j := by
@@ -2288,7 +2288,7 @@ theorem covers_by_scheme_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Opti
               rw [hbs] at hbin hw
               exact hbd b (hbnd b hbm) hbin j'' hj'' U' w hw
             rw [← hbs]
-            exact hat As (by rw [hbs]; exact hl) hb' _ _ hcov
+            exact hat oid As (by rw [hbs]; exact hl) hb' _ _ hcov
           · cases sub with
             | none => exact hren.elim
             | some r =>
@@ -2308,7 +2308,7 @@ theorem covers_by_scheme_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Opti
                 cases w with
                 | inl w => exact hr k (by omega) _ _ hR U' w hw'
                 | inr ws => exact hpa k (by omega) _ _ hR U' ws hw'
-              have hsrc := hat As (by rw [hlen]; exact hl) hb' _ _ hcov
+              have hsrc := hat oid As (by rw [hlen]; exact hl) hb' _ _ hcov
               rw [← semWithArgs_map_meaning (η := assign η s.binders As)
                 (f := r.substitute (renamingOf s.binders s'.binders)) fun S hS => ?_]
               · exact hsrc
@@ -2349,8 +2349,8 @@ theorem fields_at {G : NormalGraph ι} {η : MixedAssignment ι} {a : List (Prop
     {bs : List (List (PropKey × List ι))} {vs : List (PropKey × List ι)} {n : Nat} {W : WorldT n} {v : Val}
     (hr : refsT (famsOf (mixedValues G η) a) (bs.map (famsOf (mixedValues G η))) n W v)
     (hw : viewT (famsOf (mixedValues G η) vs) n W v) :
-    ∀ f ∈ (a :: bs).flatten ++ vs, ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr n),
-      v = .objAt flds .absent ∧ flds.lookup f.1 = some l ∧ lookup W l = some c ∧
+    ∀ f ∈ (a :: bs).flatten ++ vs, ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr n) (oid : Nat),
+      v = .objAt flds .absent oid ∧ flds.lookup f.1 = some l ∧ lookup W l = some c ∧
       ∀ (j : Nat) (hj : j < n) (U : WorldT j) (u : Val), c j hj U u → mixedValues G η f.2 j U u := by
   intro f hf
   rcases List.mem_append.mp hf with hf | hf
@@ -2359,8 +2359,8 @@ theorem fields_at {G : NormalGraph ι} {η : MixedAssignment ι} {a : List (Prop
       rcases List.mem_cons.mp hL with rfl | hL
       · exact hr.1
       · exact hr.2 _ (List.mem_map_of_mem hL)
-    obtain ⟨flds, l, c, he, hfl, hl, hag⟩ := recT_at (mem_famsOf.mpr ⟨f.2, hfL, rfl⟩) hrec
-    exact ⟨flds, l, c, he, hfl, hl, fun j hj U u hu => (hag j hj U u).mp hu⟩
+    obtain ⟨flds, l, c, oid', he, hfl, hl, hag⟩ := recT_at (mem_famsOf.mpr ⟨f.2, hfL, rfl⟩) hrec
+    exact ⟨flds, l, c, oid', he, hfl, hl, fun j hj U u hu => (hag j hj U u).mp hu⟩
   · exact viewT_at (mem_famsOf.mpr ⟨f.2, hf, rfl⟩) hw
 
 /-- A record's invariant field is at its location, whose contract agrees with
@@ -2368,8 +2368,8 @@ the field's family. -/
 theorem fields_agree {G : NormalGraph ι} {η : MixedAssignment ι} {a : List (PropKey × List ι)}
     {bs : List (List (PropKey × List ι))} {n : Nat} {W : WorldT n} {v : Val}
     (hr : refsT (famsOf (mixedValues G η) a) (bs.map (famsOf (mixedValues G η))) n W v) :
-    ∀ f ∈ (a :: bs).flatten, ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr n),
-      v = .objAt flds .absent ∧ flds.lookup f.1 = some l ∧ lookup W l = some c ∧
+    ∀ f ∈ (a :: bs).flatten, ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr n) (oid : Nat),
+      v = .objAt flds .absent oid ∧ flds.lookup f.1 = some l ∧ lookup W l = some c ∧
       ∀ (j : Nat) (hj : j < n) (U : WorldT j) (u : Val), c j hj U u ↔ mixedValues G η f.2 j U u := by
   intro f hf
   obtain ⟨L, hL, hfL⟩ := List.mem_flatten.mp hf
@@ -2381,7 +2381,7 @@ theorem fields_agree {G : NormalGraph ι} {η : MixedAssignment ι} {a : List (P
 
 /-- A present own key of an object whose own keys a bound lists is in it. -/
 private theorem ownKeysT_mem {K : KeyBound} (ha : K.among = true) {k : Nat} {W : WorldT k}
-    {flds : List (PropKey × Nat)} (h : ownKeysT K k W (.objAt flds .absent))
+    {flds : List (PropKey × Nat)} (h : ownKeysT K k W (.objAt flds .absent oid))
     {f : PropKey} {l : Nat} (hl : flds.lookup f = some l) : f ∈ K.keys := by
   simpa [KeyBound.admits, ha] using ownKeysT_admits h hl
 
@@ -2399,21 +2399,21 @@ theorem covers_keys_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : Li
     (∀ y ∈ iy, dictViewT y.1 (mixedValues G η y.2) n W v) ∧
       ∀ y ∈ cy, dictCellT y.1 (mixedValues G η y.2) n W v := by
   obtain ⟨K, hK, ha, hproto, hkeys⟩ := hc
-  obtain ⟨flds, rfl, -⟩ := hb K hK
+  obtain ⟨flds, oid, rfl, -⟩ := hb K hK
   have hown := hb K hK
   have hnp := ownKeysT_lookup (f := CallArguments.protoField) hown (by simp [KeyBound.admits, ha, hproto])
-  refine ⟨fun y hy => ⟨flds, rfl, hnp, fun f l hl hk => ?_⟩,
-    fun y hy => ⟨flds, rfl, hnp, fun f l hl hk => ?_⟩⟩
+  refine ⟨fun y hy => ⟨flds, oid, rfl, hnp, fun f l hl hk => ?_⟩,
+    fun y hy => ⟨flds, oid, rfl, hnp, fun f l hl hk => ?_⟩⟩
   · obtain ⟨p, hp, hpk, hpy⟩ :=
       (hkeys _ (ownKeysT_mem ha hown hl)).1 y hy (IndexKeys.may_of_admits hk)
-    obtain ⟨flds', l', c, he, hl', hc, hag⟩ := fields_at hrefs hw p hp
+    obtain ⟨flds', l', c, oid', he, hl', hc, hag⟩ := fields_at hrefs hw p hp
     cases he
     rw [hpk, hl] at hl'
     cases hl'
     exact ⟨c, hc, fun j hj W' u hu => hr j hj _ _ hpy W' u (hag j hj W' u hu)⟩
   · obtain ⟨p, hp, hpk, hpy, hyp⟩ :=
       (hkeys _ (ownKeysT_mem ha hown hl)).2 y hy (IndexKeys.may_of_admits hk)
-    obtain ⟨flds', l', c, he, hl', hc, hag⟩ := fields_agree hrefs p hp
+    obtain ⟨flds', l', c, oid', he, hl', hc, hag⟩ := fields_agree hrefs p hp
     cases he
     rw [hpk, hl] at hl'
     cases hl'
@@ -2425,8 +2425,8 @@ contract implies the field's family. -/
 theorem viewOf_at {G : NormalGraph ι} {η : MixedAssignment ι} {P F : List ι} {k : PropKey}
     (hF : viewOf G P k = some F) {n : Nat} {W : WorldT n} {p : Val}
     (hp : mixedValues G η P n W p) :
-    ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr n),
-      p = .objAt flds .absent ∧ flds.lookup k = some l ∧ lookup W l = some c ∧
+    ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr n) (oid : Nat),
+      p = .objAt flds .absent oid ∧ flds.lookup k = some l ∧ lookup W l = some c ∧
       ∀ (j : Nat) (hj : j < n) (U : WorldT j) (u : Val), c j hj U u → mixedValues G η F j U u := by
   unfold viewOf at hF
   split at hF
@@ -2437,14 +2437,14 @@ theorem viewOf_at {G : NormalGraph ι} {η : MixedAssignment ι} {P F : List ι}
     subst hc'
     obtain ⟨f, hf, rfl⟩ := Option.map_eq_some_iff.mp hF
     have hk : f.1 = k := by simpa using List.find?_some hf
-    obtain ⟨flds, l, c, hρ, hl1, hl2, hag⟩ := fields_at hsem.1 hsem.2.1 f (List.mem_of_find?_eq_some hf)
-    exact ⟨flds, l, c, hρ, hk ▸ hl1, hl2, hag⟩
+    obtain ⟨flds, l, c, oid, hρ, hl1, hl2, hag⟩ := fields_at hsem.1 hsem.2.1 f (List.mem_of_find?_eq_some hf)
+    exact ⟨flds, l, c, oid, hρ, hk ▸ hl1, hl2, hag⟩
   · cases hF
 
 /-- A member of a type whose one record clause excludes a key lacks it. -/
 theorem lacksKey_at {G : NormalGraph ι} {η : MixedAssignment ι} {P : List ι} {k : PropKey}
     (hk : lacksKey G P k) {n : Nat} {W : WorldT n} {p : Val} (hp : mixedValues G η P n W p) :
-    ∃ flds : List (PropKey × Nat), p = .objAt flds .absent ∧ flds.lookup k = none := by
+    ∃ (flds : List (PropKey × Nat)) (oid : Nat), p = .objAt flds .absent oid ∧ flds.lookup k = none := by
   unfold lacksKey at hk
   split at hk
   · rename_i a bs vs os ms ks hE
@@ -2454,8 +2454,8 @@ theorem lacksKey_at {G : NormalGraph ι} {η : MixedAssignment ι} {P : List ι}
     subst hc'
     obtain ⟨K, hK, hnot⟩ := hk
     have hown := hsem.2.2.2.2 K hK
-    obtain ⟨flds, rfl, -⟩ := hown
-    exact ⟨flds, rfl, ownKeysT_lookup (hsem.2.2.2.2 K hK) hnot⟩
+    obtain ⟨flds, oid, rfl, -⟩ := hown
+    exact ⟨flds, oid, rfl, ownKeysT_lookup (hsem.2.2.2.2 K hK) hnot⟩
   · exact hk.elim
 
 /-- A prototype found along the chain holds the member: every member of the
@@ -2490,12 +2490,12 @@ theorem protoHolds_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Re
       rw [trunc_trunc] at this
       exact WExt_trans this hU'
     rcases hview with ⟨k, hk, hF, hby⟩ | ⟨F, hF, hby⟩
-    · obtain ⟨pf, l, c, rfl, hl1, hl2, hag⟩ := viewOf_at hF hp
-      exact ⟨pf, l, c, rfl, hl1, hl2, fun i hi U' hU' u hu =>
+    · obtain ⟨pf, l, c, oid, rfl, hl1, hl2, hag⟩ := viewOf_at hF hp
+      exact ⟨pf, l, c, oid, rfl, hl1, hl2, fun i hi U' hU' u hu =>
         covers_arrows_sound hby hr hpa hself (Nat.lt_trans hi hj) (hx i hi U' hU')
           (hknown k hk i U' u (hag i hi U' u hu))⟩
-    · obtain ⟨pf, l, c, rfl, hl1, hl2, hag⟩ := viewOf_at (Option.mem_toList.mp hF) hp
-      exact ⟨pf, l, c, rfl, hl1, hl2, fun i hi U' hU' u hu =>
+    · obtain ⟨pf, l, c, oid, rfl, hl1, hl2, hag⟩ := viewOf_at (Option.mem_toList.mp hF) hp
+      exact ⟨pf, l, c, oid, rfl, hl1, hl2, fun i hi U' hU' u hu =>
         covers_by_function_sound hby hr hpa hre hself (Nat.lt_trans hi hj) (hx i hi U' hU')
           (hag i hi U' u hu)⟩
   intro d
@@ -2509,10 +2509,10 @@ theorem protoHolds_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Re
       -- location holds one of `P'`, which holds the key `e` up.
       obtain ⟨e, he⟩ := ih P' h
       refine ⟨e + 1, fun j hj U hU p hp => ?_⟩
-      obtain ⟨pf, rfl, hmiss⟩ := lacksKey_at hk hp
-      obtain ⟨pf', l, c, hρ, hl1, hl2, hag⟩ := viewOf_at (Option.mem_toList.mp hP') hp
+      obtain ⟨pf, oid, rfl, hmiss⟩ := lacksKey_at hk hp
+      obtain ⟨pf', l, c, oid', hρ, hl1, hl2, hag⟩ := viewOf_at (Option.mem_toList.mp hP') hp
       cases hρ
-      refine ⟨pf, rfl, hmiss, pf, l, c, rfl, hl1, hl2, fun i hi U' hU' u hu => ?_⟩
+      refine ⟨pf, oid, rfl, hmiss, pf, l, c, oid, rfl, hl1, hl2, fun i hi U' hU' u hu => ?_⟩
       have hx : WExt (trunc i (Nat.le_of_lt (Nat.lt_trans hi hj)) W) U' := by
         have := WExt_trunc (Nat.le_of_lt hi) hU
         rw [trunc_trunc] at this
@@ -2534,8 +2534,8 @@ theorem covers_methods_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option
     (W : WorldT n) (v : Val)
     (hself : ∀ j (hj : j < n) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
       mixedValues G η self j U v)
-    (hfields : ∀ f ∈ fields, ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr n),
-      v = .objAt flds .absent ∧ flds.lookup f.1 = some l ∧ lookup W l = some c ∧
+    (hfields : ∀ f ∈ fields, ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr n) (oid : Nat),
+      v = .objAt flds .absent oid ∧ flds.lookup f.1 = some l ∧ lookup W l = some c ∧
       ∀ (j : Nat) (hj : j < n) (U : WorldT j) (u : Val), c j hj U u → mixedValues G η f.2 j U u)
     (hbounds : ∀ K ∈ bounds, ownKeysT K n W v)
     (hv : MethodMembers.methodT (ms.map (MethodMembers.Member.of (mixedValues G η) (mixedArgs G η))) n W v) :
@@ -2547,13 +2547,13 @@ theorem covers_methods_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option
       (fun w j hj U u hu => covers_sig_sound hpq j (fun i hi => hr i (by omega))
         (fun i hi => hpa i (by omega)) (hr j hj) U w u hu)
       (MethodMembers.methodT_at (List.mem_map_of_mem hp) hv)
-  · obtain ⟨flds, l, c, hρ, hfl, hl, hag⟩ := hfields f hf
-    exact ⟨0, flds, l, c, hρ, by simpa [MethodMembers.Member.of, ← hkey] using hfl, hl,
+  · obtain ⟨flds, l, c, oid, hρ, hfl, hl, hag⟩ := hfields f hf
+    exact ⟨0, flds, l, c, oid, hρ, by simpa [MethodMembers.Member.of, ← hkey] using hfl, hl,
       fun j hj U hU u hu => covers_by_function_sound hby hr hpa hre hself hj hU (hag j hj U u hu)⟩
-  · obtain ⟨flds, lp, cp, rfl, hfl, hlp, hpag⟩ := hfields f hf
+  · obtain ⟨flds, lp, cp, oid, rfl, hfl, hlp, hpag⟩ := hfields f hf
     obtain ⟨e, he⟩ := protoHolds_sound hknown hr hpa hre hself protoChainDepth f.2 hview
-    exact ⟨e + 1, flds, rfl, ownKeysT_lookup (hbounds K hK) hnot,
-      flds, lp, cp, rfl, by rw [← hpk]; exact hfl, hlp,
+    exact ⟨e + 1, flds, oid, rfl, ownKeysT_lookup (hbounds K hK) hnot,
+      flds, lp, cp, oid, rfl, by rw [← hpk]; exact hfl, hlp,
       fun j hj U hU p hp => he j hj U hU p (hpag j hj U p hp)⟩
 
 /-- The same argument for a callable object's property bag, which forgets the
@@ -2567,19 +2567,19 @@ theorem covers_bags_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : Li
       (bs.map (famsOf (mixedValues G η))) n W v) :
     CallableConjunctions.propsT (famsOf (mixedValues G η) c)
       (ds.map (famsOf (mixedValues G η))) n W v := by
-  obtain ⟨flds, code, he, hval, hbag⟩ := hv.1
+  obtain ⟨flds, code, oid, he, hval, hbag⟩ := hv.1
   subst he
-  have hsrc : ∀ x ∈ a :: bs, recT (famsOf (mixedValues G η) x) n W (.objAt flds .absent) := by
+  have hsrc : ∀ x ∈ a :: bs, recT (famsOf (mixedValues G η) x) n W (.objAt flds .absent oid) := by
     intro x hx
     rcases List.mem_cons.mp hx with rfl | hx
     · exact hbag
-    · obtain ⟨flds', code', he', -, hbag'⟩ := hv.2 _ (List.mem_map_of_mem hx)
+    · obtain ⟨flds', code', oid', he', -, hbag'⟩ := hv.2 _ (List.mem_map_of_mem hx)
       cases he'
       exact hbag'
   have key := covers_recs hc n hr W flds hsrc
-  exact ⟨⟨flds, code, rfl, hval, key c (by simp)⟩, fun B hB => by
+  exact ⟨⟨flds, code, oid, rfl, hval, key c (by simp)⟩, fun B hB => by
     obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hB
-    exact ⟨flds, code, rfl, hval, key b (List.mem_cons_of_mem c hb)⟩⟩
+    exact ⟨flds, code, oid, rfl, hval, key b (List.mem_cons_of_mem c hb)⟩⟩
 
 theorem CoversPack.position {R : List ι → List ι → Prop} {p q : Tuple (List ι)}
     (hc : CoversPack R p q) : ∀ i a, p.position i = some a → ∃ b, q.position i = some b ∧ R a b := by
@@ -2947,9 +2947,9 @@ theorem Covers.sound_raw [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Re
           intro j hj U hx hu heap hh args hvals ha
           cases j with
           | zero =>
-            obtain ⟨fs, c, rfl, hc, -⟩ := hv.1
+            obtain ⟨fs, c, oid, rfl, hc, -⟩ := hv.1
             obtain ⟨enter, he⟩ := Option.isSome_iff_exists.mp hc
-            exact ⟨_, ⟨fs, c, enter, rfl, he, rfl⟩, trivial⟩
+            exact ⟨_, ⟨fs, c, enter, oid, rfl, he, rfl⟩, trivial⟩
           | succ i =>
             obtain ⟨hlen, hfix, hpack⟩ := ha
             simp only [List.length_map] at hlen hfix hpack
@@ -2982,15 +2982,15 @@ theorem Covers.sound_raw [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Re
       covers_bounds_sound hc.2.2.2.2.2.1 (recT_obj hv.1.1) hv.2.2.2.2.2⟩
     · intro y hy
       obtain ⟨x, hx, hw, hxy⟩ := hc.2.2.1.1 y hy
-      obtain ⟨flds, he, hp, hfs⟩ := dictViewT_within hw (hv.2.2.1.1 x hx)
-      refine ⟨flds, he, hp, ?_⟩
+      obtain ⟨flds, oid, he, hp, hfs⟩ := dictViewT_within hw (hv.2.2.1.1 x hx)
+      refine ⟨flds, oid, he, hp, ?_⟩
       intro f l hl hk
       obtain ⟨c, hw, hag⟩ := hfs f l hl hk
       exact ⟨c, hw, fun j hj W' u hu => hr j hj x.2 y.2 hxy W' u (hag j hj W' u hu)⟩
     · intro y hy
       obtain ⟨x, hx, hw, hxy, hyx⟩ := (hc.2.2.1.2 y hy).1
-      obtain ⟨flds, he, hp, hfs⟩ := dictCellT_within hw (hv.2.2.1.2 x hx)
-      refine ⟨flds, he, hp, ?_⟩
+      obtain ⟨flds, oid, he, hp, hfs⟩ := dictCellT_within hw (hv.2.2.1.2 x hx)
+      refine ⟨flds, oid, he, hp, ?_⟩
       intro f l hl hk
       obtain ⟨c, hw, hag⟩ := hfs f l hl hk
       exact ⟨c, hw, fun j hj W' u => ⟨fun hu => hr j hj x.2 y.2 hxy W' u ((hag j hj W' u).mp hu),

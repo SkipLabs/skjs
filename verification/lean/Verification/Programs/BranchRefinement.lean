@@ -86,7 +86,7 @@ theorem field_value {G : NormalGraph ι} {c : Clause (Ty ι)} {f : PropKey} {K :
       | .refs a _ vs _ _ _ => (f, K) ∈ a ++ vs
       | _ => False)
     (hv : semWithArgs (meaning G) (argMeaning G) c (n+1) W v) (hh : HeapOk (n+1) W h)
-    (hl : v = .objAt flds code) (hf : flds.lookup f = some l) (hu : h[l]? = some u) :
+    (hl : v = .objAt flds code oid) (hf : flds.lookup f = some l) (hu : h[l]? = some u) :
     meaning G K n (trunc n (Nat.le_succ n) W) u := by
   cases c with
   | refs a bs vs os ms ks =>
@@ -100,14 +100,14 @@ theorem field_value {G : NormalGraph ι} {c : Clause (Ty ι)} {f : PropKey} {K :
       cases hu'
       exact himp _ _ (hall n (Nat.lt_succ_self n))
     rcases List.mem_append.mp hK with hK | hK
-    · obtain ⟨flds', hv', hall⟩ := hv.1.1
+    · obtain ⟨flds', oid', hv', hall⟩ := hv.1.1
       rw [hl] at hv'
       cases hv'
       obtain ⟨l', c', hl', hc', hag⟩ := hall f (meaning G K) (ReferenceConjunctions.mem_famsOf.mpr ⟨K, hK, rfl⟩)
       rw [hf] at hl'
       cases hl'
       exact take c' hc' fun W' w hw => (hag n (Nat.lt_succ_self n) W' w).mp hw
-    · obtain ⟨flds', l', c', hv', hl', hc', himp⟩ :=
+    · obtain ⟨flds', l', c', oid', hv', hl', hc', himp⟩ :=
         hv.2.1 f (meaning G K) (ReferenceConjunctions.mem_famsOf.mpr ⟨K, hK, rfl⟩)
       rw [hl] at hv'
       cases hv'
@@ -118,7 +118,7 @@ theorem field_value {G : NormalGraph ι} {c : Clause (Ty ι)} {f : PropKey} {K :
 
 theorem fieldSlice_sound {G : NormalGraph ι} {A : Ty ι} {f tag q n W h v flds code l u}
     (hv : meaning G A (n+1) W v) (hh : HeapOk (n+1) W h)
-    (hl : v = .objAt flds code) (hf : flds.lookup f = some l) (hu : h[l]? = some u)
+    (hl : v = .objAt flds code oid) (hf : flds.lookup f = some l) (hu : h[l]? = some u)
     (hq : tagHolds tag u = q ∨ protoFree tag u = false) : meaning G (fieldSlice G A f tag q) (n+1) W v := by
   obtain ⟨a, ha, hva⟩ := hv
   refine ⟨a, List.mem_filter.mpr ⟨ha, ?_⟩, hva⟩
@@ -147,7 +147,7 @@ theorem fieldSlice_sound {G : NormalGraph ι} {A : Ty ι} {f tag q n W h v flds 
 keeps its label, whatever the observation. This is what a read through a key
 the object may lack (an optional link) needs where the key was absent. -/
 theorem fieldSlice_absent {G : NormalGraph ι} {A : Ty ι} {f tag q n W v flds code}
-    (hv : meaning G A (n+1) W v) (hl : v = .objAt flds code) (hf : flds.lookup f = none) :
+    (hv : meaning G A (n+1) W v) (hl : v = .objAt flds code oid) (hf : flds.lookup f = none) :
     meaning G (fieldSlice G A f tag q) (n+1) W v := by
   obtain ⟨a, ha, hva⟩ := hv
   refine ⟨a, List.mem_filter.mpr ⟨ha, ?_⟩, hva⟩
@@ -165,13 +165,13 @@ theorem fieldSlice_absent {G : NormalGraph ι} {A : Ty ι} {f tag q n W v flds c
       simp only [fieldAnswers, List.any_eq_true, Bool.and_eq_true, decide_eq_true_eq] at hans
       obtain ⟨⟨g, K⟩, hp, ⟨rfl, _⟩, _⟩ := hans
       rcases List.mem_append.mp hp with hK | hK
-      · obtain ⟨flds', hv', hall⟩ := hcv.1.1
+      · obtain ⟨flds', oid', hv', hall⟩ := hcv.1.1
         rw [hl] at hv'
         cases hv'
         obtain ⟨l', _, hl', _⟩ := hall g (meaning G K) (ReferenceConjunctions.mem_famsOf.mpr ⟨K, hK, rfl⟩)
         rw [hf] at hl'
         cases hl'
-      · obtain ⟨flds', l', _, hv', hl', _⟩ :=
+      · obtain ⟨flds', l', _, oid', hv', hl', _⟩ :=
           hcv.2.1 g (meaning G K) (ReferenceConjunctions.mem_famsOf.mpr ⟨K, hK, rfl⟩)
         rw [hl] at hv'
         cases hv'
@@ -201,7 +201,7 @@ def promote (k : PropKey) : Clause α → Clause α
 key, it holds a prototype. An object of a record naming the key as optional
 holds none where it lacks it (`optT`), so there it has the key. -/
 def KeyFound (k : PropKey) (v : Tm) : Prop :=
-  ∀ flds code, v = .objAt flds code → flds.lookup k = none →
+  ∀ flds code oid, v = .objAt flds code oid → flds.lookup k = none →
     (flds.lookup CallArguments.protoField).isSome = true
 
 theorem promote_sound {X : α → Fam} {P : α → ArgFam} {k : PropKey} {c : Clause α} {n W v}
@@ -214,7 +214,7 @@ theorem promote_sound {X : α → Fam} {P : α → ArgFam} {k : PropKey} {c : Cl
     · rename_i o ho
       have hmem := List.mem_of_find?_eq_some ho
       have hkey : o.key = k := by simpa using List.find?_some ho
-      obtain ⟨⟨⟨flds, hv, hrec⟩, hbs⟩, hview, hopt, hmeth, hkeys⟩ := hc
+      obtain ⟨⟨⟨flds, oid, hv, hrec⟩, hbs⟩, hview, hopt, hmeth, hkeys⟩ := hc
       subst hv
       have hmem' : o.map X ∈ os.map (·.map X) := List.mem_map.mpr ⟨o, hmem, rfl⟩
       obtain ⟨l, hl⟩ : ∃ l, flds.lookup k = some l := by
@@ -222,14 +222,14 @@ theorem promote_sound {X : α → Fam} {P : α → ArgFam} {k : PropKey} {c : Cl
         | some l => exact ⟨l, rfl⟩
         | none =>
           have hnp := optT_no_proto hmem' hopt (by simpa [OptionalField.map, hkey] using hlk)
-          have hp := hk flds .absent rfl hlk
+          have hp := hk flds .absent oid rfl hlk
           rw [hnp] at hp
           cases hp
       have hl' : flds.lookup (o.map X).key = some l := by simpa [OptionalField.map, hkey] using hl
       obtain ⟨c', hw, hsc⟩ := optT_present hmem' hopt hl'
       cases hro : o.readonly
       · simp only [Bool.false_eq_true, ↓reduceIte]
-        refine ⟨⟨⟨flds, rfl, ?_⟩, hbs⟩, hview, hopt, hmeth, hkeys⟩
+        refine ⟨⟨⟨flds, oid, rfl, ?_⟩, hbs⟩, hview, hopt, hmeth, hkeys⟩
         intro f T hm
         simp only [ReferenceConjunctions.famsOf, List.map_append, List.mem_append,
           List.map_cons, List.map_nil, List.mem_singleton] at hm
@@ -239,14 +239,14 @@ theorem promote_sound {X : α → Fam} {P : α → ArgFam} {k : PropKey} {c : Cl
           refine ⟨l, c', hl, hw, fun j hj W' u => ⟨(hsc j hj W' u).1, ?_⟩⟩
           exact (hsc j hj W' u).2 (by simp [OptionalField.map, hro])
       · simp only [↓reduceIte]
-        refine ⟨⟨⟨flds, rfl, hrec⟩, hbs⟩, ?_, hopt, hmeth, hkeys⟩
+        refine ⟨⟨⟨flds, oid, rfl, hrec⟩, hbs⟩, ?_, hopt, hmeth, hkeys⟩
         intro f T hm
         simp only [ReferenceConjunctions.famsOf, List.map_append, List.mem_append,
           List.map_cons, List.map_nil, List.mem_singleton] at hm
         rcases hm with hm | hm
         · exact hview f T hm
         · cases hm
-          exact ⟨flds, l, c', rfl, hl, hw, fun j hj W' u hu => (hsc j hj W' u).1 hu⟩
+          exact ⟨flds, l, c', oid, rfl, hl, hw, fun j hj W' u hu => (hsc j hj W' u).1 hu⟩
     · exact hc
   | _ => exact hc
 
@@ -272,8 +272,8 @@ theorem weaker_sound [DecidableEq α] {X : α → Fam} {P : α → ArgFam} {d c 
     | refs a' bs' vs' os' ms' ks' =>
       simp only [weaker, Bool.and_eq_true] at hw
       obtain ⟨⟨⟨⟨⟨ha, hb⟩, hv⟩, ho⟩, hm⟩, hk⟩ := hw
-      obtain ⟨⟨⟨flds, hvf, hrec⟩, hbs⟩, hview, hopt, hmeth, hkeys⟩ := hc
-      refine ⟨⟨⟨flds, hvf, fun f T hmem => ?_⟩, fun B hB => ?_⟩, fun f T hmem => ?_, ?_,
+      obtain ⟨⟨⟨flds, oid, hvf, hrec⟩, hbs⟩, hview, hopt, hmeth, hkeys⟩ := hc
+      refine ⟨⟨⟨flds, oid, hvf, fun f T hmem => ?_⟩, fun B hB => ?_⟩, fun f T hmem => ?_, ?_,
         fun m hm' => ?_, fun K hK => hkeys K (within_mem hk hK)⟩
       · obtain ⟨i, hi, rfl⟩ := ReferenceConjunctions.mem_famsOf.mp hmem
         exact hrec f _ (ReferenceConjunctions.mem_famsOf.mpr ⟨i, within_mem ha hi, rfl⟩)
@@ -281,8 +281,8 @@ theorem weaker_sound [DecidableEq α] {X : α → Fam} {P : α → ArgFam} {d c 
         exact hbs _ (List.mem_map.mpr ⟨B', within_mem hb hB', rfl⟩)
       · obtain ⟨i, hi, rfl⟩ := ReferenceConjunctions.mem_famsOf.mp hmem
         exact hview f _ (ReferenceConjunctions.mem_famsOf.mpr ⟨i, within_mem hv hi, rfl⟩)
-      · obtain ⟨flds', hv', hp, hf⟩ := hopt
-        refine ⟨flds', hv', fun o hmo => ?_, fun o hmo => ?_⟩
+      · obtain ⟨flds', oid', hv', hp, hf⟩ := hopt
+        refine ⟨flds', oid', hv', fun o hmo => ?_, fun o hmo => ?_⟩
         · obtain ⟨o', ho', rfl⟩ := List.mem_map.mp hmo
           exact hp _ (List.mem_map.mpr ⟨o', within_mem ho ho', rfl⟩)
         · obtain ⟨o', ho', rfl⟩ := List.mem_map.mp hmo
@@ -389,7 +389,7 @@ theorem presentKey_sound {t : Tag} {q : Bool} {check : PropKey → Bool}
   cases t <;> cases q <;> simp only [presentKey, Bool.false_eq_true] at h
   rename_i k
   refine ⟨k, h, ?_⟩
-  intro flds code he hl
+  intro flds code oid he hl
   subst he
   rcases hv with hv | hv
   · simp [tagHolds, hl] at hv
@@ -473,32 +473,32 @@ theorem realmArray_of_record [DecidableEq ι] {G : NormalGraph ι} {L : ι}
       simp only [Bool.and_eq_true, beq_iff_eq] at hrow
       obtain ⟨⟨⟨⟨rfl, rfl⟩, rfl⟩, rfl⟩, hS⟩ := hrow
       -- The tested value is a plain object owning the store key.
-      obtain ⟨flds, rfl, hst⟩ : ∃ flds, v = .objAt flds .absent ∧
+      obtain ⟨flds, oid, rfl, hst⟩ : ∃ flds oid, v = .objAt flds .absent oid ∧
           (flds.lookup CallArguments.arrayStoreField).isSome = true := by
         cases v with
-        | objAt fs code =>
+        | objAt fs code oid =>
           cases code <;> simp [tagHolds] at ha
-          exact ⟨fs, rfl, by simpa [CallArguments.arrayStoreField] using ha⟩
+          exact ⟨fs, oid, rfl, by simpa [CallArguments.arrayStoreField] using ha⟩
         | _ => simp [tagHolds] at ha
       have hinv' := hinv
       unfold realmInvariant at hinv'
       rw [hr] at hinv'
       simp only [hc, ite_true] at hinv'
-      obtain ⟨hview, hkeys⟩ := hinv' flds rfl hst
+      obtain ⟨hview, hkeys⟩ := hinv' flds oid rfl hst
       refine ⟨L, List.mem_singleton_self L, (unfold_plain hplain n W _).mpr
         ⟨.refs [] [] [(CallArguments.arrayStoreField, S), (CallArguments.protoField, r.proto)] [] []
           [⟨false, r.keys⟩], by rw [hGL]; simp, ?_, ?_⟩⟩
-      · refine ⟨⟨⟨flds, rfl, fun f T hm => by simp [ReferenceConjunctions.famsOf] at hm⟩, by simp⟩,
+      · refine ⟨⟨⟨flds, oid, rfl, fun f T hm => by simp [ReferenceConjunctions.famsOf] at hm⟩, by simp⟩,
           fun f T hm => ?_, by simpa [OptionalField.map] using optT_nil,
           MethodMembers.methodT_nil _ _ _, fun K hK => ?_⟩
         · simp only [ReferenceConjunctions.famsOf, List.map_cons, List.map_nil, List.mem_cons,
             Prod.mk.injEq, List.not_mem_nil, or_false] at hm
           rcases hm with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
-          · obtain ⟨flds', l, c', he, hl, hw, hag⟩ := hview CallArguments.arrayStoreField anyStoreT (by simp)
-            exact ⟨flds', l, c', he, hl, hw, fun j hj W' u hu =>
+          · obtain ⟨flds', l, c', oid', he, hl, hw, hag⟩ := hview CallArguments.arrayStoreField anyStoreT (by simp)
+            exact ⟨flds', l, c', oid', he, hl, hw, fun j hj W' u hu =>
               storeOfValues_sound hS (hag j hj W' u hu)⟩
-          · obtain ⟨flds', l, c', he, hl, hw, hag⟩ := hview CallArguments.protoField (realmValues G r.proto) (by simp)
-            exact ⟨flds', l, c', he, hl, hw, fun j hj W' u hu =>
+          · obtain ⟨flds', l, c', oid', he, hl, hw, hag⟩ := hview CallArguments.protoField (realmValues G r.proto) (by simp)
+            exact ⟨flds', l, c', oid', he, hl, hw, fun j hj W' u hu =>
               (realmFree_meaning hfree j W' u).mpr (hag j hj W' u hu)⟩
         · simp only [List.mem_singleton] at hK
           subst hK
@@ -794,9 +794,9 @@ level down. -/
 theorem ObservedCovers.env [DecidableEq ι] {G : NormalGraph ι} {Γ Δ i o mapping fields optionals ρ n W h}
     (hc : ObservedCovers G Γ Δ i o mapping fields optionals) (he : EnvOk G Γ ρ (n+1) W)
     (ho : o.holds (ρ i)) (hh : HeapOk (n+1) W h)
-    (hl : ∀ k f, (k, f) ∈ fields → ∃ flds c l, ρ k = .objAt flds c ∧ flds.lookup f = some l ∧
+    (hl : ∀ k f, (k, f) ∈ fields → ∃ flds c oid l, ρ k = .objAt flds c oid ∧ flds.lookup f = some l ∧
       h[l]? = some (ρ i))
-    (hopt : ∀ k f, (k, f) ∈ optionals → ∃ flds c, ρ k = .objAt flds c ∧
+    (hopt : ∀ k f, (k, f) ∈ optionals → ∃ flds c oid, ρ k = .objAt flds c oid ∧
       (flds.lookup f = none → ρ i = .undef) ∧ (∀ l, flds.lookup f = some l → h[l]? = some (ρ i))) :
     EnvOk G Δ (mapEnv mapping ρ) (n+1) W := by
   rcases hc with ⟨A, ha, himp⟩ | hc
@@ -813,21 +813,21 @@ theorem ObservedCovers.env [DecidableEq ι] {G : NormalGraph ι} {Γ Δ i o mapp
     rcases h with h | ⟨t, q, f, rfl, hf, hs⟩ | ⟨f, hf, hx, hp⟩
     · exact h (n+1) W _ (he.2 _ A ha)
     · rcases List.mem_append.mp hf with hf | hf
-      · obtain ⟨flds, c, l, hv, hfl, hu⟩ := hl _ f hf
+      · obtain ⟨flds, c, oid, l, hv, hfl, hu⟩ := hl _ f hf
         exact hs (n+1) W _ (fieldSlice_sound (he.2 _ A ha) hh hv hfl hu ho)
       -- Read through a key the object may lack: where it has it, the read
       -- gave the field's value; where it lacks it, no label the slice drops
       -- is the object's.
-      · obtain ⟨flds, c, hv, _, hpresent⟩ := hopt _ f hf
+      · obtain ⟨flds, c, oid, hv, _, hpresent⟩ := hopt _ f hf
         cases hfl : flds.lookup f with
         | none => exact hs (n+1) W _ (fieldSlice_absent (he.2 _ A ha) hv hfl)
         | some l => exact hs (n+1) W _ (fieldSlice_sound (he.2 _ A ha) hh hv hfl (hpresent l hfl) ho)
-    · obtain ⟨flds, c, hv, hab, _⟩ := hopt _ f hf
+    · obtain ⟨flds, c, oid, hv, hab, _⟩ := hopt _ f hf
       cases hfl : flds.lookup f with
       | none => exact absurd (hab hfl) (excludesUndef_sound hx ho)
       | some l =>
-        refine promotes_sound hp (he.2 _ A ha) fun flds' c' he' hn => ?_
-        have he'' : ρ (slot mapping j) = .objAt flds' c' := he'
+        refine promotes_sound hp (he.2 _ A ha) fun flds' c' oid' he' hn => ?_
+        have he'' : ρ (slot mapping j) = .objAt flds' c' oid' := he'
         rw [hv] at he''
         cases he''
         rw [hfl] at hn

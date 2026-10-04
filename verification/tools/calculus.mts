@@ -48,7 +48,7 @@ export type Term =
   /** Invoke `f` with the receiver `r` and the actuals `args`. */
   | { invoke: { f: Term; r: Term; args: Term[] } }
   | { letE: { a: Term; b: Term } }
-  | { objAt: { fields: [string, number][]; call: CallCode } }
+  | { objAt: { fields: [string, number][]; call: CallCode; identity: number } }
   | { makeAt: { call: CallCode; names: string[]; inits: Term[] } }
   | { readAt: { field: string; a: Term } }
   | { indexAt: { a: Term; key: Term } }
@@ -207,7 +207,7 @@ export function decodeTerm(value: unknown): Term {
     var: ["i"],
     invoke: ["f", "r", "args"],
     letE: ["a", "b"],
-    objAt: ["fields", "call"],
+    objAt: ["fields", "call", "identity"],
     makeAt: ["call", "names", "inits"],
     readAt: ["field", "a"],
     indexAt: ["a", "key"],

@@ -47,16 +47,18 @@ theorem hostIn_adm (v : Val) {Rs : List Fam} (h : ∀ R ∈ Rs, Adm R) : Adm (ho
   ⟨fun n W r hr => ⟨hr.1, fun R hR => (h R hR).down n W r (hr.2 R hR)⟩,
     fun n W W' hx r hr => ⟨hr.1, fun R hR => (h R hR).mono n W W' hx r (hr.2 R hR)⟩⟩
 
-/-- The forwarding function `.bind` makes of a value and a host: invoked
-with any receiver, it invokes the value with the host. -/
-def boundTo (u v : Val) : Val := .objAt [] (.bound u v [])
+/-- The forwarding function `.bind` makes of a value and a host, at the
+identity its allocation gives it: invoked with any receiver, it invokes the
+value with the host. -/
+def boundTo (u v : Val) (oid : Nat) : Val := .objAt [] (.bound u v []) oid
 
-/-- Values that, bound to host `v`, meet every family of `Fs`. -/
-def boundOn (v : Val) (Fs : List Fam) : Fam := fun k W u => ∀ F ∈ Fs, F k W (boundTo u v)
+/-- Values that, bound to host `v` at any identity, meet every family of `Fs`. -/
+def boundOn (v : Val) (Fs : List Fam) : Fam := fun k W u =>
+  ∀ oid, ∀ F ∈ Fs, F k W (boundTo u v oid)
 
 theorem boundOn_adm (v : Val) {Fs : List Fam} (h : ∀ F ∈ Fs, Adm F) : Adm (boundOn v Fs) :=
-  ⟨fun n W _u hu F hF => (h F hF).down n W _ (hu F hF),
-    fun n W W' hx _u hu F hF => (h F hF).mono n W W' hx _ (hu F hF)⟩
+  ⟨fun n W _u hu oid F hF => (h F hF).down n W _ (hu oid F hF),
+    fun n W W' hx _u hu oid F hF => (h F hF).mono n W W' hx _ (hu oid F hF)⟩
 
 /-- What a member promises of a value read from host `v`: its signatures, each
 with receiver `v` when `v` is in each of the member's receivers, and its
@@ -72,29 +74,29 @@ theorem onHost_adm (v : Val) (m : Member) (h : ∀ F ∈ m.schemes, Adm F) : Adm
 /-- `v` holds `key` at a location whose contract implies `A` below the level,
 in every world extending the current one. -/
 def holdsAt (key : PropKey) (A : Fam) : Fam := fun k W v =>
-  ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr k),
-    v = .objAt flds .absent ∧ flds.lookup key = some l ∧ lookup W l = some c ∧
+  ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr k) (oid : Nat),
+    v = .objAt flds .absent oid ∧ flds.lookup key = some l ∧ lookup W l = some c ∧
     ∀ (j : Nat) (hj : j < k) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
       ∀ (u : Val), c j hj U u → A j U u
 
 theorem holdsAt_adm (key : PropKey) (A : Fam) : Adm (holdsAt key A) := by
   refine ⟨?_, ?_⟩
   · intro n W v h
-    obtain ⟨flds, l, c, hv, hf, hl, hag⟩ := h
-    refine ⟨flds, l, _, hv, hf, lookup_trunc (Nat.le_succ n) W l c hl, ?_⟩
+    obtain ⟨flds, l, c, oid, hv, hf, hl, hag⟩ := h
+    refine ⟨flds, l, _, oid, hv, hf, lookup_trunc (Nat.le_succ n) W l c hl, ?_⟩
     intro j hj U hx u hu
     exact hag j (by omega) U (by rwa [trunc_trunc] at hx) u hu
   · intro n W W' hx v h
-    obtain ⟨flds, l, c, hv, hf, hl, hag⟩ := h
-    exact ⟨flds, l, c, hv, hf, WExt_lookup hx hl, fun j hj U hU u hu =>
+    obtain ⟨flds, l, c, oid, hv, hf, hl, hag⟩ := h
+    exact ⟨flds, l, c, oid, hv, hf, WExt_lookup hx hl, fun j hj U hU u hu =>
       hag j hj U (WExt_trans (WExt_trunc (Nat.le_of_lt hj) hx) hU) u hu⟩
 
 /-- A weaker family below the level is held wherever a stronger one is. -/
 theorem holdsAt_mono {key : PropKey} {A B : Fam} {k : Nat}
     (h : ∀ j, j < k → ∀ (U : WorldT j) u, A j U u → B j U u) {W : WorldT k} {v : Val}
     (hv : holdsAt key A k W v) : holdsAt key B k W v := by
-  obtain ⟨flds, l, c, hρ, hf, hl, hag⟩ := hv
-  exact ⟨flds, l, c, hρ, hf, hl, fun j hj U hU u hu => h j hj U u (hag j hj U hU u hu)⟩
+  obtain ⟨flds, l, c, oid, hρ, hf, hl, hag⟩ := hv
+  exact ⟨flds, l, c, oid, hρ, hf, hl, fun j hj U hU u hu => h j hj U u (hag j hj U hU u hu)⟩
 
 /-- `v` holds `key` along its prototype chain, `d` prototypes up: at `d = 0`
 its own location for the key, whose contract implies `A`; at `d + 1` it lacks
@@ -103,17 +105,17 @@ family `A` is fixed, so the host a member is read from stays the receiver
 however far up its key is found. -/
 def along (key : PropKey) (A : Fam) : Nat → Fam
   | 0 => holdsAt key A
-  | d + 1 => fun k W v => ∃ flds : List (PropKey × Nat), v = .objAt flds .absent ∧
+  | d + 1 => fun k W v => ∃ (flds : List (PropKey × Nat)) (oid : Nat), v = .objAt flds .absent oid ∧
       flds.lookup key = none ∧ holdsAt CallArguments.protoField (along key A d) k W v
 
 theorem along_adm (key : PropKey) (A : Fam) : ∀ d, Adm (along key A d)
   | 0 => holdsAt_adm key A
   | d + 1 => by
     refine ⟨?_, ?_⟩
-    · rintro n W v ⟨flds, hρ, hmiss, h⟩
-      exact ⟨flds, hρ, hmiss, (holdsAt_adm _ (along key A d)).down n W v h⟩
-    · rintro n W W' hx v ⟨flds, hρ, hmiss, h⟩
-      exact ⟨flds, hρ, hmiss, (holdsAt_adm _ (along key A d)).mono n W W' hx v h⟩
+    · rintro n W v ⟨flds, oid, hρ, hmiss, h⟩
+      exact ⟨flds, oid, hρ, hmiss, (holdsAt_adm _ (along key A d)).down n W v h⟩
+    · rintro n W W' hx v ⟨flds, oid, hρ, hmiss, h⟩
+      exact ⟨flds, oid, hρ, hmiss, (holdsAt_adm _ (along key A d)).mono n W W' hx v h⟩
 
 /-- A weaker family below the level is found wherever a stronger one is, the
 same number of prototypes up. -/
@@ -121,8 +123,8 @@ theorem along_mono {key : PropKey} {A B : Fam} : ∀ (d : Nat) {k : Nat},
     (∀ j, j < k → ∀ (U : WorldT j) u, A j U u → B j U u) →
     ∀ {W : WorldT k} {v : Val}, along key A d k W v → along key B d k W v
   | 0, _, h, _, _, hv => holdsAt_mono h hv
-  | d + 1, _, h, _, _, ⟨flds, hρ, hmiss, hv⟩ =>
-    ⟨flds, hρ, hmiss, holdsAt_mono (fun j hj U u hu =>
+  | d + 1, _, h, _, _, ⟨flds, oid, hρ, hmiss, hv⟩ =>
+    ⟨flds, oid, hρ, hmiss, holdsAt_mono (fun j hj U u hu =>
       along_mono d (fun i hi U' u' => h i (by omega) U' u') hu) hv⟩
 
 /-- **Host-relative members.** A member of `v` is where JavaScript's lookup
@@ -216,7 +218,7 @@ theorem onHost_congr {α : Type} (X Y : α → Fam) (P Q : α → ArgFam) (n : N
           hQ s.arguments.2, hX s.result⟩) W u)
       (by simp only [boundOn, List.mem_map, forall_exists_index, and_imp,
             forall_apply_eq_imp_iff₂]
-          exact forall_congr' fun a => imp_congr_right fun _ => h a j hj W _))
+          exact forall_congr' fun _ => forall_congr' fun a => imp_congr_right fun _ => h a j hj W _))
 
 /-- Members agreeing below the budget, read at their hosts, are the same
 members. -/

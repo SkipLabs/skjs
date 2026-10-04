@@ -318,7 +318,7 @@ theorem listT_anyStore {T : TupleF}
 /-- **The array invariant**, with `P` the prototype's type and `N` the keys it
 provides. -/
 def arrayInvariant (P : Fam) (N : List PropKey) : Fam := fun k W v =>
-  ∀ flds, v = .objAt flds .absent → (flds.lookup CallArguments.arrayStoreField).isSome = true →
+  ∀ flds oid, v = .objAt flds .absent oid → (flds.lookup CallArguments.arrayStoreField).isSome = true →
     viewT [(CallArguments.arrayStoreField, anyStoreT), (CallArguments.protoField, P)] k W v ∧
       ownKeysT ⟨false, N⟩ k W v
 
@@ -338,11 +338,11 @@ def rowSem (G : NormalGraph ι) (A X : List ι → Fam) (P : List ι → ArgFam)
 
 theorem arrayInvariant_adm (P : Fam) (N : List PropKey) : Adm (arrayInvariant P N) := by
   constructor
-  · intro n W v h flds hv hs
-    obtain ⟨h1, h2⟩ := h flds hv hs
+  · intro n W v h flds oid hv hs
+    obtain ⟨h1, h2⟩ := h flds oid hv hs
     exact ⟨(viewT_adm _).down n W v h1, (ownKeysT_adm _).down n W v h2⟩
-  · intro n W W' hx v h flds hv hs
-    obtain ⟨h1, h2⟩ := h flds hv hs
+  · intro n W W' hx v h flds oid hv hs
+    obtain ⟨h1, h2⟩ := h flds oid hv hs
     exact ⟨(viewT_adm _).mono n W W' hx v h1, (ownKeysT_adm _).mono n W W' hx v h2⟩
 
 /-- The invariant reads the prototype's type only below the budget, through
@@ -350,14 +350,14 @@ the contract of the prototype key. -/
 theorem arrayInvariant_congr {P Q : Fam} (N : List PropKey) {n : Nat} (h : Agree P Q n)
     (W : WorldT n) (v : Val) : arrayInvariant P N n W v ↔ arrayInvariant Q N n W v := by
   have side : ∀ (P Q : Fam), Agree P Q n → arrayInvariant P N n W v → arrayInvariant Q N n W v := by
-    intro P Q h hv flds he hs
-    obtain ⟨h1, h2⟩ := hv flds he hs
+    intro P Q h hv flds oid he hs
+    obtain ⟨h1, h2⟩ := hv flds oid he hs
     refine ⟨fun f T hm => ?_, h2⟩
     simp only [List.mem_cons, Prod.mk.injEq, List.not_mem_nil, or_false] at hm
     rcases hm with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
     · exact h1 CallArguments.arrayStoreField anyStoreT (by simp)
-    · obtain ⟨flds', l, c, he', hf, hl, hag⟩ := h1 CallArguments.protoField P (by simp)
-      exact ⟨flds', l, c, he', hf, hl, fun j hj W' u hu => (h j hj W' u).mp (hag j hj W' u hu)⟩
+    · obtain ⟨flds', l, c, oid', he', hf, hl, hag⟩ := h1 CallArguments.protoField P (by simp)
+      exact ⟨flds', l, c, oid', he', hf, hl, fun j hj W' u hu => (h j hj W' u).mp (hag j hj W' u hu)⟩
   exact ⟨side P Q h, side Q P fun j hj W' u => (h j hj W' u).symm⟩
 
 theorem realmInvariant_adm (G : NormalGraph ι) (X : List ι → Fam) (c : Clause (List ι)) :
@@ -428,21 +428,21 @@ theorem realmInvariant_of_none {G : NormalGraph ι} {X : List ι → Fam} {c : C
 /-- An object that does not own the store key meets the invariant. -/
 theorem arrayInvariant_of_lookup {P : Fam} {N : List PropKey} {n W flds code}
     (h : flds.lookup CallArguments.arrayStoreField = none) :
-    arrayInvariant P N n W (.objAt flds code) := by
-  intro flds' he hs
+    arrayInvariant P N n W (.objAt flds code oid) := by
+  intro flds' oid' he hs
   cases he
   simp [h] at hs
 
 /-- A value that is not a plain object meets the invariant. -/
 theorem arrayInvariant_of_not_plain {P : Fam} {N : List PropKey} {n W v}
-    (h : ∀ flds, v ≠ .objAt flds .absent) : arrayInvariant P N n W v :=
-  fun flds he _ => absurd he (h flds)
+    (h : ∀ flds oid, v ≠ .objAt flds .absent oid) : arrayInvariant P N n W v :=
+  fun flds oid he _ => absurd he (h flds oid)
 
 /-- A row's clause without the store key, or not a plain object, asks nothing
 it does not already have. -/
 theorem realmInvariant_of_lookup {G : NormalGraph ι} {X : List ι → Fam} {c : Clause (List ι)}
     {n W flds code} (h : flds.lookup CallArguments.arrayStoreField = none) :
-    realmInvariant G X c n W (.objAt flds code) := by
+    realmInvariant G X c n W (.objAt flds code oid) := by
   unfold realmInvariant
   cases G.realm with
   | none => trivial
@@ -452,7 +452,7 @@ theorem realmInvariant_of_lookup {G : NormalGraph ι} {X : List ι → Fam} {c :
     · exact arrayInvariant_of_lookup h
 
 theorem realmInvariant_of_not_plain {G : NormalGraph ι} {X : List ι → Fam} {c : Clause (List ι)}
-    {n W v} (h : ∀ flds, v ≠ .objAt flds .absent) : realmInvariant G X c n W v := by
+    {n W v} (h : ∀ flds oid, v ≠ .objAt flds .absent oid) : realmInvariant G X c n W v := by
   unfold realmInvariant
   cases G.realm with
   | none => trivial

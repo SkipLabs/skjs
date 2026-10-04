@@ -130,7 +130,7 @@ private def knownEffectProgram : Program :=
 
 /-- Selecting a known arm must not erase the condition's write. -/
 theorem known_condition_effects_preserved : Execution knownEffectProgram 8 []
-    (.at 0 (fun _ => .nul)) [.fls] (.done .fls) := by
+    (.at 0 (fun _ => .nul)) [.fls, .nul] (.done .fls) := by
   repeat first
     | exact Execution.refl
     | apply Execution.next (.enter rfl)
@@ -158,8 +158,8 @@ end LetOrder
 namespace PrototypeChain
 -- `key in o` reads the prototype chain: a class instance holds its
 -- prototype, whose method it lacks as an own key, and `in` finds it there.
-private def protoHeap : List Tm := [.objAt [("m", 1)] .absent, .num 0, .num 1]
-private def instanceWithProto : Tm := .objAt [("x", 2), ("[[proto]]", 0)] .absent
+private def protoHeap : List Tm := [.objAt [("m", 1)] .absent 3, .num 0, .num 1]
+private def instanceWithProto : Tm := .objAt [("x", 2), ("[[proto]]", 0)] .absent 4
 #guard tagHoldsIn protoHeap (.hasKey "m") instanceWithProto
 end PrototypeChain
 
@@ -179,11 +179,11 @@ private def program (callable : Bool) : Program :=
   [⟨if callable then .makeAt (oneNode 1 (.var 0) 0) [valueField] [.fls] else .alloc .fls,.bind 1,none⟩,
    ⟨.app callee argument,.ret,none⟩]
 /-- Initializer write and intermediate allocation precede function allocation;
-argument write then precedes the call and the body read. The three cells are
-the captured bag, the initializer's object, and the newly allocated callable
-bag. -/
+argument write then precedes the call and the body read. The heap holds the
+captured bag, the initializer's object, and the newly allocated callable bag,
+each followed by its identity cell. -/
 theorem returns_false (callable : Bool) : Execution (program callable) 16 []
-    (.at 0 (fun _ => .nul)) [.fls,.tru,.fls] (.done .fls) := by
+    (.at 0 (fun _ => .nul)) [.fls,.nul,.tru,.nul,.fls,.nul] (.done .fls) := by
   cases callable <;> run_machine
 
 /-- A stuck initializer prevents both outer allocation and argument effects. -/
@@ -240,10 +240,11 @@ private def program (callable fresh : Bool) : Program :=
    ⟨.app (.var 0) .nul,.effect 5,none⟩,
    ⟨if fresh then .read (.var 2) else .var 1,.ret,none⟩]
 /-- The heap really changes to true; a saved immutable value remains false.
-Creation of the mutator accounts for the second, null-initialized heap cell. -/
+Creation of the mutator accounts for the third, null-initialized heap cell;
+each allocation's identity takes the cell after its fields. -/
 theorem returns_expected (callable fresh : Bool) :
     Execution (program callable fresh) (if fresh then 20 else 19) []
-      (.at 0 (fun _ => .nul)) [.tru,.nul] (.done (if fresh then .tru else .fls)) := by
+      (.at 0 (fun _ => .nul)) [.tru,.nul,.nul,.nul] (.done (if fresh then .tru else .fls)) := by
   cases callable <;> cases fresh <;>
     repeat first
       | exact Execution.refl
@@ -279,10 +280,11 @@ private def program (callable fresh : Bool) : Program :=
    ⟨.makeFn (oneNode 1 callback 2) .nul,.bind 3,none⟩,
    ⟨.app (.var 1) (.var 0),.ret,none⟩]
 /-- Reentry writes true while the outer frame retains its saved false value.
-The fourth heap cell is allocated for the terminating inner callback. -/
+The fourth allocation is the terminating inner callback's; each allocation's
+identity takes the cell after its fields. -/
 theorem returns_expected (callable fresh : Bool) :
     Execution (program callable fresh) (if fresh then 34 else 32) []
-      (.at 0 (fun _ => .nul)) [.tru,.nul,.nul,.nul]
+      (.at 0 (fun _ => .nul)) [.tru,.nul,.nul,.nul,.nul,.nul,.nul,.nul]
       (.done (if fresh then .tru else .fls)) := by
   cases callable <;> cases fresh <;> run_machine
 end Reentry

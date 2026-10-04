@@ -246,7 +246,7 @@ theorem PromiseWith.bound {effect : Effect} {Acc Rest : ArgFam} {Rt R Rc : Fam}
     (hrv : isVal rv = true) (hr : Rt k W rv) (hp : CallArguments.Values pre)
     (hprefix : ∀ j (hj : j < k) U, WExt (trunc j (Nat.le_of_lt hj) W) U →
       ∀ args, Rest j U args → Acc j U (pre ++ args)) :
-    PromiseWith effect Rest Rc R k W (.objAt fs (.bound tv rv pre)) := by
+    PromiseWith effect Rest Rc R k W (.objAt fs (.bound tv rv pre) oid) := by
   intro j hj U hx hu heap hh r hv _ args hargs ha
   refine ⟨_, .bound hv hargs, ?_⟩
   cases j with
@@ -347,8 +347,8 @@ theorem callsT_bound {effect : Effect} {Rt R Rc : Fam} {Ps Ds : List Fam}
     (ht : callsT [⟨Rt, Ps ++ Ds, R, effect⟩] k W tv)
     (hrv : isVal rv = true) (hsr : Scoped 0 rv) (hr : Rt k W rv)
     (hp : ArgsT Ps k W pre) (hv : CallArguments.Values pre) (hsp : ∀ a ∈ pre, Scoped 0 a) :
-    callsT [⟨Rc, Ds, R, effect⟩] k W (.objAt fs (.bound tv rv pre)) := by
-  refine ⟨⟨fs, _, rfl, rfl, ?_⟩, ?_⟩
+    callsT [⟨Rc, Ds, R, effect⟩] k W (.objAt fs (.bound tv rv pre) oid) := by
+  refine ⟨⟨fs, _, _, rfl, rfl, ?_⟩, ?_⟩
   · simp only [Scoped, scopedArgs_iff]
     exact ⟨ht.1.scoped, hsr, hsp⟩
   · intro p hm
@@ -418,8 +418,8 @@ theorem restsT_bound {effect : Effect} {Rt R Rc : Fam} {E : ArgFam} {Ps : List F
     (hext : ∀ j (hj : j ≤ k) U, WExt (trunc j hj W) U →
       ∀ ys, E j U ys → E j U (pre.drop Ps.length ++ ys))
     (hv : CallArguments.Values pre) (hsp : ∀ a ∈ pre, Scoped 0 a) :
-    restsT [⟨Rc, (Ps.drop pre.length, E), R, effect⟩] k W (.objAt fs (.bound tv rv pre)) := by
-  refine ⟨⟨fs, _, rfl, rfl, ?_⟩, ?_⟩
+    restsT [⟨Rc, (Ps.drop pre.length, E), R, effect⟩] k W (.objAt fs (.bound tv rv pre) oid) := by
+  refine ⟨⟨fs, _, _, rfl, rfl, ?_⟩, ?_⟩
   · simp only [Scoped, scopedArgs_iff]
     exact ⟨ht.1.scoped, hsr, hsp⟩
   · intro p hm

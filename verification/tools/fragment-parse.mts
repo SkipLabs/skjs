@@ -39,7 +39,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { Atom } from "./claim.mts";
 import type { DeclarationIdentity, PropertyKey, TypeTerm } from "./declaration-types.mts";
-import { bigintText, CLASS_ACCESS, numericLexeme, GENERIC_METHOD_RECEIVER, classMemberRefusal, computedAlias, computedForm, numericKey, optionalTerm, restPositions, restRefusal, restTerm, signature, substitute, typeTerm,
+import { bigintText, CLASS_ACCESS, numericLexeme, GENERIC_METHOD_RECEIVER, classMemberRefusal, computedAlias, computedForm, numericKey, optionalTerm, restPositions, restRefusal, restTerm, signature, substitute, typeTerm, visitType,
   type TermScope } from "./type-term.mts";
 import type {
   Ast,
@@ -478,6 +478,8 @@ class Gate {
   /** Identifiers in a class's own body TypeScript binds to that class, by
    * span: the class. */
   readonly classReads = new Map<string, string>();
+  /** Identities of the declarations collected in the source type graph. */
+  readonly typeIdentities = new Set<string>();
   /** Closure parameters written without a type, by the span of their name:
    * the type TypeScript gives each from its context, or why none states it. */
   readonly contextualParams = new Map<string, TypeTerm | { refused: string }>();
@@ -1402,25 +1404,22 @@ class Gate {
    * type TypeScript gives it from its context (an optional one's includes
    * `undefined` already). That type is a proposal like any claim: the body
    * is checked at it, and the closure's signature wherever the closure
-   * goes, the call offering it included. A declaration it names must be one
-   * the file names, and a type parameter one in scope. */
+   * goes, the call offering it included. Its declarations belong to the shared
+   * declaration graph, and its type parameters are in scope. */
   private closureParamType(p: ts.ParameterDeclaration): TypeTerm {
     if (p.type || p.dotDotDotToken) return p.questionToken ? this.optionalTypeOf(p.type, p) : this.typeOf(p.type, p);
     const found = this.contextualParams.get(this.span(p.name).join(":"));
     if (!found) return this.typeOf(undefined, p);
     if ("refused" in found) return this.fail(p, found.refused);
-    const check = (t: TypeTerm): void => {
+    visitType(found, (t, bound) => {
       if (t.k === "reference") {
-        const target = t.reference.target, known = this.declaredTypes.get(t.reference.name)?.declaration;
-        if (!known || known.module !== target.module || known.span[0] !== target.span[0] || known.span[1] !== target.span[1])
-          this.fail(p, `TypeScript types this unannotated closure parameter from its context at ${t.reference.name}, a declaration the file does not name`);
+        const target = t.reference.target;
+        if (!this.typeIdentities.has(JSON.stringify([target.module, target.span, target.name])))
+          this.fail(p, `contextual type declaration missing: ${t.reference.name}`);
       }
-      if (t.k === "binder" && !this.hasTypeParam(t.name))
+      if (t.k === "binder" && !bound.has(t.name) && !this.hasTypeParam(t.name))
         this.fail(p, `TypeScript types this unannotated closure parameter from its context at the type parameter ${t.name}, not one in scope here`);
-      if (t.k === "union") t.parts.forEach(check);
-      if (t.k === "array") check(t.element);
-    };
-    check(found);
+    });
     return found;
   }
 
@@ -4999,6 +4998,8 @@ export function parseFile(file: string, carriesContext = false,
     // The standard library's well-known symbols but `Symbol.iterator`.
     gate.hostSymbols = new Set(declarations.symbols.flatMap((s, i) =>
       s.module.startsWith("typescript/lib/") && s.name !== "iterator" ? [i] : []));
+    for (const { declaration } of declarations.definitions)
+      gate.typeIdentities.add(JSON.stringify([declaration.module, declaration.span, declaration.name]));
     for (const root of declarations.roots) {
       const identity = root.declaration;
       const definition = declarations.definitions.find(d =>

@@ -982,7 +982,7 @@ representation cannot state it yet; the paths are in
 | A write at a string key known only at run time (`d[k] = v`), even on a local's own dictionary | The string may spell a key the model keeps for itself (`[]`, `[[proto]]`), which JavaScript owns as an ordinary property. |
 | A write of `__proto__`; adding a symbol key | The first runs the prototype's setter and adds no key; the copy that adds a key copies string keys only. |
 | `Object.assign` onto an object other than a fresh literal or, as a statement, a local's own object; from a source whose type does not rule out an own `__proto__` | Its value is its target, and another reference would see the keys it adds; it sets `__proto__` through the prototype's setter, which replaces the prototype. |
-| `===`, `==` or `!=` between two operands that may both be objects without a field (functions, records of optional fields, `unknown`, a type parameter's value); narrowing by object identity | Such values carry no location to compare in the model; a statement entry states no slot equality. |
+| `===`, `==` or `!=` between two operands that may both be objects without a field (functions, records of optional fields, `unknown`, a type parameter's value); narrowing by object identity | The operator rule compares identities only for record clauses with a required field (`identityClause`); a statement entry states no slot equality. |
 | A relational comparison converting a primitive (`undefined`, a Boolean) | The model's comparison is of two numbers or two strings; the refusal does not tell this conversion, which runs no code, from an object's. |
 | `keyof T`, `T[K]` over a function's own type parameter (an alias computed from its parameters is evaluated at each application) | They are functions of the type an instance names (its declared, optional and readonly keys); a parameter row denotes a value set, which does not determine a key set. |
 | A template literal type with a `${string}` hole; `keyof` with a unique-symbol key; `typeof` of a binding whose inferred type is not an object literal's record of literals and primitives, or of a class with statics | No term of the fragment states it exactly. |
@@ -1132,7 +1132,7 @@ only through its members).
 
 | Step | State | Closed when |
 | --- | --- | --- |
-| Loose equality coverage | Primitive pairs, named nullish operands and identity-bearing object pairs have a proved operator rule. Fieldless object identity requires a model extension; array-to-primitive conversion requires a `valueOf` contract and effect-aware lowering. The original service reaches a contextual `number & Managed` closure-parameter refusal. | Function and fieldless-record identity have a faithful allocation model; bounded array conversion has checked hook/effect obligations; the original service has its actual outcome recorded |
+| Loose equality coverage | Primitive pairs, named nullish operands and identity-bearing object pairs have a proved operator rule. Every object carries its allocation identity in the model; the operator rule compares only record clauses with a required field; array-to-primitive conversion requires a `valueOf` contract and effect-aware lowering. The original service reaches the shared semantic refusal for the empty intersection `number & Managed`. | Function and fieldless-record identity have a faithful allocation model; bounded array conversion has checked hook/effect obligations; the original service has its actual outcome recorded |
 | 1. Explicit-comparator sorting | done | `native-sort-contracts` and the tuple-valued sorts verify; the optional-comparator negative is rejected |
 | 2. Sparse results | done | `native-map-sparse`, `testTupleArrayMethod` and `isarray-record-array` verify; `invalid-map-hole-coalescing` is rejected |
 | 3. Density-sensitive calls | done | `array-methods`, `array-library`, `array-generic-name`, `closure-contextual-parameters`, `testArrowOptional` and `testMapReturnsArray` verify; `mapArr`/`testMapCallback` stay refused, their written contract being false |
@@ -1524,8 +1524,7 @@ the model's arrays never have. Until then both are located search failures.
 keys needs a dispatch on the key, one copy per key; at a number or a symbol,
 a one-key allocation at a computed key, and for a symbol a copy that takes
 symbol keys. A write adding a key to an object another reference holds needs
-objects to have an identity the heap maps to their keys, which the model's
-values do not; `===` of two objects without a field needs the same identity.
+the heap to map an object's identity to its keys, which it does not.
 
 **Module composition** as a Lean theorem: the step-indexed argument that
 units certified against each other's signatures compose.

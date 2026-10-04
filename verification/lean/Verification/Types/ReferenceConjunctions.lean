@@ -42,7 +42,7 @@ theorem mem_famsOf {ι : Type} {X : ι → Fam} {fs : List (PropKey × ι)} {f :
 theorem recT_congr_below {ι : Type} (X Y : ι → Fam) (a : List (PropKey × ι)) (n : Nat)
     (h : ∀ i, Agree (X i) (Y i) n) (W : WorldT n) (v : Val) :
     recT (famsOf X a) n W v ↔ recT (famsOf Y a) n W v := by
-  constructor <;> rintro ⟨flds, rfl, hfs⟩ <;> refine ⟨flds, rfl, ?_⟩ <;>
+  constructor <;> rintro ⟨flds, oid, rfl, hfs⟩ <;> refine ⟨flds, oid, rfl, ?_⟩ <;>
       intro f T hm <;> obtain ⟨i, hi, rfl⟩ := mem_famsOf.mp hm
   · obtain ⟨l, c, hl, hw, hag⟩ := hfs f (X i) (mem_famsOf.mpr ⟨i, hi, rfl⟩)
     exact ⟨l, c, hl, hw, fun j hj W' u => (hag j hj W' u).trans (h i j hj W' u)⟩
@@ -56,18 +56,18 @@ theorem view_congr_below {ι : Type} (X Y : ι → Fam) (a : List (PropKey × ι
     (h : ∀ i, Agree (X i) (Y i) n) (W : WorldT n) (v : Val) :
     viewT (famsOf X a) n W v ↔ viewT (famsOf Y a) n W v := by
   constructor <;> intro hv f T hm <;> obtain ⟨i, hi, rfl⟩ := mem_famsOf.mp hm
-  · obtain ⟨flds, l, c, rfl, hf, hl, hag⟩ := hv f (X i) (mem_famsOf.mpr ⟨i, hi, rfl⟩)
-    exact ⟨flds, l, c, rfl, hf, hl, fun j hj W' u hu => (h i j hj W' u).mp (hag j hj W' u hu)⟩
-  · obtain ⟨flds, l, c, rfl, hf, hl, hag⟩ := hv f (Y i) (mem_famsOf.mpr ⟨i, hi, rfl⟩)
-    exact ⟨flds, l, c, rfl, hf, hl, fun j hj W' u hu => (h i j hj W' u).mpr (hag j hj W' u hu)⟩
+  · obtain ⟨flds, l, c, oid, rfl, hf, hl, hag⟩ := hv f (X i) (mem_famsOf.mpr ⟨i, hi, rfl⟩)
+    exact ⟨flds, l, c, oid, rfl, hf, hl, fun j hj W' u hu => (h i j hj W' u).mp (hag j hj W' u hu)⟩
+  · obtain ⟨flds, l, c, oid, rfl, hf, hl, hag⟩ := hv f (Y i) (mem_famsOf.mpr ⟨i, hi, rfl⟩)
+    exact ⟨flds, l, c, oid, rfl, hf, hl, fun j hj W' u hu => (h i j hj W' u).mpr (hag j hj W' u hu)⟩
 
 theorem opt_congr_below {ι : Type} (X Y : ι → Fam) (a : List (OptionalField ι)) (n : Nat)
     (h : ∀ i, Agree (X i) (Y i) n) (W : WorldT n) (v : Val) :
     optT (a.map (·.map X)) n W v ↔ optT (a.map (·.map Y)) n W v := by
   have side : ∀ (X Y : ι → Fam), (∀ i j (hj : j < n) (W' : WorldT j) u, X i j W' u ↔ Y i j W' u) →
       optT (a.map (·.map X)) n W v → optT (a.map (·.map Y)) n W v := by
-    rintro X Y h ⟨flds, rfl, hp, hv⟩
-    refine ⟨flds, rfl, fun o hm hl => ?_, fun o hm l hl => ?_⟩
+    rintro X Y h ⟨flds, oid, rfl, hp, hv⟩
+    refine ⟨flds, oid, rfl, fun o hm hl => ?_, fun o hm l hl => ?_⟩
     · obtain ⟨p, hpa, rfl⟩ := List.mem_map.mp hm
       exact hp (p.map X) (List.mem_map_of_mem hpa) hl
     · obtain ⟨p, hpa, rfl⟩ := List.mem_map.mp hm
@@ -97,8 +97,8 @@ not compared at all. -/
 theorem operands_agree {A B : Fields} {Bs : List Fields} {n W v} {f : PropKey} {P Q : Fam}
     (h : refsT A Bs n W v) (hb : B ∈ Bs) (hp : (f, P) ∈ A) (hq : (f, Q) ∈ B) :
     Agree P Q n := by
-  obtain ⟨flds, l, c, rfl, hf, hl, ha⟩ := recT_at hp h.1
-  obtain ⟨flds', l', c', he, hf', hl', hc⟩ := recT_at hq (h.2 B hb)
+  obtain ⟨flds, l, c, oid, rfl, hf, hl, ha⟩ := recT_at hp h.1
+  obtain ⟨flds', l', c', oid', he, hf', hl', hc⟩ := recT_at hq (h.2 B hb)
   cases he
   cases Option.some.inj (hf.symm.trans hf')
   cases hl'.symm.trans hl
@@ -109,12 +109,12 @@ theorem operands_agree {A B : Fields} {Bs : List Fields} {n W v} {f : PropKey} {
 at every available lower budget. -/
 theorem read_all {A : Fields} {Bs : List Fields} {n W heap}
     {flds : List (PropKey × Nat)} {f : PropKey} {P : Fam} {l : Nat}
-    (hok : HeapOk n W heap) (hr : refsT A Bs n W (.objAt flds .absent))
+    (hok : HeapOk n W heap) (hr : refsT A Bs n W (.objAt flds .absent oid))
     (hp : (f, P) ∈ A) (hf : flds.lookup f = some l) :
     ∃ v, heap[l]? = some v ∧ ∀ j (hj : j < n),
       P j (trunc j (Nat.le_of_lt hj) W) v ∧
       ∀ B ∈ Bs, ∀ Q, (f, Q) ∈ B → Q j (trunc j (Nat.le_of_lt hj) W) v := by
-  obtain ⟨flds', l', c, he, hf', hl, hc⟩ := recT_at hp hr.1
+  obtain ⟨flds', l', c, oid', he, hf', hl, hc⟩ := recT_at hp hr.1
   cases he
   cases Option.some.inj (hf'.symm.trans hf)
   obtain ⟨v, hv, hm⟩ := read_sound n W heap l c hok hl
@@ -128,11 +128,11 @@ suffices: every operand constraining it agrees with the same invariant below
 this budget. Aliased heap satisfaction survives, and no other field moves. -/
 theorem write_first {A : Fields} {Bs : List Fields} {n W heap}
     {flds : List (PropKey × Nat)} {f : PropKey} {P : Fam} {l : Nat} {v : Val}
-    (hok : HeapOk n W heap) (hr : refsT A Bs n W (.objAt flds .absent))
+    (hok : HeapOk n W heap) (hr : refsT A Bs n W (.objAt flds .absent oid))
     (hp : (f, P) ∈ A) (hf : flds.lookup f = some l)
     (hv : ∀ j (hj : j < n), P j (trunc j (Nat.le_of_lt hj) W) v) :
     HeapOk n W (heap.set l v) := by
-  obtain ⟨flds', l', c, he, hf', hl, hc⟩ := recT_at hp hr.1
+  obtain ⟨flds', l', c, oid', he, hf', hl, hc⟩ := recT_at hp hr.1
   cases he
   cases Option.some.inj (hf'.symm.trans hf)
   exact write_sound n W heap l c v hok hl (fun j hj => (hc j hj _ v).mpr (hv j hj))
@@ -153,12 +153,12 @@ both says exactly what the two say. -/
 theorem recT_append (A C : Fields) (n : Nat) (W : WorldT n) (v : Val) :
     recT (A ++ C) n W v ↔ interT (recT A) (recT C) n W v := by
   constructor
-  · rintro ⟨flds, rfl, h⟩
-    exact ⟨⟨flds, rfl, fun f T hm => h f T (List.mem_append_left _ hm)⟩,
-      ⟨flds, rfl, fun f T hm => h f T (List.mem_append_right _ hm)⟩⟩
-  · rintro ⟨⟨flds, rfl, ha⟩, ⟨flds', he, hc⟩⟩
+  · rintro ⟨flds, oid, rfl, h⟩
+    exact ⟨⟨flds, oid, rfl, fun f T hm => h f T (List.mem_append_left _ hm)⟩,
+      ⟨flds, oid, rfl, fun f T hm => h f T (List.mem_append_right _ hm)⟩⟩
+  · rintro ⟨⟨flds, oid, rfl, ha⟩, ⟨flds', oid', he, hc⟩⟩
     cases he
-    refine ⟨flds, rfl, fun f T hm => ?_⟩
+    refine ⟨flds, oid, rfl, fun f T hm => ?_⟩
     rcases List.mem_append.mp hm with h | h
     · exact ha f T h
     · exact hc f T h

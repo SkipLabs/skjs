@@ -110,7 +110,7 @@ def readFields (facts : HeapKnowledge.Knowledge) (slot : Nat) : List (Nat × Pro
 
 theorem readFields_holds {facts : HeapKnowledge.Knowledge} {slot ρ h}
     (hf : HeapKnowledge.Holds facts ρ h) :
-    ∀ k f, (k, f) ∈ readFields facts slot → ∃ flds c l, ρ k = .objAt flds c ∧
+    ∀ k f, (k, f) ∈ readFields facts slot → ∃ flds c oid l, ρ k = .objAt flds c oid ∧
       flds.lookup f = some l ∧ h[l]? = some (ρ slot) := by
   intro k f hk
   obtain ⟨g, hg, he⟩ := List.mem_filterMap.mp hk
@@ -131,7 +131,7 @@ def optionalFields (facts : HeapKnowledge.Knowledge) (slot : Nat) : List (Nat ×
 
 theorem optionalFields_holds {facts : HeapKnowledge.Knowledge} {slot ρ h}
     (hf : HeapKnowledge.Holds facts ρ h) :
-    ∀ k f, (k, f) ∈ optionalFields facts slot → ∃ flds c, ρ k = .objAt flds c ∧
+    ∀ k f, (k, f) ∈ optionalFields facts slot → ∃ flds c oid, ρ k = .objAt flds c oid ∧
       (flds.lookup f = none → ρ slot = .undef) ∧
       (∀ l, flds.lookup f = some l → h[l]? = some (ρ slot)) := by
   intro k f hk
@@ -142,8 +142,8 @@ theorem optionalFields_holds {facts : HeapKnowledge.Knowledge} {slot ρ h}
     simp only [Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq] at hc
     have := hf.2.2 g hg
     simp only [hc.1.1.1, hc.1.1.2, hc.1.2, Bool.false_eq_true, ↓reduceIte] at this
-    obtain ⟨flds, c, hl, hr⟩ := this
-    refine ⟨flds, c, hl, fun hn => ?_, fun l hn => ?_⟩
+    obtain ⟨flds, c, oid, hl, hr⟩ := this
+    refine ⟨flds, c, oid, hl, fun hn => ?_, fun l hn => ?_⟩
     · unfold HeapLinks.ReadGave at hr
       rw [hn] at hr
       simpa [hc.2] using hr

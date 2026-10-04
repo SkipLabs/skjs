@@ -192,7 +192,7 @@ The encoding follows mechanically from the
 | $\mathsf{invoke}(t,t,[t,\ldots])$   | `{"invoke":{"f":t,"r":t,"args":[t]}}`                 | `effect`     | `{"effect":{"next":T}}`                       |
 | $\mathsf{construct}(t,[t,\ldots])$ | `{"construct":{"f":t,"args":[t]}}`                    | | |
 | null, undefined, true, false         | `"nul"`, `"undef"`, `"tru"`, `"fls"`                  | `branch`     | `{"branch":{"yes":T,"no":T}}`                 |
-| object with named locations          | `{"objAt":{"fields":[["value",0]],"call":c}}`         | `branchBind` | `{"branchBind":{"yes":T,"no":T}}`             |
+| object with named locations          | `{"objAt":{"fields":[["value",0]],"call":c,"identity":1}}` | `branchBind` | `{"branchBind":{"yes":T,"no":T}}`             |
 | allocation with ordered initializers | `{"makeAt":{"call":c,"names":["value"],"inits":[t]}}` | `tagBind`    | `{"tagBind":{"test":"isNul","yes":T,"no":T}}` |
 | field read                           | `{"readAt":{"field":"value","a":t}}`                  |              |                                               |
 | computed string-key read             | `{"indexAt":{"a":t,"key":t}}`                          |              |                                               |

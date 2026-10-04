@@ -272,11 +272,11 @@ inductive Invoke : Frame → Tm → Prop where
   /-- A forwarding descriptor yields the target's call: the saved receiver in
   place of this one, the saved prefix before these actuals. -/
   | bound : isVal r = true → Values args →
-      Invoke ⟨.objAt fs (.bound target r₀ pre), r, args⟩ (.invoke target r₀ (pre ++ args))
+      Invoke ⟨.objAt fs (.bound target r₀ pre) oid, r, args⟩ (.invoke target r₀ (pre ++ args))
   /-- Graph code starts its run at its entry, the receiver, the parameters and
   the captures in its environment, after collecting its rest (`graphEntry`). -/
   | graph : isVal r = true → Values args →
-      Invoke ⟨.objAt fs (.graph arity E K start caps .call rest), r, args⟩
+      Invoke ⟨.objAt fs (.graph arity E K start caps .call rest) oid, r, args⟩
         (graphEntry arity E K start caps rest r args)
 
 /-- The term each kind of code yields for a ready receiver and argument list. -/
@@ -307,7 +307,7 @@ theorem construction_pad {c : CallCode} {enter : List Tm → Tm} (h : constructi
 /-- A ready construction is one step of the machine. -/
 theorem construction_step {fs : List (PropKey × Nat)} {c : CallCode} {enter : List Tm → Tm}
     (h : construction c = some enter) {args : List Tm} (hv : Values args) (heap : Heap) :
-    Step heap (.construct (.objAt fs c) args) heap (enter args) := by
+    Step heap (.construct (.objAt fs c oid) args) heap (enter args) := by
   unfold construction at h
   split at h <;> cases h
   exact .constructGraph hv
@@ -320,15 +320,15 @@ theorem invoke_deterministic (hi : Invoke frame body) (hi' : Invoke frame body')
 callee has invocation code. No scope or type test is added to the untyped
 machine. -/
 theorem invoke_iff : Invoke frame result ↔
-    ∃ fs code, frame.callee = .objAt fs code ∧ isVal frame.recv = true ∧ Values frame.args ∧
+    ∃ fs code oid, frame.callee = .objAt fs code oid ∧ isVal frame.recv = true ∧ Values frame.args ∧
       dispatch code frame.recv frame.args = some result := by
   constructor
   · intro hi
     cases hi with
-    | bound hr hv => exact ⟨_, _, rfl, hr, hv, rfl⟩
-    | graph hr hv => exact ⟨_, _, rfl, hr, hv, rfl⟩
+    | bound hr hv => exact ⟨_, _, _, rfl, hr, hv, rfl⟩
+    | graph hr hv => exact ⟨_, _, _, rfl, hr, hv, rfl⟩
   · rcases frame with ⟨f, r, args⟩
-    rintro ⟨fs, code, hf, hr, hv, hd⟩
+    rintro ⟨fs, code, oid, hf, hr, hv, hd⟩
     cases hf
     cases code with
     | absent => cases hd
@@ -377,8 +377,8 @@ theorem call_step_iff : Step h (.invoke f r args) h' result ↔
 /-- A forwarding descriptor yields the same term whatever receiver it is
 invoked with: the saved one replaces it. -/
 theorem bound_ignores_receiver {fs t r₀ pre r r' args result result'}
-    (hi : Invoke ⟨.objAt fs (.bound t r₀ pre), r, args⟩ result)
-    (hi' : Invoke ⟨.objAt fs (.bound t r₀ pre), r', args⟩ result') :
+    (hi : Invoke ⟨.objAt fs (.bound t r₀ pre) oid, r, args⟩ result)
+    (hi' : Invoke ⟨.objAt fs (.bound t r₀ pre) oid, r', args⟩ result') :
     result = .invoke t r₀ (pre ++ args) ∧ result' = result := by
   cases hi; cases hi'; exact ⟨rfl, rfl⟩
 
@@ -387,9 +387,9 @@ order: the outer descriptor forwards to the inner one, which supplies its own
 saved receiver. -/
 theorem rebind_keeps_receiver {h : Heap} {fs gs t r₀ r₁ p₀ p₁ r args}
     (hr : isVal r = true) (hr₁ : isVal r₁ = true) (hv : Values args) (hp₁ : Values p₁) :
-    Step h (.invoke (.objAt gs (.bound (.objAt fs (.bound t r₀ p₀)) r₁ p₁)) r args) h
-        (.invoke (.objAt fs (.bound t r₀ p₀)) r₁ (p₁ ++ args)) ∧
-      Step h (.invoke (.objAt fs (.bound t r₀ p₀)) r₁ (p₁ ++ args)) h
+    Step h (.invoke (.objAt gs (.bound (.objAt fs (.bound t r₀ p₀) oid) r₁ p₁) oid) r args) h
+        (.invoke (.objAt fs (.bound t r₀ p₀) oid) r₁ (p₁ ++ args)) ∧
+      Step h (.invoke (.objAt fs (.bound t r₀ p₀) oid) r₁ (p₁ ++ args)) h
         (.invoke t r₀ (p₀ ++ (p₁ ++ args))) := by
   refine ⟨.callBound hr hv, .callBound hr₁ ?_⟩
   intro a hm

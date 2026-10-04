@@ -42,9 +42,12 @@ construct-only, by `new` ($\kappa$), collecting a rest or not ($\varrho$)
 callable object included, is graph code; there is no other code. An argument list is not a value: which lists a rest
 parameter's type admits is a separate contract on lists of values
 ([argument packs](POSITIVE-TYPES.md#argument-packs)).
-`make c a` evaluates its initializer `a`, then appends that value
-to the heap and returns `obj h.length c`, where `h.length` is the length
-before appending.
+`make c a` evaluates its initializer `a`, then appends that value and one
+identity cell holding $\mathsf{null}$ to the heap and returns `obj h.length c`,
+where `h.length` is the length before appending. Every allocation ends with
+its identity cell: an object value $\mathsf{objAt}(\mathit{fs},c,i)$ carries the
+locations $\mathit{fs}$ of its fields, its call code $c$ and the location $i$
+of that cell, its identity, which no field names and no write reaches.
 `alloc a` abbreviates `make absent a`; creating code is `make (graph …) a`.
 Both use the same constructor and the same allocation step, `Step.makeV`.
 The code is not run during creation. There is no bare lambda value.
@@ -150,15 +153,15 @@ two values, or throws where JavaScript throws, and is stuck otherwise:
 ```math
 \frac{\mathsf{binop}(op,v_1,v_2)=v}{h,\ v_1\mathbin{op}v_2\to h,\ v}\ (\texttt{arithV})
 \qquad
-\frac{\mathsf{binopThrows}(op,v_1,v_2)}{h,\ v_1\mathbin{op}v_2\to h,\ \mathsf{throw}\ \mathit{err}}\ (\texttt{arithThrow})
+\frac{\mathsf{binopThrows}(op,v_1,v_2)}{h,\ v_1\mathbin{op}v_2\to h\mathbin{+\!\!+}[\mathsf{null}],\ \mathsf{throw}\ \mathit{err}_{|h|}}\ (\texttt{arithThrow})
 \qquad op\in\{+,-,*,/,\%,{*}{*},\mathbin{\hat{}},<,\le,>,\ge,\equiv\}.
 ```
 
 $\mathsf{binop}$ is JavaScript's operation on the operand kinds it models;
 $\mathsf{binopThrows}$ is where JavaScript throws with no code of the
-program's run first, and $\mathit{err}$ the error object (`thrownError`, an
-object without fields, standing for the `TypeError` or `RangeError`
-instance). Neither answers where JavaScript converts through code or
+program's run first, and $\mathit{err}_i$ the error object (`thrownError`, an
+object without fields whose identity cell the step appends at $i$, standing
+for the `TypeError` or `RangeError` instance). Neither answers where JavaScript converts through code or
 coercions the calculus does not have:
 
 | Operands | Arithmetic ($+,-,*,/,\%,{*}{*},\hat{}$) | Relational ($<,\le,>,\ge$) |
@@ -172,25 +175,24 @@ coercions the calculus does not have:
 | anything else | none | none |
 
 Strict equality $\equiv$ (`===`, `Arith.eq`; `strictEquals`) answers a Boolean
-where JavaScript's `IsStrictlyEqual` needs no identity the model lacks:
+except on two stores:
 
 ```math
 v_1\equiv v_2=\begin{cases}
 \mathsf{sameValue}(v_1,v_2) & v_1\ \text{or}\ v_2\ \text{a primitive}\\
-\mathit{fs}_1=\mathit{fs}_2 & v_i=\mathsf{objAt}(\mathit{fs}_i,c_i),\ \mathit{fs}_1\neq[\,]\ \text{or}\ \mathit{fs}_2\neq[\,]\\
-\text{none} & \text{two objects without fields, two stores}
+i_1=i_2 & v_k=\mathsf{objAt}(\mathit{fs}_k,c_k,i_k)\\
+\mathsf{false} & \text{an object and a store}\\
+\text{none} & \text{two stores}
 \end{cases}
 ```
 
 $\mathsf{sameValue}$ is false across kinds, `Number::equal` on two numbers
 (NaN equals nothing, the zeros each other), and equality of the string, the
 bigint, the Boolean or the symbol, `null` and `undefined` each only to itself.
-An object value is the locations of its fields, which only its allocation
-creates, fresh (`makeV`): two objects with a field are one object exactly when
-their locations are. Two objects without a field (two closures, two empty
-records) would be the same value here though JavaScript tells them apart, so
-they have no answer, and the typing rule refuses them. Strict equality converts nothing, so it never
-throws ($\mathsf{binopThrows}$ is false for $\equiv$).
+An object's identity is the location of its identity cell, which only its
+allocation creates, fresh (`makeFields`): two objects are one object exactly
+when their identities are, with or without fields. Strict equality converts
+nothing, so it never throws ($\mathsf{binopThrows}$ is false for $\equiv$).
 
 Loose equality (`==`, `Arith.looseEq`; `looseEquals`) follows
 [ECMA-262's `IsLooselyEqual`](REFERENCES.md#ecma-262) on these operand pairs;
@@ -207,7 +209,7 @@ before comparison.
 | A string and a bigint | Parse by `StringToBigInt`; invalid integer text compares unequal |
 | A number and a bigint | Compare the double's exact mathematical value with the integer; NaN and infinities compare unequal |
 | A symbol and a different primitive kind | Unequal |
-| Two objects, at least one carrying a field location | Compare their field locations, as strict equality does |
+| Two objects | Compare their identities, as strict equality does |
 
 Numeric strings admit ECMAScript whitespace, empty text, decimal fractions and
 exponents, unsigned binary/octal/hexadecimal prefixes and signed `Infinity`.

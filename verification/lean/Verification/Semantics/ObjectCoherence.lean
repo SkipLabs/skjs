@@ -59,8 +59,8 @@ theorem mem_slots {base : Nat} {ns : List PropKey} {p : PropKey × Nat}
 /-! Every object occurrence agrees with its allocation, including inside code. -/
 mutual
 def Names (D : Registry) : Tm → Prop
-  | .objAt fs .absent => ∀ l ∈ locs fs, D[l]? = some .absent
-  | .objAt fs (.bound t r pre) =>
+  | .objAt fs .absent oid => ∀ l ∈ locs fs, D[l]? = some .absent
+  | .objAt fs (.bound t r pre) oid =>
       (∀ l ∈ locs fs, D[l]? = some (.bound t r pre)) ∧
         (Scoped 0 t ∧ Scoped 0 r ∧ ScopedArgs 0 pre) ∧ Names D t ∧ Names D r ∧ NamesArgs D pre
   | .makeAt (.bound t r pre) _ args =>
@@ -75,7 +75,7 @@ def Names (D : Registry) : Tm → Prop
   | .arrLit args => NamesArgs D args
   | .arr ls => ∀ l ∈ ls.filterMap id, D[l]? = some .absent
   | .ite c a b => Names D c ∧ Names D a ∧ Names D b
-  | .objAt fs (.graph n E K st caps k r) =>
+  | .objAt fs (.graph n E K st caps k r) oid =>
       (∀ l ∈ locs fs, D[l]? = some (.graph n E K st caps k r)) ∧ ScopedArgs 0 caps ∧
         NamesArgs D E ∧ NamesArgs D caps
   | .makeAt (.graph _ E _ _ caps _ _) _ args => NamesArgs D E ∧ NamesArgs D caps ∧ NamesArgs D args
@@ -95,11 +95,11 @@ end
 theorem Names.mono {D E t} (ht : Names D t) (hx : Extends D E) : Names E t := by
   induction t using Tm.induct <;> simp_all [Names]
   case arr ls => exact fun l hl => hx l _ (ht l hl)
-  case objAbsent fs => exact fun l hl => hx _ _ (ht l hl)
-  case objBound fs t r pre iht ihr ihp => exact fun l hl => hx _ _ (ht.1 l hl)
-  case objGraph fs n E K st caps k r ihE ihc => exact fun l hl => hx _ _ (ht.1 l hl)
+  case objAbsent fs oid => exact fun l hl => hx _ _ (ht l hl)
+  case objBound fs oid t r pre iht ihr ihp => exact fun l hl => hx _ _ (ht.1 l hl)
+  case objGraph fs oid n E K st caps k r ihE ihc => exact fun l hl => hx _ _ (ht.1 l hl)
 
-theorem Names.descriptor {D fs c} (ht : Names D (.objAt fs c)) :
+theorem Names.descriptor {D fs c} (ht : Names D (.objAt fs c oid)) :
     ∀ l ∈ locs fs, D[l]? = some c := by
   cases c with
   | absent => exact ht
@@ -109,20 +109,20 @@ theorem Names.descriptor {D fs c} (ht : Names D (.objAt fs c)) :
 /-- Same identity means exactly the same descriptor, including its body. An
 identity is its fields, so this needs one of them to name. -/
 theorem descriptor_unique {D fs c c'} {l : Nat} (hl : l ∈ locs fs)
-    (h : Names D (.objAt fs c)) (h' : Names D (.objAt fs c')) : c = c' :=
+    (h : Names D (.objAt fs c oid)) (h' : Names D (.objAt fs c' oid)) : c = c' :=
   Option.some.inj ((h.descriptor l hl).symm.trans (h'.descriptor l hl))
 
 theorem Names.subst {D t a} (ht : Names D t) (ha : Names D a) (j : Nat) :
     Names D (subst j a t) := by
   induction t using Tm.induct generalizing j <;> simp only [Names, namesArgs_iff, Verification.subst, substArgs_eq_map] at *
   case var i => split <;> (try split) <;> simp_all [Names]
-  case objBound fs t r pre iht ihr ihp =>
+  case objBound fs oid t r pre iht ihr ihp =>
     have hpre : pre.map (Verification.subst j a) = pre := by
       simpa using (List.map_congr_left (g := id)
         (fun x hx => subst_above ((scopedArgs_iff _ _).mp ht.2.1.2.2 x hx) (Nat.zero_le j) a))
     rw [subst_above ht.2.1.1 (Nat.zero_le j), subst_above ht.2.1.2.1 (Nat.zero_le j), hpre]
     exact ht
-  case objGraph fs n E K st caps _ _ ihE ihc =>
+  case objGraph fs oid n E K st caps _ _ ihE ihc =>
     have hc : caps.map (Verification.subst j a) = caps := by
       simpa using (List.map_congr_left (g := id)
         (fun x hx => subst_above ((scopedArgs_iff _ _).mp ht.2.1 x hx) (Nat.zero_le j) a))
@@ -143,7 +143,7 @@ theorem Names.instantiate {D t} (ht : Names D t) (ρ : Env)
     (hρ : ∀ i, Names D (ρ i)) (d : Nat) : Names D (instantiate d ρ t) := by
   induction t using Tm.induct generalizing d <;> simp only [Names, namesArgs_iff, Verification.instantiate, instantiateArgs_eq_map] at *
   case var i => split <;> simp_all [Names]
-  case objBound fs t r pre iht ihr ihp =>
+  case objBound fs oid t r pre iht ihr ihp =>
     have hpre : pre.map (Verification.instantiate d ρ) = pre := by
       simpa using (List.map_congr_left (g := id)
         (fun x hx => instantiate_above
@@ -151,7 +151,7 @@ theorem Names.instantiate {D t} (ht : Names D t) (ρ : Env)
     rw [instantiate_above (ht.2.1.1.mono (Nat.zero_le d)),
       instantiate_above (ht.2.1.2.1.mono (Nat.zero_le d)), hpre]
     exact ht
-  case objGraph fs n E K st caps _ _ ihE ihc =>
+  case objGraph fs oid n E K st caps _ _ ihE ihc =>
     have hc : caps.map (Verification.instantiate d ρ) = caps := by
       simpa using (List.map_congr_left (g := id)
         (fun x hx => instantiate_above
@@ -430,28 +430,33 @@ theorem step_preserves {h t h' t'} (step : Step h t h' t') :
         · exact hn
   | @makeFields c ns vs h hv hlen =>
     intro D hh ht
-    have hx := extends_append D (List.replicate vs.length c)
+    have hx := extends_append D (List.replicate (vs ++ [Tm.nul]).length c)
     have hfield : ∀ l ∈ locs (slots h.length ns),
-        (D ++ List.replicate vs.length c)[l]? = some c := by
+        (D ++ List.replicate (vs ++ [Tm.nul]).length c)[l]? = some c := by
       intro l hl
       obtain ⟨f,hf⟩ := mem_locs.mp hl
       obtain ⟨hlo,hhi⟩ := mem_slots (p := (f,l)) hf
       have hdl := hh.1
       have hnl := hlen
-      exact registry_alloc (by omega) (by omega)
+      exact registry_alloc (by omega) (by simp; omega)
+    have hnul : isVal (.nul : Tm) = true ∧ TermOk D .nul := ⟨rfl, by simp [TermOk, Scoped, Names]⟩
+    rw [List.append_assoc]
     cases c with
     | absent =>
       simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht ⊢
-      exact ⟨_,hx,hh.alloc (fun v hv' => ⟨hv v hv',ht.1 v hv',ht.2 v hv'⟩) .absent,
+      exact ⟨_,hx,hh.alloc (fun v hv' => (List.mem_append.mp hv').elim
+          (fun hv' => ⟨hv v hv',ht.1 v hv',ht.2 v hv'⟩) (fun hv' => by rw [List.mem_singleton.mp hv']; exact hnul)) .absent,
         trivial,hfield⟩
     | bound t r pre =>
       simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht ⊢
-      refine ⟨_,hx,hh.alloc (fun v hv' => ⟨hv v hv',ht.1.2.2.2 v hv',ht.2.2.2.2 v hv'⟩) _,
+      refine ⟨_,hx,hh.alloc (fun v hv' => (List.mem_append.mp hv').elim
+          (fun hv' => ⟨hv v hv',ht.1.2.2.2 v hv',ht.2.2.2.2 v hv'⟩) (fun hv' => by rw [List.mem_singleton.mp hv']; exact hnul)) _,
         ⟨ht.1.1,ht.1.2.1,ht.1.2.2.1⟩,hfield,⟨ht.1.1,ht.1.2.1,ht.1.2.2.1⟩,ht.2.1.mono hx,
         ht.2.2.1.mono hx,fun v hv => (ht.2.2.2.1 v hv).mono hx⟩
     | graph n E K st caps k r =>
       simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht ⊢
-      refine ⟨_,hx,hh.alloc (fun v hv' => ⟨hv v hv',ht.1.2 v hv',ht.2.2.2 v hv'⟩) _,
+      refine ⟨_,hx,hh.alloc (fun v hv' => (List.mem_append.mp hv').elim
+          (fun hv' => ⟨hv v hv',ht.1.2 v hv',ht.2.2.2 v hv'⟩) (fun hv' => by rw [List.mem_singleton.mp hv']; exact hnul)) _,
         ht.1.1,hfield,ht.1.1,fun v hv => (ht.2.1 v hv).mono hx,
         fun v hv => (ht.2.2.1 v hv).mono hx⟩
   | readC step ih =>
@@ -596,7 +601,9 @@ theorem step_preserves {h t h' t'} (step : Step h t h' t') :
     exact ih D hh ht
   | arithThrow _ =>
     intro D hh ht
-    exact ⟨D,.refl D,hh,by simp [Scoped, thrownError],by simp [Names, thrownError, locs]⟩
+    exact ⟨_,extends_append D [.absent],
+      hh.alloc (vs := [.nul]) (by simp [TermOk, Scoped, Names]; rfl) .absent,
+      by simp [Scoped, thrownError],by simp [Names, thrownError, locs]⟩
   | mergeC1 step ih =>
     intro D hh ht
     obtain ⟨E,hx,hh',hs,hn⟩ := ih D hh ⟨ht.1.1,ht.2.1⟩

@@ -68,34 +68,34 @@ class value is neither. -/
 theorem neutral_iff (A : Fields) (Bs : List Fields) (n W v) :
     unionT (ReferenceConjunctions.refsT A Bs) (objectsT A Bs []) n W v ↔
       propsT A Bs n W v ∧ Scoped 0 v ∧
-        ∀ fs c, v = .objAt fs c → c = .absent ∨ c.callable = true := by
+        ∀ fs c oid, v = .objAt fs c oid → c = .absent ∨ c.callable = true := by
   constructor
   · intro h
     rcases h with h | h
     · refine ⟨⟨recT_bag h.1, fun B hb => recT_bag (h.2 B hb)⟩, ?_, ?_⟩
-      · obtain ⟨flds,rfl,_⟩ := h.1
+      · obtain ⟨flds,oid,rfl,_⟩ := h.1
         trivial
-      · obtain ⟨flds,rfl,_⟩ := h.1
-        intro fs c he
+      · obtain ⟨flds,oid,rfl,_⟩ := h.1
+        intro fs c oid' he
         cases he
         exact .inl rfl
     · refine ⟨h.1,h.2.1.scoped, ?_⟩
-      obtain ⟨fs', code, he, hc, -⟩ := h.2.1
-      intro fs c hv
+      obtain ⟨fs', code, oid', he, hc, -⟩ := h.2.1
+      intro fs c oid hv
       rw [hv] at he
       cases he
       exact .inr hc
   · rintro ⟨h,hs,hnc⟩
-    obtain ⟨flds,code,rfl,_,hr⟩ := h.1
-    rcases hnc flds code rfl with rfl | hc
+    obtain ⟨flds,code,oid,rfl,_,hr⟩ := h.1
+    rcases hnc flds code oid rfl with rfl | hc
     · left
       refine ⟨hr,?_⟩
       intro B hb
-      obtain ⟨flds',code,he,_,hr⟩ := h.2 B hb
+      obtain ⟨flds',code,oid',he,_,hr⟩ := h.2 B hb
       cases he
       exact hr
     · right
-      exact ⟨h,⟨flds,_,rfl,hc,hs⟩,by simp⟩
+      exact ⟨h,⟨flds,_,_,rfl,hc,hs⟩,by simp⟩
 
 #print axioms neutral_iff
 #print axioms merge

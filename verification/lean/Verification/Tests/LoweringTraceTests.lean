@@ -61,11 +61,12 @@ private def expected : Program :=
 /-- The seed in slot zero, nothing else bound. -/
 private def seeded (v : Tm) : Env := fun i => if i == 0 then v else .nul
 
--- The heap holds the first cell then the second. After the run the first cell
--- is null and the second still holds the seed, which a non-null seed returns.
+-- The heap holds the first cell then the second, each followed by its
+-- identity. After the run the first cell is null and the second still holds
+-- the seed, which a non-null seed returns.
 theorem separate_cells (b : Bool) : Execution expected 48 []
     (.at 22 (seeded (if b then .tru else .fls)))
-    [.nul, if b then .tru else .fls] (.done (if b then .tru else .fls)) := by
+    [.nul, .nul, if b then .tru else .fls, .nul] (.done (if b then .tru else .fls)) := by
   cases b <;> repeat first
     | exact Execution.refl
     | apply Execution.next (.enter rfl)
@@ -135,12 +136,13 @@ private def expected : Program :=
 /-- The seed in slot zero, nothing else bound. -/
 private def seeded (v : Tm) : Env := fun i => if i == 0 then v else .nul
 
--- The heap holds the state cell, then the box's `a` and `b` locations. With
+-- The heap holds the state cell, then the box's `a` and `b` locations, each
+-- object followed by its identity. With
 -- both fields undefined, both defaults run in pattern order: the state cell
 -- ends at 2, which is returned.
 theorem both_defaults_in_order : Execution expected 60 []
     (.at 24 (seeded .undef))
-    [.num 4611686018427387904, .undef, .undef] (.done (.num 4611686018427387904)) := by
+    [.num 4611686018427387904, .nul, .undef, .undef, .nul] (.done (.num 4611686018427387904)) := by
   repeat first
     | exact Execution.refl
     | apply Execution.next (.enter rfl)
@@ -161,7 +163,7 @@ theorem both_defaults_in_order : Execution expected 60 []
 -- and the read of `b`, the seed, is returned.
 theorem no_default_runs : Execution expected 46 []
     (.at 24 (seeded (.num 4617315517961601024)))
-    [.nul, .num 4617315517961601024, .num 4617315517961601024]
+    [.nul, .nul, .num 4617315517961601024, .num 4617315517961601024, .nul]
     (.done (.num 4617315517961601024)) := by
   repeat first
     | exact Execution.refl
@@ -215,7 +217,7 @@ private def expected : Program :=
 -- The alias local is dropped on the back edge; the original closure and cell
 -- remain in the correct slots.
 theorem one_iteration : ∃ n, Execution expected n []
-    (.at 19 (fun _ => .nul)) [.fls,.nul] (.done .fls) := by
+    (.at 19 (fun _ => .nul)) [.fls,.nul,.nul,.nul] (.done .fls) := by
   apply Exists.intro
   run_machine
 
@@ -288,7 +290,7 @@ private def continueProgram : Program := [
 
 -- Continue drops the alias and returns to condition evaluation after the write.
 theorem continue_retests : ∃ n, Execution continueProgram n []
-    (.at 20 (fun _ => .nul)) [.fls,.nul] (.done .fls) := by
+    (.at 20 (fun _ => .nul)) [.fls,.nul,.nul,.nul] (.done .fls) := by
   apply Exists.intro
   run_machine
 #print axioms continue_retests
