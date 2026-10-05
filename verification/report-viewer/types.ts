@@ -34,15 +34,12 @@ export interface ExampleGroup {
   files: GroupFile[];
 }
 
-/** Which checker supplied the claims a report displays. */
-export type Producer = "tsc" | "ocaml";
-
 /** How a code unit is named to a report viewer: a function by its name, the module's
  * top-level code, which has none, as its initialization. */
 export const unitLabel = (unit: { name: string }): string =>
   unit.name === "" ? "module initialization" : unit.name;
 
-/** What the verifier found for one function, over one producer's claims. */
+/** What the verifier found for one function, over the producer's claims. */
 export type Status =
   /** A certificate was checked. */
   | "verified"
@@ -134,31 +131,12 @@ export interface MissingSite {
   syntax?: string;
 }
 
-/**
- * The signature a report carries for a function. The two writers state it
- * differently and both are read the same way: converting a producer's export
- * keeps that producer's own encoding, and converting the normalized claims document
- * has already printed its surface text. So a report viewer prints an encoding and
- * shows text as it stands.
- */
+/** The signature a report carries for a function, its types printed. */
 export interface Signature {
-  params: { name: string; type: unknown }[];
-  retType: unknown;
+  params: { name: string; type: string }[];
+  retType: string;
   /** The rigid parameters the claimed result names. */
   resultRigid?: RigidParameter[];
-}
-
-/** How complete the producer's own collection was for this function. */
-export interface Collection {
-  completion: "complete" | "aborted";
-  quality: "unverified" | "recovery";
-  mode: "normal" | "keep-going" | "backtrace";
-  /**
-   * Original spans expression checking entered, including expressions that
-   * failed before a result could be recorded (ANNOTATED-SOURCE.md). A gap is
-   * one of these with no claim against it.
-   */
-  visitedExpressions?: Span[];
 }
 
 export interface ReportFunction {
@@ -175,7 +153,9 @@ export interface ReportFunction {
   entries: Entry[];
   expressions: DisplayClaim[];
   missingSites?: MissingSite[];
-  collection?: Collection;
+  /** TypeScript's own verdict on the function: accepted when none of its
+   * diagnostics falls inside it (`typescriptVerdicts`). Display only. */
+  typescriptAccepted?: boolean;
 }
 
 /**
@@ -230,7 +210,6 @@ export type Result =
 
 export interface Manifest {
   source: { file: string; sha256: string };
-  producer: Producer | string;
   functions: ReportFunction[];
   gaps?: Gap[];
   /** Explicitly `null` when no verifier ran, rather than absent. */
@@ -249,8 +228,6 @@ export interface Manifest {
 
 /** How the report was collected, shown under provenance. */
 export interface CollectionRun {
-  producer: Producer | string;
-  producerRun: boolean;
   command: string;
   ranAt: string;
   durationMs: number;

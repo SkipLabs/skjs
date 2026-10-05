@@ -16,17 +16,22 @@ suites that check the repository around the pipeline and the example corpus.
 ## The corpus
 
 `make verify-examples` reports per-function outcomes on the report viewer's example
-corpus, listed in [`report-viewer/corpus-index.mts`](../report-viewer/corpus-index.mts):
-TypeScript's own claims for each file ([tsc claims](tsc-claims/README.md)),
-checked by the same verifier. The corpus asserts no outcome; a refusal is a
-reported result.
+corpus, listed in [`report-viewer/corpus-index.mts`](../report-viewer/corpus-index.mts),
+each file run through the pipeline entry point. A line reads
+`tsc accepted→derived`: TypeScript's own verdict on the function (accepted
+when none of its diagnostics falls inside the function,
+`typescriptVerdicts`), then whether the verifier derives the producer's
+claims. A `✗` on the right is no derivation found, never a disproof. The
+corpus asserts no outcome; a refusal is a reported result.
 
 - `stateful-source/`: storage contracts, refinements, loops, generics and the
   operations of the fragment, one phenomenon per file.
 - [`callables/`](callables/README.md): call signatures, callable objects,
   arity, receivers and argument lists.
 
-`tsconfig.json` is the regime the corpus is claimed and checked under.
+`tsconfig.json` is the regime TypeScript's verdicts are taken under. It uses
+`moduleDetection: "force"`: separate examples are independent modules, so
+repeated function names do not create cross-file overloads.
 
 To promote a boundary example, add a pipeline case with a positive witness
 and an independent negative control, then remove its expected rejection.

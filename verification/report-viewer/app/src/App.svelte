@@ -4,7 +4,7 @@
    *
    * One line of status, the functions down the left, the source in the middle,
    * and the selected claim beneath it. Everything on screen is a view of one
-   * file read through one producer; nothing here decides an outcome.
+   * file read through the producer; nothing here decides an outcome.
    * What is on screen is one object, state.svelte.ts, which every view reads.
    * Catalogue.svelte is what opens without a file in the link: every example group.
    * FunctionList.svelte lists the file's functions, each with its two outcomes.
@@ -12,7 +12,7 @@
    * Selection.svelte shows the selected claim beneath the source.
    * Obligation.svelte explains why verification stopped, from the verifier's record.
    * OpenPath.svelte opens any repository path the catalogue does not list.
-   * Provenance.svelte states the producer, the exact command and its time.
+   * Provenance.svelte states the exact command and its time.
    */
   import { onMount } from "svelte";
   import Catalogue from "./Catalogue.svelte";
@@ -23,12 +23,6 @@
   import Selection from "./Selection.svelte";
   import SourceView from "./SourceView.svelte";
   import { viewer } from "./state.svelte.ts";
-  import type { Producer } from "../../types.ts";
-
-  const PRODUCERS: { value: Producer; label: string }[] = [
-    { value: "tsc", label: "TypeScript claims" },
-    { value: "ocaml", label: "OCaml claims" },
-  ];
 
   onMount(async () => {
     // Read the link before opening anything: opening selects afresh, and the
@@ -37,14 +31,9 @@
     await viewer.start();
     const params = new URLSearchParams(location.search);
     const wanted = params.get("file");
-    // A link names a producer, and the link may be older than this list, so
-    // an unknown name reads as the default rather than as something to run.
-    const asked = params.get("producer");
-    const producer =
-      PRODUCERS.find((p) => p.value === asked)?.value ?? "ocaml";
     // A link that names a file opens it; one that does not shows what there
     // is, rather than opening whichever source happens to be listed first.
-    if (wanted) await viewer.open(wanted, producer);
+    if (wanted) await viewer.open(wanted);
     else viewer.browsing = true;
     // A link may name a claim. It names a record of one snapshot, so it is
     // honoured where it still resolves and dropped where it does not.
@@ -59,7 +48,7 @@
   }
 
   /*
-   * The address bar follows the view: the file, the producer, and the selected
+   * The address bar follows the view: the file and the selected
    * claim. Reopening the link restores the same view. Ids identify records
    * within one snapshot, not the same claim across collections, so a link into
    * a report that has changed may name nothing — and then the report viewer leaves the
@@ -69,7 +58,6 @@
     if (!viewer.path) return;
     const url = new URL(location.href);
     url.searchParams.set("file", viewer.path);
-    url.searchParams.set("producer", viewer.producer);
     const fn = viewer.selected;
     const site = viewer.selection?.site;
     url.hash = fn && site !== null && site !== undefined ? `${fn.name}:${site}` : "";
@@ -136,26 +124,14 @@
       >{viewer.browsing && viewer.report ? "back to the report" : "browse sources"}</button
     >
 
-    <select
-      aria-label="Claim producer"
-      value={viewer.producer}
-      onchange={(e) =>
-        viewer.open(viewer.path, e.currentTarget.value as Producer)}
-      disabled={viewer.busy || !viewer.path}
-    >
-      {#each PRODUCERS as p (p.value)}
-        <option value={p.value}>{p.label}</option>
-      {/each}
-    </select>
-
     <OpenPath busy={viewer.busy} onopen={choose} />
 
     <!-- What the source view draws beyond the claims themselves. Both are off
-         by default: they answer questions about the producer's run, not about
+         by default: they answer questions about the run, not about
          what it claims. -->
     <label class="tick">
-      <input type="checkbox" bind:checked={viewer.showProducerErrors} />
-      producer diagnostics
+      <input type="checkbox" bind:checked={viewer.showTypeScriptErrors} />
+      TypeScript errors
     </label>
     <label class="tick">
       <input type="checkbox" bind:checked={viewer.showUnsupported} />
@@ -170,7 +146,7 @@
       <span class="note">collecting…</span>
     {:else if viewer.collection}
       <span class="note">
-        {viewer.collection.producer} · {Math.round(
+        {Math.round(
           viewer.collection.durationMs,
         )}ms
         {#if !viewer.collection.verified}· not checked{/if}
@@ -196,13 +172,13 @@
     </p>
   {/if}
 
-  {#if viewer.showProducerErrors && !viewer.browsing}
-    <section class="producer-diagnostics" aria-label="Producer diagnostics">
-      <strong>Producer diagnostics</strong>
+  {#if viewer.showTypeScriptErrors && !viewer.browsing}
+    <section class="typescript-errors" aria-label="TypeScript errors">
+      <strong>TypeScript errors</strong>
       {#if viewer.report?.diagnostics?.trim()}
         <pre>{viewer.report.diagnostics}</pre>
       {:else}
-        <p>No producer diagnostics were recorded for this report.</p>
+        <p>TypeScript reported no errors in this source.</p>
       {/if}
     </section>
   {/if}
@@ -235,7 +211,7 @@
             {fn}
             selected={viewer.selection?.site ?? null}
             unsupported={viewer.showUnsupported}
-            producerErrors={viewer.showProducerErrors}
+            typescriptErrors={viewer.showTypeScriptErrors}
             onselect={(site) => viewer.select(fn.id, site)}
           />
         </div>
@@ -268,7 +244,7 @@
     overflow-wrap: anywhere;
     flex-shrink: 0;
   }
-  .producer-diagnostics {
+  .typescript-errors {
     padding: 10px 16px;
     border-bottom: 1px solid var(--rule);
     background: var(--panel);
@@ -276,12 +252,12 @@
     overflow: auto;
     flex-shrink: 0;
   }
-  .producer-diagnostics pre {
+  .typescript-errors pre {
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     margin: 6px 0 0;
   }
-  .producer-diagnostics p {
+  .typescript-errors p {
     margin: 6px 0 0;
   }
   .app {
@@ -300,14 +276,6 @@
     border-bottom: 1px solid var(--rule);
     background: var(--panel);
     flex: none;
-  }
-  .bar select {
-    font: inherit;
-    padding: 4px 8px;
-    border: 1px solid var(--rule);
-    border-radius: 5px;
-    background: var(--field);
-    color: var(--ink);
   }
   .path {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;

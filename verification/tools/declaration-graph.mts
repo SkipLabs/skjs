@@ -1887,27 +1887,6 @@ export function clientErrors(file: string, tsconfigPath?: string): SeenDiagnosti
         end: client.getLineAndCharacterOfPosition(d.end), text: d.text })));
 }
 
-/** Where each named import of `file` resolves, whatever kind of declaration
- * it is. Provenance for declarations the fragment cannot yet interpret; never
- * a typing certificate. */
-export function importTargets(file: string, tsconfigPath?: string):
-  { local: string; module: string; name: string; span: Span; kind: string }[] {
-  const clientFile = resolve(file);
-  return withProject(clientFile, tsconfigPath, (checker, client, root) => {
-    const idOf = moduleIds(clientFile, root);
-    return importBindings(client).map(binding => {
-      const target = targetOf(checker, binding.local);
-      if (!target || target.declarations.length !== 1)
-        throw new DeclarationError(binding.span, `no single declaration for ${binding.local.text}`);
-      const node = target.declarations[0]?.resolve();
-      if (!node) throw new DeclarationError(binding.span, `no declaration for ${binding.local.text}`);
-      const source = node.getSourceFile();
-      return { local: binding.local.text, module: idOf(source), name: target.name,
-        span: [node.getStart(source), node.end], kind: ts.SyntaxKind[node.kind] ?? "unknown" };
-    });
-  });
-}
-
 /** A merged interface's body: every part's fields, calls and at most one
  * string index, with no field named twice. The first part's span stands for
  * the whole. */

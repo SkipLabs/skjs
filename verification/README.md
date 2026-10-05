@@ -39,7 +39,7 @@ make verify
 ```
 
 [tools/package.json](tools/package.json) pins what the node side installs: the
-TypeScript compiler the parser and `tsc-claims.mts` run on, and KaTeX, which
+TypeScript compiler the parser runs on, and KaTeX, which
 checks the documents' math. [lean/lakefile.toml](lean/lakefile.toml) declares
 the Lean package Lake builds: the `Verification` library and the `verifier`
 executable. [.gitignore](.gitignore) keeps what these commands write, Lake's
@@ -58,12 +58,12 @@ The commands separate regression testing from inspecting example outcomes:
   rule inventory and the source boundaries. Its summary counts test executables,
   not functions or assertions, and marks an incomplete run after an early
   failure.
-- `make verify-examples` builds Lean and checks TypeScript's own claims for
-  the report viewer's example corpus ([corpus-report.mts](corpus-report.mts);
-  [tsc claims](tests/tsc-claims/README.md)).
+- `make verify-examples` builds Lean and runs the report viewer's example
+  corpus through the pipeline ([corpus-report.mts](corpus-report.mts);
+  [the corpus](tests/README.md#the-corpus)).
   Each function shows TypeScript's verdict and whether the verifier derives
-  its claims: proof `✓` means independently verified, `✗` means proof search
-  failed (not a disproof), and `·` means no claim was stated.
+  the producer's claims: proof `✓` means independently verified, `✗` means
+  proof search failed (not a disproof), and `·` means no claim was stated.
 - `make verify` runs both, building Lean once and keeping their summaries separate.
 
 Terminal output uses green for success, red for rejection or failed proof search,

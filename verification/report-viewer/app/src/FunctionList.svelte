@@ -1,8 +1,8 @@
 <script lang="ts">
   /*
    * The code units of the file (its functions, and its module initialization
-   * when it has top-level code), each with the two outcomes that matter: what the
-   * producer concluded, and what proof search found over the claims it made.
+   * when it has top-level code), each with the two outcomes that matter: what
+   * TypeScript concluded, and what proof search found over the producer's claims.
    * They are different questions, so neither stands for the other.
    */
   import { outcome } from "../../marks.mts";
@@ -69,18 +69,18 @@
           <span class="verdict">
             <span
               class="sym"
-              class:good={verdict.producer[0] === "✓"}
-              class:bad={verdict.producer[0] === "✗"}
+              class:good={verdict.typescript[0] === "✓"}
+              class:bad={verdict.typescript[0] === "✗"}
               role="img"
-              aria-label="the producer's own verdict: {verdict.producer[1]}"
+              aria-label="TypeScript's own verdict: {verdict.typescript[1]}"
               onpointerenter={(e) =>
                 explain(
                   e,
-                  "The producer's own verdict",
-                  verdict.producer[1] +
+                  "TypeScript's own verdict",
+                  verdict.typescript[1] +
                     ". It reads the source alone, so it holds for as long as the source does.",
                 )}
-              onpointerleave={() => (meaning = null)}>{verdict.producer[0]}</span
+              onpointerleave={() => (meaning = null)}>{verdict.typescript[0]}</span
             ><span
               class="arrow"
               role="img"
@@ -89,7 +89,7 @@
                 explain(
                   e,
                   "accepted → derived",
-                  "Two different questions: what the producer concluded about the program, and whether the verifier derives the claims it made. Neither stands for the other.",
+                  "Two different questions: what TypeScript concluded about the program, and whether the verifier derives the producer's claims. Neither stands for the other.",
                 )}
               onpointerleave={() => (meaning = null)}>→</span
             ><span
@@ -204,7 +204,7 @@
     background: var(--accent-bg);
     border-left-color: var(--accent);
   }
-  /* Amber where the two outcomes disagree: the producer accepted something
+  /* Amber where the two outcomes disagree: TypeScript accepted something
      nothing could prove, or rejected one a checked certificate covers. */
   li button.disagrees .verdict {
     color: var(--warn);

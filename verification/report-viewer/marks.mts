@@ -19,7 +19,7 @@ export type MarkedReport = {
 
 /** What an outcome is read from: the two verdicts a function carries, and —
  * where proof search stopped — what stopped it. */
-export type Judged = Pick<ShownFunction, "status" | "failure" | "collection">;
+export type Judged = Pick<ShownFunction, "status" | "failure" | "typescriptAccepted">;
 
 /** What the source view was asked to draw. */
 export interface MarkOptions {
@@ -27,11 +27,11 @@ export interface MarkOptions {
   density?: string;
   /** Show claims the producer could not decode, which are otherwise noise. */
   unsupported?: boolean;
-  producerErrors?: boolean;
+  typescriptErrors?: boolean;
 }
 
-/** One of the producer's own diagnostics, placed where it points. */
-export interface ProducerMark {
+/** One of TypeScript's errors in the source, placed where it points. */
+export interface TypeScriptMark {
   pos: [number, number];
   text: string;
   line: number;
@@ -56,17 +56,10 @@ export interface MarkItem {
   cls: string;
 }
 
-/** Marks packed onto as few rows as fit, so nesting is visible at a glance. */
-export interface MarkRow {
-  items: MarkItem[];
-  free: number;
-}
-
 export interface SourceMarks {
   entries: MarkItem[];
   items: MarkItem[];
 }
-
 
 import obligationReader from "../tools/diagnostic-view.mts";
 
@@ -182,12 +175,7 @@ const outcomeGroup = (f: Judged) => {
   return { key: symbol, label: OUTCOME_GROUP[symbol] || proofLabel(f.status) };
 };
 
-const PRODUCER_MARK: Record<string, string[]> = {
-  complete: ["✓", "Producer accepted this function"],
-  aborted: ["✗", "Producer rejected this function"],
-};
-
-// Both outcomes, and whether they disagree. The producer's verdict reads only
+// Both outcomes, and whether they disagree. TypeScript's verdict reads only
 // the source, so it holds for as long as the source does; proof search reads the claims,
 // so an edit can change it. Where proof search reached no verdict there is no
 // disagreement to report.
@@ -195,18 +183,20 @@ function outcome(
   f: Judged,
   collection: { verified: boolean } | null | undefined,
 ) {
-  const producer = PRODUCER_MARK[f.collection ?? ""] || [
-    "·",
-    "no producer outcome recorded",
-  ];
+  const typescript =
+    f.typescriptAccepted === undefined
+      ? ["·", "no TypeScript verdict recorded"]
+      : f.typescriptAccepted
+        ? ["✓", "TypeScript accepts this function"]
+        : ["✗", "TypeScript rejects this function"];
   const proof = proofMark(f);
   const concluded = !incompleteInput(f.failure?.kind);
   const disagrees =
     concluded &&
-    ((f.collection === "complete" && f.status === "not-established") ||
-      (f.collection === "aborted" && f.status === "verified"));
+    ((f.typescriptAccepted === true && f.status === "not-established") ||
+      (f.typescriptAccepted === false && f.status === "verified"));
   return {
-    producer,
+    typescript,
     proof,
     disagrees,
     // A verified function is stamped; the stamp is only solid when the consumer
@@ -217,18 +207,18 @@ function outcome(
           ? "fresh"
           : "recorded"
         : null,
-    // The producer accepted it and proof search failed outright: worth an eye.
+    // TypeScript accepts it and proof search failed outright: worth an eye.
     attention:
-      f.status === "not-established" && f.collection === "complete" && concluded,
+      f.status === "not-established" && f.typescriptAccepted === true && concluded,
   };
 }
 
-/* ---------- the producer's own diagnostics ---------- */
-// A producer's diagnostics name the source with 1-based columns and an
+/* ---------- TypeScript's errors ---------- */
+// TypeScript's errors name the source with 1-based columns and an
 // exclusive end.
 // These are its diagnostics shown where they point: not claims, not results.
-function producerMarks(rep: MarkedReport): ProducerMark[] {
-  const marks: ProducerMark[] = [];
+function typescriptMarks(rep: MarkedReport): TypeScriptMark[] {
+  const marks: TypeScriptMark[] = [];
   if (!rep.diagnostics) return marks;
   const starts = lineStarts(rep.source);
   const re = /^File "([^"]+)", line (\d+), character (\d+)-(\d+):\r?\n([^\n]*)/gm;
@@ -258,10 +248,7 @@ const isNoise = (b: { unavailable: boolean; type: string }) =>
 
 // Gaps read better as a short phrase than as the generator's sentence.
 const GAP_LABEL: Record<string, string> = {
-  "statement-not-visited": "not visited by producer",
-  "expression-without-type": "no type produced",
   "claims-unavailable": "no claims for this function",
-  "claim-edit": "claim edit",
 };
 const gapLabel = (g: { reason: string; detail: string }) =>
   GAP_LABEL[g.reason] || g.detail;
@@ -304,15 +291,12 @@ function sourceMarks(
   f: ShownFunction,
   options?: MarkOptions,
 ): SourceMarks {
-  const { density = "key", unsupported = false, producerErrors = true } = options || {};
+  const { density = "key", unsupported = false, typescriptErrors = true } = options || {};
   const source = rep.source;
   const starts = lineStarts(source);
   const at = (p: number) => lineAt(starts, p);
   const sites: Site[] = f.sites || [];
   const failure = f.status === "not-established" ? f.failure : null;
-  // A recovery-quality snapshot says so once, on the function; only a claim that
-  // stands out from its snapshot needs the label repeated.
-  const recMark = f.quality === "recovery" ? "" : "  (recovery)";
   const items: MarkItem[] = [];
   const entries: MarkItem[] = [];
   // Both sides of a failed obligation stay on screen. Compact hides an
@@ -362,10 +346,10 @@ function sourceMarks(
         col: c.col,
         end: c.end,
         label:
-          shortType(s.type) + (c.multiline ? " ↳ multiline" : "") + (s.recovery ? recMark : ""),
+          shortType(s.type) + (c.multiline ? " ↳ multiline" : ""),
         mark,
         tag,
-        cls: "expr" + (s.recovery ? " rec" : "") + flagged,
+        cls: "expr" + flagged,
       });
     } else if (s.kind === "result") {
       // What the function must establish, drawn at its annotation and read as
@@ -425,11 +409,10 @@ function sourceMarks(
         col,
         end: col,
         label:
-          list.map((b) => b.name + ": " + shortType(b.type)).join(",  ") +
-          (s.recovery ? recMark : ""),
+          list.map((b) => b.name + ": " + shortType(b.type)).join(",  "),
         mark,
         tag,
-        cls: "entry" + (s.recovery ? " rec" : "") + flagged,
+        cls: "entry" + flagged,
       });
     }
   });
@@ -454,8 +437,8 @@ function sourceMarks(
     });
   }
 
-  if (producerErrors)
-    producerMarks(rep).forEach((mark, i) => {
+  if (typescriptErrors)
+    typescriptMarks(rep).forEach((mark, i) => {
       if (mark.pos[0] < f.pos[0] || mark.pos[1] > f.pos[1]) return;
       const line = at(mark.pos[0]);
       const col = mark.pos[0] - starts[line];
@@ -529,7 +512,7 @@ export {
     outcomeGroup,
     outcomeLabel,
     outcome,
-    producerMarks,
+    typescriptMarks,
     isNoise,
     gapLabel,
     shortType,

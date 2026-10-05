@@ -86,8 +86,8 @@ is read there, below the scheme by a checked instance table (`InstArrs`).
 Nested generic closures, generic closures in generic bodies, rests, defaults
 and receivers over a binder are all graph code the same way.
 
-Both producers feed this format into [SourceClaimJson.lean](lean/Verification/Source/SourceClaimJson.lean), its strict decoder and checked consumer.
-The report viewer collects and edits this format for both producers.
+The OCaml producer feeds this format into [SourceClaimJson.lean](lean/Verification/Source/SourceClaimJson.lean), its strict decoder and checked consumer.
+The report viewer shows the claims of one pipeline run in this format.
 
 ## Encoding
 
@@ -403,12 +403,9 @@ The report command accepts this format:
 
 ```sh
 node verification/tools/annotate-source.mts input.ts \
-  --format source-claims --producer manual --claims source-claims.json \
+  --claims source-claims.json \
   --verify verification/lean/.lake/build/bin/verifier --out input.annotated.ts
 ```
 
-Producer names are display provenance;
-they are not claims document proof assumptions. Claims-only reports are displays, not
-schema certification: `--verify` invokes the authoritative strict Lean decoder.
-
-The generic `--format report` is a separate display-only format.
+Claims-only reports are displays, not schema certification: `--verify` invokes
+the authoritative strict Lean decoder.

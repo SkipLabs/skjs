@@ -3,7 +3,7 @@
    * Where what is on screen came from.
    *
    * Collapsed, because it answers a question you only sometimes have. It
-   * records the run: which producer, what command, how long, and whether the
+   * records the run: what command, how long, and whether the
    * independent consumer was run at all — a report read from a file records no
    * such run and says so rather than implying one.
    */
@@ -37,7 +37,7 @@
       provenance
       {#if collection}
         <span class="line"
-          >{collection.producer} · {collection.command} · {Math.round(
+          >{collection.command} · {Math.round(
             collection.durationMs,
           )}ms · {collection.verified
             ? "checked by the verifier"
@@ -52,8 +52,6 @@
       {#if collection}
         <dt>ran at</dt>
         <dd>{new Date(collection.ranAt).toLocaleString()}</dd>
-        <dt>producer ran</dt>
-        <dd>{collection.producerRun ? "yes" : "no"}</dd>
       {/if}
       {#each prints as [what, value] (what)}
         <dt>{what} sha256</dt>
@@ -63,7 +61,7 @@
 
     {#if bundle?.manifest?.diagnostics}
       <details class="inner">
-        <summary>producer diagnostics</summary>
+        <summary>TypeScript errors</summary>
         <pre>{bundle.manifest.diagnostics}</pre>
       </details>
     {/if}

@@ -7,7 +7,7 @@
  * an outcome in a bundle was reached by the verifier, and a bundle that carries
  * none says so rather than being filled in.
  */
-import type { Bundle, ExampleGroup, Producer } from "../../types.ts";
+import type { Bundle, ExampleGroup } from "../../types.ts";
 
 /* What the picker lists, declared where the report viewer's other documents are so
  * the server and the page cannot drift apart over it. */
@@ -52,10 +52,10 @@ export function sources(query: string) {
 }
 
 /**
- * Collect one file's claims from one producer and check them. This runs the
+ * Collect one file's claims from the producer and check them. This runs the
  * producer and the verifier, so it is the expensive call; the server allows one
  * at a time and answers 409 while another is running.
  */
-export function analyse(path: string, producer: Producer) {
-  return get<Bundle>("/api/analyse", { path, producer });
+export function analyse(path: string) {
+  return get<Bundle>("/api/analyse", { path });
 }

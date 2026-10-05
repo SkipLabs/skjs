@@ -1,28 +1,27 @@
 # Annotated source reports
 
-[`tools/annotate-source.mts`](tools/annotate-source.mts) writes a separate TypeScript copy showing producer
+[`tools/annotate-source.mts`](tools/annotate-source.mts) writes a separate TypeScript copy showing the producer's
 claims, optionally with freshly checked function results. It also writes a JSON
-manifest preserving the claims, diagnostics and content fingerprints. Producer
-names are reported provenance, not authenticated identities. The original source and claim files are not modified. Existing output files are
+manifest preserving the claims, diagnostics and content fingerprints. The original source and claim files are not modified. Existing output files are
 never overwritten.
 
 ```sh
 node verification/tools/annotate-source.mts input.ts \
-  --claims source-claims.json --producer ocaml \
+  --claims source-claims.json \
   --verify verification/lean/.lake/build/bin/verifier
 ```
 
 The default outputs are `input.annotated.ts` and `input.annotated.ts.json`.
 `--out /path/report.ts` chooses another destination. The claims file is a
-[source-claims](SOURCE-CLAIMS.md) document (`--format source-claims`, the
-default). `--file-key` selects its file key if that differs from the input
+[source-claims](SOURCE-CLAIMS.md) document, an input to the Lean consumer with
+its own schema and source fingerprint. `--file-key` selects its file key if that differs from the input
 path. The command does not rerun the producer or alter its claims. Omit `--verify` to generate a claims-only report; use `--depth N` to
 set proof-search depth (default 10).
 
 A typical excerpt looks like:
 
 ```ts
-/* @verify-report kind=function; id=f0; function copyTrue; producer=ocaml; claimed () => boolean; verification=verified */
+/* @verify-report kind=function; id=f0; function copyTrue; claimed () => boolean; verification=verified */
 function copyTrue(): boolean {
   /* @verify-report kind=entry; id=f0e0; entry { x: true } @57:77 */
   const y: boolean = /* @verify-report kind=expression; id=f0x0; expr true @76:77 */ x;
@@ -45,7 +44,7 @@ prose as text that may be reworded.
 | --- | --- | --- |
 | `kind` | every annotation | `function`, `entry`, `expression` or `gap`. |
 | `id` | every annotation | Joins this mark to its record in the manifest: `f0`, `f0e3`, `f0x7`, `g2`. |
-| `reason` | gaps | Why nothing is claimed here, as a stable slug: `statement-not-visited`, `expression-without-type`, `claims-unavailable`. |
+| `reason` | gaps | Why nothing is claimed here, as a stable slug: `claims-unavailable`. |
 | `unsupported` | entries | Bindings in that environment whose exported payload could not be decoded, joined by `+`. |
 
 Manifest records carry the same `id`, so a tool can display a mark and look up
@@ -146,40 +145,6 @@ No `refuted` status is emitted: this tool does not construct counterexamples.
 Successful command exit means a report was written, not that every function was
 verified. Inspect the results array in its manifest for automation.
 
-## Other producers
-
-A producer-independent display format is supported with `--format report`:
-
-```json
-{
-  "source": {"file": "input.ts", "sha256": "SHA256_OF_SOURCE_BYTES"},
-  "producer": "another-analyzer",
-  "functions": [{
-    "name": "f",
-    "namePos": [9, 10],
-    "entries": [{"pos": [34, 43], "bindings": [{"name": "x", "type": "boolean"}]}],
-    "expressions": [{"pos": [41, 42], "type": "boolean"}]
-  }]
-}
-```
-
-Offsets are UTF-16 indices, as in the TypeScript AST; the illustrative offsets
-above must be replaced with the exact positions in the supplied file. Expression
-spans must match AST nodes, and entry starts must be AST boundaries in the named
-function. Duplicate attachments and stale source fingerprints are rejected.
-Type strings are producer descriptions, not parsed type assertions. Optional
-`raw` fields on bindings and expressions preserve additional producer data.
-
-```sh
-node verification/tools/annotate-source.mts input.ts \
-  --format report --claims display-claims.json --out report.ts
-```
-
-Generic report inputs are claims-only. Their stored status fields are ignored;
-`--verify` is rejected until that producer has a verification adapter. This
-display format is distinct from the [claims document](SOURCE-CLAIMS.md).
-It is not a shortcut around normalizing and checking a new producer's types.
-
 ## Freshness and source preservation
 
 The manifest records the source and claims digests, the annotated output digest,
@@ -206,10 +171,3 @@ concatenation of a template, which the parser writes from the template's start
 to the end of one of its parts. Expression annotations introduce no new line breaks, preserving `return` and
 other automatic-semicolon behavior. This is a display transformation, not a
 proof of the separate source-to-calculus lowering.
-
-## Calculus-label claim inputs
-
-`--format source-claims` accepts the strict bounded
-[producer-independent claims document](SOURCE-CLAIMS.md), including fresh verification.
-Unlike `--format report`, this is an input to the Lean
-consumer, with its own schema and source fingerprint.

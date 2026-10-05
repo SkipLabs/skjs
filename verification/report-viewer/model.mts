@@ -6,7 +6,6 @@ import type {
   Manifest,
   MissingSite,
   PipelineOutcome,
-  Producer,
 } from "./types.ts";
 import type {
   ObligationDiagnostic,
@@ -50,7 +49,6 @@ export type Site =
       type: string;
       /** The producer's encoding as formatted JSON, for the inspector. */
       raw: string | null;
-      recovery: boolean;
       rigid?: RigidParameter[];
     }
   | {
@@ -59,7 +57,6 @@ export type Site =
       bindings: ShownBinding[];
       /** Names whose type differs from the previous environment's. */
       changed: Set<string>;
-      recovery: boolean;
     }
   | {
       kind: "unclaimed";
@@ -127,9 +124,8 @@ export interface ShownFunction {
   status: string;
   /** What the report says about it, where there is no result to report. */
   detail?: string;
-  /** The producer's own collection outcome and its quality. */
-  collection?: string;
-  quality?: string;
+  /** TypeScript's own verdict on the function, where it was taken. */
+  typescriptAccepted?: boolean;
   /** The obligation record, kept as recorded for the panel; never evidence. */
   obligation?: ObligationDiagnostic | null;
   obligationView?: ObligationView;
@@ -155,7 +151,6 @@ function ordered(sites: Site[]): Site[] {
 
 export interface Report {
   source: string;
-  producer: Producer | string;
   functions: ShownFunction[];
   diagnostics?: string;
   missingFunctions?: { name: string; namePos: Span }[];
@@ -237,7 +232,6 @@ function renderType(text: string) {
 
 function parseReport(annotated: string): ParsedReport {
   const rep: ParsedReport = {
-    producer: "unknown",
     file: "(unknown source)",
     meta: {},
     functions: [],
@@ -262,8 +256,7 @@ function parseReport(annotated: string): ParsedReport {
         if (kv) {
           const k = kv[1],
             v = unescapeText(kv[2].trim());
-          if (k === "producer") rep.producer = v;
-          else if (k === "source") rep.file = v;
+          if (k === "source") rep.file = v;
           else if (k === "annotation-fields")
             rep.fields = v.split(","); // format declaration, not provenance
           else rep.meta[k] = v;
@@ -299,12 +292,6 @@ function parseReport(annotated: string): ParsedReport {
     const unavailable = new Set(
       (fld.unsupported || "").split("+").filter(Boolean),
     );
-    // claims produced after an error are marked; they are still only claims
-    let recovery = false;
-    if (core.endsWith("; recovery claim")) {
-      recovery = true;
-      core = core.slice(0, -16).trim();
-    }
     if (kind === "function") {
       const parts = splitTop(core, ";");
       const f: ShownFunction = {
@@ -313,17 +300,13 @@ function parseReport(annotated: string): ParsedReport {
         pos: [src.length, src.length],
         status: "not-run",
         detail: "",
-        collection: "",
-        quality: "",
         sites: [],
       };
       for (const p of parts.slice(1)) {
         if (p.startsWith("verification=")) f.status = p.slice(13).trim();
-        else if (p.startsWith("collection=")) f.collection = p.slice(11).trim();
-        else if (p.startsWith("quality=")) f.quality = p.slice(8).trim();
-        // The producer, the claimed signature and the mode are provenance the
-        // manifest carries; nothing here reads them.
-        else if (/^(producer=|claimed |mode=)/.test(p)) continue;
+        // The claimed signature is provenance the manifest carries; nothing
+        // here reads it.
+        else if (p.startsWith("claimed ")) continue;
         else f.detail = (f.detail ? f.detail + "; " : "") + p;
       }
       rep.functions.push(f);
@@ -341,11 +324,11 @@ function parseReport(annotated: string): ParsedReport {
         };
       });
       if (cur && pos)
-        cur.sites.push({ kind: "environment", pos, bindings, recovery, changed: new Set() });
+        cur.sites.push({ kind: "environment", pos, bindings, changed: new Set() });
     } else if (kind === "expression") {
       const ty = renderType(core.replace(/^expr\s+/, ""));
       if (cur && pos)
-        cur.sites.push({ kind: "expression", pos, type: ty.text, raw: ty.raw, recovery });
+        cur.sites.push({ kind: "expression", pos, type: ty.text, raw: ty.raw });
     } else if (pos && cur) {
       // a gap is a place the producer entered but did not claim. Its reason is
       // a slug; the prose is the long form.
@@ -397,10 +380,6 @@ function fromBundle(bundle: Bundle): ShownReport {
   // Claims are shown in the syntax they were written in. The producer's display
   // string is the fallback: it is what a report carries when there is no
   // encoding to print, and the exact encoding stays available beside it.
-  /** A signature's own type, printed from an encoding or shown as the text a
-   * converted report already holds. */
-  const shown = (type: unknown) =>
-    display(type, typeof type === "string" ? type : "");
   const display = (encoding: unknown, fallback: string) => {
     if (encoding === undefined || encoding === null) return fallback;
     const printed = printSurface(encoding);
@@ -426,24 +405,22 @@ function fromBundle(bundle: Bundle): ShownReport {
     for (const g of gaps) {
       if (!(g.pos[0] >= pos[0] && g.pos[1] <= pos[1])) continue;
       const at = span(g.pos);
-      const reason = g.status === "statement not visited" ? "statement-not-visited" : "";
       const same = sites.find((s) => sameSpan(s.pos, at));
-      if (same) Object.assign(same, { reason, detail: g.status });
-      else sites.push({ kind: "unclaimed", pos: at, reason, detail: g.status });
+      if (same) Object.assign(same, { detail: g.status });
+      else sites.push({ kind: "unclaimed", pos: at, reason: "", detail: g.status });
     }
     return sites;
   };
   const functions: ShownFunction[] = m.functions.map((f) => {
     const pos = span(f.pos);
     const result = m.results?.find((r) => r.function === f.id);
-    const recovery = f.collection?.quality === "recovery";
     const sites: Site[] = [
       ...(Array.isArray(f.resultPos) && f.signature
         ? [
             {
               kind: "result" as const,
               pos: span(f.resultPos),
-              type: shown(f.signature.retType),
+              type: f.signature.retType,
               ...(f.signature.resultRigid?.length
                 ? { rigid: f.signature.resultRigid }
                 : {}),
@@ -453,7 +430,6 @@ function fromBundle(bundle: Bundle): ShownReport {
       ...f.entries.map((e) => ({
         kind: "environment" as const,
         pos: span(e.pos),
-        recovery,
         changed: new Set<string>(),
         bindings: e.bindings.map((b) => ({
           name: b.name,
@@ -465,7 +441,6 @@ function fromBundle(bundle: Bundle): ShownReport {
       ...f.expressions.map((e) => ({
         kind: "expression" as const,
         pos: span(e.pos),
-        recovery,
         type: display(e.raw, e.type),
         raw: raw(e.raw),
         ...(e.rigid?.length ? { rigid: e.rigid } : {}),
@@ -485,8 +460,7 @@ function fromBundle(bundle: Bundle): ShownReport {
       // Explanatory metadata about an unsuccessful attempt, kept as recorded.
       obligation: result?.obligation || null,
       obligationView: result?.obligationView,
-      collection: f.collection?.completion || "",
-      quality: f.collection?.quality || "",
+      ...(f.typescriptAccepted === undefined ? {} : { typescriptAccepted: f.typescriptAccepted }),
       ...(f.typeParams?.length ? { typeParams: f.typeParams } : {}),
     };
   });
@@ -643,7 +617,6 @@ function fromBundle(bundle: Bundle): ShownReport {
     source,
     functions,
     file: m.source.file,
-    producer: m.producer,
     diagnostics: m.diagnostics || "",
     // What produced this report and when, as reported by the local runner. It
     // records that a command ran, not that anything was established.

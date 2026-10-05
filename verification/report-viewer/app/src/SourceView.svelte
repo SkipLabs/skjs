@@ -26,7 +26,7 @@
     fn,
     selected,
     unsupported,
-    producerErrors,
+    typescriptErrors,
     onselect,
   }: {
     report: Report;
@@ -34,7 +34,7 @@
     /** The selected site's index, in source order. */
     selected: number | null;
     unsupported: boolean;
-    producerErrors: boolean;
+    typescriptErrors: boolean;
     onselect: (site: number) => void;
   } = $props();
 
@@ -42,7 +42,7 @@
   // hidden is one you cannot tell is missing, and weight does the work the
   // switch was for.
   const drawn = $derived(
-    sourceMarks(report, fn, { density: "all", unsupported, producerErrors }),
+    sourceMarks(report, fn, { density: "all", unsupported, typescriptErrors }),
   );
 
   /** Marks grouped by line and packed into rows. */
@@ -291,8 +291,8 @@
   .mark.entry .label {
     color: var(--faint);
   }
-  /* The producer's own diagnostic about this span: what its checker said while
-     running over the source. Neither a claim nor a verification result, so it
+  /* TypeScript's own error about this span: what its checker said about the
+     source. Neither a claim nor a verification result, so it
      reads as neither — its own colour, and a dotted bracket so it is still
      distinguishable where colour is not. */
   .mark.err {

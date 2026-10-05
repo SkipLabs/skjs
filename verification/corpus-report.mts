@@ -1,16 +1,15 @@
 #!/usr/bin/env node
-// Report what TypeScript's own checker claims over the corpus, and whether the
-// verifier derives those claims.
+// Report, per corpus function, TypeScript's own verdict and whether the
+// verifier derives the producer's claims.
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { spawnSync } from "node:child_process";
-// tools/tsc-claims.mts is the producer the corpus runs, through the pipeline entry point: TypeScript's own checker, stating its claims.
 import { check, searchDepth, verifier } from "./pipeline/verify-source.mts";
 import { functionResults } from "./tools/annotate-source.mts";
 import type { SourceClaims } from "./tools/source-claims.mts";
 import { messageOf } from "./tools/thrown.mts";
-import { definedFunctions } from "./tools/fragment-parse.mts";
+import { definedFunctions, typescriptVerdicts } from "./tools/fragment-parse.mts";
 // report-viewer/corpus-index.mts is the corpus index, which the report viewer lists too: which files each group holds.
 import { groups } from "./report-viewer/corpus-index.mts";
 
@@ -92,21 +91,19 @@ function examine(file: string) {
   const tally = empty();
   const say = (text: string) => lines.push(text.replace(/\n$/, ""));
   try {
-    // What TypeScript's own checker claims, put through the verifier. A
-    // function it could not state in full is a gap in the claims, not a
-    // verdict about them, so it reads `·`.
-    const fromTsc = new Map<string, boolean>();
-    let accepted: Map<string, boolean> | null = null;
+    // The producer's claims, put through the verifier. A function it could
+    // not state is a gap in the claims, not a verdict about them, so it
+    // reads `·`.
+    const derived = new Map<string, boolean>();
+    const accepted = typescriptVerdicts(file);
     // One pipeline run answers the whole file: the entry's search and check.
     // Only a file that fails is split, and only to say which function failed,
     // by the report writer's per-function checks over that run's Fragment and
     // claims; a file that verifies needs no second look.
-    const outcome = check(file, undefined, false, "tsc");
+    const outcome = check(file);
     try {
       const at = (name: string) => path.join(outcome.artifacts, name);
       const read = (name: string) => fs.readFileSync(at(name), "utf8");
-      if (fs.existsSync(at("tsc-verdicts.json")))
-        accepted = new Map(Object.entries(JSON.parse(read("tsc-verdicts.json"))));
       if (outcome.status === "verified" || outcome.status === "unverified" || outcome.status === "exhausted") {
         // The run named its snapshot; these name the file it is a snapshot of.
         const claims: SourceClaims = { ...JSON.parse(read("claims.json")), file };
@@ -115,17 +112,17 @@ function examine(file: string) {
         claims.functions.forEach((g, i) => {
           const result = results?.[i];
           if (result instanceof Error && verbose) say(`    ${g.name}: ${result.message}`);
-          fromTsc.set(g.name, !results || (!(result instanceof Error) && result?.status === "verified"));
+          derived.set(g.name, !results || (!(result instanceof Error) && result?.status === "verified"));
         });
-      } else if (verbose) say("    tsc could not state this file: " + outcome.detail);
+      } else if (verbose) say("    the producer stated no claims: " + outcome.detail);
     } finally {
       fs.rmSync(outcome.artifacts, { recursive: true, force: true });
     }
     const functions = definedFunctions(file);
     if (!functions.length) throw Error("example contains no function definitions");
     for (const f of functions) {
-      const own = accepted?.has(f.name) ? (accepted.get(f.name) ? "✓" : "✗") : "·";
-      const proof = fromTsc.has(f.name) ? (fromTsc.get(f.name) ? "✓" : "✗") : "·";
+      const own = accepted.has(f.name) ? (accepted.get(f.name) ? "✓" : "✗") : "·";
+      const proof = derived.has(f.name) ? (derived.get(f.name) ? "✓" : "✗") : "·";
       if (own === "✓") tally.accepted++;
       else if (own === "✗") tally.rejected++;
       else tally.unrecorded++;
@@ -160,9 +157,9 @@ try {
   }
 
   console.log(
-    "\nExample outcomes — TypeScript's claims. Each line" +
-      " reads accepted→derived: tsc's own verdict on the function, then whether" +
-      " the verifier derives the claims it made (tests/tsc-claims/README.md).",
+    "\nExample outcomes. Each line reads accepted→derived: tsc's own verdict" +
+      " on the function, then whether the verifier derives the producer's claims" +
+      " (tests/README.md).",
   );
   // Files are independent, so they are checked together and merged in order.
   // One worker per core, never more than there are files: the curve is flat

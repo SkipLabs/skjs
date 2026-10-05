@@ -204,9 +204,9 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     const sufficient = runWith(8);
     assert.equal(sufficient.status, 0, `${mode}: eight frontier rounds establish the finite graph: ${sufficient.stderr}`);
   }
-  assert.equal(check(positive, undefined, false, "ocaml", 0).status, "exhausted",
+  assert.equal(check(positive, undefined, false, 0).status, "exhausted",
     "the source runner distinguishes exhausted work from a completed refusal");
-  assert.equal((await checkApart(positive, undefined, false, "ocaml", 0)).status, "exhausted",
+  assert.equal((await checkApart(positive, undefined, false, 0)).status, "exhausted",
     "the subprocess outcome decoder preserves exhaustion");
   assert.equal(check(negative).status, "unverified", "the last field's type is incompatible");
 }
@@ -350,7 +350,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     "export function convert(value: A): A { return bounded(value); }",
   ].join("\n");
   writeFileSync(file, text);
-  const admitted = check(file, undefined, false, "ocaml", 8);
+  const admitted = check(file, undefined, false, 8);
   assert.equal(admitted.status, "verified", JSON.stringify(admitted));
   const at = text.lastIndexOf("bounded(value)");
   for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
@@ -380,7 +380,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     "export function unbox(value: Box<A>): A { return value.value; }",
   ].join("\n");
   writeFileSync(file, text);
-  const admitted = check(file, undefined, false, "ocaml", 8);
+  const admitted = check(file, undefined, false, 8);
   assert.equal(admitted.status, "verified", JSON.stringify(admitted));
   const at = text.indexOf("Box<A>");
   for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
@@ -1274,16 +1274,16 @@ const pageOf = (bundle: Bundle) => {
 };
 {
   const [collected, defaulted, invocation, assigned, crashing] = await Promise.all([
-    analyse(repositoryPath("values"), "ocaml"),
-    analyse(repositoryPath("generic-default"), "ocaml"),
-    analyse(repositoryPath("invalid-default-invocation"), "ocaml"),
-    analyse(repositoryPath("module-function-assignment"), "ocaml"),
-    analyse("verification/pipeline/examples/crashing-service-sound-binding.ts", "ocaml"),
+    analyse(repositoryPath("values")),
+    analyse(repositoryPath("generic-default")),
+    analyse(repositoryPath("invalid-default-invocation")),
+    analyse(repositoryPath("module-function-assignment")),
+    analyse("verification/pipeline/examples/crashing-service-sound-binding.ts"),
   ]);
   pageOf(collected);
-  assert.equal(collected.collection?.producer, "ocaml");
-  assert.equal(collected.collection?.producerRun, true);
   assert.equal(collected.collection?.verified, true);
+  // Beside the verifier's verdict, TypeScript's own, taken on the same file.
+  assert.deepEqual(collected.manifest.functions.map((f) => f.typescriptAccepted), [true, true]);
   // The claims the report is built from are the producer's own, not a display
   // shape derived from them: the document `check` wrote beside `values`, named by
   // the file it is about.
@@ -1320,7 +1320,7 @@ const pageOf = (bundle: Bundle) => {
 }
 
 {
-  const shown = await analyse(repositoryPath("invalid-explicit-type-argument-bound"), "ocaml");
+  const shown = await analyse(repositoryPath("invalid-explicit-type-argument-bound"));
   const results = (shown.manifest.results ?? []).filter((r) => r.status !== "verified");
   assert.deepEqual(results.map((r) => r.status), ["not-established"]);
   const direct = results[0]?.obligation;

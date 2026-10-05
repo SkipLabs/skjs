@@ -44,12 +44,10 @@ const require = createRequire(import.meta.url);
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   !!v && typeof v === "object";
 /* ------------------------------------------------------------- the shapes -- */
-// A report is built in two steps: a converter turns a producer's claims into
+// A report is built in two steps: a converter turns the producer's claims into
 // the fields below, and `main` attaches the positional ids and declaration
 // spans the report viewer indexes by (report-viewer/types.ts describes what the
-// report viewer then sees). These are the intermediate, and the producer inputs they
-// are built from. A `--format report` document another producer wrote arrives
-// in the same shape and is rendered by the same code, so these describe both.
+// report viewer then sees). These are the intermediate.
 // Spans are number lists here because that is what a document carries:
 // `checkSpan` is what makes one a span.
 
@@ -71,53 +69,24 @@ interface DraftEntry {
   pos: number[];
   bindings: DraftBinding[];
 }
-/**
- * Collection metadata as a report document carries it, which is not yet
- * checked: `Collection` in report-viewer/types.ts names the same fields once a
- * report has been read back.
- */
-interface DraftCollection {
-  completion: string;
-  quality: string;
-  mode: string;
-  /** Original spans expression checking entered (ANNOTATED-SOURCE.md). */
-  visitedExpressions?: number[][];
-}
-/** A function as `render` finds it in a document: everything a producer may
- * leave unstated is optional, and nothing is trusted until it is checked. */
-interface InputFunction {
+/** A function as the converter below builds it: its claimed signature,
+ * printed, and its claims at their points. */
+interface DraftFunction {
   name: string;
   namePos: number[];
   /** The rigid parameters the source declares for it, with their bounds. */
   typeParams?: RigidParameter[];
-  signature?: {
-    params: { name: string; type: unknown }[];
-    retType: unknown;
+  signature: {
+    params: { name: string; type: string }[];
+    retType: string;
     /** The parameters the claimed result names. */
     resultRigid?: RigidParameter[];
   };
   entries: DraftEntry[];
   expressions: DraftClaim[];
-  /** How complete the producer's own collection was; absent if it said nothing. */
-  collection?: DraftCollection;
 }
-interface ReportInput {
+interface DraftReport {
   source: { file: string; sha256: string };
-  producer: string;
-  functions: InputFunction[];
-  /** Only ever read to be ignored: a stored status is never evidence. */
-  results?: unknown;
-}
-/** What the converters below build, which states a signature for every
- * function and carries the producer's own collection metadata. */
-interface DraftFunction extends InputFunction {
-  signature: {
-    params: { name: string; type: unknown }[];
-    retType: unknown;
-    resultRigid?: RigidParameter[];
-  };
-}
-interface DraftReport extends ReportInput {
   functions: DraftFunction[];
 }
 
@@ -135,34 +104,27 @@ interface AnnotationBase {
   id?: string;
   /** The producer's own span for a claim, as it was before annotation. */
   originalSpan?: number[];
-  /** `recovery` where the producer's own collection says so. */
-  quality?: string;
   /** Names the producer could not decode at this site. */
   unsupported?: string[];
 }
 interface ReportAnnotation extends AnnotationBase, ReportIdentity {
   kind: "report";
   source: { file: string; sha256: string };
-  producer: string;
   notice: string;
 }
 interface FunctionAnnotation extends AnnotationBase {
   kind: "function";
   name: string;
-  producer: string;
-  signature?: InputFunction["signature"];
-  collection?: DraftCollection;
+  signature?: DraftFunction["signature"];
   verification: { status: string; detail?: string };
 }
 interface EntryAnnotation extends AnnotationBase {
   kind: "entry";
-  producer: string;
   bindings: { name: string; type: string }[];
   status: string;
 }
 interface ExpressionAnnotation extends AnnotationBase {
   kind: "expression";
-  producer: string;
   type: string;
   status: string;
 }
@@ -188,8 +150,6 @@ const safeText = (x: unknown) => JSON.stringify(String(x)).slice(1,-1).replace(/
 // for a gap, the reason as a slug. The prose stays: these comments are read by
 // people as well as by tools, and a reworded sentence must not break a reader.
 const reasons: Record<string, string> = {
-  "statement not visited":"statement-not-visited",
-  "expression entered without a type result":"expression-without-type",
   "claims unavailable; verification not established":"claims-unavailable"};
 const reasonSlug = (detail: string) => reasons[detail] ||
   detail.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").split("-").slice(0,4).join("-");
@@ -203,7 +163,7 @@ function fields(x: Annotation) {
 function comment(x: Annotation) {
   if(x.kind === "report") {
     const lines=["Display-only claim report; not certificate input.",
-      "annotation-fields=kind,reason,id,unsupported",`producer=${x.producer}`,
+      "annotation-fields=kind,reason,id,unsupported",
       `source=${x.source.file}`,`source-sha256=${x.source.sha256}`,
       ...Object.entries(x).filter(([k])=>k.endsWith("Sha256")).map(([k,v])=>`${k}=${v}`),
       "Function results cover modeled obligations, not every exported claim.",
@@ -212,55 +172,17 @@ function comment(x: Annotation) {
   }
   let text;
   if(x.kind === "function") {
-    const signature=x.signature ? `; claimed (${x.signature.params.map(p=>`${p.name}: ${typeText(p.type)}`).join(", ")}) => ${typeText(x.signature.retType)}` : "";
-    text=`function ${x.name}; producer=${x.producer}${signature}; verification=${x.verification.status}`;
-    if(x.collection)text+=`; collection=${x.collection.completion}; quality=${x.collection.quality}; mode=${x.collection.mode}`;
+    const signature=x.signature ? `; claimed (${x.signature.params.map(p=>`${p.name}: ${p.type}`).join(", ")}) => ${x.signature.retType}` : "";
+    text=`function ${x.name}${signature}; verification=${x.verification.status}`;
     if(x.verification.detail)text+=`; ${x.verification.detail}`;
   } else if(x.kind === "entry") {
     text=`entry { ${x.bindings.map(b=>`${b.name}: ${b.type}`).join(", ")} }`;
   } else if(x.kind === "gap")text=x.detail;
   else text=`expr ${x.type}`;
-  if(x.quality === "recovery")text+="; recovery claim";
   if(x.originalSpan)text+=` @${x.originalSpan[0]}:${x.originalSpan[1]}`;
   return `/* @verify-report ${safeText(fields(x)+text)} */ `;
 }
 
-// The same printer the report viewer uses, so a comment and a panel say the same thing.
-// The manifest keeps the producer's encoding; this is a readable view of it.
-
-// An atom is a record of its own fields. What arrives may not be one, and the
-// tests below are what say so; a nullish element reaches `Object.keys` exactly
-// as it did before there was a type here.
-const isAtomList = (v: unknown): v is Record<string, unknown>[] => Array.isArray(v);
-
-function typeText(t: unknown) {
-  if(typeof t==="string")return t;
-  // A binding the producer could not decode has no claimed type. Name the
-  // absence instead of printing an encoding that reads like a type; the exact
-  // payload stays in the manifest, joined by the annotation id.
-  if(isRecord(t) && t.unsupported === true && Object.keys(t).length === 1)return "(unavailable)";
-  // Surface syntax where the printer can name the type; the exact encoding
-  // otherwise, so a shape it does not know is never quietly hidden.
-  const printed=surface.printType(t);
-  if(printed.printable)return printed.text;
-  if(isRecord(t) && t.top === false && Object.keys(t).sort().join() === "atoms,top" && isAtomList(t.atoms)) {
-    const names=t.atoms.map(a=> {
-      if(Object.keys(a).join() === "a" && typeof a.a === "string" && ["null","boolean","string","number","undefined"].includes(a.a))return a.a;
-      if(Object.keys(a).sort().join() !== "a,v")return null;
-      // Literal types are displayed as the literal they are. Nothing is dropped:
-      // the exact payload stays in the manifest, joined by the annotation id.
-      if(a.a === "booleanlit" && typeof a.v === "string" && ["true","false"].includes(a.v))return a.v;
-      if(a.a === "stringlit" && typeof a.v === "string")return JSON.stringify(a.v);
-      if((a.a === "numberlit" || a.a === "numlit") && Number.isFinite(Number(a.v)))return String(a.v);
-      return null;
-    });
-    if(names.every((x: unknown)=>x!==null))return names.length ? names.join(" | ") : "never";
-  }
-  return JSON.stringify(t);
-}
-
-// Labels index the document's own type table; the first four rows are the
-// primitives null, true, false and undefined.
 /** The module's initialization code, as the parser reads it: top-level
  * expression statements, constants and class declarations. An ambient
  * `declare const` or `declare class` runs nothing. */
@@ -287,7 +209,6 @@ function fromSourceClaims(
   source: string,
   file: string,
   input: SourceClaims,
-  producer: string,
   // The Fragment's type parameters, where the caller read them. A source
   // outside the fragment has none, and its claims name none either.
   scopes: RigidScopes = new Map(),
@@ -441,7 +362,7 @@ function fromSourceClaims(
   if(!!input.init!==!!first)throw Error("module initialization claims do not match the source");
   const units=[...input.functions,...(input.init&&first&&last?[{name:"",namePos:[first.getStart(sf),last.end] satisfies Span,
     params:[],result:[3],entries:input.init.entries,expressions:input.init.expressions}]:[])];
-  return {source:{file,sha256:input.sourceSha256},producer,
+  return {source:{file,sha256:input.sourceSha256},
     functions:units.map(f=>{
       scope=scopeOf(scopes,f.namePos);
       return {name:f.name,namePos:f.namePos,
@@ -468,12 +389,12 @@ function parse(source: string, file: string) {
  */
 function render(
   source: string,
-  report: ReportInput,
+  report: DraftReport,
   results: { status: string; detail?: string }[] | null = null,
   identity: ReportIdentity = {},
 ): string {
   if(report.source?.sha256!==hash(source))throw Error("report source fingerprint mismatch");
-  if(typeof report.producer!=="string" || !report.producer || !Array.isArray(report.functions))throw Error("invalid report header");
+  if(!Array.isArray(report.functions))throw Error("invalid report header");
   if(results && results.length!==report.functions.length)throw Error("result count mismatch");
   const scanner=createScanner(false,undefined,source);
   for(let k=scanner.scan();k!==ts.SyntaxKind.EndOfFile;k=scanner.scan())
@@ -566,8 +487,7 @@ function render(
     const [start,end]=span;
     seen.add(`fn:${key}`);
     if(!Array.isArray(f.entries)||!Array.isArray(f.expressions))throw Error("invalid function claims");
-    add(start,{kind:"function",id:idOf("function",index),name:f.name,producer:report.producer,
-      collection:f.collection,
+    add(start,{kind:"function",id:idOf("function",index),name:f.name,
       ...(f.signature ? {signature:f.signature} : {}),
       ...(results ? {verification:results[index]} : {verification:{status:"not-run"}})});
     // Where a claim is shown: at its start, or, one of a lowering's own, at
@@ -587,15 +507,13 @@ function render(
       const shown=at("entry",q);
       if(!Array.isArray(q.bindings)||new Set(q.bindings.map(b=>b.name)).size!==q.bindings.length ||
          q.bindings.some(b=>typeof b.name!=="string"||typeof b.type!=="string"))throw Error("invalid entry bindings");
-      add(shown,{kind:"entry",id:idOf("entry",index,j),originalSpan:q.pos,producer:report.producer,
-        quality:f.collection?.quality,bindings:q.bindings.map(({name,type})=>({name,type})),
+      add(shown,{kind:"entry",id:idOf("entry",index,j),originalSpan:q.pos,bindings:q.bindings.map(({name,type})=>({name,type})),
         unsupported:q.bindings.filter(b=>isRecord(b.raw)&&b.raw.unsupported).map(b=>b.name),status:"producer-claim"});
     }
     for(const [j,q] of f.expressions.entries()) {
       const shown=at("expression",q);
       if(typeof q.type!=="string")throw Error("invalid expression claim");
-      add(shown,{kind:"expression",id:idOf("expression",index,j),originalSpan:q.pos,producer:report.producer,
-        quality:f.collection?.quality,type:q.type,status:"producer-claim"});
+      add(shown,{kind:"expression",id:idOf("expression",index,j),originalSpan:q.pos,type:q.type,status:"producer-claim"});
     }
   }
   const gaps=coverage(source,report);
@@ -604,7 +522,7 @@ function render(
   // Hashbang and BOM, when present, must remain at the beginning of the file.
   const headerAt=source.startsWith("#!") ? (source.indexOf("\n")<0 ? source.length : source.indexOf("\n")+1)
     : source.charCodeAt(0)===0xfeff ? 1 : 0;
-  const header=comment({kind:"report",source:report.source,producer:report.producer,
+  const header=comment({kind:"report",source:report.source,
     notice:"Display only. Results cover modeled function obligations, not every exported claim. Re-extract and verify after edits.",...identity});
   insertions.set(headerAt,header+(insertions.get(headerAt)||""));
   let text=source;
@@ -644,33 +562,15 @@ function tokens(text: string) {
 }
 const shape=(n: ts.Node): [number, unknown[]]=>{const kids: unknown[]=[];n.forEachChild(c=>{kids.push(shape(c));});return [n.kind,kids];};
 
-// Absence is meaningful only when the producer explicitly records collection progress.
-function coverage(source: string, report: ReportInput) {
+// A function the claims say nothing about is a gap.
+function coverage(source: string, report: DraftReport) {
   const sf=parse(source,report.source.file), gaps=[];
   for(const node of sf.statements) {
     if(!ts.isFunctionDeclaration(node)||!node.name||!node.body)continue;
     // Bound so the guard above is visible to the closure below.
     const named=node.name;
-    const f=report.functions.find(f=>f.namePos[0]===named.getStart(sf)&&f.namePos[1]===named.end);
-    if(!f){gaps.push({pos:[node.getStart(sf),node.end],status:"claims unavailable; verification not established"});continue;}
-    if(!f.collection)continue;
-    for(const pos of f.collection.visitedExpressions||[]) {
-      if(!f.expressions.some(e=>e.pos[0]===pos[0]&&e.pos[1]===pos[1])) {
-        if(!Array.isArray(pos)||pos.length!==2||!pos.every(Number.isSafeInteger)||pos[0]<node.getStart(sf)||pos[1]>node.end||pos[0]>=pos[1])throw Error("invalid expression visit span");
-        const matches=(n: ts.Node): boolean|undefined=>(n.getStart(sf)===pos[0]&&n.end===pos[1])||n.forEachChild(matches);
-        if(!matches(node))throw Error("cannot attach expression visit");
-        gaps.push({pos,status:"expression entered without a type result"});
-      }
-    }
-    if(f.collection.completion==="aborted") {
-      const walk=(n: ts.Node)=> {
-        if(ts.isFunctionDeclaration(n))return;
-        if((ts.isVariableStatement(n)||ts.isReturnStatement(n)||ts.isIfStatement(n)||ts.isWhileStatement(n)||ts.isForOfStatement(n)||ts.isExpressionStatement(n)) &&
-           !f.entries.some(e=>e.pos[0]===n.getStart(sf)))gaps.push({pos:[n.getStart(sf),n.end],status:"statement not visited"});
-        n.forEachChild(walk);
-      };
-      walk(node.body);
-    }
+    if(!report.functions.some(f=>f.namePos[0]===named.getStart(sf)&&f.namePos[1]===named.end))
+      gaps.push({pos:[node.getStart(sf),node.end],status:"claims unavailable; verification not established"});
   }
   // One id per gap, assigned in one place so every gap kind is joinable to the manifest.
   return gaps.map((g,i)=>({id:`g${i}`,...g}));
@@ -900,12 +800,12 @@ export function main(args: string[]) {
   // Every switch in `allowed` below lands here, so the record says so once
   // rather than growing a property at a time.
   const options: {
-    format:string, depth:string|number, claims?:string, out?:string, verify?:string,
-    producer?:string, "file-key"?:string, diagnostics?:string,
+    depth:string|number, claims?:string, out?:string, verify?:string,
+    "file-key"?:string, diagnostics?:string,
     stdout?:string, project?:string, fragment?:string, evidence?:string,
-  } = {format:"source-claims",depth:10};
-  if(!sourcePath)throw Error("usage: annotate-source.mts source.ts --claims claims.json [--out annotated.ts] [--verify verifier] [--format report --producer name]");
-  const allowed=new Set(["claims","out","verify","format","producer","file-key","depth","diagnostics","stdout","project","fragment","evidence"]);
+  } = {depth:10};
+  if(!sourcePath)throw Error("usage: annotate-source.mts source.ts --claims claims.json [--out annotated.ts] [--verify verifier]");
+  const allowed=new Set(["claims","out","verify","file-key","depth","diagnostics","stdout","project","fragment","evidence"]);
   // The switch names a field of the record above; nothing else can be written.
   const isOption=(k: string): k is keyof typeof options => allowed.has(k);
   while(args.length) {
@@ -914,10 +814,8 @@ export function main(args: string[]) {
     if(!key||!isOption(key)||value===undefined)throw Error(`invalid option ${key}`);
     options[key]=value;
   }
-  options.producer ??= "unspecified";
-  if(!options.claims || !["report","source-claims"].includes(options.format))throw Error("expected --claims and a supported format");
+  if(!options.claims)throw Error("expected --claims");
   if(!/^\d+$/.test(String(options.depth))||!Number.isSafeInteger(Number(options.depth)))throw Error("invalid proof depth");
-  if(options.format==="report"&&options.verify)throw Error("verification of generic report inputs needs a producer adapter; stored statuses are never trusted");
   if(options.evidence&&!(options.fragment&&options.verify))throw Error("--evidence is a pipeline's, and needs its --fragment and --verify");
   const output=options.out || sourcePath.replace(/\.ts$/,"")+".annotated.ts", manifest=output+".json";
   if([sourcePath,options.claims,options.verify].filter((p): p is string=>!!p).some(p=>path.resolve(p)===path.resolve(output)))throw Error("output must differ from inputs");
@@ -936,7 +834,7 @@ export function main(args: string[]) {
   let scopes: RigidScopes=new Map();
   try {scopes=rigidScopes(fragment ?? fragmentParse.parseFile(sourcePath,false,tsconfigPath));}
   catch {scopes=new Map();}
-  const report: ReportInput=options.format==="source-claims" ? fromSourceClaims(source,file,input,options.producer,scopes) : input;
+  const report: DraftReport=fromSourceClaims(source,file,input,scopes);
   // Validate attachment before running any expensive proof generation.
   render(source,report);
   // The fields this file reads of a verifier result; the manifest carries
@@ -955,7 +853,7 @@ export function main(args: string[]) {
   const functionNodes=sourceFile.statements.filter(ts.isFunctionDeclaration);
   const data={sourcePath:path.resolve(sourcePath),claimsPath:path.resolve(options.claims),
     ...(options.verify ? {verifierPath:path.resolve(options.verify)} : {}),
-    ...identity,source:report.source,annotatedSha256:hash(annotated),producer:report.producer,
+    ...identity,source:report.source,annotatedSha256:hash(annotated),
     ...(options.diagnostics ? {diagnosticsPath:path.resolve(options.diagnostics),diagnostics} : {}),
     // A declaration the report says nothing about: named, so the report viewer can
     // offer its contract. One without a name or a body is not a declaration

@@ -2,14 +2,14 @@
  * What the report viewer is looking at.
  *
  * One object, because the views are all views of the same thing: a file, read
- * through one producer, with one claim selected. Nothing here decides an
+ * through the producer, with one claim selected. Nothing here decides an
  * outcome — a report carries the verifier's verdicts and this only holds them.
  * It fetches them through api.ts, the server's endpoints as functions.
  */
 import { analyse, files as fetchFiles, health, type Group } from "./api.ts";
 // ../../model.mts turns the bundle the server returns into the report every view shows.
 import { fromBundle, type Report, type ShownFunction } from "../../model.mts";
-import type { Bundle, CollectionRun, Producer } from "../../types.ts";
+import type { Bundle, CollectionRun } from "../../types.ts";
 
 /** Which claim is selected: a function, and a mark within it. */
 export interface Selection {
@@ -22,7 +22,6 @@ export interface Selection {
 export class Viewer {
   /** The repository-relative source being read. */
   path = $state("");
-  producer = $state<Producer>("ocaml");
   /** True while the catalogue is up instead of a report. Opening the report viewer
    * without a file in the link starts here: what can be read is the first
    * thing to find out, and a file chosen for you answers a question nobody
@@ -42,8 +41,8 @@ export class Viewer {
 
   /** Only claims whose type the producer could not state. */
   showUnsupported = $state(false);
-  /** The producer's own diagnostics, under the spans they name. */
-  showProducerErrors = $state(false);
+  /** TypeScript's errors in the source, under the spans they name. */
+  showTypeScriptErrors = $state(false);
 
   /** Step to the next or previous site of this function, in source order. */
   step(by: 1 | -1) {
@@ -83,15 +82,14 @@ export class Viewer {
    * Collect and check one file. The producer runs every time — nothing is
    * cached — so this is the expensive path and the one the busy flag guards.
    */
-  async open(path: string, producer: Producer = this.producer) {
+  async open(path: string) {
     if (!path || this.busy) return;
     this.busy = true;
     this.error = "";
     try {
-      const bundle = await analyse(path, producer);
+      const bundle = await analyse(path);
       this.browsing = false;
       this.path = path;
-      this.producer = producer;
       this.bundle = bundle;
       this.report = fromBundle(bundle);
       this.collection = bundle.collection ?? null;

@@ -70,7 +70,7 @@ import { messageOf } from "./thrown.mts";
 import { childOf, childrenOf, isStatic, nameOf } from "./syntax.mts";
 import { enclosingBinders } from "./computed-types.mts";
 // declaration-graph.mts collects the declarations the source reaches: the declaration document the Fragment carries for Lean to lower.
-import { collectDeclarations, DeclarationError, libraryArguments, libraryTerm, tsconfigOf, type LibraryType,
+import { clientErrors, collectDeclarations, DeclarationError, libraryArguments, libraryTerm, tsconfigOf, type LibraryType,
   type SeenDiagnostic }
   from "./declaration-graph.mts";
 import { asyncCompleteName, asyncReturnName, awaitName, elementAtName, forInName, hasPropertyName, iterateForInName,
@@ -5040,6 +5040,23 @@ export function parseFile(file: string, carriesContext = false,
  * cover, and that is exactly the case a gate rejection would otherwise hide,
  * so this reads the compiler's tree directly and applies no gate.
  */
+/** TypeScript's own verdict on each function the file defines, in the project
+ * `tsconfigPath` names (else the nearest): accepted when none of TypeScript's
+ * errors falls inside the function, so one function TypeScript refuses does
+ * not speak for the rest of the file. Display only (the corpus's left column,
+ * the report viewer's); never a premise of acceptance. */
+export function typescriptVerdicts(file: string, tsconfigPath?: string): Map<string, boolean> {
+  const errors = clientErrors(file, tsconfigPath);
+  const absolute = resolve(file);
+  const source = openText(absolute, readFileSync(absolute, "utf8"));
+  const verdicts = new Map<string, boolean>();
+  for (const statement of source.statements)
+    if (ts.isFunctionDeclaration(statement) && statement.name)
+      verdicts.set(statement.name.text,
+        !errors.some((e) => e.pos[0] >= statement.getStart(source) && e.pos[0] < statement.end));
+  return verdicts;
+}
+
 export function definedFunctions(
   file: string,
 ): { name: string; namePos: Span }[] {
@@ -5053,35 +5070,6 @@ export function definedFunctions(
         name: statement.name.text,
         namePos: [statement.name.getStart(source), statement.name.end],
       });
-  return out;
-}
-
-/** Class bodies named for coverage accounting only. Discovering a callable
- * does not lower or certify it: `new`, initialization, and prototype method
- * lookup still need their own source and semantic rules. */
-export function definedClassCallables(
-  file: string,
-): { name: string; namePos: Span }[] {
-  const absolute = resolve(file);
-  const source = projectFor(absolute).program.getSourceFile(absolute);
-  if (!source) throw new Error(`the compiler produced no tree for ${file}`);
-  const out: { name: string; namePos: Span }[] = [];
-  for (const statement of source.statements) {
-    if (!ts.isClassDeclaration(statement) || !statement.name) continue;
-    for (const member of statement.members) {
-      if (ts.isConstructorDeclaration(member) && member.body) {
-        out.push({
-          name: `${statement.name.text}.constructor`,
-          namePos: [member.getStart(source), member.end],
-        });
-      } else if (ts.isMethodDeclaration(member) && member.body) {
-        out.push({
-          name: `${statement.name.text}.${member.name.getText(source)}`,
-          namePos: [member.name.getStart(source), member.name.end],
-        });
-      }
-    }
-  }
   return out;
 }
 

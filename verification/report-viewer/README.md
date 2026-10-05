@@ -11,22 +11,15 @@ make viewer                                # builds and opens it
 node verification/report-viewer/serve.mts  # http://localhost:8731, without opening
 ```
 
-The producer selector chooses whose claims are read — **OCaml claims** from
-[`ocaml-producer/`](../ocaml-producer/README.md), the default, or **TypeScript
-claims** from `tools/tsc-claims.mts`. They answer for the same
-sites and the same verifier adjudicates any of them, so switching re-reads the
-open file through another one. Each implements its own fragment of the
-language, and one that does not implement the open file says so in its own
-words rather than showing a report with nothing in it. Either producer's claims
-are one run of the pipeline, `pipeline/verify-source.mts` (`--producer tsc` for
-TypeScript's) — the run its suites and the corpus judge, so any file it runs
-opens here, with no setup of its own — and the page is built from that run's
-artifacts. Its outcome is the line under the bar. A
-source it refuses before any claim is proposed — at the shared parser's gate,
-or at the producer's proposal — is shown whole under that outcome, and with
-**producer diagnostics** ticked, TypeScript's errors are drawn under the spans
-TypeScript gives them: those the gate read, for the OCaml claims, and the
-checker's own messages, for TypeScript's. The OCaml claims need
+The page shows the claims of [the OCaml producer](../ocaml-producer/README.md)
+for the open file, as one run of the pipeline, `pipeline/verify-source.mts` —
+the run its suites and the corpus judge, so any file it runs opens here, with
+no setup of its own — built from that run's artifacts. Its outcome is the line
+under the bar. A source refused before any claim is proposed — at the shared
+parser's gate, or at the producer's proposal — is shown whole under that
+outcome, and with **TypeScript errors** ticked, the errors the gate read are
+drawn under the spans TypeScript gives them. Each function lists TypeScript's
+own verdict on it beside the verifier's. The claims need
 `dune build --root verification/ocaml-producer` to have been run.
 
 Opening the report viewer without a file in the link shows the **catalogue** ([Catalogue.svelte](app/src/Catalogue.svelte)) — every
@@ -37,7 +30,7 @@ not it is listed. Paths outside the repository are refused. The producer runs
 on every open — nothing is cached — and the verifier checks what it produced,
 so nothing is displayed as a result without having been checked.
 
-The address bar follows the view: `?file=…&producer=…#function:site`. Reopening
+The address bar follows the view: `?file=…#function:site`. Reopening
 that link restores it. A site is named by its function and its index in source
 order, because names survive a recollection and positional ids do not; a link
 into a report that has changed resolves by name or is dropped, rather than
@@ -176,9 +169,10 @@ when loaded by Node without type checking. The page renders it unconditionally.
 
 The groups come from `corpus-index.mts`, re-read for each page load, so adding an
 example needs no restart. It exports two lists, because they answer different
-questions: `groups` is the corpus, which `verification/corpus-report.mts` runs the
-tsc producer over, reading its `files` as paths; `viewerGroups` is what the report viewer lists, carrying the notes and
-descriptions and reaching another producer's fixtures. `ExampleGroup` in
+questions: `groups` is the corpus, which `verification/corpus-report.mts` runs
+through the pipeline, reading its `files` as paths; `viewerGroups` is what the
+report viewer lists, carrying the notes and descriptions and reaching the
+pipeline's own fixtures. `ExampleGroup` in
 `types.ts` declares that shape for both the server and the page.
 
 `Catalogue.svelte` scrolls at its wrapper and flows its columns inside, which
@@ -192,7 +186,7 @@ Report ids identify records within one snapshot. They are not stable identities
 across source changes; reattachment would need syntax and binding identity as
 well as offset mapping.
 
-Both producers supply `source-claims` documents. Rigid parameters use the same
+The producer supplies `source-claims` documents. Rigid parameters use the same
 function-scoped references, and unavailable claims retain their sites. Sources
 outside the modeled fragment still have an inspectable normalized report, with
 verification unavailable.
