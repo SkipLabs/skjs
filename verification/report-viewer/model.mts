@@ -44,6 +44,7 @@ export type Site =
     }
   | {
       kind: "expression";
+      point?: string;
       pos: Span;
       /** Surface syntax, printed from the producer's encoding. */
       type: string;
@@ -53,6 +54,7 @@ export type Site =
     }
   | {
       kind: "environment";
+      point?: string;
       pos: Span;
       bindings: ShownBinding[];
       /** Names whose type differs from the previous environment's. */
@@ -324,11 +326,11 @@ function parseReport(annotated: string): ParsedReport {
         };
       });
       if (cur && pos)
-        cur.sites.push({ kind: "environment", pos, bindings, changed: new Set() });
+        cur.sites.push({ kind: "environment", point: fld.point === undefined ? undefined : fld.point, pos, bindings, changed: new Set() });
     } else if (kind === "expression") {
       const ty = renderType(core.replace(/^expr\s+/, ""));
       if (cur && pos)
-        cur.sites.push({ kind: "expression", pos, type: ty.text, raw: ty.raw });
+        cur.sites.push({ kind: "expression", point: fld.point === undefined ? undefined : fld.point, pos, type: ty.text, raw: ty.raw });
     } else if (pos && cur) {
       // a gap is a place the producer entered but did not claim. Its reason is
       // a slug; the prose is the long form.
@@ -429,6 +431,7 @@ function fromBundle(bundle: Bundle): ShownReport {
         : []),
       ...f.entries.map((e) => ({
         kind: "environment" as const,
+        point: e.point,
         pos: span(e.pos),
         changed: new Set<string>(),
         bindings: e.bindings.map((b) => ({
@@ -440,6 +443,7 @@ function fromBundle(bundle: Bundle): ShownReport {
       })),
       ...f.expressions.map((e) => ({
         kind: "expression" as const,
+        point: e.point,
         pos: span(e.pos),
         type: display(e.raw, e.type),
         raw: raw(e.raw),

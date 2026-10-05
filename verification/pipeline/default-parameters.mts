@@ -7,6 +7,7 @@ import type { Ast } from "../tools/fragment.mts";
 import type { SourceClaims } from "../tools/source-claims.mts";
 import { stripTypes } from "../tools/strip-types.mts";
 import { readDiagnostic } from "../tools/diagnostic.mts";
+import { producerExecutable } from "./verify-source.mts";
 
 /** The producer's refusal is not the verifier's protection. Forge a claim for
  * the later read and require both Lean entry points to reject its scope. */
@@ -167,6 +168,29 @@ export function checkSchemeDefaults(verifier: string, artifacts: string): void {
 /** A proposed well-typed closure still cannot read its capture during TDZ.
  * This must be a located refusal from both independent entry points. */
 export function checkEarlyDefault(verifier: string, artifacts: string): void {
+  const sanitized: Ast = JSON.parse(readFileSync(join(artifacts, "fragment.json"), "utf8"));
+  const statement = sanitized.functions[0]?.body[0];
+  assert(statement?.k === "const");
+  const lambda = statement.bindings[0]?.init;
+  assert(lambda?.k === "lambda");
+  const parameter = lambda.params[1];
+  assert(parameter?.default?.k === "apply");
+  parameter.default = { k: "lit", pos: parameter.default.pos, lit: { a: "booleanlit", v: "true" } };
+  // A safe initializer supplies a complete proposal with the original source
+  // identities; both entry points check the original initializer's scope.
+  const donor = join(artifacts, "safe-default-ast.json");
+  const flow = join(artifacts, "safe-default-flow.json");
+  writeFileSync(donor, JSON.stringify(sanitized));
+  const lowered = spawnSync(verifier, ["--lower-control-flow", donor],
+    { encoding: "utf8", timeout: 30_000 });
+  assert.ifError(lowered.error);
+  assert.equal(lowered.status, 0, lowered.stdout + lowered.stderr);
+  writeFileSync(flow, lowered.stdout);
+  const proposed = spawnSync(producerExecutable, [donor, flow],
+    { encoding: "utf8", timeout: 30_000 });
+  assert.ifError(proposed.error);
+  assert.equal(proposed.status, 0, proposed.stdout + proposed.stderr);
+  writeFileSync(join(artifacts, "claims.json"), proposed.stdout);
   writeFileSync(join(artifacts, "evidence.json"), "{}");
   for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
     const result = spawnSync(
@@ -189,6 +213,6 @@ export function checkEarlyDefault(verifier: string, artifacts: string): void {
     const diagnostic = readDiagnostic(output);
     assert(diagnostic?.kind === "source-refusal");
     assert.equal(diagnostic.sourceMap.role, "binding-annotation");
-    assert(diagnostic.sourceMap.pos[0] < diagnostic.sourceMap.pos[1]);
+    assert.deepEqual(diagnostic.sourceMap.pos, lambda.pos);
   }
 }

@@ -112,7 +112,9 @@ export function checkOverloads(verifier: string, artifacts: string): void {
       assert.equal(p.status, 1, `${name}: ${p.stdout}${p.stderr}`);
       assert.match(
         p.stdout + p.stderr,
-        /invalid source claims|per-arrow claim|per-arrow interior claims|evidence search failed|source evidence does not justify/,
+        name === "foreign expression"
+          ? /expression claim names a foreign or missing execution point/
+          : /invalid source claims|per-arrow claim|per-arrow interior claims|evidence search failed|source evidence does not justify/,
       );
     }
   }

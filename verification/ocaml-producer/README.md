@@ -62,7 +62,9 @@ Proof search has fuel 12; each child process has a 30-second timeout. An
 `unverified` result is not a proof that the source is wrong. A timeout or failed
 executable is an infrastructure error. Artifacts remain available for inspection.
 
-The low-level `_build/default/producer.exe fragment.json` command **only proposes claims**.
+The low-level `_build/default/producer.exe fragment.json flow.json` command **only proposes claims**.
+Lean's `--lower-control-flow` command supplies `flow.json`; the producer solves
+entry environments over its execution points and edges.
 Its successful exit is never a type-checking verdict.
 
 ## Reading its claims

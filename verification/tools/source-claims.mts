@@ -75,8 +75,9 @@ export interface NamedPoint<L = Label> extends Point<L> {
   name: string;
 }
 
-/** The environment at one statement entry, keyed by the statement's start. */
+/** The environment at one shared control-flow point, with source provenance. */
 export interface EntryClaim<L = Label> {
+  point: string;
   start: number;
   bindings: NamedPoint<L>[];
 }
@@ -91,8 +92,16 @@ export interface TypeArgument<L = Label> {
 }
 
 export interface ExpressionClaim<L = Label> extends Point<L> {
+  point: string;
   pos: Span;
   instantiate?: TypeArgument<L>[] | null;
+}
+
+/** The fixed storage contract of a mutable declaration. */
+export interface StorageContract<L = Label> {
+  pos: Span;
+  name: string;
+  type: ClaimType<L>;
 }
 
 export interface FunctionClaims<L = Label> {
@@ -100,12 +109,13 @@ export interface FunctionClaims<L = Label> {
   namePos: Span;
   params: NamedPoint<L>[];
   result: ClaimType<L>;
+  contracts: StorageContract<L>[];
   entries: EntryClaim<L>[];
   expressions: ExpressionClaim<L>[];
   /** One interior claim set per advertised signature of the closure at pos. */
   arrows?: {
     pos: Span;
-    rows: { expressions: ExpressionClaim<L>[]; entries: EntryClaim<L>[] }[];
+    rows: { contracts: StorageContract<L>[]; expressions: ExpressionClaim<L>[]; entries: EntryClaim<L>[] }[];
   }[];
 }
 
@@ -117,5 +127,5 @@ export interface SourceClaims<L = Label> {
   functions: FunctionClaims<L>[];
   /** The module initialization unit, present exactly when the source has
    * top-level code: its entries and expressions, with no parameters. */
-  init?: Pick<FunctionClaims<L>, "entries" | "expressions" | "arrows">;
+  init?: Pick<FunctionClaims<L>, "contracts" | "entries" | "expressions" | "arrows">;
 }

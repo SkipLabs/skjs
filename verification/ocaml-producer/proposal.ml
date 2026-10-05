@@ -3,15 +3,16 @@ open Environment
 open Source
 open Inference
 
-type entry = { start: Json.t; bindings: (string * binding) list }
+type entry = { point: string; start: Json.t; bindings: (string * binding) list }
 (* A call site's proposed substitution travels with its claim. It is proposal
    output for Lean to re-check, never an acceptance fact. *)
-type expression = { pos: Json.t; type_: ty; instantiation: (string * type_argument) list option }
+type expression = { point: string; pos: Json.t; type_: ty; instantiation: (string * type_argument) list option }
 (* One closure advertising several signatures has one body and a separate
    obligation at each: the interior claims are collected once per signature,
    keyed by the closure's span and ordered with the signatures. *)
-type overlay = { row_entries: entry list; row_expressions: expression list }
-type function_claim = { source: fn; entries: entry list; expressions: expression list;
+type contract = { pos: Json.t; name: string; type_: ty }
+type overlay = { row_contracts: contract list; row_entries: entry list; row_expressions: expression list }
+type function_claim = { contracts: contract list; source: fn; entries: entry list; expressions: expression list;
                         arrows: (Json.t * overlay list) list }
 type t = { program: program; functions: function_claim list; init: function_claim option }
 let unsupported s = Json.fail ("unsupported: " ^ s)
@@ -1212,8 +1213,26 @@ let evolved key = Option.value (List.assoc_opt key !evolving_assumed) ~default:(
 (* One pass over a function. [offered] gives, for a named closure's creation,
    the further signatures its uses offer it; the pass reports them as
    [requests], and [infer_function] runs a second pass with them. *)
-let infer_pass offered declarations module_functions (f:Source.fn) =
+let infer_pass flows offered declarations module_functions (f:Source.fn) =
   let entries = ref [] and expressions = ref [] and instantiations = ref [] in
+  let current_point = ref "" and contracts = ref [] in
+  let typing_roots = ref [] in
+  let executions = Hashtbl.create 128 and expression_hints = Hashtbl.create 128 in
+  List.iter (fun (graph:Flow.graph) -> Array.iter (fun (node:Flow.node) ->
+    List.iter (fun (source,plan) -> Hashtbl.replace executions (node.Flow.point,source) plan)
+      node.Flow.executions) graph.Flow.nodes) flows;
+  let rec register_expression (e:Source.expr) =
+    Hashtbl.replace expression_hints e.pos e;
+    (match e.node with
+     | NullishAssign (name,source,_) ->
+       Hashtbl.replace expression_hints source {pos=source;node=Id name}
+     | _ -> ());
+    List.iter register_expression (Source.children e) in
+  List.iter (fun s -> List.iter register_expression (Source.statement_children s)) f.body;
+  let execution (e:Source.expr) = match Hashtbl.find_opt executions (!current_point,e.pos) with
+    | Some plan -> plan
+    | None -> Json.fail ("missing expression execution plan at " ^ !current_point ^
+        " for " ^ Json.encode e.pos) in
   (* A condition's operands are claimed before it is branched on: an operand
      Lean evaluates once into a slot of its own holds what it is claimed at. *)
   (* The evolving bindings in scope, by name: the key, and whether the
@@ -1225,7 +1244,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
   let branch = branch_with declarations ~modules:(fun n ->
     try Option.map Lazy.force (List.assoc_opt n module_functions) with Json.Error _ -> None)
     ~claimed:(fun pos -> List.find_map (fun (x:expression) ->
-      if x.pos = pos then Some x.type_ else None) !expressions) in
+      if x.point = !current_point && x.pos = pos then Some x.type_ else None) !expressions) in
   (* A parameter the body assigns is a cell holding its argument, at its
      annotation. *)
   let env0 = List.map (fun (n,t) ->
@@ -1355,18 +1374,18 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
        | Some (Atoms [Shape ({calls=[signature];_} as shape)]) ->
          let instance = Inference.substitute substitution
            (Atoms [Shape {shape with calls=[{signature with quantified=[]}]}]) in
-         instances := (callee.pos,instance) :: !instances
+         instances := ((!current_point,callee.pos),instance) :: !instances
        | _ -> ())
     | Id n when not (List.mem_assoc n env0) && List.mem_assoc n module_functions ->
       (match Lazy.force (List.assoc n module_functions) with
        | Atoms [Shape ({calls=[signature];_} as shape)] ->
          let instance = Inference.substitute substitution
            (Atoms [Shape {shape with calls=[{signature with quantified=[]}]}]) in
-         instances := (callee.pos,instance) :: !instances
+         instances := ((!current_point,callee.pos),instance) :: !instances
        | Atoms [Ctors [signature]] ->
          let instance = Inference.substitute substitution
            (Atoms [Ctors [{signature with quantified=[]}]]) in
-         instances := (callee.pos,instance) :: !instances
+         instances := ((!current_point,callee.pos),instance) :: !instances
        | _ -> ())
     | _ -> () in
   (* A method's instance is its read's claim, not the call's. *)
@@ -1375,12 +1394,21 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
   let arrows = ref [] in
   (* What [f] computes, leaving no claim behind: the elements an evolving
      array is given, seen before the call that gives them is typed. *)
+  let speculative_typing = ref false in
   let quietly f =
+    let previous_speculative = !speculative_typing in
+    speculative_typing := true;
     let saved = (!closures,!requests,!classes,!entries,!expressions,!instantiations,!instances,!arrows) in
+    let metadata = (!evolving,!grown_locals,!exact_locals,!objects,!fresh_constructor,!exact_allocs,
+                    !contracts,!current_point) in
     let result = try Some (f ()) with Json.Error _ -> None in
     let (a,b,c,d,e,g,h,i) = saved in
     closures := a; requests := b; classes := c; entries := d; expressions := e;
     instantiations := g; instances := h; arrows := i;
+    let (e,g,x,o,f,a,c,p) = metadata in
+    evolving := e; grown_locals := g; exact_locals := x; objects := o;
+    fresh_constructor := f; exact_allocs := a; contracts := c; current_point := p;
+    speculative_typing := previous_speculative;
     result in
   let rec reads n (e:expr) =
     (match e.node with Id m -> m = n | _ -> false) || List.exists (reads n) (Source.children e) in
@@ -1394,16 +1422,8 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
         (match List.assoc_opt (owner n) env with
          | Some (Value t) -> record_field declarations t (field_of n)
          | _ -> false)) env in
-      entries := {start;bindings} :: !entries
+      entries := {point = !current_point;start;bindings} :: !entries
     | [] -> Json.fail "empty source span" in
-  (* A step that may write a cell it does not name: a call, or a write. The
-     cells are then known only by their contracts. Creating a closure runs
-     nothing. *)
-  let rec stirs (e:expr) = match e.node with
-    | Call _ | Invoke _ | New _ | Apply _ | Bind _ | Write _ | IndexWrite _ | Assign _
-    | Update _ | LogicalAssign _ | NullishAssign _ | ArrayAssign _ | ObjectAssign _ -> true
-    | Lambda _ -> false
-    | _ -> List.exists stirs (Source.children e) in
   (* Where two arms meet, a cell holds what either left in it. *)
   let join before left right =
     List.filter_map (fun (n,b) -> match b,List.assoc_opt n left,List.assoc_opt n right with
@@ -1433,29 +1453,87 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       | Some (Value _) -> may_lack declarations t name
       | _ -> false)
     | _ -> false in
-  let rec effects env (e:expr) = match e.node with
-    | Lambda _ | Literal _ | Id _ -> env
-    | Assign (n,rhs) ->
-      let env = effects env rhs in
-      let t = List.find_map (fun (x:expression) -> if x.pos = e.pos then Some x.type_ else None) !expressions in
-      (match List.assoc_opt n env,t with
-       | Some (Storage _),Some t -> assign env n t
-       | Some (Storage _),None -> forget ~only:(( = ) n) env
-       | _ -> env)
-    | Conditional (c,a,b) ->
-      let env = effects env c in
-      join env (effects (branch env c true) a) (effects (branch env c false) b)
-    | Arith _ | Equality _ | Not _ | Unary _ | Read _ | Index _ | Cast _ | TypeofTest _
-    | HasKey _ | Alloc _ | ArrayLiteral _ | Comma _ ->
-      List.fold_left effects env (Source.children e)
-    | _ -> if stirs e then forget env else env in
+  let claimed_type span = List.find_map (fun (x:expression) ->
+    if x.point = !current_point && x.pos=span then Some x.type_ else None) !expressions in
+  let refine_test env condition test truth =
+    match Hashtbl.find_opt expression_hints condition with
+    | None -> env
+    | Some cond -> (match test with
+      | Execution.Truthy -> branch env cond truth
+      | Execution.Nullish | Execution.Defined ->
+        let refine t = match test,truth with
+          | Execution.Nullish,true -> union (restrict Nul true t) (restrict Undef true t)
+          | Execution.Nullish,false -> restrict Undef false (restrict Nul false t)
+          | Execution.Defined,true -> restrict Undef false t
+          | Execution.Defined,false -> restrict Undef true t
+          | Execution.Truthy,_ -> t in
+        (match cond.node with Id name -> refine_value env name refine | _ -> env)) in
+  let restore_optional original env =
+    let env=List.remove_assoc "?." env in
+    match List.assoc_opt "?." original with None -> env | Some binding -> env @ ["?.",binding] in
+  let rec run_execution ?(observe = fun _ _ -> ()) env = function
+    | Execution.Observe (source,evaluate) -> observe source env; run_execution ~observe env evaluate
+    | Execution.Atom (_,operation) -> (match operation.Execution.impact with
+      | Execution.None_ -> env
+      | Execution.Havoc -> forget env
+      | Execution.CellWrite (name,value) ->
+        (match List.assoc_opt name env,claimed_type value with
+         | Some (Storage _),Some t -> assign env name t
+         | Some (Storage _),None -> forget ~only:(( = ) name) env
+         | _ -> env)
+      | Execution.CellUpdate (name,source) ->
+        (match List.assoc_opt name env,Hashtbl.find_opt expression_hints source with
+         | Some (Storage (contract,_)),Some {node=Update (op,_,rhs,_);_} ->
+           let right=match rhs with None -> contract | Some rhs ->
+             Option.value (claimed_type rhs.pos) ~default:contract in
+           assign env name (operation_result declarations op contract right)
+         | Some (Storage _),_ -> forget ~only:(( = ) name) env
+         | _ -> env))
+    | Execution.Sequence (_,binding,evaluate,next) ->
+      let env=run_execution ~observe env evaluate in
+      let optional=binding.Execution.name="?." in
+      let original=env in
+      let env=if optional then
+        let t=Option.value (claimed_type (Execution.source evaluate)) ~default:top in
+        List.remove_assoc "?." env @ ["?.",Value t] else env in
+      let env=run_execution ~observe env next in
+      if optional then restore_optional original env else env
+    | Execution.Choose (_,condition,test,binding,evaluate,yes,no) ->
+      let env=run_execution ~observe env evaluate in
+      let original=env in
+      let optional=binding.Execution.name="?." in
+      let env=if optional then
+        let t=Option.value (claimed_type (Execution.source evaluate)) ~default:top in
+        List.remove_assoc "?." env @ ["?.",Value t] else env in
+      let path truth =
+        let env=refine_test env condition test truth in
+        if optional then refine_value env "?." (fun t ->
+          if truth then union (restrict Nul true t) (restrict Undef true t)
+          else without_nullish t) else env in
+      let left=run_execution ~observe (path true) yes
+      and right=run_execution ~observe (path false) no in
+      let result=join env left right in
+      if optional then restore_optional original result else result in
+  let effects env (e:expr) = run_execution env (execution e) in
+  let expression_entry root source fallback =
+    let (_,plan,initial)=root in
+    let entries=Hashtbl.create 16 in
+    let observe span env=match Hashtbl.find_opt entries span with
+      | None -> Hashtbl.add entries span env
+      | Some previous ->
+        let impossible env=List.exists (fun (n,b) -> not (is_field n) && binding_type b=Atoms []) env in
+        let env=if impossible previous then env else if impossible env then previous else
+          join previous previous env in
+        Hashtbl.replace entries span env in
+    ignore (run_execution ~observe initial plan);
+    Option.value (Hashtbl.find_opt entries source) ~default:fallback in
   (* The contract an assignment target is read and written at: a local's
      storage contract, or the type of the field or named index, whose read is
      also the target's claim. *)
   (* A closure's statements are checked as a function body's are, by the
      statement checker below: a constructor's too, at a result where the
      closure has one, collecting the types its `return`s give. *)
-  let block_statements = ref (fun (_:ty option) (_:ty list ref) env (_:stmt list) -> env) in
+  let block_statements = ref (fun (_:Json.t) (_:ty option) (_:ty list ref) env (_:stmt list) -> env) in
   (* The body the statement checker is in: its result, and where its
      `return`s' types are collected. *)
   let block_result = ref (Some f.result)
@@ -1554,6 +1632,16 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       explain site ("a write adds the property '" ^ key_text field ^ "' where a dictionary may lack it: \
         another reference may hold the dictionary, and would see its keys change")
   and expr ?expected env e =
+    let saved_roots = !typing_roots in
+    let root=if !speculative_typing then None else match saved_roots with
+      | ((point,plan,_) as root) :: _ when point = !current_point && Execution.contains e.pos plan -> Some root
+      | _ -> Option.map (fun plan -> !current_point,plan,env)
+          (Hashtbl.find_opt executions (!current_point,e.pos)) in
+    (match root with None -> () | Some root -> typing_roots := root :: saved_roots);
+    Fun.protect ~finally:(fun () -> typing_roots := saved_roots) (fun () ->
+    let env=match root,e.node with
+      | _,BlockBody _ | None,_ -> env
+      | Some root,_ -> expression_entry root e.pos env in
     let site = e.pos in
     let t = match e.node with
     | Id n ->
@@ -1745,7 +1833,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
         | Nullish -> without_nullish contract | OrElse -> Atoms [True] | AndAlso -> Atoms [False]) right
     | NullishAssign (n,name_pos,rhs) ->
       let current = resolve env n in
-      expressions := {pos=name_pos;type_=current;instantiation=None} :: !expressions;
+      expressions := {point = !current_point;pos=name_pos;type_=current;instantiation=None} :: !expressions;
       let contract = match lookup env n with
         | Storage (contract,_) -> contract
         | Value _ -> unsupported "assignment to immutable binding" in
@@ -1791,7 +1879,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
           (* A slice: its `%RestFrom:k%`'s fresh array, at the instance of
              the elements from the rest's index on. *)
           let element = slice_element declarations start actual in
-          expressions := {pos=span;type_=array {required=[];optional_elements=[];rest=Some element;readonly=false;presence=Readable};
+          expressions := {point = !current_point;pos=span;type_=array {required=[];optional_elements=[];rest=Some element;readonly=false;presence=Readable};
             instantiation=Some ["T",ValueArgument element]} :: !expressions
         else
         let claim = match Semantic.array_element (contract n),declared_head declarations [] actual with
@@ -1800,7 +1888,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
             array {required=List.filteri (fun i _ -> i >= start) s.required;
                    optional_elements=[];rest=None;readonly=false;presence=Dense}
           | _ -> unsupported "an array rest needs one tuple of required positions: the rest of an array of unknown length is a slice" in
-        expressions := {pos=span;type_=claim;instantiation=None} :: !expressions) rest;
+        expressions := {point = !current_point;pos=span;type_=claim;instantiation=None} :: !expressions) rest;
       actual
     | Equality (op,l,r) ->
       let lt = expr env l and rt = expr env r in
@@ -2060,14 +2148,14 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
        | Atoms [NumLit bits] -> Option.iter (fun k -> dictionary_growth site t (Name k)) (number_key bits)
        | _ -> ());
       let name = match key_type with Atoms [StrLit k] -> Some (Name k) | _ -> None in
-      let value = expr (effects (effects env receiver) key) rhs in
+      let value = expr env rhs in
       (match name with
        | Some name when adds env receiver t name -> added_contract declarations t name rhs value
        | _ -> value)
     | Write (receiver,field,rhs) ->
       let t = expr env receiver in
       dictionary_growth site t field;
-      let value = expr (effects env receiver) rhs in
+      let value = expr env rhs in
       if adds env receiver t field then added_contract declarations t field rhs value else value
     | Assign (n,rhs) ->
       if not (List.mem_assoc n env) && List.mem_assoc n module_functions then
@@ -2098,7 +2186,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       let allocated_type = match body.node with
         | BlockBody ss ->
           let returned = ref [] in
-          ignore (!block_statements (Some result) returned inner ss);
+          ignore (!block_statements body.pos (Some result) returned inner ss);
           combine (List.rev !returned)
         | _ -> expr ~expected:result inner body in
       (* A class offered construct signatures giving other instances is
@@ -2135,7 +2223,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
                (List.map (expr env) args @ List.init missing (fun _ -> Atoms [Undef])) in
              inferred.substitution,inferred.result in
          instance_of callee substitution;
-         instantiations := (e.pos,List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
+         instantiations := ((!current_point,e.pos),List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
            substitution) :: !instantiations;
          result
        | Atoms [Ctors signatures] ->
@@ -2164,24 +2252,11 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
          not permission to invoke it during initialization. Lean independently
          schedules acyclic captures and rejects pending closure exposure. *)
       let inner = List.fold_left (fun env (i,(n,t)) ->
-        let initialized = Option.map (fun d ->
-          let scope = match d.node with
-            | Lambda _ -> List.fold_left (fun scope (n,t) ->
-                if List.mem_assoc n scope then scope else extend scope n (Value t)) env ps
-            | _ -> env in
-          try expr ~expected:t scope d with
-          | Json.Error message when String.starts_with ~prefix:"unbound name " message ->
-            unsupported ("parameter default may only read initialized earlier parameters and captures: " ^ message))
-          (List.assoc_opt i defaults) in
-        let bound = match initialized with
-          | None -> t
-          | Some initial -> union (restrict Undef false t) initial in
-        (* A parameter a block body assigns is a cell holding its argument,
-           at its annotation, as a function's is. *)
         let assigned = match body.node with
           | BlockBody ss -> List.exists (assigns n) ss
           | _ -> false in
-        extend env n (if assigned then cell t else Value bound)) env (List.mapi (fun i p -> i,p) ps) in
+        let input=if List.mem_assoc i defaults then union t (Atoms [Undef]) else t in
+        extend env n (if assigned then holding t input else Value input)) env (List.mapi (fun i p -> i,p) ps) in
       (* A closure literal without a result annotation expected at one
          signature taking at least its parameters has that signature's result
          as its contextual return type, as in TypeScript. *)
@@ -2201,8 +2276,19 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
         | Some (ValueArgument b) when not (Semantic.mentions_rigid b) -> Some (q.identity,b)
         | Some (ValueArgument (Rigid t)) when t <> q.identity -> Some (q.identity,Rigid t)
         | _ -> None) quantified @ enclosing_bounds;
+      let infer_closure_body ?expected env = match body.node with
+        | BlockBody _ -> expr ?expected env body
+        | _ ->
+          let graph=match List.find_opt (fun (g:Flow.graph) -> g.Flow.owner=body.pos) flows with
+            | Some graph -> graph | None -> Json.fail "Lean supplied no graph for a closure expression body" in
+          let saved_point = !current_point in
+          Fun.protect ~finally:(fun () -> current_point := saved_point) (fun () ->
+            current_point := graph.Flow.nodes.(graph.Flow.entry).Flow.point;
+            let env=match graph.Flow.prologue with None -> env | Some plan -> execute_bindings env plan in
+            entry env body.pos;
+            expr ?expected env body) in
       let body_type = Fun.protect ~finally:(fun () -> rigid_bounds := enclosing_bounds) (fun () ->
-        expr ?expected:(if written <> None then written else contextual) inner body) in
+        infer_closure_body ?expected:(if written <> None then written else contextual) inner) in
       (* Without a result annotation the result is the body's, widened as
          TypeScript widens an inferred return type, or the contextual return
          type where the body's fits it: a literal result the context asks for
@@ -2301,17 +2387,17 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
        | Some (Atoms [Shape {calls=(_::_::_ as calls);fields=[];indexes=[];elements=None}] as contract)
          when quantified=[] && defaults=[] && List.for_all implements calls ->
          let row (s:Semantic.signature) =
-           let saved = !expressions and saved_entries = !entries in
-           expressions := []; entries := [];
+           let saved = !expressions and saved_entries = !entries and saved_contracts = !contracts in
+           expressions := []; entries := []; contracts := [];
            let env_row = List.fold_left2 (fun env (n,_) t -> extend env n (Value t))
              env ps s.params in
-           ignore (expr ~expected:s.result env_row body);
+           ignore (infer_closure_body ~expected:s.result env_row);
            (* An entry environment replaces the context it is checked against,
               so a body's entries are stated per signature like its
               expressions. *)
-           let claims = {row_expressions=List.rev !expressions;
+           let claims = {row_contracts=List.rev !contracts;row_expressions=List.rev !expressions;
                          row_entries=List.rev !entries} in
-           expressions := saved; entries := saved_entries;
+           expressions := saved; entries := saved_entries; contracts := saved_contracts;
            claims in
          let rows = List.map row calls in
          arrows := (e.pos,rows) :: !arrows;
@@ -2396,7 +2482,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
           | _ -> None in
         match arg.node with
         | Lambda (_,[],ps,_,false,_,_) ->
-          Option.map (fun (t,_) () -> instances := (arg.pos,t) :: !instances)
+          Option.map (fun (t,_) () -> instances := ((!current_point,arg.pos),t) :: !instances)
             (offered (List.length ps))
         | Id n when List.mem_assoc n !closures ->
           (match param with
@@ -2491,7 +2577,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
          instance_of ~declared:callee target substitution;
          offer ~substitute:(Inference.substitute substitution) signature;
          if not (method_read target) then
-           instantiations := (e.pos,List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
+           instantiations := ((!current_point,e.pos),List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
              substitution) :: !instantiations;
          result
        | Atoms [Shape {calls=[signature];_}]
@@ -2524,7 +2610,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
            (actuals @ List.init missing (fun _ -> Atoms [Undef])) in
          instance_of ~declared:callee target substitution;
          if not (method_read target) then
-         instantiations := (e.pos,List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
+         instantiations := ((!current_point,e.pos),List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
            substitution) :: !instantiations;
          result
        | _ ->
@@ -2688,7 +2774,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
         instance_of ~declared:callee target substitution;
         offer ~substitute:(Inference.substitute substitution) signature;
         if not (method_read target) then
-        instantiations := (e.pos,List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
+        instantiations := ((!current_point,e.pos),List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
           substitution) :: !instantiations;
         result
       (* Quantified overloads use the same proposal/validation split as one
@@ -2729,7 +2815,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
            instance_of ~declared:(Atoms [Shape {shape with calls=[s]}]) target substitution;
            offer ~substitute:(Inference.substitute substitution) s;
            if not (method_read target) then
-             instantiations := (e.pos,List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
+             instantiations := ((!current_point,e.pos),List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
                substitution) :: !instantiations;
            result
          | None,[] -> unsupported "quantified overloads have no inferable arity-compatible instance")
@@ -2828,8 +2914,8 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
          | None -> arrow ~call_effect:signature.call_effect rest signature.result)
       | _ -> unsupported "bind requires a single arrow and a valid argument prefix")
     | Conditional (c,a,b) -> ignore (expr env c);
-      let left = expr ?expected (branch env c true) a in
-      let right = expr ?expected (branch env c false) b in union left right
+      let left = expr ?expected env a in
+      let right = expr ?expected env b in union left right
     | Coalesce (a,b) -> let left=expr env a in let right=expr ?expected env b in
       if expected <> None && rigid_arm left then
         explain site ("`??` on a value of a type parameter: its values other than null and undefined are \
@@ -2840,12 +2926,12 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
        an outer one's. *)
     | Optional (r,b) -> let receiver=expr env r in
       let present=without_nullish receiver in
-      let body=expr ?expected (List.remove_assoc chain_name env @ [chain_name,Value present]) b in
+      let body=expr ?expected env b in
       if present = receiver then body else union (Atoms [Undef]) body
     (* The left operand's value where it decides, the right's elsewhere; the
        right operand runs where the left answered the other way. *)
     | Logical (conjunction,a,b) -> let left=expr env a in
-      let right=expr ?expected (branch env a conjunction) b in
+      let right=expr ?expected env b in
       union (truthy_slice (not conjunction) left) right
     (* The operand is built at its const type, which is the cast's. *)
     | Cast ("const",None,e) ->
@@ -2867,185 +2953,116 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
        checked at the closure's result where it has one. *)
     | BlockBody ss ->
       let returned = ref [] in
-      ignore (!block_statements expected returned env ss);
+      ignore (!block_statements e.pos expected returned env ss);
       combine (List.rev !returned) in
     (* Block wrappers correspond to statement entries, not expression sites. *)
     (match e.node with
       | BlockBody _ -> ()
-      | _ -> expressions := {pos=e.pos;type_=t;
-          instantiation=List.assoc_opt e.pos !instantiations} :: !expressions); t
+      | _ -> expressions := {point = !current_point;pos=e.pos;type_=t;
+          instantiation=List.assoc_opt (!current_point,e.pos) !instantiations} :: !expressions); t)
   (* A pattern binding [target] to a value of [t], in pattern order: a
      property at its field's read, an element at its position's, a rest at the
      tuple of the positions from its index on, claimed at its span; a
      default, which sees the earlier bindings, replaces the read's undefined
      slice. *)
-  and bind ?(nested = false) env target t default =
-    (* The read's defined slice, through the declarations naming it. *)
-    let rec present t = match t with
-      | Union ts -> combine (List.map present ts)
-      | Atoms xs -> combine (List.map (fun a -> match a,expand_named declarations (Atoms [a]) with
-          | Named _,Some e when e <> Atoms [a] -> present e
-          | _ -> restrict Undef false (Atoms [a])) xs)
-      | t -> t in
-    let t = match default with
-      | None -> t
-      | Some d ->
-        let kept = present t in
-        let expected = match kept with Atoms [] -> None | t -> Some t in
-        union kept (expr ?expected env d) in
-    match target with
-    | PName (n,_) -> extend env n (Value t)
-    | PObject (props,rest) ->
-      (* A nested pattern over a field holding an object beside `null`,
-         which a guard found an object, reads it at its type. *)
-      let read f = try field_type declarations [] t (Name f) with Json.Error m
-        when nested && m = "unsupported: field read on non-object" ->
-        unsupported ("a field read at its contract: a nested pattern's read of " ^ f ^ " through a field \
-          holding an object beside null or undefined, which a test does not narrow: what a field is known \
-          to hold is a union of primitive values (DESIGN.md, \"Current-content assertions\")") in
-      let env = List.fold_left (fun env (f,target,d) ->
-        bind ~nested:true env target (read f) d) env props in
-      (match rest with
-       | None -> env
-       | Some (span,target) ->
-         (* The source's other own enumerable properties, copied onto a fresh
-            object: a merge dropping the properties' keys. *)
-         let drop = List.map (fun (f,_,_) -> Name f) props in
-         let sources = List.map (fun (a:alternative) ->
-           {a with afields=List.filter (fun (f:Semantic.field) -> not (List.mem f.name drop)) a.afields})
-           (source_alternatives declarations [] t) in
-         let rest_t = combine (List.map (fun b ->
-           alternative_type (merge_alternative {afields=[];exact=true;index=None} b)) sources) in
-         expressions := {pos=span;type_=rest_t;instantiation=None} :: !expressions;
-         bind env target rest_t None)
-    | PArray (elems,rest) ->
-      (* An array pattern reads an array's positions. Over another iterable
-         (a string, a `Set`, an object with its own `[Symbol.iterator]`) it
-         steps that iterable's iterator, which nothing here models. *)
-      let position i = try index_type declarations [] t (number_literal (string_of_int i)) with Json.Error m
-        when String.length m >= 27 && String.sub m 0 27 = "unsupported: missing field " ->
-        unsupported "an array pattern over a value that may not be an array: it would step that value's own \
-          iterator, which is not modeled; only an array's positions are read" in
-      let env = List.fold_left (fun env (i,target,d) ->
-        bind env target (position i) d) env elems in
-      (match rest with
-       | None -> env
-       | Some (start,span,true,target) ->
-         (* A slice: its `%RestFrom:k%`'s fresh array, at the instance of the
-            elements from the rest's index on. *)
-         let element = slice_element declarations start t in
-         let rest_t = array {required=[];optional_elements=[];rest=Some element;readonly=false;presence=Readable} in
-         expressions := {pos=span;type_=rest_t;instantiation=Some ["T",ValueArgument element]} :: !expressions;
-         bind env target rest_t None
-       | Some (start,span,false,target) ->
-         let remaining = match declared_head declarations [] t with
-           | Atoms [Shape {elements=Some s;_}] when s.optional_elements=[] && s.rest=None ->
-             List.filteri (fun i _ -> i >= start) s.required
-           | _ -> unsupported "an array rest needs one tuple of required positions: the rest of an array of unknown length is a slice" in
-         let rest_t = array {required=remaining;optional_elements=[];rest=None;readonly=false;presence=Dense} in
-         expressions := {pos=span;type_=rest_t;instantiation=None} :: !expressions;
-         bind env target rest_t None)
+  and execute_bindings initial plan =
+    let rec input_names = function
+      | Execution.Finish -> []
+      | Execution.Input (name,_,_,next) -> name :: input_names next
+      | Execution.DefaultValue (_,_,_,next) -> input_names next
+      | Execution.Evaluate (_,_,next) | Execution.Bind (_,_,_,next)
+      | Execution.ReadField (_,_,_,_,next) | Execution.ReadPosition (_,_,_,_,next)
+      | Execution.ObjectRest (_,_,_,_,next) | Execution.ArrayRest (_,_,_,_,_,next) -> input_names next in
+    let inputs=input_names plan in
+    let env=List.filter (fun (name,_) -> not (List.mem name inputs)) initial in
+    let get values saved = match List.assoc_opt saved.Execution.id values with
+      | Some t -> t | None -> Json.fail "binding plan reads an unavailable saved value" in
+    let put values saved t = (saved.Execution.id,t) :: List.remove_assoc saved.Execution.id values in
+    let publish source t instantiation =
+      expressions := {point = !current_point;pos=source;type_=t;instantiation} :: !expressions in
+    let rec defined_slice truth t = match t with
+      | Union alternatives -> combine (List.map (defined_slice truth) alternatives)
+      | Atoms atoms -> combine (List.map (fun atom ->
+          match atom,expand_named declarations (Atoms [atom]) with
+          | Named _,Some expanded when expanded <> Atoms [atom] -> defined_slice truth expanded
+          | _ -> restrict Undef truth (Atoms [atom])) atoms)
+      | t -> restrict Undef truth t in
+    let rec run ?expected env values = function
+      | Execution.Finish -> env
+      | Execution.Input (name,_,value,next) ->
+        run env (put values value (binding_type (lookup initial name))) next
+      | Execution.Evaluate (value,plan,next) ->
+        let source=Execution.source plan in
+        let expression=match Hashtbl.find_opt expression_hints source with
+          | Some expression -> expression | None -> Json.fail "binding evaluation names missing expression" in
+        let typing_env=match expression.node with
+          | Lambda _ -> List.fold_left (fun scope name ->
+              if List.mem_assoc name scope then scope else
+                extend scope name (lookup initial name)) env inputs
+          | _ -> env in
+        let t=
+          (try expr ?expected typing_env expression with
+           | Json.Error message when inputs <> [] && String.starts_with ~prefix:"unbound name " message ->
+             unsupported ("parameter default may only read initialized earlier parameters and captures: " ^ message))
+          in
+        run (run_execution env plan) (put values value t) next
+      | Execution.DefaultValue (value,result,fallback,next) ->
+        let t=get values value in
+        let present=defined_slice false t and absent=defined_slice true t in
+        if absent=Atoms [] then run env (put values result present) next
+        else
+          let source=Execution.source fallback in
+          let expression=match Hashtbl.find_opt expression_hints source with
+            | Some expression -> expression | None -> Json.fail "binding default names missing expression" in
+          let expected=if present=Atoms [] then None else Some present in
+          let typing_env=match expression.node with
+            | Lambda _ -> List.fold_left (fun scope name -> if List.mem_assoc name scope then scope
+                else extend scope name (lookup initial name)) env inputs
+            | _ -> env in
+          let default=
+            (try expr ?expected typing_env expression with
+             | Json.Error message when inputs <> [] && String.starts_with ~prefix:"unbound name " message ->
+               unsupported ("parameter default may only read initialized earlier parameters and captures: " ^ message))
+            in
+          let after=run_execution env fallback in
+          let after=if present=Atoms [] then after else join env env after in
+          run after (put values result (union present default)) next
+      | Execution.Bind (name,_,value,next) ->
+        let t=get values value in
+        let binding=match List.assoc_opt name initial with
+          | Some (Storage (contract,_)) when List.mem name inputs -> holding contract t
+          | _ -> Value t in
+        run (extend env name binding) values next
+      | Execution.ReadField (_,receiver,field,value,next) ->
+        let t=field_type declarations [] (get values receiver) (Name field) in
+        run env (put values value t) next
+      | Execution.ReadPosition (_,array,index,value,next) ->
+        let t=index_type declarations [] (get values array) (number_literal (string_of_int index)) in
+        run (forget env) (put values value t) next
+      | Execution.ObjectRest (source,receiver,drop,value,next) ->
+        let drop=List.map (fun field -> Name field) drop in
+        let alternatives=List.map (fun (a:alternative) ->
+          {a with afields=List.filter (fun (f:Semantic.field) -> not (List.mem f.name drop)) a.afields})
+          (source_alternatives declarations [] (get values receiver)) in
+        let t=combine (List.map (fun a -> alternative_type
+          (merge_alternative {afields=[];exact=true;index=None} a)) alternatives) in
+        publish source t None; run env (put values value t) next
+      | Execution.ArrayRest (source,array,start,slice,value,next) ->
+        let original=get values array in
+        let t,instance=if slice then
+          let element=slice_element declarations start original in
+          array_type {required=[];optional_elements=[];rest=Some element;readonly=false;presence=Readable},
+          Some ["T",ValueArgument element]
+        else match declared_head declarations [] original with
+          | Atoms [Shape {elements=Some shape;_}] when shape.optional_elements=[] && shape.rest=None ->
+            array_type {required=List.filteri (fun index _ -> index>=start) shape.required;
+              optional_elements=[];rest=None;readonly=false;presence=Dense},None
+          | _ -> unsupported "an array rest needs one tuple of required positions: the rest of an array of unknown length is a slice" in
+        publish source t instance; run (forget env) (put values value t) next
+    and array_type shape = Semantic.array shape in
+    run env [] plan
   in
-  (* Whether a list never completes normally: it ends in a jump, in an `if`
-     whose arms both do, or in a block that does and, labeled, that no
-     `break` leaves. *)
-  let rec returns ss = match List.rev ss with
-    | {statement=Return _ | Throw _ | Break _ | Continue;_}::_ -> true
-    | {statement=If (_,a,b);_}::_ -> returns a && returns b
-    (* A `try` completes only through a body or handler that does, and only
-       if its `finally` does. *)
-    | {statement=Try (body,handler,finalizer);_}::_ ->
-      returns (Option.value finalizer ~default:[]) ||
-      (returns body && (match handler with Some (_,h) -> returns h | None -> true))
-    | {statement=Block (label,body);_}::_ ->
-      returns body && (match label with Some l -> not (List.exists (leaves l) body) | None -> true)
-    | {statement=Closing (_,body);_}::_ -> returns body
-    | _ -> false
-  and leaves l s = match s.statement with
-    | Break (Some l') -> l = l'
-    | If (_,a,b) -> List.exists (leaves l) (a @ b)
-    | While (_,body,update) -> List.exists (leaves l) (body @ update)
-    | ForOf (_,_,_,_,body) | Block (_,body) -> List.exists (leaves l) body
-    | Try (body,handler,finalizer) -> List.exists (leaves l)
-      (body @ (match handler with Some (_,h) -> h | None -> []) @ Option.value finalizer ~default:[])
-    | Closing (close,body) -> List.exists (leaves l) (body @ close)
-    | Declare _ | Destructure _ | Return _ | Effect _ | Throw _ | Break _ | Continue -> false in
   let after e env = effects env e in
-  (* An assignment statement writes only the cell it names. *)
-  let rec stirs_statement s = match s.statement with
-    | Declare (_,bs) -> List.exists (fun (_,_,e) -> stirs e) bs
-    | Destructure (target,d,init) -> List.exists stirs (init :: Option.to_list d @ pattern_defaults target)
-    | Effect {node=Assign (_,rhs) | NullishAssign (_,_,rhs);_} -> stirs rhs
-    | Return e | Effect e -> stirs e
-    | If (c,a,b) -> stirs c || List.exists stirs_statement (a @ b)
-    | While (c,body,update) -> stirs c || List.exists stirs_statement (body @ update)
-    (* Each step of the loop calls its iteration intrinsic. *)
-    | ForOf _ -> true
-    | Block (_,body) -> List.exists stirs_statement body
-    | Throw e -> stirs e
-    | Try (body,handler,finalizer) -> List.exists stirs_statement
-      (body @ (match handler with Some (_,h) -> h | None -> []) @ Option.value finalizer ~default:[])
-    (* Closing calls the iterator's `return`. *)
-    | Closing _ -> true
-    | Break _ | Continue -> false in
-  (* A point reached after any part of these statements ran: a cell they
-     assign, or any cell where they may write one unseen, is known there by
-     its contract. *)
-  let havoc env body =
-    if List.exists stirs_statement body then forget env
-    else forget ~only:(fun n -> List.exists (assigns n) body) env in
-  (* What continues past a point from an arm: the bindings in scope before
-     it, and the fields of their objects the arm knows. *)
-  let continuing before env = List.filter (fun (n,_) ->
-    List.mem_assoc n before || (is_field n && List.mem_assoc (owner n) before)) env in
-  (* The environments a `break` of each label leaves with, gathered until the
-     labeled block it leaves ends. *)
-  let exits = Hashtbl.create 8 in
-  (* Where several paths arrive, a value or a cell holds what it holds on
-     one of them. With no arrival the point is unreachable, and [fallback]
-     describes it. *)
-  let merge before fallback arrivals =
-    (* A path that knows a value of the empty type is never taken. *)
-    let reachable = List.filter (fun env ->
-      not (List.exists (fun (_,b) -> binding_type b = Atoms []) env))
-      arrivals in
-    match reachable with
-    | [] ->
-      (* Where every path that arrives knows a value of the empty type, the
-         point is never reached, and so is what follows it: the fallback
-         keeps that knowledge, so a later merge drops it too. *)
-      (match List.find_map (List.find_opt (fun (n,b) ->
-           not (is_field n) && binding_type b = Atoms [] && List.mem_assoc n fallback)) arrivals with
-       | Some (n,b) -> List.map (fun (m,c) -> if m = n then m,b else m,c) fallback
-       | None -> fallback)
-    | first::_ ->
-      (* A field's contents are known where every path knows them; the
-         first path names the candidates. *)
-      let fields = List.filter (fun (n,_) -> is_field n && List.mem_assoc (owner n) before) first in
-      List.filter_map (fun (n,b) ->
-        let arriving = List.filter_map (List.assoc_opt n) reachable in
-        match b,arriving with
-        | _,_ when is_field n && List.length arriving < List.length reachable -> None
-        | _,[] -> Some (n,b)
-        | Value _,_ -> Some (n,Value (combine (List.map binding_type arriving)))
-        | Storage (contract,_),_ -> Some (n,holding contract (combine (List.map binding_type arriving))))
-        (List.filter (fun (n,_) -> not (is_field n)) before @ fields) in
-  (* The unlabeled `break` and `continue` environments of each enclosing
-     loop, innermost first. *)
-  let loops = ref [] in
-  (* Run [f] for what it computes, leaving no claim, request or exit behind:
-     a loop head is found by running its body from candidate heads. *)
-  let trial f =
-    let saved = (!closures,!requests,!classes,!entries,!expressions,!instantiations,
-                 !instances,!arrows,!loops) in
-    let saved_exits = Hashtbl.fold (fun k v acc -> (k,v) :: acc) exits [] in
-    let result = try Some (f ()) with Json.Error _ -> None in
-    let (a,b,c,d,e,g,h,i,j) = saved in
-    closures := a; requests := b; classes := c; entries := d; expressions := e;
-    instantiations := g; instances := h; arrows := i; loops := j;
-    Hashtbl.reset exits;
-    List.iter (fun (k,v) -> Hashtbl.add exits k v) saved_exits;
-    result in
   (* The statements following each statement of a block, by its span. *)
   let following = Hashtbl.create 64 in
   let rec mentions n (e:expr) =
@@ -3111,10 +3128,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       | Effect e -> sink None e
       | _ -> if stmt_mentions n s then Some None else None in
     List.map at rest in
-  let rec statements env ss =
-    let rec record = function [] -> () | s :: rest -> Hashtbl.replace following s.span rest; record rest in
-    record ss;
-    List.fold_left (fun env s ->
+  let transfer_statement env s =
     (* A grown local's exact keys are claimed only where nothing else can
        reach its object: from the first statement that may let it escape on
        (but a `return` of it, after which the body runs nothing), it is its
@@ -3137,16 +3151,8 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
               | t -> t) ts))
           | _ -> m,b) env
       end) env !exact_locals in
-    let env = match s.statement with
-      | While (c,body,update) -> loop_fix env c body update
-      | ForOf _ -> forget env
-      | _ -> env in
-    (* A block has no entry of its own: its first statement's is. *)
-    (match s.statement with
-     | Block _ -> ()
-     | _ -> entry env s.span);
     match s.statement with
-    | Declare (mutable_,bs) -> List.fold_left (fun env (n,written,init) ->
+    | Declare (mutable_,[(n,written,init)]) ->
       if String.ends_with ~suffix:".[[class]]" n then fresh_constructor := true;
       (* An unannotated constant's fresh array is built at the array type its
          first use expects it at, where that use is one (SKJS commits such a
@@ -3233,30 +3239,24 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
         (* An unannotated constant of a named union is held at its arms, as
            an annotated one is: a guard then keeps or drops each. *)
         | false,None -> Value (arms declarations initial) in
-      extend (after init env) n binding) env bs
+      (match binding with
+       | Storage (contract,_) ->
+         let candidate = { pos = init.pos; name = n; type_ = contract } in
+         (match List.find_opt (fun (c:contract) -> c.pos = init.pos && c.name = n) !contracts with
+          | None -> contracts := candidate :: !contracts
+          | Some c when c.type_ = contract -> ()
+          | Some _ -> unsupported "a storage contract differs across executions of its declaration")
+       | Value _ -> ());
+      extend (after init env) n binding
+    | Declare _ -> Json.fail "a declaration flow operation requires one binding"
     (* The initializer, then each binding in pattern order: a property at its
        field's read, an element at its position's, a rest at the tuple of the
        positions from its index on, claimed at its span; a default, which
        sees the earlier bindings, replaces the read's undefined slice. *)
-    | Destructure (target,default,init) ->
-      let env = bind env target (expr env init) default in
-      (* An array pattern reads its positions from a store, a step after
-         which Lean keeps no fact of the heap: the fields' and cells'
-         contents are known by their contracts again. *)
-      let rec reads_store = function
-        | PArray _ -> true
-        | PName _ -> false
-        | PObject (props,rest) -> List.exists (fun (_,t,_) -> reads_store t) props
-            || (match rest with Some (_,t) -> reads_store t | None -> false) in
-      if stirs_statement s || reads_store target then forget env else env
+    | Destructure _ -> Json.fail "destructuring requires its shared binding schedule"
     | Return e -> !block_returned := expr ?expected:!block_result env e :: !(!block_returned); env
     (* An assignment statement leaves the cell holding the value written;
        `n ??= rhs`, the value it yields. *)
-    | Effect ({node=Assign (n,rhs) | NullishAssign (n,_,rhs);_} as e) ->
-      let t = expr env e in
-      (match lookup env n with
-       | Storage _ -> assign (after rhs env) n t
-       | Value _ -> env)
     (* `Object.assign(o, …)` on a local: the local holds the copies. *)
     | Effect ({node=ObjectAssign ({node=Id n;_},_);_} as e)
       when (match List.assoc_opt n env with Some (Value _) -> true | _ -> false) ->
@@ -3282,203 +3282,223 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
          List.map (fun (m,b) -> if m=n then m,Value (grown declarations t name c) else m,b) env
        | _ -> env)
     | Effect e -> ignore (expr env e); after e env
-    | If (c,a,b) -> ignore (expr env c);
-      let env = after c env in
-      let left = statements (branch env c true) a and right = statements (branch env c false) b in
-      (* The rest of the block runs only where an arm that always returns was
-         not taken; where both may complete, a cell holds what either left. *)
-      (match returns a,returns b with
-       | true,false -> continuing env right
-       | false,true -> continuing env left
-       | _ -> join env left right)
-    (* The update runs where the body ends or continues: from the head's
-       knowledge, which already forgets what the body assigns. *)
-    | While (c,body,update) -> ignore (expr env c);
-      let _,breaks = loop_pass env c body update in
-      (* The loop is left from its head or by a `break`. *)
-      merge env env (env :: breaks)
-    (* A block's bindings end with it. A labeled one is also left by each
-       `break` of its label, with what that path knew. *)
-    | Block (label,body) ->
-      let inner = statements env body in
-      let completes = if returns body then [] else [inner] in
-      (match label with
-       | Some l ->
-         let breaks = Hashtbl.find_all exits l in
-         List.iter (fun _ -> Hashtbl.remove exits l) breaks;
-         merge env (havoc env body) (completes @ breaks)
-       | None -> merge env env completes)
-    | ForOf (name,name_pos,iterate,iterable,body) ->
-      (* The loop is the call of its iteration intrinsic on the iterable,
-         claimed at the statement with its instance; the element, what the
-         instance's step yields, at the name it binds. *)
-      (match iterable.node with
-       | Call ({node=Id "%ForIn%";_},_,_,_,_) -> for_in_keys := name :: !for_in_keys
-       | _ -> ());
-      let actual = expr env iterable in
-      if iterate = "%Iterate%" then
-        Option.iter (fun arm ->
-          explain s.span ("a for...of loop over " ^ arm ^ ": " ^ iteration_reason))
-          (non_array_arm declarations [] actual);
-      let signature = match declared_head declarations [] (resolve env iterate) with
-        | Atoms [Shape {calls=[signature];_}] -> signature
-        | _ -> unsupported ("a for...of loop needs the " ^ iterate ^ " intrinsic") in
-      let result,substitution = if signature.quantified = [] then signature.result,[] else
-        let inferred = Inference.infer ~receiver:(Atoms [Undef]) signature [actual] in
-        inferred.result,inferred.substitution in
-      let element = match declared_head declarations [] result with
-        | Atoms [Shape {calls=[{params=[];result;_}];_}] ->
-          let yielded = match result with
-            | Union ts -> ts
-            | t -> [t] in
-          (match List.concat_map (fun t -> match declared_head declarations [] t with
-               | Atoms atoms -> List.filter_map (function
-                   | Shape {fields;_} -> List.find_map (fun (f:field) ->
-                       if f.name = Name "value" then Some f.read else None) fields
-                   | _ -> None) atoms
-               | _ -> []) yielded with
-           | [t] -> t
-           | _ -> unsupported (iterate ^ "'s step yields no one value"))
-        | _ -> unsupported (iterate ^ " gives no step") in
-      expressions := {pos=s.span;type_=result;
-        instantiation=if signature.quantified = [] then None else
-          Some (List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t) substitution)} :: !expressions;
-      expressions := {pos=name_pos;type_=element;instantiation=None} :: !expressions;
-      (* Its `break`s and `continue`s are its own. *)
-      loops := (ref [],ref []) :: !loops;
-      ignore (statements (extend env name (Value element)) body);
-      loops := List.tl !loops; env
-    | Throw e -> ignore (expr env e); env
-    | Try (body,handler,finalizer) ->
-      let local after = List.filter (fun (n,_) -> List.mem_assoc n env) after in
-      (* A `break` or `continue` out of the `try` runs the `finally` on its
-         way: it lands knowing each cell by its contract, as after the
-         `finally`, which knows them so. The jumps recorded from here on are
-         this statement's. *)
-      let jump_marks = match !loops with
-        | (breaks,continues) :: _ -> Some (List.length !breaks,List.length !continues)
-        | [] -> None in
-      let exit_marks = Hashtbl.fold (fun l _ acc ->
-          if List.mem_assoc l acc then acc else (l,List.length (Hashtbl.find_all exits l)) :: acc) exits [] in
-      let completed = statements env body in
-      (* A throw leaves the body from any point of it, after any part of it
-         ran: the handler knows each cell by its contract, and what was
-         thrown, which may be anything, at `unknown`. *)
-      let completed = match handler with
-        | None -> local completed
-        | Some (param,handled) ->
-          let caught = forget env in
-          let caught = match param with
-            | Some (name,_) -> extend caught name (Value Semantic.top)
-            | None -> caught in
-          let recovered = statements caught handled in
-          (match returns body,returns handled with
-           | true,false -> local recovered
-           | false,true -> local completed
-           | _ -> join env (local completed) (local recovered)) in
-      (match finalizer with
-       | None -> completed
-       (* The `finally` block runs after a completion, a `return` or a throw,
-          from any point: it knows each cell by its contract. *)
-       | Some finalizer ->
-         (match !loops,jump_marks with
-          | (breaks,continues) :: _,Some (b,c) ->
-            let through marker l =
-              let fresh = List.length l - marker in
-              List.mapi (fun i e -> if i < fresh then forget e else e) l in
-            breaks := through b !breaks;
-            continues := through c !continues
-          | _ -> ());
-         let labels = Hashtbl.fold (fun l _ acc -> if List.mem l acc then acc else l :: acc) exits [] in
-         List.iter (fun l ->
-             let all = Hashtbl.find_all exits l in
-             let marker = Option.value (List.assoc_opt l exit_marks) ~default:0 in
-             let fresh = List.length all - marker in
-             List.iter (fun _ -> Hashtbl.remove exits l) all;
-             List.iter (fun e -> Hashtbl.add exits l e)
-               (List.rev (List.mapi (fun i e -> if i < fresh then forget e else e) all))) labels;
-         local (statements (forget env) finalizer))
-    (* A program iterable's loop body. Its close runs after a `break` of the
-       loop, a `return` or a throw out of the body, from any point of it: it
-       knows each cell by its contract, and a `break` leaves the loop after
-       it, knowing what a call leaves known. *)
-    | Closing (close,body) ->
-      let local after = List.filter (fun (n,_) -> List.mem_assoc n env) after in
-      let marker = match !loops with (breaks,_) :: _ -> List.length !breaks | [] -> 0 in
-      let completed = statements env body in
-      (match !loops with
-       | (breaks,_) :: _ ->
-         let fresh = List.length !breaks - marker in
-         breaks := List.mapi (fun i e -> if i < fresh then forget e else e) !breaks
-       | [] -> ());
-      ignore (statements (forget env) close);
-      local completed
-    | Break (Some l) -> Hashtbl.add exits l env; env
-    | Break None -> (match !loops with (breaks,_) :: _ -> breaks := env :: !breaks | [] -> ()); env
-    | Continue -> (match !loops with (_,continues) :: _ -> continues := env :: !continues | [] -> ()); env)
-    env ss
-  (* One pass over a loop from the head [head]: the body where the
-     condition held, the update where the body ends or continues, and what
-     the update leaves for the head, with the environments its `break`s
-     leave with. *)
-  and loop_pass head c body update =
-    let breaks = ref [] and continues = ref [] in
-    loops := (breaks,continues) :: !loops;
-    let inner = statements (branch head c true) body in
-    loops := List.tl !loops;
-    let ends = (if returns body then [] else [inner]) @ !continues in
-    (* Where no end is reachable, neither is the update, nor the head again
-       from it: the update is then claimed from the head, as before. *)
-    let reachable = List.filter (fun env ->
-      not (List.exists (fun (_,b) -> binding_type b = Atoms []) env)) ends in
-    let at_update = if reachable = [] then head else merge head head reachable in
-    let back = statements at_update update in
-    (if reachable = [] then None else Some back),!breaks
-  (* A loop's head: what its cells hold on entry and on every return from
-     its body, found by running the body from the entry until the head is
-     stable. A condition or body that may write a cell unseen, or no stable
-     head within a few rounds, gives the head each assigned cell's contract,
-     as before. The head is a claim: Lean checks the entry and back edges. *)
-  and loop_fix env c body update =
-    if stirs c || List.exists stirs_statement (body @ update) then forget env else
-    let fallback = havoc env (body @ update) in
-    let rec go head rounds =
-      if rounds = 0 then fallback else
-      match Option.map fst (trial (fun () -> loop_pass head c body update)) with
-      | None -> fallback
-      | Some None -> env
-      | Some (Some back) ->
-        let next = merge env fallback [env; back] in
-        if next = head then head else go next (rounds - 1) in
-    go env 5 in
+    | If _ | While _ | Block _ | ForOf _ | Try _ | Closing _ | Break _ | Continue ->
+      Json.fail "a structured statement occurs as an atomic flow operation"
+    | Throw e -> ignore (expr env e); after e env in
+  let statements owner_span env0 ss =
+    let open Flow in
+    let spans = List.map (fun (s:Source.stmt) -> s.span) ss in
+    let graph = match List.find_opt (fun (g:Flow.graph) -> g.owner = owner_span) flows with
+      | Some g -> g
+      | None -> Json.fail "Lean supplied no control-flow graph for a body" in
+    if graph.body_spans <> spans then Json.fail "Lean control-flow body disagrees with source statements";
+    let syntax = Hashtbl.create 64 in
+    let rec register ss =
+      let rec following_statements = function
+        | [] -> ()
+        | s :: rest -> Hashtbl.replace following s.span rest; following_statements rest in
+      following_statements ss;
+      List.iter (fun (s:Source.stmt) ->
+        Hashtbl.replace syntax s.span s;
+        (match s.statement with
+         | If (_,a,b) -> register a; register b
+         | While (_,body,update) -> register body; register update
+         | Block (_,body) | ForOf (_,_,_,_,body) -> register body
+         | Try (body,handler,finalizer) -> register body;
+           Option.iter (fun (_,body) -> register body) handler; Option.iter register finalizer
+         | Closing (close,body) -> register close; register body
+         | Declare _ | Destructure _ | Return _ | Effect _ | Throw _ | Break _ | Continue -> ())) ss in
+    register ss;
+    let source span = match Hashtbl.find_opt syntax span with
+      | Some s -> s | None -> Json.fail "flow operation names missing source syntax" in
+    let scope bindings env =
+      let live n = List.mem_assoc n env0 || List.exists (fun (b:Flow.binding) -> b.name=n) bindings in
+      List.filter (fun (n,_) -> live n || (is_field n && live (owner n))) env in
+    let capture env =
+      let bound n = List.mem_assoc n env in
+      (env,List.filter (fun (n,_) -> bound n) !evolving,
+       List.filter bound !grown_locals,List.filter bound !exact_locals,
+       List.filter (fun (n,_) -> bound n) !closures,
+       List.filter (fun (n,_) -> bound n) !classes,
+       List.filter (fun (n,_) -> bound n) !objects,!fresh_constructor,!exact_allocs) in
+    let restore (env,evolved,grown,exact,closure,class_,object_,fresh,allocs) =
+      evolving := evolved; grown_locals := grown; exact_locals := exact;
+      closures := closure; classes := class_; objects := object_;
+      fresh_constructor := fresh; exact_allocs := allocs; env in
+    let join_env (node:Flow.node) left right =
+      let left=scope node.scope left and right=scope node.scope right in
+      let impossible env=List.exists (fun (n,b) -> not (is_field n) && binding_type b=Atoms []) env in
+      if impossible left then right else if impossible right then left else
+      List.filter_map (fun (n,b) -> match List.assoc_opt n right with
+        | None -> None
+        | Some c -> (match b,c with
+          | Storage (contract,l),Storage (other,r) ->
+            if contract <> other then unsupported "incoming paths disagree on a fixed storage contract";
+            Some (n,holding contract (union l r))
+          | Value l,Value r -> Some (n,Value (union l r))
+          | _ -> unsupported "incoming paths disagree on a binding's storage identity")) left in
+    let common left right = List.filter (fun x -> List.mem x right) left in
+    let combined left right = List.sort_uniq compare (left @ right) in
+    let join node ((left,le,lg,lx,lc,lk,lo,lf,la) as left_state)
+        ((right,re,rg,rx,rc,rk,ro,rf,ra) as right_state) =
+      let impossible env=List.exists (fun (n,b) -> not (is_field n) && binding_type b=Atoms []) env in
+      if impossible left then right_state else if impossible right then left_state else
+      (join_env node left right,common le re,combined lg rg,common lx rx,
+       common lc rc,common lk rk,common lo ro,lf && rf,combined la ra) in
+    let publications=Array.make (Array.length graph.nodes) ([],[],[],[],[],[],[]) in
+    let transfer (node:Flow.node) state =
+      let saved_metadata=capture env0 in
+      let env=restore state in
+      let saved_entries = !entries and saved_expressions = !expressions and saved_point = !current_point in
+      let saved_contracts = !contracts and saved_arrows = !arrows and saved_requests = !requests in
+      let saved_instances = !instances and saved_instantiations = !instantiations in
+      entries := []; expressions := []; contracts := []; arrows := []; requests := [];
+      instances := []; instantiations := [];
+      current_point := node.Flow.point;
+      let env=if node.Flow.id=graph.Flow.entry then
+        match graph.Flow.prologue with None -> env | Some plan -> execute_bindings env plan
+        else env in
+      entry env node.source;
+      let next id env = id,capture (scope graph.nodes.(id).scope env) in
+      let infer_return span = match (source span).statement with
+        | Return e -> expr ?expected:!block_result env e
+        | _ -> Json.fail "a return flow operation names another statement" in
+      let edges = match node.action with
+        | Flow.End -> []
+        | Flow.Jump id -> [next id env]
+        | Flow.Declaration (span,name,initial_source,mutable_,id) ->
+          let s=source span in
+          let selected=match s.statement with
+            | Declare (source_mutable,bindings) ->
+              if source_mutable <> mutable_ then Json.fail "flow declaration changes binding mutability";
+              let bindings=List.filter (fun (binding,_,(init:Source.expr)) -> binding=name && init.pos=initial_source) bindings in
+              if List.length bindings <> 1 then Json.fail "flow declaration names a missing or ambiguous binding";
+              {s with statement=Declare (mutable_,bindings)}
+            | _ -> Json.fail "flow declaration names another statement" in
+          [next id (transfer_statement env selected)]
+        | Flow.Statement (span,id) ->
+          let s=source span in
+          let after=match node.Flow.binding_plan with
+            | Some plan -> execute_bindings env plan
+            | None -> transfer_statement env s in
+          (match s.statement with Throw _ -> [] | _ -> [next id after])
+        | Flow.Branch (span,yes,no) ->
+          let s=source span in
+          let cond=match s.statement with If (c,_,_) | While (c,_,_) -> c
+            | _ -> Json.fail "a branch flow operation names another statement" in
+          ignore (expr env cond);
+          let after=after cond env in
+          [next yes (branch after cond true);next no (branch after cond false)]
+        | Flow.Return span ->
+
+          !block_returned := infer_return span :: !(!block_returned); []
+        | Flow.ReturnSave (span,b,id) ->
+
+          let t=infer_return span in
+          let after=match (source span).statement with Return e -> after e env | _ -> env in
+          [next id (extend after b.name (Value t))]
+        | Flow.ReturnHeld b ->
+          !block_returned := binding_type (lookup env b.name) :: !(!block_returned); []
+        | Flow.Rethrow _ -> []
+        | Flow.DiscardThrow (_,id) -> [next id env]
+        | Flow.IteratorStart (span,b,id) ->
+          let s=source span in
+          let iterate,iterable=match s.statement with ForOf (_,_,i,e,_) -> i,e
+            | _ -> Json.fail "an iterator flow operation names another statement" in
+          (match iterable.node,s.statement with
+           | Call ({node=Id "%ForIn%";_},_,_,_,_),ForOf (name,_,_,_,_) ->
+             for_in_keys := name :: !for_in_keys
+           | _ -> ());
+          let actual=expr env iterable in
+          if iterate="%Iterate%" then Option.iter (fun arm ->
+            explain s.span ("a for...of loop over " ^ arm ^ ": " ^ iteration_reason))
+            (non_array_arm declarations [] actual);
+          let signature=match declared_head declarations [] (resolve env iterate) with
+            | Atoms [Shape {calls=[s];_}] -> s
+            | _ -> unsupported ("a for...of loop needs the " ^ iterate ^ " intrinsic") in
+          let result,substitution=if signature.quantified=[] then signature.result,[] else
+            let inferred=Inference.infer ~receiver:(Atoms [Undef]) signature [actual] in
+            inferred.result,inferred.substitution in
+          expressions := {point=node.Flow.point;pos=span;type_=result;
+            instantiation=if substitution=[] then None else
+              Some (List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t) substitution)} :: !expressions;
+          [next id (extend (forget env) b.name (Value result))]
+        | Flow.IteratorStep (span,b,element,yes,no) ->
+          let s=source span in
+          let name,name_pos=match s.statement with ForOf (n,p,_,_,_) -> n,p
+            | _ -> Json.fail "an iterator step names another statement" in
+          let t=match declared_head declarations [] (binding_type (lookup env b.name)) with
+            | Atoms [Shape {calls=[{params=[];result;_}];_}] ->
+              let yielded=match result with Union ts -> ts | t -> [t] in
+              let values=List.concat_map (fun t -> match declared_head declarations [] t with
+                | Atoms atoms -> List.filter_map (function
+                  | Shape {fields;_} -> List.find_map (fun (f:Semantic.field) ->
+                    if f.name=Name "value" then Some f.read else None) fields
+                  | _ -> None) atoms
+                | _ -> []) yielded in
+              (match values with [t] -> t | _ -> unsupported "an iterator step yields no one value")
+            | _ -> unsupported "an iterator gives no step" in
+          ignore name;
+          expressions := {point=node.Flow.point;pos=name_pos;type_=t;instantiation=None} :: !expressions;
+          [next yes (extend (forget env) element.name (Value t));next no (forget env)] in
+      let edges=match node.handler with
+        | None -> edges
+        | Some h ->
+          let exceptional=scope h.scope (forget env) in
+          let exceptional=if List.mem_assoc h.binding.name exceptional then
+              List.map (fun (n,b) -> if n=h.binding.name then n,Value top else n,b) exceptional
+            else extend exceptional h.binding.name (Value top) in
+          next h.target exceptional :: edges in
+      publications.(node.id) <- (!entries,!expressions,!contracts,!arrows,!requests,!instances,!instantiations);
+      entries := saved_entries; expressions := saved_expressions; current_point := saved_point;
+      contracts := saved_contracts; arrows := saved_arrows; requests := saved_requests;
+      instances := saved_instances; instantiations := saved_instantiations;
+      ignore (restore saved_metadata);
+      edges in
+    let states=Flow.solve ~join ~transfer
+      ~widen:(fun _ (env,e,g,x,c,k,o,f,a) -> (forget env,e,g,x,c,k,o,f,a)) graph (capture env0) in
+    Array.iter (fun (es,xs,cs,rs,qs,its,substs) ->
+      entries := es @ !entries; expressions := xs @ !expressions;
+      arrows := rs @ !arrows; requests := qs @ !requests;
+      instances := its @ !instances; instantiations := substs @ !instantiations;
+      List.iter (fun (c:contract) ->
+        match List.find_opt (fun (other:contract) -> other.pos=c.pos && other.name=c.name) !contracts with
+        | None -> contracts := c :: !contracts
+        | Some other when other.type_=c.type_ -> ()
+        | Some _ -> unsupported "a storage contract differs across executions of its declaration") cs) publications;
+    let completed=Array.to_list (Array.mapi (fun id state -> match graph.nodes.(id).action,state with
+      | Flow.End,Some (env,_,_,_,_,_,_,_,_) -> Some (scope [] env) | _ -> None) states) |> List.filter_map Fun.id in
+    match completed with [] -> env0 | first::rest ->
+      List.fold_left (join_env {graph.nodes.(graph.entry) with scope=[]}) first rest in
   (* A closure's statements, in their own context, restored after. *)
-  block_statements := (fun result returned env ss ->
+  block_statements := (fun owner_span result returned env ss ->
     let saved = (!block_result,!block_returned) in
     block_result := result; block_returned := returned;
     let restore () =
       let (r,t) = saved in block_result := r; block_returned := t in
-    match statements env ss with
+    match statements owner_span env ss with
     | env -> restore (); env
     | exception ex -> restore (); raise ex);
-  ignore (statements env0 f.body);
+  let owner_span = if f.name_pos=Json.Null then Json.Array [Json.int 0;Json.int 0] else f.name_pos in
+  ignore (statements owner_span env0 f.body);
   (* An expression the lowering reaches on two paths (the fields the arms of a
      constructor's last `if` share) is claimed once when both claims agree;
      two different claims at one span stay, and Lean refuses them. *)
   let seen = Hashtbl.create 64 in
   let expressions = List.filter (fun x ->
     not (Hashtbl.mem seen x) && (Hashtbl.add seen x (); true)) (List.rev !expressions) in
-  let expressions = List.map (fun (x:expression) -> match List.assoc_opt x.pos !instances with
+  let expressions = List.map (fun (x:expression) -> match List.assoc_opt (x.point,x.pos) !instances with
     | Some instance -> {x with type_=instance}
     | None -> x) expressions in
   (* Likewise an entry, the closure body a guard's arm types twice. *)
   let seen = Hashtbl.create 64 in
   let entries = List.filter (fun x ->
     not (Hashtbl.mem seen x) && (Hashtbl.add seen x (); true)) (List.rev !entries) in
-  {source=f;entries;expressions;arrows=List.rev !arrows},!requests
+  {contracts=List.rev !contracts;source=f;entries;expressions;arrows=List.sort_uniq compare (List.rev !arrows)},List.sort_uniq compare !requests
 (* A named closure's claim is fixed where it is created, before the calls that
    offer it more parameters are reached: a first pass finds those offers, and
    the second states them at the creation. *)
-let infer_function declarations module_functions (f:Source.fn) =
+let infer_function flows declarations module_functions (f:Source.fn) =
   (* A binder bounded by another reads through it: `U extends T` reads a
      member at `T`'s bound. *)
   rigid_bounds := List.filter_map (fun (q:Semantic.quantifier) -> match q.bound with
@@ -3491,7 +3511,7 @@ let infer_function declarations module_functions (f:Source.fn) =
      itself (a list consed onto it) never settles. *)
   let rec settled offered rounds =
     evolving_seen := [];
-    let result = try Ok (infer_pass offered declarations module_functions f) with Json.Error m -> Error m in
+    let result = try Ok (infer_pass flows offered declarations module_functions f) with Json.Error m -> Error m in
     let grown = List.filter (fun (key,t) -> union (evolved key) t <> evolved key) !evolving_seen in
     match result,grown with
     | Ok result,[] -> result
@@ -3509,11 +3529,11 @@ let infer_function declarations module_functions (f:Source.fn) =
     if p = pos then Some s else None) requests)
     (List.sort_uniq compare (List.map fst requests)) in
   fst (settled offered 4)
-let infer program =
+let infer flows program =
   let module_functions = List.map (fun (g:Source.fn) -> g.name,lazy (module_type g))
     program.Source.functions
     @ List.map (fun (name,t) -> name,lazy t) program.Source.values in
-  let infer_with = infer_function program.Source.declarations in
+  let infer_with = infer_function flows program.Source.declarations in
   (* A class's instance members read the class as its own binding, `C.[[self]]`,
      at its construct signature: a module value of the initialization unit. *)
   let class_selves = List.concat_map (fun (s:Source.stmt) -> match s.statement with

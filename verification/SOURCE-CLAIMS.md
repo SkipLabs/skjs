@@ -24,8 +24,7 @@ Generic functions use the same claims document: any `type` or `result` may be
 `{"param":"T"}`, referring to that function's source type parameter, which
 Lean reads as the binder's parameter row (a bounded one as its meet with the
 bound) before the unit is extracted as an ordinary graph request, certified at
-every assignment of those rows. The TS exporter matches compiler symbol
-identities before emitting this name. Bounds come from the source, never from
+every assignment of those rows. Bounds come from the source, never from
 producer assertions. Ground functions cannot use parameter claims,
 and parameter claims cannot carry current-content assertions. Within this fragment,
 ground annotations retain their ordinary graph meanings; no parameter is
@@ -48,6 +47,7 @@ An expression that calls one carries the elimination it proposes:
 
 ```json
 {
+  "point": "9:17:7",
   "pos": [121, 129],
   "type": [1, 2],
   "current": null,
@@ -89,14 +89,115 @@ and receivers over a binder are all graph code the same way.
 The OCaml producer feeds this format into [SourceClaimJson.lean](lean/Verification/Source/SourceClaimJson.lean), its strict decoder and checked consumer.
 The report viewer shows the claims of one pipeline run in this format.
 
+## Execution graph supplied to the producer
+
+`verifier --lower-control-flow ast.json` emits an array of executable-body
+graphs. [source-flow.mts](tools/source-flow.mts) declares and decodes the wire;
+[FlowJson.lean](lean/Verification/Source/FlowJson.lean) writes it.
+Each graph has `owner` (its source span), `bodySpans` (the body's statement
+spans), `entry` (a local node ID), `prologue` and `nodes`. Each node has `id`, `point`,
+`source`, `scope`, `handler`, `action`, `executions` and `bindingPlan`. IDs are contiguous from zero;
+`point` is `"ownerStart:ownerEnd:id"`. A scope binding has `name` and `source`.
+A handler is `null` or `{target, scope, binding}`; its target receives the
+thrown value in its binding.
+
+The action's `kind` determines its fields:
+
+| Kind | Other fields | Execution |
+| --- | --- | --- |
+| `end` | none | Complete the body |
+| `jump` | `target` | Transfer control |
+| `declaration` | `statement`, `name`, `initializer`, `mutable`, `next` | Evaluate one initializer and bind its name |
+| `stmt` | `statement`, `next` | Evaluate the referenced statement |
+| `branch` | `statement`, `yes`, `no` | Evaluate its condition and choose an edge |
+| `return` | `statement` | Evaluate and return its operand |
+| `returnSave` | `statement`, `binding`, `next` | Save a return value before a finalizer |
+| `returnHeld` | `binding` | Return the saved value |
+| `rethrow` | `binding` | Throw the saved exception |
+| `discardThrow` | `binding`, `next` | Resume the original exception after iterator close |
+| `iteratorStart` | `statement`, `binding`, `next` | Save the iterator stepper |
+| `iteratorStep` | `statement`, `binding`, `element`, `yes`, `no` | Step the iterator and choose its value or completion edge |
+
+A `statement` is a source span identifying syntax in the Fragment. A `binding`
+or `element` is a scope-binding descriptor. Every normal and handler target
+names a node in its graph. The producer analyzes these edges; the verifier
+reconstructs the graph from the Fragment for claim association and typed
+elaboration. A supplied graph carries proposal data, with no acceptance
+authority.
+
+Each node's `executions` array contains `{source, plan}` for its expressions.
+A saved value has `{id, name, source, role}`. Plans contain source spans and
+saved-value references; their original expressions are read from the Fragment.
+
+| Plan kind | Other fields | Evaluation |
+| --- | --- | --- |
+| `observe` | `source`, `evaluate` | Retain the expression result at its source site |
+| `atom` | `source`, `operation` | Perform one operation |
+| `sequence` | `source`, `binding`, `evaluate`, `next` | Evaluate, bind its result, then continue |
+| `choose` | `source`, `condition`, `test`, `binding`, `evaluate`, `yes`, `no` | Evaluate and save the condition, then choose a branch |
+
+`test` is `truthy`, `nullish` or `defined`. Operations have these fields:
+
+| Operation kind | Other fields |
+| --- | --- |
+| `evaluate` | `source`, `effect` |
+| `methodRead` | `source`, `receiver`, `key`, `call` |
+| `invokeSaved` | `source`, `receiver`, `method` |
+| `snapshotSpread` | `source`, `value`, `call` |
+| `snapshotObject` | `source`, `value` |
+| `referenceRead` | `source`, `reference` |
+| `referenceWrite` | `source`, `reference`, `value` |
+| `updateSaved` | `source`, `reference`, `previous`, `rhs` |
+| `positionRead` | `source`, `array`, `index` |
+| `arrayRest` | `source`, `array`, `start`, `slice` |
+| `emptyObject` | `source` |
+| `addField` | `source`, `base`, `key`, `value`, `final` |
+| `mergeObjects` | `source`, `left`, `right`, `final`, `assign` |
+
+Operand fields `receiver`, `method`, `value`, `previous`, `array`, `base`,
+`left` and `right` are saved-value descriptors. `rhs` and the key of a
+`methodRead` may be `null`. `call` is a source span. A reference is `{kind:
+"local", name, source}` or `{kind: "field", source, receiver, key}`, whose
+`key` is a saved-value descriptor or `null`. The key of `addField` is a string
+or `{symbol: number}`. `index` and `start` are natural numbers; `slice` is a
+Boolean. `final` identifies the operation that completes an object expression;
+`assign` identifies an `Object.assign` operation.
+
+`bindingPlan` and `prologue` are nullable lexical binding schedules. Every
+schedule object has `kind`; saved operands use the descriptors above.
+
+| Kind | Other fields |
+| --- | --- |
+| `finish` | — |
+| `evaluate` | `value`, `plan`, `next` |
+| `defaultValue` | `value`, `result`, `fallback`, `next` |
+| `bind` | `name`, `origin`, `value`, `next` |
+| `input` | `name`, `index`, `value`, `next` |
+| `readField` | `source`, `receiver`, `field`, `value`, `next` |
+| `readPosition` | `source`, `array`, `index`, `value`, `next` |
+| `objectRest` | `source`, `receiver`, `drop`, `value`, `next` |
+| `arrayRest` | `source`, `array`, `start`, `slice`, `value`, `next` |
+
+`plan` and `fallback` are expression execution plans. `next` is a binding
+schedule. `defaultValue` saves the defined input or the fallback result in
+`result`, then runs `next`. `name` and
+`field` are strings, `origin` and `source` are spans, `drop` is a string list,
+`index` and `start` are natural numbers, and `slice` is a Boolean.
+
+An effect is `{kind: "none"}`, `{kind: "havoc"}`, `{kind: "cellWrite", name,
+value}` or `{kind: "cellUpdate", name, source}`. A write's `value` is the
+assigned expression's span, and an update's `source` is its expression's span.
+Sequence and choice plans state execution order separately from the producer's
+source-oriented typing choices.
+
 ## Encoding
 
 An optional function-level `arrows` field supplies per-signature interior claims
-for overloaded closures: `[{pos, rows: [{expressions, entries}]}]`. Each row uses
+for overloaded closures: `[{pos, rows: [{contracts, expressions, entries}]}]`. Each row uses
 the same expression and entry encodings as the enclosing function. The consumer
 checks the body separately for every advertised signature; rows are producer
 claims, not evidence of acceptance. Owners must be distinct source closures;
-row sites must lie inside their owner, with no duplicate sites, invalid labels,
+row sites must lie inside their owner, with no duplicate point-and-site associations, invalid labels,
 or unchecked substitutions. Row-specific current-content assertions replace the
 whole assertion at that site, including its absence; they are never discarded
 or combined with another signature's refinement.
@@ -121,13 +222,15 @@ identity, SHA-256 digest and UTF-16 source positions before use:
       "namePos": [9, 17],
       "params": [{ "name": "flag", "type": [1, 2], "current": null }],
       "result": [1, 2],
+      "contracts": [],
       "entries": [
         {
+          "point": "9:17:1",
           "start": 43,
           "bindings": [{ "name": "flag", "type": [1, 2], "current": null }]
         }
       ],
-      "expressions": [{ "pos": [50, 54], "type": [1, 2], "current": null }]
+      "expressions": [{ "point": "9:17:2", "pos": [50, 54], "type": [1, 2], "current": null }]
     }
   ]
 }
@@ -140,7 +243,7 @@ When the shape changes, regenerate the documents that carry it.
 
 A source with top-level code (module constants and expression statements)
 has one more code unit, its module initialization, whose claims are an
-`"init"` object beside `"functions"`: `{"entries": [...], "expressions":
+`"init"` object beside `"functions"`: `{"contracts": [...], "entries": [...], "expressions":
 [...]}`, with optional `"arrows"`, exactly as a function states them. It is
 present exactly when the source has that code. The unit has no parameters and
 completes with `undefined`; its sites are the top-level statements. A function
@@ -150,15 +253,26 @@ its initializer's expression, which the initialization unit checks. See
 [Modules and code units](DESIGN.md#modules-and-code-units).
 
 Function identity is its name and name span. Parameter names and order must match
-the source signature. Entry claims use statement start offsets, and expression
-claims use complete spans. Sites must occur in the named function's decoded
-body, including loop heads and supported closure bodies. A loop-head entry is
+the source signature. Entry and expression claims use the shared control-flow graph's `point` identity
+together with their source site.
+Entries retain `start`, and expressions retain `pos`, as source provenance.
+Several graph points may carry the same source location, including executions
+of a `finally` body on different exits. A point belongs to its graph owner;
+its source provenance must match that point. Its spelling is
+`"ownerStart:ownerEnd:localId"`, combining the graph owner's source span with
+the graph's local node identity. Sites include loop heads and
+supported closure bodies. A loop-head entry is
 the invariant candidate checked on initial entry and every back edge. The existing extractor resolves names
 against initialized lexical bindings and retains its shadowing restrictions.
 A `this` binding in an entry is ignored: a receiver is immutable and bound by
 the call, so it keeps the type its function's receiver gives it, and a `this`
 expression is an ordinary expression site claimed like a variable.
-Declaration IDs are not part of this interface.
+Each function, initialization unit and per-signature closure row carries
+`contracts`: the fixed storage contracts of its mutable declarations. A contract
+has `pos` (the initializer span), `name` and `type`. Its identity is the
+initializer span together with the binding name. Point-specific environments
+and `current` fields describe contents at execution points; assignment is
+checked against the declaration's storage contract.
 
 Type references are lists of labels, read as a union: `[]` denotes `never`,
 `[1,2]` denotes `boolean`, and `[0,1,2]` denotes `null | boolean`. A label is

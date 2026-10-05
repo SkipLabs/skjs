@@ -53,6 +53,7 @@ const isRecord = (v: unknown): v is Record<string, unknown> =>
 
 /** One claim, as the report carries it: surface text beside the encoding. */
 interface DraftClaim {
+  point: string;
   pos: number[];
   type: string;
   raw?: unknown;
@@ -66,6 +67,7 @@ interface DraftBinding {
   rigid?: RigidParameter[];
 }
 interface DraftEntry {
+  point: string;
   pos: number[];
   bindings: DraftBinding[];
 }
@@ -119,11 +121,13 @@ interface FunctionAnnotation extends AnnotationBase {
   verification: { status: string; detail?: string };
 }
 interface EntryAnnotation extends AnnotationBase {
+  point: string;
   kind: "entry";
   bindings: { name: string; type: string }[];
   status: string;
 }
 interface ExpressionAnnotation extends AnnotationBase {
+  point: string;
   kind: "expression";
   type: string;
   status: string;
@@ -157,13 +161,14 @@ function fields(x: Annotation) {
   const parts=["kind="+x.kind];
   if(x.kind === "gap")parts.push("reason="+reasonSlug(x.detail));
   if(x.id)parts.push("id="+x.id);
+  if(x.kind === "entry" || x.kind === "expression")parts.push("point="+x.point);
   if(x.unsupported && x.unsupported.length)parts.push("unsupported="+x.unsupported.join("+"));
   return parts.join("; ")+"; ";
 }
 function comment(x: Annotation) {
   if(x.kind === "report") {
     const lines=["Display-only claim report; not certificate input.",
-      "annotation-fields=kind,reason,id,unsupported",
+      "annotation-fields=kind,reason,id,point,unsupported",
       `source=${x.source.file}`,`source-sha256=${x.source.sha256}`,
       ...Object.entries(x).filter(([k])=>k.endsWith("Sha256")).map(([k,v])=>`${k}=${v}`),
       "Function results cover modeled obligations, not every exported claim.",
@@ -372,8 +377,8 @@ function fromSourceClaims(
       entries:f.entries.map(e=> {
         const end=entries.get(e.start);
         if(end===undefined)throw Error("source entry claim is not attached to a statement");
-        return {pos:[e.start,end],bindings:e.bindings.map(b=>({name:b.name,...point(b)}))};
-      }),expressions:f.expressions.map(e=>({pos:e.pos,...point(e)}))};
+        return {point:e.point,pos:[e.start,end],bindings:e.bindings.map(b=>({name:b.name,...point(b)}))};
+      }),expressions:f.expressions.map(e=>({point:e.point,pos:e.pos,...point(e)}))};
     })};
 }
 
@@ -492,14 +497,15 @@ function render(
       ...(results ? {verification:results[index]} : {verification:{status:"not-run"}})});
     // Where a claim is shown: at its start, or, one of a lowering's own, at
     // its statement's.
-    const at=(kind: string, q: { pos: number[] }): number=> {
+    const at=(kind: string, q: { point: string; pos: number[] }): number=> {
       checkSpan(q.pos);
       const own=q.pos[0]>=start&&q.pos[1]<=end&&starts.has(q.pos[0]) &&
         (kind!=="expression" || spans.has(q.pos.join(":")));
       const region=own ? undefined : lowered.find(r=>q.pos[0]>=r.from&&q.pos[1]<=r.to &&
         (kind==="expression" || r.entries.has(q.pos[0])));
       if(!own&&(!region||region.from<start||region.to>end))throw Error(`cannot attach ${kind} claim at ${q.pos}`);
-      const k=`${key}:${kind}:${q.pos[0]}:${kind==="expression" ? q.pos[1] : ""}`;
+      if(typeof q.point!=="string" || !/^\d+:\d+:\d+$/.test(q.point))throw Error("invalid control-flow point");
+      const k=`${key}:${kind}:${q.point}:${q.pos.join(":")}`;
       if(seen.has(k))throw Error("duplicate claim attachment");seen.add(k);
       return region ? region.from : q.pos[0];
     };
@@ -507,13 +513,13 @@ function render(
       const shown=at("entry",q);
       if(!Array.isArray(q.bindings)||new Set(q.bindings.map(b=>b.name)).size!==q.bindings.length ||
          q.bindings.some(b=>typeof b.name!=="string"||typeof b.type!=="string"))throw Error("invalid entry bindings");
-      add(shown,{kind:"entry",id:idOf("entry",index,j),originalSpan:q.pos,bindings:q.bindings.map(({name,type})=>({name,type})),
+      add(shown,{kind:"entry",point:q.point,id:idOf("entry",index,j),originalSpan:q.pos,bindings:q.bindings.map(({name,type})=>({name,type})),
         unsupported:q.bindings.filter(b=>isRecord(b.raw)&&b.raw.unsupported).map(b=>b.name),status:"producer-claim"});
     }
     for(const [j,q] of f.expressions.entries()) {
       const shown=at("expression",q);
       if(typeof q.type!=="string")throw Error("invalid expression claim");
-      add(shown,{kind:"expression",id:idOf("expression",index,j),originalSpan:q.pos,type:q.type,status:"producer-claim"});
+      add(shown,{kind:"expression",point:q.point,id:idOf("expression",index,j),originalSpan:q.pos,type:q.type,status:"producer-claim"});
     }
   }
   const gaps=coverage(source,report);

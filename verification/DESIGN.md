@@ -137,10 +137,12 @@ annotations and declarations: labels of the recursive equations the source
 lowers to. Annotations become claims in the same lowering run as the
 producer's claims (`SourceClaimJson.equationFront`), so there is one reader
 of types, not one per producer; a claim-shaped annotation in the source tree
-is refused. Claims are per unit, keyed by
-source identity; each site has at most one, a required site without one is
-refused, and extra or duplicate claims are refused. A producer's claim is
-compared with the source's annotation by meaning, not by label: a function's
+is refused. Entry claims are keyed by owner-qualified execution point;
+expression claims are keyed by execution point and source span. Each identity
+has at most one claim, a required identity without one is refused, and extra
+or duplicate claims are refused. Mutable storage contracts are keyed by
+declaration initializer span and binding name, separately from current contents.
+A producer's claim is compared with the source's annotation by meaning, not by label: a function's
 claimed signature must mean its annotation, a closure's claimed signatures
 must lie within it, and the body is checked at each claimed signature
 ([claims against annotations](PROGRAM-TYPING.md#modules-and-code-units)).
@@ -1120,16 +1122,17 @@ updates its row. The prose below describes each item's design, not its
 progress.
 
 **One producer.** The OCaml producer is the pipeline's one producer, which the
-cases, the corpus and the report viewer run. It reads the Fragment and
-predicts what Lean's lowering establishes on each control-flow edge, a mirror
-of the lowering no review covers (`proposal.ml` carries a file marker only);
-it is to read the lowered graph instead. Done in order, before the items below.
+cases, the corpus and the report viewer run. The shared control-flow IR
+separates execution structure from type-directed expression elaboration.
+The Fragment supplies source-oriented type inference; graph points and edges
+supply the producer's data-flow equations. Mutable declaration contracts and
+point-specific contents have separate claim identities.
 
 | Item | State | Closed when |
 | --- | --- | --- |
 | 1. Delete the TypeScript producer (`tools/tsc-claims.mts`): the OCaml producer is the pipeline's one producer, the corpus and the report viewer run it | done | compared per function on the corpus's 303 (2026-10-05): the OCaml producer's claims verify for 301, the TypeScript producer's for 276, every one of those among the 301; the producer, `--producer`, the viewer's producer choice, the report writer's generic report input and per-function collection metadata deleted; TypeScript's own verdict per function (`typescriptVerdicts`) beside the verifier's in the corpus and the viewer |
-| 2. The producer reads the lowered graph: design and validation. Lean emits the control-flow graphs it lowers the Fragment to; the producer proposes its claims per graph node, which Lean reads at those nodes, and stops predicting the lowering from the source (jumps through `finally`, iterator close, cell contents after declarations and assignments) | open | the design states the graph wire, the claims keyed by node and the checks on that association; a prototype over a subset of the cases (control flow, `try`/`finally`, iterator close, closures) reaches the same outcomes as the source-level producer, with forged node keys refused |
-| 3. The producer reads the lowered graph: cutover | open | every `cases.mts` outcome and the corpus's per-function results unchanged or better; the producer's source-level control-flow mirror and the source-position claim association it needed deleted |
+| 2. The producer reads the shared control-flow IR: design and validation. Lean constructs claim-independent execution points and edges, final lowering consumes that IR, and the producer proposes environments and current contents per point. Type-directed expression elaboration consumes those proposals; mutable declaration contracts have separate identities | done: `FlowGraph`, `ExpressionPlan` and `BindingPlan` supply the shared execution schedule; entry and expression claims have owner-qualified point identities, expression sites also retain source spans, and mutable lifetime contracts have separate identities; forged point and contract associations are refused | the design states the graph wire, the claims keyed by node and the checks on that association; a prototype over a subset of the cases (control flow, `try`/`finally`, iterator close, closures) reaches the same outcomes as the source-level producer, with forged node keys refused |
+| 3. The producer reads the shared control-flow IR: cutover | done: all 847 cases and independent forged-claim/report controls pass; the 53-file corpus has the same per-function outcomes as its baseline (303 accepted, 301 derived, 2 not derived); all six protected runtime traces pass; source-level control-flow, compound-expression and binding/default execution mirrors are retired | every `cases.mts` outcome and the corpus's per-function results unchanged or better; the producer's source-level control-flow mirror and the source-position claim association it needed deleted |
 
 **Upstream sum example.** `reactive-sum-prettier-ignore`, Skip's sum service
 as published, against the pinned upstream runtime. The program is safe; the

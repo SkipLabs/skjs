@@ -1,3 +1,4 @@
+import Verification.Source.FlowJson
 import Verification.Source.SourceExtraction
 import Verification.Source.EquationStore
 
@@ -103,6 +104,7 @@ structure Binding (ι : Type) where
   current : Option (CurrentFields ι) := none
   deriving ToJson, FromJson
 structure Entry (ι : Type) where
+  point : String
   start : Nat
   bindings : List (Binding ι)
   deriving ToJson, FromJson
@@ -114,6 +116,7 @@ structure Instantiation (ι : Type) where
   deriving ToJson, FromJson, BEq
 
 structure Expression (ι : Type) where
+  point : String
   pos : Span
   type : ClaimType ι
   current : Option (CurrentFields ι) := none
@@ -125,17 +128,25 @@ record's contents is itself an assertion. Absence of `instantiate` asserts
 nothing: the site simply calls no quantified callable, so it is omitted rather
 than stated, and no producer has to write it at every expression. -/
 instance [ToJson ι] : ToJson (Expression ι) where
-  toJson e := Json.mkObj ([("pos", toJson e.pos), ("type", toJson e.type),
+  toJson e := Json.mkObj ([("point", toJson e.point), ("pos", toJson e.pos), ("type", toJson e.type),
     ("current", toJson e.current)] ++
     (match e.instantiate with
      | none => []
      | some xs => [("instantiate", toJson xs)]))
+/-- A proposed lifetime contract for one mutable declaration. -/
+structure StorageContract (ι : Type) where
+  pos : Span
+  name : String
+  type : ClaimType ι
+  deriving ToJson, FromJson
+
 /-- Interior claims for one closure, one set per signature of its claimed
 callable type, in that order. A closure advertising several signatures has one
 body and a different obligation at each: the producer states the claims that
 body has under each, as scheme compilation states them under each checked
 instantiation. -/
 structure ArrowRow (ι : Type) where
+  contracts : List (StorageContract ι)
   expressions : List (Expression ι)
   entries : List (Entry ι) := []
   deriving ToJson, FromJson
@@ -150,6 +161,7 @@ structure Function (ι : Type) where
   result : ClaimType ι
   entries : List (Entry ι)
   expressions : List (Expression ι)
+  contracts : List (StorageContract ι)
   /-- Omitted by a document whose closures each advertise one signature. -/
   arrows : Option (List (ArrowClaims ι)) := none
   deriving FromJson
@@ -159,7 +171,8 @@ signature states no per-arrow claims, and no producer writes an empty list. -/
 instance [ToJson ι] : ToJson (Function ι) where
   toJson f := Json.mkObj ([("name", toJson f.name), ("namePos", toJson f.namePos),
     ("params", toJson f.params), ("result", toJson f.result),
-    ("entries", toJson f.entries), ("expressions", toJson f.expressions)] ++
+    ("entries", toJson f.entries), ("expressions", toJson f.expressions),
+    ("contracts", toJson f.contracts)] ++
     (match f.arrows with
      | none | some [] => []
      | some rows => [("arrows", toJson rows)]))
@@ -168,10 +181,12 @@ file's top-level code. It has no parameters, and completes with `undefined`. -/
 structure InitClaims (ι : Type) where
   entries : List (Entry ι)
   expressions : List (Expression ι)
+  contracts : List (StorageContract ι)
   arrows : Option (List (ArrowClaims ι)) := none
   deriving FromJson
 instance [ToJson ι] : ToJson (InitClaims ι) where
-  toJson i := Json.mkObj ([("entries", toJson i.entries), ("expressions", toJson i.expressions)] ++
+  toJson i := Json.mkObj ([("entries", toJson i.entries), ("expressions", toJson i.expressions),
+    ("contracts", toJson i.contracts)] ++
     (match i.arrows with
      | none | some [] => []
      | some rows => [("arrows", toJson rows)]))
@@ -228,18 +243,31 @@ def certifyPlans {σ ι : Type} (plans : List (FunctionPlan σ ι)) : Except Str
 section
 variable {ι : Type} [Labels ι]
 
+private def pointData (entries : List (Entry ι)) (expressions : List (Expression ι)) :
+    SourceClaims.PointData ι :=
+  { envs := entries.map (fun e => (e.start,e.bindings.map (fun b => (b.name,b.type.ground))))
+    exprs := expressions.map (fun e => (e.pos,e.type.ground))
+    entryCurrent := entries.map (fun e => (e.start,e.bindings.filterMap fun b => b.current.map (b.name,·)))
+    exprCurrent := expressions.filterMap (fun e => e.current.map (e.pos,·)) }
+
+private def pointTable (entries : List (Entry ι)) (expressions : List (Expression ι)) :
+    List (String × SourceClaims.PointData ι) :=
+  (entries.map (·.point) ++ expressions.map (·.point)).eraseDups.map fun id =>
+    (id, pointData (entries.filter (·.point == id)) (expressions.filter (·.point == id)))
+
+private def storageContracts (contracts : List (StorageContract ι)) : SourceClaims.Contracts ι :=
+  contracts.map fun c => ((c.pos,c.name),c.type.ground)
+
 def Function.normalized (f : Function ι) : SourceClaims.Function ι :=
-  ⟨f.name,f.namePos,f.params.map (fun b => (b.name,b.type.ground)),f.result.ground,
-    f.entries.map (fun e => (e.start,e.bindings.map (fun b => (b.name,b.type.ground)))),
-    f.expressions.map (fun e => (e.pos,e.type.ground)),
-    f.entries.map (fun e => (e.start,e.bindings.filterMap fun b => b.current.map (b.name,·))),
-    f.expressions.filterMap (fun e => e.current.map (e.pos,·)),
-    -- Stated by the producer for an overloaded closure.
-    (f.arrows.getD []).map (fun a => (a.pos, a.rows.map (fun row =>
-      ⟨row.expressions.map (fun e => (e.pos,e.type.ground)),
-       row.entries.map (fun e => (e.start,e.bindings.map (fun b => (b.name,b.type.ground)))),
-       row.entries.map (fun e => (e.start,e.bindings.filterMap fun b => b.current.map (b.name,·))),
-       row.expressions.filterMap (fun e => e.current.map (e.pos,·))⟩)))⟩
+  let sites := pointData f.entries f.expressions
+  { name := f.name, namePos := f.namePos, params := f.params.map (fun b => (b.name,b.type.ground))
+    ret := f.result.ground, envs := sites.envs, exprs := sites.exprs
+    entryCurrent := sites.entryCurrent, exprCurrent := sites.exprCurrent
+    points := pointTable f.entries f.expressions, contracts := storageContracts f.contracts
+    arrowClaims := (f.arrows.getD []).map fun a => (a.pos, a.rows.map fun row =>
+      { toPointData := pointData row.entries row.expressions
+        points := pointTable row.entries row.expressions
+        contracts := storageContracts row.contracts }) }
 
 private def claimHasScheme : ClaimType ι → Bool
   | .scheme .. => true
@@ -248,7 +276,7 @@ private def claimHasScheme : ClaimType ι → Bool
 private def Function.hasScheme (f : Function ι) : Bool :=
   claimHasScheme f.result || f.params.any (claimHasScheme ·.type) ||
     f.entries.any (fun e => e.bindings.any (claimHasScheme ·.type)) ||
-    f.expressions.any (claimHasScheme ·.type)
+    f.expressions.any (claimHasScheme ·.type) || f.contracts.any (claimHasScheme ·.type)
 
 /-- A generic module value's instance checks (`moduleInstances`) are not
 ordinary graph sequents, but their failures use the same mandatory located
@@ -404,17 +432,20 @@ def moduleInstances (T : EquationStore.State) (g : Instantiable)
   let calls := (unit.flatMap Fragment.Stmt.callees).filter (·.2.2.1 == g.name)
   let graph (A : List Tree) : Json := Json.mkObj [("top", toJson false),
     ("atoms", toJson (A.map fun l => Json.mkObj [("a", toJson "graph"), ("label", toJson l)]))]
-  let sites ← calls.mapM fun (pos, _, _, written) => do
-    let some inst := (claims.expressions.find? (·.pos == pos)).bind (·.instantiate)
-      | throw (refuse pos s!"a call to the generic function '{g.name}' needs its type arguments")
-    let given := inst.map (·.name)
-    if given.eraseDups.length != given.length then throw (refuse pos "duplicate type argument")
-    if given.length != g.binders.length || given.any (!g.binders.contains ·) then
-      throw (refuse pos s!"type arguments do not instantiate exactly the binders of '{g.name}'")
-    let θ ← inst.mapM fun i => do
-      let A ← (groundOf s!"the type argument for '{i.name}'" i.type).mapError (refuse pos)
-      pure (i.name, A)
-    pure (pos, θ, written)
+  let sites ← calls.flatMapM fun (pos, _, _, written) => do
+    let occurrences := claims.expressions.filter (·.pos == pos)
+    if occurrences.isEmpty then throw (refuse pos s!"a call to the generic function '{g.name}' needs its type arguments")
+    occurrences.mapM fun e => do
+      let some inst := e.instantiate
+        | throw (refuse pos s!"a call to the generic function '{g.name}' needs its type arguments")
+      let given := inst.map (·.name)
+      if given.eraseDups.length != given.length then throw (refuse pos "duplicate type argument")
+      if given.length != g.binders.length || given.any (!g.binders.contains ·) then
+        throw (refuse pos s!"type arguments do not instantiate exactly the binders of '{g.name}'")
+      let θ ← inst.mapM fun i => do
+        let A ← (groundOf s!"the type argument for '{i.name}'" i.type).mapError (refuse pos)
+        pure (i.name, A)
+      pure (pos, θ, written)
   let mut T := T
   let mut seen : List (List (String × List Tree)) := []
   let mut instances : List Json := []
@@ -670,57 +701,56 @@ def closureRows (T : EquationStore.State) (outer : List (String × Tree))
       scopes := scopes ++ [(gc.span, rows ++ enclosing)]
     -- A call of a local whose claim is a scheme: its callee is claimed at the
     -- instance the call names.
-    let mut instances : List (Span × (ClaimType Tree)) := []
-    let mut namedCalls : List Span := []
+    let mut instances : List ((String × Span) × (ClaimType Tree)) := []
+    let mut namedCalls : List (String × Span) := []
     for (p, q, _, _) in calls do
-      let some e := c.expressions.find? (·.pos == p) | continue
-      let some inst := e.instantiate | continue
-      let some callee := c.expressions.find? (·.pos == q) | continue
-      let θ := asClaims (scopeAt scopes outer q)
-      let .scheme tps rc ps rest r effect := subst θ callee.type | continue
-      if tps.isEmpty then continue
-      let given := inst.map (·.name)
-      if given.eraseDups.length != given.length || given.length != tps.length ||
-          given.any (fun n => !(tps.map Prod.fst).contains n) then
-        throw "type arguments do not instantiate exactly the scheme's binders"
-      let θp := asClaims (scopeAt scopes outer p)
-      -- A bounded binder is read as a meet row, so its instance is the meet
-      -- of the type arguments of the row's parameters with the row's
-      -- clauses: the clause row an instance table maps the meet row to
-      -- (`meetOk`), in the order it reads them.
-      let args := inst.map fun i => (i.name, subst θp i.type)
-      let (sl, rows) ← schemeRowOf (.scheme tps rc ps rest r effect)
-      let binders := match StoreView.row (← get).1 sl with
-        | .scheme bs .. => bs
-        | _ => []
-      let nameOf := binders.zip (tps.map Prod.fst)
-      let θi ← args.mapM fun (n, U) => do
-        let some l := rows.lookup n | pure (n, U)
-        let .meet b cs also := StoreView.row (← get).1 l | pure (n, U)
-        let st ← get
-        let meet : SchemeM (Option Tree) := do
-          let Us ← (b :: also).mapM fun q => do
-            let some m := nameOf.lookup q | throw "a meet row's parameter is no binder of its scheme"
-            let some A := args.lookup m | throw s!"no type argument for '{m}'"
-            groundT A
-          let (T, reg) ← get
-          let G := SourceTypes.graph T
-          if !Us.all G.plainTy then return none
-          let cs := PositiveRules.meetMany (Us.map (PositiveRules.clausesOf G) ++ [cs])
-          if cs.isEmpty then return none
-          let (T, l) := EquationStore.intern T cs
-          set (T, reg)
-          return some l
-        match meet.run st with
-        | .ok (some l, st) => set st; pure (n, .labels [l])
-        | _ => pure (n, U)
-      instances := instances ++ [(q, .scheme [] (subst θi rc) (ps.map (subst θi))
-        (rest.map (subst θi)) (subst θi r) effect)]
-      namedCalls := namedCalls ++ [p]
+      for e in c.expressions.filter (·.pos == p) do
+        let some inst := e.instantiate | continue
+        let some callee := c.expressions.find? (fun x => x.pos == q && x.point == e.point) | continue
+        let θ := asClaims (scopeAt scopes outer q)
+        let .scheme tps rc ps rest r effect := subst θ callee.type | continue
+        if tps.isEmpty then continue
+        let given := inst.map (·.name)
+        if given.eraseDups.length != given.length || given.length != tps.length ||
+            given.any (fun n => !(tps.map Prod.fst).contains n) then
+          throw "type arguments do not instantiate exactly the scheme's binders"
+        let θp := asClaims (scopeAt scopes outer p)
+        -- A bounded binder is read as a meet row, so its instance is the meet
+        -- of the type arguments of the row's parameters with the row's
+        -- clauses: the clause row an instance table maps the meet row to
+        -- (`meetOk`), in the order it reads them.
+        let args := inst.map fun i => (i.name, subst θp i.type)
+        let (sl, rows) ← schemeRowOf (.scheme tps rc ps rest r effect)
+        let binders := match StoreView.row (← get).1 sl with
+          | .scheme bs .. => bs
+          | _ => []
+        let nameOf := binders.zip (tps.map Prod.fst)
+        let θi ← args.mapM fun (n, U) => do
+          let some l := rows.lookup n | pure (n, U)
+          let .meet b cs also := StoreView.row (← get).1 l | pure (n, U)
+          let st ← get
+          let meet : SchemeM (Option Tree) := do
+            let Us ← (b :: also).mapM fun q => do
+              let some m := nameOf.lookup q | throw "a meet row's parameter is no binder of its scheme"
+              let some A := args.lookup m | throw s!"no type argument for '{m}'"
+              groundT A
+            let (T, reg) ← get
+            let G := SourceTypes.graph T
+            if !Us.all G.plainTy then return none
+            let cs := PositiveRules.meetMany (Us.map (PositiveRules.clausesOf G) ++ [cs])
+            if cs.isEmpty then return none
+            let (T, l) := EquationStore.intern T cs
+            set (T, reg)
+            return some l
+          match meet.run st with
+          | .ok (some l, st) => set st; pure (n, .labels [l])
+          | _ => pure (n, U)
+        instances := instances ++ [((e.point,q), .scheme [] (subst θi rc) (ps.map (subst θi))
+          (rest.map (subst θi)) (subst θi r) effect)]
+        namedCalls := namedCalls ++ [(e.point,p)]
     let named (at_ : Span) : List (String × List Tree) :=
       (scopeAt scopes outer at_).map fun (n, l) => (n, [l])
     let go (at_ : Span) (t : ClaimType Tree) : SchemeM (ClaimType Tree) := do
-      let t := ((instances.find? (·.1 == at_)).map (·.2)).getD t
       let st ← get
       match (groundT (subst (asClaims (scopeAt scopes outer at_)) (rebindClaim st.1 (named at_) t))).run st with
       | .ok (A, st) => set st; pure (.labels A)
@@ -734,12 +764,13 @@ def closureRows (T : EquationStore.State) (outer : List (String × Tree))
     let params ← c.params.mapM fun b => do return { b with type := ← go (0, 0) b.type }
     let result ← go (0, 0) c.result
     let entries ← c.entries.mapM entry
+    let contracts ← c.contracts.mapM fun b => do return { b with type := ← go b.pos b.type }
     let expressions ← c.expressions.mapM fun e => do
-      let type ← go e.pos e.type
-      let instantiate ← if namedCalls.contains e.pos then pure none else
+      let type ← go e.pos ((instances.lookup (e.point,e.pos)).getD e.type)
+      let instantiate ← if namedCalls.contains (e.point,e.pos) then pure none else
         e.instantiate.mapM (·.mapM fun i => do return { i with type := ← go e.pos i.type })
       return { e with type, instantiate, current := ← current e.pos e.current }
-    return ({ c with params, result, entries, expressions }, scopes)
+    return ({ c with params, result, entries, expressions, contracts }, scopes)
   let ((c, scopes), (T, _)) ← run.run (T, [])
   return (T, c, scopes)
 
@@ -801,6 +832,7 @@ def Function.atRows (c : Function Tree) (T : EquationStore.State) (rows : List (
     let params ← c.params.mapM fun b => do return { b with type := ← go b.type }
     let result ← go c.result
     let entries ← c.entries.mapM entry
+    let contracts ← c.contracts.mapM fun b => do return { b with type := ← go b.type }
     let expressions ← c.expressions.mapM fun e => do
       let type ← go e.type
       let instantiate ← e.instantiate.mapM (·.mapM fun i => do return { i with type := ← go i.type })
@@ -810,9 +842,10 @@ def Function.atRows (c : Function Tree) (T : EquationStore.State) (rows : List (
         let expressions ← r.expressions.mapM fun e => do
           return { e with type := ← go e.type, current := ← current e.current }
         let entries ← r.entries.mapM entry
-        return { r with expressions, entries }
+        let contracts ← r.contracts.mapM fun b => do return { b with type := ← go b.type }
+        return { r with expressions, entries, contracts }
       return { a with rows })
-    return { c with params, result, entries, expressions, arrows }
+    return { c with params, result, entries, expressions, contracts, arrows }
   let (c, T) := run.run T
   (T, c)
 
@@ -854,18 +887,21 @@ private def validBindings (T : EquationStore.State) (bs : List (Binding Tree)) :
 private def validSpan (p : Span) : Bool := p.1 < p.2
 private def validInterior (T : EquationStore.State) (entries : List (Entry Tree))
     (expressions : List (Expression Tree)) : Bool :=
-  (entries.map (·.start)).eraseDups.length == entries.length &&
-  (expressions.map (·.pos)).eraseDups.length == expressions.length &&
+  (entries.map (fun e => (e.point,e.start))).eraseDups.length == entries.length &&
+  (expressions.map (fun e => (e.point,e.pos))).eraseDups.length == expressions.length &&
   entries.all (fun e => validBindings T e.bindings) &&
   expressions.all (fun e => validSpan e.pos && validType T e.type && validCurrent T e.type e.current)
+private def validContracts (T : EquationStore.State) (cs : List (StorageContract Tree)) : Bool :=
+  (cs.map (fun c => (c.pos,c.name))).eraseDups.length == cs.length &&
+  cs.all (fun c => validSpan c.pos && !c.name.isEmpty && validType T c.type)
 private def validFunction (T : EquationStore.State) (f : Function Tree) : Bool :=
   !f.name.isEmpty && validSpan f.namePos && validBindings T f.params &&
   f.params.all (fun b => b.current.isNone) && validType T f.result &&
-  validInterior T f.entries f.expressions &&
+  validInterior T f.entries f.expressions && validContracts T f.contracts &&
   let arrows := f.arrows.getD []
   (arrows.map (·.pos)).eraseDups.length == arrows.length &&
   arrows.all (fun a => validSpan a.pos && !a.rows.isEmpty && a.rows.all (fun row =>
-    validInterior T row.entries row.expressions &&
+    validInterior T row.entries row.expressions && validContracts T row.contracts &&
     -- These are ground overload rows. Quantified eliminations are checked by
     -- the scheme gate, never silently discarded during ground normalization.
     row.expressions.all (fun e => e.instantiate.isNone)))
@@ -889,7 +925,7 @@ def decodeDocument (T : EquationStore.State) (claims : Json) : Except String (Do
   if (d.functions.map (fun f => (f.name,f.namePos))).eraseDups.length != d.functions.length then
     throw "duplicate function claims"
   if let some i := d.init then
-    if !validInterior d.types i.entries i.expressions then
+    if !validInterior d.types i.entries i.expressions || !validContracts d.types i.contracts then
       throw "invalid source claims: duplicate identity, span, binding or type labels"
   return d
 
@@ -908,83 +944,140 @@ private partial def restSpans : Fragment.Pattern Fragment.Expr → List Span
       | some (_, q, _, t) => q :: restSpans t
       | none => []
 mutual
-private partial def exprSites : Fragment.Expr → Sites
+private partial def exprSitesCore (includeBodies : Bool) : Fragment.Expr → Sites
   | .var p _ | .lit p _ => ([],[p],[])
   -- A defaulted parameter's expression is an ordinary source expression, so it
   -- is a claim site like any other; the parameter name is not one.
   | .lambda p _ _ _ defaults _ _ e =>
-    defaults.attach.foldl (fun acc ⟨d,_⟩ => joinSites acc (exprSites d.2))
-      (joinSites ([],[p],[p]) (exprSites e))
-  | .shapeTest p _ _ e | .not p e | .unary p _ e | .cast p _ e | .read p _ e => joinSites ([],[p],[]) (exprSites e)
-  | .alloc p _ es | .build p _ es => es.foldl (fun acc a => joinSites acc (exprSites a)) ([],[p],[])
-  | .withValue p a b _ _ | .write p _ a b | .singletonTest p _ _ _ a b | .equality p _ a b | .coalesce p a b | .logical p _ a b => joinSites ([],[p],[]) (joinSites (exprSites a) (exprSites b))
+    if !includeBodies then ([],[p],[p]) else
+    defaults.attach.foldl (fun acc ⟨d,_⟩ => joinSites acc (exprSitesCore includeBodies d.2))
+      (joinSites ([],[p],[p]) (exprSitesCore includeBodies e))
+  | .shapeTest p _ _ e | .not p e | .unary p _ e | .cast p _ e | .read p _ e => joinSites ([],[p],[]) (exprSitesCore includeBodies e)
+  | .alloc p _ es | .build p _ es => es.foldl (fun acc a => joinSites acc (exprSitesCore includeBodies a)) ([],[p],[])
+  | .withValue p a b _ _ | .write p _ a b | .singletonTest p _ _ _ a b | .equality p _ a b | .coalesce p a b | .logical p _ a b => joinSites ([],[p],[]) (joinSites (exprSitesCore includeBodies a) (exprSitesCore includeBodies b))
   -- An assignment is an expression site, and the name it assigns is not one:
   -- the producer claims the value written, not the location.
-  | .index p _ a b | .arith p _ a b | .logicalAssign p _ a b | .elemAt p a b | .comma p a b | .inKeys p a b => joinSites ([],[p],[]) (joinSites (exprSites a) (exprSites b))
-  | .arrayLit p es => es.foldl (fun acc a => joinSites acc (exprSites a)) ([],[p],[])
-  | .objectAssign p t ss => ss.foldl (fun acc a => joinSites acc (exprSites a))
-      (joinSites ([],[p],[]) (exprSites t))
+  | .index p _ a b | .arith p _ a b | .logicalAssign p _ a b | .elemAt p a b | .comma p a b | .inKeys p a b => joinSites ([],[p],[]) (joinSites (exprSitesCore includeBodies a) (exprSitesCore includeBodies b))
+  | .arrayLit p es => es.foldl (fun acc a => joinSites acc (exprSitesCore includeBodies a)) ([],[p],[])
+  | .objectAssign p t ss => ss.foldl (fun acc a => joinSites acc (exprSitesCore includeBodies a))
+      (joinSites ([],[p],[]) (exprSitesCore includeBodies t))
   | .arrayAssign p targets rest rhs => targets.foldl (fun acc q => match q.default_ with
-      | some d => joinSites acc (exprSites d) | none => acc)
-      (joinSites ([],p :: (rest.map (·.1)).toList,[]) (exprSites rhs))
-  | .elemWrite p a b c => joinSites ([],[p],[]) (joinSites (exprSites a) (joinSites (exprSites b) (exprSites c)))
-  | .update p _ a none _ => joinSites ([],[p],[]) (exprSites a)
-  | .update p _ a (some r) _ => joinSites ([],[p],[]) (joinSites (exprSites a) (exprSites r))
-  | .indexWrite p _ a b c => joinSites ([],[p],[]) (joinSites (exprSites a) (joinSites (exprSites b) (exprSites c)))
-  | .nullishAssign p _ np e => joinSites ([],[p,np],[]) (exprSites e)
-  | .assign p _ _ e => joinSites ([],[p],[]) (exprSites e)
-  | .bindWithReceiver p f receiver args | .callWithReceiver p f receiver args => args.foldl (fun acc a => joinSites acc (exprSites a))
-      (joinSites ([],[p],[]) (joinSites (exprSites f) (exprSites receiver)))
-  | .call p f args _ _ | .invoke p f args _ _ => args.foldl (fun acc a => joinSites acc (exprSites a)) (joinSites ([],[p],[]) (exprSites f))
+      | some d => joinSites acc (exprSitesCore includeBodies d) | none => acc)
+      (joinSites ([],p :: (rest.map (·.1)).toList,[]) (exprSitesCore includeBodies rhs))
+  | .elemWrite p a b c => joinSites ([],[p],[]) (joinSites (exprSitesCore includeBodies a) (joinSites (exprSitesCore includeBodies b) (exprSitesCore includeBodies c)))
+  | .update p _ a none _ => joinSites ([],[p],[]) (exprSitesCore includeBodies a)
+  | .update p _ a (some r) _ => joinSites ([],[p],[]) (joinSites (exprSitesCore includeBodies a) (exprSitesCore includeBodies r))
+  | .indexWrite p _ a b c => joinSites ([],[p],[]) (joinSites (exprSitesCore includeBodies a) (joinSites (exprSitesCore includeBodies b) (exprSitesCore includeBodies c)))
+  | .nullishAssign p _ np e => joinSites ([],[p,np],[]) (exprSitesCore includeBodies e)
+  | .assign p _ _ e => joinSites ([],[p],[]) (exprSitesCore includeBodies e)
+  | .bindWithReceiver p f receiver args | .callWithReceiver p f receiver args => args.foldl (fun acc a => joinSites acc (exprSitesCore includeBodies a))
+      (joinSites ([],[p],[]) (joinSites (exprSitesCore includeBodies f) (exprSitesCore includeBodies receiver)))
+  | .call p f args _ _ | .invoke p f args _ _ => args.foldl (fun acc a => joinSites acc (exprSitesCore includeBodies a)) (joinSites ([],[p],[]) (exprSitesCore includeBodies f))
   -- A class value is one expression; its constructor's body has its own sites.
-  | .ctor p (.lambda _ _ _ _ _ _ _ e) => joinSites ([],[p],[]) (exprSites e)
+  | .ctor p (.lambda _ _ _ _ _ _ _ e) => if !includeBodies then ([],[p],[]) else joinSites ([],[p],[]) (exprSitesCore includeBodies e)
   | .ctor p _ => ([],[p],[])
-  | .construct p f args _ => args.foldl (fun acc a => joinSites acc (exprSites a)) (joinSites ([],[p],[]) (exprSites f))
+  | .construct p f args _ => args.foldl (fun acc a => joinSites acc (exprSitesCore includeBodies a)) (joinSites ([],[p],[]) (exprSitesCore includeBodies f))
   | .applyWithReceiver p f receiver list =>
-    joinSites ([],[p],[]) (joinSites (exprSites f) (joinSites (exprSites receiver)
-      ((list.map exprSites).getD ([],[],[]))))
+    joinSites ([],[p],[]) (joinSites (exprSitesCore includeBodies f) (joinSites (exprSitesCore includeBodies receiver)
+      ((list.map (exprSitesCore includeBodies)).getD ([],[],[]))))
   -- The saved receiver's read, spelled at the `?.` token, is a site of its own.
-  | .optional p _ r b => joinSites ([],[p],[]) (joinSites (exprSites r) (exprSites b))
-  | .ifBody p a b c => joinSites ([],[p],[]) (joinSites (exprSites a) (joinSites (exprSites b) (exprSites c)))
+  | .optional p _ r b => joinSites ([],[p],[]) (joinSites (exprSitesCore includeBodies r) (exprSitesCore includeBodies b))
+  | .ifBody p a b c => joinSites ([],[p],[]) (joinSites (exprSitesCore includeBodies a) (joinSites (exprSitesCore includeBodies b) (exprSitesCore includeBodies c)))
   -- A closure's statements are its body's sites, as a function's are.
-  | .block _ ss => ss.foldl (fun s st => joinSites s (stmtSites st)) ([],[],[])
-private partial def stmtSites : Fragment.Stmt → Sites
+  | .block _ ss => if !includeBodies then ([],[],[]) else ss.foldl (fun s st => joinSites s (stmtSitesCore includeBodies st)) ([],[],[])
+private partial def stmtSitesCore (includeBodies : Bool) : Fragment.Stmt → Sites
   | .brk p _ | .cont p => ([p.1],[],[])
-  | .ret p e | .effect p e | .throw p e => joinSites ([p.1],[],[]) (exprSites e)
+  | .ret p e | .effect p e | .throw p e => joinSites ([p.1],[],[]) (exprSitesCore includeBodies e)
   -- A `try` is an entry; its blocks' statements have their own.
   | .tryStmt p body handler finalizer =>
     (body ++ ((handler.map (·.2)).getD []) ++ finalizer.getD []).foldl
-      (fun s st => joinSites s (stmtSites st)) ([p.1],[],[])
+      (fun s st => joinSites s (stmtSitesCore includeBodies st)) ([p.1],[],[])
   -- One entry for the statement; every declarator's initializer is a site.
-  | .constants p bs | .mutables p bs => bs.foldl (fun acc b => joinSites acc (exprSites b.init)) ([p.1],[],[])
+  | .constants p bs | .mutables p bs => bs.foldl (fun acc b => joinSites acc (exprSitesCore includeBodies b.init)) ([p.1],[],[])
   -- The initializer, each default and each array rest, a fresh array like a
   -- literal, are sites; the pattern's reads are not.
   | .destructure p target d init =>
-    (d.toList ++ target.defaults).foldl (fun acc e => joinSites acc (exprSites e))
-      (joinSites ([p.1],restSpans target,[]) (exprSites init))
-  | .loop p c body update => joinSites ([p.1],[],[]) (joinSites (exprSites c)
-      ((body ++ update).foldl (fun s st => joinSites s (stmtSites st)) ([],[],[])))
+    (d.toList ++ target.defaults).foldl (fun acc e => joinSites acc (exprSitesCore includeBodies e))
+      (joinSites ([p.1],restSpans target,[]) (exprSitesCore includeBodies init))
+  | .loop p c body update => joinSites ([p.1],[],[]) (joinSites (exprSitesCore includeBodies c)
+      ((body ++ update).foldl (fun s st => joinSites s (stmtSitesCore includeBodies st)) ([],[],[])))
   -- A block has no entry of its own.
-  | .block _ _ body => body.foldl (fun s st => joinSites s (stmtSites st)) ([],[],[])
+  | .block _ _ body => body.foldl (fun s st => joinSites s (stmtSitesCore includeBodies st)) ([],[],[])
   -- An iterator's closing region is an entry, as a `try` is; its body's and
   -- its close's statements have their own.
   | .closing p close body =>
-    (body ++ close).foldl (fun s st => joinSites s (stmtSites st)) ([p.1],[],[])
+    (body ++ close).foldl (fun s st => joinSites s (stmtSitesCore includeBodies st)) ([p.1],[],[])
   | .ite p c a b =>
-    joinSites ([p.1],[],[]) (joinSites (exprSites c)
-      ((a ++ b.getD []).foldl (fun s st => joinSites s (stmtSites st)) ([],[],[])))
+    joinSites ([p.1],[],[]) (joinSites (exprSitesCore includeBodies c)
+      ((a ++ b.getD []).foldl (fun s st => joinSites s (stmtSitesCore includeBodies st)) ([],[],[])))
   -- The loop's span is its iteration intrinsic's call's, and the element is
   -- claimed at the name it binds.
-  | .forOf p _ np _ i body => joinSites ([p.1],[p, np],[]) (joinSites (exprSites i)
-      (body.foldl (fun s st => joinSites s (stmtSites st)) ([],[],[])))
+  | .forOf p _ np _ i body => joinSites ([p.1],[p, np],[]) (joinSites (exprSitesCore includeBodies i)
+      (body.foldl (fun s st => joinSites s (stmtSitesCore includeBodies st)) ([],[],[])))
 
 end
+private def stmtSites := stmtSitesCore true
+
 private def allFunctionSites (f : Fragment.Fn) : Sites :=
   f.body.foldl (fun s st => joinSites s (stmtSites st)) ([],[],[])
 
 def functionSites (f : Fragment.Fn) : List Nat × List Span :=
   let sites := allFunctionSites f
   (sites.1, sites.2.1)
+
+/-- Source sites owned by one elaboration action. Structural successors own
+separate claims even when they share source syntax. -/
+private def actionSites : SourceFlow.Action → List Span
+  | .declaration _ _ binding _ => (exprSitesCore false binding.init).2.1
+  | .statement st _ | .returnValue st | .saveReturn st _ _ => (stmtSitesCore false st).2.1
+  | .branch (.ite _ cond _ _) _ _ | .branch (.loop _ cond _ _) _ _ => (exprSitesCore false cond).2.1
+  | .iteratorStart (.forOf pos _ namePos _ iterable _) _ _ =>
+      pos :: namePos :: (exprSitesCore false iterable).2.1
+  | .iteratorStep (.forOf pos _ namePos _ _ _) _ _ _ _ => [pos,namePos]
+  | .finish | .jump _ | .returnHeld _ | .rethrow _ | .discardThrow _ _ => []
+  | .branch _ _ _ | .iteratorStart _ _ _ | .iteratorStep _ _ _ _ _ => []
+
+/-- Expression-bodied closures run their parameter defaults in their entry
+prologue. Block-bodied defaults are ordinary statements in the parser's body. -/
+private partial def prologueSites : Json → Except String (List (Span × List Span))
+  | .arr xs => do return (← xs.toList.mapM prologueSites).flatten
+  | .obj fields => do
+    let raw := Json.obj fields
+    let own ← if (raw.getObjValAs? String "k").toOption == some "lambda" then do
+      let body ← Fragment.decodeExpr (← jField raw "body")
+      match body with
+      | .block .. => pure []
+      | _ =>
+        let defaults ← (← jArr raw "params").flatMapM fun p => do
+          match (p.getObjVal? "default").toOption with
+          | none => pure []
+          | some e => pure ((exprSitesCore false (← Fragment.decodeExpr e)).2.1)
+        pure [(body.span,defaults)]
+    else pure []
+    return own ++ (← fields.toList.mapM (fun (_,v) => prologueSites v)).flatten
+  | _ => pure []
+
+private def checkPointSites (graphs : List SourceFlow.Graph)
+    (prologues : List (Span × List Span)) (entries : List (Entry Tree))
+    (expressions : List (Expression Tree)) (contracts : List (StorageContract Tree)) : Except String Unit := do
+  let nodes := graphs.flatMap fun g => g.nodes.toList.zipIdx.map fun (node,id) =>
+    (SourceFlow.pointId g.owner id,node)
+  for e in entries do
+    let some node := nodes.lookup e.point | throw "entry claim names a foreign or missing execution point"
+    if node.source.1 != e.start then throw "entry claim source does not match its execution point"
+  for e in expressions do
+    let some node := nodes.lookup e.point | throw "expression claim names a foreign or missing execution point"
+    let prologue := graphs.any fun g =>
+      SourceFlow.pointId g.owner g.entry == e.point &&
+      ((prologues.lookup g.owner).getD []).contains e.pos
+    if !(actionSites node.action).contains e.pos && !prologue then
+      throw s!"expression claim at {e.pos} is outside its execution point {e.point}"
+  let declarations := nodes.flatMap fun (_,node) => match node.action with
+    | .declaration _ true b _ => [(b.init.span,b.name)]
+    | _ => []
+  for c in contracts do
+    if !declarations.contains (c.pos,c.name) then
+      throw "storage contract names no mutable declaration of the unit"
 
 /-- A module constant holds no value until its declaration runs. Walking the
 top-level code in order, a step may reach a module function, directly or
@@ -1335,7 +1428,7 @@ def extractPlans (ast claims : Json) (fileKey : String)
       if binders.map (·.name) != initBinders.map (·.1) then
         throw "the module initialization's binders are not its generic classes'"
       pure [(⟨"", span, [], undefinedType, init⟩, binders,
-        ⟨"", span, [], .labels [Labels.undef], c.entries, c.expressions, c.arrows⟩)]
+        ⟨"", span, [], .labels [Labels.undef], c.entries, c.expressions, c.contracts, c.arrows⟩)]
   let decoded := match only with
     | none => all
     | some (name, pos) => all.filter fun (f, _) => f.name == name && f.namePos == pos
@@ -1363,27 +1456,34 @@ def extractPlans (ast claims : Json) (fileKey : String)
     let mut module := module
     let mut d := d
     let mut f := f
-    let sites := functionSites f
-    if !c.entries.all (fun e => sites.1.contains e.start) ||
-        !c.expressions.all (fun e => sites.2.contains e.pos) then
-      throw "claim site is not an entry or expression of the named source function"
-    let closures := (allFunctionSites f).2.2
-    for a in c.arrows.getD [] do
-      if !closures.contains a.pos then throw "per-arrow claims must name a source closure"
-      for row in a.rows do
-        if !row.entries.all (fun e => sites.1.contains e.start && a.pos.1 ≤ e.start && e.start < a.pos.2) ||
-            !row.expressions.all (fun e => sites.2.contains e.pos && a.pos != e.pos &&
-              a.pos.1 ≤ e.pos.1 && e.pos.2 ≤ a.pos.2) then
-          throw "per-arrow claim site is outside its source closure"
-    if c.hasScheme && tps.isEmpty && !(c.arrows.getD []).isEmpty then
-      throw "per-arrow source claims are for ground closures, not quantified schemes"
-    -- The unit's source tree, and the generic closures it creates, each
-    -- graph code at its scheme row.
     let unitSource := if initClaims.isSome then
         some (Json.mkObj [("body", (ast.getObjVal? "init").toOption.getD (.arr #[]))])
       else functionJsons.find? fun j =>
         (j.getObjValAs? String "name").toOption == some f.name &&
           (j.getObjValAs? Span "namePos").toOption == some f.namePos
+    let owner := if initClaims.isSome then (0,0) else f.namePos
+    let graph ← SourceFlow.build owner [] f.body
+    let nested ← match unitSource with
+      | some raw => SourceFlow.nestedGraphs raw
+      | none => pure []
+    let flowGraphs := graph :: nested
+    let prologues ← prologueSites (unitSource.getD .null)
+    checkPointSites flowGraphs prologues c.entries c.expressions c.contracts
+    let sites := functionSites f
+    let closures := (allFunctionSites f).2.2
+    for a in c.arrows.getD [] do
+      if !closures.contains a.pos then throw "per-arrow claims must name a source closure"
+      for row in a.rows do
+        checkPointSites flowGraphs prologues row.entries row.expressions row.contracts
+        if !row.entries.all (fun e => sites.1.contains e.start && a.pos.1 ≤ e.start && e.start < a.pos.2) ||
+            !row.expressions.all (fun e => sites.2.contains e.pos && a.pos != e.pos &&
+              a.pos.1 ≤ e.pos.1 && e.pos.2 ≤ a.pos.2) ||
+            !row.contracts.all (fun c => a.pos.1 ≤ c.pos.1 && c.pos.2 ≤ a.pos.2) then
+          throw "per-arrow claim site is outside its source closure"
+    if c.hasScheme && tps.isEmpty && !(c.arrows.getD []).isEmpty then
+      throw "per-arrow source claims are for ground closures, not quantified schemes"
+    -- The unit's source tree, and the generic closures it creates, each
+    -- graph code at its scheme row.
     let closures := match unitSource with
       | some j => Scheme.genericClosures ((j.getObjVal? "body").toOption.getD .null)
       | none => []

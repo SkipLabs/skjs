@@ -89,6 +89,8 @@ export interface Failure {
 
 /** One claim, as the page shows it: surface syntax, with the encoding beside it. */
 export interface DisplayClaim {
+  /** The shared control-flow point supplying this claim. */
+  point: string;
   /** Stable within one snapshot, not across edits. `f0x3`, `f1e2`, `g0`. */
   id: string;
   pos: Span;
@@ -116,6 +118,8 @@ export interface Binding {
 }
 
 export interface Entry {
+  /** The shared control-flow point supplying this environment. */
+  point: string;
   id: string;
   pos: Span;
   bindings: Binding[];

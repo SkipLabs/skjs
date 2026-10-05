@@ -10,6 +10,8 @@ import { readDiagnostic } from "../tools/diagnostic.mts";
 import { presentObligation } from "../tools/diagnostic-view.mts";
 import { fieldOf, messageOf } from "../tools/thrown.mts";
 import type { Ast } from "../tools/fragment.mts";
+// ../tools/source-flow.mts checks the shared execution graph wire before proposal.
+import { decodeFlowDocument } from "../tools/source-flow.mts";
 
 const here = import.meta.dirname;
 // The producer runs from `_build/default/producer.exe` below `../ocaml-producer`.
@@ -249,8 +251,14 @@ export function check(source: string, tsconfigPath?: string, typescriptErrors = 
         throw Error("invalid initialization statement position");
       return [s.pos[0], s.pos[1]];
     });
+    const flow = join(artifacts, "flow.json");
+    const lowered = run(verifier, ["--lower-control-flow", ast]);
+    writeFileSync(join(artifacts, "flow.log"), lowered.detail);
+    if (lowered.code !== 0)
+      return { status: "unsupported", artifacts, phase, detail: lowered.detail };
+    writeFileSync(flow, JSON.stringify(decodeFlowDocument(JSON.parse(lowered.out))));
     phase = "proposal";
-    const proposed = run(producerExecutable, [ast]);
+    const proposed = run(producerExecutable, [ast, flow]);
     writeFileSync(join(artifacts, "proposal.log"), proposed.detail);
     if (proposed.code !== 0)
       return proposed.detail.startsWith("unsupported:")
@@ -282,7 +290,7 @@ export function check(source: string, tsconfigPath?: string, typescriptErrors = 
         artifacts,
         phase,
         detail: refusedByName(namingTheObligation(produced.detail, bytes.toString("utf8")),
-          () => readExplanations(run(producerExecutable, ["--explain", ast]).out),
+          () => readExplanations(run(producerExecutable, ["--explain", ast, flow]).out),
           refusedErrors),
       };
     phase = "check";

@@ -1,3 +1,5 @@
+-- FlowJson.lean supplies the claim-independent graphs the producer analyzes.
+import Verification.Source.FlowJson
 import Verification.Source.SourceClaimJson
 
 /-! File interface to the source adapter. Source parsing remains external;
@@ -9,6 +11,13 @@ def readJson (path : String) : IO (Except String Json) := do
   try
     return Json.parse (← IO.FS.readFile path)
   catch e => return .error s!"cannot read {path}: {e}"
+
+/-- Export the same execution graph constructor used by typed extraction. -/
+def flowFile (astPath : String) : IO UInt32 := do
+  let ast ← readJson astPath
+  match ast >>= SourceFlow.document with
+  | .ok graph => IO.println graph.compress; return 0
+  | .error reason => IO.eprintln s!"reject: {reason}"; return 1
 
 def sourceFiles (astPath claimsPath fileKey evidencePath : String)
     (fuel : Option Nat) (only : Option (String × Span) := none)

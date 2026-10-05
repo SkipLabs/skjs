@@ -18,6 +18,8 @@ def main (args : List String) : IO UInt32 := do
       | none => IO.eprintln "reject: subtype rounds must be a natural number"; return 2
     | _ => pure ({}, args)
   match args with
+  | ["--lower-control-flow", astPath] =>
+      Verification.RequestCli.flowFile astPath
   | ["--check-source-claims", astPath, claimsPath, fileKey, evidencePath] =>
       Verification.RequestCli.sourceFiles astPath claimsPath fileKey evidencePath none none budget
   | ["--produce-source-claims", astPath, claimsPath, fileKey, evidencePath, depth] =>
@@ -35,7 +37,8 @@ def main (args : List String) : IO UInt32 := do
       | some fuel, some a, some b => Verification.RequestCli.sourceFiles astPath claimsPath fileKey evidencePath (some fuel) (some (name, (a, b))) budget
       | _, _, _ => IO.eprintln "reject: search depth and function position must be natural numbers"; return 2
   | _ =>
-      IO.eprintln "usage: verifier --produce-source-claims <ast.json> <source-claims.json> <file-key> <evidence.json> <depth>"
+      IO.eprintln "usage: verifier --lower-control-flow <ast.json>"
+      IO.eprintln "       verifier --produce-source-claims <ast.json> <source-claims.json> <file-key> <evidence.json> <depth>"
       IO.eprintln "       verifier --check-source-claims <ast.json> <source-claims.json> <file-key> <evidence.json>"
       IO.eprintln "       (each mode also takes --function <name> <start> <end>: one function, the others its module)"
       IO.eprintln "       (any mode may be preceded by --trace-subtyping <file> and --subtype-rounds <rounds>)"

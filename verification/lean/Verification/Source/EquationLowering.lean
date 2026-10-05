@@ -1769,8 +1769,10 @@ def unitForm (f : Json → m Json) (j : Json) : m Json := do
   let j ← update j "result" (claimForm f)
   let j ← update j "entries" entries
   let j ← update j "expressions" (each (pointForm f))
+  let j ← update j "contracts" (each fun c => update c "type" (claimForm f))
   update j "arrows" (each fun a => update a "rows" (each fun r => do
     let r ← update r "expressions" (each (pointForm f))
+    let r ← update r "contracts" (each fun c => update c "type" (claimForm f))
     update r "entries" entries))
 
 def documentForm (f : Json → m Json) (claims : Json) : m Json := do

@@ -6,3 +6,11 @@ export function known(ys: true[]): true | undefined {
   const pick = (zs: true[]): true | undefined => ready || zs[0];
   return pick(ys);
 }
+
+// The second test is skipped once the loop's first test is false.
+export function guardedLoopRead(x: string | null, again: boolean): void {
+  while (x !== null && again) {
+    const text: string = x;
+    x = null;
+  }
+}

@@ -1,6 +1,12 @@
 import Verification.Programs.ExpressionClaims
 import Verification.Programs.DirectObligation
 import Verification.Source.Fragment
+-- FlowGraph.lean owns the execution identities and control destinations that typed elaboration consumes.
+import Verification.Source.FlowGraph
+-- ExpressionPlan.lean owns operand execution order; typed atoms elaborate its saved values.
+import Verification.Source.ExpressionPlan
+-- BindingPlan.lean owns persistent bindings and the conditional execution of pattern and parameter defaults.
+import Verification.Source.BindingPlan
 import Verification.Source.SourceClaims
 
 /-! Source extraction for the stateful consumer: it lowers a unit of the
@@ -98,6 +104,19 @@ private structure Built where
   /-- The graph under construction: the claims' table, grown by annotations. -/
   types : EquationStore.State
   program : Program := []
+  flowTargets : List (Nat × Target) := []
+  /-- Computed types of saved execution-plan values, scoped to their bindings. -/
+  executionTypes : List (String × Ty Tree) := []
+  /-- Immutable aliases retained by evaluated operands for predicate refinement. -/
+  executionOrigins : List (String × Fragment.Expr) := []
+  /-- Prepared atoms consume saved operands; the plan owns source observations. -/
+  atomicPrepared : Bool := false
+  /-- Source metadata for a primitive whose executable operands are saved values. -/
+  executionOriginal : Option Fragment.Expr := none
+  /-- A saved method call passes this already evaluated receiver. -/
+  executionReceiver : Option String := none
+  /-- One source statement whose ownership gate permits a fresh local copy. -/
+  executionOwned : Option Span := none
   claims : List (PointClaim Tree) := []
   obligations : List (ExpressionClaims.Required Tree) := []
   sourceMap : SourceMap := []
@@ -240,7 +259,9 @@ rest. -/
       s!"source expression obligation at [{span.1},{span.2}): {msg}"
   | none => throw s!"no claimed type for the expression at {spanStr span}"
 
-@[nospecialize] private def exprType (fc : SourceClaims.Function Tree) (e : Fragment.Expr) : Compiler (Ty Tree) :=
+@[nospecialize] private def exprType (fc : SourceClaims.Function Tree) (e : Fragment.Expr) : Compiler (Ty Tree) := do
+  if let .var _ name := e then
+    if let some T := (← get).executionTypes.lookup name then return T
   claimAt fc e.span
 
 /-- The store type of an array claim: the type of its store field, held
@@ -605,9 +626,7 @@ negation. -/
     | .element => return .elemWrite p r key rhs
   | .withValue p f i ft bt => return .withValue p (← comparisonsExpr fc f) (← comparisonsExpr fc i) ft bt
   | .objectAssign p t ss => return .objectAssign p (← comparisonsExpr fc t) (← ss.mapM (comparisonsExpr fc))
-  | .lambda p receiver tps ps defaults rest result b =>
-    return .lambda p receiver tps ps (← defaults.attach.mapM fun ⟨(i,d),_⟩ => do
-      return (i, ← comparisonsExpr fc d)) rest result (← comparisonsExpr fc b)
+  | .lambda .. => pure e
   | .bindWithReceiver p c r args => return .bindWithReceiver p (← comparisonsExpr fc c) (← comparisonsExpr fc r) (← args.mapM (comparisonsExpr fc))
   | .callWithReceiver p c r args => return .callWithReceiver p (← comparisonsExpr fc c) (← comparisonsExpr fc r) (← args.mapM (comparisonsExpr fc))
   | .applyWithReceiver p c r list => return .applyWithReceiver p (← comparisonsExpr fc c) (← comparisonsExpr fc r) (← list.mapM (comparisonsExpr fc))
@@ -618,31 +637,9 @@ negation. -/
     -- key: `comparisonsExpr` resolves the key from its claim.
     return .invoke p (← comparisonsExpr fc c) (← args.mapM (comparisonsExpr fc)) spreads typeArgs
   | .ifBody p c t e => return .ifBody p (← comparisonsExpr fc c) (← comparisonsExpr fc t) (← comparisonsExpr fc e)
-  | .block p ss => return .block p (← ss.mapM (comparisonsStmt fc))
+  | .block .. => pure e
 
-@[nospecialize] private partial def comparisonsStmt (fc : SourceClaims.Function Tree) (s : Fragment.Stmt) :
-    Compiler Fragment.Stmt := do
-  match s with
-  | .ret p e => return .ret p (← comparisonsExpr fc e)
-  | .constants p bs => return .constants p (← bs.mapM fun b => do return { b with init := ← comparisonsExpr fc b.init })
-  | .mutables p bs => return .mutables p (← bs.mapM fun b => do return { b with init := ← comparisonsExpr fc b.init })
-  | .destructure p target d init =>
-    return .destructure p (← target.mapDefaultsM (comparisonsExpr fc)) (← d.mapM (comparisonsExpr fc))
-      (← comparisonsExpr fc init)
-  | .effect p e => return .effect p (← comparisonsExpr fc e)
-  | .ite p c t e =>
-    return .ite p (← comparisonsExpr fc c) (← t.mapM (comparisonsStmt fc))
-      (← e.mapM (fun ss => ss.mapM (comparisonsStmt fc)))
-  | .loop p c b u =>
-    return .loop p (← comparisonsExpr fc c) (← b.mapM (comparisonsStmt fc)) (← u.mapM (comparisonsStmt fc))
-  | .forOf p n np it i b => return .forOf p n np it (← comparisonsExpr fc i) (← b.mapM (comparisonsStmt fc))
-  | .block p k b => return .block p k (← b.mapM (comparisonsStmt fc))
-  | .throw p e => return .throw p (← comparisonsExpr fc e)
-  | .tryStmt p b h f =>
-    let h ← h.mapM fun (param, c) => do return (param, ← c.mapM (comparisonsStmt fc))
-    return .tryStmt p (← b.mapM (comparisonsStmt fc)) h (← f.mapM (·.mapM (comparisonsStmt fc)))
-  | .closing p c b => return .closing p (← c.mapM (comparisonsStmt fc)) (← b.mapM (comparisonsStmt fc))
-  | .brk .. | .cont .. => pure s
+
 end
 
 mutual
@@ -1689,6 +1686,12 @@ another reference may hold the object and see its keys change. -/
   let (receiver, fld, key, rhs) ← match e with
     | .write _ fld receiver rhs => pure (receiver, fld, none, rhs)
     | .indexWrite _ (some s) receiver key rhs => pure (receiver, PropKey.str s, some key, rhs)
+    | .indexWrite _ none receiver key rhs => do
+      let resolved ← comparisonsExpr fc key
+      match ← keyField fc resolved (record := ← recordReceiver fc receiver)
+          (dict := ← dictReceiver fc receiver) with
+      | .field s => pure (receiver, PropKey.str s, some key, rhs)
+      | _ => return none
     | _ => return none
   let G := SourceTypes.graph (← table)
   if !mayLack G (← exprType fc receiver) fld then return none
@@ -1811,43 +1814,6 @@ other outcomes deliberately retain the input context rather than compute a join.
       Γ.set i (if answer then [Labels.tru] else [Labels.fls])
     else Γ
 
-/-- The span of the first read of `name` an expression always evaluates,
-before any branch or closure: its claim is what the name holds on entry to
-the expression. -/
-private partial def firstUse (name : String) : Fragment.Expr → Option Span
-  | .var p n => if n == name then some p else none
-  | .lit .. | .lambda .. | .ctor .. => none
-  | .ifBody _ c _ _ => firstUse name c
-  | .logical _ _ a _ | .coalesce _ a _ | .optional _ _ a _ => firstUse name a
-  | .shapeTest _ _ _ e | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e => firstUse name e
-  | .construct _ f args _ | .call _ f args _ _ | .invoke _ f args _ _ =>
-    (f :: args).findSome? (firstUse name)
-  | .alloc _ _ es | .arrayLit _ es => es.findSome? (firstUse name)
-  | .equality _ _ a b | .singletonTest _ _ _ _ a b | .write _ _ a b | .index _ _ a b
-  | .elemAt _ a b | .arith _ _ a b | .comma _ a b | .inKeys _ a b =>
-    (firstUse name a).orElse fun _ => firstUse name b
-  | _ => none
-
-/-- A conditional's arm starts where the condition answered: each immutable
-source binding the arm reads before any branch of its own holds what the
-producer claims that read at, which the edge from the condition checks as it
-checks a statement entry's claims (a slice by the test, a field slice, a
-present key); the others, the condition's own refinement. A binding at a
-scheme row keeps it: no test narrows a scheme, and a call reads it at the
-instance it names, not the binding. -/
-@[nospecialize] private def armContext (fc : SourceClaims.Function Tree) (scope : List (ScopeBinding Tree))
-    (Γ : List (Ty Tree)) (arm : Fragment.Expr) : Compiler (List (Ty Tree)) := do
-  let G := SourceTypes.graph (← table)
-  scope.zipIdx.foldlM (fun Δ (b,i) => do
-    match b.storage, firstUse b.source.name arm with
-    | .value, some p =>
-      if b.source.name == "" || isSnapshot b.source.name then return Δ
-      if (Γ[i]?.bind (ProgramCertificates.schemeOf G ·)).isSome then return Δ
-      match fc.exprs.lookup p with
-      | some _ => return Δ.set i (← claimAt fc p)
-      | none => return Δ
-    | _, _ => return Δ) Γ
-
 /-- The fresh array an array pattern's rest collects from the array at slot
 `obj` of `A`: the positions from `start` on, read into a store. They are a
 fixed list of reads where `A` is one tuple of required positions, whose
@@ -1959,58 +1925,6 @@ effect changes, is the other operand. -/
   attempt r l
 
 
-/-- Where `continue` and `break` go, with the lexical scope at each
-destination: the nearest enclosing loop's next iteration and its end, if there
-is a loop, and the end of each enclosing labeled block, innermost first. An
-end is `none` where it is the function's. -/
-private structure Finalizer (ι : Type) where
-  /-- The `finally` block, and the `try` it belongs to. -/
-  stmts : List Fragment.Stmt
-  pos : Span
-  /-- The lexical context of the `try`, which the block runs in: its scope,
-  handler and jump targets. -/
-  scope : List (ScopeBinding ι)
-  handler : Option (Target × Nat)
-  loop : Option ((Target × List (ScopeBinding ι)) × Option (Target × List (ScopeBinding ι)))
-  labels : List (String × Option (Target × List (ScopeBinding ι)))
-  loopDepth : Nat
-  labelDepths : List (String × Nat)
-
-private structure LoopTargets (ι : Type) where
-  loop : Option ((Target × List (ScopeBinding ι)) × Option (Target × List (ScopeBinding ι))) := none
-  labels : List (String × Option (Target × List (ScopeBinding ι))) := []
-  /-- The `finally` blocks of the `try` statements around this point,
-  innermost first: a `return` runs each of them before it returns. -/
-  finalizers : List (Finalizer ι) := []
-  /-- How many of those were around the nearest loop, and around each labeled
-  block: a jump to one of them past a `finally` is refused. -/
-  loopDepth : Nat := 0
-  labelDepths : List (String × Nat) := []
-
-/-- Whether a statement list never completes normally: it ends in a jump, a
-`return` or a `throw`, or in a statement all of whose ways on do. An
-unlabeled block is its statements; a labeled one may be left by a `break`. -/
-private partial def abrupt (ss : List Fragment.Stmt) : Bool :=
-  match ss.getLast? with
-  | some (.ret ..) | some (.throw ..) | some (.brk ..) | some (.cont ..) => true
-  | some (.ite _ _ t (some e)) => abrupt t && abrupt e
-  | some (.block _ none b) => abrupt b
-  | some (.tryStmt _ b h f) =>
-    (f.map abrupt).getD false || (abrupt b && (h.map (abrupt ·.2)).getD true)
-  | some (.closing _ _ b) => abrupt b
-  | _ => false
-
-/-- Entering a loop: its targets, behind as many `finally` blocks as now. -/
-@[nospecialize] private def LoopTargets.enterLoop (t : LoopTargets ι)
-    (l : (Target × List (ScopeBinding ι)) × Option (Target × List (ScopeBinding ι))) : LoopTargets ι :=
-  { t with loop := some l, loopDepth := t.finalizers.length }
-
-/-- Entering a labeled block, likewise. -/
-@[nospecialize] private def LoopTargets.enterLabel (t : LoopTargets ι) (label : String)
-    (done : Option (Target × List (ScopeBinding ι))) : LoopTargets ι :=
-  { t with labels := (label, done) :: t.labels,
-           labelDepths := (label, t.finalizers.length) :: t.labelDepths }
-
 /-- Compile with `h` as the handler of every node emitted. -/
 @[nospecialize] private def withHandler (h : Option (Target × Nat)) (act : Compiler α) : Compiler α := do
   let saved := (← get).handler
@@ -2031,13 +1945,6 @@ read through its own mapping, found in `scope` by descriptor, else by name
   return ⟨target.label, some ((target.mapping.getD (List.range targetScope.length)).map
     fun i => slots[i]?.getD 0)⟩
 
-/-- The entry of the first statement a list runs: a block has none of its
-own, so it is its first statement's, or, empty, the next one's. -/
-private partial def firstEntry : List Fragment.Stmt → Option Nat
-  | [] => none
-  | .block _ _ inner :: rest => (firstEntry inner).orElse fun _ => firstEntry rest
-  | s :: _ => some s.pos.1
-
 /-- The same continuation with slot `k` of its scope and context removed:
 what follows a pattern no longer holds the value it destructured. -/
 @[nospecialize] private def dropSlot (k : Nat) (after : List (ScopeBinding Tree) → List (Ty Tree) → Compiler Target)
@@ -2045,33 +1952,6 @@ what follows a pattern no longer holds the value it destructured. -/
   let next ← after (scope.eraseIdx k) (Γ.eraseIdx k)
   pure ⟨next.label, some ((next.mapping.getD (List.range (Γ.length-1))).map
     (fun j => if j < k then j else j+1))⟩
-
-private def traversalBudget : List Fragment.Stmt → Nat
-  | [] => 1
-  | .brk .. :: rest | .cont .. :: rest | .ret .. :: rest | .constants .. :: rest | .mutables .. :: rest | .destructure .. :: rest | .effect .. :: rest => 1 + traversalBudget rest
-  | .loop _ _ loopBody update :: rest =>
-      1 + traversalBudget loopBody + traversalBudget update + traversalBudget rest
-  | .forOf _ _ _ _ _ inner :: rest | .block _ _ inner :: rest =>
-      1 + traversalBudget inner + traversalBudget rest
-  | .throw .. :: rest => 1 + traversalBudget rest
-  -- A `finally` block is compiled on each way out, at most as deep as the
-  -- body and handler around the `return` that runs it.
-  | .tryStmt _ b none none :: rest => 1 + traversalBudget b + traversalBudget rest
-  | .tryStmt _ b (some (_, c)) none :: rest =>
-      1 + traversalBudget b + traversalBudget c + traversalBudget rest
-  | .tryStmt _ b none (some f) :: rest =>
-      2 + traversalBudget b + 3 * traversalBudget f + traversalBudget rest
-  | .tryStmt _ b (some (_, c)) (some f) :: rest =>
-      2 + traversalBudget b + traversalBudget c + 3 * traversalBudget f + traversalBudget rest
-  -- The close is compiled after a `break`, inside the `try` that discards
-  -- its throws on a throw, and before each `return`.
-  | .closing _ c b :: rest =>
-      3 + traversalBudget b + 3 * (2 + traversalBudget c) + traversalBudget rest
-  | .ite _ _ thn none :: rest => 2 + traversalBudget thn + traversalBudget rest
-  | .ite _ _ thn (some els) :: rest =>
-      1 + traversalBudget thn + traversalBudget els + traversalBudget rest
-termination_by stmts => sizeOf stmts
-
 
 /-- How a closure's frame binds its rest parameter (`closureCode`). -/
 private inductive RestEntry (ι : Type) where
@@ -2126,12 +2006,12 @@ between the two nothing runs (the other operand is a literal, a name or a
 field read), so both read the same value. Only a tag test, which refines the
 saved slot on its edge, and a slice within the returned read's own claim. -/
 @[nospecialize] private def guardedReturn (fc : SourceClaims.Function Tree) (scope : List (ScopeBinding Tree))
-    (Γ : List (Ty Tree)) (cond : Fragment.Expr) (thn : List Fragment.Stmt) (loopTargets : LoopTargets Tree) :
+    (Γ : List (Ty Tree)) (cond : Fragment.Expr) (thn : List Fragment.Stmt) :
     Compiler (Option (List (ScopeBinding Tree) × List (Ty Tree) × Fragment.Expr × Fragment.Expr ×
       Fragment.Expr × Span)) := do
   let some (snapshot, read, tested) := readGuard scope cond | return none
   let [.ret rp e@(.read _ fld (.var _ name))] := thn | return none
-  if !loopTargets.finalizers.isEmpty || readSnapshot name fld != some snapshot then return none
+  if readSnapshot name fld != some snapshot then return none
   let B ← exprType fc read
   let K := B :: Γ
   let probe := held ⟨snapshot, some read.span⟩ :: scope
@@ -2331,33 +2211,143 @@ scheme row's variadic signatures. -/
     signatures, overlays, captures, capSlots, arity, arrayRest.isSome, offered⟩
 
 
+/-- A copied spread holds an internal argument store. Its type is computed
+from the checked operand and callee contracts, independently of a source claim
+for the synthetic copy. -/
+@[nospecialize] private def executionSnapshotType (fc : SourceClaims.Function Tree)
+    (value : SourceExecution.Saved) (call : Fragment.Expr) : Compiler (Ty Tree) := do
+  let callee ← match call with
+    | .call _ callee _ _ _ | .invoke _ callee _ _ _ => pure callee
+    | _ => throw "internal execution plan: a spread snapshot requires a call"
+  let B ← exprType fc callee
+  let original ← exprType fc (.var value.source value.name)
+  let G := SourceTypes.graph (← table)
+  let signatures := ProgramTyping.restSigs G B
+  if signatures.isEmpty then
+    throw (locatedRefusal (← table) call.span .bindingAnnotation
+      "a spread into fixed parameters followed by an actual that runs code is outside the fragment")
+  if let some S := storeOf G original then
+    if let [.list T []] := PositiveRules.expand G S then
+      if T.optional.isEmpty && T.rest.isNone then return S
+  let some ⟨_, (_, P), _, _⟩ := signatures.head? | throw "a spread needs a variadic callee"
+  let some E := PositiveRules.restElem G P
+    | throw "a spread into a rest needs an element rest"
+  if !E.contains Labels.undef then
+    throw (locatedRefusal (← table) call.span .bindingAnnotation
+      "a spread copied before a later actual runs needs a rest element type that admits `undefined`")
+  let C ← lower (SourceTypes.use (.list ⟨[], [], some E, false, .dense⟩ []))
+  modify fun st => { st with hints := C :: st.hints }
+  return [C]
+
+@[nospecialize] private def compileSpreadSnapshot (fc : SourceClaims.Function Tree)
+    (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree))
+    (original : Fragment.Expr) (value : SourceExecution.Saved) (call : Fragment.Expr)
+    (next : Target) : Compiler Target := do
+  let some (i, .value) := resolve scope value.name
+    | throw "internal execution plan: missing saved spread value"
+  let C ← executionSnapshotType fc value call
+  let inits ← match PositiveRules.expand (SourceTypes.graph (← table)) C with
+    | [.list T []] =>
+      if T.optional.isEmpty && T.rest.isNone then
+        (List.range T.required.length).mapM fun j => do
+          return Tm.elemAt (.readAt SourceTypes.storeField (.var i)) (← indexTerm j)
+      else pure [.spread (.readAt SourceTypes.storeField (.var i))]
+    | _ => throw "a spread copy needs an array store contract"
+  emitAt original.span (.arrLit inits) (.bind next) Γ C "spread-copy" (scope := scope)
+
+@[nospecialize] private def snapshotPlanType (fc : SourceClaims.Function Tree)
+    (_scope : List (ScopeBinding Tree)) (_Γ : List (Ty Tree))
+    (operation : SourceExecution.Operation) : Compiler (Ty Tree) := do
+  match operation with
+  | .snapshotSpread _ value call => executionSnapshotType fc value call
+  | .snapshotObject _ value =>
+    let B ← exprType fc (.var value.source value.name)
+    mergeType (← groupType [] []) B
+  | _ => throw "internal execution plan: expected a snapshot operation"
+
+@[nospecialize] private def compileSnapshotOperation (fc : SourceClaims.Function Tree)
+    (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree))
+    (operation : SourceExecution.Operation) (next : Target) : Compiler Target := do
+  match operation with
+  | .snapshotSpread original value call => compileSpreadSnapshot fc scope Γ original value call next
+  | .snapshotObject original value =>
+    let some (i, .value) := resolve scope value.name
+      | throw "internal execution plan: missing saved object spread"
+    let C ← snapshotPlanType fc scope Γ operation
+    emitAt original.span (.merge [] (.makeAt .absent [] []) (.var i)) (.bind next) Γ C
+      "object-spread-copy" (scope := scope)
+  | _ => throw "internal execution plan: expected a snapshot operation"
+
+/-- Primitive alternatives retain the receiver/member correlation. The source
+arguments must be inert for the deferred primitive member lookup. -/
+@[nospecialize] private def executionDispatch (fc : SourceClaims.Function Tree)
+    (call : Fragment.Expr) : Compiler (Option PropKey) := do
+  match call with
+  | .invoke _ callee@(.read _ fld receiver) args [] _ =>
+    let O ← exprType fc receiver
+    let B ← exprType fc callee
+    let plain : Fragment.Expr → Bool := fun a => match a with
+      | .var .. | .lit .. => true
+      | _ => false
+    let G := SourceTypes.graph (← table)
+    pure (if O.length > 1 && B.length > 1 && args.all plain &&
+      (ProgramTyping.restSigs G B).isEmpty then some fld else none)
+  | _ => pure none
+
+/-- A method operation reads the member before argument evaluation. A primitive
+dispatch retains its receiver as the correlated dispatch value. -/
+@[nospecialize] private def executionMethod (fc : SourceClaims.Function Tree)
+    (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree))
+    (original : Fragment.Expr) (receiver : SourceExecution.Saved)
+    (_key : Option SourceExecution.Saved) (call : Fragment.Expr) : Compiler (Ty Tree × Tm) := do
+  let some (i, .value) := resolve scope receiver.name
+    | throw "internal execution plan: missing saved method receiver"
+  let O ← exprType fc (.var receiver.source receiver.name)
+  let B ← exprType fc original
+  let typeArgs := match call with | .invoke _ _ _ _ ts => ts | _ => []
+  let G := SourceTypes.graph (← table)
+  let resolved ← comparisonsExpr fc original
+  let (fld, read) ← match resolved with
+    | .read _ fld _ | .index _ (some fld) _ _ => do
+      explicitInstance call.span O B fld typeArgs
+      pure (some fld, memberHead G O fld (.var i))
+    | .elemAt _ _ key => do
+      if !typeArgs.isEmpty then
+        throw (locatedRefusal (← table) call.span .schemeElimination
+          ("explicit type arguments on an element call are outside the fragment: an element that " ++
+            "is a generic closure is claimed at a quantified callable, which the claim format does not encode"))
+      let index ← arrayKeyTerm (← exprType fc key)
+      pure (none, Tm.elemAt (.readAt SourceTypes.storeField (.var i)) index)
+    | _ => throw "a method call's target must name a field or an element"
+  if (← executionDispatch fc call).isSome then return (O, .var i)
+  let term ← match fld with
+    | none => pure read
+    | some fld => do
+      let arms ← primitiveArms scope Γ O fld
+      pure (if arms.isEmpty then read else dispatchTerm arms fld i (.readAt fld (.var i)))
+  if let .bindWithReceiver .. := call then
+    if fld.any (fun key => (ProgramTyping.memberOf G O key).isSome) then
+      return (← exprType fc call, term)
+  return (B, term)
+
 -- Compiling the block over a store's labels takes more than the default.
 set_option maxHeartbeats 1000000 in
 mutual
-/-- An expression body's parameters, in `parameterOrder`'s schedule, over the
-layout the frame is bound at: a parameter without a default is named at its
-slot where the schedule reaches it; a defaulted one's slot is read, tested for
-`undefined` and the default evaluated there, both joining at a slot of its own
-that the parameter names (`readWithDefault`), as a function's default is.
-`pushed` counts the slots the schedule has bound so far, above the layout. `k`
-compiles the body. -/
+/-- Expression-body parameter defaults follow the shared binding schedule.
+    Inputs retain their original frame indices while names enter source scope
+    in the parameter order supplied by extraction. -/
 @[nospecialize] private partial def defaultEntry (fc : SourceClaims.Function Tree) (pos : Span)
     (params : List (String × Ty Tree)) (defaults : List (Nat × Fragment.Expr))
     (k : List (ScopeBinding Tree) → List (Ty Tree) → Compiler Target) :
     List Nat → Nat → List (ScopeBinding Tree) → List (Ty Tree) → Compiler Target
-  | [], _, scope, Γ => k scope Γ
-  | i :: order, pushed, scope, Γ => do
-    let some (name, _) := params[i]? | throw "invalid parameter schedule"
-    -- The parameter's slot of the layout: past the receiver, and past what
-    -- the schedule has bound.
-    let slot := pushed + 1 + i
-    match defaults.lookup i with
-    | none => defaultEntry fc pos params defaults k order pushed (scope.set slot (held ⟨name, some pos⟩)) Γ
-    | some d =>
-      let some R := Γ[slot]? | throw "internal parameter slot mismatch"
-      let bound := held ⟨name, some pos⟩
-      readWithDefault fc pos pos (.var slot) R (some d) bound scope Γ fun T =>
-        defaultEntry fc pos params defaults k order (pushed + 1) (bound :: scope) (T :: Γ)
+  | order, _, scope, Γ => do
+    if defaults.isEmpty then return ← k scope Γ
+    let parameters ← order.mapM fun i => do
+      let some (name, _) := params[i]? | throw "invalid parameter schedule"
+      pure (name,pos,i,defaults.lookup i)
+    let some plan := SourceExecution.bindingPrologue pos parameters
+      | return ← k scope Γ
+    executeBindingPlan fc scope scope scope Γ plan k
 
 /-- One graph a closure's code runs, at one of its signatures, into a program
 of its own. Its entry is the frame the signature describes (`codeFrame`: the
@@ -2376,7 +2366,9 @@ state resume afterwards. -/
     (captures : List (ScopeBinding Tree)) (Cs : List (Ty Tree)) (Rt R : Ty Tree) (bodyExpr : Fragment.Expr) :
     Compiler (Program × Nat × List (PointClaim Tree) × CodeSource) := do
   let saved ← get
-  set { saved with program := [], claims := [], sourceMap := [], assertions := [], cuts := [], handler := none }
+  set { saved with
+    program := [], claims := [], sourceMap := [], assertions := [], cuts := [], handler := none,
+    executionTypes := [], executionOrigins := [], atomicPrepared := false, executionOriginal := none, executionReceiver := none, executionOwned := none }
   -- The layout the rest's array is bound in: the receiver, the parameters,
   -- the array, then the captures. While an expression body has defaults, its
   -- parameters are named where the schedule reaches them.
@@ -2399,7 +2391,7 @@ state resume afterwards. -/
           let reference ← lower (do return [← CellClaims.reference [(valueField, contract)]])
           pure { b with storage := .cell contract reference }
         else pure b
-      let mut first ← body (traversalBudget stmts) fc R bodyScope stmts none {}
+      let mut first ← body bodyExpr.span fc R bodyScope stmts
       for (b,i) in bodyScope.zipIdx.reverse do
         if let .cell _ reference := b.storage then
           if i == 0 || i > arity then continue
@@ -2415,6 +2407,8 @@ state resume afterwards. -/
       pure first
     | e => do
       let order := if named then List.range params.length else order
+      let graph ← liftSource (SourceFlow.build e.span [] [.ret e.span e])
+      let fc := fc.atPoint (SourceFlow.pointId e.span graph.entry)
       let A ← exprType fc e
       -- The expression's nodes, as a `return e` statement's, ending in the
       -- return of its value.
@@ -2465,7 +2459,10 @@ state resume afterwards. -/
   let st ← get
   let result := (st.program, entry.label, st.claims,
     ({ sourceMap := st.sourceMap, assertions := st.assertions, cuts := st.cuts } : CodeSource))
-  set { st with program := saved.program, claims := saved.claims, sourceMap := saved.sourceMap, assertions := saved.assertions, cuts := saved.cuts, handler := saved.handler }
+  set { st with
+    program := saved.program, claims := saved.claims, sourceMap := saved.sourceMap, assertions := saved.assertions, cuts := saved.cuts, handler := saved.handler,
+    executionTypes := saved.executionTypes, executionOrigins := saved.executionOrigins, atomicPrepared := saved.atomicPrepared,
+    executionOriginal := saved.executionOriginal, executionReceiver := saved.executionReceiver, executionOwned := saved.executionOwned }
   return result
 
 /-- **A lambda's graph code**, checked at each signature `lambdaSetup` finds:
@@ -2529,11 +2526,16 @@ slots are introduced only after the operand supplying their type is checked. -/
       return ← closureExpr fc scope Γ (.logical p andOp l1 (.logical p andOp l2 right))
   let A ← closureType fc e
   let G := SourceTypes.graph (← table)
-  if let some asserted := fc.exprCurrent.lookup e.span then
-    for (fld, R) in asserted do
-      match e with
-      | .var _ name => observed scope Γ (snapshotName name (← stringKey fld)) ⟨"",some e.span⟩ e.span A fld R
-      | _ => persistentObservation ⟨"",some e.span⟩ e.span A fld R
+  let state ← get
+  let prepared := state.atomicPrepared || (match e with
+    | .var _ name => (state.executionTypes.lookup name).isSome
+    | _ => false)
+  if !prepared then
+    if let some asserted := fc.exprCurrent.lookup e.span then
+      for (fld, R) in asserted do
+        match e with
+        | .var _ name => observed scope Γ (snapshotName name (← stringKey fld)) ⟨"",some e.span⟩ e.span A fld R
+        | _ => persistentObservation ⟨"",some e.span⟩ e.span A fld R
   let p ← match e with
   | .equality .. => throw "internal unresolved equality"
   | .block .. => throw "internal extraction error: statements outside a closure body"
@@ -2896,6 +2898,13 @@ slots are introduced only after the operand supplying their type is checked. -/
     closureExpr fc scope Γ (.nullishAssign pos name np rhs)
   | .logicalAssign .. => throw "logical assignment inside a closed expression is outside the fragment"
   | .bindWithReceiver _ f receiver args => do
+    if let some (.bindWithReceiver _ (.read _ fld (.var _ x)) (.var _ y) []) :=
+        (← get).executionOriginal then
+      if x == y && args.isEmpty &&
+          (ProgramTyping.memberOf G (← exprType fc receiver) fld).isSome then
+        -- The shared method-read operation has already bound this member
+        -- to the same receiver. Its saved result is the bound function.
+        return DirectProof.cast Γ A (← closureExpr fc scope Γ f)
     -- `o.m.bind(o)` of a method member of `o`: the member read from the
     -- object, bound to that same object, is JavaScript's bound function
     -- calling what `o.m` held with `o` (`bindMember`), however it is later
@@ -3256,13 +3265,13 @@ slots are introduced only after the operand supplying their type is checked. -/
   | .var _ name =>
     if (names scope).contains (localSnapshotName name) then return p else return plan
   | _ => return plan
-/-- Each expression leaves its result in slot zero and preserves the original
-slots after it. Anonymous temporary slots cannot be named by source identifiers.
-Mappings discard only the temporaries introduced by this expression. -/
-@[nospecialize] private partial def compileExpr (fc : SourceClaims.Function Tree) (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree))
-    (e : Fragment.Expr) (next : Target) : Compiler Target := do
-  let A ← exprType fc e
-  let next ← match fc.exprCurrent.lookup e.span with
+/-- An original expression's contents are checked after its value is produced,
+before subsequent operations can change the heap. Saved-value reads carry no
+new observation of their source expression. -/
+@[nospecialize] private partial def observeExprCurrent (fc : SourceClaims.Function Tree)
+    (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree)) (source : Span)
+    (A : Ty Tree) (next : Target) : Compiler Target := do
+  match fc.exprCurrent.lookup source with
     | none => pure next
     | some asserted =>
       -- An observation the cell's contract implies holds wherever the cell
@@ -3279,10 +3288,25 @@ Mappings discard only the temporaries introduced by this expression. -/
         some ws.flatten.eraseDups
       let (uniform, pointwise) := asserted.partition fun (fld, R) =>
         (invariant fld).any (within T · R)
-      for (fld, R) in uniform do persistentObservation ⟨"",some e.span⟩ e.span A fld R
+      for (fld, R) in uniform do persistentObservation ⟨"",some source⟩ source A fld R
       let facts ← pointwise.mapM fun (fld, R) => do return (⟨0,← contents R,fld⟩ : HeapFacts.Fact)
-      checkpoint e.span (A::Γ) facts next (scope := held ⟨"",some e.span⟩ :: scope)
+      checkpoint source (A::Γ) facts next (scope := held ⟨"",some source⟩ :: scope)
+
+/-- Each expression leaves its result in slot zero and preserves the original
+slots after it. Anonymous temporary slots cannot be named by source identifiers.
+Mappings discard only the temporaries introduced by this expression. -/
+@[nospecialize] private partial def compileAtom (fc : SourceClaims.Function Tree) (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree))
+    (e : Fragment.Expr) (next : Target) : Compiler Target := do
+  let A ← exprType fc e
+  let state ← get
+  let prepared := state.atomicPrepared || (match e with
+    | .var _ name => (state.executionTypes.lookup name).isSome
+    | _ => false)
+  let next ← if prepared then pure next else observeExprCurrent fc scope Γ e.span A next
   match _he : e with
+  | .nullishAssign .. | .arrayAssign .. | .build .. | .objectAssign .. | .ifBody ..
+    | .logical .. | .coalesce .. | .optional .. | .comma .. | .logicalAssign .. | .update .. =>
+    throw "internal execution plan: compound source syntax reached atomic elaboration"
   | .equality .. => throw "internal unresolved equality"
   | .block .. => throw "internal extraction error: statements outside a closure body"
   | .var _ name =>
@@ -3292,44 +3316,6 @@ Mappings discard only the temporaries introduced by this expression. -/
     -- identity in the slot is never the value of a source expression.
     | some (i, .cell ..) => emitAt e.span (.readAt valueField (.var i)) (.bind next) Γ A (scope := scope)
     | none => throw s!"unbound or uninitialized source variable '{name}'"
-  | .nullishAssign pos name namePos rhs => do
-    let some (i, .cell ..) := resolve scope name
-      | throw s!"assignment to '{name}', which is not a mutable local"
-    let left := Fragment.Expr.var namePos name
-    let B ← exprType fc left
-    let C ← exprType fc rhs
-    let G := SourceTypes.graph (← table)
-    -- A merge has no unique predecessor from which to propagate knowledge.
-    -- Both arms must establish this candidate postcondition independently.
-    let next ← match HeapKnowledge.atoms G A with
-      | some atoms =>
-        checkpoint pos (A::Γ) [⟨i+1,atoms,valueField⟩] next (scope := held ⟨"",some pos⟩ :: scope)
-      | none => pure next
-    let present := BranchRefinement.tagSlice G B .isNullish false
-    let absent := BranchRefinement.tagSlice G B .isNullish true
-    let saved := held ⟨"",some namePos⟩ :: scope
-    -- The tag witness is the saved read. On the present arm it is also the
-    -- result, and its read link justifies the unchanged cell's current type.
-    let no ← emitAt pos (.var 0) (.effect next) (present::Γ) A (scope := saved)
-    let effects := held ⟨"",some rhs.span⟩ :: saved
-    let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
-      (fun j => if j == 0 then 0 else j+2))⟩
-    let result ← emitAt pos (.var 0) (.bind drop) (C::absent::Γ) A (scope := effects)
-    let write ← emitAt pos (.writeAt valueField (.var (i+2)) (.var 0)) (.effect result)
-      (C::absent::Γ) [Labels.nul] "storage-contract" (scope := effects)
-    let yes ← compileExpr fc saved (absent::Γ) rhs write
-    -- tagBind introduces a refined copy; discard the older saved read.
-    let adapt := fun (t : Target) =>
-      ⟨t.label, some ((t.mapping.getD (List.range (Γ.length+1))).map
-        (fun j => if j == 0 then 0 else j+1))⟩
-    let dispatch ← emitAt namePos (.var 0) (.tagBind .isNullish (adapt yes) (adapt no))
-      (B::Γ) B "nullish-assignment-dispatch" (scope := saved)
-    let dispatch ← match fc.exprCurrent.lookup namePos with
-      | none => pure dispatch
-      | some asserted =>
-        let facts ← asserted.mapM fun (fld, R) => do return (⟨0,← contents R,fld⟩ : HeapFacts.Fact)
-        checkpoint namePos (B::Γ) facts dispatch (scope := saved)
-    emitAt namePos (.readAt valueField (.var i)) (.bind dispatch) Γ B (scope := scope)
   | .assign _ name _ rhs =>
     let some (i, .cell ..) := resolve scope name
       | throw s!"assignment to '{name}', which is not a mutable local"
@@ -3344,17 +3330,7 @@ Mappings discard only the temporaries introduced by this expression. -/
     let result ← emitAt e.span (.var 0) (.bind drop) (C::Γ) A (scope := effects)
     let write ← emitAt e.span (.writeAt valueField (.var (i+1)) (.var 0)) (.effect result) (C::Γ) [Labels.nul]
       "storage-contract" (scope := effects)
-    compileExpr fc scope Γ rhs write
-  | .arrayAssign _ targets rest rhs =>
-    -- The right side is held for the whole assignment, below the reads of
-    -- its positions; its value is the expression's.
-    let C ← exprType fc rhs
-    let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
-      (fun j => if j == 0 then 0 else j+1))⟩
-    let effects := held ⟨"",some rhs.span⟩ :: scope
-    let result ← emitAt e.span (.var 0) (.bind drop) (C::Γ) A (scope := effects)
-    let writes ← arrayAssigns fc e.span C rest result effects (C::Γ) 0 targets
-    compileExpr fc scope Γ rhs writes
+    compileAtom fc scope Γ rhs write
   | .lit _ v => emitAt e.span (← SourceTypes.value v) (.bind next) Γ A (scope := scope)
   | .read _ fld a =>
     let B ← exprType fc a
@@ -3377,10 +3353,10 @@ Mappings discard only the temporaries introduced by this expression. -/
           (scope := held ⟨"",some e.span⟩ :: held ⟨"",some a.span⟩ :: scope)
         let store ← emitAt e.span (.readAt SourceTypes.storeField (.var 0)) (.bind length) (B::Γ) S
           (scope := held ⟨"",some a.span⟩ :: scope)
-        return ← compileExpr fc scope Γ a store
+        return ← compileAtom fc scope Γ a store
     let node ← emitAt e.span (dispatchTerm arms fld 0 object) (.bind drop) (B::Γ) A
       (scope := held ⟨"",some a.span⟩ :: scope)
-    compileExpr fc scope Γ a node
+    compileAtom fc scope Γ a node
   | .not _ a =>
     let B ← exprType fc a
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
@@ -3390,7 +3366,7 @@ Mappings discard only the temporaries introduced by this expression. -/
       else .test .truthy (.var 0)
     let node ← emitAt e.span (.ite tested .fls .tru) (.bind drop) (B::Γ) A
       (scope := held ⟨"",some a.span⟩ :: scope)
-    compileExpr fc scope Γ a node
+    compileAtom fc scope Γ a node
   | .cast _ annot a =>
     -- The operand's value, retyped at the cast's own claim: the node proves
     -- the claim from the operand, and an annotation is one more type the
@@ -3403,7 +3379,7 @@ Mappings discard only the temporaries introduced by this expression. -/
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
       (fun i => if i == 0 then 0 else i+1))⟩
     let node ← emitAt e.span (.var 0) (.bind drop) (B::Γ) A "cast" (scope := held ⟨"",some a.span⟩ :: scope)
-    compileExpr fc scope Γ a node
+    compileAtom fc scope Γ a node
   | .alloc _ ns operands =>
     let As ← operands.mapM (exprType fc)
     let n := As.length
@@ -3413,106 +3389,10 @@ Mappings discard only the temporaries introduced by this expression. -/
     let make ← emitAt e.span (.makeAt .absent ns ((List.range n).map fun i => .var (n-1-i)))
       (.bind drop) (As.reverse ++ Γ) A (scope := temporaries ++ scope)
     operands.attach.zipIdx.reverse.foldlM (fun next (⟨arg,_⟩,i) =>
-      compileExpr fc
+      compileAtom fc
         ((operands.take i |>.map fun a => held ⟨"",some a.span⟩).reverse ++ scope)
         ((As.take i).reverse ++ Γ) arg next) make
-  | .build _ ns operands =>
-    -- The parts in source order, each operand into a slot of its own, and
-    -- each merge a node of its own right after its spread's operand, so the
-    -- copy reads the source before any later part runs; then the result,
-    -- at the literal's claim. Forward, the context the chain runs in: the
-    -- slots pushed so far, the newest first, with the accumulator's.
-    let mut steps : List (Option Fragment.Expr × Tm × Ty Tree × List (Ty Tree) × List (ScopeBinding Tree)) := []
-    let mut temps : List (Ty Tree) := []
-    let mut tscope : List (ScopeBinding Tree) := []
-    let mut acc : Option Nat := none
-    let mut group : List (String × Nat) := []
-    let at_ (a : Nat) (c : Nat) : Tm := .var (c - 1 - a)
-    let mark := held ⟨"",some e.span⟩
-    -- A field is allocated at the type the literal's claim states for it,
-    -- which its slot's value is coerced to, else at its own claim's.
-    let claimed ← claimedFields A
-    let fieldType (k : String) (T : Ty Tree) : Ty Tree := (claimed.lookup k).getD T
-    for (n, a) in ns.zip operands do
-      if n.isNone then
-        -- Close the fields before the spread: allocate them, and copy them
-        -- onto the accumulator when there is one.
-        if acc.isNone || !group.isEmpty then
-          let T ← groupType (group.map Prod.fst)
-            (group.map fun (k, i) => fieldType k temps[temps.length - 1 - i]!)
-          let term := Tm.makeAt .absent (group.map (.str ·.1)) (group.map fun (_, i) => at_ i temps.length)
-          steps := steps ++ [(none, term, T, temps, tscope)]
-          temps := T :: temps; tscope := mark :: tscope
-          match acc with
-          | none => acc := some (temps.length - 1)
-          | some x =>
-            let R ← mergeType temps[temps.length - 1 - x]! T
-            steps := steps ++ [(none, .merge [] (at_ x temps.length) (.var 0), R, temps, tscope)]
-            temps := R :: temps; tscope := mark :: tscope
-            acc := some (temps.length - 1)
-          group := []
-      let B ← exprType fc a
-      steps := steps ++ [(some a, .nul, B, temps, tscope)]
-      temps := B :: temps; tscope := held ⟨"",some a.span⟩ :: tscope
-      match n with
-      | some k => group := group ++ [(k, temps.length - 1)]
-      | none =>
-        let some x := acc | throw "internal: a spread without an accumulator"
-        let R ← mergeType temps[temps.length - 1 - x]! B
-        steps := steps ++ [(none, .merge [] (at_ x temps.length) (.var 0), R, temps, tscope)]
-        temps := R :: temps; tscope := mark :: tscope
-        acc := some (temps.length - 1)
-    if !group.isEmpty then
-      let some x := acc | throw "internal: an object literal with spreads has none"
-      let T ← groupType (group.map Prod.fst)
-        (group.map fun (k, i) => fieldType k temps[temps.length - 1 - i]!)
-      let term := Tm.makeAt .absent (group.map (.str ·.1)) (group.map fun (_, i) => at_ i temps.length)
-      steps := steps ++ [(none, term, T, temps, tscope)]
-      temps := T :: temps; tscope := mark :: tscope
-      let R ← mergeType temps[temps.length - 1 - x]! T
-      steps := steps ++ [(none, .merge [] (at_ x temps.length) (.var 0), R, temps, tscope)]
-      temps := R :: temps; tscope := mark :: tscope
-    -- The last merge is at the literal's claim where the merge rule gives it:
-    -- each pair of the operands' clauses may give a record of its own, as a
-    -- union's arms may state a field written after a spread at types of
-    -- their own, which a writable field's invariance tells apart.
-    if let some (none, t@(.merge [] (.var a) (.var 0)), _, before, bscope) := steps.getLast? then
-      if ObjectMerge.MergeOk (SourceTypes.graph (← table)) [] before[a]! before[0]! A then
-        steps := steps.dropLast ++ [(none, t, A, before, bscope)]
-        temps := A :: temps.drop 1
-    -- The result, the newest slot, at the literal's claim.
-    let k := temps.length
-    let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
-      (fun i => if i == 0 then 0 else i+k))⟩
-    let final ← emitAt e.span (.var 0) (.bind drop) (temps ++ Γ) A (scope := tscope ++ scope)
-    -- Backward, each step continues to the one after it.
-    steps.reverse.foldlM (fun next (operand, term, T, before, bscope) =>
-      match operand with
-      | some a => compileExpr fc (bscope ++ scope) (before ++ Γ) a next
-      | none => emitAt e.span term (.bind next) (before ++ Γ) T (scope := bscope ++ scope)) final
-  | .objectAssign _ target sources =>
-    match target with
-    | .alloc .. | .build .. =>
-      -- Onto a fresh literal, which nothing else holds: the copies, and the
-      -- value is the result.
-      compileAssign fc scope Γ e.span target sources fun temps tscope => do
-        let k := temps.length
-        let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
-          (fun i => if i == 0 then 0 else i+k))⟩
-        emitAt e.span (.var 0) (.bind drop) (temps ++ Γ) A (scope := tscope ++ scope)
-    | _ => throw (locatedRefusal (← table) e.span .expressionClaim
-        "Object.assign onto an object that is not a fresh literal is lowered only as a statement on \
-          a local's own object: the call's value would be one more reference to it")
-  | .ifBody _ cond thn els =>
-    -- A source ternary branches in the graph like an `if` statement, so an
-    -- effect in its condition or an arm is a node with its own knowledge;
-    -- each arm is compiled under the condition's refinement of its context
-    -- and joins the continuation with its own claim.
-    let G := SourceTypes.graph (← table)
-    let yes ← compileExpr fc scope (← armContext fc scope (conditionContext G scope Γ cond true) thn) thn next
-    let no ← compileExpr fc scope (← armContext fc scope (conditionContext G scope Γ cond false) els) els next
-    compileCondition fc scope Γ cond yes no
-  | .bindWithReceiver .. | .withValue .. | .lambda .. | .ctor .. | .coalesce .. | .optional .. | .logical .. =>
+  | .bindWithReceiver .. | .withValue .. | .lambda .. | .ctor .. =>
     let t ← closureExpr fc scope Γ e
     emitAt e.span t.term (.bind next) Γ A (scope := scope)
   | .construct _ callee args _ =>
@@ -3527,7 +3407,7 @@ Mappings discard only the temporaries introduced by this expression. -/
     let construct ← emitAt e.span (.construct (.var (n-1)) ((List.range (n-1)).map fun i => .var (n-2-i)))
       (.bind drop) (As.reverse ++ Γ) A (scope := temporaries ++ scope)
     operands.attach.zipIdx.reverse.foldlM (fun next (⟨arg,_⟩,i) =>
-      compileExpr fc
+      compileAtom fc
         ((operands.take i |>.map fun a => held ⟨"",some a.span⟩).reverse ++ scope)
         ((As.take i).reverse ++ Γ) arg next) construct
   | .shapeTest p tag equal operand =>
@@ -3537,7 +3417,7 @@ Mappings discard only the temporaries introduced by this expression. -/
       (fun i => if i == 0 then 0 else i+1))⟩
     let test ← emitAt e.span (tagTestTerm tag equal 0) (.bind drop) (B::Γ) A
       (scope := held ⟨"",some operand.span⟩ :: scope)
-    compileExpr fc scope Γ operand test
+    compileAtom fc scope Γ operand test
   | .singletonTest _ tag equal testLeft left right =>
     let B ← exprType fc left
     let C ← exprType fc right
@@ -3545,8 +3425,8 @@ Mappings discard only the temporaries introduced by this expression. -/
       (fun i => if i == 0 then 0 else i+2))⟩
     let test ← emitAt e.span (tagTestTerm tag equal (if testLeft then 1 else 0)) (.bind drop) (C::B::Γ) A
       (scope := held ⟨"",some right.span⟩::held ⟨"",some left.span⟩ :: scope)
-    let right ← compileExpr fc (held ⟨"",some left.span⟩ :: scope) (B::Γ) right test
-    compileExpr fc scope Γ left right
+    let right ← compileAtom fc (held ⟨"",some left.span⟩ :: scope) (B::Γ) right test
+    compileAtom fc scope Γ left right
   | .applyWithReceiver _ callee receiver list =>
     -- Function.prototype.apply: the target, the receiver and the list are
     -- saved in order; then the list's length and each index are read in order
@@ -3629,10 +3509,21 @@ Mappings discard only the temporaries introduced by this expression. -/
       else pure call
     let afterList ← match list with
       | none => pure prepare
-      | some xs => compileExpr fc (operandScope.drop 1 ++ scope) (saved.drop 1 ++ Γ) xs prepare
-    let afterReceiver ← compileExpr fc (held ⟨"",some callee.span⟩ :: scope) (B::Γ) receiver afterList
-    compileExpr fc scope Γ callee afterReceiver
+      | some xs => compileAtom fc (operandScope.drop 1 ++ scope) (saved.drop 1 ++ Γ) xs prepare
+    let afterReceiver ← compileAtom fc (held ⟨"",some callee.span⟩ :: scope) (B::Γ) receiver afterList
+    compileAtom fc scope Γ callee afterReceiver
   | .call _ callee args _ _ | .callWithReceiver _ callee _ args | .invoke _ callee args _ _ =>
+    let original := (← get).executionOriginal.getD e
+    let savedReceiver ← match (← get).executionReceiver with
+      | none => pure none
+      | some name => do
+        let some (i, .value) := resolve scope name
+          | throw "internal execution plan: missing saved call receiver"
+        let some O := Γ[i]? | throw "internal execution plan: saved receiver type"
+        pure (some (i, O))
+    let sourceArgs := match original with
+      | .call _ _ xs _ _ | .invoke _ _ xs _ _ | .callWithReceiver _ _ _ xs => xs
+      | _ => args
     let operands := match e with
       | .callWithReceiver _ _ receiver _ => receiver :: args
       | _ => args
@@ -3663,12 +3554,16 @@ Mappings discard only the temporaries introduced by this expression. -/
         pure (some (o, some key, fun obj => .elemAt (.readAt SourceTypes.storeField obj) index))
       | .invoke .. => throw "a method call's target must name a field or an element"
       | _ => pure none
-    let B ← exprType fc callee
+    let headType ← exprType fc callee
+    let B ← match original, savedReceiver with
+      | .invoke _ originalCallee _ _ _, some _ => exprType fc originalCallee
+      | _, _ => pure headType
     -- A method of an object of a union whose alternatives read different
     -- members, `x.toString()` on `string | number`, is read and called in
     -- one step dispatched on the object (`dispatchCallTerm`), after the
     -- actuals: so no actual may run code.
-    let dispatch : Option PropKey ← match e, method, callee with
+    let dispatch : Option PropKey ← if savedReceiver.isSome then executionDispatch fc original
+      else match e, method, callee with
       | .invoke _ _ _ [] _, some (o, none, _), .read _ fld _ => do
         let O ← exprType fc o
         let plain : Fragment.Expr → Bool := fun a => match a with
@@ -3679,7 +3574,7 @@ Mappings discard only the temporaries introduced by this expression. -/
             && (ProgramTyping.restSigs G B).isEmpty then some fld else none)
       | _, _, _ => pure none
     let headTys : List (Ty Tree) ← match method, dispatch with
-      | none, _ => pure [B]
+      | none, _ => pure [headType]
       | some (o, _, _), some _ => do pure [← exprType fc o]
       | some (o, key, _), none => do
         let O ← exprType fc o
@@ -3708,7 +3603,7 @@ Mappings discard only the temporaries introduced by this expression. -/
     let spreadOrder := spreads.eraseDups.mergeSort (· ≤ ·)
     if spread then
       let first := spreadOrder.headD args.length
-      if (args.drop (first + 1)).any runsCode then
+      if (sourceArgs.drop (first + 1)).any runsCode then
         throw (locatedRefusal (← table) e.span .bindingAnnotation
           "a spread into fixed parameters followed by an actual that runs code is outside the fragment")
     let As₀ ← operands.mapM (exprType fc)
@@ -3743,7 +3638,10 @@ Mappings discard only the temporaries introduced by this expression. -/
       spreadOrder.mapM fun i => do
         let some arrayTy := As[i]? | throw "a spread argument needs an operand"
         let G := SourceTypes.graph (← table)
-        let some S := storeOf G arrayTy | throw "a spread argument needs a tuple contract"
+        let sourceStore := match PositiveRules.expand G arrayTy with
+          | [.list ..] => some arrayTy
+          | _ => storeOf G arrayTy
+        let some S := sourceStore | throw "a spread argument needs a tuple contract"
         match PositiveRules.expand G S with
         | [.list T []] =>
           if !T.optional.isEmpty || T.rest.isSome then
@@ -3763,12 +3661,16 @@ Mappings discard only the temporaries introduced by this expression. -/
     -- an operand and not an actual, sits below them all.
     -- A spread into fixed parameters is its elements, in order, where it is
     -- written.
+    let argumentGraph := SourceTypes.graph (← table)
+    let rawStore := fun i => match PositiveRules.expand argumentGraph (As[i]?.getD []) with
+      | [.list ..] => true
+      | _ => false
     let actuals := ((List.range args.length).foldl (fun (g, out) i =>
         let v := Tm.var (k + args.length - 1 - i)
         match spreadElements.lookup i with
         | some Es => (g + Es.length, out ++ (List.range Es.length).map fun j => Tm.var (k-1-(g+j)))
         | none =>
-          (g, out ++ [if copied.contains i then .spread v
+          (g, out ++ [if copied.contains i || (spreads.contains i && rawStore i) then .spread v
             else if spreads.contains i && variadic then .spread (.readAt SourceTypes.storeField v)
             else v])) (0, ([] : List Tm))).2
     let callEnv := elements.reverse ++ As.reverse ++ headTys ++ Γ
@@ -3782,11 +3684,15 @@ Mappings discard only the temporaries introduced by this expression. -/
       | _, _ => pure []
     -- `.call` passes its first operand as the receiver; a plain call passes
     -- `undefined`.
-    let callTerm := match e, dispatch, headTys.getLast? with
-      | .callWithReceiver .., _, _ => Tm.invoke (.var (k+n)) (.var (k+n-1)) actuals
-      | .invoke .., some fld, some O => dispatchCallTerm G O dispatchArms fld (k+n) actuals
-      | .invoke .., _, _ => Tm.invoke (.var (k+n)) (.var (k+n+h-1)) actuals
-      | _, _, _ => Tm.call (.var (k+n)) actuals
+    let callTerm := match savedReceiver with
+      | some (i, O) => match dispatch with
+        | some fld => dispatchCallTerm G O dispatchArms fld (k+n) actuals
+        | none => Tm.invoke (.var (k+n)) (.var (k+n+h+i)) actuals
+      | none => match e, dispatch, headTys.getLast? with
+        | .callWithReceiver .., _, _ => Tm.invoke (.var (k+n)) (.var (k+n-1)) actuals
+        | .invoke .., some fld, some O => dispatchCallTerm G O dispatchArms fld (k+n) actuals
+        | .invoke .., _, _ => Tm.invoke (.var (k+n)) (.var (k+n+h-1)) actuals
+        | _, _, _ => Tm.call (.var (k+n)) actuals
     -- The receiver the call passes, the `.call` operand or `undefined`, is
     -- checked where the call is made at the selected signature's receiver:
     -- a located obligation, apart from the call's own typing.
@@ -3803,22 +3709,28 @@ Mappings discard only the temporaries introduced by this expression. -/
           | .ok sig => some sig.receiver
           | .error _ => none
         | _ => none
-    match e, method with
-    | .callWithReceiver _ _ r _, _ =>
-      if let some R₀ := As.head? then
-        if let some Rt := receiverOf R₀ (As.drop 1) then
-          let plan := DirectProof.cast callEnv Rt (DirectProof.var callEnv (k+n-1) R₀)
-          obligation r.span plan.goal (some plan) "method-receiver" callScope
-    | .invoke .., some (o, _, _) =>
-      if let some O := headTys.getLast? then
-        if let some Rt := receiverOf O As then
-          let plan := DirectProof.cast callEnv Rt (DirectProof.var callEnv (k+n+h-1) O)
-          obligation o.span plan.goal (some plan) "method-receiver" callScope
-    | _, _ =>
-      if let some Rt := receiverOf [Labels.undef] As then
-        if !admitsUndefined G Rt then
-          let plan := DirectProof.cast callEnv Rt (DirectProof.node callEnv .undef [Labels.undef] .undef)
-          obligation callee.span plan.goal (some plan) "method-receiver" callScope
+    match savedReceiver with
+    | some (i, O) =>
+      if let some Rt := receiverOf O As then
+        let plan := DirectProof.cast callEnv Rt (DirectProof.var callEnv (k+n+h+i) O)
+        let source := (scope[i]?.bind (·.source.span)).getD original.span
+        obligation source plan.goal (some plan) "method-receiver" callScope
+    | none => match e, method with
+      | .callWithReceiver _ _ r _, _ =>
+        if let some R₀ := As.head? then
+          if let some Rt := receiverOf R₀ (As.drop 1) then
+            let plan := DirectProof.cast callEnv Rt (DirectProof.var callEnv (k+n-1) R₀)
+            obligation r.span plan.goal (some plan) "method-receiver" callScope
+      | .invoke .., some (o, _, _) =>
+        if let some O := headTys.getLast? then
+          if let some Rt := receiverOf O As then
+            let plan := DirectProof.cast callEnv Rt (DirectProof.var callEnv (k+n+h-1) O)
+            obligation o.span plan.goal (some plan) "method-receiver" callScope
+      | _, _ =>
+        if let some Rt := receiverOf [Labels.undef] As then
+          if !admitsUndefined G Rt then
+            let plan := DirectProof.cast callEnv Rt (DirectProof.node callEnv .undef [Labels.undef] .undef)
+            obligation callee.span plan.goal (some plan) "method-receiver" callScope
     let call ← emitAt e.span callTerm (.bind drop) callEnv A
       (scope := (List.replicate k anonymous) ++ temporaries ++ scope)
     -- The reads run in position order, so they are emitted from the last back.
@@ -3827,7 +3739,9 @@ Mappings discard only the temporaries introduced by this expression. -/
       let some (i, j) := sources[g]? | throw "a spread element has no operand"
       let index ← indexTerm j
       let env := (elements.take g).reverse ++ As.reverse ++ headTys ++ Γ
-      emitAt e.span (.elemAt (.readAt SourceTypes.storeField (.var (g + n - 1 - i))) index)
+      let source := if rawStore i then Tm.var (g+n-1-i)
+        else .readAt SourceTypes.storeField (.var (g+n-1-i))
+      emitAt e.span (.elemAt source index)
         (.bind next) env E "spread-element"
         (scope := (List.replicate g anonymous) ++ temporaries ++ scope)) call
     let right ← operands.attach.zipIdx.reverse.foldlM (fun next (⟨arg,_⟩,i) => do
@@ -3851,11 +3765,11 @@ Mappings discard only the temporaries introduced by this expression. -/
         let copy ← emitAt arg.span (.arrLit inits)
           (.bind ⟨next.label, some m⟩) (A :: ctx) C "spread-copy"
           (scope := held ⟨"",some arg.span⟩ :: sc)
-        compileExpr fc sc ctx arg ⟨copy.label, none⟩
-      else compileExpr fc sc ctx arg next) reads
+        compileAtom fc sc ctx arg ⟨copy.label, none⟩
+      else compileAtom fc sc ctx arg next) reads
     match method, dispatch with
-    | none, _ => compileExpr fc scope Γ callee right
-    | some (o, _, _), some _ => compileExpr fc scope Γ o right
+    | none, _ => compileAtom fc scope Γ callee right
+    | some (o, _, _), some _ => compileAtom fc scope Γ o right
     | some (o, key, readTerm), none =>
       -- The method is read from the saved object, below any saved key; a
       -- primitive's, by its shape (`dispatchTerm`).
@@ -3873,8 +3787,8 @@ Mappings discard only the temporaries introduced by this expression. -/
         | none => pure read
         | some key => do
           let some O := headTys.getLast? | throw "internal method call slots"
-          compileExpr fc (held ⟨"",some o.span⟩ :: scope) (O::Γ) key read
-      compileExpr fc scope Γ o afterObject
+          compileAtom fc (held ⟨"",some o.span⟩ :: scope) (O::Γ) key read
+      compileAtom fc scope Γ o afterObject
   | .arrayLit _ elems =>
     -- The elements, in order, then the store they fill, then the array
     -- object holding it: two nodes, so the allocation's slots are variables.
@@ -3903,7 +3817,7 @@ Mappings discard only the temporaries introduced by this expression. -/
     let store ← emitPlanned e.span (DirectProof.node K (.arrLit ((List.range n).map fun i => .var (n-1-i))) S
         .arrLit casts) (.bind make) K S (scope := temporaries ++ scope)
     elems.attach.zipIdx.reverse.foldlM (fun next (⟨arg,_⟩,i) =>
-      compileExpr fc
+      compileAtom fc
         ((elems.take i |>.map fun a => held ⟨"",some a.span⟩).reverse ++ scope)
         ((As.take i).reverse ++ Γ) arg next) store
   | .elemAt _ receiver key =>
@@ -3929,8 +3843,8 @@ Mappings discard only the temporaries introduced by this expression. -/
         | none =>
           let term := Tm.elemAt (.readAt SourceTypes.storeField (.var 1)) index
           emitAt e.span term (.bind drop) (K::B::Γ) A (scope := temporaries)
-    let right ← compileExpr fc (held ⟨"",some receiver.span⟩ :: scope) (B::Γ) key node
-    compileExpr fc scope Γ receiver right
+    let right ← compileAtom fc (held ⟨"",some receiver.span⟩ :: scope) (B::Γ) key node
+    compileAtom fc scope Γ receiver right
   | .elemWrite _ receiver key rhs =>
     -- The store is read, the element set, and the store written back: one
     -- write, so every alias sees the contract kept.
@@ -3945,9 +3859,9 @@ Mappings discard only the temporaries introduced by this expression. -/
     let write ← emitAt e.span (.writeAt SourceTypes.storeField (.var 2)
         (.setElem (.readAt SourceTypes.storeField (.var 2)) index (.var 0)))
       (.effect result) (C::K::B::Γ) [Labels.nul] (scope := effects)
-    let right ← compileExpr fc (held ⟨"",some key.span⟩::held ⟨"",some receiver.span⟩ :: scope) (K::B::Γ) rhs write
-    let middle ← compileExpr fc (held ⟨"",some receiver.span⟩ :: scope) (B::Γ) key right
-    compileExpr fc scope Γ receiver middle
+    let right ← compileAtom fc (held ⟨"",some key.span⟩::held ⟨"",some receiver.span⟩ :: scope) (K::B::Γ) rhs write
+    let middle ← compileAtom fc (held ⟨"",some receiver.span⟩ :: scope) (B::Γ) key right
+    compileAtom fc scope Γ receiver middle
   | .index _ (some fld) receiver key =>
     let B ← exprType fc receiver
     let K ← exprType fc key
@@ -3957,8 +3871,8 @@ Mappings discard only the temporaries introduced by this expression. -/
     let arms ← primitiveArms temporaries (K::B::Γ) B fld
     let node ← emitAt e.span (dispatchTerm arms fld 1 (.readAt fld (.var 1))) (.bind drop) (K::B::Γ) A
       (scope := temporaries)
-    let right ← compileExpr fc (held ⟨"",some receiver.span⟩ :: scope) (B::Γ) key node
-    compileExpr fc scope Γ receiver right
+    let right ← compileAtom fc (held ⟨"",some receiver.span⟩ :: scope) (B::Γ) key node
+    compileAtom fc scope Γ receiver right
   | .index _ none receiver key =>
     let B ← exprType fc receiver
     let K ← exprType fc key
@@ -3978,8 +3892,8 @@ Mappings discard only the temporaries introduced by this expression. -/
       | none => pure (.indexAt (.var 1) (.var 0))
     let node ← emitAt e.span term (.bind drop) (K::B::Γ) A
       (scope := temporaries)
-    let right ← compileExpr fc (held ⟨"",some receiver.span⟩ :: scope) (B::Γ) key node
-    compileExpr fc scope Γ receiver right
+    let right ← compileAtom fc (held ⟨"",some receiver.span⟩ :: scope) (B::Γ) key node
+    compileAtom fc scope Γ receiver right
   | .indexWrite _ (some fld) receiver key rhs =>
     let B ← exprType fc receiver
     let K ← exprType fc key
@@ -3990,9 +3904,9 @@ Mappings discard only the temporaries introduced by this expression. -/
     let result ← emitAt e.span (.var 0) (.bind drop) (C::K::B::Γ) A (scope := effects)
     let write ← emitAt e.span (.writeAt fld (.var 2) (.var 0)) (.effect result) (C::K::B::Γ) [Labels.nul]
       (scope := effects)
-    let right ← compileExpr fc (held ⟨"",some key.span⟩::held ⟨"",some receiver.span⟩ :: scope) (K::B::Γ) rhs write
-    let middle ← compileExpr fc (held ⟨"",some receiver.span⟩ :: scope) (B::Γ) key right
-    compileExpr fc scope Γ receiver middle
+    let right ← compileAtom fc (held ⟨"",some key.span⟩::held ⟨"",some receiver.span⟩ :: scope) (K::B::Γ) rhs write
+    let middle ← compileAtom fc (held ⟨"",some receiver.span⟩ :: scope) (B::Γ) key right
+    compileAtom fc scope Γ receiver middle
   | .arith _ op l r =>
     let B ← exprType fc l
     let C ← exprType fc r
@@ -4000,8 +3914,8 @@ Mappings discard only the temporaries introduced by this expression. -/
       (fun i => if i == 0 then 0 else i+2))⟩
     let temporaries := held ⟨"",some r.span⟩::held ⟨"",some l.span⟩ :: scope
     let node ← emitAt e.span (.arith op (.var 1) (.var 0)) (.bind drop) (C::B::Γ) A (scope := temporaries)
-    let right ← compileExpr fc (held ⟨"",some l.span⟩ :: scope) (B::Γ) r node
-    compileExpr fc scope Γ l right
+    let right ← compileAtom fc (held ⟨"",some l.span⟩ :: scope) (B::Γ) r node
+    compileAtom fc scope Γ l right
   | .inKeys p key o =>
     -- The key, then the object, then the test of the key's singleton.
     let B ← exprType fc key
@@ -4012,19 +3926,8 @@ Mappings discard only the temporaries introduced by this expression. -/
       (fun i => if i == 0 then 0 else i+2))⟩
     let temporaries := held ⟨"",some o.span⟩::held ⟨"",some key.span⟩ :: scope
     let node ← emitAt e.span (inKeysTerm keys 1 0) (.bind drop) (C::B::Γ) A (scope := temporaries)
-    let right ← compileExpr fc (held ⟨"",some key.span⟩ :: scope) (B::Γ) o node
-    compileExpr fc scope Γ key right
-  | .comma _ l r =>
-    -- The left operand, held and never read, then the right one, whose value
-    -- the comma's claim is proved from.
-    let B ← exprType fc l
-    let C ← exprType fc r
-    let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
-      (fun i => if i == 0 then 0 else i+2))⟩
-    let temporaries := held ⟨"",some r.span⟩::held ⟨"",some l.span⟩ :: scope
-    let node ← emitAt e.span (.var 0) (.bind drop) (C::B::Γ) A "comma" (scope := temporaries)
-    let right ← compileExpr fc (held ⟨"",some l.span⟩ :: scope) (B::Γ) r node
-    compileExpr fc scope Γ l right
+    let right ← compileAtom fc (held ⟨"",some key.span⟩ :: scope) (B::Γ) o node
+    compileAtom fc scope Γ key right
   | .unary _ .typeof a =>
     -- The operand, then its `typeof`, one tag test per answer.
     let B ← exprType fc a
@@ -4032,7 +3935,7 @@ Mappings discard only the temporaries introduced by this expression. -/
       (fun i => if i == 0 then 0 else i+1))⟩
     let node ← emitAt e.span (typeofTerm 0) (.bind drop) (B::Γ) A
       (scope := held ⟨"",some a.span⟩ :: scope)
-    compileExpr fc scope Γ a node
+    compileAtom fc scope Γ a node
   | .unary pos op a =>
     -- The operand, then the constant of its family, then the operator.
     let B ← exprType fc a
@@ -4042,137 +3945,7 @@ Mappings discard only the temporaries introduced by this expression. -/
     let temporaries := held ⟨"",some e.span⟩::held ⟨"",some a.span⟩ :: scope
     let node ← emitAt e.span (.arith arith (.var 1) (.var 0)) (.bind drop) (C::B::Γ) A (scope := temporaries)
     let constant ← emitAt e.span c (.bind node) (B::Γ) C (scope := held ⟨"",some a.span⟩ :: scope)
-    compileExpr fc scope Γ a constant
-  | .update _ op target rhs post =>
-    -- The target's parts are evaluated once and its value read at the
-    -- storage contract, never at a claim; then the right side, the
-    -- operation, the write back at the contract, and the old or new value.
-    let G := SourceTypes.graph (← table)
-    -- The field's contract, of the one record the target's object is: its
-    -- views, methods and key bounds say nothing of the field.
-    let fieldType := fun (B : Ty Tree) (fld : PropKey) => do
-      match PositiveRules.expand G B with
-      | [.refs fs [] _ _ _ _] =>
-        let some T := fs.lookup fld
-          | throw (locatedRefusal (← table) e.span .storageWrite
-              s!"update of a field '{fld}' the contract does not name as a writable location")
-        pure T
-      | _ => throw (locatedRefusal (← table) e.span .storageWrite "a compound assignment needs one cell contract")
-    let (parts, T, readTerm, receiverSlot, fld) ← match target with
-      | .var _ name =>
-        let some (i, .cell contract _) := resolve scope name
-          | throw s!"assignment to '{name}', which is not a mutable local"
-        pure (([] : List Fragment.Expr), contract, Tm.readAt valueField (.var i), i+3, valueField)
-      | .read _ fld receiver =>
-        let B ← exprType fc receiver
-        let T ← fieldType B fld
-        pure ([receiver], T, Tm.readAt fld (.var 0), 3, fld)
-      | .index _ (some fld) receiver key =>
-        let B ← exprType fc receiver
-        let T ← fieldType B fld
-        pure ([receiver, key], T, Tm.readAt fld (.var 1), 4, fld)
-      | _ => throw "only field and local assignments are supported"
-    let types ← parts.mapM (exprType fc)
-    let heldParts := (parts.map fun p => held ⟨"",some p.span⟩).reverse
-    let K := types.reverse ++ Γ
-    -- The operation's value is a string for `+` with a string operand, else
-    -- of the target contract's numeric family, and an increment adds that
-    -- family's one.
-    let targetClauses := PositiveRules.expand (SourceTypes.graph (← table)) T
-    -- `x++` converts its operand to a number, where `x + 1` would
-    -- concatenate a string: an increment is this addition only on a target of
-    -- one numeric family.
-    if rhs.isNone && (targetClauses.isEmpty ||
-        !(targetClauses.all ProgramTyping.numberClause || targetClauses.all ProgramTyping.bigintClause)) then
-      throw s!"unsupported source expression at [{e.span.1},{e.span.2}): an increment needs a target of one numeric family, number or bigint"
-    let (one, oneClause) : Tm × PositiveNormalization.Clause (List Tree) :=
-      if !targetClauses.isEmpty && targetClauses.all ProgramTyping.bigintClause
-      then (.bigint 1, .bigintLit 1) else (.num (1.0 : Float).toBits, .numLit (1.0 : Float).toBits)
-    let C ← match rhs with
-      | some r => exprType fc r
-      | none => do pure [← lower (SourceTypes.use oneClause)]
-    let N ← operatorResult op T C
-    let n := parts.length
-    let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
-      (fun i => if i == 0 then 0 else i+n+3))⟩
-    let after := held ⟨"",some e.span⟩::held ⟨"",some e.span⟩::held ⟨"",some e.span⟩ :: heldParts ++ scope
-    let result ← emitAt e.span (.var (if post then 2 else 0)) (.bind drop) (N::C::T::K) A (scope := after)
-    let write ← emitAt e.span (.writeAt fld (.var receiverSlot) (.var 0)) (.effect result) (N::C::T::K) [Labels.nul]
-      "storage-contract" (scope := after)
-    let combine ← emitAt e.span (.arith op (.var 1) (.var 0)) (.bind write) (C::T::K) N
-      (scope := after.drop 1)
-    let delta ← match rhs with
-      | some r => compileExpr fc (after.drop 2) (T::K) r combine
-      | none => emitAt e.span one (.bind combine) (T::K) C (scope := after.drop 2)
-    let read ← emitAt e.span readTerm (.bind delta) K T (scope := heldParts ++ scope)
-    parts.attach.zipIdx.reverse.foldlM (fun next (⟨part,_⟩,i) =>
-      compileExpr fc ((parts.take i |>.map fun p => held ⟨"",some p.span⟩).reverse ++ scope)
-        ((types.take i).reverse ++ Γ) part next) read
-  | .logicalAssign pos .nullish (.var np name) rhs =>
-    compileExpr fc scope Γ (.nullishAssign pos name np rhs) next
-  | .logicalAssign pos op target rhs =>
-    -- The target's parts once, its value read at the storage contract, the
-    -- test on that value, and the right side written only on the writing
-    -- arm; the other arm's value is the one read.
-    let G := SourceTypes.graph (← table)
-    let fieldType := fun (B : Ty Tree) (fld : PropKey) => do
-      match PositiveRules.expand G B with
-      | [.refs fs [] _ _ _ _] =>
-        let some T := fs.lookup fld
-          | throw (locatedRefusal (← table) pos .storageWrite
-              s!"update of a field '{fld}' the contract does not name as a writable location")
-        pure T
-      | _ => throw (locatedRefusal (← table) pos .storageWrite "a logical assignment needs one cell contract")
-    let (parts, T, readTerm, receiverSlot, fld) ← match target with
-      | .var _ name =>
-        let some (i, .cell contract _) := resolve scope name
-          | throw s!"assignment to '{name}', which is not a mutable local"
-        pure (([] : List Fragment.Expr), contract, Tm.readAt valueField (.var i), i+2, valueField)
-      | .read _ fld receiver =>
-        let B ← exprType fc receiver
-        let T ← fieldType B fld
-        pure ([receiver], T, Tm.readAt fld (.var 0), 2, fld)
-      | .index _ (some fld) receiver key =>
-        let B ← exprType fc receiver
-        let T ← fieldType B fld
-        pure ([receiver, key], T, Tm.readAt fld (.var 1), 3, fld)
-      | _ => throw "only field and local assignments are supported"
-    let types ← parts.mapM (exprType fc)
-    let heldParts := (parts.map fun p => held ⟨"",some p.span⟩).reverse
-    let K := types.reverse ++ Γ
-    let C ← exprType fc rhs
-    let n := parts.length
-    -- The arms' slices of the read value: the writing arm's and the kept one's.
-    if op != .nullish && !decide (Answers G T .isBool true) then
-      throw "a logical assignment needs a Boolean target"
-    let (writes, keeps) : Ty Tree × Ty Tree := match op with
-      | .nullish => (BranchRefinement.tagSlice G T .isNullish true, BranchRefinement.tagSlice G T .isNullish false)
-      | .orElse => ([Labels.fls], [Labels.tru])
-      | .andAlso => ([Labels.tru], [Labels.fls])
-    let saved := held ⟨"",some pos⟩ :: heldParts ++ scope
-    let dropKeep := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
-      (fun j => if j == 0 then 0 else j+n+1))⟩
-    let keep ← emitAt pos (.var 0) (.bind dropKeep) (keeps::K) A (scope := saved)
-    let effects := held ⟨"",some rhs.span⟩ :: saved
-    let dropWrite := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
-      (fun j => if j == 0 then 0 else j+n+2))⟩
-    let result ← emitAt pos (.var 0) (.bind dropWrite) (C::writes::K) A (scope := effects)
-    let write ← emitAt pos (.writeAt fld (.var receiverSlot) (.var 0)) (.effect result)
-      (C::writes::K) [Labels.nul] "storage-contract" (scope := effects)
-    let yes ← compileExpr fc saved (writes::K) rhs write
-    -- The dispatch introduces a refined copy of the read; discard the older one.
-    let adapt := fun (t : Target) =>
-      ⟨t.label, some ((t.mapping.getD (List.range (K.length+1))).map
-        (fun j => if j == 0 then 0 else j+1))⟩
-    let continuation : Continuation := match op with
-      | .nullish => .tagBind .isNullish (adapt yes) (adapt keep)
-      | .orElse => .branchBind (adapt keep) (adapt yes)
-      | .andAlso => .branchBind (adapt yes) (adapt keep)
-    let dispatch ← emitAt pos (.var 0) continuation (T::K) T "logical-assignment-dispatch" (scope := saved)
-    let read ← emitAt pos readTerm (.bind dispatch) K T (scope := heldParts ++ scope)
-    parts.attach.zipIdx.reverse.foldlM (fun next (⟨part,_⟩,i) =>
-      compileExpr fc ((parts.take i |>.map fun p => held ⟨"",some p.span⟩).reverse ++ scope)
-        ((types.take i).reverse ++ Γ) part next) read
+    compileAtom fc scope Γ a constant
   | .indexWrite _ none .. => throw "internal unresolved computed key"
   | .write _ fld receiver rhs =>
     let B ← exprType fc receiver
@@ -4184,44 +3957,50 @@ Mappings discard only the temporaries introduced by this expression. -/
     let result ← emitAt e.span (.var 0) (.bind drop) (C::B::Γ) A (scope := effects)
     let write ← emitAt e.span (.writeAt fld (.var 1) (.var 0)) (.effect result) (C::B::Γ) [Labels.nul]
       (scope := effects)
-    let right ← compileExpr fc (held ⟨"",some receiver.span⟩ :: scope) (B::Γ) rhs write
-    compileExpr fc scope Γ receiver right
+    let right ← compileAtom fc (held ⟨"",some receiver.span⟩ :: scope) (B::Γ) rhs write
+    compileAtom fc scope Γ receiver right
 
-/-- `Object.assign(target, ...sources)`: the target into a slot of its own,
-then each source, each copied onto what is built so far as soon as it is
-evaluated (`Tm.merge`), as an object literal's spreads are; a source that may
-own `__proto__` is refused. `finish` continues from the context holding the
-result first. -/
-@[nospecialize] private partial def compileAssign (fc : SourceClaims.Function Tree) (scope : List (ScopeBinding Tree))
-    (Γ : List (Ty Tree)) (pos : Span) (target : Fragment.Expr) (sources : List Fragment.Expr)
-    (finish : List (Ty Tree) → List (ScopeBinding Tree) → Compiler Target) : Compiler Target := do
-  let G := SourceTypes.graph (← table)
-  let T0 ← exprType fc target
-  let mut steps : List (Option Fragment.Expr × Tm × Ty Tree × List (Ty Tree) × List (ScopeBinding Tree)) :=
-    [(some target, .nul, T0, [], [])]
-  let mut temps : List (Ty Tree) := [T0]
-  let mut tscope : List (ScopeBinding Tree) := [held ⟨"",some target.span⟩]
-  for src in sources do
-    let B ← exprType fc src
-    if !ownsNoProto G B then
-      throw (locatedRefusal (← table) src.span .expressionClaim
-        "Object.assign from a source that may own `__proto__`: it sets that key through the \
-          prototype's setter, which replaces the target's prototype rather than adds a key")
-    steps := steps ++ [(some src, .nul, B, temps, tscope)]
-    temps := B :: temps; tscope := held ⟨"",some src.span⟩ :: tscope
-    let R ← mergeType temps[1]! B
-    steps := steps ++ [(none, .merge [] (.var 1) (.var 0), R, temps, tscope)]
-    temps := R :: temps; tscope := held ⟨"",some pos⟩ :: tscope
-  let last ← finish temps tscope
-  steps.reverse.foldlM (fun next (operand, term, T, before, bscope) =>
-    match operand with
-    | some a => compileExpr fc (bscope ++ scope) (before ++ Γ) a next
-    | none => emitAt pos term (.bind next) (before ++ Γ) T (scope := bscope ++ scope)) last
+/-- Typed result of the saved method operation. -/
+@[nospecialize] private partial def methodPlanType (fc : SourceClaims.Function Tree)
+    (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree))
+    (operation : SourceExecution.Operation) : Compiler (Ty Tree) := do
+  match operation with
+  | .methodRead original receiver key call =>
+    return (← executionMethod fc scope Γ original receiver key call).1
+  | .invokeSaved original _ _ _ => exprType fc original
+  | _ => throw "internal execution plan: expected a method operation"
+
+/-- The invocation uses the previously read member and evaluated receiver.
+The call atom retains source metadata for spread and primitive dispatch checks. -/
+@[nospecialize] private partial def compileMethodOperation (fc : SourceClaims.Function Tree)
+    (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree))
+    (operation : SourceExecution.Operation) (next : Target) : Compiler Target := do
+  match operation with
+  | .methodRead original receiver key call =>
+    let (A, term) ← executionMethod fc scope Γ original receiver key call
+    if let .bindWithReceiver .. := call then
+      let B ← exprType fc original
+      obligation original.span ⟨Γ,term,B⟩ none "expression-claim" scope
+    emitAt original.span term (.bind next) Γ A (scope := scope)
+  | .invokeSaved original prepared receiver method =>
+    let .invoke pos _ args spreads typeArgs := prepared
+      | throw "internal execution plan: expected a saved invocation"
+    let saved ← get
+    modify fun s => { s with
+      executionOriginal := some original,
+      executionReceiver := some receiver.name, atomicPrepared := true }
+    let call := Fragment.Expr.call pos (.var method.source method.name) args spreads typeArgs
+    let target ← compileAtom fc scope Γ call next
+    modify fun s => { s with
+      executionOriginal := saved.executionOriginal,
+      executionReceiver := saved.executionReceiver, atomicPrepared := saved.atomicPrepared }
+    return target
+  | _ => throw "internal execution plan: expected a method operation"
 
 /-- Compile compound conditions as short-circuit edges. The full source
 expression still has an independent claimed typing obligation; the runtime
 traverses its operands once instead of evaluating it and then replaying it. -/
-@[nospecialize] private partial def compileCondition (fc : SourceClaims.Function Tree) (scope : List (ScopeBinding Tree))
+@[nospecialize] private partial def compileConditionAtom (fc : SourceClaims.Function Tree) (scope : List (ScopeBinding Tree))
     (Γ : List (Ty Tree)) (cond : Fragment.Expr) (yes no : Target) : Compiler Target := do
   let simple := do
     let A ← exprType fc cond
@@ -4235,11 +4014,11 @@ traverses its operands once instead of evaluating it and then replaying it. -/
       let lift := fun (t : Target) =>
         ⟨t.label, some ((t.mapping.getD (List.range scope.length)).map (·+1))⟩
       let node ← emitBranch ds K tested A (lift yes) (lift no)
-      let predicate ← compileExpr fc ds K tested node
-      compileExpr fc scope Γ read predicate
+      let predicate ← compileAtom fc ds K tested node
+      compileAtom fc scope Γ read predicate
     else
       let node ← emitBranch scope Γ cond A yes no
-      compileExpr fc scope Γ cond node
+      compileAtom fc scope Γ cond node
   -- For each singleton the split operand may be, in order: it is that one,
   -- and the other operand is too (strict equality is transitive where it
   -- holds). After every one failed, the split operand equals none of them
@@ -4295,7 +4074,7 @@ traverses its operands once instead of evaluating it and then replaying it. -/
       let width := scope.length
       let skip : Target := ⟨start.label, some ((start.mapping.getD (List.range width)).map (·+1))⟩
       let discard ← emitAt p (.var 0) (.effect skip) (A::Γ) A (scope := held ⟨"",some p⟩ :: scope)
-      compileExpr fc scope Γ cond discard
+      compileAtom fc scope Γ cond discard
     | none =>
       match ← savedSplit fc scope l r with
       | none => simple
@@ -4309,15 +4088,15 @@ traverses its operands once instead of evaluating it and then replaying it. -/
           ⟨t.label, some ((t.mapping.getD (List.range scope.length)).map (·+1))⟩
         let inner := held ⟨"",some e.span⟩ :: scope
         let start ← dispatch p inner (C::Γ) (((0, none)), e) (((k+1, none)), name) tags (lift yes) (lift no)
-        compileExpr fc scope Γ e start
+        compileAtom fc scope Γ e start
   | .logical _ andOp left right =>
     let _ ← closureExpr fc scope Γ cond
     let H := conditionContext (SourceTypes.graph (← table)) scope Γ left andOp
-    let rhs ← compileCondition fc scope H right yes no
-    compileCondition fc scope Γ left (if andOp then rhs else yes) (if andOp then no else rhs)
+    let rhs ← compileConditionAtom fc scope H right yes no
+    compileConditionAtom fc scope Γ left (if andOp then rhs else yes) (if andOp then no else rhs)
   | .not _ e =>
     let _ ← closureExpr fc scope Γ cond
-    compileCondition fc scope Γ e no yes
+    compileConditionAtom fc scope Γ e no yes
   | .read p f (.var _ name) =>
     -- The truthiness of a field of an immutable binding's object, where some
     -- arm of it leaves the field optional or unnamed, so that no fact about
@@ -4345,624 +4124,843 @@ traverses its operands once instead of evaluating it and then replaying it. -/
       else simple
     | none => simple
   | _ => simple
-/-- A read that binds: `term`, at type `R` under `Γ`, becomes the binding
-`bound` above the scope. One with a default dispatches on the read being
-undefined: the default is compiled only on that arm, the defined slice of the
-read is the other, and both arms join at a node typed by their union, which
-every incoming edge must establish. `next` compiles what follows, given the
-type the binding holds. -/
-@[nospecialize] private partial def readWithDefault (fc : SourceClaims.Function Tree) (pos namePos : Span) (term : Tm)
-    (R : Ty Tree) (default_ : Option Fragment.Expr) (bound : ScopeBinding Tree)
-    (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree)) (next : Ty Tree → Compiler Target) :
-    Compiler Target := do
-  let G := SourceTypes.graph (← table)
-  match default_ with
-  | none =>
-    let next ← next R
-    emitAt namePos term (.bind next) Γ R "pattern-read" (some pos.1) (scope := scope)
-  | some d =>
-    let D ← exprType fc d
-    let R ← byClause R
-    let present := BranchRefinement.tagSlice G R .isUndef false
-    let T := (present ++ D).eraseDups
-    let next ← next T
-    -- A merge has no unique predecessor: each arm proves the binding's type.
-    let join ← emitAt namePos .nul (.effect next) (T::Γ) [Labels.nul] "pattern-default-join" (some pos.1)
-      (scope := bound::scope)
-    -- The undefined read is dropped before the default is evaluated; its
-    -- value is what the arm binds.
-    let fallback ← compileExpr fc scope Γ d join
-    let yes : Target := ⟨fallback.label, some ((fallback.mapping.getD (List.range Γ.length)).map (·+1))⟩
-    -- tagBind introduces a refined copy; discard the older read.
-    let adapt := fun (t : Target) =>
-      ⟨t.label, some ((t.mapping.getD (List.range (Γ.length+1))).map
-        (fun j => if j == 0 then 0 else j+1))⟩
-    let dispatch ← emitAt namePos (.var 0) (.tagBind .isUndef (adapt yes) (adapt join))
-      (R::Γ) R "pattern-default-dispatch" (some pos.1) (scope := held ⟨"",some namePos⟩ :: scope)
-    emitAt namePos term (.bind dispatch) Γ R "pattern-read" (some pos.1) (scope := scope)
+/-- One immutable declaration commits the value whose initializer schedule
+    the graph action owns. The annotation is a separate checked obligation. -/
+@[nospecialize] private partial def constant (fc : SourceClaims.Function Tree) (pos : Span)
+    (after : List (ScopeBinding Tree) → Compiler Target) (scope : List (ScopeBinding Tree))
+    (Γ : List (Ty Tree)) (b : Fragment.Binding) : Compiler Target := do
+  if b.name == "undefined" then throw "shadowing undefined is outside the fragment"
+  if (names scope).contains b.name then throw s!"duplicate or shadowing local declaration '{b.name}'"
+  let A ← exprType fc b.init
+  let B ← match b.annot with | none => pure A | some ty => lower (Fragment.translate ty)
+  let fresh := match b.init with | .alloc .. | .arrayLit .. => true | _ => false
+  let bound : ScopeBinding Tree := { source := ⟨b.name,some pos⟩, fresh := fresh }
+  let next ← after (bound::scope)
+  let annotation ← emitAt b.init.span (.var 0) (.effect next) (A::Γ) B "binding-annotation" (some pos.1)
+    (scope := held ⟨b.name,some b.init.span⟩::scope)
+  compileExpr fc scope Γ b.init annotation
 
-/-- The writes an array assignment performs, left to right, over the right
-side held at slot `obj`: each position is read, defaulted, and written to its
-mutable local, whose storage contract the write must meet. `after` compiles
-what follows, under the environment the reads started from. -/
-@[nospecialize] private partial def arrayAssigns (fc : SourceClaims.Function Tree) (pos : Span) (A : Ty Tree)
-    (rest : Option (Span × Bool × Fragment.ArrayElem Fragment.Expr)) (after : Target) :
-    List (ScopeBinding Tree) → List (Ty Tree) → Nat → List (Fragment.ArrayElem Fragment.Expr) → Compiler Target
-  | scope, Γ, obj, [] => do
-    -- The rest's fresh array, written to its mutable local: a slice's by
-    -- its `%RestFrom:k%`, any other's by reads.
-    let some (restPos, slice, q) := rest | pure after
-    if slice then
-      let C ← claimAt fc restPos
-      let call ← sliceCall scope obj q.index
-      let arrayScope := held ⟨"",some restPos⟩ :: scope
-      let some (i, .cell ..) := resolve scope q.name
-        | throw s!"assignment to '{q.name}', which is not a mutable local"
-      let dropped : Target := ⟨after.label, some ((after.mapping.getD (List.range Γ.length)).map (·+1))⟩
-      let write ← emitAt q.namePos (.writeAt valueField (.var (i+1)) (.var 0)) (.effect dropped)
-        (C::Γ) [Labels.nul] "storage-contract" (some pos.1) (scope := arrayScope)
-      return ← emitAt restPos call (.bind write) Γ C "pattern-rest" (some pos.1) (scope := scope)
-    let (store, Sr, C) ← restArray fc A obj q.index restPos
-    let storeScope := held ⟨"",some restPos⟩ :: scope
-    let arrayScope := held ⟨"",some restPos⟩ :: storeScope
-    let some (i, .cell ..) := resolve scope q.name
-      | throw s!"assignment to '{q.name}', which is not a mutable local"
-    let dropped : Target := ⟨after.label, some ((after.mapping.getD (List.range Γ.length)).map (·+2))⟩
-    let write ← emitAt q.namePos (.writeAt valueField (.var (i+2)) (.var 0)) (.effect dropped)
-      (C::Sr::Γ) [Labels.nul] "storage-contract" (some pos.1) (scope := arrayScope)
-    let proto ← prototypeSlot storeScope
-    let object ← emitAt restPos (arrayTerm proto) (.bind write) (Sr::Γ) C "pattern-rest" (some pos.1)
-      (scope := storeScope)
-    emitAt restPos store (.bind object) Γ Sr "pattern-rest" (some pos.1) (scope := scope)
-  | scope, Γ, obj, q :: more => do
-    let R ← tryCatch (positionRead (SourceTypes.graph (← table)) A q.index) fun reason => do
-      throw (locatedRefusal (← table) q.namePos .bindingAnnotation reason)
-    let bound := held ⟨"",some q.namePos⟩
-    let term := Tm.elemAt (.readAt SourceTypes.storeField (.var obj)) (.num (bitsOfNat q.index))
-    readWithDefault fc pos q.namePos term R q.default_ bound scope Γ fun T => do
-      let some (i, .cell ..) := resolve (bound::scope) q.name
-        | throw s!"assignment to '{q.name}', which is not a mutable local"
-      let rest ← arrayAssigns fc pos A rest after scope Γ obj more
-      let dropped : Target := ⟨rest.label, some ((rest.mapping.getD (List.range Γ.length)).map (·+1))⟩
-      emitAt q.namePos (.writeAt valueField (.var i) (.var 0)) (.effect dropped) (T::Γ) [Labels.nul]
-        "storage-contract" (some pos.1) (scope := bound::scope)
+/-- A mutable declaration allocates one private cell at its explicit lifetime
+    contract, with obligations for the annotation and initializer. -/
+@[nospecialize] private partial def mutableBinding (fc : SourceClaims.Function Tree) (pos : Span)
+    (after : List (ScopeBinding Tree) → Compiler Target) (scope : List (ScopeBinding Tree))
+    (Γ : List (Ty Tree)) (b : Fragment.Binding) : Compiler Target := do
+  if b.name == "undefined" then throw "shadowing undefined is outside the fragment"
+  if (names scope).contains b.name then throw "shadowing is outside the fragment"
+  let A ← exprType fc b.init
+  let some candidate := fc.contracts.lookup (b.init.span, b.name)
+    | throw s!"no claimed storage contract for '{b.name}' at {b.init.span.1}"
+  let contract ← (SourceClaims.resolve (← table) candidate).mapError fun msg =>
+    s!"storage contract for '{b.name}' at {b.init.span.1}: {msg}"
+  if let some annotation := b.annot then
+    let written ← lower (Fragment.translate annotation)
+    requireSameMeaning (← table) b.init.span .bindingAnnotation contract written
+      s!"claimed storage contract differs from the source annotation for '{b.name}'"
+  let reference ← lower (do return [← CellClaims.reference [(valueField, contract)]])
+  let binding : ScopeBinding Tree := { source := ⟨b.name,some pos⟩, storage := .cell contract reference, apart := some Γ }
+  let continued ← after (binding::scope)
+  let drop := ⟨continued.label, some ((continued.mapping.getD (List.range (Γ.length+1))).map
+    (fun j => if j == 0 then 0 else j+1))⟩
+  let allocate ← emitAt b.init.span (.makeAt .absent [valueField] [.var 0]) (.bind drop)
+    (A::Γ) reference "binding-storage" (some pos.1) (scope := held ⟨"",some b.init.span⟩::scope)
+  let stored ← emitAt b.init.span (.var 0) (.effect allocate) (A::Γ) contract
+    "storage-contract" (some pos.1) (scope := held ⟨"",some b.init.span⟩::scope)
+  compileExpr fc scope Γ b.init stored
 
-/-- Binds `target` to the value `term` reads under `Γ` at `R`, `default_`
-replacing it where it is undefined (`readWithDefault`): a name binds it; a
-nested pattern holds it in an anonymous slot, destructures it, and drops it.
-`after` compiles what follows, given the scope and context with the
-pattern's bindings added, innermost first. -/
-@[nospecialize] private partial def bindTarget (fc : SourceClaims.Function Tree) (pos : Span)
-    (target : Fragment.Pattern Fragment.Expr) (term : Tm) (R : Ty Tree) (default_ : Option Fragment.Expr)
+@[nospecialize] private partial def executionSaved (scope : List (ScopeBinding Tree))
+    (Γ : List (Ty Tree)) (value : SourceExecution.Saved) : Compiler (Nat × Ty Tree) := do
+  let some (i, .value) := resolve scope value.name
+    | throw s!"internal execution plan: missing saved value '{value.name}'"
+  let some A := Γ[i]? | throw "internal execution plan: saved value has no type"
+  return (i, A)
+
+@[nospecialize] private partial def executionReference (fc : SourceClaims.Function Tree)
     (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree))
-    (after : List (ScopeBinding Tree) → List (Ty Tree) → Compiler Target) : Compiler Target := do
-  match target with
-  | .name n namePos =>
-    if n == "undefined" then throw "shadowing undefined is outside the fragment"
-    if (names scope).contains n then throw s!"duplicate or shadowing local declaration '{n}'"
-    let bound := held ⟨n,some pos⟩
-    readWithDefault fc pos namePos term R default_ bound scope Γ
-      fun T => after (bound::scope) (T::Γ)
-  | .object p _ _ | .array p _ _ =>
-    let bound := held ⟨"",some p⟩
-    readWithDefault fc pos p term R default_ bound scope Γ fun T =>
-      destructureAt fc pos target (bound::scope) (T::Γ) 0 fun scope' Γ' =>
-        dropSlot (scope'.length - scope.length - 1) after scope' Γ'
+    (reference : SourceExecution.Reference) : Compiler (Tm × PropKey × Ty Tree) := do
+  match reference with
+  | .local name _ =>
+    let some (i, .cell contract _) := resolve scope name
+      | throw s!"assignment to '{name}', which is not a mutable local"
+    return (.var i, valueField, contract)
+  | .field original receiver key =>
+    let (i, B) ← executionSaved scope Γ receiver
+    let object := Fragment.Expr.var receiver.source receiver.name
+    let prepared ← match original with
+      | .read pos fld _ => pure (Fragment.Expr.read pos fld object)
+      | .index pos fld _ _ =>
+        let some key := key | throw "internal execution plan: missing reference key"
+        pure (.index pos fld object (.var key.source key.name))
+      | .elemAt pos _ _ =>
+        let some key := key | throw "internal execution plan: missing reference key"
+        pure (.elemAt pos object (.var key.source key.name))
+      | _ => throw "only field and local assignments are supported"
+    let prepared ← comparisonsExpr fc prepared
+    let fld ← match prepared with
+      | .read _ fld _ => pure fld
+      | .index _ (some fld) _ _ => pure (.str fld)
+      | _ => throw "only field and local assignments are supported"
+    match PositiveRules.expand (SourceTypes.graph (← table)) B with
+    | [.refs fs [] _ _ _ _] =>
+      let some T := fs.lookup fld
+        | throw (locatedRefusal (← table) original.span .storageWrite
+          s!"update of a field '{fld}' the contract does not name as a writable location")
+      pure (.var i, fld, T)
+    | _ => throw (locatedRefusal (← table) original.span .storageWrite
+        "an assignment needs one cell contract")
 
-/-- The bindings an object or array pattern yields, left to right, over the
-value held at slot `obj`. An object pattern's property reads its field as
-`readCell` reads it; an array pattern's element reads its position of the
-store (`positionRead`): the array's own iterator, stepped, reads the current
-length and the next index, and a default runs between two steps as it does
-here. A rest collects the positions after the elements into a fresh array,
-where the source is a tuple of required positions: that array is a literal of
-reads, claimed at the rest's span like an array literal. `after` compiles what
-follows, the value's slot still held below the new bindings. -/
-@[nospecialize] private partial def destructureAt (fc : SourceClaims.Function Tree) (pos : Span)
-    (target : Fragment.Pattern Fragment.Expr) (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree)) (obj : Nat)
-    (after : List (ScopeBinding Tree) → List (Ty Tree) → Compiler Target) : Compiler Target := do
-  let some A := Γ[obj]? | throw "internal pattern slot mismatch"
-  -- Each element's bindings sit above the ones before it, so the value's slot
-  -- moves up by as many as the element bound.
-  let rec elems (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree)) (obj : Nat)
-      (read : Nat → Nat × Fragment.Pattern Fragment.Expr × Option Fragment.Expr → Compiler (Tm × Ty Tree))
-      (last : List (ScopeBinding Tree) → List (Ty Tree) → Nat → Compiler Target) :
-      List (Nat × Fragment.Pattern Fragment.Expr × Option Fragment.Expr) → Compiler Target
-    | [] => last scope Γ obj
-    | e :: more => do
-      let (term, R) ← read obj e
-      bindTarget fc pos e.2.1 term R e.2.2 scope Γ fun scope' Γ' =>
-        elems scope' Γ' (obj + (scope'.length - scope.length)) read last more
-  match target with
-  | .name .. => throw "internal: a name is bound, not destructured"
-  | .object _ props rest =>
-    elems scope Γ obj (fun obj (i, _, _) => do
-        let some (fld, t, _) := props[i]? | throw "internal pattern property"
-        let G := SourceTypes.graph (← table)
-        if let .error reason := noMethodRead G A fld then
-          throw (locatedRefusal (← table) t.span .bindingAnnotation reason)
-        let plan ← readCell G Γ fld (DirectProof.var Γ obj A)
-        pure (Tm.readAt fld (.var obj), plan.type))
-      (fun scope Γ obj => match rest with
-        | none => after scope Γ
-        | some (restPos, t) => do
-          -- The source's other own enumerable properties, copied onto a
-          -- fresh object: a merge dropping the keys the properties name,
-          -- bound as the rest's value at its claim.
-          let drop := props.map fun (fld, _, _) => PropKey.str fld
-          let E ← groupType [] []
-          let _ ← mergeType E A drop
-          let C ← claimAt fc restPos
-          bindTarget fc pos t (.merge drop (.makeAt .absent [] []) (.var obj)) C none scope Γ after)
-      (props.zipIdx.map fun ((_, t, d), i) => (i, t, d))
-  | .array _ positions rest =>
-    elems scope Γ obj (fun obj (i, t, _) => do
-        let R ← tryCatch (positionRead (SourceTypes.graph (← table)) A i) fun reason => do
-          throw (locatedRefusal (← table) t.span .bindingAnnotation reason)
-        pure (Tm.elemAt (.readAt SourceTypes.storeField (.var obj)) (.num (bitsOfNat i)), R))
-      (fun scope Γ obj => match rest with
-        | none => after scope Γ
-        | some (start, restPos, true, t) => do
-          -- A slice: its `%RestFrom:k%` on the array, bound as the rest's value.
-          let C ← claimAt fc restPos
-          bindTarget fc pos t (← sliceCall scope obj start) C none scope Γ after
-        | some (start, restPos, false, t) => do
-          let (store, Sr, C) ← restArray fc A obj start restPos
-          let storeScope := held ⟨"",some restPos⟩ :: scope
-          let proto ← prototypeSlot storeScope
-          -- The store, then the array holding it, bound as the rest's value.
-          let next ← bindTarget fc pos t (arrayTerm proto) C none storeScope (Sr::Γ)
-            fun scope' Γ' => dropSlot (scope'.length - scope.length - 1) after scope' Γ'
-          emitAt restPos store (.bind next) Γ Sr "pattern-rest" (some pos.1) (scope := scope))
-      positions
+@[nospecialize] private partial def executionClaim (fc : SourceClaims.Function Tree)
+    (source : Span) (fallback : Compiler (Ty Tree)) : Compiler (Ty Tree) :=
+  match fc.exprs.lookup source with
+  | some candidate => do SourceClaims.resolve (← table) candidate
+  | none => fallback
 
-/-- The declarators of a `const`, bound left to right under the one entry `Γ`
-the producer states for the statement: each initializer is compiled in the
-scope the earlier bindings extend, and no cut separates them, because the
-producer states none. `after` compiles what follows the whole statement. -/
-@[nospecialize] private partial def constants (fc : SourceClaims.Function Tree) (pos : Span)
-    (after : List (ScopeBinding Tree) → Compiler Target) :
-    List (ScopeBinding Tree) → List (Ty Tree) → List Fragment.Binding → Compiler Target
-  | scope, _, [] => after scope
-  | scope, Γ, b :: more => do
-    if b.name == "undefined" then throw "shadowing undefined is outside the fragment"
-    if (names scope).contains b.name then throw s!"duplicate or shadowing local declaration '{b.name}'"
-    let A ← exprType fc b.init
-    let B ← match b.annot with | none => pure A | some ty => lower (Fragment.translate ty)
-    let fresh := match b.init with | .alloc .. | .arrayLit .. => true | _ => false
-    let bound : ScopeBinding Tree := { source := ⟨b.name,some pos⟩, fresh := fresh }
-    let next ← constants fc pos after (bound::scope) (A::Γ) more
-    let annotation ← emitAt b.init.span (.var 0) (.effect next) (A::Γ) B "binding-annotation" (some pos.1)
-      (scope := held ⟨b.name,some b.init.span⟩::scope)
-    compileExpr fc scope Γ b.init annotation
+/-- Synthetic operation results are derived from their operand contracts.
+    Original operations retain their exact producer result obligation. -/
+@[nospecialize] private partial def executionOperationType (fc : SourceClaims.Function Tree)
+    (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree))
+    (operation : SourceExecution.Operation) : Compiler (Ty Tree) := do
+  match operation with
+  | .evaluate original prepared _ => do
+    if let .var _ name := prepared then
+      if let some A := (← get).executionTypes.lookup name then return A
+    executionClaim fc original.span (exprType fc prepared)
+  | .methodRead .. | .invokeSaved .. => methodPlanType fc scope Γ operation
+  | .snapshotSpread .. | .snapshotObject .. => snapshotPlanType fc scope Γ operation
+  | .referenceRead source reference =>
+    let (_, _, T) ← executionReference fc scope Γ reference
+    executionClaim fc source (pure T)
+  | .referenceWrite source _ value =>
+    executionClaim fc source (do return (← executionSaved scope Γ value).2)
+  | .updateSaved original _ previous _ =>
+    executionClaim fc original.span (do return (← executionSaved scope Γ previous).2)
+  | .positionRead source array index =>
+    tryCatch (positionRead (SourceTypes.graph (← table)) (← executionSaved scope Γ array).2 index) fun reason => do
+      throw (locatedRefusal (← table) source .bindingAnnotation reason)
+  | .arrayRest source _ _ _ => claimAt fc source
+  | .emptyObject _ => groupType [] []
+  | .addField original base key value final =>
+    let .str key := key | throw "internal execution plan: object literal field is not a string"
+    let A ← claimAt fc original.span
+    let fields ← claimedFields A
+    let V := (← executionSaved scope Γ value).2
+    let V := (fields.lookup key).getD V
+    let L := (← executionSaved scope Γ base).2
+    let F ← groupType [key] [V]
+    if key == Fragment.protoKeyName then return F
+    if final && ObjectMerge.MergeOk (SourceTypes.graph (← table)) [] L F A then pure A
+    else mergeType L F
+  | .mergeObjects source left right final assign =>
+    let L := (← executionSaved scope Γ left).2
+    let R := (← executionSaved scope Γ right).2
+    if assign && !ownsNoProto (SourceTypes.graph (← table)) R then
+      throw (locatedRefusal (← table) right.source .expressionClaim
+        "Object.assign from a source that may own `__proto__`: it sets that key through the prototype's setter, which replaces the target's prototype rather than adds a key")
+    if final then
+      let A ← claimAt fc source
+      if ObjectMerge.MergeOk (SourceTypes.graph (← table)) [] L R A then return A
+    mergeType L R
 
-/-- The declarators of a `let`, each allocating its own private cell, in the
-same left-to-right order under the statement's one entry. An unannotated
-binding's contract is read at `next`, the entry of the statement that follows
-the whole list: the first place every binding of the list stands in scope. -/
-@[nospecialize] private partial def mutables (fc : SourceClaims.Function Tree) (pos : Span) (next : Option Nat)
-    (after : List (ScopeBinding Tree) → Compiler Target) :
-    List (ScopeBinding Tree) → List (Ty Tree) → List Fragment.Binding → Compiler Target
-  | scope, _, [] => after scope
-  | scope, Γ, b :: more => do
-    if b.name == "undefined" then throw "shadowing undefined is outside the fragment"
-    if (names scope).contains b.name then throw "shadowing is outside the fragment"
-    let A ← exprType fc b.init
-    let contract ← match b.annot with
-      | some ty => lower (Fragment.translate ty)
-      -- An inferred binding still has a stated contract: the type the
-      -- producer gives the name where it first stands in scope, before
-      -- anything has narrowed it. It is supplied and then checked like a
-      -- written one — every assignment against it, the initializer too —
-      -- rather than the initializer's own type being taken for it.
-      | none =>
-        -- Only the next statement in this lexical block sees this binding
-        -- immediately after initialization. Searching all environments by
-        -- name can pick a different declaration in a sibling block, or a
-        -- later narrowing when the producer reorders its entries.
-        -- A declaration that ends its block has no statement after it to
-        -- read the binding: any contract every write is checked against
-        -- serves, and the initializer's claimed type is the one it meets.
-        let some start := next | pure A
-        let some candidate := (fc.envs.lookup start).bind (·.lookup b.name)
-          | throw s!"no claimed storage contract for '{b.name}' at {start}"
-        (SourceClaims.resolve (← table) candidate).mapError fun msg =>
-          s!"storage contract for '{b.name}' at {start}: {msg}"
-    let reference ← lower (do return [← CellClaims.reference [(valueField, contract)]])
-    -- The slot holds the identity of a cell only this lowering allocated.
-    -- Storage is decided here, by the declaration, and nowhere else.
-    let binding : ScopeBinding Tree := { source := ⟨b.name,some pos⟩, storage := .cell contract reference }
-    let binding := { binding with apart := some Γ }
-    let continued ← mutables fc pos next after (binding::scope) (reference::Γ) more
-    let drop := ⟨continued.label, some ((continued.mapping.getD (List.range (Γ.length+1))).map
-      (fun j => if j == 0 then 0 else j+1))⟩
-    let allocation ← emitAt b.init.span (.makeAt .absent [valueField] [.var 0]) (.bind drop) (A::Γ) reference
-      "binding-allocation" (some pos.1) (scope := held ⟨"",some b.init.span⟩ :: scope)
-    -- The initializer meets the storage contract, or the declaration fails
-    -- here rather than being admitted at the initializer's narrower type.
-    let stored ← emitAt b.init.span (.var 0) (.effect allocation) (A::Γ) contract
-      "storage-contract" (some pos.1) (scope := held ⟨"",some b.init.span⟩ :: scope)
-    compileExpr fc scope Γ b.init stored
+@[nospecialize] private partial def executionPlanType (fc : SourceClaims.Function Tree)
+    (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree))
+    (plan : SourceExecution.Plan) : Compiler (Ty Tree) := do
+  match plan with
+  | .observe source evaluate => executionClaim fc source (executionPlanType fc scope Γ evaluate)
+  | .atom _ operation => executionOperationType fc scope Γ operation
+  | .sequence _ binding evaluate next =>
+    let A ← executionPlanType fc scope Γ evaluate
+    let previous := (← get).executionTypes
+    modify fun s => { s with executionTypes := (binding.name, A) :: s.executionTypes }
+    let scope := { source := ⟨binding.name, some binding.source⟩, fixed := some A : ScopeBinding Tree } :: scope
+    let result ← executionPlanType fc scope (A::Γ) next
+    modify fun s => { s with executionTypes := previous }
+    return result
+  | .choose source _ _ binding evaluate yes no =>
+    executionClaim fc source (do
+      let A ← executionPlanType fc scope Γ evaluate
+      let previous := (← get).executionTypes
+      modify fun s => { s with executionTypes := (binding.name, A) :: s.executionTypes }
+      let scope := { source := ⟨binding.name, some binding.source⟩, fixed := some A : ScopeBinding Tree } :: scope
+      let Y ← executionPlanType fc scope (A::Γ) yes
+      let N ← executionPlanType fc scope (A::Γ) no
+      modify fun s => { s with executionTypes := previous }
+      pure (Y ++ N).eraseDups)
 
-/-- Compile the continuation once, then point both arms at it. Allocation order
-is intentionally independent of source order; `start` records the real entry.
-Fuel bounds structural traversal, not execution or certificate search. -/
-@[nospecialize] private partial def body : Nat → SourceClaims.Function Tree → Ty Tree → List (ScopeBinding Tree) → List Fragment.Stmt →
-    Option (Target × List (ScopeBinding Tree)) → LoopTargets Tree → Compiler Target
-  | 0, _, _, _, _, _, _ => throw "internal extraction error: exhausted structural traversal"
-  | fuel+1, fc, R, scope, stmts, tail, loopTargets => do
-    let target ← match stmts with
-    | [] => leave fc.namePos R scope tail
-    | .brk pos _ :: rest | .cont pos :: rest =>
-      if !rest.isEmpty then throw "statements after break or continue are outside the fragment"
-      let Γ ← env fc pos.1 scope
-      let destination ← match stmts, loopTargets.loop with
-        | .brk _ (some l) :: _, _ => match loopTargets.labels.lookup l with
-          | some done => pure done
-          | none => throw s!"break to '{l}' outside a block of that label"
-        | .brk _ none :: _, some (_, done) => pure done
-        | .cont _ :: _, some (again, _) => pure (some again)
-        | _, _ => throw "break or continue outside a source loop"
-      -- The `finally` blocks between the jump and its target, innermost
-      -- first: the jump runs each, in its `try`'s context, before it lands,
-      -- as a `return` does. One that itself jumps, returns or throws leaves
-      -- by its own way instead.
-      let depth := match stmts with
-        | .brk _ (some l) :: _ => (loopTargets.labelDepths.lookup l).getD 0
-        | _ => loopTargets.loopDepth
-      let fins := loopTargets.finalizers
-      let passed := fins.take (fins.length - depth)
-      -- A jump whose entry claims a binding of the empty type is never
-      -- reached (every incoming edge proves that claim): it completes the
-      -- function instead, which it may claim at any result.
-      if Γ.any (·.isEmpty) then
-        emitAt pos .undef .ret Γ R "unreachable" (scope := scope)
-      else
-        -- The outermost passed `finally` completes into the destination;
-        -- each inner one into the next outer one's entry.
-        let mut after := destination
-        for i in (List.range passed.length).reverse do
-          let some fin := passed[i]? | throw "internal extraction error: finalizer index"
-          let targets : LoopTargets Tree := ⟨fin.loop, fin.labels, fins.drop (i+1), fin.loopDepth, fin.labelDepths⟩
-          let entry ← withHandler fin.handler (body fuel fc R fin.scope fin.stmts after targets)
-          after := some (entry, fin.scope)
-        let next ← match passed, after with
-          | _ :: _, some (entry, entryScope) => jumpTo scope entry entryScope
-          | _, _ => leave fc.namePos R scope after
-        emitAt pos .nul (.effect next) Γ [Labels.nul] (scope := scope)
-    | .ret pos e :: rest =>
-      if !rest.isEmpty then throw "statements after return are outside the fragment"
-      let Γ ← env fc pos.1 scope
+/-- A checked owned write replaces its local reference with a fresh copy.
+    Operand slots are supplied by the shared execution plan. -/
+@[nospecialize] private partial def executionGrowth (fc : SourceClaims.Function Tree)
+    (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree))
+    (original prepared : Fragment.Expr) :
+    Compiler (Option (Nat × Nat × Nat × PropKey × Ty Tree × Ty Tree × Ty Tree)) := do
+  if (← get).executionOwned != some original.span then return none
+  let some (ownedIndex, _, field, _, _) ← growingWrite fc scope original | return none
+  let prepared ← comparisonsExpr fc prepared
+  let (receiver, rhs) ← match prepared with
+    | .write _ _ receiver rhs | .indexWrite _ _ receiver _ rhs => pure (receiver,rhs)
+    | _ => throw "internal execution plan: a prepared owned write has no operands"
+  let .var _ receiverName := receiver | throw "internal execution plan: owned receiver was not saved"
+  let .var _ rhsName := rhs | throw "internal execution plan: owned right side was not saved"
+  let some r := valueSlot scope receiverName | throw "internal execution plan: missing owned receiver"
+  let some v := valueSlot scope rhsName | throw "internal execution plan: missing owned right side"
+  let .str name := field | throw (locatedRefusal (← table) original.span .expressionClaim
+    "a key-adding write of a symbol key: the copy that adds the key copies string keys only")
+  let W ← exprType fc original
+  let F ← groupType [name] [W]
+  let M ← mergeType (Γ[r]?.getD []) F
+  pure (some (ownedIndex,r,v,field,W,F,M))
+
+/-- Typed atomic copies can replace one owned local while every source
+    operand remains scheduled by the execution plan. -/
+@[nospecialize] private partial def executionAfterContext (fc : SourceClaims.Function Tree)
+    (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree))
+    (operation : SourceExecution.Operation) : Compiler (List (Ty Tree)) := do
+  match operation with
+  | .evaluate original prepared _ =>
+    if let some (i,_,_,_,_,_,M) ← executionGrowth fc scope Γ original prepared then
+      return Γ.set i M
+    if (← get).executionOwned == some original.span then
+      if let .objectAssign _ (.var _ name) _ := original then
+        let some i := valueSlot scope name | throw "internal execution plan: missing owned Object.assign target"
+        return Γ.set i (← executionOperationType fc scope Γ operation)
+    pure Γ
+  | _ => pure Γ
+
+/-- Every prepared primitive is checked at the original expression's claim,
+    including a result represented internally by a saved-value read. -/
+@[nospecialize] private partial def executionEvaluate (fc : SourceClaims.Function Tree)
+    (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree))
+    (original prepared : Fragment.Expr) (next : Target) : Compiler Target := do
+  if let some (ownedIndex,receiver,rhs,field,W,F,M) ← executionGrowth fc scope Γ original prepared then
+    let mapping := (next.mapping.getD (List.range (Γ.length+1))).map
+      (fun j => if j == 0 then 0 else if j == ownedIndex+1 then 1 else j+2)
+    let merged := held ⟨"",some original.span⟩ :: held ⟨"",some original.span⟩ :: scope
+    let result ← emitAt original.span (.var (rhs+2)) (.bind ⟨next.label,some mapping⟩)
+      (M::F::Γ) W "expression-claim" (scope := merged)
+    let merge ← emitAt original.span (.merge [] (.var (receiver+1)) (.var 0)) (.bind result)
+      (F::Γ) M "owned-copy" (scope := merged.tail)
+    return ← emitAt original.span (.makeAt .absent [field] [.var rhs]) (.bind merge)
+      Γ F "owned-field" (scope := scope)
+  if let .objectAssign _ target _ := original then
+    match target with
+    | .alloc .. | .build .. => pure ()
+    | .var .. =>
+      if (← get).executionOwned != some original.span then
+        throw (locatedRefusal (← table) original.span .expressionClaim
+          "Object.assign onto an object that is not a fresh literal is lowered only as a statement on a local's own object: the call's value would be one more reference to it")
+    | _ => throw (locatedRefusal (← table) original.span .expressionClaim
+        "Object.assign onto an object that is not a fresh literal is lowered only as a statement on a local's own object: the call's value would be one more reference to it")
+  let A ← executionClaim fc original.span (exprType fc prepared)
+  let B ← exprType fc prepared
+  let copied ← if (← get).executionOwned == some original.span then
+      match original with
+      | .objectAssign _ (.var _ name) _ => pure (valueSlot scope name)
+      | _ => pure none
+    else pure none
+  if let .var _ name := prepared then
+    if ((← get).executionTypes.lookup name).isSome then
+      -- A source claim checks the saved value without forgetting the more
+      -- precise type carried by its selected branch.
+      let mapping := (next.mapping.getD (List.range (Γ.length+1))).map
+        (fun i => if i > 0 && copied == some (i-1) then 0 else i)
+      let checked ← emitAt original.span (.var 0) (.effect ⟨next.label,some mapping⟩)
+        (B::Γ) A "expression-claim" (scope := held ⟨"",some original.span⟩ :: scope)
+      return ← compileAtom fc scope Γ prepared checked
+  let mapping := (next.mapping.getD (List.range (Γ.length+1))).map
+    (fun i => if i == 0 || copied == some (i-1) then 0 else i+1)
+  let cast ← emitAt original.span (.var 0) (.bind ⟨next.label, some mapping⟩)
+    (B::Γ) A "expression-claim" (scope := held ⟨"",some original.span⟩ :: scope)
+  let saved ← get
+  modify fun s => { s with atomicPrepared := true, executionOriginal := some original }
+  let prepared ← comparisonsExpr fc prepared
+  let target ← compileAtom fc scope Γ prepared cast
+  modify fun s => { s with atomicPrepared := saved.atomicPrepared, executionOriginal := saved.executionOriginal }
+  return target
+
+@[nospecialize] private partial def compileExecutionOperation (fc : SourceClaims.Function Tree)
+    (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree))
+    (source : Span) (operation : SourceExecution.Operation) (next : Target) : Compiler Target := do
+  let A ← executionOperationType fc scope Γ operation
+  match operation with
+  | .evaluate original prepared _ => executionEvaluate fc scope Γ original prepared next
+  | .methodRead .. | .invokeSaved .. => compileMethodOperation fc scope Γ operation next
+  | .snapshotSpread .. | .snapshotObject .. => compileSnapshotOperation fc scope Γ operation next
+  | .referenceRead _ reference =>
+    let (object, fld, _) ← executionReference fc scope Γ reference
+    emitAt source (.readAt fld object) (.bind next) Γ A (scope := scope)
+  | .referenceWrite _ reference value =>
+    let (object, fld, _) ← executionReference fc scope Γ reference
+    let (i, _) ← executionSaved scope Γ value
+    let result ← emitAt source (.var i) (.bind next) Γ A "expression-claim" (scope := scope)
+    emitAt source (.writeAt fld object (.var i)) (.effect result) Γ [Labels.nul]
+      "storage-contract" (scope := scope)
+  | .updateSaved original reference previous rhs =>
+    let .update _ op _ _ post := original | throw "internal execution plan: expected an update"
+    let (object, fld, _) ← executionReference fc scope Γ reference
+    let (old, T) ← executionSaved scope Γ previous
+    let clauses := PositiveRules.expand (SourceTypes.graph (← table)) T
+    if rhs.isNone && (clauses.isEmpty ||
+        !(clauses.all ProgramTyping.numberClause || clauses.all ProgramTyping.bigintClause)) then
+      throw s!"unsupported source expression at [{source.1},{source.2}): an increment needs a target of one numeric family, number or bigint"
+    let (delta, C) ← match rhs with
+      | some rhs => do
+        let (i, C) ← executionSaved scope Γ rhs
+        pure (Tm.var i, C)
+      | none => do
+        if !clauses.isEmpty && clauses.all ProgramTyping.bigintClause then
+          pure (Tm.bigint 1, [← lower (SourceTypes.use (.bigintLit 1))])
+        else pure (Tm.num (1.0 : Float).toBits, [← lower (SourceTypes.use (.numLit (1.0 : Float).toBits))])
+    let N ← operatorResult op T C
+    let mapping := (next.mapping.getD (List.range (Γ.length+1))).map
+      (fun i => if i == 0 then 0 else i+1)
+    let scope' := held ⟨"",some source⟩ :: scope
+    let result ← emitAt source (.var (if post then old+1 else 0)) (.bind ⟨next.label, some mapping⟩)
+      (N::Γ) A "expression-claim" (scope := scope')
+    let object ← match object with
+      | .var i => pure (Tm.var (i+1))
+      | _ => throw "internal execution plan: reference is not a saved location"
+    let write ← emitAt source (.writeAt fld object (.var 0)) (.effect result)
+      (N::Γ) [Labels.nul] "storage-contract" (scope := scope')
+    emitAt source (.arith op (.var old) delta) (.bind write) Γ N (scope := scope)
+  | .positionRead _ array index =>
+    let (i, _) ← executionSaved scope Γ array
+    emitAt source (.elemAt (.readAt SourceTypes.storeField (.var i)) (← indexTerm index))
+      (.bind next) Γ A "pattern-read" (scope := scope)
+  | .arrayRest _ array start slice =>
+    let (i, B) ← executionSaved scope Γ array
+    if slice then
+      emitAt source (← sliceCall scope i start) (.bind next) Γ A "pattern-rest" (scope := scope)
+    else
+      let (store, S, _) ← restArray fc B i start source
+      let temporary := held ⟨"",some source⟩ :: scope
+      let proto ← prototypeSlot temporary
+      let mapping := (next.mapping.getD (List.range (Γ.length+1))).map
+        (fun j => if j == 0 then 0 else j+1)
+      let object ← emitAt source (arrayTerm proto) (.bind ⟨next.label, some mapping⟩)
+        (S::Γ) A "pattern-rest" (scope := temporary)
+      emitAt source store (.bind object) Γ S "pattern-rest" (scope := scope)
+  | .emptyObject _ => emitAt source (.makeAt .absent [] []) (.bind next) Γ A (scope := scope)
+  | .addField original base key value _ =>
+    let .str key := key | throw "internal execution plan: object literal field is not a string"
+    let (baseIndex, _) ← executionSaved scope Γ base
+    let (valueIndex, V) ← executionSaved scope Γ value
+    let fields ← claimedFields (← claimAt fc original.span)
+    let V := (fields.lookup key).getD V
+    let F ← groupType [key] [V]
+    if key == Fragment.protoKeyName then
+      return ← emitAt source (.makeAt .absent [.str key] [.var valueIndex]) (.bind next) Γ A (scope := scope)
+    let mapping := (next.mapping.getD (List.range (Γ.length+1))).map
+      (fun j => if j == 0 then 0 else j+1)
+    let merge ← emitAt source (.merge [] (.var (baseIndex+1)) (.var 0))
+      (.bind ⟨next.label, some mapping⟩) (F::Γ) A (scope := held ⟨"",some source⟩ :: scope)
+    emitAt source (.makeAt .absent [.str key] [.var valueIndex]) (.bind merge) Γ F (scope := scope)
+  | .mergeObjects _ left right _ _ =>
+    let (leftIndex, _) ← executionSaved scope Γ left
+    let (rightIndex, _) ← executionSaved scope Γ right
+    emitAt source (.merge [] (.var leftIndex) (.var rightIndex)) (.bind next) Γ A (scope := scope)
+
+/-- Predicate metadata recovers immutable aliases and reads whose cells have
+not been invalidated by an intervening effect. -/
+@[nospecialize] private partial def executionPredicate (scope : List (ScopeBinding Tree))
+    (origins : List (String × Fragment.Expr)) (e : Fragment.Expr) : Fragment.Expr :=
+  match e with
+  | .var p name =>
+    match origins.lookup name with
+    | some (.var _ original) =>
+      if original != name && (valueSlot scope original).isSome then
+        .var p original
+      else e
+    | some predicate@(.not ..) | some predicate@(.shapeTest ..)
+      | some predicate@(.singletonTest ..) | some predicate@(.arith ..)
+      | some predicate@(.inKeys ..) | some predicate@(.read ..) =>
+        executionPredicate scope origins predicate
+    | _ => e
+  | .not p e => .not p (executionPredicate scope origins e)
+  | .shapeTest p tag eq e => .shapeTest p tag eq (executionPredicate scope origins e)
+  | .singletonTest p tag eq side l r => .singletonTest p tag eq side
+      (executionPredicate scope origins l) (executionPredicate scope origins r)
+  | .arith p op l r => .arith p op (executionPredicate scope origins l) (executionPredicate scope origins r)
+  | .read p fld e => .read p fld (executionPredicate scope origins e)
+  | .inKeys p k e => .inKeys p (executionPredicate scope origins k) (executionPredicate scope origins e)
+  | _ => e
+
+private partial def executionBranches : SourceExecution.Plan → Bool
+  | .atom .. => false
+  | .observe _ evaluate => executionBranches evaluate
+  | .sequence _ _ evaluate next => executionBranches evaluate || executionBranches next
+  | .choose .. => true
+
+/-- A source read in the unconditional, effect-free prefix of a shared plan.
+Its claim is an entry candidate checked by the incoming branch edge. -/
+private partial def executionEntryRead (name : String) : SourceExecution.Plan → Option Span × Bool
+  | .observe _ evaluate => executionEntryRead name evaluate
+  | .atom _ (.evaluate original _ .none) =>
+    match original with
+    | .var p n => (if n == name then some p else none, true)
+    | .lit .. => (none, true)
+    | _ => (none, false)
+  | .sequence _ _ evaluate next =>
+    let (found, more) := executionEntryRead name evaluate
+    if found.isSome || !more then (found, false) else executionEntryRead name next
+  | .choose _ _ _ _ evaluate _ _ => ((executionEntryRead name evaluate).1, false)
+  | _ => (none, false)
+
+@[nospecialize] private partial def executionArmContext (fc : SourceClaims.Function Tree)
+    (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree)) (plan : SourceExecution.Plan) :
+    Compiler (List (Ty Tree)) := do
+  let G := SourceTypes.graph (← table)
+  scope.zipIdx.foldlM (fun Δ (b,i) => do
+    if b.source.name == "" || isSnapshot b.source.name then return Δ
+    let .value := b.storage | return Δ
+    if (Γ[i]?.bind (ProgramCertificates.schemeOf G ·)).isSome then return Δ
+    let some p := (executionEntryRead b.source.name plan).1 | return Δ
+    match fc.exprs.lookup p with
+    | some _ => return Δ.set i (← claimAt fc p)
+    | none => return Δ) Γ
+
+/-- A terminal continuation sees the result first and all evaluated operands.
+Only the plan traverses source execution; the continuation can inspect the
+prepared predicate without replaying an effectful source operand. -/
+@[nospecialize] private partial def executePlanTail (fc : SourceClaims.Function Tree)
+    (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree)) (plan : SourceExecution.Plan)
+    (k : List (ScopeBinding Tree) → List (Ty Tree) → Fragment.Expr → Compiler Target) : Compiler Target := do
+  match plan with
+  | .observe source evaluate =>
+    executePlanTail fc scope Γ evaluate fun scope' Δ origin => do
+      let some A := Δ.head? | throw "internal execution plan: no observed result"
+      let C ← executionClaim fc source (pure A)
+      let next ← k scope' Δ origin
+      let next ← observeExprCurrent fc scope'.tail Δ.tail source A next
+      emitAt source (.var 0) (.effect next) Δ C "expression-claim" (scope := scope')
+  | .atom source operation =>
+    let A ← executionOperationType fc scope Γ operation
+    let previous := (← get).executionOrigins
+    let preservesReads := match operation with
+      | .evaluate _ _ .none | .methodRead .. | .referenceRead .. | .positionRead .. => true
+      | _ => false
+    if !preservesReads then
+      modify fun s => { s with executionOrigins := s.executionOrigins.filter fun (_, origin) =>
+        match origin with | .var .. => true | _ => false }
+    let origin ← match operation with
+      | .evaluate _ prepared _ => comparisonsExpr fc prepared
+      | _ => pure (Fragment.Expr.var source "")
+    let after ← executionAfterContext fc scope Γ operation
+    if Γ != after then modify fun s => { s with executionOrigins := [] }
+    let next ← k (held ⟨"",some source⟩ :: scope) (A::after) origin
+    modify fun s => { s with executionOrigins := previous }
+    compileExecutionOperation fc scope Γ source operation next
+  | .sequence _ binding evaluate next =>
+    if executionBranches evaluate && executionBranches next then
+      -- A sequence joins its evaluated value before compiling its continuation.
+      -- Retaining branch-local frames across another choice would duplicate
+      -- later conditional arguments and grow the graph exponentially.
+      let A ← executionPlanType fc scope Γ evaluate
+      let previous ← get
+      modify fun s => { s with
+        executionTypes := (binding.name,A) :: s.executionTypes }
+      let bound : ScopeBinding Tree := { source := ⟨binding.name,some binding.source⟩, fixed := some A }
+      let after ← executePlanTail fc (bound::scope) (A::Γ) next k
+      modify fun s => { s with
+        executionTypes := previous.executionTypes, executionOrigins := previous.executionOrigins }
+      return ← executePlanTail fc scope Γ evaluate fun _ Δ _ => do
+        let offset := Δ.length - Γ.length
+        return ⟨after.label,some ((after.mapping.getD (List.range (Γ.length+1))).map
+          (fun i => if i == 0 then 0 else offset+i-1))⟩
+    executePlanTail fc scope Γ evaluate fun scope' Δ origin => do
+      let some A := Δ.head? | throw "internal execution plan: no sequence result"
+      let previous ← get
+      let origin := executionPredicate scope' previous.executionOrigins origin
+      modify fun s => { s with
+        executionTypes := (binding.name,A) :: s.executionTypes
+        executionOrigins := (binding.name,origin) :: s.executionOrigins }
+      let bound : ScopeBinding Tree := { source := ⟨binding.name,some binding.source⟩, fixed := some A }
+      let result ← executePlanTail fc (bound :: scope'.tail) Δ next k
+      modify fun s => { s with
+        executionTypes := previous.executionTypes, executionOrigins := previous.executionOrigins }
+      return result
+  | .choose source _ test binding evaluate yes no =>
+    executePlanTail fc scope Γ evaluate fun scope' Δ origin => do
+      let some A := Δ.head? | throw "internal execution plan: no condition result"
+      let previous ← get
+      let origin := executionPredicate scope' previous.executionOrigins origin
+      let G := SourceTypes.graph (← table)
+      let tag := match test with
+        | .truthy => Tag.truthy | .nullish => .isNullish | .defined => .isUndef
+      let answer := test != .defined
+      let Y := BranchRefinement.tagSlice G A tag answer
+      let N := BranchRefinement.tagSlice G A tag (!answer)
+      let alias := match origin with
+        | .var _ name => valueSlot scope' name
+        | _ => none
+      let correlated := test == .truthy && !Y.isEmpty && !N.isEmpty &&
+        BranchRefinement.onlyBoolean G A && readOnly origin && !origin.freeNames.contains ""
+      let arm := fun (truth : Bool) (T : Ty Tree) (body : SourceExecution.Plan) => do
+        let base := if correlated then conditionContext G scope' Δ origin truth else
+          match alias with
+          | some i => Δ.set i T
+          | none => Δ
+        let base ← executionArmContext fc scope' base body
+        let types := base.set 0 T
+        let bound : ScopeBinding Tree := { source := ⟨binding.name,some binding.source⟩, fixed := some T }
+        let sc := bound :: scope'.tail
+        let savedTypes := previous.executionTypes.map fun (name,B) =>
+          (name, ((resolve sc name).bind fun (i,_) => types[i]?).getD B)
+        modify fun s => { s with
+          executionTypes := (binding.name,T) :: savedTypes
+          executionOrigins := (binding.name,origin) :: previous.executionOrigins }
+        let target ← executePlanTail fc sc types body k
+        if correlated then
+          let mapping := (target.mapping.getD (List.range types.length)).map
+            (fun i => if i == 0 then 0 else i+1)
+          emitAt source (if truth then .tru else .fls) (.bind ⟨target.label,some mapping⟩)
+            base T "condition-result" (scope := scope')
+        else pure target
+      -- A proved answer admits only its selected execution. Keeping A retains
+      -- the evaluated value and avoids elaborating observations in a dead arm.
+      if decide (Answers G A tag answer) then
+        let selected ← arm true A yes
+        modify fun s => { s with
+          executionTypes := previous.executionTypes, executionOrigins := previous.executionOrigins }
+        return ← emitAt source (.var 0) (.effect selected) Δ A "expression-dispatch" (scope := scope')
+      if decide (Answers G A tag (!answer)) then
+        let selected ← arm false A no
+        modify fun s => { s with
+          executionTypes := previous.executionTypes, executionOrigins := previous.executionOrigins }
+        return ← emitAt source (.var 0) (.effect selected) Δ A "expression-dispatch" (scope := scope')
+      let yes ← arm true Y yes
+      let no ← arm false N no
+      modify fun s => { s with
+        executionTypes := previous.executionTypes, executionOrigins := previous.executionOrigins }
+      if correlated then
+        return ← compileConditionAtom fc scope' Δ origin yes no
+      let adapt := fun (target : Target) =>
+        ⟨target.label,some ((target.mapping.getD (List.range Δ.length)).map
+          (fun i => if i == 0 || alias == some i then 0 else i+1))⟩
+      let continuation := if answer then Continuation.tagBind tag (adapt yes) (adapt no)
+        else .tagBind tag (adapt no) (adapt yes)
+      emitAt source (.var 0) continuation Δ A "expression-dispatch" (scope := scope')
+
+/-- A statement condition follows the same operand plan as a value expression.
+The final pure predicate uses the retained operands to justify refinements. -/
+@[nospecialize] private partial def compileCondition (fc : SourceClaims.Function Tree)
+    (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree)) (cond : Fragment.Expr)
+    (yes no : Target) : Compiler Target :=
+  executePlanTail fc scope Γ (SourceExecution.build cond) fun inner Δ origin => do
+    let offset := Δ.length - Γ.length
+    let adapt := fun (target : Target) =>
+      ⟨target.label,some ((target.mapping.getD (List.range Γ.length)).map (·+offset))⟩
+    let predicate := executionPredicate inner (← get).executionOrigins origin
+    let A := Δ.headD []
+    let G := SourceTypes.graph (← table)
+    if decide (Answers G A .truthy true) then
+      return ← emitAt cond.span (.var 0) (.effect (adapt yes)) Δ A (scope := inner)
+    if decide (Answers G A .truthy false) then
+      return ← emitAt cond.span (.var 0) (.effect (adapt no)) Δ A (scope := inner)
+    let unsettled := !(BranchRefinement.tagSlice G A .truthy true).isEmpty &&
+      !(BranchRefinement.tagSlice G A .truthy false).isEmpty
+    if unsettled && readOnly predicate && !predicate.freeNames.contains "" then
+      compileConditionAtom fc inner Δ predicate (adapt yes) (adapt no)
+    else
+      let drop := fun (target : Target) =>
+        ⟨target.label,some ((target.mapping.getD (List.range Γ.length)).map (·+(offset+1)))⟩
+      let transfer := Continuation.tagBind .truthy (drop yes) (drop no)
+      emitAt cond.span (.var 0) transfer Δ A (scope := inner)
+
+/-- Source operand scheduling is owned by ExpressionPlan. Atomic elaboration
+    receives only saved operands and source annotation metadata. -/
+@[nospecialize] private partial def compileExpr (fc : SourceClaims.Function Tree)
+    (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree))
+    (e : Fragment.Expr) (next : Target) : Compiler Target :=
+  executePlanTail fc scope Γ (SourceExecution.build e) fun _ Δ _ => do
+    let offset := Δ.length - Γ.length
+    return ⟨next.label,some ((next.mapping.getD (List.range (Γ.length+1))).map
+      (fun i => if i == 0 then 0 else offset+i-1))⟩
+
+/-- A binding schedule's continuation receives lexical bindings and its
+    original frame; intermediate expression values are projected away. -/
+@[nospecialize] private partial def executeBindingPlan (fc : SourceClaims.Function Tree)
+    (original : List (ScopeBinding Tree)) (wanted scope : List (ScopeBinding Tree))
+    (Γ : List (Ty Tree)) (plan : SourceExecution.BindingPlan)
+    (k : List (ScopeBinding Tree) → List (Ty Tree) → Compiler Target) : Compiler Target := do
+  let save := fun (source : Span) (value : SourceExecution.Saved) (T : Ty Tree)
+      (term : Tm) (next : SourceExecution.BindingPlan) => do
+    let previous := (← get).executionTypes
+    modify fun s => { s with executionTypes := (value.name,T)::s.executionTypes }
+    let bound : ScopeBinding Tree := { source := ⟨value.name,some value.source⟩, fixed := some T }
+    let next ← executeBindingPlan fc original wanted (bound::scope) (T::Γ) next k
+    modify fun s => { s with executionTypes := previous }
+    emitAt source term (.bind next) Γ T "pattern-read" (scope := scope)
+  match plan with
+  | .finish =>
+    let added := wanted.length - original.length
+    let locals ← (wanted.take added).mapM fun binding => do
+      let some i := scope.findIdx? (fun other => other.source == binding.source)
+        | throw s!"internal binding plan: lost lexical binding '{binding.source.name}'"
+      pure i
+    let indices := locals ++ (List.range original.length).map
+      (fun i => scope.length - original.length + i)
+    let types := indices.map (Γ[·]!)
+    let next ← k wanted types
+    let mapping := (next.mapping.getD (List.range wanted.length)).map (indices[·]!)
+    emitAt (0,0) .nul (.effect ⟨next.label,some mapping⟩) Γ [Labels.nul] "binding-completion" (scope := scope)
+  | .evaluate value plan next =>
+    executePlanTail fc scope Γ plan fun scope' Δ _ => do
+      let some T := Δ.head? | throw "internal binding plan: no evaluated value"
+      let previous := (← get).executionTypes
+      modify fun s => { s with executionTypes := (value.name,T)::s.executionTypes }
+      let bound : ScopeBinding Tree := { source := ⟨value.name,some value.source⟩, fixed := some T }
+      let result ← executeBindingPlan fc original wanted (bound::scope'.tail) Δ next k
+      modify fun s => { s with executionTypes := previous }
+      pure result
+  | .bind name origin value next =>
+    if name == "undefined" then throw "shadowing undefined is outside the fragment"
+    if (names wanted).contains name then
+      throw s!"duplicate or shadowing local declaration '{name}'"
+    let (i,T) ← executionSaved scope Γ value
+    let bound := held ⟨name,some origin⟩
+    let wanted := bound :: wanted.filter (fun b => b.source.name != name)
+    let next ← executeBindingPlan fc original wanted (bound::scope) (T::Γ) next k
+    emitAt value.source (.var i) (.bind next) Γ T "pattern-binding" (scope := scope)
+  | .input _ index value next =>
+    let i := scope.length - original.length + 1 + index
+    let some T := Γ[i]? | throw "internal binding plan: invalid parameter input"
+    save value.source value T (.var i) next
+  | .readField source receiver field value next =>
+    let (i,T) ← executionSaved scope Γ receiver
+    let G := SourceTypes.graph (← table)
+    if let .error reason := noMethodRead G T field then
+      throw (locatedRefusal (← table) source .bindingAnnotation reason)
+    let read ← readCell G Γ field (DirectProof.var Γ i T)
+    save source value read.type (.readAt field (.var i)) next
+  | .readPosition source array index value next =>
+    let (i,T) ← executionSaved scope Γ array
+    let R ← tryCatch (positionRead (SourceTypes.graph (← table)) T index) fun reason => do
+      throw (locatedRefusal (← table) source .bindingAnnotation reason)
+    save source value R (.elemAt (.readAt SourceTypes.storeField (.var i)) (.num (bitsOfNat index))) next
+  | .objectRest source receiver drop value next =>
+    let (i,T) ← executionSaved scope Γ receiver
+    let E ← groupType [] []
+    let _ ← mergeType E T (drop.map PropKey.str)
+    let R ← claimAt fc source
+    save source value R (.merge (drop.map PropKey.str) (.makeAt .absent [] []) (.var i)) next
+  | .arrayRest source array start slice value next =>
+    let (i,T) ← executionSaved scope Γ array
+    if slice then
+      save source value (← claimAt fc source) (← sliceCall scope i start) next
+    else
+      let (store,S,R) ← restArray fc T i start source
+      let previous := (← get).executionTypes
+      modify fun s => { s with executionTypes := (value.name,R)::s.executionTypes }
+      let stored := held ⟨"",some source⟩ :: scope
+      let bound : ScopeBinding Tree := { source := ⟨value.name,some value.source⟩, fixed := some R }
+      let target ← executeBindingPlan fc original wanted (bound::stored) (R::S::Γ) next k
+      modify fun s => { s with executionTypes := previous }
+      let proto ← prototypeSlot stored
+      let object ← emitAt source (arrayTerm proto) (.bind target) (S::Γ) R "pattern-rest" (scope := stored)
+      emitAt source store (.bind object) Γ S "pattern-rest" (scope := scope)
+  | .defaultValue value result fallback next =>
+    let (i,R) ← executionSaved scope Γ value
+    let R ← byClause R
+    let G := SourceTypes.graph (← table)
+    let present := BranchRefinement.tagSlice G R .isUndef false
+    let absent := BranchRefinement.tagSlice G R .isUndef true
+    let D ← executionPlanType fc scope Γ fallback
+    let T := (present ++ D).eraseDups
+    let previous := (← get).executionTypes
+    modify fun s => { s with executionTypes := (result.name,T)::s.executionTypes }
+    let resultBinding : ScopeBinding Tree := { source := ⟨result.name,some result.source⟩, fixed := some T }
+    let joined ← executeBindingPlan fc original wanted (resultBinding::scope) (T::Γ) next k
+    modify fun s => { s with executionTypes := previous }
+    let mapping := (joined.mapping.getD (List.range (Γ.length+1))).map
+      (fun j => if j == 0 then 0 else j+1)
+    let presentBinding : ScopeBinding Tree := { source := ⟨value.name,some value.source⟩, fixed := some present }
+    let yes ← emitAt value.source (.var 0) (.bind ⟨joined.label,some mapping⟩)
+      (present::Γ) T "pattern-default-join" (scope := presentBinding::scope)
+    let absentBinding : ScopeBinding Tree := { source := ⟨value.name,some value.source⟩, fixed := some absent }
+    modify fun s => { s with executionTypes := (value.name,absent)::previous }
+    let no ← executePlanTail fc (absentBinding::scope) (absent::Γ) fallback fun inner Δ _ => do
+      let extra := Δ.length - Γ.length
+      let mapping := (joined.mapping.getD (List.range (Γ.length+1))).map
+        (fun j => if j == 0 then 0 else j+extra)
+      emitAt result.source (.var 0) (.bind ⟨joined.label,some mapping⟩)
+        Δ T "pattern-default-join" (scope := inner)
+    modify fun s => { s with executionTypes := previous }
+    emitAt value.source (.var i) (.tagBind .isUndef no yes) Γ R
+      "pattern-default-dispatch" (scope := scope)
+
+/-- Project lexical graph identities onto typed slots. Ambient parameters and
+    captures are shared by every action of a body. -/
+@[nospecialize] private partial def flowScope (ambient incoming : List (ScopeBinding Tree))
+    (node : SourceFlow.Node) : Compiler (List (ScopeBinding Tree)) := do
+  let locals ← node.scope.mapM fun descriptor => do
+    let some binding := incoming.find? (fun b => b.source == descriptor)
+      | throw s!"internal flow error: lost binding '{descriptor.name}'"
+    pure binding
+  pure (locals ++ ambient)
+
+/-- Elaborate one immutable control-flow action. Reserved entries permit
+    cyclic edges; every entry retains the context required of its predecessors. -/
+@[nospecialize] private partial def flowNode (graph : SourceFlow.Graph)
+    (ambient : List (ScopeBinding Tree)) (base : SourceClaims.Function Tree)
+    (R : Ty Tree) (incoming : List (ScopeBinding Tree)) (id : Nat) : Compiler Target := do
+  let some node := graph.nodes[id]? | throw "internal flow error: missing node"
+  let scope ← flowScope ambient incoming node
+  if let some target := (← get).flowTargets.lookup id then
+    return ← jumpTo incoming target scope
+  let fc := base.atPoint (SourceFlow.pointId graph.owner id)
+  let Γ ← env fc node.source.1 scope
+  let reserved ← withHandler none (emitAt node.source .nul .ret Γ [Labels.nul]
+    "flow-entry" (some node.source.1) scope)
+  modify fun s => { s with flowTargets := (id, reserved) :: s.flowTargets }
+  let handler ← match node.handler with
+    | none => pure none
+    | some h => do
+      let top ← lower (SourceTypes.use .top)
+      let captured ← h.scope.mapM fun descriptor => do
+        let some binding := scope.find? (fun b => b.source == descriptor)
+          | throw s!"internal flow error: lost handler binding '{descriptor.name}'"
+        pure binding
+      let caught : ScopeBinding Tree := if h.binding.name.startsWith "%" then
+        { source := h.binding, fixed := some [top] } else held h.binding
+      let handlerScope := caught :: captured ++ ambient
+      let entry ← flowNode graph ambient base R handlerScope h.target
+      pure (some (entry, captured.length + ambient.length))
+  let action := node.action
+  let target ← withHandler handler do
+    let successor := fun (next : Nat) (bindings : List (ScopeBinding Tree)) =>
+      flowNode graph ambient base R bindings next
+    match action with
+    | .finish => emitAt node.source .undef .ret Γ R "completion" (scope := scope)
+    | .jump next =>
+      let next ← successor next scope
+      if Γ.any (·.isEmpty) then emitAt node.source .undef .ret Γ R "unreachable" (scope := scope)
+      else emitAt node.source .nul (.effect next) Γ [Labels.nul] (scope := scope)
+    | .returnValue (.ret pos e) =>
       let A ← exprType fc e
-      match loopTargets.finalizers with
-      | [] =>
-        let done ← emitAt e.span (.var 0) .ret (A::Γ) R "return-contract" (some pos.1)
-          (scope := held ⟨"",some e.span⟩ :: scope)
-        compileExpr fc scope Γ e done
-      | fins =>
-        -- The value, held in a slot of its own, passes through every
-        -- enclosing `finally`, innermost first, each run in its `try`'s
-        -- context; after the outermost, it is returned. A `finally` that
-        -- itself returns or throws leaves by its own way instead.
-        let retHeld : ScopeBinding Tree := { source := ⟨s!"%return@{pos.1}%", some e.span⟩, fixed := some A }
-        let some outermost := fins.getLast? | throw "internal extraction error: no finalizer"
-        let Γo ← env fc outermost.pos.1 outermost.scope
-        let mut after ← emitAt e.span (.var 0) .ret (A::Γo) R "return-contract" (some pos.1)
-          (scope := retHeld :: outermost.scope)
-        let mut afterScope := retHeld :: outermost.scope
-        for i in (List.range fins.length).reverse do
-          let some fin := fins[i]? | throw "internal extraction error: finalizer index"
-          let fscope := retHeld :: fin.scope
-          let targets : LoopTargets Tree := ⟨fin.loop, fin.labels, fins.drop (i+1), fin.loopDepth, fin.labelDepths⟩
-          after ← withHandler fin.handler
-            (body fuel fc R fscope fin.stmts (some (after, afterScope)) targets)
-          afterScope := fscope
-        let first ← jumpTo (retHeld :: scope) after afterScope
-        compileExpr fc scope Γ e first
-    | .throw pos e :: rest =>
-      if !rest.isEmpty then throw "statements after throw are outside the fragment"
-      let Γ ← env fc pos.1 scope
+      let done ← emitAt e.span (.var 0) .ret (A::Γ) R "return-contract" (some pos.1)
+        (scope := held ⟨"",some e.span⟩ :: scope)
+      compileExpr fc scope Γ e done
+    | .saveReturn (.ret _ e) descriptor next =>
       let A ← exprType fc e
-      -- `throw` has every type: the node claims the result, and never
-      -- produces a value to return.
+      let binding : ScopeBinding Tree := { source := descriptor, fixed := some A }
+      let next ← successor next (binding :: scope)
+      compileExpr fc scope Γ e next
+    | .returnHeld descriptor =>
+      let some i := (sources scope).idxOf? descriptor | throw "internal flow error: lost return"
+      emitAt node.source (.var i) .ret Γ R "return-contract" (scope := scope)
+    | .rethrow descriptor =>
+      let some i := (sources scope).idxOf? descriptor | throw "internal flow error: lost thrown value"
+      emitAt node.source (.throw (.var i)) .ret Γ R "rethrow" (scope := scope)
+    | .discardThrow _ next =>
+      let next ← successor next scope
+      emitAt node.source .nul (.effect next) Γ [Labels.nul] "rethrow" (scope := scope)
+    | .statement (.throw pos e) _ =>
+      let A ← exprType fc e
       let raise ← emitAt e.span (.throw (.var 0)) .ret (A::Γ) R "throw" (some pos.1)
         (scope := held ⟨"",some e.span⟩ :: scope)
       compileExpr fc scope Γ e raise
-    | .tryStmt pos tryBody handler finalizer :: rest =>
-      let Γ ← env fc pos.1 scope
-      let continuation ← if rest.isEmpty then pure tail else do
-        let next ← body fuel fc R scope rest tail loopTargets
-        pure (some (next,scope))
-      -- A thrown value is bound at `unknown`: anything may be thrown.
-      let top ← lower (SourceTypes.use .top)
-      modify fun s => { s with hints := top :: s.hints }
-      let outer := (← get).handler
-      let n := scope.length
-      -- The `finally` block, twice: after a normal completion of the body or
-      -- the handler, continuing after the statement; and after a throw out of
-      -- either, holding the thrown value, then throwing it again. Each runs in
-      -- the `try`'s own context.
-      -- The normal way through the `finally` is there only if the body or
-      -- the handler can complete.
-      let completes := !abrupt tryBody || (handler.map (fun h => !abrupt h.2)).getD false
-      let (completed, onThrow) ← match finalizer with
-        | none => pure ((continuation, none) :
-            Option (Target × List (ScopeBinding Tree)) × Option (Target × (Finalizer Tree)))
-        | some F =>
-          -- Where neither can, no way leads there: a node that loops on
-          -- itself stands for it, so nothing is claimed of a completion.
-          let normal ← if completes then
-              withHandler outer (body fuel fc R scope F continuation loopTargets)
-            else do
-              let self := (← get).program.length
-              let stub ← withHandler none (emitAt pos .nul (.effect ⟨self, some []⟩) [] [Labels.nul] "unreachable")
-              -- Its own predecessor, it states its (empty) knowledge as a cut.
-              modify fun s => { s with cuts := stub.label :: s.cuts }
-              pure stub
-          let thrown : ScopeBinding Tree := { source := ⟨s!"%thrown@{pos.1}%", some pos⟩, fixed := some [top] }
-          let tscope := thrown :: scope
-          let rethrow ← withHandler outer
-            (emitAt pos (.throw (.var 0)) .ret ([top] :: Γ) R "rethrow" (some pos.1) (scope := tscope))
-          let entry ← withHandler outer (body fuel fc R tscope F (some (rethrow, tscope)) loopTargets)
-          let fin : Finalizer Tree := ⟨F, pos, scope, outer, loopTargets.loop, loopTargets.labels,
-            loopTargets.loopDepth, loopTargets.labelDepths⟩
-          pure ((some (normal, if completes then scope else []), some (entry, fin)) :
-            Option (Target × List (ScopeBinding Tree)) × Option (Target × (Finalizer Tree)))
-      let inner : LoopTargets Tree := match onThrow with
-        | none => loopTargets
-        | some (_, fin) => { loopTargets with finalizers := fin :: loopTargets.finalizers }
-      -- Where a throw goes from the handler: the `finally`, or else out.
-      let afterHandler : Option (Target × Nat) := match onThrow with
-        | some (entry, _) => some (entry, n)
-        | none => outer
-      let bodyHandler ← match handler with
-        | none => pure afterHandler
-        | some (param, C) =>
-          let caught : ScopeBinding Tree ← match param with
-            | some (name, namePos) =>
-              if name == "undefined" then throw "shadowing undefined is outside the fragment"
-              if (names scope).contains name then
-                throw s!"duplicate or shadowing local declaration '{name}'"
-              pure (held ⟨name, some namePos⟩)
-            | none => pure { source := ⟨s!"%caught@{pos.1}%", some pos⟩, fixed := some [top] }
-          let entry ← withHandler afterHandler (body fuel fc R (caught :: scope) C completed inner)
-          pure (some (entry, n))
-      withHandler bodyHandler (body fuel fc R scope tryBody completed inner)
-    | .closing pos close inner :: rest =>
-      -- The body of a `for...of` over a program's iterable, the last
-      -- statement of its loop: the `close` statements (IteratorClose) are a
-      -- `finally` that runs on some ways out only. A `break` of the loop runs
-      -- them, then leaves it; a `return` runs them as any `finally` block,
-      -- its value held (`finalizers`); a throw runs them inside a `try` whose
-      -- empty handler discards their own throws, then throws again. A
-      -- `continue` and the body's end go to the loop's head, closing
-      -- nothing. A jump past the loop to an outer target is a jump past a
-      -- `finally` (`loopDepth`).
-      let Γ ← env fc pos.1 scope
-      let continuation ← if rest.isEmpty then pure tail else do
-        let next ← body fuel fc R scope rest tail loopTargets
-        pure (some (next,scope))
-      let some (again, exit) := loopTargets.loop
-        | throw "internal extraction error: an iterator's close outside its loop"
-      let top ← lower (SourceTypes.use .top)
-      modify fun s => { s with hints := top :: s.hints }
-      let outer := (← get).handler
-      let n := scope.length
-      let closed ← withHandler outer (body fuel fc R scope close exit loopTargets)
-      let thrown : ScopeBinding Tree := { source := ⟨s!"%thrown@{pos.1}%", some pos⟩, fixed := some [top] }
-      let tscope := thrown :: scope
-      let rethrow ← withHandler outer
-        (emitAt pos (.throw (.var 0)) .ret ([top] :: Γ) R "rethrow" (some pos.1) (scope := tscope))
-      -- A throw out of the close itself is dropped, and the first one thrown
-      -- again: the handler of the close's nodes discards its value.
-      let dropped : ScopeBinding Tree := { source := ⟨s!"%dropped@{pos.1}%", some pos⟩, fixed := some [top] }
-      let discard ← withHandler outer
-        (emitAt pos .nul (.effect ⟨rethrow.label, some ((List.range tscope.length).map (·+1))⟩)
-          ([top] :: [top] :: Γ) [Labels.nul] "rethrow" (some pos.1) (scope := dropped :: tscope))
-      let quiet ← withHandler (some (discard, tscope.length))
-        (body fuel fc R tscope close (some (rethrow, tscope)) loopTargets)
-      let fin : Finalizer Tree := ⟨close, pos, scope, outer, loopTargets.loop, loopTargets.labels,
-        loopTargets.loopDepth, loopTargets.labelDepths⟩
-      let targets : LoopTargets Tree := { loopTargets with
-        finalizers := fin :: loopTargets.finalizers,
-        loop := some (again, some (closed, scope)),
-        loopDepth := loopTargets.finalizers.length + 1 }
-      withHandler (some (quiet, n)) (body fuel fc R scope inner continuation targets)
-    | .constants pos bindings :: rest =>
-      let Γ ← env fc pos.1 scope
-      constants fc pos (fun scope => body fuel fc R scope rest tail loopTargets) scope Γ bindings
-    | .ite pos cond thn els :: rest =>
-      let Γ ← env fc pos.1 scope
-      let continuation ← if rest.isEmpty then pure tail else do
-        let next ← body fuel fc R scope rest tail loopTargets
-        pure (some (next,scope))
-      match ← guardedReturn fc scope Γ cond thn loopTargets with
+    | .declaration pos mutable binding next =>
+      if mutable then mutableBinding fc pos (successor next) scope Γ binding
+      else constant fc pos (successor next) scope Γ binding
+    | action@(.statement (.destructure ..) next) =>
+      let some plan := SourceExecution.bindingAction action
+        | throw "internal binding plan: missing destructuring schedule"
+      executeBindingPlan fc scope scope scope Γ plan fun bindings _ => successor next bindings
+    | .statement (.effect _ e) nextId =>
+      let next ← successor nextId scope
+      let owned ← if let .objectAssign _ (.var _ name) _ := e then do
+          let sites := (← get).grows
+          let some _ := (valueSlot scope name).filter fun _ => sites.contains e.span
+            | throw (locatedRefusal (← table) e.span .expressionClaim
+                "Object.assign onto an object another reference may hold adds keys that reference would see: it is lowered on a local's own fresh object that nothing else has reached, outside any loop its declaration does not enclose")
+          pure true
+        else do pure (← growingWrite fc scope e).isSome
+      let previous := (← get).executionOwned
+      if owned then modify fun s => { s with executionOwned := some e.span }
+      let first ← executePlanTail fc scope Γ (SourceExecution.build e) fun inner Δ _ => do
+        let offset := Δ.length - Γ.length
+        let mapping := (next.mapping.getD (List.range Γ.length)).map (·+offset)
+        emitAt e.span .nul (.effect ⟨next.label,some mapping⟩) Δ [Labels.nul]
+          "expression-discard" (scope := inner)
+      modify fun s => { s with executionOwned := previous }
+      pure first
+    | .branch statement yesId noId =>
+      let cond ← match statement with
+        | .ite _ cond _ _ | .loop _ cond _ _ => pure cond
+        | _ => throw "internal flow error: malformed branch"
+      let guarded ← match statement, graph.nodes[yesId]? with
+        | .ite _ _ thn _, some { action := .returnValue _, .. } =>
+          let yesClaims := base.atPoint (SourceFlow.pointId graph.owner yesId)
+          guardedReturn { fc with exprs := fc.exprs ++ yesClaims.exprs } scope Γ cond thn
+        | _, _ => pure none
+      match guarded with
       | some (ds, K, read, tested, e, rp) =>
-        -- `if (x.f !== c) return x.f;`: the tested read, saved, is what the
-        -- arm returns. Nothing runs between the two reads, so they read the
-        -- same value, and the saved one keeps the test's refinement.
-        let Γy ← env fc rp.1 ds
-        let p ← closureExpr fc ds Γy e
+        let yesClaims := base.atPoint (SourceFlow.pointId graph.owner yesId)
+        let Γy ← env yesClaims rp.1 ds
+        let e ← comparisonsExpr yesClaims e
+        let p ← closureExpr yesClaims ds Γy e
         let yes ← emitPlanned e.span p .ret Γy R "return-contract" (scope := ds)
-        let no ← body fuel fc R scope (els.getD []) continuation loopTargets
+        let no ← successor noId scope
+        let no : Target := ⟨no.label, some ((no.mapping.getD (List.range scope.length)).map (·+1))⟩
         let A ← exprType fc cond
-        let lift := fun (t : Target) =>
-          (⟨t.label, some ((t.mapping.getD (List.range scope.length)).map (·+1))⟩ : Target)
-        let node ← emitBranch ds K tested A yes (lift no)
-        let predicate ← compileExpr fc ds K tested node
+        let branch ← emitBranch ds K tested A yes no
+        let predicate ← compileExpr fc ds K tested branch
         compileExpr fc scope Γ read predicate
       | none =>
-        let yes ← body fuel fc R scope thn continuation loopTargets
-        let no ← body fuel fc R scope (els.getD []) continuation loopTargets
+        let yes ← successor yesId scope
+        let no ← successor noId scope
         compileCondition fc scope Γ cond yes no
-    | .loop pos cond loopBody update :: rest =>
-      let Γ ← env fc pos.1 scope
-      -- Reserve a stable label for incoming and back edges. Replace its stub
-      -- before returning; the completed program is independently checked.
-      let head ← emitAt cond.span .nul .ret Γ [Labels.nul] (scope := scope)
-      let continuation ← if rest.isEmpty then pure tail else do
-        let next ← body fuel fc R scope rest tail loopTargets
-        pure (some (next,scope))
-      -- The end of the body and every `continue` run the update, which
-      -- returns to the head.
-      let again ← if update.isEmpty then pure head else
-        body fuel fc R scope update (some (head,scope)) loopTargets
-      let yes ← body fuel fc R scope loopBody (some (again,scope))
-        (loopTargets.enterLoop ((again,scope), continuation))
-      let no ← leave fc.namePos R scope continuation
-      let condition ← compileCondition fc scope Γ cond yes no
-      modify fun s => { s with program := s.program.set head.label ⟨.nul,.effect condition,none⟩ }
-      let facts ← entryFacts fc pos.1 scope
-      let links := distinctLinks (SourceTypes.graph (← table)) scope Γ
-      if !facts.isEmpty || !links.isEmpty then
-        modify fun s => { s with
-          assertions := s.assertions ++ [(head.label,⟨facts,[],links⟩)]
-          sourceMap := s.sourceMap.set head.label (some ⟨pos,"heap-observation",some pos.1,sources scope⟩) }
-      modify fun s => { s with cuts := head.label :: s.cuts }
-      pure head
-    | .forOf pos name namePos iterate iterable loopBody :: rest =>
-      -- The iterable once, then its iteration intrinsic on it (`%Iterate%`
-      -- for an array): the step closure, held in a
-      -- slot of its own at the claimed type the call's typing checks. At the
-      -- head the step yields `{ value }` or `null`; null leaves the loop, and a
-      -- record's value binds `name` for one run of the body, whose end and
-      -- `continue` return to the head.
-      let Γ ← env fc pos.1 scope
+    | .iteratorStart (.forOf pos _ _ iterate iterable _) descriptor next =>
       let some (iterateSlot, _) := resolve scope iterate
-        | throw "internal extraction error: a for...of loop without its intrinsic"
+        | throw "internal flow error: missing iteration intrinsic"
       let A ← exprType fc iterable
       let N ← exprType fc (.var pos iterate)
+      let binding : ScopeBinding Tree := { source := descriptor, fixed := some N }
+      let head ← successor next (binding :: scope)
+      let mapping := (head.mapping.getD (List.range (scope.length+1))).map
+        (fun i => if i == 0 then 0 else i+1)
+      let start ← emitAt pos (Tm.call (.var (iterateSlot+1)) [.var 0])
+        (.bind ⟨head.label, some mapping⟩) (A::Γ) N "for-of-iterator"
+        (scope := held ⟨"",some iterable.span⟩ :: scope)
+      compileExpr fc scope Γ iterable start
+    | .iteratorStep (.forOf pos name namePos _ _ _) descriptor element yes no =>
+      let some i := (sources scope).idxOf? descriptor | throw "internal flow error: lost iterator"
+      let N := Γ[i]?.getD []
       let T ← exprType fc (.var namePos name)
       let G := SourceTypes.graph (← table)
       let [.arrs [⟨_, [], S, _⟩] _] := PositiveRules.expand G N
-        | throw (locatedRefusal (← table) pos .bindingAnnotation
-            "a for...of step is one call of no parameters")
+        | throw (locatedRefusal (← table) pos .bindingAnnotation "a for...of step is one call of no parameters")
       let present := BranchRefinement.tagSlice G S .isNul false
-      let stepper := { source := ⟨s!"%next@{pos.1}%", some pos⟩, fixed := some N : ScopeBinding Tree }
-      let loopScope := stepper :: scope
-      let ΓH := N :: Γ
-      let head ← emitAt pos .nul .ret ΓH [Labels.nul] (scope := loopScope)
-      let continuation ← if rest.isEmpty then pure tail else do
-        let next ← body fuel fc R scope rest tail loopTargets
-        pure (some (next,scope))
-      let elemScope := held ⟨name, some namePos⟩ :: loopScope
-      let first ← body fuel fc R elemScope loopBody (some (head,loopScope))
-        (loopTargets.enterLoop ((head,loopScope), continuation))
-      let exit ← leave fc.namePos R loopScope continuation
-      -- `name` takes the value read; the record it was read from is dropped.
-      let bindElement := ⟨first.label, some ((first.mapping.getD (List.range elemScope.length)).map
+      let first ← successor yes (held element :: scope)
+      let exit ← successor no scope
+      let bindElement := ⟨first.label, some ((first.mapping.getD (List.range (scope.length+1))).map
         (fun j => if j == 0 then 0 else j+1))⟩
-      let element ← emitAt namePos (.readAt (.str "value") (.var 0)) (.bind bindElement)
-        (present::ΓH) T "for-of-element" (scope := held ⟨"",some pos⟩ :: loopScope)
-      -- The dispatch binds a refined copy of the step's result; both arms
-      -- discard the older one, and leaving discards both.
-      let toElement : Target := ⟨element.label, some ((List.range (ΓH.length+1)).map
+      let read ← emitAt namePos (.readAt (.str "value") (.var 0)) (.bind bindElement)
+        (present::Γ) T "for-of-element" (scope := held ⟨"",some pos⟩ :: scope)
+      let toElement : Target := ⟨read.label, some ((List.range (scope.length+1)).map
         (fun j => if j == 0 then 0 else j+1))⟩
-      let toExit : Target := ⟨exit.label, some ((exit.mapping.getD (List.range ΓH.length)).map (·+2))⟩
-      let stepped := held ⟨"",some pos⟩ :: loopScope
-      let dispatch ← emitAt pos (.var 0) (.tagBind .isNul toExit toElement) (S::ΓH) S
-        "for-of-dispatch" (scope := stepped)
-      let step ← emitAt pos (Tm.call (.var 0) []) (.bind dispatch) ΓH S "for-of-step"
-        (scope := loopScope)
-      modify fun s => { s with program := s.program.set head.label ⟨.nul,.effect step,none⟩ }
-      let facts ← entryFacts fc pos.1 scope
-      let links := distinctLinks (SourceTypes.graph (← table)) loopScope ΓH
-      if !facts.isEmpty || !links.isEmpty then
-        modify fun s => { s with
-          assertions := s.assertions ++ [(head.label,⟨facts,[],links⟩)]
-          sourceMap := s.sourceMap.set head.label (some ⟨pos,"heap-observation",some pos.1,sources loopScope⟩) }
-      modify fun s => { s with cuts := head.label :: s.cuts }
-      -- Before the loop: the iterable, then the call making the step closure,
-      -- which the head holds in place of the iterable.
-      let toHead : Target := ⟨head.label, some (0 :: (List.range Γ.length).map (·+2))⟩
-      let start ← emitAt pos (Tm.call (.var (iterateSlot+1)) [.var 0]) (.bind toHead) (A::Γ) N
-        "for-of-iterator" (scope := held ⟨"",some iterable.span⟩ :: scope)
-      compileExpr fc scope Γ iterable start
-    | .mutables pos bindings :: rest =>
-      let Γ ← env fc pos.1 scope
-      mutables fc pos (firstEntry rest)
-        (fun scope => body fuel fc R scope rest tail loopTargets) scope Γ bindings
-    | .destructure pos target default_ init :: rest =>
-      let Γ ← env fc pos.1 scope
-      let A ← exprType fc init
-      -- The initializer is held anonymously for the whole statement, below the
-      -- bindings it yields, and dropped before the next statement's entry.
-      let inner := held ⟨"",some init.span⟩ :: scope
-      let after := fun (scope' : List (ScopeBinding Tree)) (Γ' : List (Ty Tree)) =>
-        dropSlot (scope'.length - scope.length - 1)
-          (fun scope _ => body fuel fc R scope rest tail loopTargets) scope' Γ'
-      let next ← match target, default_ with
-        | .object .., none | .array .., none => destructureAt fc pos target inner (A::Γ) 0 after
-        | _, _ => bindTarget fc pos target (.var 0) A default_ inner (A::Γ) after
-      compileExpr fc scope Γ init next
-    | .effect pos e :: rest =>
-      let Γ ← env fc pos.1 scope
-      let next ← body fuel fc R scope rest tail loopTargets
-      if let .objectAssign _ target@(.var _ name) sources := e then
-        -- `Object.assign(o, …)` on an owned object: the copies onto it,
-        -- which the local holds from here on, as a key-adding write's.
-        let sites := (← get).grows
-        let some i := (valueSlot scope name).filter fun _ => sites.contains e.span
-          | throw (locatedRefusal (← table) e.span .expressionClaim
-              "Object.assign onto an object another reference may hold adds keys that reference \
-                would see: it is lowered on a local's own fresh object that nothing else has reached, \
-                outside any loop its declaration does not enclose")
-        compileAssign fc scope Γ e.span target sources fun temps tscope => do
-          let k := temps.length
-          let mapping := (next.mapping.getD (List.range Γ.length)).map fun j =>
-            if j == i then 0 else j + k + 1
-          emitAt e.span (.var 0) (.bind ⟨next.label, some mapping⟩) (temps ++ Γ) temps[0]!
-            (scope := tscope ++ scope)
-      else
-      match ← growingWrite fc scope e with
-      | some (i, receiver, fld, key, rhs) =>
-        -- A key-adding write on an owned object: the receiver, the key and
-        -- the right side as the write evaluates them, then the object built
-        -- from the one new field and the copy of the receiver with it
-        -- (`Tm.merge`), which the local holds from here on.
-        let parts := receiver :: key.toList ++ [rhs]
-        let types ← parts.mapM (exprType fc)
-        let m := parts.length
-        let temporaries := (parts.map fun p => held ⟨"",some p.span⟩).reverse
-        let K := types.reverse ++ Γ
-        let W ← exprType fc e
-        let some name := match fld with | .str s => some s | .sym _ => none
-          | throw (locatedRefusal (← table) e.span .expressionClaim
-              "a key-adding write of a symbol key: the copy that adds the key copies string keys only")
-        let T ← groupType [name] [W]
-        let Rm ← mergeType types[0]! T
-        let mapping := (next.mapping.getD (List.range Γ.length)).map fun j =>
-          if j == i then 0 else j + m + 2
-        let marks := held ⟨"",some e.span⟩ :: held ⟨"",some e.span⟩ :: temporaries
-        let merged ← emitAt e.span (.merge [] (.var (m + 0)) (.var 0)) (.bind ⟨next.label, some mapping⟩)
-          (T :: K) Rm (scope := marks.drop 1 ++ scope)
-        let field ← emitAt e.span (.makeAt .absent [fld] [.var 0]) (.bind merged) K T
-          (scope := temporaries ++ scope)
-        parts.attach.zipIdx.reverse.foldlM (fun next (⟨part,_⟩,j) =>
-          compileExpr fc ((parts.take j |>.map fun p => held ⟨"",some p.span⟩).reverse ++ scope)
-            ((types.take j).reverse ++ Γ) part next) field
-      | none =>
-      let drop := ⟨next.label, some ((next.mapping.getD (List.range Γ.length)).map (·+1))⟩
-      compileExpr fc scope Γ e drop
-    -- A block's statements run in a scope of their own and continue after it,
-    -- where its bindings are gone. A labeled one is where a `break` of its
-    -- label goes. It has no entry of its own: its first statement's is.
-    | .block _ label inner :: rest =>
-      let continuation ← if rest.isEmpty then pure tail else do
-        let next ← body fuel fc R scope rest tail loopTargets
-        pure (some (next,scope))
-      let targets := match label with
-        | some l => loopTargets.enterLabel l continuation
-        | none => loopTargets
-      body fuel fc R scope inner continuation targets
-    match stmts with
-    | [] | .loop .. :: _ | .block .. :: _ => return target
-    | st :: _ =>
-      let pos := st.pos
-      let facts ← entryFacts fc pos.1 scope
-      let entry ← checkpoint pos (← env fc pos.1 scope) facts target (some pos.1) scope
-      modify fun s => { s with cuts := entry.label :: s.cuts }
-      return entry
+      let toExit : Target := ⟨exit.label, some ((exit.mapping.getD (List.range scope.length)).map (·+2))⟩
+      let dispatch ← emitAt pos (.var 0) (.tagBind .isNul toExit toElement) (S::Γ) S
+        "for-of-dispatch" (scope := held ⟨"",some pos⟩ :: scope)
+      emitAt pos (Tm.call (.var i) []) (.bind dispatch) Γ S "for-of-step" (scope := scope)
+    | _ => throw "internal flow error: malformed action"
+  modify fun s => { s with program := s.program.set reserved.label ⟨.nul, .effect target, none⟩ }
+  let facts ← entryFacts fc node.source.1 scope
+  let links := distinctLinks (SourceTypes.graph (← table)) scope Γ
+  if !facts.isEmpty || !links.isEmpty then
+    modify fun s => { s with assertions := s.assertions ++ [(reserved.label, ⟨facts, [], links⟩)] }
+  modify fun s => { s with cuts := reserved.label :: s.cuts }
+  return ← jumpTo incoming reserved scope
+
+/-- Typed lowering consumes the same claim-independent graph exported to the
+    producer. Each recursive body owns a separate memo of cyclic entries. -/
+@[nospecialize] private partial def body (owner : Span) (fc : SourceClaims.Function Tree) (R : Ty Tree)
+    (scope : List (ScopeBinding Tree)) (stmts : List Fragment.Stmt) : Compiler Target := do
+  let graph ← liftSource (SourceFlow.build owner [] stmts)
+  let saved := (← get).flowTargets
+  modify fun s => { s with flowTargets := [] }
+  let first ← flowNode graph scope fc R scope graph.entry
+  modify fun s => { s with flowTargets := saved }
+  return first
+
 end
 
 end
@@ -5046,8 +5044,9 @@ did not mention grow it, and the request carries the result. -/
     throw "shadowing undefined is outside the fragment"
   if !distinct (names scope) then throw "duplicate source parameter name"
   if f.params.length != fc.params.length then throw "parameter claim count mismatch"
-  if !distinct (fc.envs.map Prod.fst) || !distinct (fc.exprs.map Prod.fst) then
-    throw "duplicate statement or expression claim"
+  if !distinct (fc.points.map Prod.fst) || fc.points.any (fun (_, row) =>
+      !distinct (row.envs.map Prod.fst) || !distinct (row.exprs.map Prod.fst)) then
+    throw "duplicate execution point, statement or expression claim"
   let ((inputs, R, entry), built) ← (do
     -- One binding per source parameter, and one request input per position a
     -- caller writes: a rest parameter is one binding, and its tuple's required
@@ -5110,7 +5109,7 @@ did not mention grow it, and the request carries the result. -/
     let claimedR ← SourceClaims.resolve (← table) fc.ret
     requireSameMeaning (← table) f.namePos .returnContract R claimedR
       "claimed return type differs from the source annotation"
-    let stmts ← f.body.mapM (comparisonsStmt fc)
+    let stmts := f.body
     let paramScope : List (ScopeBinding Tree) ← (scope.zip bindings).mapM fun (pair : ScopeBinding Tree × Ty Tree) => do
       let (b,contract) := pair
       if stmts.any (assignsStmt b.source.name) then
@@ -5121,7 +5120,7 @@ did not mention grow it, and the request carries the result. -/
     let bodyScope := paramScope ++ siblingScope
     let slotTypes := bindings ++ siblingTypes
     let fullScope := scope ++ siblingScope
-    let mut first ← body (traversalBudget stmts) fc R bodyScope stmts none {}
+    let mut first ← body (if f.name.isEmpty then (0,0) else f.namePos) fc R bodyScope stmts
     -- Each assigned parameter gets one fresh private cell at function entry.
     -- Replace its slot in place; the caller still supplies the original value
     -- and the function's public input contract does not mention these cells.

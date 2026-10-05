@@ -618,6 +618,9 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     ["non-regular-alias", "first({ v: 1, next: null })", 1],
     ["invalid-non-regular-alias", "wrong({ v: 1, next: null })", null],
     ["assertion-snapshot", "assertedSnapshot({ value: 3 })", 3],
+    ["saved-field-comparison", "const box = { value: 7 }; JSON.stringify([comparedBeforeWrite(box), box.value])", "[true,null]"],
+    ["saved-field-comparison", "currentAfterWrite({ value: 7 })", null],
+    ["invalid-saved-field-comparison", "wrong({ value: 7 })", null],
     // A closure reads a captured cell when it runs, and sees its own write.
     ["invalid-closure-graph-captured-cell", "counter()", null],
     // A generic function type's result: a pair where it holds, the argument
@@ -689,7 +692,12 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   member.type = { k: "atom", name: "unknown", span: member.type.span };
   const weakened = join(erased, "weakened.json");
   writeFileSync(weakened, JSON.stringify(ast));
-  const proposal = spawnSync(producerExecutable, [weakened],
+  const lowered = spawnSync(verifier, ["--lower-control-flow", weakened],
+    { encoding: "utf8", timeout: 30_000 });
+  assert.equal(lowered.status, 0, lowered.stderr);
+  const flow = join(erased, "weakened-flow.json");
+  writeFileSync(flow, lowered.stdout);
+  const proposal = spawnSync(producerExecutable, [weakened, flow],
     { encoding: "utf8", timeout: 30_000 });
   assert.equal(proposal.status, 0, proposal.stderr);
   const claims = join(erased, "forged-claims.json");
@@ -902,20 +910,109 @@ for (const [artifacts, arity, refusal] of [
     /closure signature claim is outside the source annotation/);
 }
 {
-  // An unannotated closure's claimed result is checked against its body, not
-  // taken from the producer on trust. The body, `p !== null ? p - c : c`, is
-  // a number, not the null claimed: the closure's one node returns it at that
-  // result.
+  // The unannotated closure's body returns a number. Its claimed null result
+  // is checked by the body's return obligation.
   const localClosure = run("closure-result-contract");
   const claims = readClaims(localClosure);
-  const own = must(claims.types.flatMap((row) => row.flatMap((clause) =>
-    typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : []))
+  const source = readFileSync(join(localClosure, "source.ts"), "utf8");
+  const fn = must(claims.functions.find((f) => f.name === "minus"), "minus's claims");
+  const closure = must(fn.expressions.find((e) => e.pos[0] === source.indexOf("(p: number")),
+    "the unannotated closure's expression claim");
+  assert.ok(Array.isArray(closure.type));
+  assert.equal(closure.type.length, 1);
+  const label = closure.type[0];
+  assert.ok(typeof label === "number");
+  const originalType = structuredClone(closure.type);
+  // The closure value uses a private row; reduce retains its declared instance.
+  const row = structuredClone(must(claims.types[label], "the closure's type row"));
+  const own = must(row.flatMap((clause) =>
+    typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : [])
     .find((s) => s.arguments.length === 2), "the closure's own arrow");
   own.result = [0];
-  const body = readFileSync(join(localClosure, "source.ts"), "utf8").indexOf("p !== null");
+  const forgedType = [claims.types.push(row) - 1];
+  for (const expression of fn.expressions) {
+    if (JSON.stringify(expression.type) === JSON.stringify(originalType)) expression.type = forgedType;
+  }
+  for (const entry of fn.entries) {
+    for (const binding of entry.bindings) {
+      if (binding.name === "acc") binding.type = forgedType;
+    }
+  }
+  const body = source.indexOf("p !== null");
   refusedAt(localClosure, writeClaims(localClosure, "forged-closure-result", claims), "forged-closure-result",
     `source expression obligation at [${body},`);
   process.stdout.write("claims wider than their annotations: refused\n");
+}
+
+
+{
+  // Point identities bind claims to executions of the shared graph. Source
+  // provenance alone cannot authorize a claim at another graph point.
+  const artifacts = run("values");
+  const original = readClaims(artifacts);
+  const first = must(original.functions[0]?.expressions[0], "a graph-point claim");
+  const foreign = must(original.functions[1]?.expressions[0], "another function's point");
+  for (const [name, replacement] of [
+    ["unknown-point", first.point.replace(/:[0-9]+$/, ":999999999")],
+    ["foreign-point", foreign.point],
+  ]) {
+    const claims = readClaims(artifacts);
+    must(claims.functions[0]?.expressions[0], "the graph-point claim").point = replacement;
+    const forged = writeClaims(artifacts, name, claims);
+    const searched = produceWith(artifacts, forged, name);
+    assert.notEqual(searched.status, 0, `${name}: forged graph point accepted by search`);
+    assert.match(searched.stdout + searched.stderr, /expression claim names a foreign or missing execution point/);
+    assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts), /expression claim names a foreign or missing execution point/);
+  }
+  const duplicate = readClaims(artifacts);
+  const fn = must(duplicate.functions[0], "the first function");
+  fn.expressions.push(structuredClone(must(fn.expressions[0], "the duplicated point")));
+  const forged = writeClaims(artifacts, "duplicate-point", duplicate);
+  const duplicated = produceWith(artifacts, forged, "duplicate-point");
+  assert.notEqual(duplicated.status, 0);
+  assert.match(duplicated.stdout + duplicated.stderr, /invalid source claims: duplicate identity/);
+  assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts), /invalid source claims: duplicate identity/);
+  // A lifetime contract is checked independently of its point observations.
+  const retyped = readClaims(artifacts);
+  const mutable = must(retyped.functions.find((f) => f.name === "mutable"), "mutable");
+  must(mutable.contracts.find((c) => c.name === "value"), "value's storage contract").type = [1];
+  const wrongContract = writeClaims(artifacts, "forged-storage-contract", retyped);
+  assert.notEqual(produceWith(artifacts, wrongContract, "forged-storage-contract").status, 0);
+  assert.match(invoke(wrongContract, join(artifacts, "evidence.json"), artifacts), /contract|claim|evidence/);
+}
+
+
+{
+  // A deferred closure body owns execution points separate from creation.
+  const artifacts = run("closure-graph-try");
+  const claims = readClaims(artifacts);
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const fn = must(claims.functions[0], "guarded");
+  const creation = must(fn.expressions.find((e) => e.pos[0] === source.indexOf("(): number =>")), "closure creation");
+  const at = source.indexOf("return g();") + "return ".length;
+  must(fn.expressions.find((e) => e.pos[0] === at && e.pos[1] === at + 3), "deferred call").point = creation.point;
+  const forged = writeClaims(artifacts, "deferred-at-creation", claims);
+  const deferred = produceWith(artifacts, forged, "deferred-at-creation");
+  assert.notEqual(deferred.status, 0);
+  assert.match(deferred.stdout + deferred.stderr, /expression claim at .*outside its execution point/);
+  assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts), /expression claim at .*outside its execution point/);
+}
+{
+  // A copied finalizer's source site belongs to each actual finalizer action.
+  const artifacts = run("try-finally-jump");
+  const claims = readClaims(artifacts);
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const fn = must(claims.functions.find((f) => f.name === "breakThroughFinally"), "breakThroughFinally");
+  const at = source.indexOf("count = count * 2");
+  const copies = fn.expressions.filter((e) => e.pos[0] === at && e.pos[1] === at + "count = count * 2".length);
+  assert.ok(new Set(copies.map((e) => e.point)).size > 1, "distinct finalizer executions");
+  const unrelated = must(fn.expressions.find((e) => e.pos[1] <= at && !copies.some((c) => c.point === e.point)), "another execution point");
+  must(copies[0], "the copied finalizer claim").point = unrelated.point;
+  const forged = writeClaims(artifacts, "finalizer-at-other-point", claims);
+  const finalizer = produceWith(artifacts, forged, "finalizer-at-other-point");
+  assert.notEqual(finalizer.status, 0);
+  assert.match(finalizer.stdout + finalizer.stderr, /expression claim at .*outside its execution point/);
+  assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts), /expression claim at .*outside its execution point/);
 }
 
 {
@@ -939,7 +1036,7 @@ for (const [artifacts, arity, refusal] of [
     if (expected) {
       const searched = produceWith(artifacts, forged, "forged-known-arm");
       assert.equal(searched.status, 0, searched.stdout + searched.stderr);
-    } else refusedAt(artifacts, forged, "forged-known-arm", `closure expression claim at [${at},${at + condition.length})`);
+    } else refusedAt(artifacts, forged, "forged-known-arm", `source expression obligation at [${at},${at + condition.length})`);
     assert.equal(runExample(file, call), expected);
   }
 }
@@ -950,7 +1047,7 @@ for (const [artifacts, arity, refusal] of [
   // refused there, as one arm admits later Boolean writes. A statement entry's
   // null-only observation holds after the closure writes `null` into the cell,
   // and not where nothing wrote it; an entry narrowing the cell to its null arm
-  // is refused at the read, though its observation holds.
+  // is refused at its entry, though its observation holds.
   const cellUnion = run("cell-union-capture");
   const source = readFileSync(join(cellUnion, "source.ts"), "utf8");
   const within = (fn: string, text: string): number => {
@@ -967,12 +1064,13 @@ for (const [artifacts, arity, refusal] of [
   /** The claims with the captured cell observed at `pick`'s labels, at the
    * expression or statement entry starting at `at`. */
   const observed = (fn: string, at: number, name: string,
-      pick: (l: ReturnType<typeof labels>) => number[], narrowed = false): string => {
+      pick: (l: ReturnType<typeof labels>) => number[], site: "expression" | "entry", narrowed = false): string => {
     const claims = readClaims(cellUnion);
     const l = labels(claims);
     const f = must(claims.functions.find((g) => g.name === fn), fn);
-    const points = [...f.expressions.filter((e) => e.pos[0] === at && e.pos[1] === at + "cell".length),
-      ...f.entries.filter((e) => e.start === at).flatMap((e) => e.bindings.filter((b) => b.name === "cell"))];
+    const points = site === "expression"
+      ? f.expressions.filter((e) => e.pos[0] === at && e.pos[1] === at + "cell".length)
+      : f.entries.filter((e) => e.start === at).flatMap((e) => e.bindings.filter((b) => b.name === "cell"));
     assert.equal(points.length, 1, `one point observed in ${fn} at ${at}`);
     for (const p of points) {
       p.current = [["value", pick(l)]];
@@ -982,17 +1080,16 @@ for (const [artifacts, arity, refusal] of [
   };
   const edge = (span: [number, number]) => `source incoming edge obligation at [${span[0]},${span[1]})`;
   const read = within("readLater", "=> cell.value") + "=> ".length;
-  assert.equal(produceWith(cellUnion, observed("readLater", read, "observed-every", (l) => l.every), "observed-every").status, 0);
-  refusedAt(cellUnion, observed("readLater", read, "observed-null", (l) => [l.nul]), "observed-null", edge([read, read + 4]));
+  assert.equal(produceWith(cellUnion, observed("readLater", read, "observed-every", (l) => l.every, "expression"), "observed-every").status, 0);
+  refusedAt(cellUnion, observed("readLater", read, "observed-null", (l) => [l.nul], "expression"), "observed-null", edge([read, read + 4]));
   const written = within("writeThenRead", "return cell.value;");
-  assert.equal(produceWith(cellUnion, observed("writeThenRead", written, "entry-written", (l) => [l.nul]),
+  assert.equal(produceWith(cellUnion, observed("writeThenRead", written, "entry-written", (l) => [l.nul], "entry"),
     "entry-written").status, 0);
   const unwritten = within("readBlock", "return cell.value;");
-  refusedAt(cellUnion, observed("readBlock", unwritten, "entry-unwritten", (l) => [l.nul]), "entry-unwritten",
+  refusedAt(cellUnion, observed("readBlock", unwritten, "entry-unwritten", (l) => [l.nul], "entry"), "entry-unwritten",
     edge([unwritten, unwritten + "return cell.value;".length]));
-  const cellRead = written + "return ".length;
-  refusedAt(cellUnion, observed("writeThenRead", written, "entry-null-arm", (l) => [l.nul], true), "entry-null-arm",
-    edge([cellRead, cellRead + 4]));
+  refusedAt(cellUnion, observed("writeThenRead", written, "entry-null-arm", (l) => [l.nul], "entry", true), "entry-null-arm",
+    edge([written, written + "return cell.value;".length]));
 }
 {
   // The result of a call through a captured union of functions is not narrowed
@@ -1060,8 +1157,8 @@ for (const [artifacts, arity, refusal] of [
   // A writable index is never met through an own-key bound: a callee holding
   // the object as a writable dictionary may add a key the bound says is absent.
   // Claims forged to state one, the literal's exact keys (none) or the rest's
-  // lacking the pattern's key `x`, are refused at the call handing the object to
-  // the callee. Run as JavaScript with a callee that stores `x`, each function
+  // lacking the pattern's key `x`, are refused at allocation or the call handing
+  // the object to the callee. Run as JavaScript with a callee that stores `x`, each function
   // returns the string stored, where its result claims `number | undefined`.
   for (const [file, name, call, clause] of [
     ["invalid-writable-dictionary-exact-keys", "o", "exact((d) => { d.x = 's'; })",
@@ -1087,9 +1184,18 @@ for (const [artifacts, arity, refusal] of [
     const searched = produceWith(artifacts, writeClaims(artifacts, "forged-own-key-bound", claims), "forged-own-key-bound");
     const detail = searched.stdout + searched.stderr;
     assert.equal(searched.status, 1, detail);
-    const site = source.indexOf(`add(${name})`);
     const at = /source expression obligation at \[(\d+),(\d+)\)/.exec(detail);
-    assert.ok(at && Number(at[1]) >= site && Number(at[2]) <= site + `add(${name})`.length, detail);
+    if (file === "invalid-writable-dictionary-rest-keys") {
+      const rest = source.indexOf("...r");
+      assert.ok(at, detail);
+      assert.deepEqual([Number(at[1]), Number(at[2])], [rest, rest + 4]);
+      const diagnostic = readDiagnostic(detail);
+      assert.ok(diagnostic?.kind === "node-typing");
+      assert.equal(diagnostic.source.sourceMap?.role, "pattern-read");
+    } else {
+      const site = source.indexOf(`add(${name})`);
+      assert.ok(at && Number(at[1]) >= site && Number(at[2]) <= site + `add(${name})`.length, detail);
+    }
     assert.equal(runExample(file, call), "s");
   }
 }
@@ -1159,7 +1265,9 @@ for (const [artifacts, arity, refusal] of [
     const claims = readClaims(twoCalls);
     const sites = must(claims.functions[0], "the containing function").expressions.filter((e) => e.instantiate);
     assert.equal(sites.length, 2, "both eliminations must carry a substitution");
-    mutate(must(must(sites[1], "the second call").instantiate, "the second substitution"));
+    const source = readFileSync(join(twoCalls, "source.ts"), "utf8");
+    const countCall = must(sites.find((e) => source.slice(e.pos[0], e.pos[1]) === "id(count)"), "the numeric call");
+    mutate(must(countCall.instantiate, "the numeric substitution"));
     invoke(writeClaims(twoCalls, `forged-${name}`, claims), join(twoCalls, "evidence.json"), twoCalls);
   }
   const genericModule = run("generic-module-calls");
@@ -1230,8 +1338,16 @@ for (const [file, arity, accepted] of [
 ] as const) {
   const artifacts = run(file);
   const claims = readClaims(artifacts);
-  const arrow = must(claims.types.flatMap(row => row.flatMap(clause =>
-    typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : []))
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const at = source.indexOf(accepted ? "(p: number" : "(): void");
+  const closure = must(claims.functions.flatMap(f => f.expressions).find(e => e.pos[0] === at),
+    "the callback's source claim");
+  assert.ok(Array.isArray(closure.type) && closure.type.length === 1);
+  const label = closure.type[0];
+  assert.ok(typeof label === "number");
+  const row = must(claims.types[label], "the callback's type row");
+  const arrow = must(row.flatMap(clause =>
+    typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : [])
     .find(s => s.arguments.length === arity), "the callback contract");
   arrow.effect = "preservesInputHeap";
   const input = writeClaims(artifacts, "qualified-callback", claims);
@@ -1269,18 +1385,27 @@ const pageOf = (bundle: Bundle) => {
     assert.deepEqual(
       spans(shown.sites.filter((s) => s.kind === "expression").map((s) => s.pos)),
       spans(f.expressions.map((e) => e.pos)));
+    assert.deepEqual(
+      shown.sites.filter((s) => s.kind === "expression").map((s) => `${s.point}@${s.pos.join(":")}`).sort(),
+      f.expressions.map((e) => `${e.point}@${e.pos.join(":")}`).sort());
   });
   return page;
 };
 {
-  const [collected, defaulted, invocation, assigned, crashing] = await Promise.all([
+  const [collected, defaulted, invocation, assigned, crashing, finalized] = await Promise.all([
     analyse(repositoryPath("values")),
     analyse(repositoryPath("generic-default")),
     analyse(repositoryPath("invalid-default-invocation")),
     analyse(repositoryPath("module-function-assignment")),
     analyse("verification/pipeline/examples/crashing-service-sound-binding.ts"),
+    analyse(repositoryPath("try-finally-jump")),
   ]);
   pageOf(collected);
+  pageOf(finalized);
+  const executions = finalized.manifest.functions.flatMap((f) => f.expressions);
+  assert.ok(executions.some((e) => executions.some((other) =>
+    other.point !== e.point && other.pos[0] === e.pos[0] && other.pos[1] === e.pos[1])),
+    "finally executions retain distinct graph points at one source span");
   assert.equal(collected.collection?.verified, true);
   // Beside the verifier's verdict, TypeScript's own, taken on the same file.
   assert.deepEqual(collected.manifest.functions.map((f) => f.typescriptAccepted), [true, true]);
@@ -1298,12 +1423,13 @@ const pageOf = (bundle: Bundle) => {
   assert.equal(failed.status, "not-established");
   assert.equal(failed.failure?.kind, "expression-obligation");
   assert.deepEqual(failed.sites[failed.failure?.at ?? -1]?.pos, [400, 419]);
-  // A refusal the verifier makes while validating the source, before a graph
-  // exists, is shown as a located source refusal.
-  const [refused] = invocation.manifest.results ?? [];
-  assert.equal(refused?.obligation?.kind, "source-refusal");
-  assert.equal(refused?.location?.kind, "source-limitation");
-  assert.match(refused?.detail ?? "", /pending closure cannot be invoked or exposed/);
+  // The claim-independent source gate refuses the invalid parameter scope
+  // before a producer document exists; the report keeps that boundary's reason.
+  assert.equal(invocation.outcome?.status, "unsupported");
+  assert.equal(invocation.outcome?.phase, "source");
+  assert.match(invocation.outcome?.detail ?? "", /parameter default may only read initialized earlier parameters and captures; a pending closure cannot be invoked or exposed/);
+  assert.deepEqual(invocation.manifest.functions, []);
+  assert.equal(invocation.manifest.results, null);
   // What this producer does not implement is refused where it is refused, in
   // the words that boundary uses, and nothing claimed.
   assert(assigned.outcome && assigned.outcome.status === "unsupported");

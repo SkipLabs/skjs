@@ -17,8 +17,8 @@ const read = (file: string) => readFileSync(join(root, file), "utf8");
 const captured = (m: RegExpMatchArray): string[] => (m[1] === undefined ? [] : [m[1]]);
 
 /** Property names a TypeScript file declares. */
-const declared = (files: string[]) => new Set(files.flatMap((file) =>
-  [...read(file).replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*/g, "")
+const declared = (files: string[], before?: string) => new Set(files.flatMap((file) =>
+  [...(before ? read(file).split(before)[0] ?? "" : read(file)).replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*/g, "")
     .matchAll(/(?<![\w.])([A-Za-z_]\w*)\??\s*:(?!:)/g)].flatMap(captured)));
 
 /** Field names a Lean file reads or states: explicit field reads, exact field
@@ -85,6 +85,20 @@ const expectSubset = (what: string, names: Set<string>, from: Set<string>, allow
   expectSubset("SourceClaims fields Lean ignores", declared(["tools/source-claims.mts"]), leanNames, {
     labels: "a tuple element's label, not a field",
   });
+}
+
+// The claim-independent source execution graphs.
+{
+  const ts = declared(["tools/source-flow.mts"], "const invalid");
+  const keys = read("lean/Verification/Source/RequestJson.lean")
+    .match(/instance : ToJson PropKey where[\s\S]*?(?=instance : FromJson PropKey)/)?.[0] ?? "";
+  const writes = new Set([...(read("lean/Verification/Source/FlowJson.lean") +
+    read("lean/Verification/Source/ExpressionPlan.lean") + keys)
+    .matchAll(/\("(\w+)",/g)].flatMap(captured));
+  expectSubset("Lean writes of source flow", writes, ts, {});
+  expectSubset("OCaml reads of source flow", new Set([...ocamlReads("ocaml-producer/flow.ml"),
+    ...ocamlReads("ocaml-producer/execution.ml")]), ts, {});
+  expectSubset("Source flow fields Lean omits", ts, writes, {});
 }
 
 process.stdout.write(`JSON field names: ${checked} comparisons agree across TypeScript, Lean and OCaml\n`);

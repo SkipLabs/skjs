@@ -56,6 +56,7 @@ macro "run_machine" : tactic => `(tactic| repeat first
   | apply Verification.ControlFlow.Execution.next (.bind rfl)
   | apply Verification.ControlFlow.Execution.next (.effect rfl)
   | apply Verification.ControlFlow.Execution.next (.ret rfl)
+  | apply Verification.ControlFlow.Execution.next (.tagBind rfl)
   | apply Verification.ControlFlow.Execution.next .yesBind
   | apply Verification.ControlFlow.Execution.next .noBind
   | apply Verification.ControlFlow.Execution.next .yes

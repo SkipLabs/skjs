@@ -361,35 +361,38 @@ let encode (proposal : Proposal.t) =
                   "current",(if fields = [] then Null else Array fields)])) bs)
 
   in
+  let contracts row = Array (List.map (fun (c : Proposal.contract) ->
+    Object ["pos",c.pos;"name",String c.name;"type",claim_type c.type_]) row) in
   let interior (f : Proposal.function_claim) =
     let expressions row = Array (List.map (fun (e : Proposal.expression) ->
-      Object (["pos",e.pos; "type",claim_type e.type_; "current",Null]
+      Object (["point",String e.point; "pos",e.pos; "type",claim_type e.type_; "current",Null]
         @ instantiate e.instantiation)) row) in
     let entries es = Array (List.map (fun (e : Proposal.entry) ->
-      Object ["start",e.start;"bindings",bindings e.bindings]) es) in
+      Object ["point",String e.point; "start",e.start;"bindings",bindings e.bindings]) es) in
     let arrows = if f.arrows = [] then [] else
       ["arrows",Array (List.map (fun (pos,rows) ->
         Object ["pos",pos;"rows",Array (List.map (fun (o : Proposal.overlay) ->
-          Object ["expressions",expressions o.row_expressions;
+          Object ["contracts",contracts o.row_contracts;"expressions",expressions o.row_expressions;
                   "entries",entries o.row_entries]) rows)]) f.arrows)] in
-    ["entries",entries f.entries; "expressions",expressions f.expressions] @ arrows in
+    ["contracts",contracts f.contracts;"entries",entries f.entries; "expressions",expressions f.expressions] @ arrows in
   let functions = List.map (fun (f : Proposal.function_claim) ->
     let source = f.source in
     let expressions row = Array (List.map (fun (e : Proposal.expression) ->
-      Object (["pos",e.pos; "type",claim_type e.type_; "current",Null]
+      Object (["point",String e.point; "pos",e.pos; "type",claim_type e.type_; "current",Null]
         @ instantiate e.instantiation)) row) in
     (* One set of interior claims per advertised signature, in signature order,
        stated only by a closure that advertises more than one. *)
     let entries es = Array (List.map (fun (e : Proposal.entry) ->
-      Object ["start",e.start;"bindings",bindings e.bindings]) es) in
+      Object ["point",String e.point; "start",e.start;"bindings",bindings e.bindings]) es) in
     let arrows = if f.arrows = [] then [] else
       ["arrows",Array (List.map (fun (pos,rows) ->
         Object ["pos",pos;"rows",Array (List.map (fun (o : Proposal.overlay) ->
-          Object ["expressions",expressions o.row_expressions;
+          Object ["contracts",contracts o.row_contracts;"expressions",expressions o.row_expressions;
                   "entries",entries o.row_entries]) rows)]) f.arrows)] in
     Object (["name",String source.name; "namePos",source.name_pos;
       "params",Array (List.map (fun (n,t) -> named (n,Value t)) source.params);
       "result",claim_type source.result;
+      "contracts",contracts f.contracts;
       "entries",entries f.entries;
       "expressions",expressions f.expressions]
       @ arrows)) proposal.functions in

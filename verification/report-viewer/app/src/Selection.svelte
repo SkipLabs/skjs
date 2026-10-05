@@ -69,6 +69,10 @@
       <pre class="text">{text}</pre>
     {/if}
 
+    {#if (picked.kind === "expression" || picked.kind === "environment") && picked.point !== undefined}
+      <p>Control-flow point {picked.point}</p>
+    {/if}
+
     {#if picked.kind === "result"}
       <dl>
         <dt>must establish</dt>

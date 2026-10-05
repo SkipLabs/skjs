@@ -21,6 +21,7 @@ export function checkGenericRest(verifier: string, artifacts: string): void {
     changed: SourceClaims,
     tree: Ast,
     reason: RegExp,
+    reusedReason = reason,
   ) => {
     const claimed = join(artifacts, `${name}-claims.json`);
     const parsed = join(artifacts, `${name}-ast.json`);
@@ -42,7 +43,7 @@ export function checkGenericRest(verifier: string, artifacts: string): void {
       assert.ifError(p.error);
       assert.equal(p.signal, null);
       assert.equal(p.status, 1, p.stdout + p.stderr);
-      assert.match(p.stdout + p.stderr, reason);
+      assert.match(p.stdout + p.stderr, mode === "--produce-source-claims" ? reason : reusedReason);
     }
   };
   const retyped = structuredClone(claims);
@@ -54,13 +55,14 @@ export function checkGenericRest(verifier: string, artifacts: string): void {
   assert(point && !Array.isArray(point.type) && "scheme" in point.type);
   assert.deepEqual(point.type.scheme.rest, { param: "T" });
   point.type.scheme.rest = [1, 2];
-  // The closure is graph code at its scheme row: the rest the claim names
-  // must be one its collected store meets.
+  // The changed rest contract is checked at the numeric call's source
+  // obligation; reused evidence must also decode over its changed type table.
   reject(
     "retyped-rest",
     retyped,
     ast,
-    /claimed at a signature its store does not meet/,
+    /source expression obligation at \[261,268\): evidence search failed/,
+    /head \d+ argument 0 part 0: head \d+ binds 0 locals, slot 0 named/,
   );
 
   const wrongCall = structuredClone(claims);
@@ -68,7 +70,9 @@ export function checkGenericRest(verifier: string, artifacts: string): void {
   assert(fn);
   const calls = fn.expressions.filter((e) => e.instantiate);
   assert.equal(calls.length, 2);
-  const numeric = calls[1]?.instantiate?.[0];
+  const numericStart = readFileSync(join(artifacts, "source.ts"), "utf8").indexOf("collect(n, n)");
+  assert(numericStart >= 0);
+  const numeric = calls.find((e) => e.pos[0] === numericStart)?.instantiate?.[0];
   assert(numeric);
   numeric.type = [1, 2];
   // Fresh search fails at the obligation; reused evidence names heads of the
