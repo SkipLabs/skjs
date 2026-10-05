@@ -1126,14 +1126,14 @@ progress.
 TypeScript producer is a second writer of the claims format, used only by the
 corpus and the report viewer. The OCaml producer reads the Fragment and
 predicts what Lean's lowering establishes on each control-flow edge, a mirror
-of the lowering no review covers (`proposal.ml` carries a file marker only).
-Done in order, before the items below.
+of the lowering no review covers (`proposal.ml` carries a file marker only);
+it is to read the lowered graph instead. Done in order, before the items below.
 
 | Item | State | Closed when |
 | --- | --- | --- |
 | 1. Delete the TypeScript producer (`tools/tsc-claims.mts`): the OCaml producer is the pipeline's one producer, the corpus and the report viewer run it | open: compared per function on the corpus's 303 (2026-10-05): the OCaml producer's claims verify for 301, the TypeScript producer's for 276, every one of those among the 301 | the corpus run with the OCaml producer states and verifies at least the functions the TypeScript producer did, compared per function; then `tsc-claims.mts`, `--producer`, the viewer's producer choice and their docs are deleted |
-| 2. Producer mirror: an inventory of `proposal.ml`'s rules that predict a lowering or Lean rule (jumps through `finally`, iterator close, cell contents after declarations and assignments, operator classification, offered signatures), and a decision between reading Lean's lowered graph (claims keyed by graph node) and a concern per mirrored rule | open | the inventory is recorded and the decision taken with its cost: the wire and claim-reader change for the first, the concerns for the second |
-| 3. Producer mirror: the decision implemented | open | no producer rule predicts the lowering unreviewed: either the producer reads the lowered graph, or each mirrored rule has a concern that a change to either side makes due |
+| 2. The producer reads the lowered graph: design and validation. Lean emits the control-flow graphs it lowers the Fragment to; the producer proposes its claims per graph node, which Lean reads at those nodes, and stops predicting the lowering from the source (jumps through `finally`, iterator close, cell contents after declarations and assignments) | open | the design states the graph wire, the claims keyed by node and the checks on that association; a prototype over a subset of the cases (control flow, `try`/`finally`, iterator close, closures) reaches the same outcomes as the source-level producer, with forged node keys refused |
+| 3. The producer reads the lowered graph: cutover | open | every `cases.mts` outcome and the corpus's per-function results unchanged or better; the producer's source-level control-flow mirror and the source-position claim association it needed deleted |
 
 **Upstream sum example.** `reactive-sum-prettier-ignore`, Skip's sum service
 as published, against the pinned upstream runtime. The program is safe; the
