@@ -967,7 +967,7 @@ obstacle named. A search failure is neither.
 | TypeScript's `any` in the checked module's own annotations; a contextual closure parameter TypeScript types `any` | It states no contract. |
 | A rest parameter typed by what is no array | TypeScript rejects it (TS2370). |
 | A rest parameter typed by an intersection (`...xs: T[] & (number[] \| string[])`) | Its declared contract can be empty at an instance TypeScript admits: at `T := boolean` no array is both a writable `boolean[]` and a `number[]`, writable storage being invariant, yet TypeScript accepts `f<boolean>()`, and a body writing through one operand's view returns a number as a `boolean` (`invalid-rest-intersection`, executed under Node by `test.mts`). |
-| An intersection that normalizes to nothing (`string & { a: number }`, `(() => void) & number[]`, `number[] & { map: number }`) | No value of the model inhabits it (TypeScript keeps a branded primitive); it is refused rather than verified vacuously. |
+| A type that normalizes to nothing as a whole (`string & { a: number }`, `(() => void) & number[]`, `number[] & { map: number }`); as an arm of a union such an intersection adds nothing | No value of the model inhabits it (TypeScript keeps a branded primitive); it is refused rather than verified vacuously. |
 | An empty module (no function, no initialization code) | Accepting it would check nothing. |
 
 ### Model limits
@@ -1121,6 +1121,25 @@ units each gap stops is in
 Progress is recorded here and nowhere else. A commit that moves an item
 updates its row. The prose below describes each item's design, not its
 progress.
+
+**One producer.** The OCaml producer is the pipeline's producer; the
+TypeScript producer is a second writer of the claims format, used only by the
+corpus and the report viewer. Done before the items below.
+
+| Item | State | Closed when |
+| --- | --- | --- |
+| Delete the TypeScript producer (`tools/tsc-claims.mts`): the OCaml producer is the pipeline's one producer, the corpus and the report viewer run it | open | the corpus run with the OCaml producer states and verifies at least the functions the TypeScript producer did, compared per function; then `tsc-claims.mts`, `--producer`, the viewer's producer choice and their docs are deleted |
+
+**Upstream sum example.** `reactive-sum-prettier-ignore`, Skip's sum service
+as published, against the pinned upstream runtime. The program is safe; the
+items are the verifier limits it meets and the runtime's declared service
+types, which do not state why it is safe.
+
+| Item | State | Closed when |
+| --- | --- | --- |
+| 1. An intersection with no member inside a union is that union's bottom arm: `number & DepSafe`, distributed to `number \| (number & Managed)`, is `number` | done | `union-empty-intersection-arm` verifies, an annotation and a contextual callback parameter; `array-shadow-refused` stays refused; `reactive-sum-prettier-ignore` reaches item 2 |
+| 2. A named function passed where a callback type binds more parameters: JavaScript calls it with the extra arguments, which it ignores | open | `process.on(sig, shutdown)` verifies, `shutdown` checked at its own annotated signature |
+| 3. `runService(service, …)`: the upstream service types admit the service only by method bivariance, and do not relate what `createGraph` returns to what each resource reads | open | a design for runtime types stating that relation, against which the published service source is checked |
 
 **Boundary-repair cleanup: done.** Restore the original positive sources that the
 soundness boundary repairs refused ([steps](#restoring-completeness)). Closed

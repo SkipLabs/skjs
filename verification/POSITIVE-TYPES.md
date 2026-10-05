@@ -588,8 +588,8 @@ is excluded. Such a clause is dropped from a meet (`Clause.consistent`,
 
 and likewise for `dict`. So an array with an own `map`, `number[] & { map:
 number }`, whose bound excludes the key its record operand names, normalizes
-to $\bot$, and an intersection lowering to $\bot$ is refused rather than
-verified vacuously; an array with a key no prototype member has, such as
+to $\bot$; an arm $\bot$ of a union adds nothing to it, and a type lowering
+to $\bot$ as a whole is refused rather than verified vacuously; an array with a key no prototype member has, such as
 `[number, number] & Managed`, is kept.
 
 Lean: `meet`, `Clause.consistent`, `meetLists`, `normalize`, `normalize_sound`

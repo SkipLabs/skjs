@@ -535,6 +535,16 @@ def top : M Tree := prim "unknown" .top
 def emptyMeet : String :=
   "the intersection is empty: its operands have no value in common (no value has two shapes, and an array owns no key its prototype provides), and an empty intersection is refused rather than verified vacuously"
 
+/-- A union read arm by arm: an intersection arm with no value is the union's
+bottom and adds nothing. A union with an intersection arm (`meets`) is refused
+when it has no value as a whole: empty here, or each of its meets empty once
+the rows are known (`meetChecks`). -/
+def unionOfArms (site : String) (U : Union) (meets : Bool) : M Union := do
+  if meets then
+    if U.isEmpty then throw s!"{site}: {emptyMeet}"
+    modify fun s => { s with meetChecks := s.meetChecks ++ [(U, site)] }
+  return U
+
 /-- Two operands' clauses as TypeScript meets them: the model's meet, except
 that a record of invariant fields met with a function type is the function
 carrying those fields, a `callable`. -/
@@ -830,8 +840,9 @@ partial def lowerType (ctx : Ctx) (term : Json) : M Union := do
   match ← str term "k" with
   | "atom" => atomLabels term
   | "literal" => literalLabels term
-  | "union" => return normUnion ((← (← arr term "parts").mapM (lowerType ctx)).toList.flatten)
-  | "intersection" => intersect ctx term
+  | "union" | "intersection" => do
+    let (U, meets) ← lowerArm ctx term
+    unionOfArms ctx.site U meets
   | "parameter" =>
     fieldsExactly term ["k", "index", "span"]
     ctxValue ctx (.param (← (← field term "index").getNat?))
@@ -941,26 +952,37 @@ function as one callable, that row is a literal head of its own. -/
 partial def intersect (ctx : Ctx) (term : Json) : M Union := do
   fieldsExactly term ["k", "parts", "span"]
   let parts := (← (← arr term "parts").mapM (lowerType ctx)).toList
-  meetOf ctx.site parts (mentions [] term).isEmpty
+  meetOf parts (mentions [] term).isEmpty
 
-/-- The intersection of unions (§3.3): the meet labels over their product,
-unless the operands are ground (`ground`) and their rows clause rows: then,
-where TypeScript reads a record met with a function as one callable, that
-row is a head of its own. An intersection none of whose meets has a value is
-refused where it is written (`meetChecks`). -/
-partial def meetOf (site : String) (parts : List Union) (ground : Bool) : M Union := do
-  if parts.any List.isEmpty then throw s!"{site}: {emptyMeet}"
+/-- A type as the arms of its union: a union's arms, recursively, and an
+intersection as one arm, whose meets are lowered without deciding emptiness;
+whether the type has an intersection arm. `unionOfArms` decides emptiness for
+the whole union. -/
+partial def lowerArm (ctx : Ctx) (term : Json) : M (Union × Bool) := do
+  match kindOf term with
+  | some "union" =>
+    let arms ← (← arr term "parts").toList.mapM (lowerArm ctx)
+    return (normUnion (arms.flatMap (·.1)), arms.any (·.2))
+  | some "intersection" => return (← intersect ctx term, true)
+  | _ => return (← lowerType ctx term, false)
+
+/-- The intersection of unions (§3.3), as an arm of the union it is in: the
+meet labels over their product, unless the operands are ground (`ground`)
+and their rows clause rows: then, where TypeScript reads a record met with a
+function as one callable, that row is a head of its own. An arm with no value
+is empty here; its union decides whether the type has a value
+(`unionOfArms`). -/
+partial def meetOf (parts : List Union) (ground : Bool) : M Union := do
+  if parts.any List.isEmpty then return []
   if parts.length == 1 then return parts[0]!
   if ground then
     if let some rows ← groundRows parts then
       let some last := rows.getLast? | throw "empty intersection"
       let met ← (rows.dropLast.foldrM sourceMeetLists last : Except String _)
-      if met.isEmpty then throw s!"{site}: {emptyMeet}"
+      if met.isEmpty then return []
       let model := rows.dropLast.foldr meetLists last
       if met != model then return [← EquationLowering.ground "callable" met]
-  let meets := meetUnions parts
-  modify fun s => { s with meetChecks := s.meetChecks ++ [(meets, site)] }
-  return meets
+  return meetUnions parts
 
 /-- The clauses of ground operands whose rows are clause rows, when every
 operand's is. -/
@@ -1300,7 +1322,7 @@ partial def claimLabel (scope : List (String × Binding)) (j : Json) : M Union :
       fieldsExactly j ["meet"]
       let parts ← (← ps.getArr?).toList.mapM (claimUnion scope)
       if parts.length < 2 then throw "source claims: a meet has at least two parts"
-      meetOf "source claims" parts (parts.all (·.all fun t => !treeOpen t && !hasRigid t))
+      meetOf parts (parts.all (·.all fun t => !treeOpen t && !hasRigid t))
     else if let some s := get? "array" then
       fieldsExactly j ["array", "readonly"]
       let store ← claimUnion scope s
@@ -1321,7 +1343,8 @@ partial def claimUnion (scope : List (String × Binding)) (j : Json) : M Union :
   let ls := (← j.getArr?).toList
   unless (ls.zip ls.tail).all (fun (a, b) => claimCmp a b == .lt) do
     throw "source claims: a label list is in canonical order, each label once"
-  return normUnion ((← ls.mapM (claimLabel scope)).flatten)
+  unionOfArms "source claims" (normUnion ((← ls.mapM (claimLabel scope)).flatten))
+    (ls.any fun l => (l.getObjVal? "meet").isOk)
 /-- Lower one pending row. -/
 partial def runJob (job : Job) : M Unit := do
   let h := job.head

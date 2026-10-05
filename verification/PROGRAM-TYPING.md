@@ -4062,9 +4062,17 @@ intersection it leaves with nothing is refused for it. An array owns its store, 
 never one, and their meet is empty. An interface stating no member of its own
 is its bases' meet (`interface Callback extends Function {}` is `Function`).
 An intersection whose meet is empty (`string & { a: number }`, a function and
-an array, `number[] & { map: number }`) is refused rather than verified
-vacuously: TypeScript keeps such a type (a branded primitive), which no value
-of the model inhabits.
+an array, `number[] & { map: number }`) has no value, though TypeScript keeps
+such a type (a branded primitive). As an arm of a union it adds nothing:
+emptiness is decided for the union as written, its arms read together
+(`unionOfArms`, for annotations and producer claims alike), so
+`number | (number & Managed)` is `number`. A type with no value as a whole
+is refused rather than verified vacuously:
+
+```math
+⟦A_1\mid\cdots\mid A_k⟧=\bigcup_i ⟦A_i⟧,\qquad
+\text{refused when}\ \bigcup_i ⟦A_i⟧=\varnothing.
+```
 
 ### Computed types
 
