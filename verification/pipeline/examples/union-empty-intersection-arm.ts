@@ -1,6 +1,5 @@
 // An intersection arm with no value adds nothing to its union: a number
-// branded by a record is no value, so the parameter is a number, as the
-// framework's `number & DepSafe` distributes.
+// branded by a record is no value, so the parameter is a number.
 interface Brand {
   readonly brand: symbol;
 }

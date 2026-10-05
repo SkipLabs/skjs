@@ -4066,7 +4066,7 @@ an array, `number[] & { map: number }`) has no value, though TypeScript keeps
 such a type (a branded primitive). As an arm of a union it adds nothing:
 emptiness is decided for the union as written, its arms read together
 (`unionOfArms`, for annotations and producer claims alike), so
-`number | (number & Managed)` is `number`. A type with no value as a whole
+`number | (number & { brand: symbol })` is `number`. A type with no value as a whole
 is refused rather than verified vacuously:
 
 ```math
