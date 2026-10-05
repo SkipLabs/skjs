@@ -3217,7 +3217,10 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
           (match init.node with
            | Literal (LNull | LUndefined) -> cell (union (widen initial) (evolved init.pos))
            | _ -> cell (widen initial))
-        | true,Some contract -> cell contract
+        (* An annotated `let` is its cell's first assignment: TypeScript
+           narrows the declared type to what was assigned, and the cell
+           holds the initializer's value, as after an assignment statement. *)
+        | true,Some contract -> holding contract initial
         (* A class's annotation is its own construct signature, which the
            parser writes; the class value's claim may offer more. *)
         | false,Some _ when (match init.node with Ctor _ -> true | _ -> false) -> Value initial
@@ -3348,6 +3351,15 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     | Throw e -> ignore (expr env e); env
     | Try (body,handler,finalizer) ->
       let local after = List.filter (fun (n,_) -> List.mem_assoc n env) after in
+      (* A `break` or `continue` out of the `try` runs the `finally` on its
+         way: it lands knowing each cell by its contract, as after the
+         `finally`, which knows them so. The jumps recorded from here on are
+         this statement's. *)
+      let jump_marks = match !loops with
+        | (breaks,continues) :: _ -> Some (List.length !breaks,List.length !continues)
+        | [] -> None in
+      let exit_marks = Hashtbl.fold (fun l _ acc ->
+          if List.mem_assoc l acc then acc else (l,List.length (Hashtbl.find_all exits l)) :: acc) exits [] in
       let completed = statements env body in
       (* A throw leaves the body from any point of it, after any part of it
          ran: the handler knows each cell by its contract, and what was
@@ -3368,7 +3380,24 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
        | None -> completed
        (* The `finally` block runs after a completion, a `return` or a throw,
           from any point: it knows each cell by its contract. *)
-       | Some finalizer -> local (statements (forget env) finalizer))
+       | Some finalizer ->
+         (match !loops,jump_marks with
+          | (breaks,continues) :: _,Some (b,c) ->
+            let through marker l =
+              let fresh = List.length l - marker in
+              List.mapi (fun i e -> if i < fresh then forget e else e) l in
+            breaks := through b !breaks;
+            continues := through c !continues
+          | _ -> ());
+         let labels = Hashtbl.fold (fun l _ acc -> if List.mem l acc then acc else l :: acc) exits [] in
+         List.iter (fun l ->
+             let all = Hashtbl.find_all exits l in
+             let marker = Option.value (List.assoc_opt l exit_marks) ~default:0 in
+             let fresh = List.length all - marker in
+             List.iter (fun _ -> Hashtbl.remove exits l) all;
+             List.iter (fun e -> Hashtbl.add exits l e)
+               (List.rev (List.mapi (fun i e -> if i < fresh then forget e else e) all))) labels;
+         local (statements (forget env) finalizer))
     (* A program iterable's loop body. Its close runs after a `break` of the
        loop, a `return` or a throw out of the body, from any point of it: it
        knows each cell by its contract, and a `break` leaves the loop after
