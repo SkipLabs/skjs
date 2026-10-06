@@ -321,8 +321,7 @@ captured receiver retains its binding function's mode.
   function's receiver slot, an arrow's `this` being a capture; `o.m(a)` and
   `(o.m)(a)` lower to `invoke` on the saved object and method; every call's
   receiver is a located `method-receiver` obligation. Lean, Fragment,
-  SourceClaims, the TypeScript producer, the OCaml
-  producer's signatures and inference, claim text, the diagnostic view and the
+  SourceClaims, the OCaml producer's signatures and inference, claim text, the diagnostic view and the
   term codec all carry the receiver.
 - **R4.** `CallCode.bound` with `Step.callBound`; `callsT_bound` and
   `restsT_bound` (residual fixed and variadic signatures at any receiver),
@@ -339,9 +338,9 @@ targets as plain calls do; `.bind` takes fixed and variadic targets
 (`bindRestE`, `restsT_bound`); `.apply` takes tuples, lists of unknown length
 into a rest-only target, and nullish lists; a declaration's `this` parameter is
 an assumed input; a named function expression is accepted where its body does
-not refer to its name. The TypeScript producer states quantified closures and
-reads each call's instantiation from the receiver and actuals it passes, so
-every witness is verified by both producers. What stays refused is refused
+not refer to its name. The OCaml producer proposes quantified closure
+signatures and call instances using receiver and actual-argument types.
+What stays refused is refused
 for every function, not for receivers: sloppy code reading `this` (the plan's
 later obligation), a function expression referring to its own name (a
 recursive binding, as a cyclic closure initialization is), and inside a closure

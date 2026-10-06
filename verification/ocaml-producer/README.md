@@ -1,14 +1,16 @@
-# OCaml producer prototype
+# OCaml claim producer
 
-An independent OCaml producer with **verified acceptance**, using the existing
-Fragment → SourceClaims → Lean evidence pipeline. It does not invoke SKJS or
-TypeScript's type checker to infer claims. The shared TypeScript parser remains
-the source front end. The producer uses the shared Lean model, lowering and
-proof rules; it has no separate acceptance calculus.
+The producer infers candidate types for a TypeScript program. It reads the
+shared source representation, called Fragment, and execution plans supplied by
+Lean, then writes SourceClaims. Lean checks the proposed types against the
+source annotations and the program's behavior in its model. A successful
+producer run means that it produced claims; the pipeline reports `verified`
+only when Lean certifies every extracted function.
 
-## Documents
-
-- [SKJS-COVERAGE](../pipeline/SKJS-COVERAGE.md): the measurement of how much of SKJS's own test suite the pipeline verifies, and what stops the rest.
+The shared front end uses TypeScript's parser and project resolution. OCaml
+performs its own inference. The producer and
+verifier share the source language and execution plans; Lean owns the typing
+rules and acceptance decision.
 
 ## Try it
 
@@ -22,1423 +24,274 @@ dune build --root verification/ocaml-producer
 node verification/pipeline/verify-source.mts verification/pipeline/examples/callbacks.ts
 node verification/pipeline/verify-source.mts verification/pipeline/examples/recursive-json.ts \
   --project verification/pipeline/skip-runtime-snapshot
-node verification/pipeline/verify-source.mts verification/pipeline/examples/recursive-json-variants.ts \
-  --project verification/pipeline/skip-runtime-snapshot
-node verification/pipeline/test.mts
 ```
 
-The `--project` argument reads TypeScript files, package exports, workspace
-symlinks, and a `tsconfig.json` that includes the client. The checked-in
-`skip-runtime-snapshot` directory is a small source-tree snapshot with that project setup;
-`skip-runtime-sound-binding` is the same snapshot with a sound service binding, holding
-only the files that binding changes
-([reactive-runtime integration](#after-callable-part-5-reactive-runtime-integration)).
-A full Skip checkout needs an equivalent client project before its imports can
-pass the new TypeScript resolution check.
+Dune is available through `opam install dune`. The executable needs only the
+OCaml standard library. It needs no Skip toolchain or Docker. Set `VERIFIER` to
+use a verifier executable built from the same Lean sources.
 
-Set `VERIFIER` to reuse a verifier executable built from this checkout's Lean
-sources. This avoids rebuilding Lean in a fresh worktree. The prototype requires
-Dune for building, but no OCaml libraries beyond the standard library, and no
-Skip toolchain or Docker. Install Dune with `opam install dune` if needed.
-`node test.mts` (from this directory) runs the end-to-end verification tests.
+The pipeline requires a strict TypeScript project. Without `--project`, the
+examples use their checked-in project. With it, the front end resolves imports
+through that project's source files, package exports, workspace symlinks and
+`tsconfig.json`. The configuration must include the client file. The
+`skip-runtime-snapshot` directory supplies such a project for the imported
+examples; a full Skip checkout needs equivalent client configuration.
 
-[dune](dune) declares the producer's library and its executable;
-[dune-project](dune-project) makes this directory a dune root of its
-own, which `--root` builds into the `_build/` the report viewer and `verify-source.mts` run.
-[`../dune`](../dune) limits the repository's dune workspace, which an editor's
-OCaml language server needs at the root, to this directory.
-[examples/tsconfig.json](../pipeline/examples/tsconfig.json) is the strict project an
-example is checked under when no `--project` names another, and
-[examples/package.json](../pipeline/examples/package.json) makes the examples ES modules,
-as the `skip-runtime-snapshot` project's Node16 resolution requires of the examples it
-includes.
+The command prints an outcome and an artifact directory. The directory holds
+the source snapshot, `fragment.json`, `flow.json`, `claims.json` when proposed,
+`evidence.json` when produced, and diagnostic logs. Outcomes are:
 
-The checker prints `verified`, `unverified`, `unsupported`, or `error`, with an
-artifact directory containing the exact source snapshot, Fragment, claims,
-evidence (if produced), and diagnostic logs. The outcome identifies the failing
-phase (`source`, `proposal`, `search`, or `check`); success lists every verified
-function. Only `verified` exits successfully.
-Proof search has fuel 12; each child process has a 30-second timeout. An
-`unverified` result is not a proof that the source is wrong. A timeout or failed
-executable is an infrastructure error. Artifacts remain available for inspection.
+| Outcome | Meaning |
+| --- | --- |
+| `verified` | Every extracted function has a checked certificate. |
+| `unverified` | Validation or proof search did not establish the claims. |
+| `unsupported` | A source or proposal restriction prevents the run. |
+| `exhausted` | A verification resource budget was reached before an obligation was decided. |
+| `error` | A tool failed, timed out or produced an invalid document. |
 
-The low-level `_build/default/producer.exe fragment.json flow.json` command **only proposes claims**.
-Lean's `--lower-control-flow` command supplies `flow.json`; the producer solves
-entry environments over its execution points and edges.
-Its successful exit is never a type-checking verdict.
+Only `verified` exits successfully. `unverified` is not a disproof of the
+program. The pipeline uses proof-search fuel 12 and a 30-second timeout per
+child process. These are operational limits, separate from the typing rules.
 
-## Reading its claims
+For direct use, with existing artifacts:
 
-`make viewer` offers this producer beside `tsc`: select **OCaml
-claims**, and the report viewer runs `verify-source.mts` on the file — the same run as the
-command line, in a process of its own — and builds its page from that run's
-outcome and artifacts: the Fragment, this producer's own claims, and the
-evidence the verifier checked. What it shows is that document, claim by claim
-at the spans it is about, the run's outcome, and the verdict beside each
-function; where the run did not verify, each function is checked alone over the
-same Fragment and claims to say where it stopped. Its examples above are in the
-picker, negative controls and named gaps included. The report viewer displays outcomes
-and never reaches one, so an outcome there means what it means here: `✗` is no
-derivation found, never a disproof. A source the run refuses before proposing
-a claim — the parser's gate, or this producer's own `unsupported:` — is shown
-whole under that outcome, with the TypeScript errors the gate read
-(`typescript-diagnostics.json` among the artifacts) at their spans. The report viewer
-runs the executable `dune build` leaves in `_build/`; it does not build it.
+```sh
+verification/lean/.lake/build/bin/verifier --lower-control-flow fragment.json > flow.json
+verification/ocaml-producer/_build/default/producer.exe fragment.json flow.json > claims.json
+verification/ocaml-producer/_build/default/producer.exe --explain fragment.json flow.json
+```
 
-`node verification/pipeline/test.mts` checks that correspondence: that
-the claims the report viewer carries are the ones this producer wrote, that its
-verdicts are the verifier's, and that a source the run refuses is shown under
-that outcome, in its words.
+`--explain` prints the known causes of proposal failure with source spans. It
+is an aid to diagnosis, not a verification result. The pipeline command runs
+the complete search and independent certificate check.
 
-## Inferred effects: implementation in progress
+[dune](dune) declares the library and executable;
+[dune-project](dune-project) makes this directory a Dune root. The enclosing
+[workspace declaration](../dune) lets an OCaml editor find that root from the
+repository.
 
-Callback heap-preservation guarantees are inferred components of function types,
-proposed at definitions and independently certified by Lean. Translating an
-ordinary TypeScript annotation does not supply such a guarantee. Calls use the
-certified type, without requiring the callback body at the call site. The current
-body check composes pure expressions, required field reads, fresh allocations and
-fixed calls consuming qualified signatures. Other call forms and nested
-short-circuit/coalescing terms with heap operations still need composition;
-the producer keeps their proposals conservative. Signature transport, generic substitution and
-`.bind` retain effects. Native `map` and `find`/`findIndex` consume them through
-ordinary overloads, restoring `array-methods`, `array-library` and
-`array-generic-name`. `callback-effects` exercises returned and bound callbacks.
-The admitted semantics supplies ordinary array construction, including for
-external inputs. `callback-effects` also covers readonly field reads and returned
-fresh objects/arrays and calls through annotated bindings with omitted defaults.
-`closure-contextual-parameters` also verifies unchanged: module constants retain
-checked initializer claims, with source annotations still checked independently.
-Forged effects fail at the callable's located typing obligation: search uses
-only definitions whose full certificate checks. Final acceptance still checks
-every code certificate. Broader composition remains incomplete.
-The [design boundary](../DESIGN.md#inferred-call-effects-elaboration-and-certification)
-owns this distinction and the [planned typing rules](../PROGRAM-TYPING.md#certifying-inferred-call-effects)
-own the definition, application and effect-forgetting obligations.
+## Execution and inference
 
-## Architecture, including the parts not implemented yet
+A program has three relevant representations:
 
-The scope limit is in the implemented cases, not a different account of the
-language. The boundaries are:
+1. **Fragment** retains expressions, statements, annotations and source spans.
+2. **Execution plans** specify control flow, evaluation order and binding order.
+3. **SourceClaims** proposes types and environments at points in those plans.
 
-1. [source.ml](source.ml) decodes the shared Fragment into typed OCaml data. It preserves
-   source positions, declared contracts, and quantified parameters with bounds.
-   Local alias substitution uses a fresh parameter environment, retaining the scoped
-   identities of its actual arguments. Imported recursive aliases retain named
-   declaration identities; the producer never expands their equations.
-   Unsupported constructs fail explicitly. It does not lower JavaScript into a
-   second calculus; existing Lean lowering owns that step.
-2. [semantic.ml](semantic.ml) describes immutable semantic types. Rigid binder identity
-   includes scope and binder index; spelling is only for export. Object shapes
-   contain both field capabilities and call signatures. Fields distinguish
-   presence, reads and writes; function objects will not require a second
-   type universe. Required invariant fields, readonly views and array/tuple
-   contracts are implemented. Optional field presence remains separate from
-   present-undefined, and is blocked by the shared source/proof interface.
-3. [environment.ml](environment.ml) distinguishes immutable value snapshots from mutable
-   storage contracts. A cell carries its fixed contract and what it is
-   proposed to hold at a point: the contract, or a narrower primitive type
-   after an assignment statement, a guard, or where two arms meet, which Lean
-   checks as a fact about the cell's current contents on every edge into the
-   point. A call or write it cannot see, a loop head the body assigns, and a
-   closure body (which runs later) know a cell by its contract. No refinement
-   replaces the contract itself: every write is checked against it. A `let`
-   without an annotation has TypeScript's declared type as its contract, the
-   initializer's widened type, or, for a `null` or `undefined` initializer
-   (TypeScript's evolving `any`), the union of what is assigned to it, and
-   an unannotated `[]` is claimed at the array of what is pushed or written
-   into it; a parameter the body assigns is
-   a cell at its annotation. It also records what a field of an immutable
-   binding's object holds after a guard, until a step may write it, which the
-   claims state as that binding's `current` field assertion; and an
-   immutable binding declared at a named union is held at its arms, which a
-   field test against a singleton keeps or drops (discriminated unions);
-   initialized by an object literal, at the arms the literal's keys and
-   literal members admit, as TypeScript narrows a declared union on
-   assignment. A `typeof` test naming a primitive family narrows a value of
-   a type parameter to that family where it holds, as one of `unknown`. A
-   labeled block (a lowered `switch`) is left with what each `break` of its
-   label knew, joined at its end.
-4. [proposal.ml](proposal.ml) infers immutable candidate claims. It neither validates nor
-   publishes acceptance.
-   [inference.ml](inference.ml) infers the instance of a quantified callable at a call: it
-   accumulates directional lower/upper constraints through callable shapes,
-   reversing direction at each callback parameter and preserving it at results.
-   Two applications of one declaration relate their arguments both ways, and
-   where the call's value is expected at a type its result is constrained by
-   it, as TypeScript infers from the return position.
-   Declared dependent bounds propagate lower constraints forward and upper
-   constraints backward to a fixed point. Constraints also pass through
-   construct signatures (parameters reversed, the instance preserved), between
-   two applications of one declaration (each argument both ways, as no variance
-   is known), into a declaration's equation when an application meets another
-   shape, and field by field into records, so a class value passed to a generic
-   method (`b.map(Show)`, `EagerCollection.map`) fixes the method's binders from
-   the class's instance. Two generic methods binding as many parameters are
-   related with the source's binders renamed to the target's (`then` of
-   `Promise<number>` at `then` of `PromiseLike<T>` gives `T := number`); a
-   bound mentioning one of those binders fixes nothing. A callable at a union
-   with one callable arm (an optional callback) is related to that arm. A
-   variable whose lower and upper bounds share a type,
-   as an invariant position makes them, is that type; otherwise a declared
-   graph bound is preferred. Candidate types join lower bounds;
-   upper-only candidates intersect primitive bounds when representable; a
-   binder with no candidate is `unknown`, as in TypeScript. A binder no
-   actual, receiver or expected type constrains takes its declared default
-   at the other binders' instances, as TypeScript does: `p.then(f)` with no
-   expected type instantiates `then`'s `TResult2 = never` at `never`. A literal
-   candidate of an unbounded binder the result does not return bare widens,
-   as TypeScript widens it (`box(42)` is a `Box<number>`, `id(42)` is `42`),
-   where every upper bound admits the widened type. A record at a
-   discriminated union of records is related to the one arm whose literal
-   tags it holds (`{ kind: "some"; value: number }` at `Option<T>` gives
-   `T := number`). An array literal at a binder bounded by a union with one
-   tuple arm of its length is built at that tuple, and a tuple below a bound
-   with a tuple arm is the binder's instance. Every
-   argument and substituted bound is still validated by Lean. It conservatively joins branches and infers local
-   values, object shapes, callback results and calls from explicit signatures.
-   A closure without a result annotation is proposed at its body's widened
-   type. A named closure passed where more parameters are offered — a fixed
-   signature taking more, or a variadic one whose fixed parameters cover its
-   own — is claimed, where it is created, at that signature beside its own; a
-   first pass over the function finds the offers and a second states them. A
-   literal is claimed at the offered signature. Offers are made at every call
-   shape, and an overloaded callee's candidate matches a closure argument it
-   would offer to. A class value expected at a construct signature whose
-   instance has a method taking more parameters than the class's own offers
-   its method's closure that longer signature, and the class value that
-   construct signature, the same way; so does one whose construct signature
-   passes more actuals than the constructor binds. A fresh object literal whose contract
-   has a readonly index or an optional field is claimed at its exact record (`Exact`:
-   its fields and an own-key bound: own keys among exactly theirs), which is how
-   it meets a readonly dictionary or leaves an optional field out, and so is
-   a constant's literal used whole where such a contract is expected; one whose
-   contract has a writable index is claimed at the dictionary itself, each
-   field at its index's type, since a writable index is never met through an
-   own-key bound. Explicit type
-   arguments fix a call's leading binders before the rest are inferred; an
-   actual at a parameter mentioning none of them is built at that parameter.
-   Expected types guide fresh object/array construction, while the actual
-   initializer claims remain separate obligations. Branch refinements never
-   refine a mutable binding's storage contract, only its proposed contents. Loops use the incoming
-   fixed contracts as candidate invariants; `break` and `continue` edges are
-   validated by the existing control-flow checker. Declared types are candidates to prove, not proof that their bodies satisfy
-   them. There is no second, approximate subtype relation used for acceptance.
-5. [claims.ml](claims.ml) serializes those candidates into the existing producer-neutral
-   SourceClaims protocol. Its table holds only its own clause rows; it names
-   what only Lean builds rows for by
-   [label trees](../SOURCE-CLAIMS.md#encoding): a declaration's
-   application by the declaration's position and its arguments, defaults
-   completed, an array type by its store row, an intersection, which the
-   producer keeps as its operands (`Meet`), by its operands, and a binder by
-   its name; an intersection with a union operand is written as the union
-   of the intersections with each arm, the same values, so a read splits on
-   them. Lean builds those rows from the source equations, the one array
-   shape and its own lowering of an intersection: every declaration, array
-   and intersection has one lowering, and OCaml cannot supply a competing
-   interpretation. A
-   read of an intersection is proposed at the first operand that has the
-   member, which Lean checks. Graph interning is local to one
-   document. Graph labels are an export detail, not type-variable identities.
-6. `verify-source.mts` freezes source bytes, runs the parser and OCaml producer, asks Lean
-   to reconstruct obligations and produce evidence, then invokes the independent
-   evidence consumer. Every source function must be covered. Acceptance is
-   printed only after that final check succeeds.
+The [languages index](../LANGUAGES.md) identifies their definitions, and the
+[claims protocol](../SOURCE-CLAIMS.md) defines their wire format.
 
-Source binder roles are classified structurally, respecting nested scheme
-scopes, in both OCaml and Lean. Each source environment retains whether a name
-binds a value type or a pack; the wrong lookup path refuses it. A binder used
-in both roles remains an explicit unsupported combination until its collected
-array interpretation is implemented.
+Lean constructs the execution plans from Fragment before reading claims. A
+statement graph supplies successors, lexical scopes and exception handlers.
+Each body has its own graph. Declarations with several bindings have one node
+per binding, so an initializer sees the bindings initialized before it.
+Expression plans save intermediate values and specify conditional evaluation,
+receiver and method evaluation before call arguments, assignment references
+and spreads. Binding plans specify destructuring reads, defaults and the
+progressive initialization of parameters.
 
-Value types and argument-list contracts are distinct OCaml types: `ty` and
-`pack`. A rest pack is a `PackParameter` or a concrete tuple shape; it cannot
-occur as an atom of a value type. Substitutions explicitly carry a
-`ValueArgument` or `PackArgument`, and lookup refuses using either in the other
-position. Nested binders protect their identities in both projections. Ordinary
-inference proposes value arguments; the pack-call path supplies its list
-candidate before inferring the remaining value arguments. Neither path decides
-acceptance. Inference returns its substitution and proposed result; unused
-copies of instantiated parameters and bounds have been removed. Lean checks
-bounds from the declaration and the exported substitution. Array and pack
-element substitution share one sequence traversal, but an argument list is
-still distinct from its allocated array.
+The producer interprets these plans to compute point states. It uses a work
+queue: a changed input state causes a node to be visited again, and outgoing
+states are joined at successors. Scope projection retains only live bindings;
+impossible paths do not contribute types to a feasible join. Exception edges
+conservatively forget mutable contents and field facts. Repeated visits can
+widen a state by forgetting those facts. Claims for each node come from its
+latest transfer, and the producer assembles them after the work queue settles.
 
-Inference metavariables and existential witnesses are **not implemented**.
-When introduced, they must have separate identities and capabilities from rigid
-binders. They belong to proposal/search state; they cannot be substituted into
-published semantic types without discharging retained obligations. Likewise,
-delayed literals are inference work, not new semantic types. Keep
-inference-variable identities and write capabilities out of the published
-semantic-type API.
+Expression inference also reads the source tree to obtain contextual types,
+choose callable signatures and infer generic instances. The execution plan
+supplies the environment at each observed child expression. Recursive source
+typing therefore uses the state appropriate to that child's evaluation, while
+the shared plan determines effects and which operands run. Closure bodies use
+their own graphs and capture contexts. Expression-bodied closures use a binding
+prologue for defaults; defaults represented as statements follow the body graph.
 
-The implemented slice accepts generic closures — unbounded, bounded by any
-ground type or by another of their binders, nested, in generic bodies, with
-rests and defaults — called any number of times at any ground types. Each
-preserves its scheme in SourceClaims; Lean reads the scheme as a scheme row
-whose binders are fresh parameter rows, and the closure is graph code at that
-row (`funScheme`), checked once at its signatures, so acceptance does not
-depend on which calls the program makes. A call names its instance, checked
-against the scheme (`InstArrs`). An unannotated immutable local retains its
-checked initializer type, through dependent bounds and sequential declarators
-alike.
+Lean's final lowering consumes the same plan builders, with the claims used
+for type-directed operations. It reconstructs plans from Fragment when checking
+a proposal. Acceptance depends on the source, claims and certificates; a digest
+of the producer's input graph is not an acceptance premise. Source-to-model
+correspondence remains a review obligation, described in
+[the trust boundary](../DESIGN.md#trust-surface).
 
-Missing: fresh inference variables. An unquantified returned closure may
-retain an outer binder; that is not a nested quantified scheme.
+## Values, storage and facts
 
-Modules outside these stages:
+An environment distinguishes a value snapshot from a mutable cell. A cell has
+a fixed storage contract and proposed current contents. For example, a cell
+with contract `number | null` can hold `number` at one point and `null` at
+another. Both writes must meet the same contract. A guard refines current
+contents; it does not alter what may be stored over the cell's lifetime.
 
-- [json.ml](json.ml): the dependency-free JSON codec the stages read and write documents with.
-- [producer.ml](producer.ml): the executable; it emits proposals, never an acceptance decision, and with `--explain` the causes of failure it met.
+The producer obtains contracts from annotations or inference. For evolving
+unannotated bindings initialized with `null`, `undefined` or an empty array,
+it collects candidate types from writes and repeats inference until those
+candidates settle. Initializers and every write remain Lean obligations.
+Mutable parameters use their annotated contracts. A contract is published
+separately from point states, keyed by the binding's initializer span and name;
+copies of a declaration in different control-flow paths must agree on it.
+
+Current-content facts cover primitive refinements and supported facts that a
+cell is defined. Field facts describe an immutable binding's object at a point;
+unknown writes or calls invalidate them. Closure analysis forgets facts that
+need not hold when the closure runs. The producer's conservative state can
+therefore lose information that a stronger analysis might prove.
+
+Object types distinguish readable fields, writable fields, presence and bounds
+on the keys an object owns. Array types distinguish element contracts, tuple
+positions, mutability
+and presence: dense, readable or sparse. Source `T[]` requires readable elements
+in `T`; holes are compatible only when `T` admits `undefined`. A readonly view
+is a capability restriction, not a guarantee that another alias cannot mutate
+the array. The semantic rules for those distinctions belong to
+[positive types](../POSITIVE-TYPES.md) and
+[program typing](../PROGRAM-TYPING.md).
+
+## Generic-call inference
+
+A generic declaration binds rigid type parameters: each parameter stands for
+one fixed type within its body. Their identities include
+scope and index, so nested parameters with the same spelling remain distinct.
+A quantified callable is retained as a scheme, a contract that holds at every
+allowed instantiation of its parameters. Lean checks its body under the
+scheme's parameters and bounds, with its capture contracts, independently of
+which concrete calls occur. Each call proposes an instance whose arguments
+and bounds Lean checks.
+
+[inference.ml](inference.ml) collects lower and upper constraints for one
+call. A lower constraint requires a candidate to admit a type; an upper
+constraint requires the candidate to fit within a type. Callback inputs
+reverse the constraint direction; results preserve it.
+Constraints also come from receivers, expected result types, construct
+signatures, records, sequence shapes and applications of named declarations.
+Dependent bounds propagate constraints between parameters. When generic
+methods are compared, their local binders are renamed rather than treated as
+parameters to solve for the enclosing call.
+
+Candidate selection joins lower bounds and uses representable intersections
+of upper bounds. It considers declared bounds and defaults. An unconstrained
+parameter without a usable candidate is proposed as `unknown`. Literal
+candidates for an unbounded parameter can widen when the result does not return
+that parameter directly: `box(42)` can infer `Box<number>`, while `id(42)` retains
+`42`. A tuple arm of a bound can supply a contextual type for an array literal.
+These are inference choices; Lean checks the full instantiated contract.
+
+Value types and argument packs have separate OCaml representations. A pack
+specifies an argument list, including its arity; a rest parameter collects an
+array at runtime. Substitutions distinguish value arguments from pack arguments
+and refuse a lookup in the wrong role. A source binder used in both roles is
+unsupported. Explicit call type arguments fix leading parameters before the
+remaining ones are inferred.
+
+The solver does not search every substitution or every overload alternative.
+Structural decomposition and declaration unfolding have depth limits; a shape
+it does not decompose contributes no guessed constraint. A deterministic
+candidate can fail Lean validation even when another substitution would work.
+Solver constraint records are local proposal state, absent from published
+semantic types. The producer has no general existential-witness inference.
+
+## Callable effects
+
+Function types can propose that a call preserves its input heap: the contents
+of heap locations existing when the call starts. Operand evaluation precedes
+that guarantee. The producer
+infers this property conservatively from bodies and carries it through supported
+signature mappings, generic substitution and binding. An immutable annotated
+binding can retain an inferred effect on the same callable signature; an
+ordinary TypeScript annotation alone supplies no effect guarantee.
+
+Lean certifies the effect together with the definition's typing before a call
+can use it. Native array overloads can consume certified effects, for example
+to establish an array result's presence. Preservation concerns normal return;
+exceptional edges require their own state treatment. Composition has an
+explicit admitted scope in the
+[effect design](../DESIGN.md#inferred-call-effects-elaboration-and-certification)
+and [effect typing rules](../PROGRAM-TYPING.md#certifying-inferred-call-effects).
+
+## Implementation map
+
+| Module | Responsibility |
+| --- | --- |
+| [source.ml](source.ml) | Decode Fragment, annotations, declarations and scoped binders. |
+| [flow.ml](flow.ml) | Decode statement graphs and solve states over their edges. |
+| [execution.ml](execution.ml) | Decode expression and binding plans. |
+| [semantic.ml](semantic.ml) | Immutable type, signature, field, sequence and pack representations. |
+| [environment.ml](environment.ml) | Value snapshots, fixed cell contracts and current facts. |
+| [inference.ml](inference.ml) | Call-local constraints, substitutions and candidate instances. |
+| [proposal.ml](proposal.ml) | Interpret plans, infer contextual types and assemble claims. |
+| [claims.ml](claims.ml) | Serialize candidates and intern clause rows. |
+| [json.ml](json.ml) | Dependency-free JSON input and output. |
+| [producer.ml](producer.ml) | Command-line proposal and explanation entry points. |
+
+Named recursive declarations retain their source identities. The producer can
+inspect their equations for inference, while the claims refer to declaration
+applications. Lean owns their interpretation. Likewise, array types,
+intersections and scoped parameters use the protocol's label trees where Lean
+constructs the corresponding rows. The claims document contains a table of
+type rows. Numeric row labels identify entries in that table; they are separate
+from rigid type-parameter identities.
+
+Entry claims identify an execution point; expression claims identify that point
+and a source span. The point includes the body's owner and local node identity.
+This distinguishes repeated execution of one source expression, including
+copies through `finally`, from distinct closure bodies. Conflicting claims at
+one identity and missing required claims are validation failures.
+
+## Reading and checking claims
+
+`make viewer` offers **OCaml claims** beside TypeScript's verdict. The viewer
+runs the same pipeline entry, displays the producer's document at its source
+spans, and presents the verifier's outcome and located obligations. It runs
+the Dune executable already built in `_build/`. A refusal before proposal has
+no claims to display. Where the whole run does not verify, the viewer can check
+functions separately over the same Fragment and claims to locate their failures.
+
+The producer is unproved. Successful certification uses Lean's certificate
+consumer and the theorem `SourceClaimJson.checkJson_safe` for every accepted
+function plan. That theorem concerns the modeled program. The parser,
+source-to-model correspondence, native specifications, executable toolchain
+and runner have separate trust obligations. The model's restrictions and
+external-library assumptions are stated in [DESIGN](../DESIGN.md) and
+[program typing](../PROGRAM-TYPING.md).
+
+The admitted source language is a subset of TypeScript. Proposal limits include
+unsupported mixed value/pack binders, certain spreads and pattern types,
+ambiguous reused binding names in an input Fragment, and inference that does
+not converge. The source parser handles ordinary lexical shadowing by renaming
+bindings before proposal generation. Control-flow solving refuses
+a node after 64 visits and begins forgetting refinements at repeatedly visited
+joins after five visits. Evolving-contract inference permits four rounds of
+growth per pass. These limits can prevent a proposal for a safe program.
+The [case inventory](../pipeline/cases.mts) states executable expectations;
+[coverage](../pipeline/SKJS-COVERAGE.md) measures how far the pipeline reaches
+in SKJS's tests and identifies the blockers. The measurement is needed to
+assess utility beyond the small examples.
 
 ## Extending the producer
 
-Every row runs these steps. Each names the document that owns the rule it
-applies; this file records only what is specific to this producer.
+Start with a motivating source and its negative control, registered in
+[cases.mts](../pipeline/cases.mts). Identify the first failing boundary: parsing,
+execution-plan construction, proposal, obligation reconstruction, search or
+certificate checking. Preserve the source's behavior and complete annotation;
+an earlier restriction cannot stand in for the intended negative obligation.
 
-1. Add the motivating positive and negative sources without simplifying away
-   the feature. Add them to [`cases.mts`](../pipeline/cases.mts) with their expected phase
-   and diagnostic; that file is the executable source of truth, and the report viewer
-   lists its cases without further registration.
-2. Run the case once and identify the first honest boundary: shared parsing,
-   OCaml proposal, Lean obligation reconstruction, evidence production, or
-   evidence checking.
-3. Extend an existing shared representation in place; the
-   [languages index](../LANGUAGES.md) says which file owns each. If Fragment
-   or SourceClaims changes, update every producer, decoder, printer and
-   consumer; never add an OCaml-only format or a second accepted wire shape.
-   What the change must carry — soundness lemma, located obligations, or a
-   tampering test — is set by
-   [documentation ownership](../README.md#documentation-ownership).
-4. Keep inference candidates in `inference.ml`. Published `Semantic.ty` values
-   may contain rigid binders and schemes, never solver metavariables or an
-   unresolved substitution. A proposal is not an acceptance fact.
-5. Make Lean reconstruct every obligation from source and claims. A check that
-   can fail is an obligation with a source span, reported through the
-   [located diagnostic channel](../OBLIGATION-DIAGNOSTICS.md#direct-obligations);
-   a bare error string is a defect. Add a negative control that is
-   [independent](../tests/README.md) — it reaches that obligation and fails
-   there, and no shortcut that accepts the positives also rejects it — plus a
-   mutation showing that valid evidence cannot certify a forged claim or
-   substitution.
-6. While iterating, run only the cases the change touches:
-   `node verification/pipeline/run-cases.mts <pattern>` after
-   `dune build --root verification/ocaml-producer` (and
-   `lake -d verification/lean build` when Lean changed). Before committing,
-   run `node verification/pipeline/test.mts`, and the
-   wider tiers in [AGENTS.md](../AGENTS.md#iterating-run-what-the-change-touches)
-   when Lean, the parser or a wire format changed.
-7. Update the documents that own what changed, per
-   [documentation ownership](../README.md#documentation-ownership) — wire
-   fields in the protocol documents, the notation in the report report viewer language, the
-   decision in DESIGN — then the queue below from the final test output. Name any remaining blocked witness; passing adjacent
-   examples does not complete its row. Do not create a handoff or checkpoint
-   file.
+Extend the shared representation at its owner in the
+[languages index](../LANGUAGES.md). An expression with new executable children
+needs its execution order represented and consumed by both producer and Lean.
+Candidate inference belongs in OCaml; acceptance obligations belong in Lean.
+Add forged-claim controls where source correspondence is unproved, and run
+negative native-contract examples under Node when their runtime behavior is
+the reason for the restriction.
 
-## Breadth progress and work queue
+For producer changes:
 
-The current goal is breadth: exercise each major language mechanism with the
-smallest source that forces the final architecture to represent it honestly.
-Small examples are intentional; subset-specific representations are not. A row
-is complete only when its positive witness reaches `verified`, its relevant bad
-program reaches validation and is rejected there, and any new evidence field is
-covered by a tampering test. [`cases.mts`](../pipeline/cases.mts) is the executable source of
-truth for outcomes; the queue below records why the open rows matter.
-
-Complete, with their witnesses in [`cases.mts`](../pipeline/cases.mts): primitive values and
-fixed local storage; branches, nullish flow and loops; multi-field objects and
-aliases; arrays, tuples and readonly views; higher-order callbacks and variance;
-closure scope and partial application; callable objects with fields; omitted
-trailing arguments, for optional and for defaulted parameters; closures
-advertising several signatures, checked once per signature; rest parameters,
-tuple or mutable array, and spreads among the actuals; quantified array rests
-and calls through variadic callbacks; defaults and acyclic forward captures
-with preserved effect order, generic ones included; generic declarations and
-bounds; quantified closures — one inferred call, one closure called at two
-types, bounded, dependently bounded, returned or outer-dependent, reading
-captured storage, and as a callback argument; and generic inference
-constraints, for the maintained witnesses.
-
-| Open row                            | State                                   | Witness                              | Architectural pressure                                                        |
-| ----------------------------------- | --------------------------------------- | ------------------------------------ | ----------------------------------------------------------------------------- |
-| Optional object-field presence      | blocked at shared source/proof boundary | `optional-field.ts`                  | Model absence separately from a present `undefined` value                     |
-| Arbitrary numeric array indexing    | blocked in lowering                     | `dynamic-index.ts`                   | Prove a general index obligation rather than inventing a singleton key        |
-
-Take the first open row whose prerequisite representation already exists. For
-every quantified row, rewriting a closure to the finite overloads observed in
-that program, checking its body once per observed call, or replacing its scheme
-claim with a monomorphic arrow does not satisfy the row: acceptance must require
-the code's check at its scheme row independently of the number and types of
-observed calls, and each call must name an instance checked against the
-scheme.
-
-The procedure for a row is [Extending the producer](#extending-the-producer)
-above.
-
-### Schemes: what exists, what is missing
-
-A quantified callable is a scheme row
-([quantified schemes](../POSITIVE-TYPES.md#quantified-scheme-layer)): one
-callable value, in one world, meeting its signatures at every instantiation of
-its binders within their bounds. A generic closure is graph code at a scheme
-row (`funScheme`): its code is checked once, at the row's signatures over the
-binders' parameter rows, and a code table entry holds at every assignment of
-them, so at every instantiation, with one unchanged capture environment. A
-call names its instance: the callee is read at the instance's signatures,
-below the scheme by a checked instance table (`InstArrs`). A bounded binder is
-read as the meet of its row and its bound, one bounded by another binder as
-the meet of the two rows, and an instance maps a meet row to the meet of its
-parameters' instances (`meetOk`). There is one checker for generic bodies.
-
-Missing: recursive scheme graph nodes and first-class scheme hypotheses in the
-request protocol.
-
-Invariants any extension must keep. Scoped quantifiers have one shared
-representation across Fragment, semantic types and SourceClaims, including bounds
-and occurrences inside fields, callbacks and results; a spelling-only top-level
-`{param: "T"}` cannot identify nested, shadowing binders, and no producer may add
-its own encoding or flatten quantifiers into monomorphic arrows. Introduction
-checks the code at the scheme's signatures over parameter rows, for every
-assignment of them; captures keep their types and location contracts, and an
-already allocated location must not acquire a different contract at each
-instantiation. Elimination names an instance and proves its bounds and
-argument obligations. Each call gets fresh proposal-only
-candidates in the solver module, including reversed callback inputs and both
-read/write obligations for writable fields; no unresolved candidate ID appears in
-published semantic types or evidence, and hidden existential witnesses remain
-opaque rather than being solved as candidates. Extending only the parser, or
-specializing each closure body at its observed calls, would bypass the
-universal obligation.
-
-`generic-closure.ts` is the first end-to-end witness and `generic-two-calls.ts`
-the first with two independently substituted eliminations of one retained scheme.
-`invalid-scheme-capture.ts` is what separates this from specialization: every one
-of its calls instantiates `T` at Boolean, so a check at the observed instance
-would pass, and only the code's check at the scheme row refuses it. A successful OCaml solver unit test or an
-unchecked concrete specialization would not close that gap.
-
-### Subsequent flow work
-
-Then extend flow analysis with location identity, alias/effect tracking and
-invariant proposals. An inferred storage contract is TypeScript's declared
-type, checked against initialization and **all** writes. For heap flow facts, keep
-refinements separate from persistent field capabilities, invalidate them across
-unknown calls/writes, and preserve immutable snapshots. Cache validated decisions
-only with their complete assumptions/dependencies, separately from inference
-caches. None of that machinery is needed or claimed by the current conservative
-fixed-contract loop analysis.
-
-This is not a promise that full-language support needs no new representations.
-For example, recursive types, effect summaries and general quantifier proofs
-still need implementation and mathematical work. The invariants above must
-survive those extensions rather than being replaced by subset shortcuts.
-
-## What works and what the tests establish
-
-[cases.mts](../pipeline/cases.mts) is the executable inventory, including expected phase
-and diagnostic for every negative control and known gap.
-[test.mts](../pipeline/test.mts) runs every case against it, then the checks no case can
-make, in groups each justified by the requirement it guards: pinned trusted
-inputs, import resolution and declaration refusals, forged parser documents
-and claims, Node runs of the examples, and the report viewer's correspondence. It
-prints what the suite verifies, refuses and keeps visible; the numbers live in
-its output, not here.
-
-| Architectural pressure                      | Small examples with full certificates                                                                                                         |
-| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| Stable storage vs value snapshots           | `values.ts`, captured storage in `callbacks.ts`, `mutable-bindings.ts` (inferred contracts, assigned parameters, definite assignment)          |
-| Field identity and aliasing                 | `objects.ts`                                                                                                                                  |
-| Bidirectional construction hints            | `contextual.ts` (fresh object and tuple), `array-iterable.ts` (literal as `Iterable`)                                                                                                      |
-| Read permission vs write permission         | `readonly.ts` (alias view, array covariance)                                                                                                  |
-| Indexed reads and absent keys                | `index-signature.ts` (readonly dictionary identity, mixed named views, fresh construction, and results including `undefined`)                |
-| Sequence shape and presence                 | `arrays.ts` (write, inferred literal, optional tuple position)                                                                                |
-| Path-local knowledge                        | `flow.ts` (null test, conditional, nullish expression)                                                                                        |
-| Cyclic control flow                         | `loops.ts` (invariant, break, continue)                                                                                                       |
-| Higher-order values and variance            | `callbacks.ts`                                                                                                                                |
-| Closure-local scope and partial application | `blocks-bind.ts`                                                                                                                              |
-| One value with both fields and calls        | `function-fields.ts`                                                                                                                          |
-| No usable result guarantee                  | `top-void.ts` (unknown, discarded callback result)                                                                                            |
-| Rigid parameters and dependent bounds       | `aliases.ts`, `generic-inferred.ts`, `generic-bounds.ts` (ground bounds, unions over a binder, bodies without a return) |
-| Generic bodies as graph requests            | `generic-graph-bodies.ts`, `generic-recursive-list.ts`, `generic-graph-bounds.ts`, `generic-class.ts` (each binder a parameter row, a bounded one met with its bound; records, recursive aliases and classes over a binder) |
-| Explicit type arguments and `as const`      | `explicit-type-arguments.ts`, `as-const.ts` (readonly literal tuples and fields, tuple bounds as contextual types)                  |
-| Quantified rest collection and callbacks | `generic-rest.ts` (declaration, fresh arrays, independent instances, prefixes, spreads, defaults, callback invocation) |
-| Quantified closures and their calls         | `generic-closure.ts`, `generic-two-calls.ts`, `generic-bounded.ts`, `generic-returned.ts`, `generic-captured-store.ts`, `generic-callback.ts` |
-
-Every negative control must reach validation and fail for its expected reason;
-a premature gate refusal is a test failure. Controls cover bad returns,
-local/aliased/array writes, readonly writes, callback arguments and variance,
-mutable captures, generic fabrication, a closure valid at every observed call
-but not universally, a type argument violating its bound, a body that
-reverses its binder's bound, bad contextual initializers and stale heap refinements. Contextual types cannot turn a bad initializer into a fact.
-
-The named gaps are:
-
-- `dynamic-index.ts`: the existing lowering needs a proved array-index singleton;
-  it does not model arbitrary numeric properties.
-- `optional-field.ts`: the shared parser cannot yet represent optional presence.
-
-The motivating sources are preserved. No gap is counted as a verification,
-rewritten into an easier witness, or allowed to disappear behind another error.
-General recursive and interface types, value imports, classes/prototypes,
-exceptions, async behavior and general effects still need separate work.
-Callable overloads, imported recursive aliases and named type-only imports
-have narrower implemented slices; this is breadth across the current
-calculus's major mechanisms, not the full language.
-
-Decision completeness is stated and proved for the program checker:
-program evidence is accepted exactly when the program is derivable. Each is stated by rules, without proof
-terms or fuel, and each theorem gives both directions. This is completeness
-for the declared rules,
-not for every inclusion that happens to hold in the semantic model, and it is
-separate from completeness of graph proof search. The operational target
-stands beside it: every positive row reaches final semantic certification and
-every negative control fails its intended obligation. These are component results, not a
-completeness theorem for the complete source-to-certificate pipeline or for
-OCaml inference. Captured-cell writes still have a source typing rule but no
-direct certificate constructor.
-
-### OCaml inference completeness
-
-`inference.ml` proposes one substitution per call. It now accumulates constraints
-instead of committing to the first occurrence. The original witness
-`second(true, flag)` in `generic-inference.ts` infers `boolean`; callback-only
-constraints can infer the intersection `true` of upper bounds `boolean` and
-`true`. A dependent constraint `T ≤ U` propagates every lower bound of `T` to
-`U`, and every upper bound of `U` to `T`. If `U` has a chosen lower-bound join,
-that choice also constrains an upper-only `T`; otherwise `U = true` could still
-leave `T = boolean`. Each saturation copies finite seed sets (including these
-chosen joins), so cycles terminate without a heuristic fuel limit.
-Solver variables are local records keyed by scoped binder identities, never
-semantic types or exported inference state.
-
-The former `invalid-bound-reversed.ts` is preserved as the positive
-`generic-dependent-inference.ts`: `pick(true, flag)` has the valid substitution
-`U = T = boolean`. TypeScript 7.0.2's implicit inference rejects this call;
-the verifier accepts the OCaml producer's explicit substitution. The genuine
-negative `invalid-bound-argument.ts` supplies `number` for `T extends boolean`.
-Existing forged-substitution and callback-variance controls still fail Lean
-obligations; inference does not publish acceptance or hide contradictions.
-
-This is still not a complete solver. Constraint decomposition covers bare
-binders and simple monomorphic callable shapes, not generic record/array
-positions, overload alternatives or higher-rank schemes. Upper-only primitive
-intersections are computed; unrepresentable structural/rigid intersections
-fall back to a deterministic existing upper candidate that Lean must validate.
-There is no search over alternative substitutions or result-context inference.
-A binder with neither argument constraints nor a usable declared bound is
-explicitly unsupported. Further work must retain these constraints and the
-independent acceptance boundary, not add a permissive subtype checker here.
-
-## After callable part 5: reactive-runtime integration
-
-Status: **the recursive `Json` prerequisite has verified clients; all three
-framework milestones remain open**. The receiver work in the
-[callable roadmap](../tests/callables/README.md) is certified. Classes,
-construction and the runtime's generic API are not yet certified.
-The target is Skip's `skipruntime-ts` TypeScript API and implementation, not
-the native runtime written in Skip. The initial assessment inspected
-`skipruntime-ts/core/src/api.ts` and `skipruntime-ts/examples/sum.ts` in the
-sibling `skip` checkout; it is not a coverage run.
-
-The integration target is `sum.ts` as a sound client of the runtime's
-type-safe API. Preserve its classes, signatures and library interactions: do
-not rewrite it into today's fragment and call that runtime coverage. Retain
-the selected sources as fixtures, with provenance and expected outcomes in
-`cases.mts`. Measure each function's first blocker through parsing, proposal,
-lowering, evidence production and independent checking. Report verified,
-rejected and unsupported separately.
-
-The baseline is pinned to upstream `skip` commit
-`5c902f17431d963c1b6e07fc1d15da054ba30e70`, whose `api.ts` is the type-safe
-collection API: `EagerCollection<K, V>` extends the type-erased, branded
-`AbstractEagerCollection`, and `Resource<Collections extends
-SharedCollections>` bounds collection records by that base. That is how the
-API avoids the variance problem: `EagerCollection<K, V>` uses `K` and `V` in
-parameter positions, so it is not a subtype of `EagerCollection<Json, Json>`
-under sound subtyping, and nothing requires it to be. SKJS's
-[`@skipruntime/core` stubs](../../import-stubs/@skipruntime/core/index.d.ts)
-describe the same API. The upstream
-[`sum.ts`](../pipeline/examples/reactive-sum-prettier-ignore.ts), byte for byte
-but the result annotation `Promise<void>` on `shutdown`, and
-[`api.ts`](../pipeline/skip-runtime-snapshot/skipruntime-ts/core/src/api.ts) snapshots are checked by
-SHA-256 in `test.mts`.
-
-The upstream `sum.ts` is not a sound client of that API, and SKJS rejects it:
-loose `==`, a statement starting with `[`, and a plain object type
-`Collections` passed as `Resource<Collections>` — a named-field type is not an
-index-signature type, so it does not meet `SharedCollections` (TypeScript
-accepts it only by its unsound implicit index rule). It stays as provenance,
-with its first parser refusal recorded: its loose `==`. The target is
-[`reactive-sum-sound.ts`](../pipeline/examples/reactive-sum-sound.ts), the same program
-corrected as a client, which SKJS accepts with no errors and TypeScript accepts
-against the pinned API and Node's declarations (`@types/node` at the version
-Skip's lock pins, which the fixture project installs as Skip's build does).
-It changes only what soundness or SKJS requires: `===`; `interface Collections
-extends NamedEagerCollections`; parameter annotations in `Plus` and an
-explicit `reduce<number | null>` in `Minus`; the service as a `Service` class
-with `inputs`, `resources`, `externalServices` and `createGraph`, the form
-Skipper generates, since SKJS refuses object-typed top-level constants; and
-startup, shutdown and signal registration inside `async function main()`. The
-mapper and resource bodies are upstream's. SKJS's stubs gained the two real
-APIs it uses, `Values.getUnique` and `process.on`
-([`runtime-client-apis.ts`](../../tests/expect-error/runtime-client-apis.ts)).
-
-Its whole declaration graph is read: the runtime API, the standard
-library's `Promise`, `Iterable` and `Iterator`, and `ResourceClass` as a
-construct signature. Before the contract-erasure repair, every class
-(`AddIndex`, `Plus`, `Minus`, `Add`, `Sub`, `Service`) and `main`, given an
-`AnySkipService`, verified; the `sum-*` cases in [`cases.mts`](../pipeline/cases.mts)
-retain those targets. Promise-dependent units now stop earlier: recursive
-quantified contracts need an exact representation. Beyond that gap, the module
-also has a service-binding refusal, `runService(new Service(), …)`: sum.ts's `Service`
-takes the named `Collections` in `createGraph` and in its resources'
-`instantiate`, so it is not an `AnySkipService`, which TypeScript admits only
-through bivariant method parameters. What would make the call safe is the
-runtime's link from a service's `inputs` to the collections `createGraph`
-receives, which no trusted contract states yet
-([trust surface](../DESIGN.md#trust-surface)).
-
-**The sound-service-binding target is reopened.** It previously verified,
-but now fails at the unsupported full recursive Promise contract. The binding
-work below remains useful; its earlier successful verification relied on the
-contract erasure that has been removed.
-[`skip-runtime-sound-binding`](../pipeline/skip-runtime-sound-binding/tsconfig.json) is the pinned snapshot with
-that link stated: a second project that holds only the three files the
-binding changes and reuses every other file of `skip-runtime-snapshot` through symlinks
-and an `extends` of its configuration (the package entries point at the
-patched files; `npm ci --prefix verification/pipeline/skip-runtime-snapshot` still
-installs Node's declarations for both). In
-[`api.ts`](../pipeline/skip-runtime-sound-binding/skipruntime-ts/core/src/api.ts), `createGraph`
-receives `InputCollections`, whose `get<K, V>(definition: InputDefinition<K,
-V>): EagerCollection<K, V>` hands out each input collection through the
-definition that declared it, so `SkipService` loses its free `Inputs`
-parameter; resources are `ResourceClass<ResourceInputs, Json>`, since the
-runtime constructs them with the request's parameters (`never` stated
-nothing true). [`server.ts`](../pipeline/skip-runtime-sound-binding/skipruntime-ts/server/src/server.ts)
-makes `runService` generic over the concrete service,
-`SkipService<InputDefs, ResourceInputs>`, which needs no method bivariance,
-and the runtime's `createGraph` in
-[`index.ts`](../pipeline/skip-runtime-sound-binding/skipruntime-ts/core/src/index.ts) builds `get` from
-the service's own definitions, throwing for any other (a trust note:
-[trust surface](../DESIGN.md#trust-surface)). Under `tsc` the
-patched tree reports the same errors as the snapshot and no new one.
-[`sum-sound-binding.ts`](../pipeline/examples/sum-sound-binding.ts) is
-`reactive-sum-sound.ts` as a client of it, changed only where the binding
-changed: `SkipService<Inputs, Collections>`, `ResourceClass<Collections,
-Json>`, and `createGraph(inputs: InputCollections, …)` returning
-`{ input1: inputs.get(this.inputs.input1), … }`. The target remains verification
-of the whole module: every class (`AddIndex`, `Plus`, `Minus`, `Add`, `Sub`, `Service`), the module's
-initialization and `main`, including `runService(new Service(), …)`, where
-`InputDefs` and `ResourceInputs` are inferred from the service as `Inputs` and
-`Collections`. Two refusals TypeScript does not make:
-`invalid-sum-sound-binding-resource.ts` (a resource needing a collection
-`createGraph` does not return; TypeScript's bivariant method parameters admit
-it) and `invalid-sum-sound-binding-constructor.ts` (a resource class whose
-constructor needs more than `Json`). A service reading an input it does not
-declare, `this.inputs.input3`, does not type-check. Alone, the case takes
-about 17 s, 13 s of it in the search.
-
-The configured TypeScript project includes both files. TypeScript resolves
-upstream `sum.ts`'s type imports from `@skipruntime/core` (`EagerCollection`,
-`Mapper`, `Resource`, `Values`) to interfaces in `core/src/api.ts`, its value
-import `InputDefinition` to a class there, and `runService` from
-`@skipruntime/server` to a function in `server/src/server.ts` (`importTargets`
-in [`declaration-graph.mts`](../tools/declaration-graph.mts)); the test pins
-those targets and all six class callables. The first value import makes the
-whole declaration graph refuse. This is resolution inventory, not acceptance of
-those contracts. The source gate
-currently admits named type-only imports of aliases and single interfaces
-whose fields, string indexes, function-valued properties or method signatures
-fit the imported graph. An optional parameter contributes `T | undefined` at
-its position; an array rest parameter contributes its element contract to the
-existing variadic call clause, and a tuple rest its positions. These are the same call clauses as local
-functions, with no new callable semantics or proof rule. Imported call
-signatures become the existing conjunction of fixed and variadic
-arrows. A callable interface may also have invariant writable fields, using
-the existing callable-object clause. Readonly fields or string indexes mixed
-with calls still refuse because that combined clause is not represented.
-Synthetic `Box`, recursive `Node`, callable-property `CallableBox`,
-method-bearing `WithMethod`, overloaded callable interfaces and callable
-objects with a field, plus required, optional and rest tuple aliases (mutable
-or readonly), verify through the same Lean path. A detached method call fails
-its receiver obligation, while an incorrect callable result fails its return
-obligation.
-The method graph promises safe invocation for every receiver satisfying the
-interface, which is stronger than TypeScript's structural method declaration.
-This is a relative client contract; imported runtime values cannot be granted
-it without an explicit assumption or a checked implementation.
-Interface inheritance is interpreted (see below); nested methods, optional
-method *presence*, generic methods and declaration merging refuse. All four
-runtime API interfaces reach a refused declaration, and `InputDefinition` and
-`runService` are value imports, so the interface slice does not yet admit
-`sum.ts`. Applied in a
-client of the same project, each is collected; the `sum-*` cases import
-them:
-
-| Interface | First refusal | Why |
-| --- | --- | --- |
-| `Mapper<K1, V1, K2, V2>` | none: collected | `mapEntry` returns `Iterable<[K2, V2]>`, read from the standard library |
-| `Resource<C>` | none: collected | collection alone does not certify its generic contracts |
-| `EagerCollection<K, V>` | none: collected | it extends `Managed`, whose brand `[sk_managed]: true` is a symbol-keyed field; its generic contracts must be lowered in full before verification |
-| `Values<T>` | none: collected | it extends `Iterable<T & DepSafe>`, read from the standard library |
-
-The admitted contract work is larger than recognizing the declaration keyword:
-`Mapper` has four `Json`-bounded parameters and a method returning
-`Iterable<[K2, V2]>`; `Values<T>` extends `Iterable<T & DepSafe>` and supplies
-`getUnique` and `toArray`; `EagerCollection` extends `Managed` and supplies the
-generic `map`/`merge` calls used below; `Resource` connects a collections
-parameter to `instantiate`. The `runService` value import and its return type
-are a separate, effectful module contract. Each dependency must either be
-interpreted and certified or appear as an explicit external assumption.
-Collecting the pinned `Mapper` declaration reaches its method and resolves its
-`Iterable` result reference to the configured TypeScript project's
-`lib.es2015.iterable.d.ts` declaration; omitted trailing type arguments are
-retained as source defaults. Its first refusal is now `Context`'s generic
-method, above. Behind it, `Values` extends `Iterable<T & DepSafe>`: the
-library interface has a computed-symbol method and references to `Iterator`,
-so resolving its name is not interpreting it, and `T & DepSafe` is an
-intersection over a binder. The tuple shape in `mapEntry`'s result is
-interpreted by the declaration graph; finite ground applications of generic
-declarations use their source bounds and trailing defaults. Named tuple
-position labels still refuse explicitly.
-
-The next file-level steps are to model the top-level initializer and other
-declarations without dropping their effects, and extend the admitted interface
-slice to generic methods, constructor contracts, `bigint`/`symbol` and
-computed-symbol keys, and bounded or recursive generic instantiation over
-binders, together with value imports. Then represent the imported API contracts as explicit client assumptions; checking
-the runtime's implementations is the separate third milestone below. Class construction,
-parameter properties, `implements`, method receivers and prototype lookup must
-be certified before counting a mapper body. Later source statements include
-service creation, top-level `await` and asynchronous shutdown; they remain
-outside the current fragment. Skipping any of these statements and then
-counting the whole file as verified would change the program under test.
-
-### Cross-file recursive `Json` milestone
-
-**Status: partly implemented.** The concrete target is to verify small source functions that
-import and use the *actual* `Json` declaration at the pinned upstream revision,
-then use the same contract in `Mapper` bounds. Passing a locally rewritten or
-nonrecursive approximation of `Json` does not close this milestone. This is a
-prerequisite of the mapper and collection milestones below, not a claim that
-the runtime implementation satisfies its API contracts.
-
-Checkpoint 1 has a source-closure implementation for aliases and single
-field/index/callable-property/method interfaces in
-[`declaration-graph.mts`](../tools/declaration-graph.mts). The fixture pins the
-tracked `skiplang-json` source; TypeScript follows the core star export,
-API-local `export type`, and the workspace link to that source. The
-collector reaches `Json` and `JsonObject` as two nodes without inlining either,
-and a separate two-file generic cycle checks binder and argument retention.
-Each collected alias now also has a structural source-type expression: the
-pinned `Json` cycle retains its readonly array, dictionary index, unions,
-`null`, and declaration-identified references; the generic cycle retains
-binder indices and applied arguments. Unsupported syntax is refused during
-collection rather than left inside an opaque span.
-Nested, optional and generic methods, merging and other declaration kinds
-still refuse explicitly. The
-Fragment document has one required `declarations` slot: the roots and the
-deduplicated declaration equations. The source parser fills it for named
-type-only imports and for the file's own declarations. TypeScript's checker, in
-the file's configured project, decides what every name denotes: each client
-import, and every reference and `extends` clause inside a collected
-declaration, must resolve to exactly one alias or interface declaration. Global
-declaration files the project loads, the standard library included, supply
-unimported names; merged declarations refuse. Code the graph uses must be code
-TypeScript accepts: an error TypeScript reports in a collected declaration (an
-interface that incorrectly extends its base) or on an import or export
-statement the resolution passes through (an ambiguous star reexport) refuses
-the graph. Errors elsewhere in those files are not the graph's: the snapshot's
-core barrel has errors for modules it omits, none of them on the `Json` route.
-A synthetic global interface verifies end to end. TypeScript reads the declarations it resolves once, and
-the equations are parsed from its own trees; the parser only checks that
-TypeScript read the same client bytes it parsed. Function annotations are
-source type terms like declaration bodies, and a reference in one names the
-declaration TypeScript resolved; the producer decodes both with one decoder. Exported source functions are accepted as strict
-module code. With that project, both `nest` and `lookup` in
-[`recursive-json.ts`](../pipeline/examples/recursive-json.ts) now reach Lean evidence
-production and checking and verify. In
-[`recursive-json-values.ts`](../pipeline/examples/recursive-json-values.ts), Boolean,
-number, string, array and object values pass to a `Json` consumer. In
-[`recursive-json-variants.ts`](../pipeline/examples/recursive-json-variants.ts), those
-kinds of values pass to a universally checked `<T extends Json>` closure.
-At each call OCaml proposes the imported `Json` bound as a widened
-instantiation of `T`; Lean checks the concrete argument and the bound. These
-calls do not establish separate precise inferred types for `T`. Four invalid
-clients in the same project reach search and fail: a non-JSON
-dictionary member, a missing-key read without `undefined`, and a function
-passed to `<T extends Json>`, and a `boolean[]` assigned to a writable `Json[]`
-alias before a string write and Boolean read. TypeScript accepts the last
-program; the verifier refuses the alias assignment because a location's write
-contract cannot widen. OCaml reserves empty rows for imported declarations
-without parameters; Lean derives and fills their equations from the Fragment's
-source-type expressions. A finite ground application of an unbounded imported
-generic instead gets an interned row for its substituted equation. The producer
-uses that row as a candidate, while Lean independently substitutes the source
-binder arguments and derives the row before checking the client. Synthetic
-cross-file clients now verify unary, two-parameter, and transitive record
-applications, plus tuple and callable applications; a wrong result fails proof search. Recursive generic applications
-need memoized application rows. Imported bounds are checked using the existing
-certified subtype relation after each argument is completed; failed bounds
-refuse, including a supplied argument that violates its bound. Source defaults
-are applied in declaration order, so a later default may use an earlier
-argument. Interface `extends` edges also remain explicit in the collected
-source document. For disjoint plain object fields, Lean derives one equivalent
-record contract from the local and inherited fields; other representable
-intersections use the graph's general conjunction operation. OCaml inspects
-the bases only to propose member-read types. A generic inherited object and
-two-base interface now verify, while an incorrect inherited-field result
-fails proof search. Overlapping fields and richer inherited shapes are still
-refused by the OCaml proposal path. The suite refuses producer-filled rows and source-authored internal
-graph labels. The CLI accepts `--project` with a source checkout containing the
-TypeScript files, package manifests and workspace symlinks; the test and command
-above read the same checked-in source snapshot. All intermediate JSON is
-generated from that source tree. The report viewer uses the same project mapping from
-the executable case inventory; a bare CLI invocation still needs `--project`.
-This is conditional verification relative to the trusted declaration document, not
-closure of the full milestone.
-
-An interface or alias declared in the client file now uses that same source
-declaration graph. The local `Derived extends Base` example verifies, and an
-incorrect inherited-field result fails. TypeScript resolves the local root to
-the declaration itself, as it resolves an imported one. Every declaration
-application, local or imported, has one interpretation from its source
-equation. With ground arguments it lowers to graph rows. With an argument over
-the enclosing function's binders, Lean expands the equation with the
-arguments substituted: parameters, functions and arrays become claim forms,
-each binder read as its parameter row, and parameter-free parts still lower
-to graph rows. The
-OCaml encoder expands the same application from the same definition. So
-`GenericCallable<T> = (value: T) => T` applied to a rigid `T` verifies, and a
-wrong result fails with the same generic obligation, whether the declaration
-is local or imported, one lowering serving both. Bounded declarations and recursive applications over a binder refuse.
-Declaration location is no longer a separate type meaning.
-
-The present source checker recognizes `boolean`, an earlier rigid parameter,
-and a non-generic declared graph node as bounds. This is a translation gap,
-not a semantic restriction on generics: a well-formed bound can be any type
-the model interprets. General ground bounds should go through the same
-annotation-to-graph translation as parameter and result types, with the
-translated upper bound checked under the preceding binders. Adding individual
-special cases for `number`, objects, or arrays would leave the wrong boundary.
-
-OCaml also reads the same source-type expressions to choose useful candidates
-for fresh literals, including a dictionary candidate for `{ child: ... }`.
-That inspection has no authority over the imported graph: a wrong hint can
-lose a proof or propose a false claim, but Lean derives the graph equation and
-checks every field obligation independently. This keeps candidate search from
-becoming a second implementation of the imported type's meaning.
-
-The declaration document contains the collected declaration equations. Resolution
-is TypeScript's, under the snapshot's dedicated
-[`skip-runtime-snapshot/tsconfig.json`](../pipeline/skip-runtime-snapshot/tsconfig.json), which includes the
-imported-`Json` clients and mirrors upstream's strict Node16 resolution and
-its `types: ["node"]`;
-`--project` names it explicitly, leaving the other OCaml examples' TypeScript
-project unchanged. Because the snapshot
-contains neither built `dist`
-declarations nor npm's workspace links, its two package entry points have
-explicit source `paths` mappings; the `skiplang-json` workspace link is real.
-The remaining trust assumption is that this project configuration agrees with
-the actual upstream build. The TypeScript checker and our source-type parser
-remain trusted: Lean interprets the collected equations but does not reparse
-TypeScript or reconstruct package exports and symlink routes. TypeScript reads
-each declaration from its project, and the collector parses that same tree;
-only the client text is compared with the independent source parser's text.
-There is no independent byte check for declaration files or module mappings.
-The test's pinned hashes guard accidental fixture changes and are not a
-soundness argument. The result remains relative to the supplied source tree
-and this front end, rather than verification of arbitrary imports.
-
-`core/src/api.ts` imports `Json`, `JsonObject` and `DepSafe` from
-`../skiplang-json/index.js`. In the Skip checkout, `prebuild.mjs` makes
-`skipruntime-ts/core/skiplang-json` a symlink to the tracked
-`skiplang/skjson/ts/binding/src` directory. The canonical declaration is
-`skiplang/skjson/ts/binding/src/index.ts`, not a generated copy under `core`.
-At commit `5c902f17431d963c1b6e07fc1d15da054ba30e70`, it says:
-
-```ts
-type Json = boolean | number | string | readonly (Json | null)[] | JsonObject;
-type JsonObject = { readonly [key: string]: Json | null };
+```sh
+dune build --root verification/ocaml-producer
+node verification/pipeline/run-cases.mts <pattern>
+node verification/pipeline/test.mts
 ```
 
-The type equations are one mutually dependent graph: `J = boolean ∪ number ∪
-string ∪ readonlyArray(J ∪ null) ∪ O`, and `O = readonlyStringDictionary(J ∪
-null)`. `null` is admitted *inside* those collections, not as a top-level
-`Json`. Keep the named nodes and their declaration identities; recursively
-inlining an alias, choosing an arbitrary unfolding depth, or replacing a cycle
-with `unknown` changes the contract. Type parameters on other declarations
-must remain binders and arguments on graph edges, rather than becoming global
-names or a finite set of observed instantiations.
-
-The inline readonly string-index slice now verifies parameter and result
-contracts, named and computed string-key reads returning `boolean | undefined`,
-and a fresh two-field dictionary literal through OCaml claims, Lean source lowering and
-evidence checking. `invalid-index-signature-read.ts` shows that a missing-key
-read cannot establish plain `boolean` although `tsc --strict` accepts it.
-`invalid-index-signature-construction.ts` confirms that every fresh field must
-meet the index value type. `invalid-dynamic-index-read.ts` checks the same
-missing-key bound for a computed key; its certificate has a tampering control.
-The same source path now accepts required named fields alongside a readonly
-string index in parameter and result contracts, preserving their invariant or
-readonly-view roles. The mixed `readMixed` example checks a computed key;
-`invalid-mixed-index-read.ts` checks absence even when another field is
-required. Mixed-literal construction and a precise read of a named field from
-such a contract remain outside this slice. The graph's `dict` clause supports
-recursive index operands; the explicit-universe `Json` example above now
-exercises that path.
-
-Current progress against the `Json` prerequisite:
-
-| Checkpoint | Current result | Remaining boundary |
-| --- | --- | --- |
-| 1. Source closure | Canonical `Json`/`JsonObject` cycle, workspace link, cross-file generic cycle, trailing type-parameter defaults, single field/index/callable-property/method interfaces, interface heritage edges, and configured global declaration sources collected. | Computed-symbol keys and methods, `bigint` and `symbol`, declaration merging and value declarations remain outside this collector. |
-| 2. Shared graph and gate | Imported alias and supported interface equations, including a global declaration, reach the common Fragment and Lean request; TypeScript supplies declaration identities; the client-byte comparison checks the two parser inputs. | The configured project and source parser remain trusted; richer declarations are refused. |
-| 3. Semantic interpretation | Recursive readonly array, dictionary, fixed callable, interface method receiver, disjoint plain-object inheritance, and finite ground imported generic record, tuple and callable applications with bounds and defaults reach `CertifiedPlan` and `checkJson_safe`. | Recursive generic applications, overlapping or richer inherited contracts, mutable dictionary and implementation contracts need their own certified paths. |
-| 4. Relative contracts and controls | Forged alias equations, targets, source bytes and evidence have negative controls. | External value-contract assumptions and their eventual discharge are not yet represented. |
-| 5. Actual-source acceptance | Imported `Json` clients, a bound-instantiation case and four negative controls run end to end; synthetic cross-file generic applications with bounds, defaults and inheritance also verify. | Actual `Mapper` now first refuses an unsupported method signature in `Context`; library iterator semantics, richer generic interfaces, classes and their dependencies follow. |
-
-The checkpoints below spell out the current implementation and the remaining
-proof and trust obligations; the table above records the outcomes.
-
-Implementation checkpoints:
-
-1. **Canonical source closure.** The configured TypeScript checker resolves
-   each named import and each reference in a reachable declaration to one
-   alias or interface; the collector parses those declarations from the
-   checker's own source trees. Each declaration has a module-qualified
-   identity, binders, spans, an expression and heritage edges. References
-   occur in those expressions, bounds, defaults and edges, with no second
-   serialized edge inventory. The pinned fixture hashes guard changes to
-   test inputs; they do not validate the resolution or bind request bytes.
-2. **One shared graph format and source gate.** The existing Fragment
-   document carries those equations to Lean, which interprets them rather
-   than trusting the OCaml candidate graph. TypeScript's project configuration
-   and source parsing remain trusted. The client-byte comparison ensures the
-   source parser and TypeScript checker saw the same client text; both use
-   TypeScript's own trees for declarations. The configured package exports,
-   workspace links and `paths` entries are assumptions about the upstream
-   build, not independently certified mappings. Unsupported declarations are
-   refused at the source gate.
-
-3. **Semantic interpretation and proof.** Extend the existing guarded
-   recursive-graph interpretation with the dictionary constructor and prove
-   that the accepted graph equations denote admissible semantic types. Define
-   indexed lookup over actual JavaScript properties, including absence: a
-   missing key reads `undefined`, so an arbitrary `JsonObject[key]` cannot be
-   promised only `Json | null` merely because TypeScript says so. A readonly
-   index is a read view, not a claim that no other alias can mutate the object;
-   writes and flow refinements still obey fixed world contracts. Extend
-   subtyping, indexed-read obligations, normalization and evidence checking
-   with their safety proofs. A successful graph check must enter the exhaustive
-   `CertifiedPlan` path and the `SourceClaimJson.checkJson_safe` conclusion;
-   an unconnected Lean lemma or OCaml proposal is not verification.
-4. **Relative contracts and controls.** Forged source equations,
-   declaration identities, client bytes and evidence have rejection controls.
-   These controls exercise the existing request and proof boundary, not an
-   independent declaration-byte or module-mapping hash check. Imported value
-   contracts remain external assumptions until implementations are checked;
-   an imported type equation does not assert that a runtime value implements
-   it. Make those assumptions visible in the report and theorem boundary.
-   Cross-file recursive and invalid unguarded-cycle fixtures exercise the
-   graph interpretation.
-
-5. **Actual-source acceptance.** Add positive OCaml-producer cases that import
-   the pinned `Json` through the real package path, build nested arrays and
-   objects containing `null`, read them safely, and instantiate a bound such
-   as `T extends Json`. Add negative cases for a non-JSON nested value and a
-   missing dictionary key used as though it could not be `undefined`. Each
-   case must reach independent Lean evidence checking with its expected
-   outcome; record the first blocker if one remains. Then use the same graph
-   for `Mapper<string, number, string, [number, number]>`'s four bound
-   obligations. `DepSafe`, `Values`, `Iterable` and class bodies may still be
-   separately unsupported; do not count those as failures of this milestone
-   or silently weaken their contracts to make the mapper pass.
-
-The milestone closes when at least one real-import `Json` example and its
-bound-instantiation case verify against the canonical declaration, the negative
-and forged controls fail at their intended obligations, the recursive graph is
-accepted through the soundness theorem, and the reader states any remaining
-external assumptions. Check that all new cases are counted by the OCaml suite
-and report viewer; report verified, rejected and unsupported outcomes separately.
-
-For classes, preserve separate `[[Call]]` and `[[Construct]]` capabilities on
-one function object. `new` allocates an instance, runs its constructor with
-that instance as receiver, and exposes it only under the JavaScript
-constructor-return rules. Prototype lookup supplies methods on instances;
-their receiver comes from the call reference as in part 5. Instance fields
-and parameter properties need initialization obligations before the instance
-can satisfy its exported class contract. Do not lower `new C` to an ordinary
-call or treat an `implements Mapper` clause as proof of the constructor and
-method bodies. The first mapper milestone ends only when those bodies and the
-actual imported method contracts are certified, with independent failures for
-initialization, receiver, result and forged evidence.
-
-| Requirement | Work to assess after part 5 |
-| --- | --- |
-| Mutable objects, captured callbacks, fixed storage contracts | Existing foundations; exercise them together on actual runtime clients. |
-| Methods using `this` | Part 5 prerequisite; verify its coverage against mapper methods. |
-| Classes, constructors, `new`, field initialization | Additional semantics and certified lowering; construction is not ordinary invocation. |
-| `Mapper<K1, V1, K2, V2>` and bounds such as `K extends Json` | Ground multiple-parameter applications, source bound checking, and disjoint object inheritance work; `Context` first needs a generic method with constructor and variadic tuple contracts. |
-| `new (...params: Params) => Mapper<…>` | Constructor contracts and generic tuple packs; ordinary quantified array-rest support is insufficient. |
-| Recursive `Json`, dictionaries and optional fields | The [cross-file `Json` milestone](#cross-file-recursive-json-milestone) covers the canonical recursive type and indexed reads; a key a guard found present is a field from then on ([guards](../PROGRAM-TYPING.md#guards)), still distinct from present-undefined. |
-| `Iterable`, iteration and array/library methods | Explicit contracts and execution semantics, including callback effects and iterator behavior. |
-| Promises, exceptions and native/Wasm bindings | Further model extensions and explicit external assumptions for the implementation. |
-
-The three framework milestones remain open:
-
-1. **One actual mapper class.** Verify constructor initialization, method
-   receiver use and callback results end to end. Include independent failures
-   for an invalid initialization/receiver/result and forged evidence. Merely
-   accepting the class declaration or trusting its method signature is not
-   completion.
-2. **A synchronous collection graph.** Verify the synchronous mapper/resource
-   portion of `sum.ts`, including generic collection methods, constructor
-   arguments and iteration, against explicit runtime contracts. Record which
-   contracts are external assumptions; keep service startup and asynchronous
-   shutdown visible as remaining work. This establishes client typing relative
-   to those contracts, not correctness of the runtime implementation.
-3. **Runtime implementation.** Check the TypeScript implementation behind those
-   contracts, extending to asynchronous behavior, exceptions and native/Wasm
-   boundaries. Discharge the contracts where implementation is modeled and
-   enumerate the remaining external assumptions. Count checked implementations,
-   not declarations, toward this milestone.
-
-### Fragment extensions still required
-
-Work proceeds extension first: each fragment extension is developed with its
-own witnesses, negative controls and tampering tests, following
-[Extending the producer](#extending-the-producer), and only then assessed,
-separately, for how far it moves `sum.ts` and the milestones above. An
-extension is not shaped around `sum.ts`, and progress toward the milestones is
-reported from measured first blockers, not from the extension landing.
-
-The target is the corrected client
-[`reactive-sum-sound.ts`](../pipeline/examples/reactive-sum-sound.ts). Required for the
-first milestone, in order of how much each gates:
-
-1. **Module-level code and value imports.** Done: module functions reachable
-   from one another at their signatures, module constants read by functions
-   at their annotations, top-level expression statements, and an
-   initialization unit with its order check, and value imports of
-   non-generic functions, annotated constants and classes, assumed at their
-   declared types and listed in the declaration document, and global
-   variables (`process`) read at the members the module uses. Remaining:
-   generic value imports (`InputDefinition<K, V>`, `runService`), top-level
-   `await`, module-level `let`, and the Lean theorem composing the units into
-   a module result.
-2. **Classes.** Done for top-level classes without inheritance or generics:
-   a class declares its instance type in the declaration graph (fields at
-   their annotations, methods as readonly fields whose receiver is the
-   instance, parameter properties); its value is lowered in module
-   initialization to method closures allocated once, as its prototype's, and
-   a constructor that allocates the instance from the field initializers,
-   parameter properties and `this.f = e` assignments; `new C(args)` calls
-   it, and no other read of the class is admitted. Remaining: `implements` as
-   a checked obligation, inheritance (`extends`, needed by
-   `InputDefinition`), generic methods with binders of their own, general
-   constructor bodies, statics,
-   and array operations inside methods (a closure limitation `AddIndex`
-   meets).
-3. **Generic calls.** Done for generic module functions and generic imported
-   functions and classes (`InputDefinition<K, V>`): a call validates its
-   instantiation and reaches that instance; a class's `extends` is a base of
-   its instance type; and each ground application of a generic declaration
-   with methods has its own row, its methods' receiver. Remaining: generic
-   methods (next item) and constructor or tuple-pack parameters.
-4. **The runtime API's declaration forms.** `Mapper` reaches `Context` and
-   `Values`; interpreting them needs:
-   - generic interface methods, i.e. quantified method signatures: read today
-     as quantified types in the graph, one semantics for every use (below,
-     "Quantified types"); calling one (`EagerCollection.map`) is its
-     elimination;
-   - constructor types (done: construct signatures in the calculus, class
-     values first class, `new` on any value with a construct signature) and
-     generic tuple packs, `new (...params: Params) => T` with `Params extends
-     readonly DepSafe[]` (remaining);
-   - `bigint` and `symbol` (done: values in the calculus and types in the
-     graph, a bigint its integer with literal singletons, its arithmetic and
-     comparisons through the one operator rule, and `typeof` tests for every
-     shape, `"object"` included, and `typeof` as a value), and
-     symbol-keyed properties (done: the heap's keys are strings or symbols,
-     and a declaration's `[x]: T` member, with `x` a `unique symbol`
-     constant, is a field keyed by that symbol). Remaining for `Managed` and
-     the `Opaque` types: `typeof x` of a unique symbol as a singleton type
-     (the `internal.ts` tags), and a class field's definite-assignment `!`
-     (`Frozen`'s `[sk_managed]!: true`);
-   - types over rigid binders, such as `T & DepSafe`: done for a generic
-     method's value binder, a meet row whose instance is the meet of the
-     binder's instance with the ground operands
-     ([binders met with ground types](../PROGRAM-TYPING.md#binders-met-with-ground-types)), which the producer proposes as `Meet` operands and
-     names by an intersection label, whose row Lean fills; a generic unit's own binder met with ground
-     types is a meet row the same way
-     ([binders met](../PROGRAM-TYPING.md#binders-met-with-ground-types)).
-5. **Library contracts**, read from TypeScript's own standard library
-   declarations (`lib.*.d.ts`) through the same declaration graph as any
-   library, not written by hand. Done: global type names are declaration
-   roots; an interface declared several times is merged, as TypeScript
-   merges it; well-known symbol keys (`[Symbol.iterator]`) are symbol keys; a
-   declaration's `any` is `unknown`; a recursive generic application at the
-   same arguments is its application label's row. `Promise<T>` is collected this way, but its full recursive generic contract
-   currently exceeds the lowering budget and is refused, not erased.
-   `Iterable`/`Iterator` are read too: `next(...[value]: [] | [TNext])` is
-   one signature per tuple, and `return?`/`throw?` are optional fields.
-   Remaining: arrays as iterables (every `mapEntry` returns an array literal as
-   `Iterable`), and `Array.prototype.reduce` and `sort` with their callback
-   effects and mutation.
-6. **Optional field presence** (done for mutable and readonly optional
-   fields: see [objects and prototypes](../DESIGN.md#objects-and-prototypes); `optional-field.ts` and
-   `optional-view.ts` verify; a fresh literal leaving out an optional field,
-   by its exact keys, `optional-literal.ts`); `in` tests (DESIGN.md's
-   [Guards](../DESIGN.md#guards), `in-test.ts`). Remaining: presence
-   narrowing.
-
-   `getUnique(_default?: { ifMany?: T })` needs only the done part.
-7. **Exceptions** (done: a throw is an outcome, `throw` and
-   `try`/`catch`/`finally` are lowered, [DESIGN.md](../DESIGN.md#throws);
-   `throw.ts` and `try-catch.ts` verify). `getUnique` throws when a key has
-   several values, which its declared result then need not describe.
-
-Required for the second milestone in addition:
-
-8. **Generic calls taking classes.** `.map(Plus)` and `.map(AddIndex, 0)`
-   infer constructor and tuple-pack arguments, chained across `merge` and
-   `map`.
-9. **Asynchronous startup.** `async`/`await`, the library `Promise` and
-   `process.on` are read as trusted steps and declared contracts; the
-   `runService` contract, and the effects of all of them, stay out of scope
-   until they are modeled.
-
-**Branded types (planned, not yet implemented).** TypeScript brands types two
-ways: a `private` or `protected` member makes a class nominal, and a field
-keyed by a `unique symbol` can be written only by code holding the symbol.
-The instance types here are structural and ignore visibility, so today a
-brand such as `AbstractEagerCollection`'s `__sk_collectionBrand` is just a
-field any object of the right shape has. That reading is sound, since types
-describe runtime values, but it is weaker than the brand intends. With
-classes in the fragment, brands can be real: a class's instances are exactly
-the objects its constructor allocates, so its instance type can carry a
-hidden brand field no source can spell and only that constructor sets. Then
-only constructed instances (and, with inheritance, subclass instances)
-inhabit the type. A class declared elsewhere whose constructor is not
-checked here gets its brand as an external contract. `unique symbol` brands
-(`Managed`, the `Opaque` types) are symbol-keyed fields, which the fragment
-now reads (item 4). Brands matter for `SharedCollections`: its bound is meant to admit
-only runtime collections.
-
-**Quantified types (in progress).** A generic method's type is a scheme row
-of the graph: binders, which are parameter rows, and signatures whose rows may
-mention them (`Promise<T>`'s `then` reaches `PromiseLike<R1>`). The
-denotation is indexed by an assignment of the parameter rows as well as by the
-label, over the same guarded fixed point (`qDenoteWithArgs` in
-`Types/PositiveGraphs.lean`): a scheme row means one callable meeting its
-signatures at every reassignment of its binders, a value binder to a family of
-closed values and a pack binder to a family of closed argument lists.
-
-Stages 1 and 2 are done. A `NormalGraph` carries clause rows, scheme rows,
-parameter rows and the assignment `env`, and `meaning G` is the denotation at
-`G.env`. No check reads `env`, so a theorem proved for every graph holds at
-every reassignment `{G with env := η}` (`meaning_reassign`): a derivation that
-types a generic body once, with its binders opaque, is sound at each instance.
-This is what the introduction rule uses, so the soundness proofs are not
-redone for it. Parameter and scheme rows are opaque to every check:
-they have no clauses (`expand` of a type holding one is empty, so
-`Represents` and `Answers` fail), a parameter is below itself, a union holding
-it, and `unknown` (`OpaqueFamily` in a covered pair), and test refinement
-keeps it. The graphs the pipeline builds have only clause rows, so every
-verified result is unchanged.
-
-Stage 3 is done: subtyping over scheme rows, with certificates
-(`PositiveRules`, `Proof.inst`).
-- *Elimination* (`InstArrs`): a scheme row is below an arrow type whose
-  signatures are instances of its own. The instance is checked by a table of
-  entries (row, context, image): the context says what each binder in scope
-  stands for, an instance type or, under a scheme mapped to another, that
-  scheme's binder, and each row maps to the graph's substituted copy of it
-  (`Box<T>` to `Box<boolean>`), clause by clause, or to itself when it has no
-  free row the context names. Scheme rows map to scheme rows up to renaming
-  their binders, without capture. Under its context a row means its image
-  (`table_row_mixed`, for values and argument lists). This is capture-avoiding substitution up to renaming of bound
-  binders, which the colouring of generic methods (stage 4) needs: one binder
-  row serves several scopes. A call
-  through a generic function is then the existing call rule after
-  subsumption: `id(true)` is typed a Boolean, `wrap(true)` a `Box<boolean>`.
-- Subtyping is proved at every assignment, for both components (`checkUsing_sound`). This is where "no
-  check reads `env`" became a theorem: the one judgment that was indexed by
-  the graph beyond its rows, overload coverage, is now indexed by the graph's
-  compatibility test.
-- The Lean producer proposes instance maps by matching a signature against
-  the target (`matchRow`).
-
-Stage 4 is done for unbounded generic methods. The TypeScript reader reads a
-generic method as a scheme term. Lean lowers it to a scheme row with coloured
-binder rows, and OCaml reserves each generic application's row for Lean to
-fill, so every declaration has one lowering. At a method call OCaml infers the
-instance and claims the method's read at the instance's ground arrow; Lean
-proves the scheme below it by an instance table (`generic-method-value-import`:
-`chooser.pick(flag, !flag)` is a Boolean, `c.with(s).value` a string; the
-negative's instance returns a Boolean where a number is declared). Stage 5 adds bounded binders (`K2 extends Json`): a scheme quantifies over the
-instances within its bounds, read where the method is declared and below the
-current level, which keeps the fixed point contractive; the approximations are
-non-expansive in the assignment, which gives admissibility. An instance's
-types must lie within the bounds (inclusion, or the pairs reachable from the
-instance and the bound, covered, per bound);
-`bounded-generic-method-value-import` and its negative exercise it.
-Pack parameters, as `EagerCollection.map`'s `...params: Params`, are a rest
-typed by a binder: an argument-list type (the `pack` clause, a contract on
-lists of values), the rest of a variadic scheme signature and of a variadic
-construct signature, instantiated at the tuple of a call's further actuals and
-bounded position by position (`pack-method-value-import`, whose class takes the
-one number the pack holds; its negatives refuse a string outside the bound and
-a constructor needing more actuals than the rest;
-`object-pack-method-value-import` holds an object). A fixed construct or call
-signature meets a rest that is one exact tuple, whatever its positions. Unsupported dependent bounds and methods whose
-unfolding keeps growing refuse the whole declaration. The runtime API's
-`V & DepSafe` is proposed as its parameter, which Lean lowers and checks
-whole. Arrays as library objects are implemented, but the full framework
-now stops earlier at recursive quantified contracts. Native array construction
-is ordinary in the admitted realm; external code must preserve that invariant.
-`map` retains a sparse result unless a dense input and a checked callback effect establish density. Source `T[]` requires readable elements, permitting holes only where `T` admits `undefined`; readonly is independent of presence.
-
-Scheme rows are the one mechanism for quantified callables: a local generic
-closure is graph code at a scheme row, with bounds, rests and defaults.
-
-The one semantics serves three rules, each needed:
-- *elimination*, calling a generic method at an instance: every generic call
-  `sum.ts` makes (`EagerCollection.map`, `Promise.then` under `await`,
-  `Array.reduce`) is one, on a value the library provides;
-- *introduction*, code checked at a scheme row's signatures, as a local
-  generic closure's is (`funScheme`): no client `sum.ts` needs it, but
-  the runtime it calls implements every one of those methods
-  (`EagerCollectionImpl.map`, `ContextImpl.createLazyCollection`, in
-  `core/src/index.ts`), and TypeScript accepts it for classes and objects
-  implementing generic interface methods, custom thenables, and generic
-  functions passed where a generic function type is expected;
-- *coverage* between two quantified types, for the last of those.
-
-So there is no instance-only version first: the rules are built once, over
-this semantics. Stages: (2, done) scheme rows in `meaning`, with the typing
-rules never reading a scheme label as a ground clause; (3, done) coverage
-and elimination, with certificates; (4, done) the pipeline; (5, done) bounded binders
-(`K2 extends Json`), which need the denotation to be non-expansive in the
-assignment; introduction when the runtime is a target.
-
-Generic methods are necessary for `sum.ts`, not sufficient. Each of its
-generic calls also needs something else: `await` needs an operational
-meaning (the engine calls `then` and resumes from a job queue, which the
-calculus does not have: a faithful model or a trusted `await` step);
-`.map(Plus)` needs tuple-pack binders (`Params extends readonly DepSafe[]`,
-used as a rest parameter, so an instance fixes the arity) and bounded
-binders; the mappers' bodies return array literals as `Iterable` and call
-`reduce`/`sort`, which needs arrays as library objects, with `Array<T>`'s
-declared methods, where the calculus's arrays are stores with none.
-
-**Object-valued callable operands.** Functions and constructors now decode
-nested object inputs/results and receivers through one recursive decoder.
-The separate receiver decoder was removed; optional fields keep the same
-meaning in each position.
-`object-callable-operands.ts` and `object-constructor-value-import.ts` verify;
-the readonly-to-writing-callback control is rejected. This fixed an earlier
-decoder barrier to object-valued pack calls.
-
-**Argument packs.** A rest parameter's type is a contract on argument lists,
-checked at the level of the actuals, not a runtime value
-([argument packs](../POSITIVE-TYPES.md#argument-packs)).
-A pack parameter is instantiated at a pack type by one checked substitution,
-which may also carry value types, and its bound is checked on argument lists.
-A fixed constructor covers a rest that is one exact tuple of any positions, so
-`object-pack-method-value-import.ts`, a pack parameter instantiated at a tuple
-of objects, verifies, and `invalid-object-pack-method-value-import.ts`, with a
-wrong object field, is rejected. The producer distinguishes value and pack
-substitutions internally and uses one pack encoder for homogeneous and tuple
-rests. The framework calls need `Params = []` for `Plus`/`Minus` and
-`[number]` for `AddIndex`, with `Params extends readonly DepSafe[]`. A binder
-used as an array value must keep its array interpretation too; an argument
-list is not an array, and such a declaration is refused. Rerun the original client
-independently: its array-library and asynchronous-startup gaps are separate.
-
-**A tight service binding, verified with its use.**
-[`framework-binding-sound.ts`](../pipeline/examples/framework-binding-sound.ts) is the
-first framework binding verified together with a client, beside
-[`framework-binding-unsound.ts`](../pipeline/examples/framework-binding-unsound.ts),
-today's binding in one file, under which a service reading an undeclared
-input verifies and crashes: the unsoundness is the binding's, not a checker's.
-In the sound binding, a service's
-`createGraph` obtains each input collection through the definition that
-declared it (`get<K, V>(definition: InputDefinition<K, V>):
-Collection<K, V>`), so a collection's types are its definition's. The
-runtime's current binding instead gives `createGraph` a collections type
-`Inputs` that nothing ties to the declared inputs (`runService<InputDefs,
-Inputs, ...>` on upstream's `anyskipservice` branch; `AnySkipService` on
-upstream main), so a service reading an undeclared input
-type-checks and crashes. The binding is declared in the file, so every tool
-reads the same one. Its negative, `invalid-framework-binding-sound.ts`, is
-a service taking more than the framework passes, which TypeScript accepts by
-method bivariance. The matching change to Skip's API (`InputCollections`,
-`runService` generic over the concrete service, `ResourceClass<R, Json>`) is
-checked in as [`skip-runtime-sound-binding`](../pipeline/skip-runtime-sound-binding/tsconfig.json), and sum.ts on
-it verifies end to end (`sum-sound-binding.ts`, above). It needed two proposal
-changes and no new rule: a class whose constructor takes fewer parameters
-than the construct signature it meets is claimed there
-(`class-constructor-offer.ts`; extraction had required equal lengths), and a
-fresh literal at a generic call's parameter free of the callee's binders is
-built at that parameter (`generic-contextual-literal.ts`).
-
-**Record values as `Json` (done for ground instances).**
-
-*The problem.* A record type is open: its value may carry keys the type does
-not name, of any type. So `{ readonly n: number }` is not a subtype of
-`Json`'s object arm `{ readonly [k: string]: Json }`. Readonly does not help:
-the unsoundness is on reads, since an unnamed key would be read at `Json`
-(`Object.values`, serialization), not on writes. TypeScript accepts the
-subtyping and is unsound; SKJS refuses it (`skjs-rules.md` §28), and so does
-the model: `recT` is open and `dictViewT` constrains every present string key.
-A Skip client whose collection keys or values are records meets this at the
-framework's `K, V extends Json` bounds. `sum.ts` does not: its keys and values
-are strings and numbers.
-
-*What was done elsewhere.* Skipper generates such types from OpenAPI schemas.
-- skipper#1217 intersected each generated object type with
-  `{ readonly [key: string]: Json | null }`: sound, and a `Json` subtype.
-- skipper PR #1239 (open) replaced it with a comment tag re-expanded to the
-  intersection only for SKJS, because under `tsc` it broke `deepFreeze`.
-- skipper PR #1242 (open) proposes SKJS's closed-object type `Closed<T>`
-  (identity under `tsc`) instead. Neither is merged.
-
-*What actually breaks under `tsc`* (reproduced with `tsc` 6.0.3 against the
-pinned upstream):
-
-```ts
-type Todo = { readonly title: string; readonly done: boolean }
-          & { readonly [key: string]: Json | null };
-const b: Todo = deepFreeze({ title: "x", done: false });   // error
-```
-
-`deepFreeze<T>(value: T): T & DepSafe`, with `DepSafe = null | boolean |
-number | bigint | string | symbol | Managed`. `T` is inferred from the
-literal, and the result distributes over `DepSafe`; TypeScript keeps members
-such as `{ title; done } & string` (the branded-primitive idiom), whose
-apparent type is the `String` wrapper, which has no string index signature.
-Against the plain record the member is assignable; against the index part it
-is not. These all check: a fresh literal at `Todo`; `deepFreeze(t)` with `t`
-already a `Todo`; `deepFreeze<Todo>({ ... })`; the plain record type as
-`Json` under `tsc`. So the intersection is not the problem, `DepSafe`'s
-primitive arms at a literal's inferred type are. The workaround is local:
-freeze a value that already has the type, or pass the type argument, which an
-instruction to agents covers. The root-cause fix would be upstream
-(`deepFreeze`'s result `T & Managed` for an object `T`).
-
-*Decision.* `Serializable<T> = T & { readonly [k: string]: Json }`, and no
-closed-object notion. The alternatives, by the same principles:
-
-- TypeScript's implicit index rule, a record type as a `Json` object: unsound,
-  as above; refused (`invalid-sum-record-json`, which `tsc` accepts).
-- A closed-object type, `Closed<T>` (skipper #1242, SKJS's rule 28b): sound,
-  but a new notion. It means nothing under `tsc` (it is the identity there),
-  so the program `tsc` checks is not the one verified, and the model would
-  need a second way for a declared type to bound its own keys beside the one
-  a fresh literal has (`Exact`, `CoversKeys`).
-- A comment tag re-expanded for the checker only (skipper #1239): the same
-  divergence between the two checked programs, spelled in a comment.
-- The intersection: plain TypeScript that `tsc` checks the same way (a
-  literal's every field must meet the index there too, so
-  `invalid-sum-serializable` is refused by both), stating exactly what the
-  framework needs, and read by one existing mechanism, the meet. Its costs are
-  a type name users write and `deepFreeze`'s inference, above.
-
-*Mechanism.* Nothing new is represented; three existing pieces were
-completed.
-- Lean's meet of two object clauses joins their first invariant operands into
-  one record (`PositiveNormalization.meet`; `ReferenceConjunctions.flatten`
-  from `recT_append`: one value has one own-field map, so one operand naming
-  the fields of two says what the two say; `meet_sound` is unchanged). The
-  read rules read a named field from the first operand, so `Serializable<Todo>`
-  is one `dict` whose named views are readable. Interface heritage is that
-  meet, own members first (`inheritRows` is `meetLists own base`; its separate
-  disjoint-key canonicalization is gone), and so are source intersections
-  (`meetRow`), so there is one.
-- Coverage: a `dict` is below a `refs` whose members its own cover, its index
-  forgotten (`CoversWith`, case `dict.refs` of `Covers.sound`;
-  [POSITIVE-TYPES.md](../POSITIVE-TYPES.md#clause-coverage)). So a
-  `Serializable<Todo>` is a `Todo`, and it is a `Json` by dictionary
-  coverage, as before.
-- OCaml keeps an intersection in a declaration's equation that names one of
-  its parameters or another declaration (`Semantic.Meet`), and resolves it
-  where the declaration is applied (`Proposal.definition`): record operands,
-  named ones read through their equations, are one object (`meet_objects`,
-  which heritage uses too), anything else the parameter's instance as before.
-  So a fresh literal expected at `Serializable<Todo>` sees the index and is
-  claimed at its exact record, which meets the index by its keys
-  (`CoversKeys`). Outside a declaration, record operands of an intersection
-  merge the same way; any other ground operands, such as an array with a
-  record's members, are kept as a `Meet`, an intersection label whose row Lean fills.
-
-*Witnesses.* `sum-serializable` (a literal at `Serializable<{ … }>`, passed as
-`Json`, read at its named fields, and passed as the plain record);
-`invalid-sum-serializable` (`undefined` in a field); `sum-serializable-collection`
-(a `Mapper<string, string, string, Serializable<Todo>>` whose `mapEntry` builds
-the literal inside the returned array, and `EagerCollection<string,
-Serializable<Todo>>.getUnique(key).title`, through `V extends Json` and
-`V & DepSafe`); `invalid-sum-record-collection`, the plain `Todo` at
-`EagerCollection`'s bound, which `tsc` accepts and the application's bound
-check refuses — that refusal is the request's, not located at the annotation,
-as every application bound's is, so `test.mts` checks it rather than the
-report viewer's controls.
-
-*Left.*
-- `sum-serializable-map` now verifies: the exact meet of a type parameter
-  with a ground type (a meet row, [binders met with ground types](../PROGRAM-TYPING.md#binders-met-with-ground-types)) replaced the stopgap bound, so
-  `V2 = Serializable<Todo>` is within `Json`, and `V2 & DepSafe` is that
-  dictionary meeting `Managed`, which is not empty.
-- `sum-serializable-freeze`: `deepFreeze`'s declaration is read (it is a
-  generic value import), but `deepFreeze<Todo>(…)` needs explicit type
-  arguments on a plain call, which the parser admits on method calls only.
-  Behind that, measured with `deepFreeze(t)` for `t: Todo`, its result
-  `T & DepSafe` over its own binder is refused at the call's scheme
-  elimination ("an intersection of anything but records or functions"): the
-  same exact meet, at the scheme elimination.
-- Generic `Serializable<T>`, `T` a type parameter, is `T & {index}`, a binder
-  met with a ground type: that same work. OCaml still proposes the binder for
-  it (a `Meet` whose principal stays rigid resolves to it), and refuses a
-  `Meet` in a claim; once the meet is exact, the claim form needs the
-  intersection, not the binder.
-- Application bounds refused at the request, not at the annotation naming the
-  application, are a located-diagnostics gap independent of this row.
-
-Generic interface variance is not on this list: the type-safe API does not
-ask for `EagerCollection<K, V> ≤ EagerCollection<Json, Json>`, and the
-corrected client meets `SharedCollections` through `interface Collections
-extends NamedEagerCollections`.
-
-The third milestone adds asynchronous behavior, exceptions and native/Wasm
-boundaries in the runtime implementation, outside the fragment work.
-
-Type safety alone does **not** establish reactive dependency correctness. The
-API's mapper-construction and `DepSafe` restrictions aim to keep dependencies
-trackable. That requires a separately stated property and justification; a
-brand, interface or successful ordinary typing certificate is not its proof.
-Keep this obligation distinct from the three typing milestones, with its
-scope and completion criteria to be specified before claiming reactive
-correctness.
-
-For every extension, follow [Extending the producer](#extending-the-producer):
-shared representations, reconstructed obligations, semantic certification and
-tampering controls remain mandatory. Design for the full language while
-implementing these milestones incrementally; record a remaining blocker rather
-than weakening a witness or silently narrowing a milestone.
-
-## What is proved, and what is trusted
-
-Successful certification uses the existing Lean certificate consumer and its
-soundness theorems for the modeled fragment. The OCaml inference algorithm is
-not itself proved correct; a bad proposal must fail validation. Generic
-variable-copy certificates and immutable read/closure/call certificates
-are checked at the `CertifiedPlan` boundary and covered by `checkJson_safe`.
-Other scheme checking still runs in both Lean phases, but its success is not
-promoted to verification until the missing semantic theorem is connected there.
-
-The shared parser, source-to-calculus correspondence, executable toolchain and
-runner remain part of the trust boundary. Source lowering being written in Lean
-is not a proof of preservation of full JavaScript semantics. Existing model
-assumptions and restrictions in [DESIGN.md](../DESIGN.md) still apply. This is a
-first producer against that boundary, not a verified implementation of the full
-TypeScript language.
+The [verification instructions](../AGENTS.md#iterating-run-what-the-change-touches)
+set the wider checks for Lean, parser or protocol changes. Update each fact in
+its owning document, following
+[documentation ownership](../README.md#documentation-ownership). Design status
+belongs in [DESIGN](../DESIGN.md#status); this guide describes the producer's
+interface, algorithm and limits.

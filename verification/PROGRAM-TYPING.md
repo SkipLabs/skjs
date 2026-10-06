@@ -2434,7 +2434,9 @@ storage contract is insufficient.
 #### Source observation checkpoints
 
 `SourceClaims.Function` retains ordinary types and separately indexed current
-predicates. Both adapters populate this interface. **Every source statement entry
+predicates. The OCaml producer supplies claims through this interface, keyed
+by execution point and, for expressions, source span
+([claim identities](SOURCE-CLAIMS.md#execution-graph-supplied-to-the-producer)). **Every source statement entry
 is a full local interface**, including entries with no current predicates. The
 compiler reconstructs its ordinary context $\Gamma_l$ and knowledge
 $K_l=(\Delta_l,\varnothing,\varnothing)$, where $\Delta_l$ contains exactly the
@@ -4994,7 +4996,7 @@ constructor); `CAbsent`, provably not callable (object literals, class
 instances, arrays); and `CUnknown`, a structural object type — `{}`, an
 interface — which width subtyping lets a function inhabit. The
 [views these modes obtain](#shape-tests-and-identity) are given with the rules.
-The claims exporter still refuses positive callability on cells and function
+The producer refuses positive callability on cells and function
 shape without a signature. Ordinary exported function signatures already run
 through the allocated-function path.
 

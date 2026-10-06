@@ -1,10 +1,17 @@
 # Independent claim verification
 
-This pipeline checks supplied types and program-point invariants against an
-independent calculus. A producer proposes the claims: the OCaml producer, or
-TypeScript's own checker for the corpus. Every producer's claims go through the
-same source adapter and independently checked certificates. Neither a producer
-nor proof search is assumed sound.
+This pipeline checks type claims about TypeScript programs. A **claim** is a
+proposed expression type or a description of local variables at a program
+point. The OCaml producer proposes those claims; Lean checks whether they
+follow from the program and its declared inputs.
+
+Lean first turns source syntax into execution plans describing control flow,
+operand order and variable binding. OCaml computes type facts over those plans.
+Lean then reconstructs the plans, uses the proposed types to elaborate a
+**calculus graph**—a program in the verifier's formal language—and checks
+certificates for its typing obligations. A certificate records a derivation
+that the checker can validate. Neither type inference nor evidence search is
+trusted to produce correct answers.
 
 There is one maintained calculus and verifier. Its implementation lives in
 `lean/Verification/`, organized by semantics, types, program rules,
@@ -15,12 +22,12 @@ program rules.
 [DESIGN.md](DESIGN.md) describes the architecture and trust surface;
 [REFERENCES.md](REFERENCES.md) collects the works it draws on.
 
-The base language everything else is defined over is small, and stated in two
-places. [Terms and values](SEMANTICS.md#operational-language) are the programs
-the indexed model interprets directly; [formulas and clauses](POSITIVE-TYPES.md#types-and-clauses)
-are the types a graph label can name. [Control-flow graphs](PROGRAM-TYPING.md#checked-control-flow-graphs)
-and [state assertions](POSITIVE-TYPES.md#state-assertion-grammar) are layered on
-those two rather than alternatives to them.
+Start with [the architecture](DESIGN.md#architecture) for the full data flow
+and [the language map](LANGUAGES.md) for the representations exchanged between
+components. The formal definitions live in [SEMANTICS](SEMANTICS.md), which
+defines execution and safety, [POSITIVE-TYPES](POSITIVE-TYPES.md), which defines
+types and state assertions, and [PROGRAM-TYPING](PROGRAM-TYPING.md), which
+defines the rules used to check programs.
 
 The TypeScript the pipeline reads is summarised under
 [current source fragment](#current-source-fragment); the
@@ -99,7 +106,7 @@ In outline, the parser admits:
   strings and symbols, with literal types; arithmetic, relational comparison
   of operands in their primitive order, string `+` and template literals,
   compound and logical assignment; `typeof`, `in`, `instanceof`,
-  truthiness, strict equality and `== null` as guards
+  truthiness, strict equality, and supported loose-equality comparisons
   ([values](DESIGN.md#values), [guards](DESIGN.md#guards)).
 - **Objects and arrays**: object literals with spreads, records, index
   signatures, dense arrays and tuples, optional chaining, enums, and classes
@@ -107,8 +114,7 @@ In outline, the parser admits:
   file ([objects and prototypes](DESIGN.md#objects-and-prototypes),
   [classes](PROGRAM-TYPING.md#classes)).
 - **Functions**: declarations, function expressions and arrows with
-  optional, default and rest parameters, closures as graph code, method
-  members host-relative, `.call`, `.apply` and `.bind`; generic functions and
+  optional, default and rest parameters, closures as graph code, methods whose contracts depend on their receiver, `.call`, `.apply` and `.bind`; generic functions and
   classes certified at every instantiation; `async` functions and `await`
   of promises of primitives ([calls](DESIGN.md#calls),
   [generic bodies](DESIGN.md#generic-bodies),
@@ -123,7 +129,8 @@ A type assertion (`e as T`, `e satisfies T`, `e!`) decides nothing: `T` is one
 more type the operand must meet, so an assertion never establishes what a
 guard would.
 
-Everything else is refused with a located reason. The fragment is smaller
+Unsupported forms are refused with a reason. Where source locations are
+available, diagnostics identify the relevant span. The fragment is smaller
 than the calculus, and the parser can represent syntax the Lean adapter then
 rejects: such a rejection is a limitation, never evidence that a producer
 claim is false. How much of SKJS's own test suite this covers, and what stops
@@ -156,10 +163,11 @@ See the [report viewer guide](report-viewer/README.md) and
 
 ## What is established
 
-1. An independent TypeScript parser emits source syntax and positions.
-2. A producer supplies candidate types and environments.
-3. Lean reconstructs a calculus request, including source annotation obligations.
-4. Proof search proposes evidence; the independent consumer checks it against
+1. The front end uses TypeScript’s compiler API to produce source syntax and declarations.
+2. Lean constructs execution plans; OCaml proposes types and environments over them.
+3. Lean reconstructs those plans and elaborates a calculus request, retaining
+   source annotation obligations.
+4. Proof search proposes evidence; certificate checking validates it against
    that exact request. Acceptance implies typing and modeled execution safety.
 
 Termination is not guaranteed. Applying the safety result to JavaScript still

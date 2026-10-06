@@ -1,68 +1,84 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="800" height="1050" viewBox="0 0 800 1050" role="img" aria-labelledby="title desc">
-<title id="title">Independent verification architecture</title>
-<desc id="desc">Independent source extraction and associated SKJS claims form a verification request. An untrusted producer supplies derivation certificates. The proved consumer checks both the original request and certificates. Typing soundness establishes safety under the reviewed semantics. Amber marks the remaining source and model trust boundary; green marks the proved path.</desc>
-<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#57606a"/></marker></defs>
-<style>
-text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #1f2328; font-size: 18px; }
-.heading { font-weight: 650; }
-.note { font-size: 15px; fill: #57606a; }
-.edge { fill: none; stroke: #57606a; stroke-width: 2; marker-end: url(#arrow); }
-</style>
-<rect width="800" height="1050" rx="16" fill="#ffffff"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="1060" height="1120" viewBox="0 0 1060 1120" role="img" aria-labelledby="title desc">
+<title id="title">Source verification pipeline</title>
+<desc id="desc">TypeScript parsing supplies Fragment syntax and declarations. Lean exports claim-independent execution plans to the OCaml producer. Lean reconstructs those plans from Fragment and elaborates the source with proposed types into a calculus request. Evidence search proposes a certificate; the checker checks it against the original request. Success establishes modeled safety. Source translation and host conformance remain reviewed assumptions.</desc>
 
-<rect x="275" y="25" width="250" height="58" rx="10" fill="#f6f8fa" stroke="#8c959f" stroke-width="1.5"/>
-<text x="400.0" y="60.0" text-anchor="middle" class="heading">TypeScript source</text>
-<rect x="40" y="135" width="300" height="78" rx="10" fill="#fff4dc" stroke="#9a6700" stroke-width="1.5"/>
-<text x="190.0" y="168.0" text-anchor="middle" class="heading">Independent parsing</text>
-<text x="190.0" y="192.0" text-anchor="middle" class="">and source/type extraction</text>
-<rect x="480" y="145" width="260" height="58" rx="10" fill="#f6f8fa" stroke="#8c959f" stroke-width="1.5"/>
-<text x="610.0" y="180.0" text-anchor="middle" class="heading">SKJS</text>
-<path class="edge" d="M 335 83 V 107 H 190 V 135"/>
-<path class="edge" d="M 465 83 V 107 H 610 V 145"/>
-<rect x="480" y="260" width="260" height="58" rx="10" fill="#f6f8fa" stroke="#8c959f" stroke-width="1.5"/>
-<text x="610.0" y="295.0" text-anchor="middle" class="heading">Candidate type claims</text>
-<path class="edge" d="M 610 203 V 260"/>
-<rect x="480" y="365" width="260" height="102" rx="10" fill="#fff4dc" stroke="#9a6700" stroke-width="1.5"/>
-<text x="610.0" y="410.0" text-anchor="middle" class="heading">Source association</text>
-<text x="610.0" y="434.0" text-anchor="middle" class="">and claim translation</text>
-<path class="edge" d="M 610 318 V 365"/>
-<path class="edge" d="M 340 174 H 405 V 400 H 480"/>
-<text x="349" y="340" class="note">source points</text>
-<rect x="40" y="490" width="300" height="126" rx="10" fill="#f6f8fa" stroke="#8c959f" stroke-width="1.5"/>
-<text x="190.0" y="523.0" text-anchor="middle" class="heading">Verification request</text>
-<text x="190.0" y="547.0" text-anchor="middle" class="">calculus program</text>
-<text x="190.0" y="571.0" text-anchor="middle" class="">source requirements</text>
-<text x="190.0" y="595.0" text-anchor="middle" class="">point annotations</text>
-<path class="edge" d="M 190 213 V 490"/>
-<text x="55" y="460" class="note">program + requirements</text>
-<path class="edge" d="M 610 467 V 510 H 340"/>
-<text x="427" y="492" class="note">supplied annotations</text>
-<rect x="480" y="570" width="260" height="78" rx="10" fill="#f6f8fa" stroke="#8c959f" stroke-width="1.5"/>
-<text x="610.0" y="603.0" text-anchor="middle" class="heading">Untrusted producer</text>
-<text x="610.0" y="627.0" text-anchor="middle" class="">bounded evidence search</text>
-<path class="edge" d="M 340 573 H 425 V 610 H 480"/>
-<rect x="480" y="710" width="260" height="78" rx="10" fill="#f6f8fa" stroke="#8c959f" stroke-width="1.5"/>
-<text x="610.0" y="743.0" text-anchor="middle" class="heading">Finite certificates</text>
-<text x="610.0" y="767.0" text-anchor="middle" class="">rule derivations</text>
-<path class="edge" d="M 610 648 V 710"/>
-<rect x="40" y="710" width="300" height="96" rx="10" fill="#dafbe1" stroke="#1a7f37" stroke-width="1.5"/>
-<text x="190.0" y="740.0" text-anchor="middle" class="heading">Proved consumer</text>
-<text x="190.0" y="764.0" text-anchor="middle" class="">checks request, derivations</text>
-<text x="190.0" y="788.0" text-anchor="middle" class="">and every actual edge</text>
-<path class="edge" d="M 190 616 V 710"/>
-<text x="203" y="666" class="note">original request</text>
-<path class="edge" d="M 480 749 H 340"/>
-<rect x="40" y="865" width="300" height="58" rx="10" fill="#dafbe1" stroke="#1a7f37" stroke-width="1.5"/>
-<text x="190.0" y="900.0" text-anchor="middle" class="heading">Declarative typing</text>
-<path class="edge" d="M 190 806 V 865"/>
-<text x="203" y="842" class="note">acceptance</text>
-<rect x="40" y="970" width="300" height="58" rx="10" fill="#dafbe1" stroke="#1a7f37" stroke-width="1.5"/>
-<text x="190.0" y="1005.0" text-anchor="middle" class="heading">Modeled execution safety</text>
-<path class="edge" d="M 190 923 V 970"/>
-<text x="203" y="952" class="note">soundness theorem</text>
-<rect x="480" y="875" width="260" height="102" rx="10" fill="#fff4dc" stroke="#9a6700" stroke-width="1.5"/>
-<text x="610.0" y="920.0" text-anchor="middle" class="heading">Reviewed semantics</text>
-<text x="610.0" y="944.0" text-anchor="middle" class="">execution and types</text>
-<path class="edge" d="M 610 977 V 999 H 340" stroke-dasharray="6 5"/>
-<text x="426" y="1023" class="note">defines the guarantee</text>
+
+<rect width="1060" height="1120" rx="16" fill="white"/>
+
+<rect x="200" y="20" width="370" height="53" rx="9" fill="#f6f8fa" stroke="#8c959f"/>
+<text x="385.0" y="48" text-anchor="middle" class="heading" font-family="Arial, sans-serif" font-size="18" font-weight="700">TypeScript source + project</text>
+<rect x="200" y="110" width="370" height="76" rx="9" fill="#fff4dc" stroke="#9a6700"/>
+<text x="385.0" y="138" text-anchor="middle" class="heading" font-family="Arial, sans-serif" font-size="18" font-weight="700">Parse and collect declarations</text>
+<text x="385.0" y="161" text-anchor="middle" class="note" font-family="Arial, sans-serif" font-size="15" fill="#57606a">TypeScript compiler API</text>
+<g><rect x="384" y="73" width="2" height="37" fill="#57606a"/></g>
+<rect x="200" y="220" width="370" height="76" rx="9" fill="#f6f8fa" stroke="#8c959f"/>
+<text x="385.0" y="248" text-anchor="middle" class="heading" font-family="Arial, sans-serif" font-size="18" font-weight="700">Fragment + declarations</text>
+<text x="385.0" y="271" text-anchor="middle" class="note" font-family="Arial, sans-serif" font-size="15" fill="#57606a">Syntax, source locations, type declarations</text>
+<g><rect x="384" y="186" width="2" height="34" fill="#57606a"/></g>
+<rect x="200" y="340" width="370" height="99" rx="9" fill="#fff4dc" stroke="#9a6700"/>
+<text x="385.0" y="368" text-anchor="middle" class="heading" font-family="Arial, sans-serif" font-size="18" font-weight="700">Lean: execution plans</text>
+<text x="385.0" y="391" text-anchor="middle" class="note" font-family="Arial, sans-serif" font-size="15" fill="#57606a">Statement edges, expression order,</text>
+<text x="385.0" y="414" text-anchor="middle" class="note" font-family="Arial, sans-serif" font-size="15" fill="#57606a">binding and default schedules</text>
+<g><rect x="384" y="296" width="2" height="44" fill="#57606a"/></g>
+<rect x="670" y="340" width="350" height="99" rx="9" fill="#ddf4ff" stroke="#0969da"/>
+<text x="845.0" y="368" text-anchor="middle" class="heading" font-family="Arial, sans-serif" font-size="18" font-weight="700">OCaml: type proposals</text>
+<text x="845.0" y="391" text-anchor="middle" class="note" font-family="Arial, sans-serif" font-size="15" fill="#57606a">Data flow over the shared plans;</text>
+<text x="845.0" y="414" text-anchor="middle" class="note" font-family="Arial, sans-serif" font-size="15" fill="#57606a">contextual typing and generic inference</text>
+<g><rect x="570" y="388" width="100" height="2" fill="#57606a"/></g>
+<rect x="670" y="475" width="350" height="76" rx="9" fill="#f6f8fa" stroke="#8c959f"/>
+<text x="845.0" y="503" text-anchor="middle" class="heading" font-family="Arial, sans-serif" font-size="18" font-weight="700">SourceClaims</text>
+<text x="845.0" y="526" text-anchor="middle" class="note" font-family="Arial, sans-serif" font-size="15" fill="#57606a">Types, environments, storage contracts</text>
+<g><rect x="844" y="439" width="2" height="36" fill="#57606a"/></g>
+<rect x="200" y="510" width="370" height="99" rx="9" fill="#fff4dc" stroke="#9a6700"/>
+<text x="385.0" y="538" text-anchor="middle" class="heading" font-family="Arial, sans-serif" font-size="18" font-weight="700">Lean: typed elaboration</text>
+<text x="385.0" y="561" text-anchor="middle" class="note" font-family="Arial, sans-serif" font-size="15" fill="#57606a">Reconstruct plans from Fragment;</text>
+<text x="385.0" y="584" text-anchor="middle" class="note" font-family="Arial, sans-serif" font-size="15" fill="#57606a">check claim identities and annotations</text>
+<g><rect x="384" y="439" width="2" height="71" fill="#57606a"/></g>
+<g><rect x="570" y="512" width="100" height="2" fill="#57606a"/></g>
+<g><rect x="105" y="257" width="95" height="2" fill="#57606a"/> <rect x="104" y="258" width="2" height="302" fill="#57606a"/> <rect x="105" y="559" width="95" height="2" fill="#57606a"/></g>
+<text x="14" y="468" class="note" font-family="Arial, sans-serif" font-size="15" fill="#57606a">source input</text>
+<rect x="200" y="655" width="370" height="76" rx="9" fill="#f6f8fa" stroke="#8c959f"/>
+<text x="385.0" y="683" text-anchor="middle" class="heading" font-family="Arial, sans-serif" font-size="18" font-weight="700">Calculus request</text>
+<text x="385.0" y="706" text-anchor="middle" class="note" font-family="Arial, sans-serif" font-size="15" fill="#57606a">Program + required typing obligations</text>
+<g><rect x="384" y="609" width="2" height="46" fill="#57606a"/></g>
+<rect x="670" y="655" width="350" height="76" rx="9" fill="#ddf4ff" stroke="#0969da"/>
+<text x="845.0" y="683" text-anchor="middle" class="heading" font-family="Arial, sans-serif" font-size="18" font-weight="700">Lean: evidence search</text>
+<text x="845.0" y="706" text-anchor="middle" class="note" font-family="Arial, sans-serif" font-size="15" fill="#57606a">Proposes derivations; may fail</text>
+<g><rect x="570" y="692" width="100" height="2" fill="#57606a"/></g>
+<rect x="670" y="775" width="350" height="76" rx="9" fill="#f6f8fa" stroke="#8c959f"/>
+<text x="845.0" y="803" text-anchor="middle" class="heading" font-family="Arial, sans-serif" font-size="18" font-weight="700">Certificate</text>
+<text x="845.0" y="826" text-anchor="middle" class="note" font-family="Arial, sans-serif" font-size="15" fill="#57606a">Typing and subtype derivations</text>
+<g><rect x="844" y="731" width="2" height="44" fill="#57606a"/></g>
+<rect x="200" y="825" width="370" height="99" rx="9" fill="#dafbe1" stroke="#1a7f37"/>
+<text x="385.0" y="853" text-anchor="middle" class="heading" font-family="Arial, sans-serif" font-size="18" font-weight="700">Lean: certificate checker</text>
+<text x="385.0" y="876" text-anchor="middle" class="note" font-family="Arial, sans-serif" font-size="15" fill="#57606a">Checks all required obligations</text>
+<text x="385.0" y="899" text-anchor="middle" class="note" font-family="Arial, sans-serif" font-size="15" fill="#57606a">against the exact extracted request</text>
+<g><rect x="384" y="731" width="2" height="94" fill="#57606a"/></g>
+<text x="401" y="786" class="note" font-family="Arial, sans-serif" font-size="15" fill="#57606a">original request</text>
+<g><rect x="620" y="812" width="50" height="2" fill="#57606a"/> <rect x="619" y="813" width="2" height="59" fill="#57606a"/> <rect x="570" y="871" width="50" height="2" fill="#57606a"/></g>
+<rect x="200" y="970" width="370" height="76" rx="9" fill="#dafbe1" stroke="#1a7f37"/>
+<text x="385.0" y="998" text-anchor="middle" class="heading" font-family="Arial, sans-serif" font-size="18" font-weight="700">Modeled execution safety</text>
+<text x="385.0" y="1021" text-anchor="middle" class="note" font-family="Arial, sans-serif" font-size="15" fill="#57606a">For inputs and heaps meeting contracts</text>
+<g><rect x="384" y="924" width="2" height="46" fill="#57606a"/></g>
+<rect x="670" y="955" width="350" height="99" rx="9" fill="#fff4dc" stroke="#9a6700"/>
+<text x="845.0" y="983" text-anchor="middle" class="heading" font-family="Arial, sans-serif" font-size="18" font-weight="700">Reviewed assumptions</text>
+<text x="845.0" y="1006" text-anchor="middle" class="note" font-family="Arial, sans-serif" font-size="15" fill="#57606a">Source translation, annotation meaning,</text>
+<text x="845.0" y="1029" text-anchor="middle" class="note" font-family="Arial, sans-serif" font-size="15" fill="#57606a">host contracts and Lean infrastructure</text>
+<text x="40" y="1090" class="note" font-family="Arial, sans-serif" font-size="15" fill="#57606a">Amber: reviewed source/host boundary     Blue: untrusted proposals     Green: checked theorem consequence</text>
+<polygon points="385,110 380,100 390,100" fill="#57606a"/>
+<polygon points="385,220 380,210 390,210" fill="#57606a"/>
+<polygon points="385,340 380,330 390,330" fill="#57606a"/>
+<polygon points="670,389 660,394 660,384" fill="#57606a"/>
+<polygon points="845,475 840,465 850,465" fill="#57606a"/>
+<polygon points="385,510 380,500 390,500" fill="#57606a"/>
+<polygon points="570,513 580,508 580,518" fill="#57606a"/>
+<polygon points="200,560 190,565 190,555" fill="#57606a"/>
+<polygon points="385,655 380,645 390,645" fill="#57606a"/>
+<polygon points="670,693 660,698 660,688" fill="#57606a"/>
+<polygon points="845,775 840,765 850,765" fill="#57606a"/>
+<polygon points="385,825 380,815 390,815" fill="#57606a"/>
+<polygon points="570,872 580,867 580,877" fill="#57606a"/>
+<polygon points="385,970 380,960 390,960" fill="#57606a"/>
+<g><rect x="570" y="257" width="275" height="2" fill="#57606a"/><rect x="844" y="258" width="2" height="82" fill="#57606a"/><polygon points="845,340 840,330 850,330" fill="#57606a"/></g>
+<text x="740" y="245" text-anchor="middle" font-family="Arial, sans-serif" font-size="15" fill="#57606a">source syntax and declarations</text>
 </svg>

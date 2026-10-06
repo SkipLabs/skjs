@@ -1,102 +1,235 @@
 # Producer-independent claims documents
 
-The claims document supplies ground types as calculus labels into a type table the
-document carries, and type parameters as function-scoped references. It contains no inferred bounds or stored
-proof results. A human or another producer can write it. This is a bounded
-interface for the existing source fragment, not support for arbitrary graphs,
-TypeScript types, shadowing or recursive source aliases.
+A source-claims document proposes types for one parsed TypeScript file. The
+verifier checks those proposals against the source's declarations and runtime
+operations. Evidence is a separate document: supplying a claim does not establish
+that it holds.
+
+A **source span** is `[start,end]`, a half-open interval of UTF-16 offsets in
+the source. An **execution point** identifies a node of the shared execution
+graph. The same source span can run at several points, for example when a
+`finally` body runs on different exits. Claims name both the point and the
+source site. A **type label** names a row of a type table or a type constructed
+from the source's declarations. A list of labels denotes their union;
+`[]` denotes the empty type, `never`.
+
+The protocol has three documents:
+
+- The Fragment document describes parsed source syntax and declarations.
+- The execution document describes statement edges, expression evaluation,
+  and lexical binding order. Lean derives it from the Fragment.
+- The source-claims document proposes entry environments, expression results,
+  and fixed storage contracts. Any producer can write it.
 
 ```sh
-node verification/tools/fragment-parse.mts input.ts > ast.json
+verification/lean/.lake/build/bin/verifier --lower-control-flow ast.json
 verification/lean/.lake/build/bin/verifier --produce-source-claims \
   ast.json source-claims.json input.ts evidence.json 10
 verification/lean/.lake/build/bin/verifier --check-source-claims \
   ast.json source-claims.json input.ts evidence.json
 ```
 
-The consumer reconstructs the calculus requests and required claim obligations
-from the AST and claims document. It checks evidence using `checkRequests` and its soundness theorems.
-`SourceClaimJson.checkJson_safe` states that every accepted plan first becomes
-a `CertifiedPlan` and that every such function has the calculus safety
-guarantee, at every assignment of its parameter rows.
+`--produce-source-claims` searches for evidence of the reconstructed obligations.
+`--check-source-claims` checks supplied evidence against those obligations.
+`SourceClaimJson.checkJson_safe` proves calculus safety for every accepted
+function, at every permitted interpretation of its type parameters. The
+theorem concerns the extracted calculus graph; correspondence with the source
+is a separate boundary, specified below.
 
-Generic functions use the same claims document: any `type` or `result` may be
-`{"param":"T"}`, referring to that function's source type parameter, which
-Lean reads as the binder's parameter row (a bounded one as its meet with the
-bound) before the unit is extracted as an ordinary graph request, certified at
-every assignment of those rows. Bounds come from the source, never from
-producer assertions. Ground functions cannot use parameter claims,
-and parameter claims cannot carry current-content assertions. Within this fragment,
-ground annotations retain their ordinary graph meanings; no parameter is
-replaced by its bound. Declarations certify invocation as well as body safety,
-and every supplied callee and operand claim is checked at its source span.
+## Encoding
 
-## Quantified callables and their eliminations
+The top-level object has required fields `file`, `sourceSha256`, `types` and
+`functions`, and optional `init`. Unknown fields are rejected. `file` identifies
+the source; `sourceSha256` is its lowercase SHA-256 digest. `types` is the
+producer's type table. Each ordinary row is a list of clauses, also interpreted
+as a union. Row operands contain label lists, so recursive rows can refer to
+one another without expanding them into trees. The first four rows are
+`["nul"]`, `[{"boolLit":{"value":true}}]`,
+`[{"boolLit":{"value":false}}]`, and `["undef"]`, in that order.
+The table also accepts scheme rows for classes' quantified methods, whose
+binders use binder labels; their native graph fields are specified with the
+clause fields below.
 
-A `type` may also be `{"scheme":{"typeParams":[...],"this":...,"params":[...],"rest":null,"result":...,"effect":"unrestricted"}}`:
-a callable quantified over its own binders, which a binding can hold. Binders
-shadow, so a nested scheme's own names hide an outer substitution. `this` is
-required: the receiver a call must pass, top for an arrow, and for an ordinary
-function its `this` annotation, which may be a binder, so that each call's
-receiver instantiates it. `rest` is required: `null` for a fixed signature,
-otherwise the type of each surplus actual. A mutable array over a binder is `{"array":{"param":"T"}}`;
-its store contract is invariant. After substitution it is interned through the
-same list-store and object graph rows as every ordinary array.
+Each function object has these fields:
 
-An expression that calls one carries the elimination it proposes:
+| Field | Value |
+| --- | --- |
+| `name` | Source function name |
+| `namePos` | Name span |
+| `params` | Ordered parameter points: `{name,type,current}` |
+| `result` | Claimed return type |
+| `contracts` | Mutable declaration contracts: `{pos,name,type}` |
+| `entries` | Entry claims: `{point,start,bindings}` |
+| `expressions` | Expression claims: `{point,pos,type,current}` |
+| `arrows` | Optional per-signature interior claims, described below |
+
+A parameter point and an entry binding both carry `name`, `type` and
+`current`. Entry `bindings` is a list of those named points. `start` is the
+source offset associated with the graph node. Expression `pos` is a span.
+Every point has an explicit `current`: `null` states that no additional
+contents assertion is supplied. Expressions may also have `instantiate`,
+absent or `null` except at proposed quantified-call eliminations.
+
+A contract's `pos` is the initializer span; together with `name` it identifies
+one mutable declaration. The contract fixes the allocated cell's permitted
+contents for its lifetime. The initializer and every write must satisfy it.
+An annotation, when present, must have the same meaning as the supplied
+contract. Entry types and contents assertions describe execution points;
+they do not replace this lifetime obligation.
+
+A source containing top-level executable code has an `init` object with
+`contracts`, `entries`, `expressions`, and optional `arrows`. It has no
+parameters and completes with `undefined`. Functions read module declarations
+at their source types; an unannotated module constant uses its initializer
+claim, which the initialization unit checks.
+
+Function names, name spans, parameter names and parameter order must match
+the source. Entry identities are `(point,start)`; expression identities are
+`(point,pos)`. Duplicate associations are rejected. The verifier reconstructs
+point ownership and allowed sites from the Fragment. A loop-head entry is an
+invariant candidate checked on initial entry and every back edge. Names resolve
+against initialized lexical bindings under the Fragment's shadowing rules.
+A receiver `this` keeps the source signature's receiver type; an entry's
+`this` binding supplies no replacement type.
+
+For example, this document illustrates the fields rather than a complete
+executable input; its identity and point associations must match a Fragment:
 
 ```json
 {
-  "point": "9:17:7",
-  "pos": [121, 129],
-  "type": [1, 2],
-  "current": null,
-  "instantiate": [{ "name": "T", "type": [1, 2] }]
+  "file": "input.ts",
+  "sourceSha256": "REPLACE_WITH_EXACT_SOURCE_DIGEST",
+  "types": [["nul"], [{"boolLit":{"value":true}}],
+            [{"boolLit":{"value":false}}], ["undef"]],
+  "functions": [{
+    "name": "identity", "namePos": [9,17],
+    "params": [{"name":"flag","type":[1,2],"current":null}],
+    "result": [1,2], "contracts": [],
+    "entries": [{"point":"9:17:1","start":43,
+      "bindings":[{"name":"flag","type":[1,2],"current":null}]}],
+    "expressions": [{"point":"9:17:1","pos":[50,54],
+      "type":[1,2],"current":null}]
+  }]
 }
 ```
 
-`instantiate` is absent, or `null`, at every other site. Its names must be
-exactly the scheme's binders, and each type argument must be a ground type: an
-unresolved parameter or a nested scheme is refused. The consumer re-checks the
-substitution and derives the call's arrow from the scheme's own signature, so a
-forged `instantiate` can only name another genuine instance.
+A label has one of these spellings. Here `A` denotes a label list, `k` is a
+declaration index, `i` is a table index, and `b` is a Boolean:
 
-The required `effect` is either `unrestricted` or `preservesInputHeap`, as in
-ordinary graph signatures. Grounding a symbolic claim, substitution and scheme
-instantiation retain it; definition certification checks it. Source annotations
-remain unrestricted. OCaml currently infers preservation for operationally pure
-closure bodies and defaults; its analysis is deliberately incomplete for reads,
-allocation, calls and rest-array wrappers. Those bodies retain unrestricted
-claims until the compositional checker can certify their stronger effect.
+| Label | Meaning |
+| --- | --- |
+| `i` | Row `i` of `types` |
+| `{"decl":k,"args":[A,...]}` | Source declaration `k` applied to its type arguments |
+| `{"meet":[A,...]}` | Intersection of at least two label unions |
+| `{"array":A,"readonly":b}` | Array object over the store contract `A` |
+| `{"binder":"T"}` | The in-scope source binder `T`, interpreted within its source bound |
 
-Lean reads each such scheme as a scheme head of its own, whose binders are
-its application's owned parameters
-([RECURSIVE-EQUATIONS §5](RECURSIVE-EQUATIONS.md#5-from-source)): every claim
-and annotation inside the closure reads the closure's binders, spelled by
-their names, as those parameters, a bounded one as the meet of its parameter
-and its bound, one bounded by another of the closure's binders as the meet of
-the two parameters. The
-closure is graph code at the row (`funScheme`), checked once at the row's
-signatures, so at every instantiation and never at the observed calls alone: a
-closure that satisfies each observed call but cannot produce an arbitrary
-binder's value fails its own code's check, whatever its calls. A call of a
-local holding one is claimed at the instance its `instantiate` names, a bounded
-binder's instance the meet of its type argument with the bound, and the callee
-is read there, below the scheme by a checked instance table (`InstArrs`).
-Nested generic closures, generic closures in generic bodies, rests, defaults
-and receivers over a binder are all graph code the same way.
+Declaration indices refer to the Fragment's `definitions`. A nullary application
+omits `args`; an empty `args` field is not its spelling. Defaults and bounds
+are interpreted from the source declaration. Label lists are duplicate-free
+and ordered canonically: row indices, applications, intersections, arrays,
+then binders; within a category, fields and lists are ordered lexicographically.
 
-The OCaml producer feeds this format into [SourceClaimJson.lean](lean/Verification/Source/SourceClaimJson.lean), its strict decoder and checked consumer.
-The report viewer shows the claims of one pipeline run in this format.
+The `type` language also has these recursive forms:
+
+| Claim type | Meaning |
+| --- | --- |
+| `A` | Union of labels |
+| `{"param":"T"}` | Rigid source type parameter in lexical scope |
+| `{"union":[C,...]}` | Union of claim types, including symbolic types |
+| `{"array":C}` | Mutable homogeneous array over a symbolic element claim |
+| `{"scheme":S}` | Quantified callable signature, specified below |
+| `{"unavailable":"reason"}` | Explicit unavailable proposal; its use fails with that reason |
+
+The two `array` forms serve different levels: a label's array wraps a store
+contract and requires `readonly`; a claim type's array wraps an element claim.
+Rigid parameters are not replaced by their bounds. A bounded parameter is
+interpreted as the parameter within that bound.
+
+Ordinary table clauses use the native graph vocabulary:
+
+| Clause | Contract |
+| --- | --- |
+| `"nul"`, `"undef"`, `"bool"`, `"num"`, `"str"`, `"bigint"`, `"symbol"`, `"top"` | Primitive types and the universal type |
+| `boolLit`, `numLit`, `strLit`, `bigintLit` objects | Singleton values |
+| `refs` | Required invariant fields, readonly views, and optional object capabilities |
+| `dict` | Object fields plus index contracts |
+| `list` | Array-store tuple contracts |
+| `pack` | Argument-list tuple contracts |
+| `arrs` | Call signatures |
+| `ctors` | Construct signatures |
+| `callable` | Object fields and call signatures together |
+
+For example, an invariant field is
+`{"refs":{"first":[["value",[1,2]]],"rest":[],"views":[]}}`.
+An ordinary call signature is an object with `receiver`, `arguments`, `result`
+and `effect`, inside `{"arrs":{"arrows":[signature]}}`. `arguments` is an
+ordered list of label unions. A zero-argument signature uses `[]`; a signature
+with one `undefined` parameter uses `[[3]]` in the illustrative table above.
+Optional row fields describe variadic signatures, optional fields, host-relative
+methods, and own-key bounds. The full native clause field definitions are in
+[Request fields](REQUEST-PROTOCOL.md#request-fields), shared by graph requests
+and this document; [type-graph.mts](tools/type-graph.mts) declares their wire types.
+The reader validates label references even in unused candidates. A label is a
+name, not a guarantee that the value at a source site has that type.
+
+## Quantified callables and their eliminations
+
+A scheme is one callable satisfying its signature for every assignment of its
+own type parameters. In this example, row `4` is `["top"]`, appended to the
+primitive table above, so the receiver accepts any value. Its claim is:
+
+```json
+{"scheme": {
+  "effect": "unrestricted",
+  "typeParams": [{"name":"T","bound":null}],
+  "this": [4], "params": [{"param":"T"}],
+  "rest": null, "result": {"param":"T"}
+}}
+```
+
+Every shown scheme field is required. `bound` is `null` or a claim type;
+`this` is the required receiver type, `params` is the fixed parameter list,
+and `rest` is `null` or the surplus-element type. Binder names resolve
+lexically; a nested scheme's binders hide outer binders of the same names.
+The effect is `unrestricted` or `preservesInputHeap`. The latter promises
+that execution preserves the input heap and requires corresponding evidence.
+
+A call expression can propose an instance with:
+
+```json
+{"point":"9:17:7","pos":[121,129],"type":[1,2],"current":null,
+ "instantiate":[{"name":"T","type":[1,2]}]}
+```
+
+Its names must match the callable's binders. Type arguments must be ground:
+unresolved rigid parameters and nested quantified schemes are refused. The
+consumer checks bounds, substitution, the instantiated signature, and the
+source call. A body is certified at its quantified signature, not solely at
+the instances observed at calls. Generic rests, defaults and receivers retain
+the same quantified obligation.
+
+An overloaded ground closure can supply `arrows` on its enclosing function or
+initialization claim object:
+`[{"pos":span,"rows":[{"contracts":[],"entries":[],"expressions":[]}]}]`.
+The rows follow advertised signature order. Each body is checked separately
+under that signature. Sites belong to the closure and its execution points;
+duplicate associations and invalid labels are rejected. A row's `current`
+value is its complete assertion at that site, including `null`. These
+per-signature rows apply to ground closures; quantified schemes have their
+own binder-based certification.
 
 ## Execution graph supplied to the producer
 
-`verifier --lower-control-flow ast.json` emits an array of executable-body
+The execution document describes the order of runtime operations independently
+of proposed types. `verifier --lower-control-flow ast.json` emits an array of executable-body
 graphs. [source-flow.mts](tools/source-flow.mts) declares and decodes the wire;
 [FlowJson.lean](lean/Verification/Source/FlowJson.lean) writes it.
 Each graph has `owner` (its source span), `bodySpans` (the body's statement
 spans), `entry` (a local node ID), `prologue` and `nodes`. Each node has `id`, `point`,
-`source`, `scope`, `handler`, `action`, `executions` and `bindingPlan`. IDs are contiguous from zero;
+`source`, `scope`, `handler`, `action`, `executions` and `bindingPlan`. The graph owner is the function name span, the nested body span, or `[0,0]`
+for module initialization. Its scope lists local bindings; parameters and
+captures form the surrounding environment. IDs are contiguous from zero;
 `point` is `"ownerStart:ownerEnd:id"`. A scope binding has `name` and `source`.
 A handler is `null` or `{target, scope, binding}`; its target receives the
 thrown value in its binding.
@@ -126,17 +259,22 @@ elaboration. A supplied graph carries proposal data, with no acceptance
 authority.
 
 Each node's `executions` array contains `{source, plan}` for its expressions.
-A saved value has `{id, name, source, role}`. Plans contain source spans and
+A saved value is an intermediate result retained for later operations. Its
+descriptor is `{id, name, source, role}`; `id` is a local identity, `name` is
+the internal binding name, `source` records its origin, and `role` records
+its use. Plans contain source spans and
 saved-value references; their original expressions are read from the Fragment.
 
 | Plan kind | Other fields | Evaluation |
 | --- | --- | --- |
-| `observe` | `source`, `evaluate` | Retain the expression result at its source site |
+| `observe` | `source`, `evaluate` | Check the expression result and its contents observation at its source site |
 | `atom` | `source`, `operation` | Perform one operation |
 | `sequence` | `source`, `binding`, `evaluate`, `next` | Evaluate, bind its result, then continue |
 | `choose` | `source`, `condition`, `test`, `binding`, `evaluate`, `yes`, `no` | Evaluate and save the condition, then choose a branch |
 
-`test` is `truthy`, `nullish` or `defined`. Operations have these fields:
+`test` is `truthy`, `nullish` or `defined`; `yes` is the branch where that
+test holds. A proved answer executes only its selected branch. Otherwise
+both branches have checked entry contexts. Operations have these fields:
 
 | Operation kind | Other fields |
 | --- | --- |
@@ -182,338 +320,173 @@ schedule object has `kind`; saved operands use the descriptors above.
 schedule. `defaultValue` saves the defined input or the fallback result in
 `result`, then runs `next`. `name` and
 `field` are strings, `origin` and `source` are spans, `drop` is a string list,
-`index` and `start` are natural numbers, and `slice` is a Boolean.
+`index` and `start` are natural numbers, and `slice` is a Boolean. An
+`input` index selects a source parameter after the receiver slot. `bind`
+publishes its saved value as a lexical binding; reads and defaults follow
+the progressive scope supplied by the schedule.
 
-An effect is `{kind: "none"}`, `{kind: "havoc"}`, `{kind: "cellWrite", name,
+Effects describe what the producer must update in its knowledge of mutable
+contents. `none` preserves that knowledge; `havoc` forgets it; `cellWrite`
+sets a named cell's contents to the assigned expression type; `cellUpdate`
+uses the update expression's type. An effect is `{kind: "none"}`, `{kind: "havoc"}`, `{kind: "cellWrite", name,
 value}` or `{kind: "cellUpdate", name, source}`. A write's `value` is the
 assigned expression's span, and an update's `source` is its expression's span.
 Sequence and choice plans state execution order separately from the producer's
 source-oriented typing choices.
 
-## Encoding
-
-An optional function-level `arrows` field supplies per-signature interior claims
-for overloaded closures: `[{pos, rows: [{contracts, expressions, entries}]}]`. Each row uses
-the same expression and entry encodings as the enclosing function. The consumer
-checks the body separately for every advertised signature; rows are producer
-claims, not evidence of acceptance. Owners must be distinct source closures;
-row sites must lie inside their owner, with no duplicate point-and-site associations, invalid labels,
-or unchecked substitutions. Row-specific current-content assertions replace the
-whole assertion at that site, including its absence; they are never discarded
-or combined with another signature's refinement.
-
-Every field shown below is required. Unknown fields, including stored verification
-statuses, are rejected. This illustrative document must be given the actual file
-identity, SHA-256 digest and UTF-16 source positions before use:
-
-```json
-{
-  "file": "input.ts",
-  "sourceSha256": "REPLACE_WITH_SHA256_OF_EXACT_SOURCE_BYTES",
-  "types": [
-    ["nul"],
-    [{ "boolLit": { "value": true } }],
-    [{ "boolLit": { "value": false } }],
-    ["undef"]
-  ],
-  "functions": [
-    {
-      "name": "identity",
-      "namePos": [9, 17],
-      "params": [{ "name": "flag", "type": [1, 2], "current": null }],
-      "result": [1, 2],
-      "contracts": [],
-      "entries": [
-        {
-          "point": "9:17:1",
-          "start": 43,
-          "bindings": [{ "name": "flag", "type": [1, 2], "current": null }]
-        }
-      ],
-      "expressions": [{ "point": "9:17:2", "pos": [50, 54], "type": [1, 2], "current": null }]
-    }
-  ]
-}
-```
-
-A decoder requires every field above and refuses any field not above, so a
-document that does not have exactly this shape is rejected rather than read
-under some other reading. Every point carries an explicit `current` field.
-When the shape changes, regenerate the documents that carry it.
-
-A source with top-level code (module constants and expression statements)
-has one more code unit, its module initialization, whose claims are an
-`"init"` object beside `"functions"`: `{"contracts": [...], "entries": [...], "expressions":
-[...]}`, with optional `"arrows"`, exactly as a function states them. It is
-present exactly when the source has that code. The unit has no parameters and
-completes with `undefined`; its sites are the top-level statements. A function
-reads the module's functions and annotated constants at their source types,
-which no claim states, and an unannotated constant at the `"init"` claim for
-its initializer's expression, which the initialization unit checks. See
-[Modules and code units](DESIGN.md#modules-and-code-units).
-
-Function identity is its name and name span. Parameter names and order must match
-the source signature. Entry and expression claims use the shared control-flow graph's `point` identity
-together with their source site.
-Entries retain `start`, and expressions retain `pos`, as source provenance.
-Several graph points may carry the same source location, including executions
-of a `finally` body on different exits. A point belongs to its graph owner;
-its source provenance must match that point. Its spelling is
-`"ownerStart:ownerEnd:localId"`, combining the graph owner's source span with
-the graph's local node identity. Sites include loop heads and
-supported closure bodies. A loop-head entry is
-the invariant candidate checked on initial entry and every back edge. The existing extractor resolves names
-against initialized lexical bindings and retains its shadowing restrictions.
-A `this` binding in an entry is ignored: a receiver is immutable and bound by
-the call, so it keeps the type its function's receiver gives it, and a `this`
-expression is an ordinary expression site claimed like a variable.
-Each function, initialization unit and per-signature closure row carries
-`contracts`: the fixed storage contracts of its mutable declarations. A contract
-has `pos` (the initializer span), `name` and `type`. Its identity is the
-initializer span together with the binding name. Point-specific environments
-and `current` fields describe contents at execution points; assignment is
-checked against the declaration's storage contract.
-
-Type references are lists of labels, read as a union: `[]` denotes `never`,
-`[1,2]` denotes `boolean`, and `[0,1,2]` denotes `null | boolean`. A label is
-a row of the document's `types` table, or a tree naming a type whose row only
-the verifier builds, from the declaration document the parser emits:
-
-| Label | Spelling | Denotes |
-| --- | --- | --- |
-| row | `i` | the clauses of row `i` of `types`, each spelled as [the request fields](REQUEST-PROTOCOL.md#request-fields) give it |
-| application | `{"decl": k, "args": [A, ...]}` | declaration `k`, its position in the declaration document's `definitions`, applied to one union per parameter, an omitted argument written as its default at the earlier arguments; `args` is left out for a nullary declaration, and never written empty |
-| intersection | `{"meet": [A, ...]}` | the intersection of at least two unions, as the source's own `A & B` lowers (`EquationLowering.meetOf`) |
-| array | `{"array": [s], "readonly": b}` | the array whose store has the tuple contract of row `s`, with `Array.prototype` as a view at `ArrayProto` and the own-key bound excluding `ArrayProto`'s keys (`PositiveNormalization.arrayClauseOf`) |
-| binder | `{"binder": "T"}` | the binder `T` in scope, as its unit, closure or class's generic method binds it, a bounded one within its bound: the label alone states the bound, which a claim does not restate |
-
-```math
-\begin{aligned}
-L &::= i \;\mid\; \mathsf{decl}(k, A_1, \ldots, A_n) \;\mid\; \mathsf{meet}(A_1, \ldots, A_m) \;\mid\; \mathsf{array}(s, b) \;\mid\; \mathsf{binder}(T)
-\qquad n = \mathrm{arity}(k),\ m \ge 2\\
-A &::= [L_1, \ldots, L_p] \qquad L_1 < \cdots < L_p
-\end{aligned}
-```
-
-A label list is in canonical order, each label once: rows ascending, then
-applications, intersections, arrays and binders, each ordered by its fields in
-turn, lists lexicographically with a prefix first. Each tree has this one
-spelling and no other field. So a producer never writes a declaration's
-equation, an array's shape, an intersection's row or a binder's row: its
-`types` are the four primitives, then its own clause rows and the scheme rows
-of classes' generic methods, whose binders are binder labels. The verifier
-lowers the claims with the source's declarations to recursive equations
-([RECURSIVE-EQUATIONS §5](RECURSIVE-EQUATIONS.md#5-from-source)):
-a row is a head of its own, lifted over the binder names it mentions, and a
-binder label is its name, read as the unit or closure that binds it gives
-it. The
-source decoder also accepts unions
-mixing supported cell and function atoms with primitives. Existing limits on
-external cell parameters and nested record operands remain in force; fields
-and arrow operands admit bounded primitive/callable contracts, and an arrow parameter is assumed at its annotation.
-
-A zero-argument source arrow has an empty domain list `[]`; a unary
-`undefined` parameter has domain list `[[3]]`. Arity is retained in both
-the source AST and the graph; see [the callable protocol](REQUEST-PROTOCOL.md#expression-closures-and-calls).
-
-The table is the graph the functions are checked against. Row `i` is the list
-of clauses that label `i` denotes, and a clause names its operands as label
-lists into the same table:
-
-| Row                | Clause                                                         | Meaning                                                                                                                                                                                                                            |
-| ------------------ | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `0`, `1`, `2`, `3` | `"nul"`, `boolLit true`, `boolLit false`, `"undef"`            | The primitives, fixed                                                                                                                                                                                                              |
-| any                | `{"refs": {"first": [["value", A]], "rest": [], "views": []}}` | A plain record with an invariant `value` field holding the union `A`                                                                                                                                                               |
-| any                | `{"refs": {"first": F, "rest": [H, ...], "views": V}}`         | One record under every listed field contract; `F`, `H` and `V` are lists of `[name, labels]` pairs. `V` names readonly views: fields read at a sound upper bound on their contents, with no write permission through this contract |
-| any                | `{"arrs": {"arrows": [[T, [D, R]]]}}`                          | A signature with receiver union `T`, ordered domain list `D` and result union `R`; a signature indifferent to its receiver names a `"top"` row                                                                                     |
-
-The table starts with the four primitives and holds one further row per compound
-type the source mentions, in order of first use: a compound type gets a row the
-first time it is translated and the same label afterwards, so equal types share
-a label and no row exists that nothing uses. Labels are names, not meanings:
-`[4]` is `Ref<boolean>` in a document whose row 4 says so, and the checker's
-theorems hold for every table (`HasTy.sound` is graph-generic). Any table that
-starts with the primitives and refers only to its own labels is accepted, and
-Lean reads its rows as heads of the equations the checked requests are over
-([lowering](RECURSIVE-EQUATIONS.md#5-from-source)). The exporter writes the table it built, and `--produce` may grow a
-request's table further with annotations the claims did not mention.
-
 ## Conjunction
 
-An atom list is a union: its members are alternatives. Conjunction is not
-written there, because it is not a union of anything. It is written inside the
-atom kinds that have one, which is where the clause language puts it: `refs`
-carries a first contract and the rest, `arrs` carries a list of signatures, and
-`nul`, `bool`, `boolLit` and `undef` carry nothing. So an atom may carry `and`,
-a list of further atoms of the same kind:
+A label list and a table row both denote unions: their members are alternatives.
+Simultaneous requirements belong inside a clause or a `meet` label. For a
+record, `first` and each member of `rest` are invariant field contracts the
+same object must satisfy. `views` give read capabilities without write
+permission. An `arrs` clause requires every signature in its `arrows` list;
+its callable body is checked under each one. Signature order also determines
+the source adapter's overload choice.
+
+For example, this clause requires both invariant contracts on `value`:
 
 ```json
-{ "a": "record", "fields": [ ... ], "and": [ { "a": "record", "fields": [ ... ] } ] }
+{"refs":{"first":[["value",[1,2]]],
+ "rest":[[["value",[1]]]],"views":[]}}
 ```
 
-which is `Ref<A> & Ref<B>`: one location meeting both contracts invariantly. An
-absent or empty `and` is the ordinary single-contract atom, unchanged.
+Structural intersections can also be written as `{"meet":[[4],[5]]}` when
+those labels name the desired contracts. The decoder and typed operations
+check whether a supported interpretation exists. A decodable type is not a
+promise that every source operation through it is admitted.
 
-On a function atom, `(D1 => R1) & (D2 => R2)`: one function meeting every
-signature. The rule that keeps this honest is that the format may not be able
-to say more than the clause language can hold. `and` on a primitive atom is
-refused, because no clause conjoins primitives and a decoder would have to
-invent a meaning for it. Conjunction is associative, so the parser flattens a
-parenthesized intersection into the same list; there is no arity.
-
-A conjunction of references lowers to one `refs` row. It is commutative and
-idempotent, so the operands are sorted and deduplicated before the row is
-interned: the two spellings of a pair share a label, and a conjunction of one
-contract is the plain cell. A conjunction of arrows lowers to one `arrs` row
-with the signatures in declaration order, which is TypeScript's overload
-resolution order; only exact repeats are dropped, so the two spellings are two
-rows that mean the same set.
-
-The lambda rule proves a body once under each claimed signature, and a call
-resolves to the first signature whose parameter admits the argument's claimed
-type, as TypeScript does. Each claimed parameter must lie within the lambda's
-annotated one, so no signature leaves the source's declared domain. Expression
-claims inside the body are one type per site, holding under every signature,
-so a body whose result depends on the signature cannot yet be claimed
-per signature.
-
-These are calculus contracts; the source boundary still checks that allocations
-and operations justify their interpretation. An array of several reference or
-arrow labels can be decoded, but the source adapter may reject its use where it
-requires a single record or arrow contract.
-
-A record contract names one location per field, so a claim about what a point
-currently holds names the field it is about: `current` is a list of `[field,
-labels]` pairs, or `null` where no such assertion is made. A point whose type
-names no record cannot carry one.
-
-All labels are validated, including those in unused candidates. Duplicate sites,
-bindings and function identities are rejected. All source functions must have
-matching claim records. Missing required claims fail extraction or checking;
-unrelated bindings at a valid environment site remain subject to the existing
-export policy and need not be consumed. A successful function result establishes
-the modeled obligations, not every candidate in its environment. This claims document
-therefore does not yet implement the proposed comment frontend's stricter
-requirement to consume every directive.
+All source functions require matching claim records. Required entry and
+expression claims must exist. Extra named bindings at a valid entry are
+subject to the source consumer's binding policy; success establishes the
+consumed modeled obligations rather than a requirement to consume every
+annotation in the document.
 
 ## Arrays
 
-An array claim is one atom:
+An array object is represented by an array label over a `list` store contract,
+or by a source declaration application. A tuple store has this shape:
 
 ```json
-{ "a": "array", "required": [T, ...], "optional": [T, ...], "rest": T | null, "readonly": false, "dense": true }
+{"list":{"first":{"required":[[4]],"optional":[],"rest":[4],
+ "readonly":false,"presence":"readable"},"rest":[]}}
 ```
 
-`number[]` has no required or optional positions and `number` as its rest;
-`[number, string]` has two required positions and no rest; `readonly` marks a
-`ReadonlyArray` or readonly tuple. The exporter lowers the atom to a record
-whose one field, the store, holds a `list` clause with the same positions,
-invariantly for a mutable array and as a view for a readonly one, so an array
-is an object and its contract is on the store: aliases share it, a write
-keeps it. A readonly store contract uses an upper bound at each element location, so element types are covariant; the store-field view grants no replacement permission. Presence of a position
-is kept apart from a present `undefined`: an optional or rest position reads
-at its type or `undefined`, a required one at its type alone. Optional tuple
-positions are carried for tsc.
-The required `dense` flag excludes holes below the length when true; when
-false, required positions remain present but optional/rest entries may be
-holes. Source arrays currently request density; native `map` results do not.
+`required` and `optional` contain ordered element unions; `rest` is an element
+union or `null` when there are no further positions. The outer `rest` is a
+list of additional simultaneous tuple contracts. An element location of a
+mutable store retains its invariant type across writes. A readonly contract
+provides upper bounds for reads and no write permission through that contract.
 
-The editor prints homogeneous arrays as `Array<T>` or `ReadonlyArray<T>` and
-also accepts `T[]` and `readonly T[]`. Tuples use `[T, U?, ...Array<V>]`. The prefix `sparse` states
-`dense: false`, for example `sparse ReadonlyArray<number>` or
-`sparse [number, string?]`; it composes with `Store<...>`.
-`Store<...>` names the internal store contract when a graph row is edited
-by itself; it uses the same structural fields with atom tag `store`. Normalized
-array objects lift back to the array spelling. The `readonly` flag on a native
-`list` tuple is required, and does not mean the backing locations are immutable.
+`presence` is `dense`, `readable` or `sparse`. Density excludes holes below
+the length. Readability permits a hole only where the position's element
+type admits `undefined`; it supplies a safe in-bounds read at that type.
+Sparse contracts allow holes independently of element type. Required
+positions remain present in every mode. Source homogeneous arrays use
+`readable`; source tuples use `dense`. Present `undefined` and absent
+positions are distinct states. See [Array contracts](POSITIVE-TYPES.md) for
+the semantic tuple rules.
 
-Source numeric element operations require a valid array-index singleton.
-Arbitrary numbers can name ordinary properties (negative, fractional, NaN,
-or out of range), which this store does not represent. Destructuring reads
-positions of an array, under the trust the array iterator's `%Iterate%`
-states; an array pattern's rest is a fresh array, a site claimed like an array
-literal at the rest's span (`...r`), and the pattern's reads are not sites. A
-slice rest's claim there carries the instance of its `%RestFrom:k%` call,
-like a generic call's.
+Direct calculus store operations use an array-index singleton; their store
+represents element locations. A source read `xs[k]` at a key typed as
+`number` is lowered to the host intrinsic `%ElementAt%`. It can read an
+element below the length, another numeric own property, or `undefined`,
+under the stated host assumptions. [Source array reads](PROGRAM-TYPING.md)
+defines that lowering; [the trust surface](DESIGN.md#trust-surface) states
+the numeric-property assumptions. Destructuring
+reads follow the modeled iterator contract. A pattern rest is a fresh array
+claimed at its rest span. Slice-rest claims can carry the instance of their
+rest operation, using `instantiate` as other quantified calls do.
 
 ## Current-content assertions
 
-The [assertion grammar](POSITIVE-TYPES.md#state-assertion-grammar) defines the
-combined notation; this section specifies its claims document encoding.
+A location has a fixed write contract and contents that can vary within it.
+`current` proposes additional facts about those contents at one execution
+point. It is `null`, or a nonempty list of distinct `[field,labels]` pairs.
+Each field must belong to every record alternative, and its labels name
+a valid type in the table. An empty inner label list denotes impossibility;
+it does not mean that the assertion is absent.
 
-Bindings and expressions have a required `current` field: `null` means no
-additional assertion; otherwise it is a nonempty list of distinct `[field, labels]` pairs. Each field
-must belong to the point's record contract; `type` must name exactly one
-single-contract plain reference row. Each label list is sorted and
-duplicate-free; extraction requires it to denote a finite primitive predicate
-(`0` null, `1` true, `2` false, `3` undefined). For example, in a
-document whose row 4 is `Ref<boolean>`:
+For a table whose row 4 is a single invariant Boolean cell:
 
 ```json
-{ "name": "cell", "type": [4], "current": [["value", [1]]] }
+{"name":"cell","type":[4],"current":[["value",[1]]]}
 ```
 
-This displays as `{ value: boolean = (true) }`. The storage invariant and current
-predicate are distinct; their [semantic meaning](SEMANTICS.md#current-content-assertions-and-postconditions)
-is not a persistent read/write capability. An empty field predicate, `[["value",[]]]`, denotes impossibility, not
-absence. The outer `current` array must be nonempty. Function parameters require `current: null`;
-ordinary arrows do not acquire creation-time heap assumptions or postconditions.
-Numbers, nested predicates, and correlated unions of differently refined
-references remain outside this profile.
+The binding has the Boolean write contract and currently contains `true`.
+This assertion supplies no persistent permission to read `true` after a
+write or call. Function parameters require `current:null`; ordinary closures
+receive no creation-time heap assumption.
 
-A supported standalone record refinement is its write-invariant reference plus
-its read-content predicate. The claims document consumer binds current predicates to statement-entry or expression-result graph checkpoints.
-Every statement entry resets to exactly its supplied types and current predicates;
-extra derived facts and links cannot cross it. All incoming edges must justify
-that interface, including loop backedges. Expression claims are local obligations
-within a statement, where checked effects may preserve or derive facts. The
-source consumer enforces both policies independently of evidence production.
+The decoder accepts a nonempty union of record clauses, each with one
+invariant field contract and optional readonly views. Every alternative must
+name each asserted field in its invariant contract or its views. Additional
+simultaneous invariant contracts in a clause are outside this profile.
 
-Observations inside ordinary closure/compositional proofs require the storage
-invariant to imply the predicate uniformly. They do not inherit creation-time
-heap facts. [Program typing](PROGRAM-TYPING.md#source-observation-checkpoints)
-specifies that conservative obligation. Failure to prove an observation is a
-located proof obligation, not an unavailable-type or unsupported-format result.
-[Design](DESIGN.md#current-content-assertions) owns remaining precision work.
+Extraction checks an assertion in one of two ways. If every plain record
+alternative's field contract implies the asserted type, a persistent inclusion
+obligation checks it; the asserted type can be nonprimitive. Otherwise, a
+point observation requires a supported finite predicate for null, true, false
+and undefined, justified by the graph checkpoint. Thus a union of cell
+contracts can carry an assertion common to all its alternatives. Numeric or
+nested types can be checked as persistent consequences of the contracts;
+they are outside the transient predicate vocabulary.
+
+Entry assertions form the graph node's interface. Each incoming normal or
+exceptional edge must justify it, including loop backedges. Each entry resets
+to its supplied types and contents predicates. Expression observations are
+checked at the evaluated result; modeled effects determine which facts survive.
+A closure's entry assumes its captured storage contracts; creation-time
+contents supply no later entry assumption. Checked operations within its
+body can establish observations at later graph points. The exact obligations
+are in
+[Source observation checkpoints](PROGRAM-TYPING.md#source-observation-checkpoints).
+A failed observation is a located proof obligation.
 
 ## Record alternative absorption
 
-Before ordinary invariant-cell translation, `translate` in [CellUnion.lean](lean/Verification/Types/CellUnion.lean) validates every
-record alternative. It may absorb an arm only into an existing invariant arm,
-with a weaker read requirement and **the same** write invariant. Writing `C(R,W)`
-for the schema's read/write requirements, the sufficient rule is:
+For one named field, let `C(R,W)` require every possible read result to
+belong to `R` and every write input in `W` to be accepted. These are
+read/write capabilities in the normalization schema. With the same field
+name and write requirement, the sufficient absorption law is:
 
 ```math
-\frac{R_1 \subseteq R_2 \qquad W_1 = W_2}
-     {C(R_1,W_1) \preceq C(R_2,W_2)},
-\qquad
+R_1 \subseteq R_2 \quad\Longrightarrow\quad
 C(R_1,W) \lor C(R_2,W) \equiv C(R_2,W).
 ```
 
-The equality uses the premise on the left. `covers_sound` and `normalize_exact`
-prove the implication and union preservation for the capability schema. This is
-an input-normalization law, not a new declarative program-typing rule. All surviving ordinary arms must have equal read/write
-meanings; malformed or unsupported arms are never dropped.
-
-Different write invariants must not be absorbed: a Boolean-world cell currently
-true need not be `Ref true`. Thus `C(true,boolean) | C(true,true)` cannot become
-`C(true,true)` under the point interpretation. `observed_union_absorb` separately
-proves observation absorption at a fixed invariant. The corresponding model
-counterexample is `observation_does_not_narrow_invariant` in `ModelBoundaries.lean`.
+`CellUnion.covers_sound` and `CellUnion.normalize_exact` prove the implication
+and union preservation for this capability schema, for arbitrary read and
+write relations. The record form checks the rule field by field for every
+field the replacement requires. Normalization selects a covering invariant
+alternative already present in the union. Every input alternative is
+validated; each surviving alternative must be invariant or a supported
+readonly view. Unsupported alternatives cannot disappear through absorption.
+Different write requirements remain different: a Boolean
+cell currently containing true need not be a cell whose world type is true.
+`observed_union_absorb` proves observation absorption at a fixed invariant;
+`ModelBoundaries.observation_does_not_narrow_invariant` proves the corresponding
+boundary on narrowing that invariant.
 
 ## Source identity and trust
 
-The external parser now includes `sourceSha256` in its AST output. The claims document's
-file identity and digest must match that AST. The report command additionally
-checks the digest against the actual source text. Hashing and parsing remain
-part of the reviewed source boundary; Lean checks agreement of the supplied
-identities, not a theorem that the JSON AST describes those source bytes.
-Editing source requires regenerating the AST and updating claim positions and
-fingerprint. Supplying evidence from a previous judgment cannot bypass checking.
+The claims document's file identity and digest must match the Fragment.
+The pipeline and report tools compare the source bytes with that digest.
+The Lean commands take a file identity as their third argument; they check
+that identity and the supplied digests, without reading or hashing the source
+file. Parsing and hashing form the reviewed source boundary: the parser
+determines which Fragment represents those bytes. Source offsets use UTF-16; the digest uses the exact
+source bytes. Editing the source requires corresponding identity and span
+updates.
+
+The verifier derives execution ownership, source annotations and type-directed
+operations from the Fragment. The exported execution document guides the
+producer; acceptance reconstructs the schedule and checks evidence for its
+obligations. A producer's successful analysis or supplied evidence cannot
+replace those checks. Calculus safety is the guarantee of the checked model,
+subject to its parser and external primitive trust boundary.
 
 ## Reports
-
-The report command accepts this format:
 
 ```sh
 node verification/tools/annotate-source.mts input.ts \
@@ -521,5 +494,6 @@ node verification/tools/annotate-source.mts input.ts \
   --verify verification/lean/.lake/build/bin/verifier --out input.annotated.ts
 ```
 
-Claims-only reports are displays, not schema certification: `--verify` invokes
-the authoritative strict Lean decoder.
+A claims-only report displays proposals. With `--verify`, the command invokes
+the authoritative Lean decoder and evidence checker. Display success alone
+establishes neither schema validity nor modeled safety.

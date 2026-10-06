@@ -5,8 +5,7 @@ independently justified consumer. A producer proposes the types of a
 module's expressions and the environments at its program points; Lean checks
 that those claims are derivable in a calculus whose rules are proved sound
 against an execution model. The OCaml producer, which reads TypeScript's own
-declarations, is the pipeline's producer; the TypeScript-checker exporter
-states claims for the corpus. No producer is trusted.
+declarations, supplies the pipeline and corpus claims. No producer is trusted.
 
 This document states the current design and what comes next: the principles,
 the architecture, the model in brief, the trust surface, the fragment's
@@ -50,9 +49,9 @@ name; a fresh literal owns exactly its written keys, and a record type is
 open. Where TypeScript states more than is true, the model states less, and
 the program must justify the rest.
 
-**Lean is the authority; OCaml proposes.** Every claim, contract, instance,
-loop head and construction hint the producer supplies is a proposal that Lean
-checks against the source it reads itself. Search strategy, fuel and hints
+**Lean is the authority; OCaml proposes.** Claims, contracts, instances,
+loop heads and construction hints are proposals. Lean checks every proposal
+used to establish an extracted obligation against the source it reads itself. Search strategy, fuel and hints
 decide whether evidence is found, never what acceptance requires. A search
 that finds nothing leaves a unit *unverified*, never disproved. The consumer
 must stay usable with evidence from any producer.
@@ -83,286 +82,285 @@ them. Library contracts are TypeScript's declarations filtered by reviewed
 overlays that record the text they were reviewed against, so a changed
 library is refused rather than trusted silently.
 
-**Evidence is syntax-directed.** Claims attach to source spans and
-statement entries; loop heads and joins are supplied, and every incoming edge
+**Evidence is syntax-directed.** Entry claims attach to execution points,
+and expression claims to sites within those points; loop heads and joins are supplied, and every incoming edge
 must justify them. The checker infers no invariant and computes no join. What
 a producer states at a program point is exactly what is checked there, and
 source maps, which say how a node reads in the source, never reach evidence.
 
 ## Architecture
 
-![Architecture: source extraction and associated claims form a request; an untrusted producer supplies certificates, and the proved consumer checks both before establishing modeled safety.](diagrams/architecture.svg)
+The pipeline has two distinct jobs: proposing type information and checking
+whether that information follows from the program. It also has two stages of
+lowering, meaning translation into a simpler program representation. The first
+fixes execution order without needing types; the second constructs the typed
+calculus program that the verifier checks.
 
-[Open the full-size diagram](diagrams/architecture.svg). Green nodes are
-connected by Lean proofs; amber nodes are source and model meaning that is
-reviewed, not proved. The producer is outside the soundness argument, and the
-request reaches the consumer directly: evidence cannot substitute another
-program or weaker requirements.
+![Architecture: source parsing, Lean execution plans, OCaml type proposals, Lean typed elaboration, evidence search and certificate checking.](diagrams/architecture.svg)
+
+[Open the full-size diagram](diagrams/architecture.svg). Amber marks translation
+whose correspondence with JavaScript is reviewed and tested. Blue marks
+replaceable proposals. Green marks checking with a proved safety consequence
+for the extracted calculus program.
 
 ### Stages
 
-- **The parser** (`tools/fragment-parse.mts`, trusted) reads a file with
-  TypeScript's own compiler API. Its gate admits the fragment and refuses
-  everything else with a located reason; it lowers source rewrites (unbraced
-  arms, `switch` as labeled blocks, templates as concatenations, enums, async
-  forms as intrinsic calls) and emits the Fragment AST. Its declaration
-  reader (`tools/declaration-graph.mts`, `type-term.mts`,
-  `computed-types.mts`) writes the declaration document: every type the
-  module names, as source terms, with imported, ambient and global values,
-  the prototype contracts and the intrinsics the module uses.
-- **The OCaml producer** (`ocaml-producer/`, untrusted) proposes claims: an
-  expression type at every span Lean asks about, an environment at every
-  statement entry, loop heads, the storage contract of an unannotated `let`,
-  instances of generic calls, and rows it reserves for arrays, applications
-  and meets it names without computing. Where TypeScript types by context,
-  the producer proposes what TypeScript would: an unannotated closure's
-  result widened, or the contextual return type where the body fits it; a
-  fresh literal at a union built at the one arm its keys, length and literal
-  members select; an unannotated constant's fresh array built at the array
-  type its first use expects; a binder in `A | null` inferred from the
-  actual's other atoms; a loop head found by running the body until what it
-  claims of each cell is stable. Each is a construction hint Lean checks, and
-  adds no trust.
-- **Lean** (`lean/Verification/`) reads the AST and declarations,
-  lowers the declarations, every annotation and the claims once to recursive
-  equations (`EquationLowering.source`), lowers each code unit to a graph
-  request over them (`SourceExtraction`), searches for evidence
-  (`--produce-source-claims`) and checks it (`--check-source-claims`). Only
-  the check is part of acceptance.
+1. **Parse source and collect declarations.** The TypeScript front end reads
+   source using the project's strict compiler configuration. It emits a
+   **Fragment**, a syntax tree for the supported source constructs, and a
+   declaration graph describing the types and external values the source uses.
+   Parsing includes source rewrites such as representing `switch` with labeled
+   blocks. These rewrites must preserve JavaScript behavior.
+2. **Build execution plans in Lean.** Lean derives a statement graph and
+   schedules for expression evaluation and binding. A graph edge records where
+   execution can go, including a transfer through `finally` or an exception
+   handler. Expression schedules record operand order and conditional
+   evaluation. Binding schedules record parameter defaults and destructuring.
+   These plans depend on source syntax, before the producer supplies claims.
+3. **Propose types in OCaml.** The producer follows the exported plans and
+   computes environments along their edges. An **environment** records the
+   proposed types of local bindings and facts about their current contents.
+   At a loop head, the producer seeks an invariant that is preserved by the
+   loop's back edges. Source syntax supplies contextual types, generic-call
+   inference and other type information. The output is a claims document.
+4. **Elaborate the typed program in Lean.** Lean reconstructs the execution
+   plans from the Fragment. It checks claim identities, interprets annotations
+   and proposed types, and elaborates operations into a **calculus graph**:
+   the program over which typing and safety are defined. This stage can depend
+   on types, for example when choosing how to read an array element or a field.
+   It produces a request containing that graph and the obligations it must meet.
+5. **Search for evidence.** Lean's search procedure proposes a **certificate**,
+   a finite description of typing and subtype derivations for the request.
+   Search can fail or exhaust its budget even when the obligations hold.
+6. **Check the certificate.** The verifier checks the proposed derivations
+   against the exact extracted request. Success establishes safety for that
+   calculus program under its stated input and host assumptions.
+
+The OCaml producer analyzes the early execution plans; it does not need a
+finished typed calculus graph. This ordering avoids the circularity in which
+expression lowering needs types that the producer has yet to infer. The
+exported execution-plan document is an input to proposal generation. Acceptance
+uses the plans Lean reconstructs from source, rather than trusting that document.
+
+Implementation entry points are [the parser](tools/fragment-parse.mts),
+[the execution-plan writer](lean/Verification/Source/FlowJson.lean),
+[the OCaml producer](ocaml-producer/README.md),
+[typed extraction](lean/Verification/Source/SourceExtraction.lean) and
+[claim checking](lean/Verification/Source/SourceClaimJson.lean).
+[LANGUAGES](LANGUAGES.md) maps each representation to its definitions.
 
 ### Claims and the claim reader
 
-A claim is a type at a source site, in one claim form shared by producers,
-annotations and declarations: labels of the recursive equations the source
-lowers to. Annotations become claims in the same lowering run as the
-producer's claims (`SourceClaimJson.equationFront`), so there is one reader
-of types, not one per producer; a claim-shaped annotation in the source tree
-is refused. Entry claims are keyed by owner-qualified execution point;
-expression claims are keyed by execution point and source span. Each identity
-has at most one claim, a required identity without one is refused, and extra
-or duplicate claims are refused. Mutable storage contracts are keyed by
-declaration initializer span and binding name, separately from current contents.
-A producer's claim is compared with the source's annotation by meaning, not by label: a function's
-claimed signature must mean its annotation, a closure's claimed signatures
-must lie within it, and the body is checked at each claimed signature
-([claims against annotations](PROGRAM-TYPING.md#modules-and-code-units)).
+A **claim** is a proposed type or state description. It becomes an obligation
+where extraction uses it. A **source span** is a pair of offsets locating
+syntax in the source file. An **execution point** identifies a node in a body's
+statement graph. One span can occur at several points: a finalizer, for example,
+can execute on a return path and on a loop exit.
 
-Positions associate claims with syntax; they authorize no edit and establish
-no truth. Alongside the graph, the extractor records a **source map**: how to
-describe each node and its bindings in the source's words, for diagnostics
-only ([obligation diagnostics](OBLIGATION-DIAGNOSTICS.md#node-and-expression-obligations)).
-It has no decoder and never reaches a request or evidence.
+Entry claims are identified by execution point. Expression claims use both a
+point and a span, since one statement can evaluate several expressions.
+Mutable declarations have separate **storage contracts**, the types every
+value written to their cells must satisfy. A point's current-content claim
+may be narrower than that contract; it does not change what later writes allow.
+The [claims protocol](SOURCE-CLAIMS.md) defines the identities and encodings.
+
+Lean validates point ownership and source-site membership, rejects duplicate
+identities, and requires the claims needed by extraction. It reads source
+annotations independently. A function's proposed signature must agree with its
+annotation; a closure must justify the signatures claimed for it and meet its
+written annotation. An unused display claim is not thereby certified: acceptance
+covers the extracted program's required obligations, not every candidate a
+producer might include at a valid site.
+
+Types are interpreted through a common graph of recursive type equations.
+A **type label** names a type in that graph; the label's number or spelling
+has no independent meaning. Comparisons use the types denoted by labels.
+[RECURSIVE-EQUATIONS](RECURSIVE-EQUATIONS.md) defines that interpretation.
+
+The extractor also writes a **source map** linking calculus nodes and local
+slots to source descriptions. Reports use it to locate failures. It is
+diagnostic metadata and supplies no evidence for acceptance.
 
 ### Search
 
-Search (`CertificateProducer`, `--produce-source-claims`) finds evidence for
-the claimed program; it is untrusted and replaceable, and the check runs none
-of it. A node whose term the extractor built with known evidence (a closure
-creation, an array literal, an element read) carries that plan, which is
-rendered, not searched; elsewhere search tries a sequent's own types before
-the vocabulary, which is only what the file's request mentions. Subtype
-search follows [RECURSIVE-EQUATIONS §4](RECURSIVE-EQUATIONS.md#4-subtyping)
-from the pair only: the premise judgment on it, an instance of a quantified
-signature, or the fallback, which the checker itself decides from the pair:
-the pairs reachable from it (each adding the pairs its coverage compares,
-read through `Var` and renamed rows, until they close: how two instances of
-a recursive declaration unfold together), the uncovered ones deleted. The
-producer supplies only the prototype-member instances those pairs ask for,
-and the checker validates each
-([producing evidence](PROGRAM-TYPING.md#producing-evidence-from-supplied-claims)).
-A failed search is refused by name for display only: `producer --explain`
-lists the forms with a known reason and their spans, the innermost one that
-meets the failed obligation is shown first, and with `--typescript-errors`
-code TypeScript also refuses is named by its nearest error (a gate's or the
-producer's refusal, which names no obligation, by its first). Nothing of this
-is a premise; Lean decides on the ordinary proposal
-([a failed search refused by name](OBLIGATION-DIAGNOSTICS.md#a-failed-search-refused-by-name)).
+Search tries to construct evidence for each required typing or subtype
+judgment. Some operations have evidence determined by their elaboration;
+others require searching among types and rules relevant to the request.
+Recursive subtype comparisons use finite certificates whose dependencies the
+checker validates. The details belong to
+[recursive subtyping](RECURSIVE-EQUATIONS.md#4-subtyping) and
+[evidence construction](PROGRAM-TYPING.md#producing-evidence-from-supplied-claims).
+
+Search is replaceable. It cannot change the source requirements, and an
+unsuccessful search is not evidence that a program is unsafe. The OCaml
+producer's `--explain` output and TypeScript diagnostics can help explain a
+failure in the report; neither is a premise of certificate checking.
+[Failure classification](OBLIGATION-DIAGNOSTICS.md) specifies these distinctions.
 
 ### The pipeline entry point
 
-`pipeline/verify-source.mts` is the single entry point for a file: parser, producer,
-Lean search, Lean check, each a phase with its own log and a wall-clock
-limit (`stepTimeoutMs`). The outcome is `verified` (the check accepted),
-`unsupported` (a located refusal by the gate or the producer), `unverified`
-(search or check found no derivation; never a disproof) or `error` (a step
-failed or timed out; never a verdict). `--project` names the TypeScript
-project the file belongs to, whose `tsconfig.json` must be strict.
-`run-cases.mts`, `test.mts`, the coverage run (`skjs-coverage.mts`), the
-corpus (`corpus-report.mts`) and the report viewer (`serve.mts`) go
-through it. Where a run does
-not verify, the corpus and the report viewer attribute the failure to its functions
-by the report writer's per-function checks over that run's Fragment and
-claims (`annotate-source.mts`).
+`pipeline/verify-source.mts` runs parsing, execution-plan export, OCaml proposal
+generation, Lean evidence search and Lean checking. Each subprocess has a log
+and a time limit. `--project` selects the strict TypeScript project configuration.
+The case suite, coverage run, corpus and report viewer use this entry point.
+
+The outcome is one of:
+
+- **verified**: certificate checking accepted the extracted request;
+- **unsupported**: source processing or proposal generation refused a construct;
+- **unverified**: search or checking did not establish the required derivation;
+- **exhausted**: a verification resource budget was reached before the
+  obligation could be decided;
+- **error**: a subprocess failed or exceeded its time limit.
+
+A whole-file failure can precede claim generation. When claims exist, the corpus
+and report viewer can rerun checks per code unit to identify which unit failed.
+Neither an unsupported result nor an infrastructure error is a safety verdict.
 
 ### What "verified" means
 
-`SourceClaimJson.checkJson_safe` is the headline theorem. Its premise is the
-exact CLI success condition; its conclusion is that every extracted plan was
-certified over the recursive equations the extracted store presents,
-validated once extraction is done (`freezePlans`), and that for every
-accepted unit's request, every assignment $\eta$ of its parameter rows, and
-every environment meeting the unit's inputs at $\eta$ in an admissible world
-with a satisfying heap, the graph, `Equations.graph` of those equations, is
-safe at its declared result read at $\eta$ (`SafeGraph`). Every plan is a
-graph request: a generic unit and a generic closure are checked by the same
-checker, their binders parameter rows. The inputs are the unit's
-parameters, the module values it reads, and every assumed value: imports,
-ambient declarations, globals, prototypes, intrinsics. Every plan reaches
-acceptance through one exhaustive conversion to `CertifiedPlan`; no variant
-can be dropped. The proofs use no `sorry` and no project axioms. What the
-definitions mean is reviewed, not proved; see
-[what the checked development establishes](SEMANTICS.md#what-the-checked-development-establishes).
-How the theorem relates to a JavaScript run, and what a mechanized ECMA-262
-semantics would add for the host, is in [TRUST-REDUCTION](TRUST-REDUCTION.md#the-host).
+`SourceClaimJson.checkJson_safe` connects successful source-claim checking to
+safety of every certified calculus request. Each **code unit** is a function
+or module-initialization body. Its inputs include parameters and the module,
+imported and host values it uses.
+
+For inputs that satisfy their types and a heap that satisfies its storage
+contracts, the extracted program does not get stuck or return a value outside
+its result type. It may throw or run forever. Generic units have this guarantee
+at every admissible assignment of their type parameters. All extracted plans
+pass through the checked conversion to `CertifiedPlan`; acceptance cannot
+silently omit an unhandled kind of plan.
+
+This is a theorem about the extracted calculus program. Correspondence between
+source JavaScript and that program, the interpretation of annotations, and the
+host's compliance with assumed contracts remain review obligations. The
+[trust surface](#trust-surface) lists them. The proofs use no `sorry` and no
+project axioms; that fact does not itself establish source correspondence.
+See [the semantic guarantee](SEMANTICS.md#what-the-checked-development-establishes)
+and [trust-reduction options](TRUST-REDUCTION.md).
 
 ### Modules and code units
 
-A source file is a module, and the module is the unit of verification.
-Obligations stay per code unit, so a failure points at one place: each
-function, and the module's initialization, which runs its constants, classes,
-enums and expression statements in order and checks every class's methods
-and constructor. A module function is checked at its annotated signature, a
-source-fixed slot no producer claims; a module constant is read at its
-annotation or at the initialization unit's claim for its initializer, which
-that unit checks. The initialization unit refuses a call that can read a
-constant before it is initialized. Values the module does not define (imports,
-ambient declarations, globals) join its scope at their declared types as
-assumptions ([rules](PROGRAM-TYPING.md#imported-ambient-and-global-values)).
+The module is the unit of source verification. Its top-level functions and
+initialization body have separate obligations, so a failure can name the
+responsible code unit. Initialization evaluates constants, classes, enums and
+top-level statements in source order; class constructors and methods receive
+their own code checks.
 
-Composition is not yet a Lean theorem: a unit's result is relative to the
-signatures of the module values it reaches, each certified by its own unit.
-`--function` selects one unit; the rest of the module stays its scope. The
-report viewer shows one unit at a time, with the module's units as an outline.
+A module function is available at its source signature. A module constant is
+available at its annotation or its checked initializer claim. Initialization
+refuses calls that could read a constant before it is initialized. Imports,
+ambient declarations and globals enter at assumed declared types.
+[Module rules](PROGRAM-TYPING.md#modules-and-code-units) specify these interfaces.
+
+Each unit's theorem assumes the signatures of the module values it reads.
+A Lean theorem composing these unit guarantees for an entire module execution
+is not available. `--function` selects a unit while retaining the module scope;
+it does not establish the omitted units' obligations.
 
 ### Generic bodies
 
-A generic unit is an ordinary graph request whose binders are **parameter
-rows**: rows the graph's assignment interprets and no rule reads.
-`Parametricity.accept_reassign` proves acceptance independent of that
-assignment ([Reynolds 1983](REFERENCES.md#reynolds-1983)), so one derivation is safe at every instantiation
-([Generic-Body](PROGRAM-TYPING.md#overloads-polymorphism-and-binding)).
-Records, tuples, arrays, field reads and writes, literals, calls of other
-generic functions at a binder: whatever the graph checks for ground types it
-checks over a binder, with no rule of its own. A bounded binder is the meet
-of its row and its bound. A generic class's binders belong to the
-initialization unit that declares it, so its constructor and methods are
-certified at every instantiation. A call of a generic module value names its
-instance, checked against the value's signature and bounds
-([instances](PROGRAM-TYPING.md#imported-ambient-and-global-values)).
+A generic type parameter denotes an arbitrary type satisfying its bound.
+The calculus represents it with a **parameter row**, a type-graph entry whose
+interpretation is supplied when the generic is instantiated. Typing rules may
+use its declared bounds but cannot inspect that arbitrary interpretation.
+`Parametricity.accept_reassign` proves that accepted evidence remains valid
+when the interpretation changes.
 
-A generic closure is graph code at a scheme row
-([`funScheme`](PROGRAM-TYPING.md#judgments-and-constructor-views)): its
-claimed scheme becomes a row whose binders are fresh parameter rows, every
-claim and annotation inside it reads its binders as those rows (a bounded one
-as its meet with the bound), and its code is checked once, at the scheme's
-signatures. A code table entry holds at every assignment of the parameter
-rows (`CodesSound`, `codeChecked_sound`), so at every instantiation; the
-captures' types read none of the binders, so they mean the same at each.
-Generic closures nest, in function bodies and in generic ones alike. A call
-names its instance: the callee is read at the instance's signature, below the
-scheme by a checked instance (`InstArrs`).
+A bounded parameter such as `T extends A` is interpreted as the intersection
+of its arbitrary type with `A`. A bound `U extends T` relates the parameters
+by the same intersection construction. A generic call proposes a substitution
+for the parameters; Lean checks the instance and its bounds. Generic classes
+and closures use this mechanism too.
 
-A binder bounded by another, `U extends T`, is the meet of the two
-parameter rows, within `T`'s clauses if it has any: a meet row may name
-several parameters, and is below each of them and below a meet of some of
-them within the same clauses ([`meetBelow`](POSITIVE-TYPES.md#covered-pairs)).
-A generic closure's binder is read so too: such a bound reads a binder,
-which a scheme row's bounds, read outside its binders, cannot, so the meet
-alone states it, and at every instantiation within the bound the meet is the
-binder. An instance maps a meet row of several parameters to the meet of
-their instances with its clauses (`meetOk`), which is what a call's
-claimed instance names. An intersection an annotation writes over binders,
-`T & U`, `T & "fixed"`, `T & A`, is the same meet row, each binder read as
-the unit reads it. Every generic unit and every generic closure is a
-graph request; there is no second checker for generic bodies.
+A **type scheme** is a callable contract with universally quantified type
+parameters. A generic closure is checked at its scheme's signatures with
+fresh parameter rows, including the types of captured values. It is checked
+for all admitted instances, rather than only for calls observed in the source.
+See [generic typing](PROGRAM-TYPING.md#overloads-polymorphism-and-binding) and
+[parameterized equations](RECURSIVE-EQUATIONS.md).
 
 ### Closures are graph code
 
-A closure's body is a graph, as a function body is (`funGraph`,
-[graph code](SEMANTICS.md#graph-code)), checked by its own certificate at
-each signature its claim offers, entered with its receiver, parameters and
-captured slots. Mutable locals, loops, `switch`, `try` and patterns inside a
-closure are the same graph shapes as anywhere; a generic closure's code is
-checked at its scheme's signatures ([generic bodies](#generic-bodies)). There
-is no other closure code: every kind of closure is graph code, and one rule
-creates each kind. The calculus has no other code either: an object's call
-code is graph code, `.bind`'s forwarding descriptor, or none
-([call codes](SEMANTICS.md#graph-code)).
+A closure's body is a calculus graph with its own certificate. Its entry receives
+a receiver, arguments and captured values. A mutable capture is the identity
+of its cell; its creation-time contents cannot be assumed when the closure
+later runs. Each claimed call signature must be justified by the body.
 
-- **A rest parameter** makes the code collect the actuals past its fixed
-  parameters into a fresh store, in slot 0 of the frame, below the receiver
-  (`CallArguments.graphEntry`). Such code offers only variadic signatures,
-  each checked from the frame with the store at its rest's store type
-  (`CodeOffers`, `restsT_of_graphRest`).
-- **A parameter default** is an entry node: a tag dispatch on `undefined` at
-  the parameter's slot, the default's evaluation on one arm, first in the
-  graph, in the order `parameterOrder` fixes, as a function's default is.
-- **A generic closure** with either is graph code at its scheme row
-  (`funScheme`), as any generic closure is.
-- **A class constructor** is construct-only graph code (`ctorGraph`), checked
-  at each construct signature from the frame with `undefined` for the
-  receiver `new` passes (`ctorsT_of_graph`). A constructor's default is its
-  entry node as a closure's is. The realm's array invariant asks nothing of
-  a class value, as of any value carrying code: its clause is no record's
-  (`realmInvariant_of_not_record`).
-- **A callable object** built by `Object.assign` allocates its bag as a
-  record's with graph code offering the advertised signatures, one code-table
-  entry per signature (`callableGraph`), at its two type arguments, written or
-  the two TypeScript infers, which the arrow and the literal are checked at.
+Parameter defaults execute at entry in source order. A rest parameter collects
+surplus arguments into fresh array storage. Constructors have construct
+signatures, checked against constructor code; callable objects combine code
+with property storage. `.bind` creates a forwarding value with a retained
+receiver and arguments. These forms share the model's call and code checking
+rather than relying on a special source-level acceptance test.
 
-A closure's code is checked in its own table entry, not inside the creating
-body, so the creating body's certificate only names the entry and the
-captures' types.
+The creating body's certificate identifies the checked closure code and its
+captures. [Graph code](SEMANTICS.md#graph-code) and
+[call rules](PROGRAM-TYPING.md#source-closures-and-their-annotations) define the entry frames and obligations.
 
 ## The model in brief
 
-Each section names what the model has and links the rules; none is
-restated here.
+The calculus describes execution, types and the conditions under which a
+program may use a value. This section introduces the main concepts;
+[SEMANTICS](SEMANTICS.md), [POSITIVE-TYPES](POSITIVE-TYPES.md) and
+[PROGRAM-TYPING](PROGRAM-TYPING.md) own the formal definitions and rules.
 
 ### Values
 
-`null`, `undefined`, Booleans, numbers (a number is the bit
-pattern of its IEEE-754 double; the literal type `0` denotes both zeros),
-bigints (the integer), strings, symbols (opaque identities), objects (a map
-from property keys, strings or symbols, to locations), arrays, and functions
-with call or construct code. Binary operators are one term, `arith`, whose
-meaning is JavaScript's operation where it converts nothing: `+` concatenates
-a string with any primitive but a symbol by `ToString` exactly (`Number::toString`
-digit for digit), `%` is the exact remainder, relational operators compare
-two numeric values or two strings, and `===` is `IsStrictlyEqual`
-([operational language](SEMANTICS.md#operational-language)).
+Values include JavaScript primitives and allocated objects. Object properties
+refer to heap locations. Arrays have element storage; callable objects also
+carry call or constructor code. Every allocated object has an identity, including
+empty objects and functions, so object equality compares identities.
+
+Primitive operations model the supported JavaScript behavior, including IEEE-754
+numbers, bigint arithmetic and string operations.
+Literal type `0` includes both positive and negative zero; equality against
+`0` keeps or excludes both. The [operational language](SEMANTICS.md#operational-language)
+defines their numeric representation and comparison.
+
+The supported equality
+comparisons are specified under [guards](#guards) and in the
+[operational language](SEMANTICS.md#operational-language). Operations requiring
+unsupported coercions are refused at the source boundary.
 
 ### Heap and contracts
 
-Every location carries a stable invariant contract in
-the world; heap satisfaction ties contracts to contents, and a write must
-meet the location's contract. References are invariant views of storage, not
-covariant containers. Functions are safe in every admissible future world
-([types, worlds and heaps](SEMANTICS.md#computations-and-recursive-types);
-[Ahmed 2004](REFERENCES.md#ahmed-2004)).
-Recursive types are finite guarded graphs, interpreted by a budget-indexed
-fixed point ([POSITIVE-TYPES](POSITIVE-TYPES.md); [Appel and McAllester 2001](REFERENCES.md#appel-and-mcallester-2001)).
+The **heap** maps locations to their current values. A **world** assigns each
+allocated location a fixed type, its storage contract. A heap satisfies a world
+when each stored value meets that contract. A write must preserve it. Allocation
+extends the world with fresh locations; it does not change existing contracts.
+
+A readonly view permits reading a location without permission to write it.
+A writable reference must preserve the same contract through every alias.
+For example, a writable Boolean cell cannot be used as a writable `true` cell,
+because another alias could store `false`.
+
+The semantic model handles recursive types using a **step index**, a natural
+number bounding how much execution an approximation describes. The safety
+result holds at every index. This mathematical index is separate from the
+resource budget used by proof search.
+[Worlds and recursive types](SEMANTICS.md#computations-and-recursive-types)
+give the definitions and their relation to the cited step-indexed models.
 
 ### Current-content assertions
 
-What a location holds now is separate from its contract. `{ value: boolean =
-true }` records a Boolean contract and currently true contents. Observations
-are duplicable facts: they neither narrow the contract nor grant writes
-([semantics](SEMANTICS.md#current-content-assertions-and-postconditions),
-[rules](PROGRAM-TYPING.md#current-content-rules-semantic-layer)). A
-statement entry is an exact interface: its supplied types and observations
-are the whole starting context, plus the distinct-location links the
-extractor states (a private cell is a fresh allocation, apart from the fields
-of older bindings and later literals). A write of a known primitive
-establishes new contents, and one of a value whose type rules `undefined`
-out that the cell holds some other value, read at its contract less
-`undefined` (so `let x: T;` assigned an object on every path reads at `T`);
-a call forgets every heap fact, since a callee may
-write any location its operands reach and the model states no reachability.
-Immutable values and slot equalities survive. A closure's entry claims must
-follow from contracts, never from creation-time contents. Loop heads are
-supplied, and every back edge must establish them
-([checkpoints](PROGRAM-TYPING.md#source-observation-checkpoints)).
+A cell's current contents can be more precise than its lifetime contract.
+For example, `{ value: boolean = true }` describes a Boolean cell whose current
+value is `true`. The observation permits a more precise read; later writes
+must still satisfy the Boolean contract.
+
+Each statement entry supplies a local interface: binding types and current
+heap observations. Every incoming edge, including a loop back edge, must
+establish that interface. The calculus can also retain relationships such as
+two slots denoting the same value or two private cells being distinct.
+The source-entry rules determine which of these facts cross a checkpoint.
+
+An unrestricted call invalidates heap observations because the callee may write
+through an alias. A certified heap-preserving call can retain facts on normal
+return, under the [effect rules](#inferred-call-effects-elaboration-and-certification).
+Immutable values remain available. A closure's initial heap assumptions follow
+from storage contracts, rather than observations made when the closure was
+created. See [source checkpoints](PROGRAM-TYPING.md#source-observation-checkpoints).
 
 ### Mutable bindings
 
@@ -389,7 +387,7 @@ cell of its own at its value.
 A local may hide an outer binding of its name. The parser renames it, by
 the declaration TypeScript binds each reference to, to a name no source
 spells (`x@line:col`), so the lowering never meets two bindings of one name:
-$\alpha$-conversion, for `const`, `let`, parameters, patterns, closure
+consistent renaming of bound variables, for `const`, `let`, parameters, patterns, closure
 parameters, `for...of` and `catch` bindings in any body
 ([shadowing](PROGRAM-TYPING.md#derived-source-forms)). A mention above the
 declaration, a closure's included, or in its own initializer is refused, as
@@ -397,37 +395,25 @@ JavaScript's temporal dead zone throws there.
 
 ### Objects and prototypes
 
-An object's keys are fixed at its allocation; a
-write stores at an existing location and never adds a key. A source write
-that adds a key, `o.k = e` where `o`'s type does not state `k`, is the copy
-of the object with the key (an allocation from parts), which the local holds
-from then on: JavaScript's write in place and the copy agree because nothing
-else can observe the object the copy replaces. It is lowered so only on a
-local's own fresh object that nothing else has reached (not passed, stored,
-captured, returned or copied to another binding, and outside any loop its
-declaration does not enclose); on any other object it is refused, since
-another reference would see the object's keys change
-([key-adding writes](PROGRAM-TYPING.md#key-adding-writes); a strong update
-where the location is unaliased, as in
-[Smith, Walker and Morrisett 2000](REFERENCES.md#smith-walker-and-morrisett-2000)).
-A record type is
-open: it constrains the keys it names and says nothing of others. An
-**own-key bound** says which keys an object may own, $\mathsf{among}\,K$ or
-$\mathsf{outside}\,N$ ([records](POSITIVE-TYPES.md#records)); a fresh
-literal's own keys are exactly its written ones, which is how it meets a
-readonly dictionary or leaves out an optional field; a literal meant for a
-writable dictionary is allocated at it instead
-([index signatures](#writable-string-index-signatures)). An object may hold a prototype
-under the reserved key `[[proto]]`, and a read of a key the object lacks
-continues there (`readProto`). A class instance holds its class's prototype
-object, whose methods it reads; a derived class's prototype links to its
-base's. A private name `#x` is a key no code outside its class spells, a
-symbol of its own: a private field an own key of each instance, a private
-method the prototype's, a static one a binding; a copy takes none
-([classes](PROGRAM-TYPING.md#classes)). Optional fields read an absent key as `undefined`, which holds only
-without a prototype, so they require none. `readonly` is a view: a read
-capability that withholds writes through that view without retyping the
-location.
+An object's set of keys is fixed at allocation in the calculus. Writing a field
+changes its location's contents. Adding a key to a fresh, unaliased local object
+can be represented by copying the object with the additional field and updating
+the local binding. This translation is valid only when no other reference can
+observe the old object. Source extraction checks that ownership condition;
+[key-adding writes](PROGRAM-TYPING.md#key-adding-writes) states the restriction.
+
+A record type is **open**: it describes named properties without excluding
+others. An **own-key bound** adds information about which properties an object
+itself owns. An upper bound lists the only permitted keys; an exclusion bound
+lists keys that must be absent. Fresh object literals have known own keys.
+These bounds matter for optional fields, dictionaries and native methods.
+
+The model represents a prototype link under the reserved key `[[proto]]`.
+A missing own property can be read through that link. Classes use prototype
+objects for methods and distinct keys for private fields. `readonly` grants a
+read capability without granting a write through that view. The exact
+[record contracts](POSITIVE-TYPES.md#records) and
+[class translation](PROGRAM-TYPING.md#classes) define these forms.
 
 ### Object literals
 
@@ -458,11 +444,15 @@ own `__proto__`, which it would set through the prototype's setter.
 
 ### Arrays
 
+A **realm** is a JavaScript global environment with its associated built-in
+objects and prototypes. The array contracts below assume the standard
+prototypes of that realm.
+
 An array is one store of element locations under the reserved
 store key and one object holding `Array.prototype` under `[[proto]]`, read
 through the one array shape (`arrayClauseOf`,
-[arrays](POSITIVE-TYPES.md#arrays)). Its own keys are outside $N$, the keys
-`ArrayProto` provides plus `constructor`, so `xs.map` reaches the prototype
+[arrays](POSITIVE-TYPES.md#arrays)). Its own keys exclude the members declared by
+`ArrayProto` and `constructor`, so `xs.map` reaches the prototype
 and ordinary construction cannot be overridden; it may own other keys,
 as Skip's runtime tags managed arrays with a symbol key. Stores may be sparse;
 source `T[]` requires **readability**: every in-bounds read, including a hole's
@@ -488,53 +478,31 @@ is also what a handler binds a thrown value at, carries no invariant.
 
 ### Index signatures
 
-A dictionary is a `dict` clause of index contracts, each over a **key class**:
-every string key, the canonical numeric keys (a string some number's
-`ToString` spells), or every symbol key
-([records](POSITIVE-TYPES.md#records),
-[source forms](PROGRAM-TYPING.md#index-signatures)). A read at a key the
-object may lack is `V | undefined`. A mutable index is a **writable index
-contract**.
+An index signature describes properties in a **key class**: string keys,
+canonical numeric property keys, or symbol keys. A dictionary read returns
+`V | undefined` when the key may be absent. A readonly index promises values
+of type `V` at present keys without granting writes.
 
 #### Writable string index signatures
 
-A mutable index signature lets code holding the dictionary add keys and
-overwrite values at `V`, and TypeScript also treats it covariantly. Lowering
-it to the readonly view would be unsound: a caller handed a dictionary of
-`true` at `{ [key: string]: boolean }` could store `false` where the program
-still reads `true`. So every present field under its class holds exactly
-`V` (`dictCellT`), a mutable dictionary is invariant, and a readonly one is
-never mutable. The program adds a key to a dictionary only as it adds one
-to any object, by copying a local's own object with a key the source spells.
-A write at a key known only at run time is refused: through a dictionary
-another reference may hold, as any key-adding write is; on a local's own one
-at a string, since the string may spell a key the model keeps for itself
-(`[]`, `[[proto]]`), which JavaScript owns as an ordinary property; at a
-number or a symbol it is not yet lowered. That code outside
-the unit adds keys to a writable dictionary only at its contract, and only
-keys of its class, is an assumption ([trust surface](#trust-surface)). Every
-type the checker lets the unit hold such an object at stays true of it with
-such a key, so every capability it grants is kept. Covering a writable index
-requires every index and optional field of the source over its keys to admit
-`V`, and every own-key bound of the source to keep its class: none lists keys
-(the class has keys it does not list) and none excludes a key the class may
-admit (`KeyBound.keeps`, [covering](POSITIVE-TYPES.md#records)), unless no
-value meets `V`, so no key can be added. A bound is
-the one capability the writable contract does not imply: a value met as a
-writable dictionary through one could be held elsewhere at a type saying a
-key is absent that outside code then adds. So a record meets a writable index
-through a bound only at an uninhabited contract (`CoversKeys`); a literal meant for a
-writable dictionary is allocated at it, with no bound
-([`allocDict`](PROGRAM-TYPING.md#judgments-and-constructor-views)); a merge's
-dictionary result states only bounds that keep its writable classes. That a
-kept bound survives a key of its class, and that every clause covering a
-writable index has only kept bounds, are theorems (`ownKeysT_keeps`,
-`covers_writable_keeps`, `covers_writable_bounds_grow`); that fields, views,
-indexes and optional fields survive it is the argument above, which the
-covering premises state.
+A writable index must permit every admitted write while preserving all aliases'
+contracts. It is therefore invariant in its value type. A dictionary of `true`
+cannot be passed as a writable dictionary of Boolean values: a caller could
+store `false` through the wider view.
 
-A read `o[k]` whose key is one of several string or number literals tests
-`k` against each and reads that member (NaN excluded).
+An own-key bound must also remain valid when external code adds an allowed key.
+For example, a type that excludes `x` cannot justify a writable string index
+whose callers may add `x`. Fresh literals intended as writable dictionaries are
+allocated at the dictionary contract rather than using an exact-key bound to
+justify that capability.
+
+Within the source fragment, adding a key requires the ownership condition for
+[key-adding writes](PROGRAM-TYPING.md#key-adding-writes). General dynamic
+key-adding writes are restricted. External code is assumed to respect the
+writable contract and the reserved-key restrictions.
+[Dictionary typing](POSITIVE-TYPES.md#records) and
+[source index operations](PROGRAM-TYPING.md#index-signatures) specify the
+coverage checks and supported keys.
 
 ### Method members are host-relative
 
@@ -651,18 +619,17 @@ rules suffice. Native conformance remains audited, not proved against ECMA-262.
 The native regression sources are also executed under Node. Source-contract
 erasure is tested against both verifier entry points using a forged producer
 proposal. These tests exercise premises and translation that the calculus
-safety theorem does not prove. Intrinsics are collected on demand; a loop no
-longer brings in unrelated Promise declarations.
+safety theorem does not prove. Intrinsics are collected on demand from the operations the source uses.
 
 ### Inferred call effects: elaboration and certification
 
-**Certification, initial inference, native overloads and graph composition, including fixed qualified calls, are integrated.**
-`CallEffects.lean` supplies the semantic foundation. Qualified signatures now
-flow through the type graph, source claims and the executable acceptance checker.
-A proposed heap-preserving closure must pass both ordinary safety and the body
-effect check. Its targets and remaining limitations are in step 3 below. The [semantic equation](SEMANTICS.md#effect-qualified-call-contracts)
-and [planned rules](PROGRAM-TYPING.md#certifying-inferred-call-effects)
-specify the extension, including its proof obligations.
+A call signature may state the effect `preservesInputHeap`: on normal return,
+the call leaves every previously allocated location's contents unchanged.
+It may allocate fresh storage. An **effect-qualified signature** is a signature
+carrying such a guarantee. `CallEffects.lean` defines its semantics; the
+[effect contract](SEMANTICS.md#effect-qualified-call-contracts) and
+[certification rules](PROGRAM-TYPING.md#certifying-inferred-call-effects)
+state what a certificate must establish.
 
 This extends the language of claims beyond TypeScript annotations. Three
 operations must remain distinct:
@@ -701,14 +668,13 @@ this distinction. No stronger external assumption is implicit here.
 The guarantee is sufficient but not necessary for safe dense
 `map`: mutation of unrelated state can also be safe. Future footprint-sensitive
 effects can express that without changing the inference/certification boundary.
-The initial body checker may recognize fewer programs than the semantic
-contract allows. Record that as incompleteness, never as a source restriction.
+The body-effect checker recognizes a subset of programs satisfying the
+semantic contract. An unrecognized body therefore represents an inference or
+checking limit, not a restriction on the meaning of heap preservation.
 
-Closure conditions include forged-effect refusals at the verifier boundary,
-propagation through a named or returned callback, ordinary-effect fallback,
-and retained alias-mutation witnesses. The headline acceptance theorem must
-cover the new effect obligations; passing a producer check or proving an
-isolated semantic lemma is not integration.
+The source acceptance theorem includes effect checking. Pipeline controls
+exercise qualified callbacks passed or returned as values, ordinary-call
+fallbacks, and forged effect claims on bodies that mutate captured storage.
 
 ### Calls
 
@@ -734,7 +700,7 @@ passes; into fixed parameters such an actual is refused
 ([model limits](#model-limits)). A union callee is called at every
 arm, its result the union of theirs; a method call on a union whose arms'
 members differ reads and calls in one step dispatched on the receiver, where
-every actual is a name or a literal. A callee that is a callable with fields
+every actual is a name or a literal. A union callee whose alternatives carry callable fields
 is refused ([call rules](PROGRAM-TYPING.md#reading-the-source)).
 
 ### Primitive members
@@ -909,7 +875,7 @@ the model's reading of an operation relies.
 | A value TypeScript types as `Set<T>`, `Map<K, V>`, `SetIterator<T>` or `MapIterator<T>` that a loop or spread iterates is the host's: its iterator is the realm's, and the prototypes it inherits (`%IteratorPrototype%` included) hold no `return` and are unmodified. Assumed of every such value a program receives; the fragment builds none but through the host: a `Set`'s and a `Map`'s type state their `[Symbol.toStringTag]`, a well-known symbol key no literal or class of the fragment writes, and no annotation of the fragment states a `SetIterator` or `MapIterator`. A host iterator a program's protocol steps (an array's, as an `Iterable<T>`) likewise has no `return` along its chain. | the iteration intrinsics' pick, `iterationKind` in `tools/declaration-graph.mts`; `writtenSymbol` in `tools/fragment-parse.mts` |
 | Every object owning the array store key is a JavaScript array: every object the model allocates, and assumed of every object a program receives. `Array.isArray` is the native test. For `instanceof Array`, every array a program receives is of its realm and no object but an array inherits from `Array.prototype`. | `isArray` ([SEMANTICS](SEMANTICS.md#operational-language)); the `Array` entries of `library-globals.mts` |
 | The array invariant: every object a unit receives at a record or dictionary type that owns the array store key is an array of the realm: its store may be sparse, it holds `Array.prototype` (meeting `ArrayProto`, which reads no parameter row), and it owns neither `constructor` nor any key declared by `ArrayProto`. Proved of every object the unit allocates; assumed of every value it receives, as the arrays it receives at array types already are. Nothing is assumed of a value at `unknown`, and no class invariant: an object whose prototype chain holds a class's prototype need not have the class's fields. | `realmInvariant` in the meaning of record and dictionary rows, so `EnvOk` in the premise of `checkJson_safe` ([SEMANTICS](SEMANTICS.md#the-array-invariant)) |
-| An array a program receives owns neither `constructor` nor any key declared by `ArrayProto`. The realm keeps standard `Array.prototype.constructor`, `Array[Symbol.species]` and their prototype links; external code preserves that behavior across calls. | the $\mathsf{outside}\,N$ bound includes `constructor` (`RequestJson.arrayExcludedKeys`); standard native construction is a host assumption |
+| An array a program receives owns neither `constructor` nor any key declared by `ArrayProto`. The realm keeps standard `Array.prototype.constructor`, `Array[Symbol.species]` and their prototype links; external code preserves that behavior across calls. | the own-key exclusion bound includes `constructor` (`RequestJson.arrayExcludedKeys`); standard native construction is a host assumption |
 | An array a program receives owns, at a canonical numeric key that is no index below its length, only a data property holding a value of its element type, as `Array<T>`'s declared `[n: number]: T` says; the realm's `Array.prototype` owns no numeric key. What `%ElementAt%` reads rests on it; the arrays the model allocates own no such key. | `%ElementAt%` in `tools/intrinsics.mts` |
 | The model's reserved keys (the store key `[]` and every name in double brackets) are spelled by no source key, and an object a program receives is represented with its own keys apart from them. | `Fragment.sourceKey`, `reservedSourceKey` |
 | `Object.prototype`, `Array.prototype` and `Function.prototype` own no string key but those `inKeyRefusal` lists (node's `Object.getOwnPropertyNames`), none enumerable, so a `for...in` over a plain object visits its own keys only; `String.prototype`, `Array.prototype` and `Object.prototype` own no numeric key; `String.prototype` owns no `[Symbol.split]` or `[Symbol.replace]`; `Object.prototype` has no `toJSON`. | `inKeyRefusal` in `Source/Fragment.lean`; the overlay comments |
@@ -939,7 +905,7 @@ obstacle named. A search failure is neither.
 
 | Construct | Refused because |
 | --- | --- |
-| `new Array(n)`, `new Array(x)` with one argument | It makes an array with holes; an array type promises none. |
+| `new Array(n)`, `new Array(x)` with one argument | A numeric argument constructs holes; a readable element contract excluding `undefined` cannot justify those reads. The source gate refuses the ambiguous one-argument form. |
 | An element write at an index not proven in bounds or appending | It could create a hole. |
 | A mutable `Dog[]` as an `Animal[]`, a mutable dictionary of `true` as one of `boolean`, a readonly view as a writable one | Mutable storage is invariant: a write through the wider alias breaks the narrower one's contract (TypeScript's covariance is unsound). |
 | Method bivariance (`Handler<Dog>` as `Handler<Animal>`), an override with narrower parameters, a narrower constructor at a construct signature | The member may be invoked with the wider argument. |
@@ -995,7 +961,7 @@ representation cannot state it yet; the paths are in
 | An array assignment pattern writing a field (`[o.f] = e`) | Its target's reference is evaluated before its position is read and defaulted; the lowering writes locals only. |
 | An accessor (`get`/`set`), `__proto__`, a computed key in a literal other than a `unique symbol` constant, a spread of a string or of a value that may be a class | The heap has data properties only; the key or copy is known only at run time (a string's characters); a class's static fields are bindings of the model, not properties of the class value a copy reads. |
 | A literal or class member keyed by a well-known symbol other than `Symbol.iterator` (`Symbol.toStringTag`, `Symbol.toPrimitive`, …), but a class's static `[Symbol.hasInstance]` method, which `instanceof` calls | It changes how the host treats the object, which the model does not state; a tag would let it pass for a host collection, whose iteration is trusted. |
-| An element read past a readonly tuple arm's length (`const [a, b] = t` with `t: readonly [number] \| readonly [number, string]`); a slice rest in a closure's directly checked body | No element rule reads `undefined` beyond an exact length; the slice's call is graph code. |
+| An element read past a readonly tuple arm's length (`const [a, b] = t` with `t: readonly [number] \| readonly [number, string]`) | No element rule reads `undefined` beyond an exact length. |
 | A rest parameter of a definition typed by a type parameter; one typed by a tuple with optional or rest elements | A definition has no allocation rule for an array only an instance fixes (a function type's is a pack); several lengths are several signatures. |
 | A written `let` pattern in a `for` head, or a written `let` in a `for...of` head; a test of a written `let` holding a union of objects; a `let` captured by a closure in a `for` loop | Its bindings are cells, which only a statement of a block lowers them to; a cell's known contents are primitive or merely no `undefined`; JavaScript copies the binding per iteration, which the lowering does not. |
 | An array pattern over a value that may not be an array | The pattern reads an array's positions; over a host non-array iterable it would step `%Iterate:K%`, which the lowering does not place. |
@@ -1094,8 +1060,7 @@ One line each; the reason is the one the design keeps.
 - **`Closed<T>` is read as `T`**: less than SKJS's meaning, and true of every
   closed value.
 - **A number is its double's bit pattern; a bigint its integer.** Distinct
-  spellings of one value are one singleton; the literal type `0` is both
-  zeros.
+  spellings of one value are one singleton ([values](#values)).
 - **An omitted closure result is the producer's claim**; an annotation adds a
   requirement at the annotated signature and never removes a check.
 - **`<T>e` is `e as T`**, and a type reference to a name that is also a function resolves to the type.
@@ -1132,7 +1097,7 @@ point-specific contents have separate claim identities.
 | --- | --- | --- |
 | 1. Delete the TypeScript producer (`tools/tsc-claims.mts`): the OCaml producer is the pipeline's one producer, the corpus and the report viewer run it | done | compared per function on the corpus's 303 (2026-10-05): the OCaml producer's claims verify for 301, the TypeScript producer's for 276, every one of those among the 301; the producer, `--producer`, the viewer's producer choice, the report writer's generic report input and per-function collection metadata deleted; TypeScript's own verdict per function (`typescriptVerdicts`) beside the verifier's in the corpus and the viewer |
 | 2. The producer reads the shared control-flow IR: design and validation. Lean constructs claim-independent execution points and edges, final lowering consumes that IR, and the producer proposes environments and current contents per point. Type-directed expression elaboration consumes those proposals; mutable declaration contracts have separate identities | done: `FlowGraph`, `ExpressionPlan` and `BindingPlan` supply the shared execution schedule; entry and expression claims have owner-qualified point identities, expression sites also retain source spans, and mutable lifetime contracts have separate identities; forged point and contract associations are refused | the design states the graph wire, the claims keyed by node and the checks on that association; a prototype over a subset of the cases (control flow, `try`/`finally`, iterator close, closures) reaches the same outcomes as the source-level producer, with forged node keys refused |
-| 3. The producer reads the shared control-flow IR: cutover | done: all 847 cases and independent forged-claim/report controls pass; the 53-file corpus has the same per-function outcomes as its baseline (303 accepted, 301 derived, 2 not derived); all six protected runtime traces pass; source-level control-flow, compound-expression and binding/default execution mirrors are retired | every `cases.mts` outcome and the corpus's per-function results unchanged or better; the producer's source-level control-flow mirror and the source-position claim association it needed deleted |
+| 3. The producer reads the shared control-flow IR: cutover | done: all 847 cases and independent forged-claim/report controls pass; the 53-file corpus has the same per-function outcomes as its baseline (303 accepted, 301 derived, 2 not derived); all six protected runtime traces pass; source-level control-flow, compound-expression and binding/default execution mirrors are retired | every `cases.mts` outcome and the corpus's per-function results unchanged or better; the producer's source-level control-flow mirror and association by source position alone deleted; expression claims identified by execution point and source span |
 
 **Upstream sum example.** `reactive-sum-prettier-ignore`, Skip's sum service
 as published, against the pinned upstream runtime. The program is safe; the
@@ -1205,7 +1170,7 @@ unchanged ([design](#recursive-quantified-contracts)).
 | R1. Fix: a bound framework method's claimed signature refused, the judgment holding. Equation lowering names a declaration's type literal by a head lifted over its binders, so the literal at an instance and the producer's own row for the same type are two labels with equal unfoldings. Two components required one label where the rule admits either. (a) Proof search's instance of a quantified member (`instanceCandidates`) offers the claimed operand as the image of a scheme operand spelled otherwise, which the image check accepts once proved equal, for fixed and variadic signatures: `map`'s constructor parameter `new (...p: P) => Mapper<…>` at its instance (`sum-map-array`, `sum-serializable-map`, `sum-add-index`, `class-value-generic-method`). (b) The checker's `bindMember` required a claimed variadic signature to be the member's by label (`merge`'s rest `EagerCollection<K, V>[]`); it covers it by subtyping proofs of the fixed parameters, the rest and the result, as a fixed one ([rule](PROGRAM-TYPING.md#judgments-and-constructor-views); `sum-collections`, `sum-resource`, `sum-sound-binding`) | done | the seven cases verify; `invalid-sum-map`, `invalid-sum-resource-mapper` and `invalid-class-value-generic-method` are rejected at their own obligations, and a rest claim wider than the member's at the bound member, by search and by the checker (`test.mts`); coverage run 2,441 verified (2,440 before), 142 gaps (142), 2 unexplained (3): `eagercollection-deep-value-no-oom#build` verifies; `json-generated-service#GraphResource` stops before any call, at its declarations, a record as `EagerCollection`'s `V extends Json` |
 | R2. Fix: producer claims refused as outside their source annotation. Two causes, both in how the claims were written or read, the comparison being right. (a) The producer spelled a bounded binder `T` as `T & B`, while a binder label already denotes `T` within its bound as its unit reads it, the meet `T ⊓ B`: the claim read `T ⊓ B ⊓ B`, with `B` distributed when a union (`V extends Json`). Semantically within the annotation, but a second spelling the checker's meet rule does not relate (`generic-graph-bounds`; `class-ctor-tparam-unsound`, `generic-class-union-constraint`). The producer writes a binder by its name alone ([encoding](SOURCE-CLAIMS.md#encoding)). (b) A generic closure's scheme row for its annotations read the enclosing binders in claim-form parameters but not in graph labels (a class's generic method's receiver `C<T>`), so its annotations and its claim named two scheme rows' binders (`clauses-diff-subset`); `closureRows` reads them as its claims do | done | `generic-graph-bounds` verifies and `invalid-generic-graph-bound` is rejected; coverage run 2,438 verified (2,430 before), 144 gaps (155): the 8 `class-ctor-tparam-unsound` and `generic-class-union-constraint` units verify; of the 3 `clauses-diff-subset` units, 2 reach a later obligation, a class's generic method at the class's instance type (`class-generic-method`'s block, R3), and 1 is refused where TypeScript refuses it |
 | R3. Fix: a class's generic method refused where the judgment holds. The prototype's closure and the instance type's member are two quantified signatures binding rows of their own (each scheme's binders are its head's), and the checker related a scheme received by the host to a target member only when both bind the same rows (`SchemeBinds`): incomplete for the quantified rule, which holds up to renaming ([RECURSIVE-EQUATIONS §4.1](RECURSIVE-EQUATIONS.md#41-quantified-signatures)). `SchemeBinds` renames the target's binders to the closure's, as `SchemeRenames` does for two declared schemes, proved in `covers_by_scheme_sound` ([rule](POSITIVE-TYPES.md#clause-coverage)) (`class-generic-method`, `clauses-diff-subset`) | done | `class-generic-method` verifies; `invalid-class-generic-method` is rejected at its own obligation, and a class declaration tampered so that the closure does not cover the member after renaming is refused at the construct code's return (`test.mts`); coverage run 2,444 verified (2,442 before), 141 gaps (141), 0 unexplained (2): `clauses-diff-subset#Helper` and `#testExplicit` verify |
-| R4. Fix two stale `pipeline/test.mts` checks. The nested closure claim `() => boolean` over a body of type `T` is refused: proof search finds no derivation of its return-contract obligation, and the original evidence does not decode against the forged claims' equations; the check expected a message the equation labels no longer produce. `async-await` verifies, and the reader shows it verified; the check expected it refused as an unsupported Promise contract. The nested claim check asserts the search refusal at the body; the reader's source-refusal check runs on `invalid-default-invocation` | done | both checks pass |
+| R4. Fix two stale `pipeline/test.mts` checks. The nested closure claim `() => boolean` over a body of type `T` is refused: proof search finds no derivation of its return-contract obligation, and the original evidence does not decode against the forged claims' equations; the check expected a message the equation labels no longer produce. `async-await` verifies, and the reader shows it verified; the check expected it refused as an unsupported Promise contract. The nested claim check asserts the search refusal at the body; the reader checks `invalid-default-invocation` as a whole-file unsupported source result before claims exist | done | both checks pass |
 | S7. Variance by the checker ([§4.2–4.3](RECURSIVE-EQUATIONS.md#43-variance)): recursive instance discharge, variances computed per definition (traversal; guarded self-assumption on cycles), `Var` in request certificates, fallback coinduction up to renaming of bound variables; lowering's variance proposal and the front's variance gate removed | done | proved; tracing (`--trace-subtyping`) and the measurement script (`tools/subtyping-trace.mts`) in place; `promise-covariance`, `generic-growing-application-push`, `promise-like`, `framework-binding-sound`, `framework-binding-unsound` verify; `invalid-promise-covariance` and `invalid-framework-binding-sound` rejected at their own obligations |
 | D. Decidability of subtyping in this model, studied in mathematics before any Lean | done | a note stating the problems precisely, what is proved, and what is open |
 | S8. Coverage and performance, including the subtyping trace: work per question against type size ([§4](RECURSIVE-EQUATIONS.md#4-subtyping), linear-work conjecture) | done: 2,430 verified, 155 gaps, 1 unexplained; evidence median 44 kB, check median 32 ms; checker work at most 8.2 steps per unit of type size over 169 questions, consistent with the linear-work conjecture, not proving it ([measurements](pipeline/SKJS-COVERAGE.md#performance-on-the-pipeline-cases)) | coverage run remeasured; evidence size and decode time recorded; the conjecture confirmed or refuted on the examples, with the trace's counts |
@@ -1223,141 +1188,43 @@ unchanged ([design](#recursive-quantified-contracts)).
 | O8. Fix: two principled refusals, a method read off its object by a pattern and a position past a mutable tuple's arity, were thrown by source extraction as bare messages, so the report viewer had no obligation to show and their cases could not be negative controls. Both go through `locatedRefusal` at the pattern element (`Pattern.span`) | done | both refusals located at their source span; `pattern-method-refused` and `mutable-tuple-position-refused` negatives, the reader showing each |
 | C2. Write the source layer directly over its one store, `EquationStore.State`: `EquationLowering` and `EquationStore` precede the modules written over them in the import order, which call the store's operations and `equationFront` directly. `StoreView` and `Labels` stay classes, each with two instances: the growing store and the frozen equations | done | the three classes deleted; `lake build` green; every `cases.mts` outcome and diagnostic unchanged |
 | E. Fix: the declaration reader erased a generic method whose signature it could not read to an `unknown` member, so a produced value met the declaration at any field (`return { run: 42 }` as a `Runner` whose `run` takes a type literal with a generic method). The reader refuses the declaration at such a method; a declaration's generic function type, the form behind most such erasures (`EagerCollection.mapReduce`'s result), is a scheme term whose signatures take any receiver ([request protocol](REQUEST-PROTOCOL.md)). The other `unknown` readings in the parser, the OCaml producer and Lean are stated meanings (a declaration's `any`, an ambient class's untyped readonly field, a receiver no signature states), none a fallback for a contract the reader cannot read | done | `invalid-generic-method-nested-scheme` refused at its declaration, and 42 in `run`'s place throws under Node; `generic-method-nested-method` and `generic-function-type-member` verify, `invalid-generic-function-type-member` is rejected at its return contract and returns the unpaired argument under Node; coverage run 2,466 verified (2,466), 110 gaps (110): no unit loses verification; `testUnionWithGenerics` and `testGenericTupleConstraint` stay gaps, blocked at their own generic function values |
-| U1. [Unified subtype engine](#subtype-engine-cleanup-plan): one comparison operation and its soundness boundary | done: checked structural dependencies and completed results share one comparison state; cached successes carry proofs at every parameter assignment, with a fresh cache for each equation environment; full Lean build and eight pipeline suites pass; all 828 source cases pass | the operation handles the existing subtype rules over equations, with checked internal justification and explicit resource exhaustion |
+| U1. [Unified subtype engine](#subtype-engine-cleanup-plan): one comparison operation and its soundness boundary | done: checked structural dependencies and completed results share one comparison state; cached successes carry proofs at every parameter assignment, with a fresh cache for each equation environment; full Lean build and eight pipeline suites pass; the source case suite passes | the operation handles the existing subtype rules over equations, with checked internal justification and explicit resource exhaustion |
 | U2. Route subtype consumers through that operation | done: lowering, extraction, proposal search and certificate checking use the common operation for bounds, arguments, results, receivers and image equality; explicit instances share its checked state; declaration gates retain located outcomes; Promise, 205-field record and callable-bound positive/negative controls pass | bounds, arguments, results, receiver checks and instance-image equality use the same engine; producers supply inference choices |
 | U3. Resource accounting and diagnostic integration | done: explicit frontier budgets retain typed exhaustion through required source comparisons, proposal search, expression/heap checks, graph/code validation and source bundles; acceptance equivalence is proved; both CLI modes and the shared report viewer presentation pass insufficient/sufficient-budget controls with located judgments and inconclusive exhaustion | the 200-comparison acceptance cap is absent; exhausted work is located and visibly inconclusive through the CLI, runner and viewer |
-| U4. Retire superseded paths and validate the cleanup | done: public evidence supplies instance choices; separate subtype strategies, finite bound search, producer image prechecks and stateless instance helpers are retired; rule inventory and documentation checks pass; full Lean build and eight suites pass; all 828 source cases pass and 4,110 corpus outcomes agree with the recorded coverage run, with 2,466/2,674 verified; five alternating binary benchmarks have comparable search/check timings; a forged instance bound citing its unfinished comparison is refused during evidence search and checking | strategy-selection evidence and duplicate searches are deleted; the closure checks below pass; documentation and coverage measurements agree with the implementation |
+| U4. Retire superseded paths and validate the cleanup | done: public evidence supplies instance choices; separate subtype strategies, finite bound search, producer image prechecks and stateless instance helpers are retired; rule inventory and documentation checks pass; full Lean build and eight suites pass; the source case suite passes and per-function outcomes agree with the recorded coverage run; five alternating binary benchmarks have comparable search/check timings; a forged instance bound citing its unfinished comparison is refused during evidence search and checking | strategy-selection evidence and duplicate searches are deleted; the closure checks below pass; documentation and coverage measurements agree with the implementation |
 
 The stages' order and dependencies: S1, S3 and the kernel rows may run in
 parallel; S4 follows S1; S5 follows S3 and S4's interface; S6 needs all of
 them and the image-checker row; S7 follows S6; S8 follows S7. K2 and K3
 block the framework cases, not the cutover.
 
-### Subtype engine cleanup plan
+<a id="subtype-engine-cleanup-plan"></a>
+### Subtype comparison
 
-**Scope.** This plan concerns subtype checking over the recursive equations
-and its consumers. The equation representation, its interpretation, the
-substitution and congruence theorems, and the guarded family soundness
-argument supply the foundation. Callable/record intersection semantics and
-dependent quantified bounds are separate design work. Execution authorization
-and progress are recorded in U1–U4 in the status table above.
+A subtype comparison asks whether every value of one type also belongs to
+another, under the stated type-parameter bounds. The engine operates over
+recursive type equations. Identity, checked variance, quantified instantiation,
+binder renaming and structural unfolding contribute to one comparison operation.
+Equality of types requires inclusion in both directions.
 
-**Producer and verifier responsibilities.** The producer proposes expression
-types, storage contracts, loop invariants and generic instances. Lean derives
-the required comparisons from source contracts and checks them through one
-subtype engine. Type arguments and other instantiation choices are untrusted
-inputs whose bounds and substituted signatures require validation. Program
-evidence search in `CertificateProducer` performs a producer role even though
-it runs in the Lean executable; it and evidence checking use the same subtype
-operation. The source claims and evidence protocols expose the choices needed
-for validation. A producer-selected subtype strategy or a supplied table of
-comparison pairs is outside this interface.
+The engine uses a work queue and records dependencies between comparisons.
+A completed positive comparison carries a sound justification at every
+admissible assignment of the type parameters. Unfinished recursive work cannot
+be reused as an established result. Cached results belong to one equation
+environment and its bounds.
 
-**Target operation.** A comparison asks whether one type is included in
-another under a stated binder context. Identity, validated variance,
-quantified instantiation, binder renaming and structural unfolding are rules
-of this operation. Semantic equality asks for inclusion in both directions.
-The engine maintains a worklist and shared dependencies between comparisons;
-these are internal proof-search state. The type representation remains the
-finite program of recursive equations described in
-[RECURSIVE-EQUATIONS](RECURSIVE-EQUATIONS.md).
+Public evidence supplies choices such as generic instances. The checker derives
+the required comparisons and validates those choices. Both typing search and
+certificate checking use the comparison operation. The result distinguishes:
 
-The result distinguishes an established comparison, one the supported search
-does not establish, and resource exhaustion. Only the established result
-authorizes a typing step. An unsuccessful search is no claim of semantic
-non-inclusion. Exhaustion identifies the obligation, resource and work
-performed; a program must not become verified through an exhausted branch.
+- an established inclusion, which may justify a typing step;
+- an inclusion the supported search did not establish;
+- resource exhaustion, which identifies an incomplete obligation.
 
-**U1 — Engine and proof boundary.** Define this result and the common
-comparison operation in Lean. Use the existing family-rule soundness theorem
-to validate the engine's internal justification, preserving the theorem for
-every assignment of the parameter meanings. Internal proof constructors may
-name inference rules. Public evidence does not select among `subset`, `inst`
-and `fallback` algorithms.
-
-Each comparison records its dependencies and the alternative ways a rule can
-justify it. A visited pair alone is not a proof: recursive reuse requires the
-guarded coinductive justification. Cache keys account for the equation store,
-binder context and hypotheses on which a result depends. Share work within a
-fixed equation environment; a growing store cannot reuse results whose
-dependencies changed. Binder renaming preserves scope and captured parameters.
-
-Make generic bounds and instance-image equality sub-obligations of the same
-engine. Audit the dependency between instantiation, image validation and
-subtyping before implementing it: a cycle through those operations must not
-discharge itself as though a constructor had guarded it. In particular,
-`imagesUpTo`/`equivalent` and the proved `InstanceImageCheck` interface must
-retain their semantic justification through the migration.
-
-**U2 — Consumers and producer choices.** Route ordinary coercions, generic
-bounds, receiver requirements, fixed and variadic arguments/results,
-annotation/claim comparisons and substituted-image equality through the
-operation. Audit source lowering and extraction as well as the frozen request
-checker: checking before and after freezing must use the same rules for the
-same equations. Preserve the parameter-reassignment laws used by generic
-units and closures.
-
-Consolidate the responsibilities of `CertificateProducer.subtypeUsing`,
-`PositiveCertificates.fallbackWith`, `boundOk` and
-`EquationStore.equivalent`. Instance inference supplies choices; the engine
-checks their bounds and images. Program evidence search must obtain its
-subtyping result without independently reconstructing the same comparison
-graph to discover which choices the checker needs. Memoized results used in
-acceptance carry the checked justification; producer caches carry no authority.
-
-**U3 — Resources and outcomes.** Remove `fallbackLimit = 200` as a fixed
-acceptance restriction. Account for work through an explicit execution budget
-or resumable search state. For a finite reachable comparison graph, sufficient
-resources allow the engine to finish without an arbitrary comparison-count
-ceiling. This is a closure requirement, not a claim of completeness for all
-recursive types. Growing non-regular comparisons may exhaust resources or
-meet a documented algorithmic restriction; neither outcome asserts that the
-subtyping judgment is false.
-
-Carry these outcomes through source obligations, evidence search/checking,
-the runner and the report viewer. Preserve the source location and structured
-judgment. Keep exhausted work distinct from a completed search that establishes
-no derivation, and from a source form outside the fragment. Preserve this
-distinction in measurements. Change the shared protocol types and exhaustive
-consumers together.
-
-**U4 — Retirement and closure.** Delete the superseded strategy dispatch,
-separate finite bound-checking path, duplicate comparison discovery and public
-strategy-selection evidence in the same migration. Retain helpers and proofs
-that the common engine uses. A renamed fallback beside the ordinary engine
-does not meet this plan. Review and regenerate the rule inventory after
-checking its affected paragraphs. Update the actual theory, implementation
-and protocol sections in their owning documents when the code changes; the
-plan itself makes no claim that those changes are present.
-
-Use the following independent closure checks:
-
-- A method `accept<T extends Promise<number | string>>(x: T): number`
-  accepts a `Promise<number>` argument, both directly and through an explicitly
-  widened variable. The corresponding argument outside the bound is refused.
-  Exercise the same comparison as an ordinary subtype obligation and as a
-  generic bound.
-- Two equivalent shallow readonly record types with 205 distinct child-type
-  comparisons verify. Generate the source fixture if that keeps the test
-  readable. A changed leaf type is refused at the relevant obligation.
-  A deliberately small execution budget reports exhaustion; sufficient
-  resources establish the original comparison.
-- Keep the growing `Pair`, Promise covariance, generic-method renaming,
-  variadic instantiation and framework cases with their original negative
-  controls. Preserve writable invariance, receiver requirements, capture
-  independence, argument-pack kinds and callback effects.
-- Retain forged-evidence controls for the changed acceptance boundary,
-  particularly a false generic instance and an unjustified recursive
-  dependency. Prefer source cases for ordinary behavior and retire temporary
-  probes once a pipeline case covers their purpose.
-
-Before a migration commit, run the relevant narrow checks, the full Lean
-build and `verification/test-all.sh`; inspect both the statement and axioms of
-`SourceClaimJson.checkJson_safe`. For closure, rerun the coverage measurement
-and representative subtyping performance measurements, inspecting every
-changed outcome. Update the trust explanation to distinguish equation
-well-formedness and proved inclusion from the trusted interpretation of source
-types. Commit tested stages; pushing requires separate user permission.
+The last two results cannot authorize acceptance. They are not proofs of
+semantic non-inclusion. The [recursive-equation rules](RECURSIVE-EQUATIONS.md#4-subtyping)
+own the algorithm and its soundness statement; the status table records the
+implementation and validation milestones.
 
 ### Open work
 
@@ -1389,150 +1256,34 @@ two declarations, or of two instances of one, bind different parameters; the com
 renaming ([RECURSIVE-EQUATIONS §4.2](RECURSIVE-EQUATIONS.md#42-parametric-assumptions)).
 
 <a id="restoring-completeness"></a>
-**Restoring useful completeness after the boundary repair.** Keep the original
-positive sources as the targets. The work is split by semantic obligation:
+**Contract completeness.** Array presence, callback effects and conversion
+contracts impose separate obligations. Their current designs are stated under
+[arrays](#arrays), [native contracts](#exact-contracts-and-native-effects) and
+[effect certification](#inferred-call-effects-elaboration-and-certification).
+A future inference improvement must preserve these distinctions: density is
+stronger than readable elements; readonly aliases do not prevent callback
+mutation; and a written callback annotation cannot silently acquire a stronger
+effect. A program with an arbitrary callback promising readable `U[]` for every
+`U` must justify that promise even when the callback shrinks the source.
 
-1. **Explicit-comparator sorting.** One universally quantified
-   callable offers two signatures: arbitrary elements with a checked comparator,
-   and primitive elements with an omitted/undefined comparator. The producer
-   proposes a signature instance; Lean checks the projection and call. Receiver
-   intersections survive substitution. `native-sort-contracts` verifies objects,
-   numeric tuples and explicit `undefined` on primitives; the optional-comparator
-   negative rejects objects when default coercion remains possible.
-2. **Sparse results.** The runtime store already uses a
-   list of optional locations, so holes have an operational representation.
-   The contract on *present* elements is separate from the guarantee that every
-   position below the length is present. Required tuple positions still require
-   presence; optional/rest positions distinguish physical density from the
-   readable contract that admits holes only where `undefined` is allowed. Readonly is a separate capability,
-   not a presence guarantee. The existing store contract and its proofs are
-   generalized; there is no separate array calculus. The realm-wide array
-   invariant permits sparse stores. Native `map` returns a sparse array under
-   the explicit ordinary-construction invariant; its length and present-element
-   types are retained. `testTupleArrayMethod` and `native-map-sparse` verify.
-   `isarray-record-array` verifies unchanged: `Array.isArray` establishes
-   sparse unknown elements, which meet the readable `readonly unknown[]` result.
-   `CoversPresence` checks the distinction, and the meaning commutes with generic
-   substitution. `invalid-map-hole-coalescing` retains a formerly positive source
-   as a negative: its `(number | undefined)[]` input may have holes, and `map`
-   skips them even with a pure numeric callback. The runtime witness demonstrates
-   the resulting hole. The former dense-only source interpretation excluded that
-   input rather than validating the broader source contract.
-3. **Density-sensitive calls.** Follow the
-   [inference/certification boundary](#inferred-call-effects-elaboration-and-certification)
-   and the linked semantic and typing rules. A sparse numeric result alone does
-   not restore `testMapReturnsArray` or the pure-map curated examples. The admitted realm supplies ordinary construction;
-   the remaining requirement is a checked callback effect sufficient to preserve
-   source presence during traversal.
-   A syntax heuristic or a readonly alias is not that guarantee. Density facts
-   may be lost after effects; no operation may change a location's world type.
-   The same guarantee can justify pure `find` callbacks at T instead of
-   `T | undefined`.
-   Restore safe specializations, not false universal contracts: the coverage run's
-   generic `mapArr` accepts an arbitrary callback and promises readable `U[]`
-   for every `U`, so source-shrinking callbacks returning numbers are
-   counterexamples. Its written callback type
-   must not be silently strengthened. The safe `testMapCallback` unit also
-   checks that general declaration and remains blocked by it.
-   The core has effect-aware application, weakening, congruence and overload
-   conjunction, plus `GraphCode.codeChecked_sound` and the graph introduction rules:
-   an ordinary graph certificate and a checked effect together
-   establish a qualified arrow. Fixed and rest-collecting entries are covered;
-   fresh rest-store allocation preserves the input heap. Effect-qualified
-   binding handles fixed and variadic signatures through one forwarding proof.
-   Overload result combination retains an effect established by one of its
-   premises, with the existing cross-world result-compatibility requirement.
-   The executable body-effect check composes pure operations, required field
-   reads (invariant and readonly views), and fresh object/array allocations.
-   Ordinary graph progress supplies the same point assertions and control-flow
-   transitions to both safety and effect proofs. Graph composition refuses
-   handlers because a throwing operation has no normal-return postcondition;
-   pure graphs also retain their operational proof, including pure handlers.
-   Fixed calls consume the selected qualified signature, including omitted
-   arguments and result weakening. Pure immutable lets compose by substitution,
-   covering immutable coalescing expressions; nested heap operations remain incomplete.
-   Fixed and variadic signatures, including scheme and method paths, now use
-   one required per-signature effect. Mapping, substitution, normalization,
-   coverage and certificate checking retain and justify it. Pipeline controls
-   certify a pure callback and refuse a forged effect on a captured write,
-   both when producing evidence and when consuming old evidence. The headline
-   acceptance theorem covers this check.
-   OCaml infers preservation for operationally pure closure bodies and
-   defaults. Its semantic signature, symbolic claims and substitution all carry
-   the effect, including generic closures; `.bind` retains it. Ordinary source
-   annotations remain unrestricted. The producer proposes preservation for
-   required field reads and fresh allocation too; it checks each receiver's
-   inferred contract when proposing a read. Fixed calls consume inferred callee
-   effects. Rest wrappers, and reads or
-   allocation inside short-circuit/coalescing expressions stay conservative:
-   those expressions currently lower to nested terms, not separate graph nodes.
-   Native `map` and `find`/`findIndex` have qualified overloads alongside
-   their unrestricted fallbacks. `array-methods`, `array-library` and
-   `array-generic-name` verify without source changes. `callback-effects`
-   exercises returned and bound callbacks through the same types. Instantiation
-   matches clause metadata (including effects and density), not only operands,
-   so it cannot discard the applicable fallback after matching the wrong overload.
-   `closure-contextual-parameters` verifies unchanged, including `doubled`
-   and `names`. Immutable module constants retain both the initializer's checked claim
-   and the written annotation, intersected by ordinary type lowering. The
-   initialization unit must discharge both contracts. Local
-   annotations retain only effects proved for the same signature. Defaulted
-   immutable parameters use their post-initialization contents, while assigned
-   parameters retain the original fixed cell contract. A forwarding mutator
-   stays unrestricted and its sparse map result is refused at a dense result.
-   Evidence production publishes only completely checked definitions to its
-   search table, including the effect check. A forged effect therefore fails
-   at the callable's located typing obligation. Every submitted code certificate
-   is retained and checked again at acceptance; search filtering cannot bypass it.
-   `testArrowOptional` and `testMapReturnsArray` verify unchanged in the coverage run.
-   Other call forms and nested heap expressions remain conservative effect
-   inference limitations; they are not needed by these original targets.
-4. **Standard array conversion.** One recursive
-   native contract admits primitives and nested arrays. The array own-key
-   invariant and prototype contract exclude custom conversion hooks, including
-   in external code. This is the explicit engineering trade-off described
-   [above](#exact-contracts-and-native-effects). `sum-local-closure`,
-   `sum-values-tuple` and `local-closure-result` verify without source edits.
-   Ordinary objects with arbitrary hooks remain refused without a comparator;
-   the original coercion counterexamples stay negative. No new core rule is
-   needed: the existing recursive types, key bounds and quantified calls express
-   the contract.
-5. <a id="recursive-quantified-contracts"></a>**Recursive quantified contracts.** Each generic declaration
-   becomes one parameterized equation. A type is a finite application of an
-   equation, and it is unfolded one row at a time, only when read. This
-   replaces unfolding every application into fresh colours until a budget runs
-   out. The rules, their proofs and the rules still to be built are in
-   [RECURSIVE-EQUATIONS](RECURSIVE-EQUATIONS.md). The design constraints:
+Effect inference remains conservative for some rest wrappers, call forms and
+nested heap operations. Expression scheduling alone does not supply the missing
+effect derivation. Keep the source targets and their negative controls when
+extending the body-effect checker; report coverage using the measured results
+in [SKJS-COVERAGE](pipeline/SKJS-COVERAGE.md).
 
-   - The semantic fixed point is the reference. `NormalGraph` already allows
-     any label type; the finite table is a protocol representation, not a
-     semantic requirement. Equations present graphs to that semantics and add
-     no second interpretation.
-   - Do not enumerate a growing family such as `Pair<[T, U]>`, truncate it,
-     raise a budget, erase unused-looking members, or reinterpret a
-     structural interface as a nominal native promise.
-   - Binders are owned by their application, so nested instantiation cannot
-     capture them. Instantiation is checked substitution into finite syntax.
-     Subtyping between members of one family is a finite family argument
-     whose hypotheses the producer proposes and the checker checks. Variance
-     is computed by the checker from the equations, never read from
-     TypeScript or proposed, and writable positions stay invariant.
-   - There is one production path: the source path's requests are over the
-     equations, and the colour/depth/argument machinery is deleted.
-   - Review the acceptance theorem for every new certified form.
+<a id="recursive-quantified-contracts"></a>
+**Recursive quantified contracts.** Generic declarations are parameterized
+equations. Their finite syntax can describe an unbounded family of instances;
+comparison unfolds only what an obligation needs. Parameter identities must
+remain local to their applications, substitution must preserve bounds and
+effects, and writable positions must remain invariant. These requirements are
+specified in [RECURSIVE-EQUATIONS](RECURSIVE-EQUATIONS.md).
 
-   A shared polymorphic prototype may be a valid audited contract for a native,
-   but it is not an equivalent translation of an arbitrary structural interface:
-   an instance method can close over its declaration's type parameter. Do not
-   hoist that parameter into a universally quantified receiver merely to make
-   recursive unfolding finite.
-
-For each step: prove new core obligations, wire the producer and verifier through
-one representation, retain the original negative controls, run the report viewer and
-pipeline suites, then remeasure coverage. An earlier refusal of a negative
-control remains a gap. The last full SKJS coverage run is identified in
-[SKJS-COVERAGE.md](pipeline/SKJS-COVERAGE.md); do not extrapolate its counts
-from a handful of newly passing examples.
+A universally quantified native prototype is an audited host contract. It
+cannot replace an arbitrary structural interface whose method may capture the
+interface's type parameter. Any future simplification must preserve that
+semantic difference.
 
 **The array invariant at `unknown`, and a record's `length`.** `Array.isArray`
 on `unknown` needs the invariant of every value, a thrown one included: the
@@ -1566,8 +1317,7 @@ reading `undefined` beyond an exact length.
 
 **Remaining source forms.** Assignment patterns into fields: each
 element's target reference (receiver, computed key) evaluated into slots
-before the position is read and defaulted, then a field write, where
-`arrayAssigns` writes locals only. A method call on a union of primitives,
+before the position is read and defaulted, then a field write, which the source parser restricts to local-variable targets. A method call on a union of primitives,
 which needs one callee contract its receiver meets. A source binder used both
 as a pack and as an array value (`...args: T`, `args: T`): a binder whose instances are
 arrays or tuples of required positions, its pack meaning that tuple contract's lists, so an

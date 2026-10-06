@@ -419,7 +419,7 @@ The result graph supplies the presence mode. Tuple contracts require `presence`
 with exactly `"dense"`, `"readable"` or `"sparse"`; there is no Boolean fallback.
 For argument packs it has no semantic effect; producers use the canonical
 `"dense"` and `readonly: false` metadata.
-These rules are available to calculus requests. The source exporter emits a
+These rules are available to calculus requests. The OCaml producer emits a
 combined callable/property type for one required `value` field on a function;
 other property shapes meet the cell refusal reasons.
 
@@ -647,7 +647,7 @@ Unused extra exported bindings, such as the implicit `this`, do not create local
 slots. Duplicate claim keys are rejected.
 
 Parameter slots follow source declaration order; local declarations push ahead
-of them. The exporter’s duplicate parameter signature must match source names,
+of them. The producer’s duplicate parameter signature must match source names,
 order and exact translated types. The request's `inputs` come from source
 annotations. A synthetic entry node carries those types and its outgoing edge
 must justify the first supplied statement environment. Narrowing a parameter in
@@ -799,9 +799,9 @@ Every function atom states its receiver in `"this"`: `unknown` for a signature
 indifferent to it, the `this` parameter's type otherwise. A receiver contract
 may be a record, lowered with its readonly members as views, so a method that
 writes through its receiver needs the field's write capability. There is no
-missing-field default. The exporter preserves the ordered list of free
+missing-field default. The producer preserves the ordered list of free
 parameters and the result, an optional parameter appearing as the union its
-contract admits. The TypeScript producer states a `this` parameter as the
+contract admits. The producer states a `this` parameter as the
 receiver. A rest parameter with a
 tuple contract of required positions is exported as those positions, which is
 what the signature has. A rest parameter whose contract is a mutable `T[]` is
@@ -810,8 +810,7 @@ it lowers to a variadic signature of the call clause, beside any fixed arrows
 of the same value, and a callable object may carry it. Arrow arguments and
 results
 may recursively union bounded function contracts with the
-supported primitives null, undefined, true and false, and semantic top (`unknown`). The tsc producer applies a depth limit when translating
-nested operands. No unsupported union alternative is discarded.
+supported primitives null, undefined, true and false, and semantic top (`unknown`). No unsupported union alternative is discarded.
 
 `Fragment.callableType` lowers every supported operand to graph labels.
 See [calls](DESIGN.md#calls) and the [trust surface](DESIGN.md#trust-surface) for the proof boundary.
