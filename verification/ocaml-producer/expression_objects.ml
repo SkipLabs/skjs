@@ -4,9 +4,14 @@ open Source
 open Type_queries
 open Proposal_diagnostics
 open Object_spread
-module Make (S : Analysis_state.Scope) = struct
-open Analysis_state.View(S)
-open Analysis_context.Make(S)
+module type Inputs = sig
+  include Expression_support.Inputs
+  include Analysis_capabilities.Path_queries
+  include Analysis_capabilities.Offer_operations
+  include Analysis_capabilities.Exact_allocations
+end
+module Make (S : Inputs) = struct
+open S
 module Support = Expression_support.Make(S)
 let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analysis_state.body_infer) ?expected env (e:Source.expr) =
   let site = e.pos in
@@ -26,13 +31,13 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
           | None,_ -> None in
         (match hint,e.node with
          | Some f,Literal LUndefined when f.optional && not (Semantic.admits_undefined f.read) ->
-           explain site ("an optional field given `undefined`: " ^ exact_optional_reason)
+           S.explain site ("an optional field given `undefined`: " ^ exact_optional_reason)
          | _ -> ());
         let inferred=expr ?expected env e in
         (* A method's closure offered further signatures is held at its own
            claim: a construct signature offering them reads them there. *)
         let widened = match e.node with
-          | Id m -> (match List.assoc_opt m (!local).Analysis_state.closures with
+          | Id m -> (match List.assoc_opt m (path_facts ()).Proposal_flow.closures with
             | Some (pos,_) -> List.mem_assoc pos offered | None -> false)
           | _ -> false in
         (* A literal's type widens in a mutable field, as TypeScript's fresh
@@ -51,7 +56,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
          for one is allocated at the dictionary itself, each field at its
          index's type. *)
       (match contract with
-       | _ when List.mem_assoc (Name proto_key) fs || List.mem e.pos (!local).Analysis_state.exact_allocs -> Atoms [Exact fields]
+       | _ when List.mem_assoc (Name proto_key) fs || List.mem e.pos (path_facts ()).Proposal_flow.exact_allocs -> Atoms [Exact fields]
        | Some {indexes=(_::_ as indexes);fields=contract_fields;_}
          when List.exists (fun (i:Semantic.index_signature) -> i.writable <> None) indexes ->
          (* The contract's optional fields it leaves out, which it lacks. *)
@@ -68,12 +73,12 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
                | Some t -> (try flat_atoms declarations t with Json.Error _ -> [])
                | None -> []) with
         | atoms when List.exists (function Shape {indexes=_::_;_} -> true | _ -> false) atoms ->
-          explain site ("a spread of a dictionary: " ^ dictionary_spread_reason)
+          S.explain site ("a spread of a dictionary: " ^ dictionary_spread_reason)
         | atoms when List.exists (function
             | Shape {fields;_} | Exact fields ->
               List.exists (fun (f:Semantic.field) -> not (string_key f) && not f.host) fields
             | _ -> false) atoms ->
-          explain site ("a spread of an object with a symbol-keyed property: " ^ symbol_copy_reason)
+          S.explain site ("a spread of an object with a symbol-keyed property: " ^ symbol_copy_reason)
         | _ -> ()) parts;
       let contract = Option.bind expected (object_hint declarations []) in
       (* A field is built at the type the contract names for it, else at its
@@ -124,7 +129,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
               | first :: (_ :: _ as others) -> List.exists (fun k ->
                   List.exists (fun s -> typed s k <> typed first k) others) written
               | _ -> false) alts
-          then explain site ("a spread with a written field that the arms of the expected union type \
+          then S.explain site ("a spread with a written field that the arms of the expected union type \
             differently: " ^ copy_field_reason);
           alts
         | _ -> alts in

@@ -1116,7 +1116,7 @@ equal amounts of effort.
 | M9. Node output and path scopes | done | named output records and scoped execution replace paired checkpoint callbacks and restore enclosing output and metadata on every exit |
 | M10. Overload-row claim scope | done | each signature collects its claims through one scoped operation with restoration on every exit |
 | M11. Typing-context scopes | done | block return context, observation roots, active point and rigid bounds have explicit scope operations |
-| M12. Remaining OCaml access restrictions | open | the seven expression modules, binding analysis, statement analysis and closure offers use responsibility-specific interfaces; their unrestricted pass-state views are retired |
+| M12. Remaining OCaml access restrictions | done | the seven expression modules, binding analysis, statement analysis and closure offers use responsibility-specific interfaces; their unrestricted pass-state views are retired |
 | M13. Lean lowering access restrictions | done | temporary contexts have scoped operations and consumers cannot access or replace the complete construction state |
 | M14. Documentation organization | open | calculus rules, source elaboration, host contracts, protocol definitions, architecture decisions and the work ledger have clear owners; large mixed-subject documents are split, prerequisites are explicit, and links resolve |
 

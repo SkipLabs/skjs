@@ -111,19 +111,20 @@ prologue for defaults; defaults represented as statements follow the body graph.
 Analysis state has explicit lifetimes. One producer run owns diagnostic
 observations shared by its functions and retries. Each function owns the
 candidate storage contracts passed between inference attempts. Each pass owns
-its environments, active bounds, closure offers and collected claims. The
-expression, binding and statement components share that pass state; the pass
-coordinator connects their recursive operations. Graph successors receive
-snapshots of path metadata, and node outputs retain the claims from the latest
-visit. These boundaries describe state ownership; the components still share
-mutable pass state. Components access it explicitly through `Analysis_state.View`;
-`Analysis_context.Make` composes their analysis operations. Execution analysis
-receives an explicit interface containing declarations, point-specific lookups
-and a branch-refinement operation. Its sealed input module exposes no pass-state
-record, references or shared tables; the adapter in `Analysis_context` owns
-access to the pass state. Claim collection receives lookup, publication and
-speculation operations through a sealed interface. The adapter associates each
-published claim with the active execution point.
+its environments, active bounds, closure offers and collected claims.
+`Analysis_state` hides that mutable storage behind an abstract type. The pass
+coordinator assembles component inputs from operations declared in
+[analysis_capabilities.ml](analysis_capabilities.ml); each component's `Inputs`
+signature selects its permitted queries, observations, proposals and scopes.
+Components receive immutable values and operations, without the state handle,
+shared references or indexing tables. The graph solver receives an owned copy
+of the node array; closure setup receives the entry point and binding prologue.
+
+Graph successors carry snapshots of path metadata, and node outputs retain
+the claims from the latest visit. Claim-publication operations associate each
+claim with the active execution point. Queries distinguish a claim at that
+point from the latest claim at a source span, since their consumers require
+different lookup semantics.
 
 Speculative inference copies one record containing collected claims, closure
 offers and path metadata. `Analysis_state.speculate` restores the enclosing

@@ -2,11 +2,14 @@ open Semantic
 open Environment
 open Source
 open Type_queries
-open Proposal_types
 open Object_spread
-module Make (S : Analysis_state.Scope) = struct
-open Analysis_state.View(S)
-open Analysis_context.Make(S)
+module type Inputs = sig
+  include Analysis_capabilities.Queries
+  include Analysis_capabilities.Execution_operations
+  include Analysis_capabilities.Expression_publication
+end
+module Make (S : Inputs) = struct
+open S
   let infer (expr:Analysis_state.expression_infer) initial plan =
     let rec input_names = function
       | Execution.Finish -> []
@@ -21,7 +24,7 @@ open Analysis_context.Make(S)
       | Some t -> t | None -> Json.fail "binding plan reads an unavailable saved value" in
     let put values saved t = (saved.Execution.id,t) :: List.remove_assoc saved.Execution.id values in
     let publish source t instantiation =
-      (!local).Analysis_state.expressions <- {point = (!local).Analysis_state.current_point;pos=source;type_=t;instantiation} :: (!local).Analysis_state.expressions in
+      publish_expression source t instantiation in
     let rec defined_slice truth t = match t with
       | Union alternatives -> combine (List.map (defined_slice truth) alternatives)
       | Atoms atoms -> combine (List.map (fun atom ->
@@ -35,7 +38,7 @@ open Analysis_context.Make(S)
         run env (put values value (binding_type (lookup initial name))) next
       | Execution.Evaluate (value,plan,next) ->
         let source=Execution.source plan in
-        let expression=match Hashtbl.find_opt expression_hints source with
+        let expression=match expression_hint source with
           | Some expression -> expression | None -> Json.fail "binding evaluation names missing expression" in
         let typing_env=match expression.node with
           | Lambda _ -> List.fold_left (fun scope name ->
@@ -54,7 +57,7 @@ open Analysis_context.Make(S)
         if absent=Atoms [] then run env (put values result present) next
         else
           let source=Execution.source fallback in
-          let expression=match Hashtbl.find_opt expression_hints source with
+          let expression=match expression_hint source with
             | Some expression -> expression | None -> Json.fail "binding default names missing expression" in
           let expected=if present=Atoms [] then None else Some present in
           let typing_env=match expression.node with
@@ -76,10 +79,10 @@ open Analysis_context.Make(S)
           | _ -> Value t in
         run (extend env name binding) values next
       | Execution.ReadField (_,receiver,field,value,next) ->
-        let t=field_type declarations [] (get values receiver) (Name field) in
+        let t=S.field_type declarations [] (get values receiver) (Name field) in
         run env (put values value t) next
       | Execution.ReadPosition (_,array,index,value,next) ->
-        let t=index_type declarations [] (get values array) (number_literal (string_of_int index)) in
+        let t=S.index_type declarations [] (get values array) (number_literal (string_of_int index)) in
         run (forget env) (put values value t) next
       | Execution.ObjectRest (source,receiver,drop,value,next) ->
         let drop=List.map (fun field -> Name field) drop in

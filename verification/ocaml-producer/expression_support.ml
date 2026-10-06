@@ -3,9 +3,14 @@ open Environment
 open Source
 open Type_queries
 open Proposal_diagnostics
-module Make (S : Analysis_state.Scope) = struct
-open Analysis_state.View(S)
-open Analysis_context.Make(S)
+module type Inputs = sig
+  include Analysis_capabilities.Queries
+  include Analysis_capabilities.Observations
+  include Analysis_capabilities.Environment_queries
+  include Analysis_capabilities.Speculation
+end
+module Make (S : Inputs) = struct
+open S
   let target_contract (expr:Analysis_state.expression_infer) env (target:expr) = match target.node with
     | Id n ->
       ignore (expr env target);
@@ -56,7 +61,7 @@ open Analysis_context.Make(S)
         | Named (id,_) -> List.mem id promises
         | _ -> false in
       if not (List.for_all settled (atoms [] actual)) then
-        explain e.pos (if n = "%Await%"
+        S.explain e.pos (if n = "%Await%"
           then "an await of a non-promise object, or of a value of a type parameter or `unknown`: " ^ thenable_reason
           else "the result of an async function that may be an object other than a promise: " ^ thenable_reason
             ^ "; the promise of an async function is settled to a primitive or adopts a promise of one")
@@ -65,7 +70,7 @@ open Analysis_context.Make(S)
      where every array would do. *)
   let explain_open_array site env n expected =
     match expected with
-    | Some x when List.mem n !open_array_tests ->
+    | Some x when List.mem n (observations ()).Analysis_capabilities.open_array_tests ->
       let any_array = function
         | Shape {elements=Some {required=[];optional_elements=[];rest=Some (Atoms [Top] | Rigid _);_};
                  fields=[];indexes=[];calls=[]} -> true
@@ -73,7 +78,7 @@ open Analysis_context.Make(S)
       let wanted = flat_atoms declarations x in
       let actual = try resolve env n with Json.Error _ -> Atoms [] in
       if wanted <> [] && List.for_all any_array wanted && actual = top
-      then explain site ("`unknown` used as an array after `Array.isArray`: " ^ open_array_reason)
+      then S.explain site ("`unknown` used as an array after `Array.isArray`: " ^ open_array_reason)
     | _ -> ()
   (* A record at an index signature, which TypeScript admits through an
      implicit index signature. *)
@@ -86,7 +91,7 @@ open Analysis_context.Make(S)
       let dictionary = function Shape {elements=None;calls=[];indexes=_::_;_} -> true | _ -> false in
       if actual <> [] && List.for_all record actual && List.exists dictionary wanted
          && not (List.exists (fun a -> record a || a = Top) wanted) then
-        explain site ("a record at an index signature: " ^ implicit_index_reason
+        S.explain site ("a record at an index signature: " ^ implicit_index_reason
           ^ (if mentions_closed declarations [] named then "; " ^ closed_reason else ""))
     | None -> ()
   (* A write at a key a dictionary may lack adds it. *)
@@ -97,7 +102,7 @@ open Analysis_context.Make(S)
         | Shape {indexes=_::_;elements=None;calls=[];fields;_} ->
           not (List.exists (fun (f:Semantic.field) -> f.name = field) fields)
         | _ -> false) atoms then
-      explain site ("a write adds the property '" ^ key_text field ^ "' where a dictionary may lack it: \
+      S.explain site ("a write adds the property '" ^ key_text field ^ "' where a dictionary may lack it: \
         another reference may hold the dictionary, and would see its keys change")
 
 end

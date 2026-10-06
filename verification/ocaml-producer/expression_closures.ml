@@ -3,27 +3,17 @@ open Environment
 open Source
 open Inference
 open Type_queries
-open Proposal_types
-module Make (S : Analysis_state.Scope) = struct
-open Analysis_state.View(S)
-open Analysis_context.Make(S)
+module type Inputs = sig
+  include Expression_support.Inputs
+  include Analysis_capabilities.Path_queries
+  include Analysis_capabilities.Instance_publication
+  include Analysis_capabilities.Claim_operations
+  include Analysis_capabilities.Closure_scope
+  val tails : Source.expr -> Json.t list
+end
+module Make (S : Inputs) = struct
+open S
 module Support = Expression_support.Make(S)
-let collect_overload_row_claims infer_row =
-  let saved_expressions = (!local).Analysis_state.expressions
-  and saved_entries = (!local).Analysis_state.entries
-  and saved_contracts = (!local).Analysis_state.contracts in
-  Fun.protect ~finally:(fun () ->
-    (!local).Analysis_state.expressions <- saved_expressions;
-    (!local).Analysis_state.entries <- saved_entries;
-    (!local).Analysis_state.contracts <- saved_contracts) (fun () ->
-      (!local).Analysis_state.expressions <- [];
-      (!local).Analysis_state.entries <- [];
-      (!local).Analysis_state.contracts <- [];
-      infer_row ();
-      {row_contracts=List.rev (!local).Analysis_state.contracts;
-       row_expressions=List.rev (!local).Analysis_state.expressions;
-       row_entries=List.rev (!local).Analysis_state.entries})
-
 let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:Analysis_state.body_infer) ?expected env (e:Source.expr) =
   match e.node with
     | Ctor {node=Lambda (None,[],ps,[],false,Some result,body);_} ->
@@ -32,14 +22,11 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
          what its contract admits. The class value's type is its construct
          signature. *)
       let inner = List.fold_left (fun env (n,t) -> extend env n (Value t)) (forget env) ps in
-      let fresh = (!local).Analysis_state.fresh_constructor in
-      (!local).Analysis_state.fresh_constructor <- false;
-      if fresh then (!local).Analysis_state.exact_allocs <- tails body @ (!local).Analysis_state.exact_allocs;
+      let fresh = prepare_constructor (tails body) in
       let allocated_type = match body.node with
         | BlockBody ss ->
-          let returned = ref [] in
-          ignore (infer_body body.pos (Some result) returned inner ss);
-          combine (List.rev !returned)
+          let _,returned = infer_body body.pos (Some result) inner ss in
+          combine (List.rev returned)
         | _ -> expr ~expected:result inner body in
       (* A class offered construct signatures giving other instances is
          claimed at them too, beside its own; Lean checks the body at each. *)
@@ -75,8 +62,7 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
                (List.map (expr env) args @ List.init missing (fun _ -> Atoms [Undef])) in
              inferred.substitution,inferred.result in
          instance_of callee substitution;
-         (!local).Analysis_state.instantiations <- (((!local).Analysis_state.current_point,e.pos),List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
-           substitution) :: (!local).Analysis_state.instantiations;
+         publish_substitution e.pos (List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t) substitution);
          result
        | Atoms [Ctors signatures] ->
          if types <> [] then Proposal_diagnostics.unsupported "explicit type arguments to a class that takes none";
@@ -126,17 +112,17 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
       let closure_bounds = List.filter_map (fun (q:Semantic.quantifier) -> match q.bound with
         | Some (ValueArgument b) when not (Semantic.mentions_rigid b) -> Some (q.identity,b)
         | Some (ValueArgument (Rigid t)) when t <> q.identity -> Some (q.identity,Rigid t)
-        | _ -> None) quantified @ !rigid_bounds in
+        | _ -> None) quantified @ rigid_bounds () in
       let infer_closure_body ?expected env = match body.node with
         | BlockBody _ -> expr ?expected env body
         | _ ->
-          let graph=match List.find_opt (fun (g:Flow.graph) -> g.Flow.owner=body.pos) flows with
-            | Some graph -> graph | None -> Json.fail "Lean supplied no graph for a closure expression body" in
-          Analysis_state.with_current_point S.state graph.Flow.nodes.(graph.Flow.entry).Flow.point (fun () ->
-            let env=match graph.Flow.prologue with None -> env | Some plan -> execute_bindings env plan in
+          let point,prologue=match closure_entry body.pos with
+            | Some entry -> entry | None -> Json.fail "Lean supplied no graph for a closure expression body" in
+          with_current_point point (fun () ->
+            let env=match prologue with None -> env | Some plan -> execute_bindings env plan in
             entry env body.pos;
             expr ?expected env body) in
-      let body_type = Analysis_state.with_rigid_bounds S.state closure_bounds (fun () ->
+      let body_type = with_rigid_bounds closure_bounds (fun () ->
         infer_closure_body ?expected:(if written <> None then written else contextual) inner) in
       (* Without a result annotation the result is the body's, widened as
          TypeScript widens an inferred return type, or the contextual return
@@ -167,10 +153,9 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
            | _ -> Proposal_diagnostics.unsupported "a rest parameter needs a tuple of required positions or an array")
         | [] -> Proposal_diagnostics.unsupported "a rest parameter needs a parameter" in
       let values = List.filter_map (fun (name,b) -> match b with
-        | Value _ -> Some name | Storage _ -> None) inner @ List.map fst module_functions in
+        | Value _ -> Some name | Storage _ -> None) inner @ module_names in
       let readable (a:expr) key =
-        match List.find_map (fun (p:expression) ->
-          if p.pos=a.pos then Some p.type_ else None) (!local).Analysis_state.expressions with
+        match latest_claim a.pos with
         | Some t -> (match declared_head declarations [] t with
           | Atoms [Shape shape] ->
             (shape.elements <> None && key=Name "length") ||
@@ -179,8 +164,7 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
           | _ -> false)
         | None -> false in
       let callable (callee:expr) =
-        match List.find_map (fun (p:expression) ->
-          if p.pos=callee.pos then Some p.type_ else None) (!local).Analysis_state.expressions with
+        match latest_claim callee.pos with
         | Some t -> (match declared_head declarations [] t with
           | Atoms [Shape {calls;fields=[];indexes=[];elements=None}] -> calls <> [] &&
             List.for_all (fun (s:signature) -> s.call_effect=PreservesInputHeap &&
@@ -244,7 +228,7 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
                env ps s.params in
              ignore (infer_closure_body ~expected:s.result env_row)) in
          let rows = List.map row calls in
-         (!local).Analysis_state.arrows <- (e.pos,rows) :: (!local).Analysis_state.arrows;
+         publish_arrow e.pos rows;
          contract
        | _ -> own)
     | _ -> Json.fail "expression dispatched to the wrong typing family"

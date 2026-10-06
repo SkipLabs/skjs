@@ -2,11 +2,18 @@ open Semantic
 open Source
 open Inference
 open Type_queries
-open Proposal_types
 open Proposal_diagnostics
-module Make (S : Analysis_state.Scope) = struct
-open Analysis_state.View(S)
-open Analysis_context.Make(S)
+module type Inputs = sig
+  include Expression_support.Inputs
+  include Analysis_capabilities.Path_queries
+  include Analysis_capabilities.Offer_operations
+  include Analysis_capabilities.Evolution
+  include Analysis_capabilities.Instance_publication
+  include Analysis_capabilities.Claim_operations
+  val observe_method_call : Json.t -> unit
+end
+module Make (S : Inputs) = struct
+open S
 module Support = Expression_support.Make(S)
 open Support
 let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analysis_state.body_infer) ?expected env (e:Source.expr) =
@@ -43,7 +50,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
       let no_type_arguments () = if type_args <> [] then
         Proposal_diagnostics.unsupported "explicit type arguments on a callee without binders" in
       let target = callee in
-      method_callees := callee.pos :: !method_callees;
+      observe_method_call callee.pos;
       (* A binder's value is called at its bound, as it is read there. *)
       let callee = match declared_head declarations [] (expr env callee) with
         | Rigid r -> (match rigid_bound r with
@@ -55,8 +62,8 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
       let receiver_type = match receiver, target.node with
         | Some r, _ -> expr env r
         | None, (Read (o,_) | Index (o,_)) when (match e.node with Invoke _ -> true | _ -> false) ->
-          (match List.find_opt (fun (x:expression) -> x.pos = o.pos) (!local).Analysis_state.expressions with
-           | Some x -> x.type_
+          (match latest_claim o.pos with
+           | Some t -> t
            | None -> Atoms [Undef])
         | None, _ -> Atoms [Undef] in
       (* A closure passed where a callback is offered more parameters than it
@@ -76,8 +83,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
           offered.call_effect=Unrestricted ||
           let known = match arg.node with
             | Id name -> quietly (fun () -> resolve env name)
-            | _ -> List.find_map (fun (p:expression) ->
-                if p.pos=arg.pos then Some p.type_ else None) (!local).Analysis_state.expressions in
+            | _ -> latest_claim arg.pos in
           match known with
           | Some (Atoms [Shape {calls;_}]) -> List.exists (fun (s:Semantic.signature) ->
               s.call_effect=offered.call_effect) calls
@@ -91,9 +97,9 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
           | _ -> None in
         match arg.node with
         | Lambda (_,[],ps,_,false,_,_) ->
-          Option.map (fun (t,_) () -> (!local).Analysis_state.instances <- (((!local).Analysis_state.current_point,arg.pos),t) :: (!local).Analysis_state.instances)
+          Option.map (fun (t,_) () -> publish_instance arg.pos t)
             (offered (List.length ps))
-        | Id n when List.mem_assoc n (!local).Analysis_state.closures ->
+        | Id n when List.mem_assoc n (path_facts ()).Proposal_flow.closures ->
           (match param with
            | Atoms [Shape {calls=[o];fields=[];indexes=[];elements=None}]
                when supplies_effect o -> closure_offer n o
@@ -101,8 +107,8 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
         (* A class value at a generic call's construct parameter, known only
            once the call's instance is: offered as where the parameter's type
            is expected. *)
-        | Id n when List.mem_assoc n (!local).Analysis_state.classes ->
-          Some (fun () -> offer_class (List.assoc n (!local).Analysis_state.classes) param)
+        | Id n when List.mem_assoc n (path_facts ()).Proposal_flow.classes ->
+          Some (fun () -> offer_class (List.assoc n (path_facts ()).Proposal_flow.classes) param)
         (* Any other named function is its annotated signature: one binding
            more parameters is not offered it. *)
         | Id n ->
@@ -111,7 +117,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
           (match param, (try Some (resolve env n) with Json.Error _ -> None) with
            | Atoms [Shape {calls=[o];_}], Some (Atoms [Shape {calls=[own];fields=[];indexes=[];elements=None}])
                when List.length o.params > List.length own.params || (o.variadic <> None && own.variadic = None) ->
-             explain arg.pos ("a named function where a signature binding more parameters is expected: "
+             S.explain arg.pos ("a named function where a signature binding more parameters is expected: "
                ^ module_arity_reason)
            | _ -> ());
           None
@@ -147,7 +153,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
          List.iteri (fun i e ->
            if List.mem i spreads then
              Option.iter (fun arm ->
-               explain (e:expr).pos ("a spread argument of " ^ arm ^ ": " ^ iteration_reason))
+               S.explain (e:expr).pos ("a spread argument of " ^ arm ^ ": " ^ iteration_reason))
                (non_array_arm declarations [] (expr env e))
            else match List.nth_opt params i with
              | Some p -> ignore (expr ~expected:p env e)
@@ -186,8 +192,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
          instance_of ~declared:callee target substitution;
          offer ~substitute:(Inference.substitute substitution) signature;
          if not (method_read target) then
-           (!local).Analysis_state.instantiations <- (((!local).Analysis_state.current_point,e.pos),List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
-             substitution) :: (!local).Analysis_state.instantiations;
+           publish_substitution e.pos (List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t) substitution);
          result
        | Atoms [Shape {calls=[signature];_}]
            when signature.quantified<>[] && signature.variadic<>None ->
@@ -219,8 +224,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
            (actuals @ List.init missing (fun _ -> Atoms [Undef])) in
          instance_of ~declared:callee target substitution;
          if not (method_read target) then
-         (!local).Analysis_state.instantiations <- (((!local).Analysis_state.current_point,e.pos),List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
-           substitution) :: (!local).Analysis_state.instantiations;
+         publish_substitution e.pos (List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t) substitution);
          result
        | _ ->
       let spread = spreads <> [] in
@@ -383,8 +387,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
         instance_of ~declared:callee target substitution;
         offer ~substitute:(Inference.substitute substitution) signature;
         if not (method_read target) then
-        (!local).Analysis_state.instantiations <- (((!local).Analysis_state.current_point,e.pos),List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
-          substitution) :: (!local).Analysis_state.instantiations;
+        publish_substitution e.pos (List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t) substitution);
         result
       (* Quantified overloads use the same proposal/validation split as one
          quantified signature. Type the actuals once, infer an instance for
@@ -424,8 +427,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
            instance_of ~declared:(Atoms [Shape {shape with calls=[s]}]) target substitution;
            offer ~substitute:(Inference.substitute substitution) s;
            if not (method_read target) then
-             (!local).Analysis_state.instantiations <- (((!local).Analysis_state.current_point,e.pos),List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
-               substitution) :: (!local).Analysis_state.instantiations;
+             publish_substitution e.pos (List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t) substitution);
            result
          | None,[] -> Proposal_diagnostics.unsupported "quantified overloads have no inferable arity-compatible instance")
       (* Several advertised signatures on one value. The actuals are built

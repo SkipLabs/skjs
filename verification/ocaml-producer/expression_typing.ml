@@ -6,23 +6,29 @@
 (* expression_calls.ml infers calls and method invocations with overload and generic-instance proposals. *)
 (* analysis_context.ml assembles the per-pass operations used by expression inference and its operation families. *)
 open Source
-open Proposal_types
-module Make (S : Analysis_state.Scope) = struct
-open Analysis_state.View(S)
-open Analysis_context.Make(S)
+module type Inputs = sig
+  include Expression_values.Inputs
+  include Expression_objects.Inputs
+  include Expression_properties.Inputs
+  include Expression_closures.Inputs
+  include Expression_calls.Inputs
+  include Analysis_capabilities.Typing_scope
+end
+module Make (S : Inputs) = struct
+open S
 module Values = Expression_values.Make(S)
 module Objects = Expression_objects.Make(S)
 module Properties = Expression_properties.Make(S)
 module Closures = Expression_closures.Make(S)
 module Calls = Expression_calls.Make(S)
   let infer expr execute_bindings body ?expected env (e:Source.expr) =
-    let saved_roots = !typing_roots in
-    let root=if (!local).Analysis_state.speculative_typing then None else match saved_roots with
-      | ((point,plan,_) as root) :: _ when point = (!local).Analysis_state.current_point && Execution.contains e.pos plan -> Some root
-      | _ -> Option.map (fun plan -> (!local).Analysis_state.current_point,plan,env)
-          (Hashtbl.find_opt executions ((!local).Analysis_state.current_point,e.pos)) in
+    let saved_roots = typing_roots () in
+    let root=if speculative_typing () then None else match saved_roots with
+      | ((point,plan,_) as root) :: _ when point = current_point () && Execution.contains e.pos plan -> Some root
+      | _ -> Option.map (fun plan -> current_point (),plan,env)
+          (execution_at e.pos) in
     let roots = match root with None -> saved_roots | Some root -> root :: saved_roots in
-    Analysis_state.with_typing_roots S.state roots (fun () ->
+    with_typing_roots roots (fun () ->
     let env=match root,e.node with
       | _,BlockBody _ | None,_ -> env
       | Some root,_ -> expression_entry root e.pos env in
@@ -42,7 +48,6 @@ module Calls = Expression_calls.Make(S)
     (* Block wrappers correspond to statement entries, not expression sites. *)
     (match e.node with
       | BlockBody _ -> ()
-      | _ -> (!local).Analysis_state.expressions <- {point = (!local).Analysis_state.current_point;pos=e.pos;type_=t;
-          instantiation=List.assoc_opt ((!local).Analysis_state.current_point,e.pos) (!local).Analysis_state.instantiations} :: (!local).Analysis_state.expressions); t)
+      | _ -> publish_expression e.pos t (instantiation_at e.pos)); t)
 
 end

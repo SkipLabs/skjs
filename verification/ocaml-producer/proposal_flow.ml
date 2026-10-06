@@ -22,7 +22,7 @@ type state = { env: environment; metadata: metadata }
    output payload is owned by the analysis and may contain nested body claims. *)
 type 'output callbacks = {
   snapshot_metadata: unit -> metadata;
-  restore_metadata: metadata -> unit;
+  with_path_metadata: 'result. metadata -> metadata -> (unit -> 'result) -> 'result;
   empty_output: 'output;
   with_output: 'result. string -> (unit -> 'result) -> 'result * 'output;
   publish_output: 'output -> unit;
@@ -38,18 +38,12 @@ type 'output callbacks = {
   iterator_step: Flow.node -> Source.stmt -> environment -> Flow.binding -> Flow.binding -> environment * environment;
 }
 
-(* The enclosing path is projected to its lexical bindings by the caller.
-   Node execution publishes successor snapshots while this scope restores that
-   enclosing metadata on normal return, refusal and unexpected exceptions. *)
-let with_path restore_metadata enclosing action =
-  Fun.protect ~finally:(fun () -> restore_metadata enclosing) action
-
 let unsupported s = Json.fail ("unsupported: " ^ s)
 
-let statements callbacks flows following owner_span env0 ss =
+let statements callbacks flow_graph register_following owner_span env0 ss =
     let open Flow in
     let spans = List.map (fun (s:Source.stmt) -> s.span) ss in
-    let graph = match List.find_opt (fun (g:Flow.graph) -> g.owner = owner_span) flows with
+    let graph = match flow_graph owner_span with
       | Some g -> g
       | None -> Json.fail "Lean supplied no control-flow graph for a body" in
     if graph.body_spans <> spans then Json.fail "Lean control-flow body disagrees with source statements";
@@ -57,7 +51,7 @@ let statements callbacks flows following owner_span env0 ss =
     let rec register ss =
       let rec following_statements = function
         | [] -> ()
-        | s :: rest -> Hashtbl.replace following s.span rest; following_statements rest in
+        | s :: rest -> register_following s.span rest; following_statements rest in
       following_statements ss;
       List.iter (fun (s:Source.stmt) ->
         Hashtbl.replace syntax s.span s;
@@ -86,7 +80,6 @@ let statements callbacks flows following owner_span env0 ss =
         classes=List.filter (fun (n,_) -> bound n) m.classes;
         objects=List.filter (fun (n,_) -> bound n) m.objects;
         fresh_constructor=m.fresh_constructor; exact_allocs=m.exact_allocs}} in
-    let restore state = callbacks.restore_metadata state.metadata; state.env in
     let join_env (node:Flow.node) left right =
       let left=scope node.scope left and right=scope node.scope right in
       let impossible env=List.exists (fun (n,b) -> not (is_field n) && binding_type b=Atoms []) env in
@@ -118,9 +111,9 @@ let statements callbacks flows following owner_span env0 ss =
     let publications=Array.make (Array.length graph.nodes) callbacks.empty_output in
     let transfer (node:Flow.node) state =
       let saved_metadata=capture env0 in
-      let edges,output=with_path callbacks.restore_metadata saved_metadata.metadata (fun () ->
+      let edges,output=callbacks.with_path_metadata saved_metadata.metadata state.metadata (fun () ->
         callbacks.with_output node.Flow.point (fun () ->
-      let env=restore state in
+      let env=state.env in
       let env=if node.Flow.id=graph.Flow.entry then
         match graph.Flow.prologue with None -> env | Some plan -> callbacks.execute_bindings env plan
         else env in
