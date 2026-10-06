@@ -79,7 +79,7 @@ const expectSubset = (what: string, names: Set<string>, from: Set<string>, allow
 // The SourceClaims document and its type table.
 {
   const ts = declared(["tools/source-claims.mts", "tools/type-graph.mts"]);
-  const leanNames = lean(["lean/Verification/Source/SourceClaimJson.lean",
+  const leanNames = lean(["lean/Verification/Source/SourceClaimWire.lean",
     "lean/Verification/Source/EquationLowering.lean"], true);
   expectSubset("OCaml writes of SourceClaims", ocamlWrites("ocaml-producer/claims.ml"), ts, {});
   expectSubset("SourceClaims fields Lean ignores", declared(["tools/source-claims.mts"]), leanNames, {

@@ -243,6 +243,17 @@ They share [construction state](lean/Verification/Source/LoweringState.lean);
 these module boundaries separate responsibilities but do not restrict access
 to individual state fields.
 
+The source-claims boundary has a [wire decoder](lean/Verification/Source/SourceClaimWire.lean),
+[scheme interpretation](lean/Verification/Source/SourceClaimSchemes.lean),
+[source-site validation](lean/Verification/Source/SourceClaimSites.lean), and
+[equation preparation](lean/Verification/Source/SourceClaimPreparation.lean).
+[Request extraction](lean/Verification/Source/SourceClaimExtraction.lean) combines
+them with typed lowering. [Plan certification](lean/Verification/Source/SourceClaimPlans.lean)
+requires every extracted plan to cross an exhaustive conversion before
+[the acceptance entry point](lean/Verification/Source/SourceClaimJson.lean)
+checks evidence. That entry point also owns the theorem connecting its exact
+success condition to safety of every accepted function.
+
 The main Lean entry points are:
 
 | Area | Entry points |
