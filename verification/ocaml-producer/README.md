@@ -103,8 +103,20 @@ choose callable signatures and infer generic instances. The execution plan
 supplies the environment at each observed child expression. Recursive source
 typing therefore uses the state appropriate to that child's evaluation, while
 the shared plan determines effects and which operands run. Closure bodies use
-their own graphs and capture contexts. Expression-bodied closures use a binding
+their own graphs and capture contexts. Each inference pass owns its active
+rigid-parameter bounds; a closure extends them for its body and restores the
+enclosing scope on success or refusal. Expression-bodied closures use a binding
 prologue for defaults; defaults represented as statements follow the body graph.
+
+Analysis state has explicit lifetimes. One producer run owns diagnostic
+observations shared by its functions and retries. Each function owns the
+candidate storage contracts passed between inference attempts. Each pass owns
+its environments, active bounds, closure offers and collected claims. The
+expression, binding and statement components share that pass state; the pass
+coordinator connects their recursive operations. Graph successors receive
+snapshots of path metadata, and node outputs retain the claims from the latest
+visit. These boundaries describe state ownership; the components still share
+mutable pass state.
 
 Lean's final lowering consumes the same plan builders, with the claims used
 for type-directed operations. It reconstructs plans from Fragment when checking
@@ -124,7 +136,11 @@ contents; it does not alter what may be stored over the cell's lifetime.
 The producer obtains contracts from annotations or inference. For evolving
 unannotated bindings initialized with `null`, `undefined` or an empty array,
 it collects candidate types from writes and repeats inference until those
-candidates settle. Initializers and every write remain Lean obligations.
+candidates settle. Each function owns its candidate contracts. A pass receives
+those candidates and returns the types collected from writes, including writes
+observed before a proposal refusal; the next pass can retry with larger
+candidates. Additional closure-signature inference retains the settled candidates.
+Initializers and every write remain Lean obligations.
 Mutable parameters use their annotated contracts. A contract is published
 separately from point states, keyed by the binding's initializer span and name;
 copies of a declaration in different control-flow paths must agree on it.
@@ -216,10 +232,44 @@ and [effect typing rules](../PROGRAM-TYPING.md#certifying-inferred-call-effects)
 | [semantic.ml](semantic.ml) | Immutable type, signature, field, sequence and pack representations. |
 | [environment.ml](environment.ml) | Value snapshots, fixed cell contracts and current facts. |
 | [inference.ml](inference.ml) | Call-local constraints, substitutions and candidate instances. |
-| [proposal.ml](proposal.ml) | Interpret plans, infer contextual types and assemble claims. |
+| [type_queries.ml](type_queries.ml) | Read-only declaration expansion, member queries and construction hints, with explicit rigid bounds. |
+| [proposal.ml](proposal.ml) | Coordinate function retries and module initialization, and assemble the program proposal. |
 | [claims.ml](claims.ml) | Serialize candidates and intern clause rows. |
 | [json.ml](json.ml) | Dependency-free JSON input and output. |
 | [producer.ml](producer.ml) | Command-line proposal and explanation entry points. |
+
+The proposal implementation separates these responsibilities:
+
+- **Pass coordination and state:** [analysis_pass.ml](analysis_pass.ml) connects
+  recursive expression, binding and body inference;
+  [analysis_state.ml](analysis_state.ml) owns the state they share.
+  [proposal_types.ml](proposal_types.ml) defines the candidate output records,
+  and [proposal_diagnostics.ml](proposal_diagnostics.ml) owns observations and
+  explanations for one run.
+- **Execution:** [proposal_flow.ml](proposal_flow.ml) applies graph actions and
+  manages path metadata and node outputs;
+  [statement_analysis.ml](statement_analysis.ml) supplies statement transfers.
+  [execution_analysis.ml](execution_analysis.ml) interprets expression schedules
+  and obtains the environment at each observation;
+  [binding_analysis.ml](binding_analysis.ml) interprets binding schedules.
+  [refinement.ml](refinement.ml) supplies guard and field refinements.
+- **Expression inference:** [expression_typing.ml](expression_typing.ml) chooses
+  the source form and its entry environment. It delegates to
+  [expression_values.ml](expression_values.ml),
+  [expression_objects.ml](expression_objects.ml),
+  [expression_properties.ml](expression_properties.ml),
+  [expression_closures.ml](expression_closures.ml) and
+  [expression_calls.ml](expression_calls.ml) for their corresponding forms.
+  [expression_support.ml](expression_support.ml) supplies assignment-target contracts,
+  constant assertions and failure explanations;
+  [analysis_context.ml](analysis_context.ml) combines binding lookup, execution,
+  closure offers and claim collection for those components.
+- **Construction and publication:** [object_spread.ml](object_spread.ml) computes
+  record alternatives for spreads; [closure_offers.ml](closure_offers.ml) gathers
+  additional signatures requested by closure uses;
+  [module_contract.ml](module_contract.ml) constructs the signatures visible to
+  module callers. [claim_collection.ml](claim_collection.ml) records entries
+  and instantiated member types and isolates speculative inference.
 
 Named recursive declarations retain their source identities. The producer can
 inspect their equations for inference, while the claims refer to declaration

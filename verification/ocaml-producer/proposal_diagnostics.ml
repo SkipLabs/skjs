@@ -1,0 +1,180 @@
+open Semantic
+open Source
+open Type_queries
+
+(* Diagnostic observations belong to one producer run. Its function analyses,
+   retries and closure bodies share this state; separate runs receive fresh
+   state. These observations explain proposals without changing acceptance. *)
+let unsupported s = Json.fail ("unsupported: " ^ s)
+
+type state = {
+  explaining : bool ref;
+  explanations : (Json.t * string) list ref;
+  (* Names introduced by for...in steps. *)
+  for_in_keys : string list ref;
+  (* Method reads used directly as callees. *)
+  method_callees : Json.t list ref;
+  (* Primitive shapes established for unknown or parameter-typed names. *)
+  shape_tests : (string * string) list ref;
+  (* Fields tested equal to undefined. *)
+  undefined_fields : (string * string) list ref;
+  (* Dictionary keys found present by an in test. *)
+  dictionary_keys : (string * string) list ref;
+  (* Unknown names whose values pass Array.isArray. *)
+  open_array_tests : string list ref;
+  (* Unknown names whose values pass a class instanceof test. *)
+  unknown_instance_tests : string list ref;
+}
+
+let create ?(explaining=false) () = {
+  explaining = ref explaining;
+  explanations = ref [];
+  for_in_keys = ref [];
+  method_callees = ref [];
+  shape_tests = ref [];
+  undefined_fields = ref [];
+  dictionary_keys = ref [];
+  open_array_tests = ref [];
+  unknown_instance_tests = ref [];
+}
+
+(* A run that explains a failed search (`producer --explain`): each form
+   whose failure has a known cause is recorded at its source span with its
+   reason, and the one at the failed obligation names it. An ordinary run
+   proposes these forms as any other, and Lean decides; an explanation only
+   names why it found no derivation. *)
+let explain state pos s =
+  if !(state.explaining) then state.explanations := (pos,s) :: !(state.explanations)
+let iteration_reason =
+  "the iteration of one host kind is stated (%Iterate:K%), picked where the whole iterable is of that \
+   kind: a union of host kinds has no one intrinsic (an iterable the program defines, or a union with \
+   one, runs the iterator protocol)"
+let array_or_record_reason =
+  "an array keeps its length in its store, not at a location a field of a record names, and an open record \
+   may be an array carrying other keys, so no rule reads `length` on a union of an array and a record"
+(* `length` read on a union of an array and an open record naming it: refused
+   by name. *)
+let refuse_length_union state declarations pos t name =
+  if name = Name "length" then
+    let atoms = flat_atoms declarations t in
+    let names_length = function
+      | Shape {elements=None;calls=[];fields;_} ->
+        List.exists (fun (f:Semantic.field) -> f.name = name) fields
+      | _ -> false in
+    if List.exists array_atom atoms && List.exists names_length atoms then
+      explain state pos ("a read of `length` on a union of an array and a record: " ^ array_or_record_reason)
+let module_arity_reason =
+  "its slot is its annotated signature, checked by its own unit, and the arity of an arrow is exact; \
+   offering it more parameters would make that slot a claim (DESIGN.md, \"Method members are host-relative\")"
+let for_in_key_reason =
+  "the read is the entry the loop's step visited only where nothing since the step can remove the key or \
+   change the object read (a call, a construction, a write of a property or of the object's name), and \
+   here something may have run, so the read may miss"
+let generic_instances_reason =
+  "the covering rule for quantified signatures relates two members up to renaming the target's binders to \
+   the source's: as many binders, of the same kinds, each target bound within the source's, and the source's \
+   signatures covering the target's renamed; members binding different numbers of binders need an instance \
+   table naming each source signature's image at the target's binders"
+(* SKJS's `Closed<T>`, which the SKJS environment declares as the identity
+   alias `T` (skjs-environment.d.ts). *)
+let closed_alias declarations id =
+  let suffix = "skjs-environment.d.ts#" in
+  let rec contains i = i + String.length suffix <= String.length id
+    && (String.sub id i (String.length suffix) = suffix || contains (i+1)) in
+  contains 0 && List.exists (fun (d:Source.declaration) -> d.id = id && match d.parameters,d.expression with
+    | [r],Rigid r' -> r = r'
+    | _ -> false) declarations
+(* Whether a type is, or names through its aliases, a `Closed<T>`. *)
+let rec mentions_closed declarations seen t = match t with
+  | Union ts -> List.exists (mentions_closed declarations seen) ts
+  | Atoms atoms -> List.exists (function
+      | Named (id,_) when closed_alias declarations id -> true
+      | Named (id,args) when not (List.mem id seen) ->
+        (match definition declarations id args with
+         | body -> mentions_closed declarations (id::seen) body
+         | exception Json.Error _ -> false)
+      | _ -> false) atoms
+  | Rigid _ | Meet _ -> false
+let implicit_index_reason =
+  "TypeScript admits a type literal whose named fields fit the index (an implicit index signature), but \
+   a value of it may carry other keys of any type, so it meets no index"
+let closed_reason =
+  "the pipeline reads `Closed<T>` as `T` (the SKJS environment states it so), which promises less than \
+   SKJS's closed type"
+let receiver_reason =
+  "that type admits a call passing any receiver, and the function requires its own"
+let invariance_reason =
+  "a writable element or field is invariant, as a write through the wider view would break the narrower \
+   one; TypeScript relates them covariantly, which is unsound, and SKJS infers the narrower from a \
+   later use"
+let shape_test_reason =
+  "the values of that shape are the meet of the type parameter with it (`T & number`, a meet row), \
+   but a tag test refines only clause rows, and no rule narrows a parameter row to that meet \
+   (`unknown` to a callable of no known signature)"
+let family_test_reason =
+  "the value is narrowed to that primitive family, and a tag test does not narrow a type parameter's \
+   row to its meet with the family, the `T & number` of TypeScript, so it is no longer read as a `T`"
+let object_cell_reason =
+  "a `let` without an initializer holds `undefined` until it is assigned, and is known to hold another \
+   value only where every path into the read assigned one, with no step between that may write it (a \
+   call, whose callee may write any location its operands reach)"
+let forgotten_cell_reason =
+  "a cell is known by its contract after a step that may write it (a call, whose callee may write any \
+   location its operands reach, as the model states no reachability; a closure run later; a throw from \
+   anywhere in a `try`)"
+let equality_reason =
+  "neither operand is known to be a primitive or an object, the kinds strict equality decides, and \
+   a value of a type parameter may be of any kind"
+let dictionary_spread_reason =
+  "the copy owns the keys the dictionary holds when it runs, which no type states: the result is a \
+   dictionary only where every part says what it gives under the index's keys, by an index or its \
+   exact keys"
+let dictionary_presence_reason =
+  "presence promotes an optional field of a record, not the index of a dictionary, so the read is \
+   still at the index, which may miss"
+let absent_key_reason =
+  "the key may be absent, and a read of an absent key is stated by no clause the model reads"
+let relational_reason =
+  "`<` converts such an operand to a number or a string first (`undefined` to NaN, an object through its \
+   `valueOf` or `toString`), and the comparison the model states is of two numbers or two strings, the primitive \
+   order; an index read past the end is `undefined`, where TypeScript types it as the element"
+let exact_optional_reason =
+  "the pipeline reads `f?: T` exactly, as absent or a `T` (as `exactOptionalPropertyTypes` does), \
+   where the default reading of TypeScript also admits a present `undefined`; `f?: T | undefined` states it"
+let thenable_reason =
+  "JavaScript adopts a thenable, calling its `then`, instead of settling to it, and a record type does \
+   not rule out a `then`, its own or one on its prototype (a `PromiseLike` is one), so the model admits only a \
+   realm promise or a primitive there"
+let symbol_copy_reason =
+  "the copy is stated at its string keys only, and JavaScript also copies an own enumerable \
+   symbol-keyed property, so the result states no symbol key"
+let copy_field_reason =
+  "the copy is allocated per pair of its operands' clauses at one record, and several arms of the expected \
+   union with the copy's keys type a written field apart (TypeScript types the literal per arm of the \
+   contextual union), so no one record meets them all, a writable field being invariant"
+let extraction_reason =
+  "a method is a member of its object, called with it as receiver, and read off it the function loses \
+   that receiver; TypeScript types the read as a function, which is unsound"
+(* Whether a read of `key` from a value of `t` finds a method: a host-relative
+   member of its record, or of the prototype it reads through. *)
+let method_member declarations t key =
+  let rec go depth t = depth < 4 && List.exists (function
+      | Shape {fields;_} | Exact fields ->
+        (match List.find_opt (fun (f:Semantic.field) -> f.name = key) fields with
+         | Some f -> f.host
+         | None -> List.exists (fun (f:Semantic.field) -> f.name = Name proto_key && go (depth+1) f.read) fields)
+      | _ -> false) (try flat_atoms declarations t with Json.Error _ -> []) in
+  go 0 t
+let mutable_tuple_length_reason =
+  "the length of a mutable tuple is not fixed by its type, since `push` is allowed on it (an unsoundness \
+   of TypeScript), so its `length` is a number"
+let open_array_reason =
+  "`Array.isArray(x)`, or `x instanceof Array`, on `unknown` finds that the value owns the store of an \
+   array, not that it is an array of `Array.prototype`: the array invariant is a fact of every record and \
+   dictionary type, and `unknown` is also the type a handler binds a thrown value at, of which the model \
+   states nothing"
+let unknown_instance_reason =
+  "`x instanceof C` does not narrow `unknown` to C: an object gets C's prototype without C's constructor \
+   running (`Object.create(C.prototype)`, `Object.setPrototypeOf`, `Reflect.construct` with C as the new \
+   target), so C's prototype on its chain is no evidence of C's fields, and the model assumes it of no value \
+   a unit receives"

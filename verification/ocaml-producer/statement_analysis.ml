@@ -1,0 +1,317 @@
+(* proposal_flow.ml solves the shared statement graph while preserving scopes, exception edges and node publications. *)
+open Semantic
+open Environment
+open Source
+open Inference
+open Type_queries
+open Proposal_types
+open Proposal_diagnostics
+module Make (S : Analysis_state.Scope) = struct
+open Analysis_context.Make(S)
+let transfer (expr:Analysis_state.expression_infer) =
+  let after e env = effects env e in
+  (* The statements following each statement of a block, by its span. *)
+  let rec mentions n (e:expr) =
+    (match e.node with Id m -> m = n | _ -> false) || List.exists (mentions n) (Source.children e) in
+  let rec stmt_mentions n (s:stmt) = match s.statement with
+    | Declare (_,bs) -> List.exists (fun (_,_,e) -> mentions n e) bs
+    | Destructure (p,d,e) -> List.exists (mentions n) (e :: Option.to_list d @ pattern_defaults p)
+    | Return e | Effect e | Throw e -> mentions n e
+    | If (c,a,b) -> mentions n c || List.exists (stmt_mentions n) (a @ b)
+    | While (c,b,u) -> mentions n c || List.exists (stmt_mentions n) (b @ u)
+    | Block (_,b) -> List.exists (stmt_mentions n) b
+    | ForOf (_,_,_,e,b) -> mentions n e || List.exists (stmt_mentions n) b
+    | Try (b,h,f) -> List.exists (stmt_mentions n)
+      (b @ (match h with Some (_,h) -> h | None -> []) @ Option.value f ~default:[])
+    | Closing (c,b) -> List.exists (stmt_mentions n) (b @ c)
+    | Break _ | Continue -> false in
+  (* Whether [n] may reach a place other than the receiver of its own member
+     reads and writes, as Lean's `escapesExpr` reads it: a binding, a field,
+     an argument or the receiver of a call, a result, a closure. *)
+  let rec escapes n (e:expr) = match e.node with
+    | Id m -> m = n
+    | Read ({node=Id _;_},_) -> false
+    | Index ({node=Id _;_},key) -> escapes n key
+    | Write ({node=Id _;_},_,rhs) -> escapes n rhs
+    | IndexWrite ({node=Id _;_},key,rhs) -> escapes n key || escapes n rhs
+    | Invoke ({node=Read ({node=Id m;_},_);_},args,_,_) -> m = n || List.exists (escapes n) args
+    | ObjectAssign ({node=Id _;_},sources) -> List.exists (escapes n) sources
+    | Lambda _ | Ctor _ -> mentions n e
+    | _ -> List.exists (escapes n) (Source.children e) in
+  (* Whether a statement among [ss] adds a key other than [keys] to the
+     object [n] names: `n.k = e` or `n["k"] = e`. *)
+  let rec grows_later n keys ss = List.exists (fun (s:stmt) -> match s.statement with
+    | Effect {node=Write ({node=Id m;_},Name k,_);_}
+    | Effect {node=IndexWrite ({node=Id m;_},{node=Literal (LString k);_},_);_} ->
+      m = n && not (List.mem (Name k) keys)
+    | Effect {node=ObjectAssign ({node=Id m;_},_::_);_} -> m = n
+    | If (_,a,b) -> grows_later n keys a || grows_later n keys b
+    | Block (_,b) -> grows_later n keys b
+    | Try (b,h,f) -> grows_later n keys (b @ (match h with Some (_,h) -> h | None -> [])
+        @ Option.value f ~default:[])
+    | _ -> false) ss in
+  (* The first use of an unannotated constant's fresh array, in the
+     statements after its declaration: where it is the whole value expected
+     at a type (an annotated constant's initializer, a returned value, an
+     argument of a call to a function of one plain signature), that type;
+     any other first use, none. `None` where it is not used. *)
+  let rec first_use env n rest = Option.join (List.find_map Fun.id (uses env n rest))
+  (* Each statement's use of the constant: `Some` of where its first
+     mention in the statement is the whole value expected at a type, as
+     [first_use] reads it. *)
+  and uses env n rest =
+    let rec sink expected (e:expr) = match e.node with
+      | Id m when m = n -> Some expected
+      | Call ({node=Id g;_},None,args,[],[]) when g <> n ->
+        let params = match (try declared_head declarations [] (resolve env g) with Json.Error _ -> Atoms []) with
+          | Atoms [Shape {calls=[s];_}] when s.quantified=[] && s.variadic=None && s.rest_pack=None -> s.params
+          | _ -> [] in
+        List.find_map Fun.id (List.mapi (fun i a -> sink (List.nth_opt params i) a) args)
+      | _ -> List.find_map (sink None) (Source.children e) in
+    let at (s:stmt) = match s.statement with
+      | Declare (_,bs) -> List.find_map (fun (_,written,e) -> sink written e) bs
+      | Return e -> sink !block_result e
+      | Effect e -> sink None e
+      | _ -> if stmt_mentions n s then Some None else None in
+    List.map at rest in
+  let transfer_statement env s =
+    (* A grown local's exact keys are claimed only where nothing else can
+       reach its object: from the first statement that may let it escape on
+       (but a `return` of it, after which the body runs nothing), it is its
+       record, so no other reference, and no callee that may add a key to a
+       writable dictionary, learns which keys it lacks. *)
+    let env = List.fold_left (fun env n ->
+      let escaping = match s.statement with
+        | Return {node=Id _;_} -> false
+        | _ -> List.exists (escapes n) (Source.statement_children s) in
+      if not escaping then env else begin
+        exact_locals := List.filter ((<>) n) !exact_locals;
+        List.map (fun (m,b) -> match b with
+          | Value (Atoms atoms) when m = n -> m,Value (Atoms (List.map (function
+              | Exact fields -> Shape {fields;indexes=[];calls=[];elements=None}
+              | a -> a) atoms))
+          | Value (Union ts) when m = n -> m,Value (Union (List.map (function
+              | Atoms atoms -> Atoms (List.map (function
+                  | Exact fields -> Shape {fields;indexes=[];calls=[];elements=None}
+                  | a -> a) atoms)
+              | t -> t) ts))
+          | _ -> m,b) env
+      end) env !exact_locals in
+    match s.statement with
+    | Declare (mutable_,[(n,written,init)]) ->
+      if String.ends_with ~suffix:".[[class]]" n then fresh_constructor := true;
+      (* An unannotated constant's fresh array is built at the array type its
+         first use expects it at, where that use is one (SKJS commits such a
+         literal there; TypeScript widens it at the declaration, and refuses
+         the use when that differs). A proposal: Lean checks the elements
+         against it and every use against the binding. *)
+      let committed = match mutable_,written,init.node with
+        | false,None,ArrayLiteral (_::_) ->
+          (match first_use env n (Option.value (Hashtbl.find_opt following s.span) ~default:[]) with
+           | Some t -> (match (try declared_head declarations [] t with Json.Error _ -> t) with
+             | Atoms atoms when atoms <> [] && List.for_all (function
+                 | Shape {elements=Some _;_} -> true | _ -> false) atoms -> Some t
+             | _ -> None)
+           | None -> None)
+        | _ -> None in
+      (* An evolving binding (TypeScript's evolving `any`): an unannotated
+         `let` of `null` or `undefined` holds what is assigned to it, an
+         unannotated `[]` the elements written into it. Its contract is the
+         union of those, TypeScript's evolved type: a proposal, which Lean
+         checks at every write. *)
+      evolving := List.remove_assoc n !evolving;
+      let committed = match written,init.node with
+        | None,ArrayLiteral [] ->
+          evolving := (n,(init.pos,true)) :: !evolving;
+          Some (array {required=[];optional_elements=[];rest=Some (evolved init.pos);readonly=false;presence=Readable})
+        | None,Literal (LNull | LUndefined) when mutable_ ->
+          evolving := (n,(init.pos,false)) :: !evolving; committed
+        | _ -> committed in
+      (* A constant's object literal to which a later statement of its
+         block adds a key is claimed with its exact keys: the bound says
+         which keys it lacks, so a key added on one path only is optional
+         where the paths join. *)
+      exact_locals := List.filter ((<>) n) !exact_locals;
+      (match mutable_,written,init.node with
+       | false,None,Alloc fs when grows_later n (List.map fst fs)
+             (Option.value (Hashtbl.find_opt following s.span) ~default:[]) ->
+         exact_allocs := init.pos :: !exact_allocs;
+         exact_locals := n :: !exact_locals
+       (* A constant's object literal used whole where a type with an
+          optional field it leaves out is expected is claimed with its exact
+          keys, as a literal written there would be: the bound is what says
+          it lacks the key. Not where it is also used as a writable
+          dictionary. A proposal: Lean checks the bound at the allocation
+          and every use against it. *)
+       | false,None,Alloc fs ->
+         let lacks_optional t = match object_hint declarations [] t with
+           | Some {fields;indexes=[];_} -> List.exists (fun (f:Semantic.field) ->
+               f.optional && not f.host && not (List.mem_assoc f.name fs)) fields
+           | _ -> false in
+         (* A holder of a writable dictionary some value meets may add
+            keys, so no view learns from the bound which it lacks. *)
+         let writable_dictionary t = match object_hint declarations [] t with
+           | Some {indexes;_} -> List.exists (fun (i:Semantic.index_signature) ->
+               match i.writable with Some (Atoms []) | None -> false | Some _ -> true) indexes
+           | None -> false in
+         let used = uses env n (Option.value (Hashtbl.find_opt following s.span) ~default:[]) in
+         if List.exists (function Some (Some t) -> lacks_optional t | _ -> false) used
+            && not (List.exists (function Some (Some t) -> writable_dictionary t | _ -> false) used) then
+           exact_allocs := init.pos :: !exact_allocs
+       | _ -> ());
+      let initial = expr ?expected:(if committed <> None then committed else written) env init in
+      if not mutable_ then named_closure n written init;
+      let binding = match mutable_,written with
+        (* TypeScript's declared type for an unannotated `let`: its
+           initializer's type, widened, or an evolving one's evolved type.
+           Lean checks the initializer and every assignment against it. *)
+        | true,None ->
+          (match init.node with
+           | Literal (LNull | LUndefined) -> cell (union (widen initial) (evolved init.pos))
+           | _ -> cell (widen initial))
+        (* An annotated `let` is its cell's first assignment: TypeScript
+           narrows the declared type to what was assigned, and the cell
+           holds the initializer's value, as after an assignment statement. *)
+        | true,Some contract -> holding contract initial
+        (* A class's annotation is its own construct signature, which the
+           parser writes; the class value's claim may offer more. *)
+        | false,Some _ when (match init.node with Ctor _ -> true | _ -> false) -> Value initial
+        (* A closure offered further signatures holds them beside its
+           annotation's: the binding is the closure, claimed at all of them,
+           which Lean checks against the annotation. *)
+        | false,Some _ when List.mem_assoc init.pos offered -> Value initial
+        | false,Some contract -> Value (retain_call_effects
+            (assigned_arms declarations (arms declarations contract) init) initial)
+        (* An unannotated constant of a named union is held at its arms, as
+           an annotated one is: a guard then keeps or drops each. *)
+        | false,None -> Value (arms declarations initial) in
+      (match binding with
+       | Storage (contract,_) ->
+         let candidate = { pos = init.pos; name = n; type_ = contract } in
+         (match List.find_opt (fun (c:contract) -> c.pos = init.pos && c.name = n) !contracts with
+          | None -> contracts := candidate :: !contracts
+          | Some c when c.type_ = contract -> ()
+          | Some _ -> Proposal_diagnostics.unsupported "a storage contract differs across executions of its declaration")
+       | Value _ -> ());
+      extend (after init env) n binding
+    | Declare _ -> Json.fail "a declaration flow operation requires one binding"
+    (* The initializer, then each binding in pattern order: a property at its
+       field's read, an element at its position's, a rest at the tuple of the
+       positions from its index on, claimed at its span; a default, which
+       sees the earlier bindings, replaces the read's undefined slice. *)
+    | Destructure _ -> Json.fail "destructuring requires its shared binding schedule"
+    | Return e -> !block_returned := expr ?expected:!block_result env e :: !(!block_returned); env
+    (* An assignment statement leaves the cell holding the value written;
+       `n ??= rhs`, the value it yields. *)
+    (* `Object.assign(o, …)` on a local: the local holds the copies. *)
+    | Effect ({node=ObjectAssign ({node=Id n;_},_);_} as e)
+      when (match List.assoc_opt n env with Some (Value _) -> true | _ -> false) ->
+      let t = expr env e in
+      let env = after e env in
+      grown_locals := n :: !grown_locals;
+      List.map (fun (m,b) -> if m=n then m,Value t else m,b) env
+    | Effect ({node=Write ({node=Id n;_},_,_) | IndexWrite ({node=Id n;_},_,_);_} as e)
+      when (match List.assoc_opt n env with Some (Value _) -> true | _ -> false) ->
+      let t = binding_type (lookup env n) in
+      let c = expr env e in
+      let claimed (x:expr) = List.find_map (fun (y:expression) ->
+        if y.pos = x.pos then Some y.type_ else None) !expressions in
+      let receiver,name = match e.node with
+        | Write (r,name,_) -> r,Some name
+        | IndexWrite (r,key,_) -> r,(match claimed key with Some (Atoms [StrLit k]) -> Some (Name k) | _ -> None)
+        | _ -> e,None in
+      let before = env in
+      let env = after e env in
+      (match name with
+       | Some name when adds before receiver t name ->
+         grown_locals := n :: !grown_locals;
+         List.map (fun (m,b) -> if m=n then m,Value (grown declarations t name c) else m,b) env
+       | _ -> env)
+    | Effect e -> ignore (expr env e); after e env
+    | If _ | While _ | Block _ | ForOf _ | Try _ | Closing _ | Break _ | Continue ->
+      Json.fail "a structured statement occurs as an atomic flow operation"
+    | Throw e -> ignore (expr env e); after e env  in
+  transfer_statement
+
+let statements (expr:Analysis_state.expression_infer) execute_bindings owner_span env ss =
+  let transfer_statement = transfer expr in
+  let after e env = effects env e in
+  let flow_callbacks = {
+    Proposal_flow.snapshot_metadata=(fun () -> {
+      Proposal_flow.evolving= !evolving; grown_locals= !grown_locals;
+      exact_locals= !exact_locals; closures= !closures; classes= !classes;
+      objects= !objects; fresh_constructor= !fresh_constructor; exact_allocs= !exact_allocs});
+    restore_metadata=(fun (m:Proposal_flow.metadata) ->
+      evolving := m.Proposal_flow.evolving; grown_locals := m.Proposal_flow.grown_locals;
+      exact_locals := m.Proposal_flow.exact_locals; closures := m.Proposal_flow.closures; classes := m.Proposal_flow.classes;
+      objects := m.Proposal_flow.objects; fresh_constructor := m.Proposal_flow.fresh_constructor; exact_allocs := m.Proposal_flow.exact_allocs);
+    empty_output=([],[],[],[],[],[],[]);
+    begin_output=(fun point ->
+      let saved=(!current_point,!entries,!expressions,!contracts,!arrows,!requests,!instances,!instantiations) in
+      entries := []; expressions := []; contracts := []; arrows := []; requests := [];
+      instances := []; instantiations := []; current_point := point; saved);
+    finish_output=(fun (point,es,xs,cs,rs,qs,its,substs) ->
+      let output=(!entries,!expressions,!contracts,!arrows,!requests,!instances,!instantiations) in
+      entries := es; expressions := xs; contracts := cs; arrows := rs; requests := qs;
+      instances := its; instantiations := substs; current_point := point; output);
+    publish_output=(fun (es,xs,cs,rs,qs,its,substs) ->
+      entries := es @ !entries; expressions := xs @ !expressions;
+      arrows := rs @ !arrows; requests := qs @ !requests;
+      instances := its @ !instances; instantiations := substs @ !instantiations;
+      List.iter (fun (c:contract) ->
+        match List.find_opt (fun (other:contract) -> other.pos=c.pos && other.name=c.name) !contracts with
+        | None -> contracts := c :: !contracts
+        | Some other when other.type_=c.type_ -> ()
+        | Some _ -> Proposal_diagnostics.unsupported "a storage contract differs across executions of its declaration") cs);
+    statement=transfer_statement;
+    execute_bindings;
+    expression=(fun env e -> expr env e);
+    expression_effects=after;
+    branch;
+    return_expression=(fun env e -> expr ?expected:!block_result env e);
+    returned=(fun t -> !block_returned := t :: !(!block_returned));
+    entry;
+    iterator_start=(fun (node:Flow.node) (s:Source.stmt) env (b:Flow.binding) ->
+      let span=s.span in
+          let iterate,iterable=match s.statement with ForOf (_,_,i,e,_) -> i,e
+            | _ -> Json.fail "an iterator flow operation names another statement" in
+          (match iterable.node,s.statement with
+           | Call ({node=Id "%ForIn%";_},_,_,_,_),ForOf (name,_,_,_,_) ->
+             for_in_keys := name :: !for_in_keys
+           | _ -> ());
+          let actual=expr env iterable in
+          if iterate="%Iterate%" then Option.iter (fun arm ->
+            explain s.span ("a for...of loop over " ^ arm ^ ": " ^ iteration_reason))
+            (non_array_arm declarations [] actual);
+          let signature=match declared_head declarations [] (resolve env iterate) with
+            | Atoms [Shape {calls=[s];_}] -> s
+            | _ -> Proposal_diagnostics.unsupported ("a for...of loop needs the " ^ iterate ^ " intrinsic") in
+          let result,substitution=if signature.quantified=[] then signature.result,[] else
+            let inferred=Inference.infer ~receiver:(Atoms [Undef]) signature [actual] in
+            inferred.result,inferred.substitution in
+          expressions := {point=node.Flow.point;pos=span;type_=result;
+            instantiation=if substitution=[] then None else
+              Some (List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t) substitution)} :: !expressions;
+          extend (forget env) b.Flow.name (Value result));
+    iterator_step=(fun (node:Flow.node) (s:Source.stmt) env (b:Flow.binding) (element:Flow.binding) ->
+          let name,name_pos=match s.statement with ForOf (n,p,_,_,_) -> n,p
+            | _ -> Json.fail "an iterator step names another statement" in
+          let t=match declared_head declarations [] (binding_type (lookup env b.Flow.name)) with
+            | Atoms [Shape {calls=[{params=[];result;_}];_}] ->
+              let yielded=match result with Union ts -> ts | t -> [t] in
+              let values=List.concat_map (fun t -> match declared_head declarations [] t with
+                | Atoms atoms -> List.filter_map (function
+                  | Shape {fields;_} -> List.find_map (fun (f:Semantic.field) ->
+                    if f.name=Name "value" then Some f.read else None) fields
+                  | _ -> None) atoms
+                | _ -> []) yielded in
+              (match values with [t] -> t | _ -> Proposal_diagnostics.unsupported "an iterator step yields no one value")
+            | _ -> Proposal_diagnostics.unsupported "an iterator gives no step" in
+          ignore name;
+          expressions := {point=node.Flow.point;pos=name_pos;type_=t;instantiation=None} :: !expressions;
+          extend (forget env) element.Flow.name (Value t),forget env);
+  } in
+  let statements = Proposal_flow.statements flow_callbacks flows following in
+  statements owner_span env ss
+
+end

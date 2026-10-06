@@ -14,7 +14,7 @@ type ty = Atoms of atom list | Rigid of rigid | Union of ty list
             parameter of the declaration, `T & { readonly [k: string]: Json }`,
             or another declaration, and it is kept, its principal operand
             first, until the application: there it is the one object its
-            operands describe where they are records (`Proposal.definition`),
+            operands describe where they are records (`Type_queries.definition`),
             and otherwise the whole intersection, with every operand retained. In a function's
             annotation, a binder met with other types (`T & U`, `T & "fixed"`)
             is claimed as the meet row of its operands (`Claims`). *)

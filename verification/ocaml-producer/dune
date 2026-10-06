@@ -5,7 +5,14 @@
 (library
  (name producer_core)
  (wrapped false)
- (modules json semantic environment execution flow source inference proposal claims))
+ (modules
+  json semantic environment execution flow
+  source inference type_queries proposal_types proposal_diagnostics
+  refinement object_spread module_contract analysis_state closure_offers
+  execution_analysis claim_collection analysis_context expression_support expression_values
+  expression_objects expression_properties expression_closures expression_calls expression_typing
+  binding_analysis proposal_flow statement_analysis analysis_pass proposal
+  claims))
 
 (executable
  (name producer)

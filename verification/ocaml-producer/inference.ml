@@ -13,7 +13,7 @@ let unsupported s = Json.fail ("unsupported: " ^ s)
 
 (* [meet] rebuilds an intersection of a declaration's equation (`Meet`) once
    its operands are substituted: by default it stays one, for the
-   declaration's expansion to resolve (`Proposal.definition`). *)
+   declaration's expansion to resolve (`Type_queries.definition`). *)
 let rec substitute ?meet solution = function
   | Rigid identity as original ->
     (match List.assoc_opt identity solution with

@@ -1,8 +1,9 @@
+(* proposal_types.ml defines the candidate records that inference supplies for SourceClaims serialization. *)
 open Json
+open Proposal_types
 open Semantic
 open Environment
 open Source
-open Proposal
 (* A property key as the claim wire spells it: the decoding of
    `Source.property_key`. *)
 let key_json = function
@@ -40,7 +41,7 @@ let rec label_json = function
   | Binder name -> Object ["binder",String name]
 and labels_json ls = Array (List.map label_json ls)
 
-let encode (proposal : Proposal.t) =
+let encode (proposal : Proposal_types.t) =
   (* The table holds the producer's own rows: the four primitives, then each
      clause row it states, interned structurally. *)
   let declarations = proposal.program.declarations in
@@ -361,32 +362,32 @@ let encode (proposal : Proposal.t) =
                   "current",(if fields = [] then Null else Array fields)])) bs)
 
   in
-  let contracts row = Array (List.map (fun (c : Proposal.contract) ->
+  let contracts row = Array (List.map (fun (c : Proposal_types.contract) ->
     Object ["pos",c.pos;"name",String c.name;"type",claim_type c.type_]) row) in
-  let interior (f : Proposal.function_claim) =
-    let expressions row = Array (List.map (fun (e : Proposal.expression) ->
+  let interior (f : Proposal_types.function_claim) =
+    let expressions row = Array (List.map (fun (e : Proposal_types.expression) ->
       Object (["point",String e.point; "pos",e.pos; "type",claim_type e.type_; "current",Null]
         @ instantiate e.instantiation)) row) in
-    let entries es = Array (List.map (fun (e : Proposal.entry) ->
+    let entries es = Array (List.map (fun (e : Proposal_types.entry) ->
       Object ["point",String e.point; "start",e.start;"bindings",bindings e.bindings]) es) in
     let arrows = if f.arrows = [] then [] else
       ["arrows",Array (List.map (fun (pos,rows) ->
-        Object ["pos",pos;"rows",Array (List.map (fun (o : Proposal.overlay) ->
+        Object ["pos",pos;"rows",Array (List.map (fun (o : Proposal_types.overlay) ->
           Object ["contracts",contracts o.row_contracts;"expressions",expressions o.row_expressions;
                   "entries",entries o.row_entries]) rows)]) f.arrows)] in
     ["contracts",contracts f.contracts;"entries",entries f.entries; "expressions",expressions f.expressions] @ arrows in
-  let functions = List.map (fun (f : Proposal.function_claim) ->
+  let functions = List.map (fun (f : Proposal_types.function_claim) ->
     let source = f.source in
-    let expressions row = Array (List.map (fun (e : Proposal.expression) ->
+    let expressions row = Array (List.map (fun (e : Proposal_types.expression) ->
       Object (["point",String e.point; "pos",e.pos; "type",claim_type e.type_; "current",Null]
         @ instantiate e.instantiation)) row) in
     (* One set of interior claims per advertised signature, in signature order,
        stated only by a closure that advertises more than one. *)
-    let entries es = Array (List.map (fun (e : Proposal.entry) ->
+    let entries es = Array (List.map (fun (e : Proposal_types.entry) ->
       Object ["point",String e.point; "start",e.start;"bindings",bindings e.bindings]) es) in
     let arrows = if f.arrows = [] then [] else
       ["arrows",Array (List.map (fun (pos,rows) ->
-        Object ["pos",pos;"rows",Array (List.map (fun (o : Proposal.overlay) ->
+        Object ["pos",pos;"rows",Array (List.map (fun (o : Proposal_types.overlay) ->
           Object ["contracts",contracts o.row_contracts;"expressions",expressions o.row_expressions;
                   "entries",entries o.row_entries]) rows)]) f.arrows)] in
     Object (["name",String source.name; "namePos",source.name_pos;
