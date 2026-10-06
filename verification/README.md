@@ -222,9 +222,11 @@ acceptance — and one interface so a later certificate can replace it.
 
 The source boundary starts in
 [Fragment.lean](lean/Verification/Source/Fragment.lean) and
-[SourceExtraction.lean](lean/Verification/Source/SourceExtraction.lean);
-[RequestJson.lean](lean/Verification/Source/RequestJson.lean) checks the
-resulting requests and evidence.
+[SourceExtraction.lean](lean/Verification/Source/SourceExtraction.lean).
+[SourceFacts.lean](lean/Verification/Source/SourceFacts.lean) supplies assignment
+and ownership analyses; [SourceRequests.lean](lean/Verification/Source/SourceRequests.lean)
+checks source interfaces and obligations using the graph evidence that
+[RequestJson.lean](lean/Verification/Source/RequestJson.lean) validates.
 
 The main Lean entry points are:
 
