@@ -228,6 +228,21 @@ and ownership analyses; [SourceRequests.lean](lean/Verification/Source/SourceReq
 checks source interfaces and obligations using the graph evidence that
 [RequestJson.lean](lean/Verification/Source/RequestJson.lean) validates.
 
+Typed lowering is organized around three recursive operations: compiling an
+expression, a binding schedule, or a statement body.
+[SourceExtraction.lean](lean/Verification/Source/SourceExtraction.lean) connects
+them through [explicit callbacks](lean/Verification/Source/LoweringCallbacks.lean)
+and constructs each function request. Separate modules handle
+[closure code](lean/Verification/Source/LoweringClosures.lean),
+[expression proofs](lean/Verification/Source/LoweringExpression.lean),
+[atomic operations](lean/Verification/Source/LoweringAtoms.lean),
+[operand schedules](lean/Verification/Source/LoweringExecution.lean),
+[bindings](lean/Verification/Source/LoweringBindings.lean), and
+[control flow](lean/Verification/Source/LoweringFlow.lean).
+They share [construction state](lean/Verification/Source/LoweringState.lean);
+these module boundaries separate responsibilities but do not restrict access
+to individual state fields.
+
 The main Lean entry points are:
 
 | Area | Entry points |
