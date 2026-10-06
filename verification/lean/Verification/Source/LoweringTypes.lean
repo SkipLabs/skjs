@@ -116,7 +116,7 @@ rest. -/
 
 @[nospecialize] def exprType (fc : SourceClaims.Function Tree) (e : Fragment.Expr) : Compiler (Ty Tree) := do
   if let .var _ name := e then
-    if let some T := (← get).executionTypes.lookup name then return T
+    if let some T := (← executionType name) then return T
   claimAt fc e.span
 
 /-- The store type of an array claim: the type of its store field, held
@@ -153,7 +153,7 @@ keys bounded to them, the type `alloc` gives before it is read as an array. -/
   let label ← lower (SourceTypes.use (.refs [(SourceTypes.storeField, S),
     (SourceTypes.protoField, [StoreView.arrayProto (← table)])] [] [] [] []
     [⟨true, [SourceTypes.storeField, SourceTypes.protoField]⟩]))
-  modify fun s => {s with hints := label :: s.hints}
+  recordHints [label]
   return [label]
 
 /-- The slot holding `Array.prototype` in a scope. -/
@@ -172,14 +172,14 @@ program mentions. -/
 @[nospecialize] def indexTerm (j : Nat) : Compiler Tm := do
   let b := bitsOfNat j
   let label ← lower (SourceTypes.use (.numLit b))
-  modify fun s => {s with hints := label :: s.hints}
+  recordHints [label]
   return .num b
 
 @[nospecialize] def arrayKeyTerm (K : Ty Tree) : Compiler Tm := do
   let k ← arrayIndex (SourceTypes.graph (← table)) K
   let b := bitsOfNat k
   let label ← lower (SourceTypes.use (.numLit b))
-  modify fun s => {s with hints := label :: s.hints}
+  recordHints [label]
   return .num b
 
 /-- The type a binary operator's value is claimed at before it meets the
@@ -215,11 +215,11 @@ each is refused. The constant's singleton is interned and offered to search. -/
   if bigint then
     if op == .plus then throw (located ++ "unary + on a bigint throws a TypeError")
     let label ← lower (SourceTypes.use (.bigintLit factor))
-    modify fun s => {s with hints := label :: s.hints}
+    recordHints [label]
     return (arith, .bigint factor, [label], .bigintLit)
   let b := (if factor < 0 then -1.0 else 1.0 : Float).toBits
   let label ← lower (SourceTypes.use (.numLit b))
-  modify fun s => {s with hints := label :: s.hints}
+  recordHints [label]
   return (arith, .num b, [label], .numLit)
 
 /-- The operand of `key in o`, whose test (`Tag.hasKey`) asks whether the
@@ -471,7 +471,7 @@ negation. -/
       let T ← table
       let refuse := fun {α : Type} (reason : String) =>
         (throw (locatedRefusal T p .expressionClaim reason) : Compiler α)
-      if !(← get).grows.contains p then
+      if !(← growthSites).contains p then
         refuse "a write at a key known only at run time may add the key to an object another reference holds, which would see the object's keys change: a key-adding write is typed only on a local's own fresh object that nothing else has reached"
       if (keySingletons G K).isSome then
         refuse "a key-adding write at one of several literal keys is not lowered: it needs a dispatch on the key, one copy of the object per key"

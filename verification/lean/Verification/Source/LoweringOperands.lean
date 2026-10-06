@@ -39,7 +39,7 @@ for the synthetic copy. -/
     throw (locatedRefusal (← table) call.span .bindingAnnotation
       "a spread copied before a later actual runs needs a rest element type that admits `undefined`")
   let C ← lower (SourceTypes.use (.list ⟨[], [], some E, false, .dense⟩ []))
-  modify fun st => { st with hints := C :: st.hints }
+  recordHints [C]
   return [C]
 
 @[nospecialize] private def compileSpreadSnapshot (fc : SourceClaims.Function Tree)

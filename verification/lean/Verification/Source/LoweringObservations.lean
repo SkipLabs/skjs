@@ -21,7 +21,7 @@ private def cannotThrow : Tm → Bool
 read from the thrown value's (0) and from the `try`'s scope, which the node's
 scope ends with, past the node's own `Γ.length - n` inner slots. -/
 @[nospecialize] private def nodeHandler (Γ : List (Ty Tree)) (t : Tm) : Compiler (Option Target) := do
-  match (← get).handler with
+  match ← currentHandler with
   | none => return none
   | some (entry, n) =>
     if cannotThrow t then return none
@@ -34,11 +34,7 @@ scope ends with, past the node's own `Γ.length - n` inner slots. -/
 @[nospecialize] def emit (t : Tm) (k : Continuation) (Γ : List (Ty Tree)) (A : Ty Tree) :
     Compiler Target := do
   let handler ← nodeHandler Γ t
-  let s : Built ← get
-  set { s with program := s.program ++ [(⟨t,k,handler⟩ : ControlFlow.Node)]
-               claims := s.claims ++ [(⟨Γ,A⟩ : PointClaim Tree)]
-               sourceMap := s.sourceMap ++ [none] }
-  return ⟨s.program.length, none⟩
+  appendNode ⟨t,k,handler⟩ ⟨Γ,A⟩
 
 /-- Record this node's source map entry. Explanatory only; never part of the
 certified request. The context must be describable binding for binding: a
@@ -52,8 +48,7 @@ so it fails here rather than reaching a message. -/
     throw s!"internal extraction error: source map covers {scope.length} of {Γ.length} bindings at {pos.1}"
   if let some b := scope.find? (!·.source.describes) then
     throw s!"internal extraction error: undescribed binding '{b.source.name}' at {pos.1}"
-  modify fun s =>
-    { s with sourceMap := s.sourceMap.set target.label (some ⟨pos,role,environmentStart,sources scope⟩) }
+  recordNodeSource target ⟨pos,role,environmentStart,sources scope⟩
   return target
 
 /-- The fields every record of a type names: where each of its clauses is a
@@ -69,7 +64,7 @@ claim, joins the search's known evidence, so the node is not searched. -/
 @[nospecialize] def emitPlanned (pos : Span) (plan : DirectProof.Plan Tree) (k : Continuation)
     (Γ : List (Ty Tree)) (A : Ty Tree) (role : String := "node-typing")
     (scope : List (ScopeBinding Tree) := []) : Compiler Target := do
-  modify fun s => { s with nodePlans := s.nodePlans ++ [DirectProof.cast Γ A plan] }
+  recordNodePlan (DirectProof.cast Γ A plan)
   emitAt pos plan.term k Γ A role (scope := scope)
 
 /-- The cells this lowering allocated sit at locations no other object in
@@ -114,7 +109,7 @@ justify its supplied current-heap assertion, including backedges. -/
   let links := if entry.isSome then distinctLinks G scope Γ else []
   if facts.isEmpty && links.isEmpty then return next
   let t ← emitAt pos .nul (.effect next) Γ [Labels.nul] "heap-observation" entry scope
-  modify fun s => { s with assertions := s.assertions ++ [(t.label,⟨facts,[],links⟩)] }
+  recordAssertion t ⟨facts,[],links⟩
   return t
 
 @[nospecialize] def contents (A : Ty Tree) : Compiler (List HeapFacts.Atom) := do
@@ -132,7 +127,7 @@ justify its supplied current-heap assertion, including backedges. -/
     throw s!"internal extraction error: source map covers {scope.length} of {j.context.length} bindings at {pos.1}"
   if scope.any (!·.source.describes) then
     throw s!"internal extraction error: undescribed binding at {pos.1}"
-  modify fun s => { s with obligations := s.obligations ++ [⟨pos,j,plan,role,sources scope⟩] }
+  recordObligation ⟨pos,j,plan,role,sources scope⟩
 
 /-- Ordinary lambda proofs cannot retain transient heap observations across
 calls. Require their declared storage contract to imply such an observation

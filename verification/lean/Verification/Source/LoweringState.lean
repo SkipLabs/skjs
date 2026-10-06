@@ -71,7 +71,7 @@ itself whether a name denotes a value or a location. -/
 
 /-- State local to one compiled graph. A closure begins with an empty frame
 and restores its enclosing frame as a whole. -/
-structure GraphFrame where
+private structure GraphFrame where
   program : Program := []
   /-- Computed types of saved execution-plan values, scoped to their bindings. -/
   executionTypes : List (String × Ty Tree) := []
@@ -97,7 +97,7 @@ structure GraphFrame where
   handler : Option (Target × Nat) := none
 
 /-- Equation growth, obligations and nested code are shared across graph frames. -/
-structure Built extends GraphFrame where
+private structure Built extends GraphFrame where
   /-- The graph under construction: the claims' table, grown by annotations. -/
   types : EquationStore.State
   flowTargets : List (Nat × Target) := []
@@ -127,21 +127,198 @@ def locatedRefusal (T : EquationStore.State) (pos : Span)
      ("sourceMap",toJson (SourceMapEntry.mk pos role.wire none [])),
      ("reason",toJson reason),("fuel",toJson 0)] ++ (StoreView.projection T []).fields)
 
-abbrev Compiler := StateT Built (Except String)
+/-- Lowering actions compose through their operations. The constructor and raw
+runner belong to this module; consumers have no general state instance. -/
+structure Compiler (α : Type) where
+  private mk ::
+  private run : StateT Built (Except String) α
 
-/-- Compile a graph in a fresh frame. Successful shared-state updates survive;
-the enclosing graph frame is restored. A failure returns no state. -/
-def withFreshGraph (action : Compiler α) : Compiler α := fun before => do
-  let (value, after) ← action { before with toGraphFrame := {} }
-  return (value, { after with toGraphFrame := before.toGraphFrame })
+/-- Partial lowering functions have a failure action at every result type. -/
+instance : Inhabited (Compiler α) := ⟨⟨fun _ => .error ""⟩⟩
 
-@[nospecialize] def table : Compiler EquationStore.State := do return (← get).types
+instance : Monad Compiler where
+  pure a := ⟨fun s => .ok (a,s)⟩
+  bind action next := ⟨fun s => do
+    let (a,s) ← action.run s
+    (next a).run s⟩
 
-@[nospecialize] def lower (m : SourceTypes.Lowering α) : Compiler α := do
-  let s ← get
-  let (a, T) ← m.run s.types
-  set { s with types := T }
-  return a
+instance : MonadExceptOf String Compiler where
+  throw reason := ⟨fun _ => .error reason⟩
+  tryCatch action handler := ⟨fun s =>
+    match action.run s with
+    | .ok result => .ok result
+    | .error reason => (handler reason).run s⟩
+
+instance : MonadLift (Except String) Compiler where
+  monadLift action := ⟨fun s => do return (← action,s)⟩
+
+private def readBuilt (f : Built → α) : Compiler α := ⟨fun s => .ok (f s,s)⟩
+
+private def updateBuilt (f : Built → Built) : Compiler Unit := ⟨fun s => .ok ((),f s)⟩
+
+/-- The scope owner restores precisely its temporary fields. Shared successful
+updates survive; a failure carries no state, and a catch resumes at its entry. -/
+private def scopeState (enter : Built → Built) (restore : Built → Built → Built)
+    (action : Compiler α) : Compiler α := ⟨fun before => do
+  let (value,after) ← action.run (enter before)
+  return (value,restore before after)⟩
+
+/-- Compile a graph in a fresh frame and resume the enclosing graph frame. -/
+def withFreshGraph (action : Compiler α) : Compiler α :=
+  scopeState (fun before => { before with toGraphFrame := {} })
+    (fun before after => { after with toGraphFrame := before.toGraphFrame }) action
+
+@[nospecialize] def table : Compiler EquationStore.State := readBuilt (·.types)
+
+@[nospecialize] def lower (m : SourceTypes.Lowering α) : Compiler α := ⟨fun s => do
+  let (a,T) ← m.run s.types
+  return (a,{ s with types := T })⟩
+
+/-- Saved values and their predicate aliases at one execution-plan continuation. -/
+structure ExecutionBindings where
+  types : List (String × Ty Tree)
+  origins : List (String × Fragment.Expr)
+
+def executionBindings : Compiler ExecutionBindings :=
+  readBuilt fun s => ⟨s.executionTypes,s.executionOrigins⟩
+
+def executionType (name : String) : Compiler (Option (Ty Tree)) :=
+  readBuilt fun s => s.executionTypes.lookup name
+
+def executionOrigins : Compiler (List (String × Fragment.Expr)) := readBuilt (·.executionOrigins)
+
+/-- A saved binding's computed type is visible for its continuation. -/
+def withExecutionType (name : String) (A : Ty Tree) (action : Compiler α) : Compiler α :=
+  scopeState (fun s => { s with executionTypes := (name,A)::s.executionTypes })
+    (fun before after => { after with executionTypes := before.executionTypes }) action
+
+/-- A branch's saved values and aliases are visible within that branch. -/
+def withExecutionBindings (bindings : ExecutionBindings) (action : Compiler α) : Compiler α :=
+  scopeState (fun s => { s with executionTypes := bindings.types, executionOrigins := bindings.origins })
+    (fun before after => { after with
+      executionTypes := before.executionTypes
+      executionOrigins := before.executionOrigins }) action
+
+def withExecutionOrigins (origins : List (String × Fragment.Expr)) (action : Compiler α) : Compiler α :=
+  scopeState (fun s => { s with executionOrigins := origins })
+    (fun before after => { after with executionOrigins := before.executionOrigins }) action
+
+/-- An atom is prepared by its execution plan or names a saved plan value. -/
+def isPreparedAtom (e : Fragment.Expr) : Compiler Bool := readBuilt fun s =>
+  s.atomicPrepared || (match e with
+    | .var _ name => (s.executionTypes.lookup name).isSome
+    | _ => false)
+
+def originalExpression : Compiler (Option Fragment.Expr) := readBuilt (·.executionOriginal)
+def savedReceiver : Compiler (Option String) := readBuilt (·.executionReceiver)
+def ownedWrite : Compiler (Option Span) := readBuilt (·.executionOwned)
+
+def withPreparedAtom (original : Fragment.Expr) (action : Compiler α) : Compiler α :=
+  scopeState (fun s => { s with atomicPrepared := true, executionOriginal := some original })
+    (fun before after => { after with
+      atomicPrepared := before.atomicPrepared
+      executionOriginal := before.executionOriginal }) action
+
+def withSavedInvocation (original : Fragment.Expr) (receiver : String)
+    (action : Compiler α) : Compiler α :=
+  scopeState (fun s => { s with
+      atomicPrepared := true
+      executionOriginal := some original
+      executionReceiver := some receiver })
+    (fun before after => { after with
+      atomicPrepared := before.atomicPrepared
+      executionOriginal := before.executionOriginal
+      executionReceiver := before.executionReceiver }) action
+
+/-- The ownership gate covers one source statement's elaboration. -/
+def withOwnedWrite (source : Span) (enabled : Bool) (action : Compiler α) : Compiler α :=
+  scopeState (fun s => if enabled then { s with executionOwned := some source } else s)
+    (fun before after => { after with executionOwned := before.executionOwned }) action
+
+/-- Every throwing node emitted in the scope names this handler. -/
+def withHandler (handler : Option (Target × Nat)) (action : Compiler α) : Compiler α :=
+  scopeState (fun s => { s with handler := handler })
+    (fun before after => { after with handler := before.handler }) action
+
+def currentHandler : Compiler (Option (Target × Nat)) := readBuilt (·.handler)
+
+/-- A recursive source body owns its memo of cyclic graph entries. -/
+def withFreshFlowTargets (action : Compiler α) : Compiler α :=
+  scopeState (fun s => { s with flowTargets := [] })
+    (fun before after => { after with flowTargets := before.flowTargets }) action
+
+def flowTarget (id : Nat) : Compiler (Option Target) := readBuilt fun s => s.flowTargets.lookup id
+
+def rememberFlowTarget (id : Nat) (target : Target) : Compiler Unit :=
+  updateBuilt fun s => { s with flowTargets := (id,target)::s.flowTargets }
+
+def growthSites : Compiler (List Span) := readBuilt (·.grows)
+
+/-- Node allocation appends its claim and source-map slot at the same index. -/
+def appendNode (node : ControlFlow.Node) (claim : PointClaim Tree) : Compiler Target := ⟨fun s =>
+  .ok (⟨s.program.length,none⟩,{ s with
+    program := s.program ++ [node]
+    claims := s.claims ++ [claim]
+    sourceMap := s.sourceMap ++ [none] })⟩
+
+def recordNodeSource (target : Target) (source : SourceMapEntry) : Compiler Unit :=
+  updateBuilt fun s => { s with sourceMap := s.sourceMap.set target.label (some source) }
+
+/-- Complete a reserved cyclic entry with its already elaborated successor. -/
+def completeFlowEntry (reserved target : Target) : Compiler Unit :=
+  updateBuilt fun s => { s with program := s.program.set reserved.label ⟨.nul,.effect target,none⟩ }
+
+def recordAssertion (target : Target) (knowledge : HeapKnowledge.Knowledge) : Compiler Unit :=
+  updateBuilt fun s => { s with assertions := s.assertions ++ [(target.label,knowledge)] }
+
+def recordCut (target : Target) : Compiler Unit :=
+  updateBuilt fun s => { s with cuts := target.label::s.cuts }
+
+def recordObligation (required : ExpressionClaims.Required Tree) : Compiler Unit :=
+  updateBuilt fun s => { s with obligations := s.obligations ++ [required] }
+
+def recordNodePlan (plan : DirectProof.Plan Tree) : Compiler Unit :=
+  updateBuilt fun s => { s with nodePlans := s.nodePlans ++ [plan] }
+
+def recordHints (labels : List Tree) : Compiler Unit :=
+  updateBuilt fun s => { s with hints := labels ++ s.hints }
+
+/-- A nested code request and its source account occupy the same table index. -/
+def recordCode (request : CodeRequest Tree) (source : CodeSource) : Compiler Unit :=
+  updateBuilt fun s => { s with codes := s.codes ++ [request], codeSources := s.codeSources ++ [source] }
+
+/-- Read-only outputs of one compiled graph. -/
+structure LoweredGraph where
+  program : Program
+  claims : List (PointClaim Tree)
+  source : CodeSource
+
+private def graphOutput (s : Built) : LoweredGraph :=
+  ⟨s.program,s.claims,⟨s.sourceMap,s.assertions,s.cuts⟩⟩
+
+def graphResult : Compiler LoweredGraph := readBuilt graphOutput
+
+/-- Extraction receives the graph and shared outputs through this projection. -/
+structure LoweringResult extends LoweredGraph where
+  types : EquationStore.State
+  obligations : List (ExpressionClaims.Required Tree)
+  hints : List Tree
+  codes : List (CodeRequest Tree)
+  codeSources : List CodeSource
+  nodePlans : List (DirectProof.Plan Tree)
+
+/-- Run one source unit with its equation table and admitted ownership sites. -/
+def runCompiler (types : EquationStore.State) (grows : List Span) (action : Compiler α) :
+    Except String (α × LoweringResult) := do
+  let (value,s) ← action.run { types := types, grows := grows }
+  return (value,{
+    toLoweredGraph := graphOutput s
+    types := s.types
+    obligations := s.obligations
+    hints := s.hints
+    codes := s.codes
+    codeSources := s.codeSources
+    nodePlans := s.nodePlans })
 
 end
 end Verification.SourceExtraction

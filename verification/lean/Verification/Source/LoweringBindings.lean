@@ -62,11 +62,9 @@ set_option maxHeartbeats 1000000
     (k : List (ScopeBinding Tree) → List (Ty Tree) → Compiler Target) : Compiler Target := do
   let save := fun (source : Span) (value : SourceExecution.Saved) (T : Ty Tree)
       (term : Tm) (next : SourceExecution.BindingPlan) => do
-    let previous := (← get).executionTypes
-    modify fun s => { s with executionTypes := (value.name,T)::s.executionTypes }
     let bound : ScopeBinding Tree := { source := ⟨value.name,some value.source⟩, fixed := some T }
-    let next ← executeBindingPlan recursive fc original wanted (bound::scope) (T::Γ) next k
-    modify fun s => { s with executionTypes := previous }
+    let next ← withExecutionType value.name T
+      (executeBindingPlan recursive fc original wanted (bound::scope) (T::Γ) next k)
     emitAt source term (.bind next) Γ T "pattern-read" (scope := scope)
   match plan with
   | .finish =>
@@ -84,12 +82,9 @@ set_option maxHeartbeats 1000000
   | .evaluate value plan next =>
     LoweringExecution.executePlanTail recursive fc scope Γ plan fun scope' Δ _ => do
       let some T := Δ.head? | throw "internal binding plan: no evaluated value"
-      let previous := (← get).executionTypes
-      modify fun s => { s with executionTypes := (value.name,T)::s.executionTypes }
       let bound : ScopeBinding Tree := { source := ⟨value.name,some value.source⟩, fixed := some T }
-      let result ← executeBindingPlan recursive fc original wanted (bound::scope'.tail) Δ next k
-      modify fun s => { s with executionTypes := previous }
-      pure result
+      withExecutionType value.name T
+        (executeBindingPlan recursive fc original wanted (bound::scope'.tail) Δ next k)
   | .bind name origin value next =>
     if name == "undefined" then throw "shadowing undefined is outside the fragment"
     if (names wanted).contains name then
@@ -127,12 +122,10 @@ set_option maxHeartbeats 1000000
       save source value (← claimAt fc source) (← sliceCall scope i start) next
     else
       let (store,S,R) ← restArray fc T i start source
-      let previous := (← get).executionTypes
-      modify fun s => { s with executionTypes := (value.name,R)::s.executionTypes }
       let stored := held ⟨"",some source⟩ :: scope
       let bound : ScopeBinding Tree := { source := ⟨value.name,some value.source⟩, fixed := some R }
-      let target ← executeBindingPlan recursive fc original wanted (bound::stored) (R::S::Γ) next k
-      modify fun s => { s with executionTypes := previous }
+      let target ← withExecutionType value.name R
+        (executeBindingPlan recursive fc original wanted (bound::stored) (R::S::Γ) next k)
       let proto ← prototypeSlot stored
       let object ← emitAt source (arrayTerm proto) (.bind target) (S::Γ) R "pattern-rest" (scope := stored)
       emitAt source store (.bind object) Γ S "pattern-rest" (scope := scope)
@@ -144,25 +137,22 @@ set_option maxHeartbeats 1000000
     let absent := BranchRefinement.tagSlice G R .isUndef true
     let D ← LoweringExecution.executionPlanType fc scope Γ fallback
     let T := (present ++ D).eraseDups
-    let previous := (← get).executionTypes
-    modify fun s => { s with executionTypes := (result.name,T)::s.executionTypes }
     let resultBinding : ScopeBinding Tree := { source := ⟨result.name,some result.source⟩, fixed := some T }
-    let joined ← executeBindingPlan recursive fc original wanted (resultBinding::scope) (T::Γ) next k
-    modify fun s => { s with executionTypes := previous }
+    let joined ← withExecutionType result.name T
+      (executeBindingPlan recursive fc original wanted (resultBinding::scope) (T::Γ) next k)
     let mapping := (joined.mapping.getD (List.range (Γ.length+1))).map
       (fun j => if j == 0 then 0 else j+1)
     let presentBinding : ScopeBinding Tree := { source := ⟨value.name,some value.source⟩, fixed := some present }
     let yes ← emitAt value.source (.var 0) (.bind ⟨joined.label,some mapping⟩)
       (present::Γ) T "pattern-default-join" (scope := presentBinding::scope)
     let absentBinding : ScopeBinding Tree := { source := ⟨value.name,some value.source⟩, fixed := some absent }
-    modify fun s => { s with executionTypes := (value.name,absent)::previous }
-    let no ← LoweringExecution.executePlanTail recursive fc (absentBinding::scope) (absent::Γ) fallback fun inner Δ _ => do
-      let extra := Δ.length - Γ.length
-      let mapping := (joined.mapping.getD (List.range (Γ.length+1))).map
-        (fun j => if j == 0 then 0 else j+extra)
-      emitAt result.source (.var 0) (.bind ⟨joined.label,some mapping⟩)
-        Δ T "pattern-default-join" (scope := inner)
-    modify fun s => { s with executionTypes := previous }
+    let no ← withExecutionType value.name absent do
+      LoweringExecution.executePlanTail recursive fc (absentBinding::scope) (absent::Γ) fallback fun inner Δ _ => do
+        let extra := Δ.length - Γ.length
+        let mapping := (joined.mapping.getD (List.range (Γ.length+1))).map
+          (fun j => if j == 0 then 0 else j+extra)
+        emitAt result.source (.var 0) (.bind ⟨joined.label,some mapping⟩)
+          Δ T "pattern-default-join" (scope := inner)
     emitAt value.source (.var i) (.tagBind .isUndef no yes) Γ R
       "pattern-default-dispatch" (scope := scope)
 

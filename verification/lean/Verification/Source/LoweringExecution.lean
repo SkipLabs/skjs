@@ -67,7 +67,7 @@ set_option maxHeartbeats 1000000
   match operation with
   | .evaluate original prepared _ => do
     if let .var _ name := prepared then
-      if let some A := (← get).executionTypes.lookup name then return A
+      if let some A := (← executionType name) then return A
     executionClaim fc original.span (exprType fc prepared)
   | .methodRead .. | .invokeSaved .. => LoweringAtoms.methodPlanType fc scope Γ operation
   | .snapshotSpread .. | .snapshotObject .. => snapshotPlanType fc scope Γ operation
@@ -113,22 +113,16 @@ set_option maxHeartbeats 1000000
   | .atom _ operation => executionOperationType fc scope Γ operation
   | .sequence _ binding evaluate next =>
     let A ← executionPlanType fc scope Γ evaluate
-    let previous := (← get).executionTypes
-    modify fun s => { s with executionTypes := (binding.name, A) :: s.executionTypes }
     let scope := { source := ⟨binding.name, some binding.source⟩, fixed := some A : ScopeBinding Tree } :: scope
-    let result ← executionPlanType fc scope (A::Γ) next
-    modify fun s => { s with executionTypes := previous }
-    return result
+    withExecutionType binding.name A (executionPlanType fc scope (A::Γ) next)
   | .choose source _ _ binding evaluate yes no =>
     executionClaim fc source (do
       let A ← executionPlanType fc scope Γ evaluate
-      let previous := (← get).executionTypes
-      modify fun s => { s with executionTypes := (binding.name, A) :: s.executionTypes }
       let scope := { source := ⟨binding.name, some binding.source⟩, fixed := some A : ScopeBinding Tree } :: scope
-      let Y ← executionPlanType fc scope (A::Γ) yes
-      let N ← executionPlanType fc scope (A::Γ) no
-      modify fun s => { s with executionTypes := previous }
-      pure (Y ++ N).eraseDups)
+      withExecutionType binding.name A do
+        let Y ← executionPlanType fc scope (A::Γ) yes
+        let N ← executionPlanType fc scope (A::Γ) no
+        pure (Y ++ N).eraseDups)
 
 /-- A checked owned write replaces its local reference with a fresh copy.
     Operand slots are supplied by the shared execution plan. -/
@@ -136,7 +130,7 @@ set_option maxHeartbeats 1000000
     (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree))
     (original prepared : Fragment.Expr) :
     Compiler (Option (Nat × Nat × Nat × PropKey × Ty Tree × Ty Tree × Ty Tree)) := do
-  if (← get).executionOwned != some original.span then return none
+  if (← ownedWrite) != some original.span then return none
   let some (ownedIndex, _, field, _, _) ← growingWrite fc scope original | return none
   let prepared ← comparisonsExpr fc prepared
   let (receiver, rhs) ← match prepared with
@@ -162,7 +156,7 @@ set_option maxHeartbeats 1000000
   | .evaluate original prepared _ =>
     if let some (i,_,_,_,_,_,M) ← executionGrowth fc scope Γ original prepared then
       return Γ.set i M
-    if (← get).executionOwned == some original.span then
+    if (← ownedWrite) == some original.span then
       if let .objectAssign _ (.var _ name) _ := original then
         let some i := valueSlot scope name | throw "internal execution plan: missing owned Object.assign target"
         return Γ.set i (← executionOperationType fc scope Γ operation)
@@ -188,20 +182,20 @@ set_option maxHeartbeats 1000000
     match target with
     | .alloc .. | .build .. => pure ()
     | .var .. =>
-      if (← get).executionOwned != some original.span then
+      if (← ownedWrite) != some original.span then
         throw (locatedRefusal (← table) original.span .expressionClaim
           "Object.assign onto an object that is not a fresh literal is lowered only as a statement on a local's own object: the call's value would be one more reference to it")
     | _ => throw (locatedRefusal (← table) original.span .expressionClaim
         "Object.assign onto an object that is not a fresh literal is lowered only as a statement on a local's own object: the call's value would be one more reference to it")
   let A ← executionClaim fc original.span (exprType fc prepared)
   let B ← exprType fc prepared
-  let copied ← if (← get).executionOwned == some original.span then
+  let copied ← if (← ownedWrite) == some original.span then
       match original with
       | .objectAssign _ (.var _ name) _ => pure (valueSlot scope name)
       | _ => pure none
     else pure none
   if let .var _ name := prepared then
-    if ((← get).executionTypes.lookup name).isSome then
+    if (← executionType name).isSome then
       -- A source claim checks the saved value without forgetting the more
       -- precise type carried by its selected branch.
       let mapping := (next.mapping.getD (List.range (Γ.length+1))).map
@@ -213,12 +207,9 @@ set_option maxHeartbeats 1000000
     (fun i => if i == 0 || copied == some (i-1) then 0 else i+1)
   let cast ← emitAt original.span (.var 0) (.bind ⟨next.label, some mapping⟩)
     (B::Γ) A "expression-claim" (scope := held ⟨"",some original.span⟩ :: scope)
-  let saved ← get
-  modify fun s => { s with atomicPrepared := true, executionOriginal := some original }
-  let prepared ← comparisonsExpr fc prepared
-  let target ← LoweringAtoms.compileAtom recursive fc scope Γ prepared cast
-  modify fun s => { s with atomicPrepared := saved.atomicPrepared, executionOriginal := saved.executionOriginal }
-  return target
+  withPreparedAtom original do
+    let prepared ← comparisonsExpr fc prepared
+    LoweringAtoms.compileAtom recursive fc scope Γ prepared cast
 
 @[nospecialize] private partial def compileExecutionOperation (recursive : RecursiveLowering) (fc : SourceClaims.Function Tree)
     (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree))
@@ -377,20 +368,19 @@ prepared predicate without replaying an effectful source operand. -/
       emitAt source (.var 0) (.effect next) Δ C "expression-claim" (scope := scope')
   | .atom source operation =>
     let A ← executionOperationType fc scope Γ operation
-    let previous := (← get).executionOrigins
+    let previous ← executionOrigins
     let preservesReads := match operation with
       | .evaluate _ _ .none | .methodRead .. | .referenceRead .. | .positionRead .. => true
       | _ => false
-    if !preservesReads then
-      modify fun s => { s with executionOrigins := s.executionOrigins.filter fun (_, origin) =>
-        match origin with | .var .. => true | _ => false }
-    let origin ← match operation with
-      | .evaluate _ prepared _ => comparisonsExpr fc prepared
-      | _ => pure (Fragment.Expr.var source "")
-    let after ← executionAfterContext fc scope Γ operation
-    if Γ != after then modify fun s => { s with executionOrigins := [] }
-    let next ← k (held ⟨"",some source⟩ :: scope) (A::after) origin
-    modify fun s => { s with executionOrigins := previous }
+    let retained := if preservesReads then previous else
+      previous.filter fun (_, origin) => match origin with | .var .. => true | _ => false
+    let next ← withExecutionOrigins retained do
+      let origin ← match operation with
+        | .evaluate _ prepared _ => comparisonsExpr fc prepared
+        | _ => pure (Fragment.Expr.var source "")
+      let after ← executionAfterContext fc scope Γ operation
+      withExecutionOrigins (if Γ != after then [] else retained)
+        (k (held ⟨"",some source⟩ :: scope) (A::after) origin)
     compileExecutionOperation recursive fc scope Γ source operation next
   | .sequence _ binding evaluate next =>
     if executionBranches evaluate && executionBranches next then
@@ -398,34 +388,26 @@ prepared predicate without replaying an effectful source operand. -/
       -- Retaining branch-local frames across another choice would duplicate
       -- later conditional arguments and grow the graph exponentially.
       let A ← executionPlanType fc scope Γ evaluate
-      let previous ← get
-      modify fun s => { s with
-        executionTypes := (binding.name,A) :: s.executionTypes }
+      let previous ← executionBindings
       let bound : ScopeBinding Tree := { source := ⟨binding.name,some binding.source⟩, fixed := some A }
-      let after ← executePlanTail recursive fc (bound::scope) (A::Γ) next k
-      modify fun s => { s with
-        executionTypes := previous.executionTypes, executionOrigins := previous.executionOrigins }
+      let after ← withExecutionBindings { previous with types := (binding.name,A)::previous.types }
+        (executePlanTail recursive fc (bound::scope) (A::Γ) next k)
       return ← executePlanTail recursive fc scope Γ evaluate fun _ Δ _ => do
         let offset := Δ.length - Γ.length
         return ⟨after.label,some ((after.mapping.getD (List.range (Γ.length+1))).map
           (fun i => if i == 0 then 0 else offset+i-1))⟩
     executePlanTail recursive fc scope Γ evaluate fun scope' Δ origin => do
       let some A := Δ.head? | throw "internal execution plan: no sequence result"
-      let previous ← get
-      let origin := executionPredicate scope' previous.executionOrigins origin
-      modify fun s => { s with
-        executionTypes := (binding.name,A) :: s.executionTypes
-        executionOrigins := (binding.name,origin) :: s.executionOrigins }
+      let previous ← executionBindings
+      let origin := executionPredicate scope' previous.origins origin
       let bound : ScopeBinding Tree := { source := ⟨binding.name,some binding.source⟩, fixed := some A }
-      let result ← executePlanTail recursive fc (bound :: scope'.tail) Δ next k
-      modify fun s => { s with
-        executionTypes := previous.executionTypes, executionOrigins := previous.executionOrigins }
-      return result
+      withExecutionBindings ⟨(binding.name,A)::previous.types,(binding.name,origin)::previous.origins⟩
+        (executePlanTail recursive fc (bound :: scope'.tail) Δ next k)
   | .choose source _ test binding evaluate yes no =>
     executePlanTail recursive fc scope Γ evaluate fun scope' Δ origin => do
       let some A := Δ.head? | throw "internal execution plan: no condition result"
-      let previous ← get
-      let origin := executionPredicate scope' previous.executionOrigins origin
+      let previous ← executionBindings
+      let origin := executionPredicate scope' previous.origins origin
       let G := SourceTypes.graph (← table)
       let tag := match test with
         | .truthy => Tag.truthy | .nullish => .isNullish | .defined => .isUndef
@@ -446,34 +428,26 @@ prepared predicate without replaying an effectful source operand. -/
         let types := base.set 0 T
         let bound : ScopeBinding Tree := { source := ⟨binding.name,some binding.source⟩, fixed := some T }
         let sc := bound :: scope'.tail
-        let savedTypes := previous.executionTypes.map fun (name,B) =>
+        let savedTypes := previous.types.map fun (name,B) =>
           (name, ((resolve sc name).bind fun (i,_) => types[i]?).getD B)
-        modify fun s => { s with
-          executionTypes := (binding.name,T) :: savedTypes
-          executionOrigins := (binding.name,origin) :: previous.executionOrigins }
-        let target ← executePlanTail recursive fc sc types body k
-        if correlated then
-          let mapping := (target.mapping.getD (List.range types.length)).map
-            (fun i => if i == 0 then 0 else i+1)
-          emitAt source (if truth then .tru else .fls) (.bind ⟨target.label,some mapping⟩)
-            base T "condition-result" (scope := scope')
-        else pure target
+        withExecutionBindings ⟨(binding.name,T)::savedTypes,(binding.name,origin)::previous.origins⟩ do
+          let target ← executePlanTail recursive fc sc types body k
+          if correlated then
+            let mapping := (target.mapping.getD (List.range types.length)).map
+              (fun i => if i == 0 then 0 else i+1)
+            emitAt source (if truth then .tru else .fls) (.bind ⟨target.label,some mapping⟩)
+              base T "condition-result" (scope := scope')
+          else pure target
       -- A proved answer admits only its selected execution. Keeping A retains
       -- the evaluated value and avoids elaborating observations in a dead arm.
       if decide (Answers G A tag answer) then
         let selected ← arm true A yes
-        modify fun s => { s with
-          executionTypes := previous.executionTypes, executionOrigins := previous.executionOrigins }
         return ← emitAt source (.var 0) (.effect selected) Δ A "expression-dispatch" (scope := scope')
       if decide (Answers G A tag (!answer)) then
         let selected ← arm false A no
-        modify fun s => { s with
-          executionTypes := previous.executionTypes, executionOrigins := previous.executionOrigins }
         return ← emitAt source (.var 0) (.effect selected) Δ A "expression-dispatch" (scope := scope')
       let yes ← arm true Y yes
       let no ← arm false N no
-      modify fun s => { s with
-        executionTypes := previous.executionTypes, executionOrigins := previous.executionOrigins }
       if correlated then
         return ← LoweringAtoms.compileConditionAtom recursive fc scope' Δ origin yes no
       let adapt := fun (target : Target) =>
@@ -492,7 +466,7 @@ The final pure predicate uses the retained operands to justify refinements. -/
     let offset := Δ.length - Γ.length
     let adapt := fun (target : Target) =>
       ⟨target.label,some ((target.mapping.getD (List.range Γ.length)).map (·+offset))⟩
-    let predicate := executionPredicate inner (← get).executionOrigins origin
+    let predicate := executionPredicate inner (← executionOrigins) origin
     let A := Δ.headD []
     let G := SourceTypes.graph (← table)
     if decide (Answers G A .truthy true) then

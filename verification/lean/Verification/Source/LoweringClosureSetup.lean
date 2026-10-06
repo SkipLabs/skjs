@@ -186,7 +186,7 @@ scheme row's variadic signatures. -/
         let R ← lower (Fragment.callableType ret)
         let restPack ← lower (SourceTypes.use (.pack ⟨[], [], some E, false, .dense⟩ []))
         let own ← lower (SourceTypes.use (.arrs [] [⟨Rsource, (sourceDs, [restPack]), R, .unrestricted⟩]))
-        modify fun st => {st with hints := own :: st.hints}
+        recordHints [own]
         pure ([(⟨Rsource, sourceDs, R, .unrestricted⟩, some [restPack])], [own])
     | none => do
       let (L, S) ← match mode, scheme with
@@ -216,7 +216,7 @@ scheme row's variadic signatures. -/
     let some S := storeOf G restTy | throw "a rest parameter needs an array contract"
     if !decide (ProgramTyping.RestStore G S P) then
       throw "a closure collecting a rest array is claimed at a signature its store does not meet"
-    modify fun st => {st with hints := restTy ++ S ++ st.hints}
+    recordHints (restTy ++ S)
     pure (some S)
   let rows := rows.map Prod.fst
   -- The positions the code takes: the fixed parameters, and a tuple rest's.

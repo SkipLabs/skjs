@@ -114,7 +114,7 @@ did not mention grow it, and the request carries the result. -/
   if !distinct (fc.points.map Prod.fst) || fc.points.any (fun (_, row) =>
       !distinct (row.envs.map Prod.fst) || !distinct (row.exprs.map Prod.fst)) then
     throw "duplicate execution point, statement or expression claim"
-  let ((inputs, R, entry), built) ← (do
+  let ((inputs, R, entry), built) ← runCompiler T (growSites f.body (module := f.name == "")) do
     -- One binding per source parameter, and one request input per position a
     -- caller writes: a rest parameter is one binding, and its tuple's required
     -- elements are the positions. The array itself is allocated at entry.
@@ -231,9 +231,9 @@ did not mention grow it, and the request carries the result. -/
         inputs S "rest-allocation" (scope := restScope)
       first := store
     let entry ← emit .nul (.effect first) inputs [Labels.nul]
-    return (inputs, R, entry)).run { types := T, grows := growSites f.body (module := f.name == "") }
+    return (inputs, R, entry)
   return ⟨⟨built.types, built.program, built.claims, R, entry.label, inputs, built.codes⟩,
-    built.obligations, built.sourceMap, built.assertions, built.cuts, built.hints, built.codeSources,
+    built.obligations, built.source.sourceMap, built.source.assertions, built.source.cuts, built.hints, built.codeSources,
     built.nodePlans⟩
 
 end

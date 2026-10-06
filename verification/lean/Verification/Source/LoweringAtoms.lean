@@ -45,10 +45,7 @@ Mappings discard only the temporaries introduced by this expression. -/
 @[nospecialize] partial def compileAtom (recursive : RecursiveLowering) (fc : SourceClaims.Function Tree) (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree))
     (e : Fragment.Expr) (next : Target) : Compiler Target := do
   let A ← exprType fc e
-  let state ← get
-  let prepared := state.atomicPrepared || (match e with
-    | .var _ name => (state.executionTypes.lookup name).isSome
-    | _ => false)
+  let prepared ← isPreparedAtom e
   let next ← if prepared then pure next else observeExprCurrent fc scope Γ e.span A next
   match _he : e with
   | .nullishAssign .. | .arrayAssign .. | .build .. | .objectAssign .. | .ifBody ..
@@ -260,8 +257,8 @@ Mappings discard only the temporaries introduced by this expression. -/
     let afterReceiver ← compileAtom recursive fc (held ⟨"",some callee.span⟩ :: scope) (B::Γ) receiver afterList
     compileAtom recursive fc scope Γ callee afterReceiver
   | .call _ callee args _ _ | .callWithReceiver _ callee _ args | .invoke _ callee args _ _ =>
-    let original := (← get).executionOriginal.getD e
-    let savedReceiver ← match (← get).executionReceiver with
+    let original := (← originalExpression).getD e
+    let savedReceiver ← match (← savedReceiver) with
       | none => pure none
       | some name => do
         let some (i, .value) := resolve scope name
@@ -370,7 +367,7 @@ Mappings discard only the temporaries introduced by this expression. -/
         throw (locatedRefusal (← table) e.span .bindingAnnotation
           "a spread copied before a later actual runs needs a rest element type that admits `undefined`")
       let C ← lower (SourceTypes.use (.list ⟨[], [], some E, false, .dense⟩ []))
-      modify fun st => {st with hints := C :: st.hints}
+      recordHints [C]
       pure (i, [C])
     let As := As₀.zipIdx.map fun (A, i) =>
       (copyTypes.lookup i).getD A
@@ -425,7 +422,7 @@ Mappings discard only the temporaries introduced by this expression. -/
     let callScope := (List.replicate k anonymous) ++ temporaries ++ scope
     -- The alternatives' members, as the callee's claim names them, are the
     -- types the dispatched call is typed at.
-    if dispatch.isSome then modify fun st => {st with hints := B ++ st.hints}
+    if dispatch.isSome then recordHints (B)
     let dispatchArms ← match dispatch, headTys.getLast? with
       | some fld, some O => primitiveArms callScope callEnv O fld
       | _, _ => pure []
@@ -732,16 +729,8 @@ The call atom retains source metadata for spread and primitive dispatch checks. 
   | .invokeSaved original prepared receiver method =>
     let .invoke pos _ args spreads typeArgs := prepared
       | throw "internal execution plan: expected a saved invocation"
-    let saved ← get
-    modify fun s => { s with
-      executionOriginal := some original,
-      executionReceiver := some receiver.name, atomicPrepared := true }
     let call := Fragment.Expr.call pos (.var method.source method.name) args spreads typeArgs
-    let target ← compileAtom recursive fc scope Γ call next
-    modify fun s => { s with
-      executionOriginal := saved.executionOriginal,
-      executionReceiver := saved.executionReceiver, atomicPrepared := saved.atomicPrepared }
-    return target
+    withSavedInvocation original receiver.name (compileAtom recursive fc scope Γ call next)
   | _ => throw "internal execution plan: expected a method operation"
 
 /-- Compile compound conditions as short-circuit edges. The full source

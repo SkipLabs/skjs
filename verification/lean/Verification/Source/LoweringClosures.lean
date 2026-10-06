@@ -132,10 +132,8 @@ state resume afterwards. -/
     | .block .., _ | _, some _ =>
       emitAt pos .nul (.effect first) frameInputs [Labels.nul] "closure-entry" (scope := frameScope)
     | _, none => pure first
-  let st ← get
-  let result := (st.program, entry.label, st.claims,
-    ({ sourceMap := st.sourceMap, assertions := st.assertions, cuts := st.cuts } : CodeSource))
-  return result
+  let graph ← graphResult
+  return (graph.program, entry.label, graph.claims, graph.source)
 
 /-- **A lambda's graph code**, checked at each signature `lambdaSetup` finds:
 one code request per signature, the graph `closureCode` compiles from that
@@ -169,7 +167,7 @@ signature's frame, whose certificate the unit's code table records. -/
     | none => code := some (P, start)
     let entry : CodeEntry Tree := ⟨s.arity, P.map (·.expression), P.map fun n => (n.continuation, n.handler),
       start, Cs, sig, store⟩
-    modify fun st => { st with codes := st.codes ++ [⟨entry, claims⟩], codeSources := st.codeSources ++ [source] }
+    recordCode ⟨entry, claims⟩ source
   let some (P, start) := code | throw "closure claim must name a source arrow"
   let exprs := P.map fun n => n.expression
   let conts := P.map fun n => (n.continuation, n.handler)

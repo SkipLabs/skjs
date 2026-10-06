@@ -30,13 +30,13 @@ set_option maxHeartbeats 1000000
     (R : Ty Tree) (incoming : List (ScopeBinding Tree)) (id : Nat) : Compiler Target := do
   let some node := graph.nodes[id]? | throw "internal flow error: missing node"
   let scope ← flowScope ambient incoming node
-  if let some target := (← get).flowTargets.lookup id then
+  if let some target := (← flowTarget id) then
     return ← jumpTo incoming target scope
   let fc := base.atPoint (SourceFlow.pointId graph.owner id)
   let Γ ← env fc node.source.1 scope
   let reserved ← withHandler none (emitAt node.source .nul .ret Γ [Labels.nul]
     "flow-entry" (some node.source.1) scope)
-  modify fun s => { s with flowTargets := (id, reserved) :: s.flowTargets }
+  rememberFlowTarget id reserved
   let handler ← match node.handler with
     | none => pure none
     | some h => do
@@ -94,21 +94,18 @@ set_option maxHeartbeats 1000000
     | .statement (.effect _ e) nextId =>
       let next ← successor nextId scope
       let owned ← if let .objectAssign _ (.var _ name) _ := e then do
-          let sites := (← get).grows
+          let sites ← growthSites
           let some _ := (valueSlot scope name).filter fun _ => sites.contains e.span
             | throw (locatedRefusal (← table) e.span .expressionClaim
                 "Object.assign onto an object another reference may hold adds keys that reference would see: it is lowered on a local's own fresh object that nothing else has reached, outside any loop its declaration does not enclose")
           pure true
         else do pure (← growingWrite fc scope e).isSome
-      let previous := (← get).executionOwned
-      if owned then modify fun s => { s with executionOwned := some e.span }
-      let first ← LoweringExecution.executePlanTail recursive fc scope Γ (SourceExecution.build e) fun inner Δ _ => do
-        let offset := Δ.length - Γ.length
-        let mapping := (next.mapping.getD (List.range Γ.length)).map (·+offset)
-        emitAt e.span .nul (.effect ⟨next.label,some mapping⟩) Δ [Labels.nul]
-          "expression-discard" (scope := inner)
-      modify fun s => { s with executionOwned := previous }
-      pure first
+      withOwnedWrite e.span owned do
+        LoweringExecution.executePlanTail recursive fc scope Γ (SourceExecution.build e) fun inner Δ _ => do
+          let offset := Δ.length - Γ.length
+          let mapping := (next.mapping.getD (List.range Γ.length)).map (·+offset)
+          emitAt e.span .nul (.effect ⟨next.label,some mapping⟩) Δ [Labels.nul]
+            "expression-discard" (scope := inner)
     | .branch statement yesId noId =>
       let cond ← match statement with
         | .ite _ cond _ _ | .loop _ cond _ _ => pure cond
@@ -169,12 +166,12 @@ set_option maxHeartbeats 1000000
         "for-of-dispatch" (scope := held ⟨"",some pos⟩ :: scope)
       emitAt pos (Tm.call (.var i) []) (.bind dispatch) Γ S "for-of-step" (scope := scope)
     | _ => throw "internal flow error: malformed action"
-  modify fun s => { s with program := s.program.set reserved.label ⟨.nul, .effect target, none⟩ }
+  completeFlowEntry reserved target
   let facts ← entryFacts fc node.source.1 scope
   let links := distinctLinks (SourceTypes.graph (← table)) scope Γ
   if !facts.isEmpty || !links.isEmpty then
-    modify fun s => { s with assertions := s.assertions ++ [(reserved.label, ⟨facts, [], links⟩)] }
-  modify fun s => { s with cuts := reserved.label :: s.cuts }
+    recordAssertion reserved ⟨facts, [], links⟩
+  recordCut reserved
   return ← jumpTo incoming reserved scope
 
 /-- Typed lowering consumes the same claim-independent graph exported to the
@@ -182,11 +179,7 @@ set_option maxHeartbeats 1000000
 @[nospecialize] partial def body (recursive : RecursiveLowering) (owner : Span) (fc : SourceClaims.Function Tree) (R : Ty Tree)
     (scope : List (ScopeBinding Tree)) (stmts : List Fragment.Stmt) : Compiler Target := do
   let graph ← liftSource (SourceFlow.build owner [] stmts)
-  let saved := (← get).flowTargets
-  modify fun s => { s with flowTargets := [] }
-  let first ← flowNode recursive graph scope fc R scope graph.entry
-  modify fun s => { s with flowTargets := saved }
-  return first
+  withFreshFlowTargets (flowNode recursive graph scope fc R scope graph.entry)
 
 end LoweringFlow
 end Verification.SourceExtraction

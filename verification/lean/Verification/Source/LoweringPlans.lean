@@ -18,7 +18,7 @@ keys, each at its initializer's type, which its own obligation establishes. -/
   let keys := ns.map PropKey.str
   let label ← lower (SourceTypes.use (.refs (keys.zip As) [] [] [] [] [⟨true, keys⟩]))
   -- A type the search may need at a node it types on its own.
-  modify fun s => {s with hints := label :: s.hints}
+  recordHints [label]
   return [label]
 
 /-- The type an object literal's claim states for each key it names, where
@@ -51,7 +51,7 @@ is given, less the dropped keys: one record per pair of their clauses
       let some r := ObjectMerge.mergeResult G drop c d
         | throw "a spread copies the own enumerable properties of a plain object; one of a string, an array, a function or a class value is outside the fragment"
       labels := labels ++ [← lower (SourceTypes.use r)]
-  modify fun s => {s with hints := labels ++ s.hints}
+  recordHints (labels)
   return labels.eraseDups
 
 /-- A saved read is usable only in a subtree with no possible heap effects or
@@ -358,7 +358,7 @@ the bound's member. Any other plan is itself. -/
   let [l] := a.type | return a
   let .meet _ cs _ := StoreView.row T l | return a
   let m ← lower (SourceTypes.useRow cs)
-  modify fun s => { s with hints := m :: s.hints }
+  recordHints [m]
   return DirectProof.cast Γ [m] a
 
 /-- Read a field from a cell plan under context `Γ`: one contract, a callable
@@ -438,7 +438,7 @@ prototype is the realm's). An object shape needs none. -/
     let some P := K[p]? | throw "internal prototype slot mismatch"
     let R ← lower (SourceTypes.use (.refs [(SourceTypes.protoField, P)] [] [] [] []
       [⟨true, [SourceTypes.protoField]⟩]))
-    modify fun s => {s with hints := R :: s.hints}
+    recordHints [R]
     return (tag, .proto p P [R])
 
 /-- One arm's read of slot `o`. -/
@@ -570,7 +570,7 @@ another reference may hold the object and see its keys change. -/
     | _ => return none
   let G := SourceTypes.graph (← table)
   if !mayLack G (← exprType fc receiver) fld then return none
-  let sites := (← get).grows
+  let sites ← growthSites
   let owned := match receiver with
     | .var _ n => (valueSlot scope n).filter fun _ => sites.contains e.span
     | _ => none

@@ -25,10 +25,7 @@ slots are introduced only after the operand supplying their type is checked. -/
       return ← closureExpr recursive fc scope Γ (.logical p andOp l1 (.logical p andOp l2 right))
   let A ← closureType fc e
   let G := SourceTypes.graph (← table)
-  let state ← get
-  let prepared := state.atomicPrepared || (match e with
-    | .var _ name => (state.executionTypes.lookup name).isSome
-    | _ => false)
+  let prepared ← isPreparedAtom e
   if !prepared then
     if let some asserted := fc.exprCurrent.lookup e.span then
       for (fld, R) in asserted do
@@ -398,7 +395,7 @@ slots are introduced only after the operand supplying their type is checked. -/
   | .logicalAssign .. => throw "logical assignment inside a closed expression is outside the fragment"
   | .bindWithReceiver _ f receiver args => do
     if let some (.bindWithReceiver _ (.read _ fld (.var _ x)) (.var _ y) []) :=
-        (← get).executionOriginal then
+        (← originalExpression) then
       if x == y && args.isEmpty &&
           (ProgramTyping.memberOf G (← exprType fc receiver) fld).isSome then
         -- The shared method-read operation has already bound this member
@@ -726,7 +723,7 @@ slots are introduced only after the operand supplying their type is checked. -/
           | throw "initializer requires a variadic signature"
         lower (SourceTypes.use (.callable P [] [] S))
       else lower (SourceTypes.use (.callable P [] L []))
-    modify fun st => {st with hints := C :: st.hints}
+    recordHints [C]
     let casts := (values.zip (P.map Prod.snd)).map fun (v,D) => DirectProof.cast Γ D v
     pure (DirectProof.node Γ
       (.makeAt (code.code .call) (P.map Prod.fst) (values.map (·.term))) [C]

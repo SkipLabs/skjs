@@ -239,12 +239,13 @@ and constructs each function request. Separate modules handle
 [operand schedules](lean/Verification/Source/LoweringExecution.lean),
 [bindings](lean/Verification/Source/LoweringBindings.lean), and
 [control flow](lean/Verification/Source/LoweringFlow.lean).
-They share [construction state](lean/Verification/Source/LoweringState.lean);
-these module boundaries separate responsibilities but do not restrict access
-to individual state fields. Graph-local fields form a `GraphFrame`:
-closure compilation starts with an empty frame and restores its enclosing frame
-as one record, while retaining equation growth, obligations and nested code.
-The frame boundary is implemented in `LoweringState.withFreshGraph`.
+[Construction state](lean/Verification/Source/LoweringState.lean) is private to
+its owner. Lowering components compose an abstract `Compiler` through operations
+for graph construction, observations, obligations and code publication. Temporary
+execution bindings, receivers, handlers and graph frames have scoped operations.
+The extraction runner returns an immutable result containing the completed
+graph and shared outputs. The type boundary excludes general state access and
+raw compiler-state replacement from consumers.
 
 The source-claims boundary has a [wire decoder](lean/Verification/Source/SourceClaimWire.lean),
 [scheme interpretation](lean/Verification/Source/SourceClaimSchemes.lean),

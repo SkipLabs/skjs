@@ -138,7 +138,7 @@ array contracts reads at the union of their positions. -/
   -- The index is a literal of the read, typed at its singleton; the producer
   -- finds that singleton among the request's types.
   let label ← lower (SourceTypes.use (.numLit (bitsOfNat i)))
-  modify fun s => { s with hints := label :: s.hints }
+  recordHints [label]
   let alts ← (PositiveRules.expand G A).mapM fun c => do
     let store ← match c with
       | .refs fs [] vs _ _ _ => match fs.lookup SourceTypes.storeField <|> vs.lookup SourceTypes.storeField with
@@ -210,14 +210,6 @@ effect changes, is the other operand. -/
   if let some x ← attempt l r then return some x
   attempt r l
 
-
-/-- Compile with `h` as the handler of every node emitted. -/
-@[nospecialize] def withHandler (h : Option (Target × Nat)) (act : Compiler α) : Compiler α := do
-  let saved := (← get).handler
-  modify fun s => { s with handler := h }
-  let r ← act
-  modify fun s => { s with handler := saved }
-  return r
 
 /-- A jump from `scope` to a target over `targetScope`: the target's slots,
 read through its own mapping, found in `scope` by descriptor, else by name
