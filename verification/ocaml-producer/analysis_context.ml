@@ -1,3 +1,4 @@
+(* refinement.ml supplies branch refinement through the execution interpreter's input interface. *)
 (* execution_analysis.ml interprets expression schedules to provide effect states and operand-entry environments. *)
 (* closure_offers.ml tracks named closures and class constructors and records signatures offered by their uses. *)
 (* claim_collection.ml collects entry claims and instances and restores claims after speculative inference. *)
@@ -7,7 +8,21 @@ open Type_queries
 module Make (S : Analysis_state.Scope) = struct
 open Analysis_state.View(S)
 include Closure_offers.Make(S)
-include Execution_analysis.Make(S)
+module Execution_inputs : Execution_analysis.Inputs = struct
+  let declarations = declarations
+  let current_point () = !current_point
+  let execution_at source = Hashtbl.find_opt executions (current_point (),source)
+  let expression_hint source = Hashtbl.find_opt expression_hints source
+  let claimed_type source = List.find_map (fun (x:Proposal_types.expression) ->
+    if x.Proposal_types.point = current_point () && x.Proposal_types.pos = source
+    then Some x.Proposal_types.type_ else None) !expressions
+  let grew name = List.mem name !grown_locals
+  let branch env cond truth = Refinement.branch_with diagnostics !rigid_bounds declarations
+    ~modules:(fun name ->
+      try Option.map Lazy.force (List.assoc_opt name module_functions) with Json.Error _ -> None)
+    ~claimed:claimed_type env cond truth
+end
+include Execution_analysis.Make(Execution_inputs)
 include Claim_collection.Make(S)
   let resolve env n = match List.assoc_opt n env with
     | Some b -> binding_type b

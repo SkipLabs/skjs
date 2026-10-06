@@ -1,27 +1,34 @@
-(* refinement.ml proposes branch environments from the test and current field facts. *)
 open Semantic
 open Environment
 open Source
 open Type_queries
-open Proposal_types
-open Refinement
-module Make (S : Analysis_state.Scope) = struct
-open Analysis_state.View(S)
-  let execution (e:Source.expr) = match Hashtbl.find_opt executions (!current_point,e.pos) with
-    | Some plan -> plan
-    | None -> Json.fail ("missing expression execution plan at " ^ !current_point ^
-        " for " ^ Json.encode e.pos)
+(* The interpreter reads point-specific proposals and refines branch states.
+   Its inputs expose no pass-state record, mutable reference or table. *)
+module type Inputs = sig
+  val declarations : Source.declaration list
+  val current_point : unit -> string
+  val execution_at : Json.t -> Execution.plan option
+  val expression_hint : Json.t -> Source.expr option
+  val claimed_type : Json.t -> Semantic.ty option
+  val grew : string -> bool
+  val branch : (string * Environment.binding) list -> Source.expr -> bool ->
+    (string * Environment.binding) list
+end
 
-  let branch env cond truth = branch_with diagnostics !rigid_bounds declarations ~modules:(fun n ->
-    try Option.map Lazy.force (List.assoc_opt n module_functions) with Json.Error _ -> None)
-    ~claimed:(fun pos -> List.find_map (fun (x:expression) ->
-      if x.point = !current_point && x.pos = pos then Some x.type_ else None) !expressions) env cond truth
+module Make (S : Inputs) = struct
+open S
+  let branch = S.branch
+  let claimed_type = S.claimed_type
+  let execution (e:Source.expr) = match execution_at e.pos with
+    | Some plan -> plan
+    | None -> Json.fail ("missing expression execution plan at " ^ current_point () ^
+        " for " ^ Json.encode e.pos)
 
   let join before left right =
     List.filter_map (fun (n,b) -> match b,List.assoc_opt n left,List.assoc_opt n right with
       | Storage (contract,_),Some (Storage (_,l)),Some (Storage (_,r)) -> Some (n,holding contract (union l r))
       (* A local an arm added a key to holds the object either arm left. *)
-      | Value _,Some (Value l),Some (Value r) when List.mem n !grown_locals && l <> r ->
+      | Value _,Some (Value l),Some (Value r) when grew n && l <> r ->
         Some (n,Value (union l r))
       | _ when is_field n -> None
       | _ -> Some (n,b)) before
@@ -31,11 +38,8 @@ open Analysis_state.View(S)
         Some (n,Value (union l r))
       | _ -> None) left
 
-  let claimed_type span = List.find_map (fun (x:expression) ->
-    if x.point = !current_point && x.pos=span then Some x.type_ else None) !expressions
-
   let refine_test env condition test truth =
-    match Hashtbl.find_opt expression_hints condition with
+    match expression_hint condition with
     | None -> env
     | Some cond -> (match test with
       | Execution.Truthy -> branch env cond truth
@@ -63,7 +67,7 @@ open Analysis_state.View(S)
          | Some (Storage _),None -> forget ~only:(( = ) name) env
          | _ -> env)
       | Execution.CellUpdate (name,source) ->
-        (match List.assoc_opt name env,Hashtbl.find_opt expression_hints source with
+        (match List.assoc_opt name env,expression_hint source with
          | Some (Storage (contract,_)),Some {node=Update (op,_,rhs,_);_} ->
            let right=match rhs with None -> contract | Some rhs ->
              Option.value (claimed_type rhs.pos) ~default:contract in

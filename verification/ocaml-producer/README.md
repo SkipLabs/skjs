@@ -117,7 +117,11 @@ coordinator connects their recursive operations. Graph successors receive
 snapshots of path metadata, and node outputs retain the claims from the latest
 visit. These boundaries describe state ownership; the components still share
 mutable pass state. Components access it explicitly through `Analysis_state.View`;
-`Analysis_context.Make` composes their analysis operations.
+`Analysis_context.Make` composes their analysis operations. Execution analysis
+receives an explicit interface containing declarations, point-specific lookups
+and a branch-refinement operation. Its sealed input module exposes no pass-state
+record, references or shared tables; the adapter in `Analysis_context` owns
+access to the pass state.
 
 Lean's final lowering consumes the same plan builders, with the claims used
 for type-directed operations. It reconstructs plans from Fragment when checking
