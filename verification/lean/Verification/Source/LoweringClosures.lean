@@ -44,11 +44,7 @@ state resume afterwards. -/
     (params : List (String × Ty Tree)) (rest : Option (String × (RestEntry Tree)))
     (defaults : List (Nat × Fragment.Expr)) (order : List Nat)
     (captures : List (ScopeBinding Tree)) (Cs : List (Ty Tree)) (Rt R : Ty Tree) (bodyExpr : Fragment.Expr) :
-    Compiler (Program × Nat × List (PointClaim Tree) × CodeSource) := do
-  let saved ← get
-  set { saved with
-    program := [], claims := [], sourceMap := [], assertions := [], cuts := [], handler := none,
-    executionTypes := [], executionOrigins := [], atomicPrepared := false, executionOriginal := none, executionReceiver := none, executionOwned := none }
+    Compiler (Program × Nat × List (PointClaim Tree) × CodeSource) := withFreshGraph do
   -- The layout the rest's array is bound in: the receiver, the parameters,
   -- the array, then the captures. While an expression body has defaults, its
   -- parameters are named where the schedule reaches them.
@@ -139,10 +135,6 @@ state resume afterwards. -/
   let st ← get
   let result := (st.program, entry.label, st.claims,
     ({ sourceMap := st.sourceMap, assertions := st.assertions, cuts := st.cuts } : CodeSource))
-  set { st with
-    program := saved.program, claims := saved.claims, sourceMap := saved.sourceMap, assertions := saved.assertions, cuts := saved.cuts, handler := saved.handler,
-    executionTypes := saved.executionTypes, executionOrigins := saved.executionOrigins, atomicPrepared := saved.atomicPrepared,
-    executionOriginal := saved.executionOriginal, executionReceiver := saved.executionReceiver, executionOwned := saved.executionOwned }
   return result
 
 /-- **A lambda's graph code**, checked at each signature `lambdaSetup` finds:

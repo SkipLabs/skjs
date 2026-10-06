@@ -69,11 +69,10 @@ itself whether a name denotes a value or a location. -/
   let (i,.value) ← resolve scope name | none
   return i
 
-structure Built where
-  /-- The graph under construction: the claims' table, grown by annotations. -/
-  types : EquationStore.State
+/-- State local to one compiled graph. A closure begins with an empty frame
+and restores its enclosing frame as a whole. -/
+structure GraphFrame where
   program : Program := []
-  flowTargets : List (Nat × Target) := []
   /-- Computed types of saved execution-plan values, scoped to their bindings. -/
   executionTypes : List (String × Ty Tree) := []
   /-- Immutable aliases retained by evaluated operands for predicate refinement. -/
@@ -87,19 +86,25 @@ structure Built where
   /-- One source statement whose ownership gate permits a fresh local copy. -/
   executionOwned : Option Span := none
   claims : List (PointClaim Tree) := []
-  obligations : List (ExpressionClaims.Required Tree) := []
   sourceMap : SourceMap := []
   assertions : List (Nat × HeapKnowledge.Knowledge) := []
   /-- Full statement-entry interfaces; absent assertions mean empty knowledge. -/
   cuts : List Nat := []
-  /-- Labels the program mentions but no claim does, such as a pattern's
-  literal index: search hints, never part of what is checked. -/
-  hints : List Tree := []
   /-- While a `try` body or handler is compiled: where a throw out of a node
   goes, as a target over the handler's scope (the thrown value's slot, then
   the scope of the `try`), and the length of the `try`'s scope. Every node
   emitted meanwhile whose expression may throw names it. -/
   handler : Option (Target × Nat) := none
+
+/-- Equation growth, obligations and nested code are shared across graph frames. -/
+structure Built extends GraphFrame where
+  /-- The graph under construction: the claims' table, grown by annotations. -/
+  types : EquationStore.State
+  flowTargets : List (Nat × Target) := []
+  obligations : List (ExpressionClaims.Required Tree) := []
+  /-- Labels the program mentions but no claim does, such as a pattern's
+  literal index: search hints, never part of what is checked. -/
+  hints : List Tree := []
   /-- The graph code the body creates, nested code first, each at each
   signature it offers, and what the source says of each code's graph. -/
   codes : List (CodeRequest Tree) := []
@@ -123,6 +128,12 @@ def locatedRefusal (T : EquationStore.State) (pos : Span)
      ("reason",toJson reason),("fuel",toJson 0)] ++ (StoreView.projection T []).fields)
 
 abbrev Compiler := StateT Built (Except String)
+
+/-- Compile a graph in a fresh frame. Successful shared-state updates survive;
+the enclosing graph frame is restored. A failure returns no state. -/
+def withFreshGraph (action : Compiler α) : Compiler α := fun before => do
+  let (value, after) ← action { before with toGraphFrame := {} }
+  return (value, { after with toGraphFrame := before.toGraphFrame })
 
 @[nospecialize] def table : Compiler EquationStore.State := do return (← get).types
 

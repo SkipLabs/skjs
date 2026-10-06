@@ -241,7 +241,10 @@ and constructs each function request. Separate modules handle
 [control flow](lean/Verification/Source/LoweringFlow.lean).
 They share [construction state](lean/Verification/Source/LoweringState.lean);
 these module boundaries separate responsibilities but do not restrict access
-to individual state fields.
+to individual state fields. Graph-local fields form a `GraphFrame`:
+closure compilation starts with an empty frame and restores its enclosing frame
+as one record, while retaining equation growth, obligations and nested code.
+The frame boundary is implemented in `LoweringState.withFreshGraph`.
 
 The source-claims boundary has a [wire decoder](lean/Verification/Source/SourceClaimWire.lean),
 [scheme interpretation](lean/Verification/Source/SourceClaimSchemes.lean),
