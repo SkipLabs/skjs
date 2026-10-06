@@ -27,15 +27,15 @@ let infer diagnostics flows offered declarations module_functions bounds assumed
      two different claims at one span stay, and Lean refuses them. *)
   let seen = Hashtbl.create 64 in
   let expressions = List.filter (fun x ->
-    not (Hashtbl.mem seen x) && (Hashtbl.add seen x (); true)) (List.rev !expressions) in
-  let expressions = List.map (fun (x:expression) -> match List.assoc_opt (x.point,x.pos) !instances with
+    not (Hashtbl.mem seen x) && (Hashtbl.add seen x (); true)) (List.rev (!local).Analysis_state.expressions) in
+  let expressions = List.map (fun (x:expression) -> match List.assoc_opt (x.point,x.pos) (!local).Analysis_state.instances with
     | Some instance -> {x with type_=instance}
     | None -> x) expressions in
   (* Likewise an entry, the closure body a guard's arm types twice. *)
   let seen = Hashtbl.create 64 in
   let entries = List.filter (fun x ->
-    not (Hashtbl.mem seen x) && (Hashtbl.add seen x (); true)) (List.rev !entries) in
-  {contracts=List.rev !contracts;source=f;entries;expressions;arrows=List.sort_uniq compare (List.rev !arrows)},List.sort_uniq compare !requests
+    not (Hashtbl.mem seen x) && (Hashtbl.add seen x (); true)) (List.rev (!local).Analysis_state.entries) in
+  {contracts=List.rev (!local).Analysis_state.contracts;source=f;entries;expressions;arrows=List.sort_uniq compare (List.rev (!local).Analysis_state.arrows)},List.sort_uniq compare (!local).Analysis_state.requests
   in
   let result = try Ok (run ()) with Json.Error m -> Error m in
   result,!(state.Analysis_state.writes)

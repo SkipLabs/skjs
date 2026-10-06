@@ -55,7 +55,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
       let receiver_type = match receiver, target.node with
         | Some r, _ -> expr env r
         | None, (Read (o,_) | Index (o,_)) when (match e.node with Invoke _ -> true | _ -> false) ->
-          (match List.find_opt (fun (x:expression) -> x.pos = o.pos) !expressions with
+          (match List.find_opt (fun (x:expression) -> x.pos = o.pos) (!local).Analysis_state.expressions with
            | Some x -> x.type_
            | None -> Atoms [Undef])
         | None, _ -> Atoms [Undef] in
@@ -77,7 +77,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
           let known = match arg.node with
             | Id name -> quietly (fun () -> resolve env name)
             | _ -> List.find_map (fun (p:expression) ->
-                if p.pos=arg.pos then Some p.type_ else None) !expressions in
+                if p.pos=arg.pos then Some p.type_ else None) (!local).Analysis_state.expressions in
           match known with
           | Some (Atoms [Shape {calls;_}]) -> List.exists (fun (s:Semantic.signature) ->
               s.call_effect=offered.call_effect) calls
@@ -91,9 +91,9 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
           | _ -> None in
         match arg.node with
         | Lambda (_,[],ps,_,false,_,_) ->
-          Option.map (fun (t,_) () -> instances := ((!current_point,arg.pos),t) :: !instances)
+          Option.map (fun (t,_) () -> (!local).Analysis_state.instances <- (((!local).Analysis_state.current_point,arg.pos),t) :: (!local).Analysis_state.instances)
             (offered (List.length ps))
-        | Id n when List.mem_assoc n !closures ->
+        | Id n when List.mem_assoc n (!local).Analysis_state.closures ->
           (match param with
            | Atoms [Shape {calls=[o];fields=[];indexes=[];elements=None}]
                when supplies_effect o -> closure_offer n o
@@ -101,8 +101,8 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
         (* A class value at a generic call's construct parameter, known only
            once the call's instance is: offered as where the parameter's type
            is expected. *)
-        | Id n when List.mem_assoc n !classes ->
-          Some (fun () -> offer_class (List.assoc n !classes) param)
+        | Id n when List.mem_assoc n (!local).Analysis_state.classes ->
+          Some (fun () -> offer_class (List.assoc n (!local).Analysis_state.classes) param)
         (* Any other named function is its annotated signature: one binding
            more parameters is not offered it. *)
         | Id n ->
@@ -186,8 +186,8 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
          instance_of ~declared:callee target substitution;
          offer ~substitute:(Inference.substitute substitution) signature;
          if not (method_read target) then
-           instantiations := ((!current_point,e.pos),List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
-             substitution) :: !instantiations;
+           (!local).Analysis_state.instantiations <- (((!local).Analysis_state.current_point,e.pos),List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
+             substitution) :: (!local).Analysis_state.instantiations;
          result
        | Atoms [Shape {calls=[signature];_}]
            when signature.quantified<>[] && signature.variadic<>None ->
@@ -219,8 +219,8 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
            (actuals @ List.init missing (fun _ -> Atoms [Undef])) in
          instance_of ~declared:callee target substitution;
          if not (method_read target) then
-         instantiations := ((!current_point,e.pos),List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
-           substitution) :: !instantiations;
+         (!local).Analysis_state.instantiations <- (((!local).Analysis_state.current_point,e.pos),List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
+           substitution) :: (!local).Analysis_state.instantiations;
          result
        | _ ->
       let spread = spreads <> [] in
@@ -383,8 +383,8 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
         instance_of ~declared:callee target substitution;
         offer ~substitute:(Inference.substitute substitution) signature;
         if not (method_read target) then
-        instantiations := ((!current_point,e.pos),List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
-          substitution) :: !instantiations;
+        (!local).Analysis_state.instantiations <- (((!local).Analysis_state.current_point,e.pos),List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
+          substitution) :: (!local).Analysis_state.instantiations;
         result
       (* Quantified overloads use the same proposal/validation split as one
          quantified signature. Type the actuals once, infer an instance for
@@ -424,8 +424,8 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
            instance_of ~declared:(Atoms [Shape {shape with calls=[s]}]) target substitution;
            offer ~substitute:(Inference.substitute substitution) s;
            if not (method_read target) then
-             instantiations := ((!current_point,e.pos),List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
-               substitution) :: !instantiations;
+             (!local).Analysis_state.instantiations <- (((!local).Analysis_state.current_point,e.pos),List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
+               substitution) :: (!local).Analysis_state.instantiations;
            result
          | None,[] -> Proposal_diagnostics.unsupported "quantified overloads have no inferable arity-compatible instance")
       (* Several advertised signatures on one value. The actuals are built

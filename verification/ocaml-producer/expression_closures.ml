@@ -16,9 +16,9 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
          what its contract admits. The class value's type is its construct
          signature. *)
       let inner = List.fold_left (fun env (n,t) -> extend env n (Value t)) (forget env) ps in
-      let fresh = !fresh_constructor in
-      fresh_constructor := false;
-      if fresh then exact_allocs := tails body @ !exact_allocs;
+      let fresh = (!local).Analysis_state.fresh_constructor in
+      (!local).Analysis_state.fresh_constructor <- false;
+      if fresh then (!local).Analysis_state.exact_allocs <- tails body @ (!local).Analysis_state.exact_allocs;
       let allocated_type = match body.node with
         | BlockBody ss ->
           let returned = ref [] in
@@ -59,8 +59,8 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
                (List.map (expr env) args @ List.init missing (fun _ -> Atoms [Undef])) in
              inferred.substitution,inferred.result in
          instance_of callee substitution;
-         instantiations := ((!current_point,e.pos),List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
-           substitution) :: !instantiations;
+         (!local).Analysis_state.instantiations <- (((!local).Analysis_state.current_point,e.pos),List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
+           substitution) :: (!local).Analysis_state.instantiations;
          result
        | Atoms [Ctors signatures] ->
          if types <> [] then Proposal_diagnostics.unsupported "explicit type arguments to a class that takes none";
@@ -117,9 +117,9 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
         | _ ->
           let graph=match List.find_opt (fun (g:Flow.graph) -> g.Flow.owner=body.pos) flows with
             | Some graph -> graph | None -> Json.fail "Lean supplied no graph for a closure expression body" in
-          let saved_point = !current_point in
-          Fun.protect ~finally:(fun () -> current_point := saved_point) (fun () ->
-            current_point := graph.Flow.nodes.(graph.Flow.entry).Flow.point;
+          let saved_point = (!local).Analysis_state.current_point in
+          Fun.protect ~finally:(fun () -> (!local).Analysis_state.current_point <- saved_point) (fun () ->
+            (!local).Analysis_state.current_point <- graph.Flow.nodes.(graph.Flow.entry).Flow.point;
             let env=match graph.Flow.prologue with None -> env | Some plan -> execute_bindings env plan in
             entry env body.pos;
             expr ?expected env body) in
@@ -157,7 +157,7 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
         | Value _ -> Some name | Storage _ -> None) inner @ List.map fst module_functions in
       let readable (a:expr) key =
         match List.find_map (fun (p:expression) ->
-          if p.pos=a.pos then Some p.type_ else None) !expressions with
+          if p.pos=a.pos then Some p.type_ else None) (!local).Analysis_state.expressions with
         | Some t -> (match declared_head declarations [] t with
           | Atoms [Shape shape] ->
             (shape.elements <> None && key=Name "length") ||
@@ -167,7 +167,7 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
         | None -> false in
       let callable (callee:expr) =
         match List.find_map (fun (p:expression) ->
-          if p.pos=callee.pos then Some p.type_ else None) !expressions with
+          if p.pos=callee.pos then Some p.type_ else None) (!local).Analysis_state.expressions with
         | Some t -> (match declared_head declarations [] t with
           | Atoms [Shape {calls;fields=[];indexes=[];elements=None}] -> calls <> [] &&
             List.for_all (fun (s:signature) -> s.call_effect=PreservesInputHeap &&
@@ -223,20 +223,20 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
        | Some (Atoms [Shape {calls=(_::_::_ as calls);fields=[];indexes=[];elements=None}] as contract)
          when quantified=[] && defaults=[] && List.for_all implements calls ->
          let row (s:Semantic.signature) =
-           let saved = !expressions and saved_entries = !entries and saved_contracts = !contracts in
-           expressions := []; entries := []; contracts := [];
+           let saved = (!local).Analysis_state.expressions and saved_entries = (!local).Analysis_state.entries and saved_contracts = (!local).Analysis_state.contracts in
+           (!local).Analysis_state.expressions <- []; (!local).Analysis_state.entries <- []; (!local).Analysis_state.contracts <- [];
            let env_row = List.fold_left2 (fun env (n,_) t -> extend env n (Value t))
              env ps s.params in
            ignore (infer_closure_body ~expected:s.result env_row);
            (* An entry environment replaces the context it is checked against,
               so a body's entries are stated per signature like its
               expressions. *)
-           let claims = {row_contracts=List.rev !contracts;row_expressions=List.rev !expressions;
-                         row_entries=List.rev !entries} in
-           expressions := saved; entries := saved_entries; contracts := saved_contracts;
+           let claims = {row_contracts=List.rev (!local).Analysis_state.contracts;row_expressions=List.rev (!local).Analysis_state.expressions;
+                         row_entries=List.rev (!local).Analysis_state.entries} in
+           (!local).Analysis_state.expressions <- saved; (!local).Analysis_state.entries <- saved_entries; (!local).Analysis_state.contracts <- saved_contracts;
            claims in
          let rows = List.map row calls in
-         arrows := (e.pos,rows) :: !arrows;
+         (!local).Analysis_state.arrows <- (e.pos,rows) :: (!local).Analysis_state.arrows;
          contract
        | _ -> own)
     | _ -> Json.fail "expression dispatched to the wrong typing family"

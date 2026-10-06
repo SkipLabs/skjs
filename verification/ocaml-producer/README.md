@@ -121,7 +121,17 @@ mutable pass state. Components access it explicitly through `Analysis_state.View
 receives an explicit interface containing declarations, point-specific lookups
 and a branch-refinement operation. Its sealed input module exposes no pass-state
 record, references or shared tables; the adapter in `Analysis_context` owns
-access to the pass state.
+access to the pass state. Claim collection receives lookup, publication and
+speculation operations through a sealed interface. The adapter associates each
+published claim with the active execution point.
+
+Speculative inference copies one record containing collected claims, closure
+offers and path metadata. `Analysis_state.speculate` restores the enclosing
+record on success, refusal and unexpected exceptions, including nested attempts.
+Write proposals and diagnostic observations survive these attempts. A
+`Json.Error` refusal returns `None`; other exceptions propagate after restoration.
+The [scope tests](speculation_tests.ml) check restoration and retained effects,
+including exceptional exits that source cases cannot inject.
 
 Lean's final lowering consumes the same plan builders, with the claims used
 for type-directed operations. It reconstructs plans from Fragment when checking
@@ -274,7 +284,7 @@ The proposal implementation separates these responsibilities:
   additional signatures requested by closure uses;
   [module_contract.ml](module_contract.ml) constructs the signatures visible to
   module callers. [claim_collection.ml](claim_collection.ml) records entries
-  and instantiated member types and isolates speculative inference.
+  and instantiated member types through the publication interface.
 
 Named recursive declarations retain their source identities. The producer can
 inspect their equations for inference, while the claims refer to declaration

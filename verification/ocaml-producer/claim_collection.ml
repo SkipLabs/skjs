@@ -1,10 +1,18 @@
 open Semantic
 open Environment
 open Source
-open Proposal_types
 open Refinement
-module Make (S : Analysis_state.Scope) = struct
-open Analysis_state.View(S)
+module type Inputs = sig
+  val declarations : Source.declaration list
+  val is_local : string -> bool
+  val module_type : string -> Semantic.ty option
+  val publish_instance : Json.t -> Semantic.ty -> unit
+  val publish_entry : Json.t -> (string * Environment.binding) list -> unit
+  val speculate : (unit -> 'a) -> 'a option
+end
+
+module Make (S : Inputs) = struct
+open S
   let instance_of ?declared (callee:expr) substitution =
     match callee.node with
     (* A generic method read from its object is claimed at the instance the
@@ -14,39 +22,25 @@ open Analysis_state.View(S)
        | Some (Atoms [Shape ({calls=[signature];_} as shape)]) ->
          let instance = Inference.substitute substitution
            (Atoms [Shape {shape with calls=[{signature with quantified=[]}]}]) in
-         instances := ((!current_point,callee.pos),instance) :: !instances
+         publish_instance callee.pos instance
        | _ -> ())
-    | Id n when not (List.mem_assoc n env0) && List.mem_assoc n module_functions ->
-      (match Lazy.force (List.assoc n module_functions) with
-       | Atoms [Shape ({calls=[signature];_} as shape)] ->
+    | Id n when not (is_local n) ->
+      (match module_type n with
+       | Some (Atoms [Shape ({calls=[signature];_} as shape)]) ->
          let instance = Inference.substitute substitution
            (Atoms [Shape {shape with calls=[{signature with quantified=[]}]}]) in
-         instances := ((!current_point,callee.pos),instance) :: !instances
-       | Atoms [Ctors [signature]] ->
+         publish_instance callee.pos instance
+       | Some (Atoms [Ctors [signature]]) ->
          let instance = Inference.substitute substitution
            (Atoms [Ctors [{signature with quantified=[]}]]) in
-         instances := ((!current_point,callee.pos),instance) :: !instances
+         publish_instance callee.pos instance
        | _ -> ())
     | _ -> ()
 
   let method_read (callee:expr) = match callee.node with
     | Read _ | Index _ -> true | _ -> false
 
-  let quietly f =
-    let previous_speculative = !speculative_typing in
-    speculative_typing := true;
-    let saved = (!closures,!requests,!classes,!entries,!expressions,!instantiations,!instances,!arrows) in
-    let metadata = (!evolving,!grown_locals,!exact_locals,!objects,!fresh_constructor,!exact_allocs,
-                    !contracts,!current_point) in
-    let result = try Some (f ()) with Json.Error _ -> None in
-    let (a,b,c,d,e,g,h,i) = saved in
-    closures := a; requests := b; classes := c; entries := d; expressions := e;
-    instantiations := g; instances := h; arrows := i;
-    let (e,g,x,o,f,a,c,p) = metadata in
-    evolving := e; grown_locals := g; exact_locals := x; objects := o;
-    fresh_constructor := f; exact_allocs := a; contracts := c; current_point := p;
-    speculative_typing := previous_speculative;
-    result
+  let quietly = S.speculate
 
   let entry env span = match Json.list span with
     | start::_ ->
@@ -55,7 +49,7 @@ open Analysis_state.View(S)
         (match List.assoc_opt (owner n) env with
          | Some (Value t) -> record_field declarations t (field_of n)
          | _ -> false)) env in
-      entries := {point = !current_point;start;bindings} :: !entries
+      publish_entry start bindings
     | [] -> Json.fail "empty source span"
 
 end

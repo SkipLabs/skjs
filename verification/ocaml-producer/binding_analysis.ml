@@ -21,7 +21,7 @@ open Analysis_context.Make(S)
       | Some t -> t | None -> Json.fail "binding plan reads an unavailable saved value" in
     let put values saved t = (saved.Execution.id,t) :: List.remove_assoc saved.Execution.id values in
     let publish source t instantiation =
-      expressions := {point = !current_point;pos=source;type_=t;instantiation} :: !expressions in
+      (!local).Analysis_state.expressions <- {point = (!local).Analysis_state.current_point;pos=source;type_=t;instantiation} :: (!local).Analysis_state.expressions in
     let rec defined_slice truth t = match t with
       | Union alternatives -> combine (List.map (defined_slice truth) alternatives)
       | Atoms atoms -> combine (List.map (fun atom ->

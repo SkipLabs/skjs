@@ -86,7 +86,7 @@ let transfer (expr:Analysis_state.expression_infer) =
         | Return {node=Id _;_} -> false
         | _ -> List.exists (escapes n) (Source.statement_children s) in
       if not escaping then env else begin
-        exact_locals := List.filter ((<>) n) !exact_locals;
+        (!local).Analysis_state.exact_locals <- List.filter ((<>) n) (!local).Analysis_state.exact_locals;
         List.map (fun (m,b) -> match b with
           | Value (Atoms atoms) when m = n -> m,Value (Atoms (List.map (function
               | Exact fields -> Shape {fields;indexes=[];calls=[];elements=None}
@@ -97,10 +97,10 @@ let transfer (expr:Analysis_state.expression_infer) =
                   | a -> a) atoms)
               | t -> t) ts))
           | _ -> m,b) env
-      end) env !exact_locals in
+      end) env (!local).Analysis_state.exact_locals in
     match s.statement with
     | Declare (mutable_,[(n,written,init)]) ->
-      if String.ends_with ~suffix:".[[class]]" n then fresh_constructor := true;
+      if String.ends_with ~suffix:".[[class]]" n then (!local).Analysis_state.fresh_constructor <- true;
       (* An unannotated constant's fresh array is built at the array type its
          first use expects it at, where that use is one (SKJS commits such a
          literal there; TypeScript widens it at the declaration, and refuses
@@ -120,24 +120,24 @@ let transfer (expr:Analysis_state.expression_infer) =
          unannotated `[]` the elements written into it. Its contract is the
          union of those, TypeScript's evolved type: a proposal, which Lean
          checks at every write. *)
-      evolving := List.remove_assoc n !evolving;
+      (!local).Analysis_state.evolving <- List.remove_assoc n (!local).Analysis_state.evolving;
       let committed = match written,init.node with
         | None,ArrayLiteral [] ->
-          evolving := (n,(init.pos,true)) :: !evolving;
+          (!local).Analysis_state.evolving <- (n,(init.pos,true)) :: (!local).Analysis_state.evolving;
           Some (array {required=[];optional_elements=[];rest=Some (evolved init.pos);readonly=false;presence=Readable})
         | None,Literal (LNull | LUndefined) when mutable_ ->
-          evolving := (n,(init.pos,false)) :: !evolving; committed
+          (!local).Analysis_state.evolving <- (n,(init.pos,false)) :: (!local).Analysis_state.evolving; committed
         | _ -> committed in
       (* A constant's object literal to which a later statement of its
          block adds a key is claimed with its exact keys: the bound says
          which keys it lacks, so a key added on one path only is optional
          where the paths join. *)
-      exact_locals := List.filter ((<>) n) !exact_locals;
+      (!local).Analysis_state.exact_locals <- List.filter ((<>) n) (!local).Analysis_state.exact_locals;
       (match mutable_,written,init.node with
        | false,None,Alloc fs when grows_later n (List.map fst fs)
              (Option.value (Hashtbl.find_opt following s.span) ~default:[]) ->
-         exact_allocs := init.pos :: !exact_allocs;
-         exact_locals := n :: !exact_locals
+         (!local).Analysis_state.exact_allocs <- init.pos :: (!local).Analysis_state.exact_allocs;
+         (!local).Analysis_state.exact_locals <- n :: (!local).Analysis_state.exact_locals
        (* A constant's object literal used whole where a type with an
           optional field it leaves out is expected is claimed with its exact
           keys, as a literal written there would be: the bound is what says
@@ -158,7 +158,7 @@ let transfer (expr:Analysis_state.expression_infer) =
          let used = uses env n (Option.value (Hashtbl.find_opt following s.span) ~default:[]) in
          if List.exists (function Some (Some t) -> lacks_optional t | _ -> false) used
             && not (List.exists (function Some (Some t) -> writable_dictionary t | _ -> false) used) then
-           exact_allocs := init.pos :: !exact_allocs
+           (!local).Analysis_state.exact_allocs <- init.pos :: (!local).Analysis_state.exact_allocs
        | _ -> ());
       let initial = expr ?expected:(if committed <> None then committed else written) env init in
       if not mutable_ then named_closure n written init;
@@ -189,8 +189,8 @@ let transfer (expr:Analysis_state.expression_infer) =
       (match binding with
        | Storage (contract,_) ->
          let candidate = { pos = init.pos; name = n; type_ = contract } in
-         (match List.find_opt (fun (c:contract) -> c.pos = init.pos && c.name = n) !contracts with
-          | None -> contracts := candidate :: !contracts
+         (match List.find_opt (fun (c:contract) -> c.pos = init.pos && c.name = n) (!local).Analysis_state.contracts with
+          | None -> (!local).Analysis_state.contracts <- candidate :: (!local).Analysis_state.contracts
           | Some c when c.type_ = contract -> ()
           | Some _ -> Proposal_diagnostics.unsupported "a storage contract differs across executions of its declaration")
        | Value _ -> ());
@@ -209,14 +209,14 @@ let transfer (expr:Analysis_state.expression_infer) =
       when (match List.assoc_opt n env with Some (Value _) -> true | _ -> false) ->
       let t = expr env e in
       let env = after e env in
-      grown_locals := n :: !grown_locals;
+      (!local).Analysis_state.grown_locals <- n :: (!local).Analysis_state.grown_locals;
       List.map (fun (m,b) -> if m=n then m,Value t else m,b) env
     | Effect ({node=Write ({node=Id n;_},_,_) | IndexWrite ({node=Id n;_},_,_);_} as e)
       when (match List.assoc_opt n env with Some (Value _) -> true | _ -> false) ->
       let t = binding_type (lookup env n) in
       let c = expr env e in
       let claimed (x:expr) = List.find_map (fun (y:expression) ->
-        if y.pos = x.pos then Some y.type_ else None) !expressions in
+        if y.pos = x.pos then Some y.type_ else None) (!local).Analysis_state.expressions in
       let receiver,name = match e.node with
         | Write (r,name,_) -> r,Some name
         | IndexWrite (r,key,_) -> r,(match claimed key with Some (Atoms [StrLit k]) -> Some (Name k) | _ -> None)
@@ -225,7 +225,7 @@ let transfer (expr:Analysis_state.expression_infer) =
       let env = after e env in
       (match name with
        | Some name when adds before receiver t name ->
-         grown_locals := n :: !grown_locals;
+         (!local).Analysis_state.grown_locals <- n :: (!local).Analysis_state.grown_locals;
          List.map (fun (m,b) -> if m=n then m,Value (grown declarations t name c) else m,b) env
        | _ -> env)
     | Effect e -> ignore (expr env e); after e env
@@ -239,29 +239,29 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
   let after e env = effects env e in
   let flow_callbacks = {
     Proposal_flow.snapshot_metadata=(fun () -> {
-      Proposal_flow.evolving= !evolving; grown_locals= !grown_locals;
-      exact_locals= !exact_locals; closures= !closures; classes= !classes;
-      objects= !objects; fresh_constructor= !fresh_constructor; exact_allocs= !exact_allocs});
+      Proposal_flow.evolving= (!local).Analysis_state.evolving; grown_locals= (!local).Analysis_state.grown_locals;
+      exact_locals= (!local).Analysis_state.exact_locals; closures= (!local).Analysis_state.closures; classes= (!local).Analysis_state.classes;
+      objects= (!local).Analysis_state.objects; fresh_constructor= (!local).Analysis_state.fresh_constructor; exact_allocs= (!local).Analysis_state.exact_allocs});
     restore_metadata=(fun (m:Proposal_flow.metadata) ->
-      evolving := m.Proposal_flow.evolving; grown_locals := m.Proposal_flow.grown_locals;
-      exact_locals := m.Proposal_flow.exact_locals; closures := m.Proposal_flow.closures; classes := m.Proposal_flow.classes;
-      objects := m.Proposal_flow.objects; fresh_constructor := m.Proposal_flow.fresh_constructor; exact_allocs := m.Proposal_flow.exact_allocs);
+      (!local).Analysis_state.evolving <- m.Proposal_flow.evolving; (!local).Analysis_state.grown_locals <- m.Proposal_flow.grown_locals;
+      (!local).Analysis_state.exact_locals <- m.Proposal_flow.exact_locals; (!local).Analysis_state.closures <- m.Proposal_flow.closures; (!local).Analysis_state.classes <- m.Proposal_flow.classes;
+      (!local).Analysis_state.objects <- m.Proposal_flow.objects; (!local).Analysis_state.fresh_constructor <- m.Proposal_flow.fresh_constructor; (!local).Analysis_state.exact_allocs <- m.Proposal_flow.exact_allocs);
     empty_output=([],[],[],[],[],[],[]);
     begin_output=(fun point ->
-      let saved=(!current_point,!entries,!expressions,!contracts,!arrows,!requests,!instances,!instantiations) in
-      entries := []; expressions := []; contracts := []; arrows := []; requests := [];
-      instances := []; instantiations := []; current_point := point; saved);
+      let saved=((!local).Analysis_state.current_point,(!local).Analysis_state.entries,(!local).Analysis_state.expressions,(!local).Analysis_state.contracts,(!local).Analysis_state.arrows,(!local).Analysis_state.requests,(!local).Analysis_state.instances,(!local).Analysis_state.instantiations) in
+      (!local).Analysis_state.entries <- []; (!local).Analysis_state.expressions <- []; (!local).Analysis_state.contracts <- []; (!local).Analysis_state.arrows <- []; (!local).Analysis_state.requests <- [];
+      (!local).Analysis_state.instances <- []; (!local).Analysis_state.instantiations <- []; (!local).Analysis_state.current_point <- point; saved);
     finish_output=(fun (point,es,xs,cs,rs,qs,its,substs) ->
-      let output=(!entries,!expressions,!contracts,!arrows,!requests,!instances,!instantiations) in
-      entries := es; expressions := xs; contracts := cs; arrows := rs; requests := qs;
-      instances := its; instantiations := substs; current_point := point; output);
+      let output=((!local).Analysis_state.entries,(!local).Analysis_state.expressions,(!local).Analysis_state.contracts,(!local).Analysis_state.arrows,(!local).Analysis_state.requests,(!local).Analysis_state.instances,(!local).Analysis_state.instantiations) in
+      (!local).Analysis_state.entries <- es; (!local).Analysis_state.expressions <- xs; (!local).Analysis_state.contracts <- cs; (!local).Analysis_state.arrows <- rs; (!local).Analysis_state.requests <- qs;
+      (!local).Analysis_state.instances <- its; (!local).Analysis_state.instantiations <- substs; (!local).Analysis_state.current_point <- point; output);
     publish_output=(fun (es,xs,cs,rs,qs,its,substs) ->
-      entries := es @ !entries; expressions := xs @ !expressions;
-      arrows := rs @ !arrows; requests := qs @ !requests;
-      instances := its @ !instances; instantiations := substs @ !instantiations;
+      (!local).Analysis_state.entries <- es @ (!local).Analysis_state.entries; (!local).Analysis_state.expressions <- xs @ (!local).Analysis_state.expressions;
+      (!local).Analysis_state.arrows <- rs @ (!local).Analysis_state.arrows; (!local).Analysis_state.requests <- qs @ (!local).Analysis_state.requests;
+      (!local).Analysis_state.instances <- its @ (!local).Analysis_state.instances; (!local).Analysis_state.instantiations <- substs @ (!local).Analysis_state.instantiations;
       List.iter (fun (c:contract) ->
-        match List.find_opt (fun (other:contract) -> other.pos=c.pos && other.name=c.name) !contracts with
-        | None -> contracts := c :: !contracts
+        match List.find_opt (fun (other:contract) -> other.pos=c.pos && other.name=c.name) (!local).Analysis_state.contracts with
+        | None -> (!local).Analysis_state.contracts <- c :: (!local).Analysis_state.contracts
         | Some other when other.type_=c.type_ -> ()
         | Some _ -> Proposal_diagnostics.unsupported "a storage contract differs across executions of its declaration") cs);
     statement=transfer_statement;
@@ -290,9 +290,9 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
           let result,substitution=if signature.quantified=[] then signature.result,[] else
             let inferred=Inference.infer ~receiver:(Atoms [Undef]) signature [actual] in
             inferred.result,inferred.substitution in
-          expressions := {point=node.Flow.point;pos=span;type_=result;
+          (!local).Analysis_state.expressions <- {point=node.Flow.point;pos=span;type_=result;
             instantiation=if substitution=[] then None else
-              Some (List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t) substitution)} :: !expressions;
+              Some (List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t) substitution)} :: (!local).Analysis_state.expressions;
           extend (forget env) b.Flow.name (Value result));
     iterator_step=(fun (node:Flow.node) (s:Source.stmt) env (b:Flow.binding) (element:Flow.binding) ->
           let name,name_pos=match s.statement with ForOf (n,p,_,_,_) -> n,p
@@ -309,7 +309,7 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
               (match values with [t] -> t | _ -> Proposal_diagnostics.unsupported "an iterator step yields no one value")
             | _ -> Proposal_diagnostics.unsupported "an iterator gives no step" in
           ignore name;
-          expressions := {point=node.Flow.point;pos=name_pos;type_=t;instantiation=None} :: !expressions;
+          (!local).Analysis_state.expressions <- {point=node.Flow.point;pos=name_pos;type_=t;instantiation=None} :: (!local).Analysis_state.expressions;
           extend (forget env) element.Flow.name (Value t),forget env);
   } in
   let statements = Proposal_flow.statements flow_callbacks flows following in

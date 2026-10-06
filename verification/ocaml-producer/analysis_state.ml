@@ -9,7 +9,30 @@ type env = (string * Environment.binding) list
 type expression_infer = ?expected:ty -> env -> Source.expr -> ty
 type body_infer = Json.t -> ty option -> ty list ref -> env -> Source.stmt list -> env
 
+(* A speculation copies this record and restores its pointer as a whole.
+   Consumers always dereference local at access time; no field stores a ref. *)
+type local = {
+  mutable closures: (string * (Json.t * ty list)) list;
+  mutable requests: (Json.t * Semantic.signature) list;
+  mutable classes: (string * (Json.t * ty list * ty * (Semantic.key * string) list)) list;
+  mutable entries: entry list;
+  mutable expressions: expression list;
+  mutable instantiations: ((string * Json.t) * (string * type_argument) list) list;
+  mutable instances: ((string * Json.t) * ty) list;
+  mutable arrows: (Json.t * overlay list) list;
+  mutable evolving: (string * (Json.t * bool)) list;
+  mutable grown_locals: string list;
+  mutable exact_locals: string list;
+  mutable objects: (string * (Semantic.key * Source.expr) list) list;
+  mutable fresh_constructor: bool;
+  mutable exact_allocs: Json.t list;
+  mutable contracts: contract list;
+  mutable current_point: string;
+  mutable speculative_typing: bool;
+ }
+
 type t = {
+  local: local ref;
   diagnostics: Proposal_diagnostics.state;
   flows: Flow.graph list;
   offered: (Json.t * Semantic.signature list) list;
@@ -20,26 +43,9 @@ type t = {
   env0: env;
   rigid_bounds: (Semantic.rigid * ty) list ref;
   writes: (Json.t * ty) list ref;
-  entries: entry list ref;
-  expressions: expression list ref;
-  instantiations: ((string * Json.t) * (string * type_argument) list) list ref;
-  current_point: string ref;
-  contracts: contract list ref;
   typing_roots: (string * Execution.plan * env) list ref;
   executions: (string * Json.t, Execution.plan) Hashtbl.t;
   expression_hints: (Json.t, Source.expr) Hashtbl.t;
-  evolving: (string * (Json.t * bool)) list ref;
-  grown_locals: string list ref;
-  exact_locals: string list ref;
-  closures: (string * (Json.t * ty list)) list ref;
-  requests: (Json.t * Semantic.signature) list ref;
-  classes: (string * (Json.t * ty list * ty * (Semantic.key * string) list)) list ref;
-  fresh_constructor: bool ref;
-  objects: (string * (Semantic.key * Source.expr) list) list ref;
-  exact_allocs: Json.t list ref;
-  instances: ((string * Json.t) * ty) list ref;
-  arrows: (Json.t * overlay list) list ref;
-  speculative_typing: bool ref;
   block_result: ty option ref;
   block_returned: ty list ref ref;
   following: (Json.t, Source.stmt list) Hashtbl.t;
@@ -62,17 +68,26 @@ let create diagnostics flows offered declarations module_functions bounds assume
     n,if List.exists (assigns n) f.body then cell t else Value (arms declarations t)) f.params in
   { diagnostics; flows; offered; declarations; module_functions; f; assumed; env0;
     executions; expression_hints; rigid_bounds=ref bounds; writes=ref [];
-    entries=ref []; expressions=ref []; instantiations=ref []; current_point=ref "";
-    contracts=ref []; typing_roots=ref []; evolving=ref []; grown_locals=ref [];
-    exact_locals=ref []; closures=ref []; requests=ref []; classes=ref [];
-    fresh_constructor=ref false; objects=ref []; exact_allocs=ref []; instances=ref [];
-    arrows=ref []; speculative_typing=ref false; block_result=ref (Some f.result);
-    block_returned=ref (ref []); following=Hashtbl.create 64 }
+    typing_roots=ref []; block_result=ref (Some f.result);
+    block_returned=ref (ref []); following=Hashtbl.create 64;
+    local=ref { entries=[]; expressions=[]; instantiations=[]; current_point="";
+      contracts=[]; evolving=[]; grown_locals=[]; exact_locals=[]; closures=[];
+      requests=[]; classes=[]; fresh_constructor=false; objects=[]; exact_allocs=[];
+      instances=[]; arrows=[]; speculative_typing=false } }
+
+(* Writes and diagnostic observations belong to the pass and run respectively;
+   they survive speculation. Proposal output and path metadata belong to local. *)
+let speculate state f =
+  let saved = !(state.local) in
+  state.local := { saved with speculative_typing=true };
+  Fun.protect ~finally:(fun () -> state.local := saved)
+    (fun () -> try Some (f ()) with Json.Error _ -> None)
 
 module type Scope = sig val state : t end
 (* Each component is instantiated once for a pass and closes over that pass.
    Instantiation does not allocate another copy of the analysis state. *)
 module View (S : Scope) = struct
+  let local = S.state.local
   let diagnostics = S.state.diagnostics
   let flows = S.state.flows
   let offered = S.state.offered
@@ -83,26 +98,9 @@ module View (S : Scope) = struct
   let env0 = S.state.env0
   let rigid_bounds = S.state.rigid_bounds
   let writes = S.state.writes
-  let entries = S.state.entries
-  let expressions = S.state.expressions
-  let instantiations = S.state.instantiations
-  let current_point = S.state.current_point
-  let contracts = S.state.contracts
   let typing_roots = S.state.typing_roots
   let executions = S.state.executions
   let expression_hints = S.state.expression_hints
-  let evolving = S.state.evolving
-  let grown_locals = S.state.grown_locals
-  let exact_locals = S.state.exact_locals
-  let closures = S.state.closures
-  let requests = S.state.requests
-  let classes = S.state.classes
-  let fresh_constructor = S.state.fresh_constructor
-  let objects = S.state.objects
-  let exact_allocs = S.state.exact_allocs
-  let instances = S.state.instances
-  let arrows = S.state.arrows
-  let speculative_typing = S.state.speculative_typing
   let block_result = S.state.block_result
   let block_returned = S.state.block_returned
   let following = S.state.following

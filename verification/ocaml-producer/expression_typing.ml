@@ -17,10 +17,10 @@ module Closures = Expression_closures.Make(S)
 module Calls = Expression_calls.Make(S)
   let infer expr execute_bindings body ?expected env (e:Source.expr) =
     let saved_roots = !typing_roots in
-    let root=if !speculative_typing then None else match saved_roots with
-      | ((point,plan,_) as root) :: _ when point = !current_point && Execution.contains e.pos plan -> Some root
-      | _ -> Option.map (fun plan -> !current_point,plan,env)
-          (Hashtbl.find_opt executions (!current_point,e.pos)) in
+    let root=if (!local).Analysis_state.speculative_typing then None else match saved_roots with
+      | ((point,plan,_) as root) :: _ when point = (!local).Analysis_state.current_point && Execution.contains e.pos plan -> Some root
+      | _ -> Option.map (fun plan -> (!local).Analysis_state.current_point,plan,env)
+          (Hashtbl.find_opt executions ((!local).Analysis_state.current_point,e.pos)) in
     (match root with None -> () | Some root -> typing_roots := root :: saved_roots);
     Fun.protect ~finally:(fun () -> typing_roots := saved_roots) (fun () ->
     let env=match root,e.node with
@@ -42,7 +42,7 @@ module Calls = Expression_calls.Make(S)
     (* Block wrappers correspond to statement entries, not expression sites. *)
     (match e.node with
       | BlockBody _ -> ()
-      | _ -> expressions := {point = !current_point;pos=e.pos;type_=t;
-          instantiation=List.assoc_opt (!current_point,e.pos) !instantiations} :: !expressions); t)
+      | _ -> (!local).Analysis_state.expressions <- {point = (!local).Analysis_state.current_point;pos=e.pos;type_=t;
+          instantiation=List.assoc_opt ((!local).Analysis_state.current_point,e.pos) (!local).Analysis_state.instantiations} :: (!local).Analysis_state.expressions); t)
 
 end

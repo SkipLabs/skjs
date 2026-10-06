@@ -32,7 +32,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
         (* A method's closure offered further signatures is held at its own
            claim: a construct signature offering them reads them there. *)
         let widened = match e.node with
-          | Id m -> (match List.assoc_opt m !closures with
+          | Id m -> (match List.assoc_opt m (!local).Analysis_state.closures with
             | Some (pos,_) -> List.mem_assoc pos offered | None -> false)
           | _ -> false in
         (* A literal's type widens in a mutable field, as TypeScript's fresh
@@ -51,7 +51,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
          for one is allocated at the dictionary itself, each field at its
          index's type. *)
       (match contract with
-       | _ when List.mem_assoc (Name proto_key) fs || List.mem e.pos !exact_allocs -> Atoms [Exact fields]
+       | _ when List.mem_assoc (Name proto_key) fs || List.mem e.pos (!local).Analysis_state.exact_allocs -> Atoms [Exact fields]
        | Some {indexes=(_::_ as indexes);fields=contract_fields;_}
          when List.exists (fun (i:Semantic.index_signature) -> i.writable <> None) indexes ->
          (* The contract's optional fields it leaves out, which it lacks. *)

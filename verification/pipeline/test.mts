@@ -105,6 +105,16 @@ function fixtureProject(files: Record<string, string>) {
   };
 }
 
+// ../ocaml-producer/speculation_tests.ml checks the producer's scoped-state contract directly.
+{
+  const result = spawnSync(resolve(here, "../ocaml-producer/_build/default/speculation_tests.exe"), [],
+    { encoding: "utf8", timeout: 30_000 });
+  assert.ifError(result.error);
+  assert.equal(result.signal, null);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  process.stdout.write(result.stdout);
+}
+
 const outcomes = await pooled(cases, runCase);
 const artifactsOf = new Map<string, string>();
 let verifiedFunctions = 0;

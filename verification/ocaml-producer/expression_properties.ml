@@ -124,7 +124,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
         let written () = if reads n rhs
           then (match quietly (fun () -> expr (forget env) rhs) with None -> Some t | s -> s)
           else Some t in
-        (match List.assoc_opt n !evolving with
+        (match List.assoc_opt n (!local).Analysis_state.evolving with
          | Some (key,false) -> Option.iter (evolve key) (written ())
          | Some (key,true) -> Option.iter (evolve key) (Option.bind (written ()) (fun t -> Semantic.array_element t))
          | None -> ());

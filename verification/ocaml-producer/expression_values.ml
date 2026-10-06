@@ -17,12 +17,12 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
   match e.node with
     | Id n ->
       Option.iter (fun expected -> Option.iter (fun c -> offer_class c expected)
-        (List.assoc_opt n !classes)) expected;
+        (List.assoc_opt n (!local).Analysis_state.classes)) expected;
       (* A named closure expected at a signature binding more parameters
          than it does is offered it, wherever it flows: an argument, an annotated binding, a return, a field. *)
       (match expected with
        | Some (Atoms [Shape {calls=[o];fields=[];indexes=[];elements=None}])
-         when List.mem_assoc n !closures && List.mem_assoc n env ->
+         when List.mem_assoc n (!local).Analysis_state.closures && List.mem_assoc n env ->
          Option.iter (fun state -> state ()) (closure_offer n o)
        | _ -> ());
       (* A named function value, a module function or a parameter, where a
@@ -30,7 +30,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
          the receiver it requires, is expected (a closure literal is offered
          such a signature instead). *)
       (match expected with
-       | Some x when not (List.mem_assoc n !closures) ->
+       | Some x when not (List.mem_assoc n (!local).Analysis_state.closures) ->
          let rec calls t = match t with
            | Meet (t,ts) -> List.concat_map calls (t::ts)
            | t -> List.concat_map (function Shape s -> s.calls | _ -> [])
@@ -203,12 +203,12 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
         | Nullish -> without_nullish contract | OrElse -> Atoms [True] | AndAlso -> Atoms [False]) right
     | NullishAssign (n,name_pos,rhs) ->
       let current = resolve env n in
-      expressions := {point = !current_point;pos=name_pos;type_=current;instantiation=None} :: !expressions;
+      (!local).Analysis_state.expressions <- {point = (!local).Analysis_state.current_point;pos=name_pos;type_=current;instantiation=None} :: (!local).Analysis_state.expressions;
       let contract = match lookup env n with
         | Storage (contract,_) -> contract
         | Value _ -> Proposal_diagnostics.unsupported "assignment to immutable binding" in
       let right = expr ~expected:contract env rhs in
-      (match List.assoc_opt n !evolving with
+      (match List.assoc_opt n (!local).Analysis_state.evolving with
        | Some (key,false) -> evolve key right
        | _ -> ());
       union (without_nullish current) right
@@ -249,8 +249,8 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
           (* A slice: its `%RestFrom:k%`'s fresh array, at the instance of
              the elements from the rest's index on. *)
           let element = slice_element declarations start actual in
-          expressions := {point = !current_point;pos=span;type_=array {required=[];optional_elements=[];rest=Some element;readonly=false;presence=Readable};
-            instantiation=Some ["T",ValueArgument element]} :: !expressions
+          (!local).Analysis_state.expressions <- {point = (!local).Analysis_state.current_point;pos=span;type_=array {required=[];optional_elements=[];rest=Some element;readonly=false;presence=Readable};
+            instantiation=Some ["T",ValueArgument element]} :: (!local).Analysis_state.expressions
         else
         let claim = match Semantic.array_element (contract n),declared_head declarations [] actual with
           | Some _,_ -> contract n
@@ -258,7 +258,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
             array {required=List.filteri (fun i _ -> i >= start) s.required;
                    optional_elements=[];rest=None;readonly=false;presence=Dense}
           | _ -> Proposal_diagnostics.unsupported "an array rest needs one tuple of required positions: the rest of an array of unknown length is a slice" in
-        expressions := {point = !current_point;pos=span;type_=claim;instantiation=None} :: !expressions) rest;
+        (!local).Analysis_state.expressions <- {point = (!local).Analysis_state.current_point;pos=span;type_=claim;instantiation=None} :: (!local).Analysis_state.expressions) rest;
       actual
     | Equality (op,l,r) ->
       let lt = expr env l and rt = expr env r in

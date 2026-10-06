@@ -23,26 +23,26 @@ open Analysis_state.View(S)
 
   let named_closure n written (init:expr) = match written,init.node with
     | (None | Some (Atoms [Shape {calls=[_];fields=[];indexes=[];elements=None}])),Lambda (_,[],ps,_,false,_,_) ->
-      closures := (n,(init.pos,List.map snd ps)) :: !closures
-    | None,Alloc fs -> objects := (n,fs) :: !objects
+      (!local).Analysis_state.closures <- (n,(init.pos,List.map snd ps)) :: (!local).Analysis_state.closures
+    | None,Alloc fs -> (!local).Analysis_state.objects <- (n,fs) :: (!local).Analysis_state.objects
     | Some _,Ctor {node=Lambda (None,[],ps,[],false,Some instance,body);_} when allocated body <> None ->
       let fs = Option.get (allocated body) in
       (* An instance's methods are its prototype chain's, the nearer first. *)
       let rec chain seen fs = match List.assoc_opt (Name proto_key) fs with
         | Some {node=Id p;_} when not (List.mem p seen) ->
-          let own = Option.value (List.assoc_opt p !objects) ~default:[] in
+          let own = Option.value (List.assoc_opt p (!local).Analysis_state.objects) ~default:[] in
           List.filter (fun (k,_) -> k <> Name proto_key) own
           @ List.filter (fun (k,_) -> not (List.mem_assoc k own)) (chain (p::seen) own)
         | _ -> [] in
       let fs = if List.mem_assoc (Name proto_key) fs then chain [] fs else fs in
       let methods = List.filter_map (fun (key,(e:expr)) -> match e.node with
-        | Id m when List.mem_assoc m !closures -> Some (key,m)
+        | Id m when List.mem_assoc m (!local).Analysis_state.closures -> Some (key,m)
         | _ -> None) fs in
-      classes := (n,(init.pos,List.map snd ps,instance,methods)) :: !classes
+      (!local).Analysis_state.classes <- (n,(init.pos,List.map snd ps,instance,methods)) :: (!local).Analysis_state.classes
     | _ -> ()
 
   let closure_offer n (offered:Semantic.signature) =
-    let pos,own = List.assoc n !closures in
+    let pos,own = List.assoc n (!local).Analysis_state.closures in
     let arity = List.length own in
     if offered.quantified=[] && offered.rest_pack=None
        && (match offered.variadic with
@@ -50,7 +50,7 @@ open Analysis_state.View(S)
            | Some _ -> List.length offered.params >= arity)
        && List.for_all2 plausible_subtype
             (List.filteri (fun i _ -> i < arity) offered.params) own
-    then Some (fun () -> requests := (pos,offered) :: !requests) else None
+    then Some (fun () -> (!local).Analysis_state.requests <- (pos,offered) :: (!local).Analysis_state.requests) else None
 
   let offer_class (pos,params,instance,methods) expected =
     match declared_head declarations [] expected with
@@ -69,8 +69,8 @@ open Analysis_state.View(S)
         let longer = s.variadic=None && s.rest_pack=None && List.length s.params > arity
           && List.for_all2 plausible_subtype (List.filteri (fun i _ -> i < arity) s.params) params in
         if widened <> [] || longer then
-          requests := (pos,{call_effect=s.call_effect;quantified=[];receiver=top;params=if longer then s.params else params;
-                            variadic=None;rest_pack=None;result=s.result}) :: !requests)
+          (!local).Analysis_state.requests <- (pos,{call_effect=s.call_effect;quantified=[];receiver=top;params=if longer then s.params else params;
+                            variadic=None;rest_pack=None;result=s.result}) :: (!local).Analysis_state.requests)
         (List.filter (fun (s:Semantic.signature) -> s.quantified=[]) signatures)
     | _ -> ()
 
