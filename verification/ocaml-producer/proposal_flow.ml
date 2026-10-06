@@ -20,12 +20,11 @@ type state = { env: environment; metadata: metadata }
 (* Statement semantics propose environments. Output isolation retains only the
    last visit's claims at a graph node, then publishes them after solving. The
    output payload is owned by the analysis and may contain nested body claims. *)
-type ('output, 'checkpoint) callbacks = {
+type 'output callbacks = {
   snapshot_metadata: unit -> metadata;
   restore_metadata: metadata -> unit;
   empty_output: 'output;
-  begin_output: string -> 'checkpoint;
-  finish_output: 'checkpoint -> 'output;
+  with_output: 'result. string -> (unit -> 'result) -> 'result * 'output;
   publish_output: 'output -> unit;
   statement: environment -> Source.stmt -> environment;
   execute_bindings: environment -> Execution.binding_plan -> environment;
@@ -38,6 +37,12 @@ type ('output, 'checkpoint) callbacks = {
   iterator_start: Flow.node -> Source.stmt -> environment -> Flow.binding -> environment;
   iterator_step: Flow.node -> Source.stmt -> environment -> Flow.binding -> Flow.binding -> environment * environment;
 }
+
+(* The enclosing path is projected to its lexical bindings by the caller.
+   Node execution publishes successor snapshots while this scope restores that
+   enclosing metadata on normal return, refusal and unexpected exceptions. *)
+let with_path restore_metadata enclosing action =
+  Fun.protect ~finally:(fun () -> restore_metadata enclosing) action
 
 let unsupported s = Json.fail ("unsupported: " ^ s)
 
@@ -113,8 +118,9 @@ let statements callbacks flows following owner_span env0 ss =
     let publications=Array.make (Array.length graph.nodes) callbacks.empty_output in
     let transfer (node:Flow.node) state =
       let saved_metadata=capture env0 in
+      let edges,output=with_path callbacks.restore_metadata saved_metadata.metadata (fun () ->
+        callbacks.with_output node.Flow.point (fun () ->
       let env=restore state in
-      let saved_output=callbacks.begin_output node.Flow.point in
       let env=if node.Flow.id=graph.Flow.entry then
         match graph.Flow.prologue with None -> env | Some plan -> callbacks.execute_bindings env plan
         else env in
@@ -174,8 +180,8 @@ let statements callbacks flows following owner_span env0 ss =
               List.map (fun (n,b) -> if n=h.binding.name then n,Value top else n,b) exceptional
             else extend exceptional h.binding.name (Value top) in
           next h.target exceptional :: edges in
-      publications.(node.id) <- callbacks.finish_output saved_output;
-      ignore (restore saved_metadata);
+      edges)) in
+      publications.(node.id) <- output;
       edges in
     let states=Flow.solve ~join ~transfer
       ~widen:(fun _ state -> {state with env=forget state.env}) graph (capture env0) in

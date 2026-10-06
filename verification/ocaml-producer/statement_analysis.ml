@@ -6,9 +6,50 @@ open Inference
 open Type_queries
 open Proposal_types
 open Proposal_diagnostics
+type node_output = {
+  entries: Proposal_types.entry list;
+  expressions: Proposal_types.expression list;
+  contracts: Proposal_types.contract list;
+  arrows: (Json.t * Proposal_types.overlay list) list;
+  requests: (Json.t * Semantic.signature) list;
+  instances: ((string * Json.t) * ty) list;
+  instantiations: ((string * Json.t) * (string * type_argument) list) list;
+}
+type output_scope = { point: string; output: node_output }
+let empty_output = { entries=[]; expressions=[]; contracts=[]; arrows=[];
+  requests=[]; instances=[]; instantiations=[] }
+
 module Make (S : Analysis_state.Scope) = struct
 open Analysis_state.View(S)
 open Analysis_context.Make(S)
+let node_output () : node_output = {
+  entries=(!local).Analysis_state.entries; expressions=(!local).Analysis_state.expressions;
+  contracts=(!local).Analysis_state.contracts; arrows=(!local).Analysis_state.arrows;
+  requests=(!local).Analysis_state.requests; instances=(!local).Analysis_state.instances;
+  instantiations=(!local).Analysis_state.instantiations }
+
+let restore_output (output:node_output) =
+  (!local).Analysis_state.entries <- output.entries;
+  (!local).Analysis_state.expressions <- output.expressions;
+  (!local).Analysis_state.contracts <- output.contracts;
+  (!local).Analysis_state.arrows <- output.arrows;
+  (!local).Analysis_state.requests <- output.requests;
+  (!local).Analysis_state.instances <- output.instances;
+  (!local).Analysis_state.instantiations <- output.instantiations
+
+(* A node owns its claims while executing. Only its returned payload can be
+   published; enclosing claims and the current point survive every exit. *)
+let with_output point action =
+  let enclosing = { point=(!local).Analysis_state.current_point; output=node_output () } in
+  Fun.protect ~finally:(fun () ->
+    restore_output enclosing.output;
+    (!local).Analysis_state.current_point <- enclosing.point)
+    (fun () ->
+      restore_output empty_output;
+      (!local).Analysis_state.current_point <- point;
+      let result = action () in
+      result,node_output ())
+
 let transfer (expr:Analysis_state.expression_infer) =
   let after e env = effects env e in
   (* The statements following each statement of a block, by its span. *)
@@ -246,24 +287,20 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
       (!local).Analysis_state.evolving <- m.Proposal_flow.evolving; (!local).Analysis_state.grown_locals <- m.Proposal_flow.grown_locals;
       (!local).Analysis_state.exact_locals <- m.Proposal_flow.exact_locals; (!local).Analysis_state.closures <- m.Proposal_flow.closures; (!local).Analysis_state.classes <- m.Proposal_flow.classes;
       (!local).Analysis_state.objects <- m.Proposal_flow.objects; (!local).Analysis_state.fresh_constructor <- m.Proposal_flow.fresh_constructor; (!local).Analysis_state.exact_allocs <- m.Proposal_flow.exact_allocs);
-    empty_output=([],[],[],[],[],[],[]);
-    begin_output=(fun point ->
-      let saved=((!local).Analysis_state.current_point,(!local).Analysis_state.entries,(!local).Analysis_state.expressions,(!local).Analysis_state.contracts,(!local).Analysis_state.arrows,(!local).Analysis_state.requests,(!local).Analysis_state.instances,(!local).Analysis_state.instantiations) in
-      (!local).Analysis_state.entries <- []; (!local).Analysis_state.expressions <- []; (!local).Analysis_state.contracts <- []; (!local).Analysis_state.arrows <- []; (!local).Analysis_state.requests <- [];
-      (!local).Analysis_state.instances <- []; (!local).Analysis_state.instantiations <- []; (!local).Analysis_state.current_point <- point; saved);
-    finish_output=(fun (point,es,xs,cs,rs,qs,its,substs) ->
-      let output=((!local).Analysis_state.entries,(!local).Analysis_state.expressions,(!local).Analysis_state.contracts,(!local).Analysis_state.arrows,(!local).Analysis_state.requests,(!local).Analysis_state.instances,(!local).Analysis_state.instantiations) in
-      (!local).Analysis_state.entries <- es; (!local).Analysis_state.expressions <- xs; (!local).Analysis_state.contracts <- cs; (!local).Analysis_state.arrows <- rs; (!local).Analysis_state.requests <- qs;
-      (!local).Analysis_state.instances <- its; (!local).Analysis_state.instantiations <- substs; (!local).Analysis_state.current_point <- point; output);
-    publish_output=(fun (es,xs,cs,rs,qs,its,substs) ->
-      (!local).Analysis_state.entries <- es @ (!local).Analysis_state.entries; (!local).Analysis_state.expressions <- xs @ (!local).Analysis_state.expressions;
-      (!local).Analysis_state.arrows <- rs @ (!local).Analysis_state.arrows; (!local).Analysis_state.requests <- qs @ (!local).Analysis_state.requests;
-      (!local).Analysis_state.instances <- its @ (!local).Analysis_state.instances; (!local).Analysis_state.instantiations <- substs @ (!local).Analysis_state.instantiations;
+    empty_output;
+    with_output;
+    publish_output=(fun (output:node_output) ->
+      (!local).Analysis_state.entries <- output.entries @ (!local).Analysis_state.entries;
+      (!local).Analysis_state.expressions <- output.expressions @ (!local).Analysis_state.expressions;
+      (!local).Analysis_state.arrows <- output.arrows @ (!local).Analysis_state.arrows;
+      (!local).Analysis_state.requests <- output.requests @ (!local).Analysis_state.requests;
+      (!local).Analysis_state.instances <- output.instances @ (!local).Analysis_state.instances;
+      (!local).Analysis_state.instantiations <- output.instantiations @ (!local).Analysis_state.instantiations;
       List.iter (fun (c:contract) ->
         match List.find_opt (fun (other:contract) -> other.pos=c.pos && other.name=c.name) (!local).Analysis_state.contracts with
         | None -> (!local).Analysis_state.contracts <- c :: (!local).Analysis_state.contracts
         | Some other when other.type_=c.type_ -> ()
-        | Some _ -> Proposal_diagnostics.unsupported "a storage contract differs across executions of its declaration") cs);
+        | Some _ -> Proposal_diagnostics.unsupported "a storage contract differs across executions of its declaration") output.contracts);
     statement=transfer_statement;
     execute_bindings;
     expression=(fun env e -> expr env e);

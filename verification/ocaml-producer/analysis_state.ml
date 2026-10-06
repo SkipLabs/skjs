@@ -83,6 +83,31 @@ let speculate state f =
   Fun.protect ~finally:(fun () -> state.local := saved)
     (fun () -> try Some (f ()) with Json.Error _ -> None)
 
+(* Typing contexts are dynamically scoped around recursive inference. *)
+let with_current_point state point f =
+  let saved = (!(state.local)).current_point in
+  (!(state.local)).current_point <- point;
+  Fun.protect ~finally:(fun () -> (!(state.local)).current_point <- saved) f
+
+let with_rigid_bounds state bounds f =
+  let saved = !(state.rigid_bounds) in
+  state.rigid_bounds := bounds;
+  Fun.protect ~finally:(fun () -> state.rigid_bounds := saved) f
+
+let with_typing_roots state roots f =
+  let saved = !(state.typing_roots) in
+  state.typing_roots := roots;
+  Fun.protect ~finally:(fun () -> state.typing_roots := saved) f
+
+let with_block_context state result returned f =
+  let saved_result = !(state.block_result) in
+  let saved_returned = !(state.block_returned) in
+  state.block_result := result;
+  state.block_returned := returned;
+  Fun.protect ~finally:(fun () ->
+    state.block_result := saved_result;
+    state.block_returned := saved_returned) f
+
 module type Scope = sig val state : t end
 (* Each component is instantiated once for a pass and closes over that pass.
    Instantiation does not allocate another copy of the analysis state. *)

@@ -1099,6 +1099,27 @@ point-specific contents have separate claim identities.
 | 2. The producer reads the shared control-flow IR: design and validation. Lean constructs claim-independent execution points and edges, final lowering consumes that IR, and the producer proposes environments and current contents per point. Type-directed expression elaboration consumes those proposals; mutable declaration contracts have separate identities | done: `FlowGraph`, `ExpressionPlan` and `BindingPlan` supply the shared execution schedule; entry and expression claims have owner-qualified point identities, expression sites also retain source spans, and mutable lifetime contracts have separate identities; forged point and contract associations are refused | the design states the graph wire, the claims keyed by node and the checks on that association; a prototype over a subset of the cases (control flow, `try`/`finally`, iterator close, closures) reaches the same outcomes as the source-level producer, with forged node keys refused |
 | 3. The producer reads the shared control-flow IR: cutover | done: all 847 cases and independent forged-claim/report controls pass; the 53-file corpus has the same per-function outcomes as its baseline (303 accepted, 301 derived, 2 not derived); all six protected runtime traces pass; source-level control-flow, compound-expression and binding/default execution mirrors are retired | every `cases.mts` outcome and the corpus's per-function results unchanged or better; the producer's source-level control-flow mirror and association by source position alone deleted; expression claims identified by execution point and source span |
 
+**Decomposition and state ownership.** This checklist covers the producer,
+source lowering and their documentation. Completion counts milestones, not
+equal amounts of effort.
+
+| Milestone | State | Closed when |
+| --- | --- | --- |
+| M1. OCaml proposal decomposition | done | pass coordination, execution, expression families and publication have separate modules |
+| M2. Lean typed source lowering decomposition | done | recursive lowering operations have responsibility-specific modules and explicit callbacks |
+| M3. Lean claim decoding and acceptance decomposition | done | decoding, site validation, extraction and certification have separate owners |
+| M4. Lean equation lowering decomposition | done | equation construction stages have separate modules |
+| M5. Lean nested graph frame | done | closure compilation restores one enclosing graph frame |
+| M6. OCaml execution analysis interface | done | the interpreter receives explicit lookups and operations without mutable pass-state access |
+| M7. OCaml speculative frame | done | speculative inference restores one local record on every exit, retaining shared proposals and diagnostics |
+| M8. OCaml claim collection interface | done | claim collection receives lookup, publication and speculation operations |
+| M9. Node output and path scopes | done | named output records and scoped execution replace paired checkpoint callbacks and restore enclosing output and metadata on every exit |
+| M10. Overload-row claim scope | done | each signature collects its claims through one scoped operation with restoration on every exit |
+| M11. Typing-context scopes | done | block return context, observation roots, active point and rigid bounds have explicit scope operations |
+| M12. Remaining OCaml access restrictions | open | the seven expression modules, binding analysis, statement analysis and closure offers use responsibility-specific interfaces; their unrestricted pass-state views are retired |
+| M13. Lean lowering access restrictions | open | temporary contexts have scoped operations and consumers cannot access or replace the complete construction state |
+| M14. Documentation organization | open | calculus rules, source elaboration, host contracts, protocol definitions, architecture decisions and the work ledger have clear owners; large mixed-subject documents are split, prerequisites are explicit, and links resolve |
+
 **Upstream sum example.** `reactive-sum-prettier-ignore`, Skip's sum service
 as published, against the pinned upstream runtime. The program is safe; the
 items are the verifier limits it meets and the runtime's declared service

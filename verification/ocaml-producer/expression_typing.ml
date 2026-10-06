@@ -21,8 +21,8 @@ module Calls = Expression_calls.Make(S)
       | ((point,plan,_) as root) :: _ when point = (!local).Analysis_state.current_point && Execution.contains e.pos plan -> Some root
       | _ -> Option.map (fun plan -> (!local).Analysis_state.current_point,plan,env)
           (Hashtbl.find_opt executions ((!local).Analysis_state.current_point,e.pos)) in
-    (match root with None -> () | Some root -> typing_roots := root :: saved_roots);
-    Fun.protect ~finally:(fun () -> typing_roots := saved_roots) (fun () ->
+    let roots = match root with None -> saved_roots | Some root -> root :: saved_roots in
+    Analysis_state.with_typing_roots S.state roots (fun () ->
     let env=match root,e.node with
       | _,BlockBody _ | None,_ -> env
       | Some root,_ -> expression_entry root e.pos env in

@@ -130,8 +130,13 @@ offers and path metadata. `Analysis_state.speculate` restores the enclosing
 record on success, refusal and unexpected exceptions, including nested attempts.
 Write proposals and diagnostic observations survive these attempts. A
 `Json.Error` refusal returns `None`; other exceptions propagate after restoration.
-The [scope tests](speculation_tests.ml) check restoration and retained effects,
-including exceptional exits that source cases cannot inject.
+Node execution collects its output in a named record and restores the enclosing
+output and scope-projected path metadata on every exit. Each overload row owns
+its expression, entry and storage-contract claims; other inference effects
+remain with the enclosing pass. Block return context, observation roots, active
+point and rigid bounds use explicit scope operations.
+The [scope tests](speculation_tests.ml) check these restoration boundaries and
+retained effects, including exceptional exits that source cases cannot inject.
 
 Lean's final lowering consumes the same plan builders, with the claims used
 for type-directed operations. It reconstructs plans from Fragment when checking

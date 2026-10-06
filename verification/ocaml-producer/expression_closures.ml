@@ -8,6 +8,22 @@ module Make (S : Analysis_state.Scope) = struct
 open Analysis_state.View(S)
 open Analysis_context.Make(S)
 module Support = Expression_support.Make(S)
+let collect_overload_row_claims infer_row =
+  let saved_expressions = (!local).Analysis_state.expressions
+  and saved_entries = (!local).Analysis_state.entries
+  and saved_contracts = (!local).Analysis_state.contracts in
+  Fun.protect ~finally:(fun () ->
+    (!local).Analysis_state.expressions <- saved_expressions;
+    (!local).Analysis_state.entries <- saved_entries;
+    (!local).Analysis_state.contracts <- saved_contracts) (fun () ->
+      (!local).Analysis_state.expressions <- [];
+      (!local).Analysis_state.entries <- [];
+      (!local).Analysis_state.contracts <- [];
+      infer_row ();
+      {row_contracts=List.rev (!local).Analysis_state.contracts;
+       row_expressions=List.rev (!local).Analysis_state.expressions;
+       row_entries=List.rev (!local).Analysis_state.entries})
+
 let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:Analysis_state.body_infer) ?expected env (e:Source.expr) =
   match e.node with
     | Ctor {node=Lambda (None,[],ps,[],false,Some result,body);_} ->
@@ -107,23 +123,20 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
       (* A generic closure's own ground bounds hold in its body, as a generic
          function's do: a member read through a bounded binder reads the
          bound's member. *)
-      let enclosing_bounds = !rigid_bounds in
-      rigid_bounds := List.filter_map (fun (q:Semantic.quantifier) -> match q.bound with
+      let closure_bounds = List.filter_map (fun (q:Semantic.quantifier) -> match q.bound with
         | Some (ValueArgument b) when not (Semantic.mentions_rigid b) -> Some (q.identity,b)
         | Some (ValueArgument (Rigid t)) when t <> q.identity -> Some (q.identity,Rigid t)
-        | _ -> None) quantified @ enclosing_bounds;
+        | _ -> None) quantified @ !rigid_bounds in
       let infer_closure_body ?expected env = match body.node with
         | BlockBody _ -> expr ?expected env body
         | _ ->
           let graph=match List.find_opt (fun (g:Flow.graph) -> g.Flow.owner=body.pos) flows with
             | Some graph -> graph | None -> Json.fail "Lean supplied no graph for a closure expression body" in
-          let saved_point = (!local).Analysis_state.current_point in
-          Fun.protect ~finally:(fun () -> (!local).Analysis_state.current_point <- saved_point) (fun () ->
-            (!local).Analysis_state.current_point <- graph.Flow.nodes.(graph.Flow.entry).Flow.point;
+          Analysis_state.with_current_point S.state graph.Flow.nodes.(graph.Flow.entry).Flow.point (fun () ->
             let env=match graph.Flow.prologue with None -> env | Some plan -> execute_bindings env plan in
             entry env body.pos;
             expr ?expected env body) in
-      let body_type = Fun.protect ~finally:(fun () -> rigid_bounds := enclosing_bounds) (fun () ->
+      let body_type = Analysis_state.with_rigid_bounds S.state closure_bounds (fun () ->
         infer_closure_body ?expected:(if written <> None then written else contextual) inner) in
       (* Without a result annotation the result is the body's, widened as
          TypeScript widens an inferred return type, or the contextual return
@@ -223,18 +236,13 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
        | Some (Atoms [Shape {calls=(_::_::_ as calls);fields=[];indexes=[];elements=None}] as contract)
          when quantified=[] && defaults=[] && List.for_all implements calls ->
          let row (s:Semantic.signature) =
-           let saved = (!local).Analysis_state.expressions and saved_entries = (!local).Analysis_state.entries and saved_contracts = (!local).Analysis_state.contracts in
-           (!local).Analysis_state.expressions <- []; (!local).Analysis_state.entries <- []; (!local).Analysis_state.contracts <- [];
-           let env_row = List.fold_left2 (fun env (n,_) t -> extend env n (Value t))
-             env ps s.params in
-           ignore (infer_closure_body ~expected:s.result env_row);
            (* An entry environment replaces the context it is checked against,
               so a body's entries are stated per signature like its
               expressions. *)
-           let claims = {row_contracts=List.rev (!local).Analysis_state.contracts;row_expressions=List.rev (!local).Analysis_state.expressions;
-                         row_entries=List.rev (!local).Analysis_state.entries} in
-           (!local).Analysis_state.expressions <- saved; (!local).Analysis_state.entries <- saved_entries; (!local).Analysis_state.contracts <- saved_contracts;
-           claims in
+           collect_overload_row_claims (fun () ->
+             let env_row = List.fold_left2 (fun env (n,_) t -> extend env n (Value t))
+               env ps s.params in
+             ignore (infer_closure_body ~expected:s.result env_row)) in
          let rows = List.map row calls in
          (!local).Analysis_state.arrows <- (e.pos,rows) :: (!local).Analysis_state.arrows;
          contract

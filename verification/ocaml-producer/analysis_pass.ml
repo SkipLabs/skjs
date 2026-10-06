@@ -14,10 +14,7 @@ let infer diagnostics flows offered declarations module_functions bounds assumed
   let rec expr ?expected env e = E.infer expr bindings body ?expected env e
   and bindings env plan = B.infer expr env plan
   and body owner_span result returned env ss =
-    let saved = (!block_result,!block_returned) in
-    block_result := result; block_returned := returned;
-    Fun.protect ~finally:(fun () ->
-      let r,t = saved in block_result := r; block_returned := t)
+    Analysis_state.with_block_context state result returned
       (fun () -> T.statements expr bindings owner_span env ss) in
   let run () =
   let owner_span = if f.name_pos=Json.Null then Json.Array [Json.int 0;Json.int 0] else f.name_pos in
