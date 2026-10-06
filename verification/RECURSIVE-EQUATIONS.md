@@ -430,7 +430,7 @@ attempt remains exhausted. Member instances are validated once, and their
 outcomes serve both guarded coverage and the enclosing comparison's outcome.
 Its acceptance theorem covers only established inclusion. The
 command-line protocol for resource outcomes is tracked in
-[DESIGN: status](DESIGN.md#status).
+[WORK](WORK.md#status).
 
 ### 4.5 Example
 
@@ -580,4 +580,4 @@ accepted.
 
 The wire spellings are in [SOURCE-CLAIMS](SOURCE-CLAIMS.md#encoding) and
 [REQUEST-PROTOCOL](REQUEST-PROTOCOL.md). Progress is recorded in
-[DESIGN: status](DESIGN.md#status).
+[WORK](WORK.md#status).

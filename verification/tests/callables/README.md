@@ -73,7 +73,7 @@ Not supported, with the refusal each one meets:
 Refusal reasons are defined in
 [obligation diagnostics](../../OBLIGATION-DIAGNOSTICS.md); the encoding and its
 restrictions belong to the
-[protocol](../../REQUEST-PROTOCOL.md#expression-closures-and-calls).
+[protocol](../../FRAGMENT.md#expression-closures-and-calls).
 
 The hole-spread witness writes past the end of a Boolean array, leaving a
 hole. Spreading it would materialize `undefined` in a `boolean[]`. TypeScript
@@ -165,8 +165,8 @@ Breadth first, cheapest new representation first:
 [implementation status](#implementation-status) below.** This section owns the
 receiver design; [SEMANTICS](../../SEMANTICS.md#one-meaning-for-callable-contracts),
 [PROGRAM-TYPING](../../PROGRAM-TYPING.md#judgments-and-constructor-views),
-[REQUEST-PROTOCOL](../../REQUEST-PROTOCOL.md#receivers) and
-[DESIGN](../../DESIGN.md#receivers) state the implemented rules.
+[FRAGMENT](../../FRAGMENT.md#receivers) and
+[SOURCE-MODEL](../../SOURCE-MODEL.md#receivers) state the implemented rules.
 
 #### Contract and runtime interface
 
@@ -461,5 +461,5 @@ value is ignored.
 
 Run `make verify-test` for suites or `make verify-examples` for the corpus;
 `make verify` runs both. The [test index](../README.md) describes suite ownership.
-The [protocol](../../REQUEST-PROTOCOL.md#expression-closures-and-calls) owns
+The [protocol](../../FRAGMENT.md#expression-closures-and-calls) owns
 callable signature restrictions.

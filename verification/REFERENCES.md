@@ -26,7 +26,7 @@ operands only at lower indices. This is the budget of `Safe`, `SafeGraph` and
 every `Fam`.
 **Discussed in** [SEMANTICS: computations and recursive types](SEMANTICS.md#computations-and-recursive-types),
 [POSITIVE-TYPES: notation](POSITIVE-TYPES.md#positive-types),
-[DESIGN: heap and contracts](DESIGN.md#heap-and-contracts).
+[DESIGN: heap and contracts](SOURCE-MODEL.md#heap-and-contracts).
 Named as "step-indexed logical relations (Appel and McAllester 2000)" in the
 removed "Names" section of SEMANTICS (added `50217bc1`, removed `d54ee142`);
 the journal version is 2001.
@@ -41,7 +41,7 @@ location carries a type (here, a contract) in a world, a reference is
 invariant because the world fixes its contract, heap satisfaction ties
 contracts to contents, and functions are safe in every future world. This is
 `WorldT`, `refT`, `HeapOk` and admissible world extension.
-**Discussed in** [DESIGN: heap and contracts](DESIGN.md#heap-and-contracts),
+**Discussed in** [DESIGN: heap and contracts](SOURCE-MODEL.md#heap-and-contracts),
 [SEMANTICS: computations and recursive types](SEMANTICS.md#computations-and-recursive-types);
 named in the removed "Names" section of SEMANTICS (`50217bc1`, removed
 `d54ee142`).
@@ -67,7 +67,7 @@ IEEE Symposium on Logic in Computer Science (LICS 2000), pp. 255–266.
 recursive occurrences sit under a guard (the later modality ▷), here a read
 below the current budget.
 **Discussed in** [SEMANTICS: computations and recursive types](SEMANTICS.md#computations-and-recursive-types),
-[DESIGN: heap and contracts](DESIGN.md#heap-and-contracts).
+[DESIGN: heap and contracts](SOURCE-MODEL.md#heap-and-contracts).
 Named in the removed "Names" section of SEMANTICS (`50217bc1`, removed
 `d54ee142`).
 
@@ -121,7 +121,7 @@ program yields a value of its type, takes a step, or raises; a type says what
 a value is, never that none is thrown. The development proves this shape
 semantically, not by progress and preservation.
 **Discussed in** [DESIGN: principles](DESIGN.md#principles),
-[DESIGN: throws](DESIGN.md#throws),
+[DESIGN: throws](SOURCE-MODEL.md#throws),
 [SEMANTICS: computations and recursive types](SEMANTICS.md#computations-and-recursive-types).
 Named ("ML-style type soundness with exceptions, Wright and Felleisen's") in
 DESIGN's Throws section (`693d706a`), dropped in the DESIGN rewrite
@@ -155,7 +155,7 @@ read from `o` and invoked with receiver `o` it behaves as typed, and it
 promises nothing for another receiver (`methodT`, `holdsAt`, `bindMember`).
 The development takes the self-application semantics, not the book's Self
 types or its object subtyping.
-**Discussed in** [DESIGN: method members are host-relative](DESIGN.md#method-members-are-host-relative),
+**Discussed in** [DESIGN: method members are host-relative](SOURCE-MODEL.md#method-members-are-host-relative),
 [POSITIVE-TYPES: records](POSITIVE-TYPES.md#records) (`methodT`, uncited),
 `lean/Verification/Types/MethodMembers.lean` (module comment). Designed
 in `6a823646` and `d6645444`.
@@ -174,7 +174,7 @@ a local's own fresh object nothing else has reached; the pipeline takes the
 idea, not the paper's linear capabilities: the unaliasedness is a syntactic
 fact of the source (`growSites`), and the write is a copy the local is
 rebound to rather than an update in place.
-**Discussed in** [DESIGN: objects and prototypes](DESIGN.md#objects-and-prototypes),
+**Discussed in** [DESIGN: objects and prototypes](SOURCE-MODEL.md#objects-and-prototypes),
 [PROGRAM-TYPING: key-adding writes](PROGRAM-TYPING.md#key-adding-writes).
 
 ## Type-system design
@@ -322,7 +322,7 @@ compares the bounds contravariantly and the bodies under the target's, is
 undecidable, so the rule relating two generic methods instantiates the
 target's binders rigidly and the source's at them only where the binder
 counts are equal and the bounds identical, a decidable check.
-**Discussed in** [DESIGN: method members are host-relative](DESIGN.md#method-members-are-host-relative),
+**Discussed in** [DESIGN: method members are host-relative](SOURCE-MODEL.md#method-members-are-host-relative),
 [POSITIVE-TYPES: covered pairs](POSITIVE-TYPES.md#covered-pairs),
 `lean/Verification/Types/PositiveRules.lean`.
 
@@ -391,14 +391,14 @@ Language Specification* as of this writing). Sections relied on by name:
 **Used for** the meaning of every calculus step and every host row of the
 trust surface; checked by review and `#guard` tests against node, not proved.
 **Discussed in** [TRUST-REDUCTION: the host](TRUST-REDUCTION.md#the-host),
-[DESIGN: the model in brief](DESIGN.md#the-model-in-brief),
+[DESIGN: the model in brief](SOURCE-MODEL.md#the-model-in-brief),
 [DESIGN: trust surface](DESIGN.md#trust-surface),
 [SEMANTICS: operational language](SEMANTICS.md#operational-language),
 [SEMANTICS: the array invariant](SEMANTICS.md#the-array-invariant),
-[PROGRAM-TYPING: async functions and await](PROGRAM-TYPING.md#async-functions-and-await),
-[PROGRAM-TYPING: loops and spreads over iterables](PROGRAM-TYPING.md#loops-and-spreads-over-iterables),
-[PROGRAM-TYPING: patterns](PROGRAM-TYPING.md#patterns),
-[PROGRAM-TYPING: classes](PROGRAM-TYPING.md#classes),
+[PROGRAM-TYPING: async functions and await](SOURCE-CONTRACTS.md#async-functions-and-await),
+[PROGRAM-TYPING: loops and spreads over iterables](SOURCE-CONTRACTS.md#loops-and-spreads-over-iterables),
+[PROGRAM-TYPING: patterns](SOURCE-ELABORATION.md#patterns),
+[PROGRAM-TYPING: classes](SOURCE-CONTRACTS.md#classes),
 PROGRAM-TYPING's callable-object sections (its `[c1]`–`[c7]` links),
 [REQUEST-PROTOCOL](REQUEST-PROTOCOL.md),
 [callables tests](tests/callables/README.md).
@@ -437,7 +437,7 @@ fulfilled with one, and a generic signature is truthful at `Promise<T>` only
 for a non-thenable `T`. These issues discuss the same fact from the ReScript
 and TypeScript sides. It is used in
 [TRUST-REDUCTION: illustration](TRUST-REDUCTION.md#illustration-nested-promises),
-[PROGRAM-TYPING: async functions and await](PROGRAM-TYPING.md#async-functions-and-await)
+[PROGRAM-TYPING: async functions and await](SOURCE-CONTRACTS.md#async-functions-and-await)
 and the promise row of [DESIGN: trust surface](DESIGN.md#trust-surface)
 (`6ed4c72c`, `395ccd5f`, `89be3129`).
 
@@ -471,7 +471,7 @@ rescript-lang/rescript issue #6433, opened 2023-10-11.
 
 **Context** for `%Await%` refusing a non-promise object operand: `await`
 calls an object's callable `then`
-([PROGRAM-TYPING: async functions and await](PROGRAM-TYPING.md#async-functions-and-await)).
+([PROGRAM-TYPING: async functions and await](SOURCE-CONTRACTS.md#async-functions-and-await)).
 **Cited in** [TRUST-REDUCTION: illustration](TRUST-REDUCTION.md#illustration-nested-promises).
 
 ### ReScript 2345
@@ -548,7 +548,7 @@ merged 2021-09-10.
 `%AsyncReturn%` and `%PromiseAll%` instead.
 **Discussed in** the `Promise.resolve`/`Promise.all` rows of DESIGN before
 `6ee739f8` (`355a9ecb`); the intrinsics are in
-[PROGRAM-TYPING: async functions and await](PROGRAM-TYPING.md#async-functions-and-await).
+[PROGRAM-TYPING: async functions and await](SOURCE-CONTRACTS.md#async-functions-and-await).
 
 ## Tools and prior checkers
 
@@ -576,7 +576,7 @@ its checker and its library declarations (`lib.*.d.ts`), and the handbook's
 **Used for** name resolution, computed and contextual types, and the library
 contracts the overlays filter: a trusted tool of the pipeline. Its downlevel
 emit of a generator as a state machine is the lowering
-[DESIGN: next steps](DESIGN.md#next-steps) names for generators.
+[DESIGN: next steps](WORK.md#next-steps) names for generators.
 **Discussed in** [DESIGN: principles](DESIGN.md#principles),
 [DESIGN: trust surface](DESIGN.md#trust-surface), PROGRAM-TYPING's `[c5]`
 link.

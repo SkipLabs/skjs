@@ -240,8 +240,8 @@ can use it. Native array overloads can consume certified effects, for example
 to establish an array result's presence. Preservation concerns normal return;
 exceptional edges require their own state treatment. Composition has an
 explicit admitted scope in the
-[effect design](../DESIGN.md#inferred-call-effects-elaboration-and-certification)
-and [effect typing rules](../PROGRAM-TYPING.md#certifying-inferred-call-effects).
+[effect design](../SOURCE-MODEL.md#inferred-call-effects-elaboration-and-certification)
+and [effect typing rules](../SOURCE-ELABORATION.md#certifying-inferred-call-effects).
 
 ## Implementation map
 
@@ -364,5 +364,5 @@ The [verification instructions](../AGENTS.md#iterating-run-what-the-change-touch
 set the wider checks for Lean, parser or protocol changes. Update each fact in
 its owning document, following
 [documentation ownership](../README.md#documentation-ownership). Design status
-belongs in [DESIGN](../DESIGN.md#status); this guide describes the producer's
+belongs in [WORK](../WORK.md#status); this guide describes the producer's
 interface, algorithm and limits.

@@ -135,14 +135,14 @@ justification; the first entry matching the key decides:
   not faithful to JavaScript, or rejected by TypeScript itself, or because
   its soundness would need an assumption the project declines; nothing else.
   Each such entry is a row of the fragment boundary's
-  [refused on principle](../DESIGN.md#refused-on-principle): TypeScript's
+  [refused on principle](../SOURCE-FRAGMENT.md#refused-on-principle): TypeScript's
   implicit index signature, covariant writable storage, method extraction,
   `instanceof` narrowing `unknown` (an object gets a class's prototype without
   its constructor), a constructor or base class from outside the file, an
   iterator whose type states no `return`, thenable adoption, a contextual
   `any`, an empty intersection, a rest typed by an intersection, and code or declarations TypeScript rejects.
 - **gap** (G): a sound construct the pipeline does not yet support: a
-  [next step](../DESIGN.md#next-steps), or a [model limit](../DESIGN.md#model-limits)
+  [next step](../WORK.md#next-steps), or a [model limit](../SOURCE-FRAGMENT.md#model-limits)
   whose obstacle the entry names (a representation limit, "no term of the
   fragment states it exactly", object identity without fields, sloppy
   receivers, module storage, a computed type over a binder); so is any reason
@@ -446,7 +446,7 @@ that names no `then` (a lint warning only), and `testAwaitAliasContract`
 states that awaiting a plain object preserves its identity. Record types are
 open, so the record may own a `then`, and `await` then calls it and yields
 what it passes. The pipeline awaits only a promise or a primitive
-([DESIGN.md](../DESIGN.md#async-and-iteration)) and refuses the unit.
+([SOURCE-MODEL](../SOURCE-MODEL.md#async-and-iteration)) and refuses the unit.
 Witness: SKJS reports no error for
 
 ```ts

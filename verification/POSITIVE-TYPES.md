@@ -138,7 +138,7 @@ $c_j\equiv T_j$ when $r=\mathsf{w}$ and $c_j\subseteq T_j$ when $r=\mathsf{ro}$
   ([key-adding writes](PROGRAM-TYPING.md#key-adding-writes)).
 - **Methods** are host-relative members: read from the object and invoked on
   it, they behave as typed
-  ([DESIGN.md](DESIGN.md#method-members-are-host-relative)). A member $m$ has
+  ([SOURCE-MODEL](SOURCE-MODEL.md#method-members-are-host-relative)). A member $m$ has
   fixed signatures $(\vec P\to B)$ and variadic ones $(\vec P,\ldots Q)\to B$,
   none with a receiver, **quantified signatures**: types $S$, a generic
   method's scheme rows, that the member bound to its host meets, and the
@@ -185,7 +185,7 @@ $c_j\equiv T_j$ when $r=\mathsf{w}$ and $c_j\subseteq T_j$ when $r=\mathsf{ro}$
   a read of one of those continues at the prototype, which it holds as a
   readonly view under the reserved key. An array may own further keys, as
   Skip's runtime marks the arrays it manages with a hidden symbol key
-  ([DESIGN.md](DESIGN.md#arrays)). Keys are fixed at allocation,
+  ([SOURCE-MODEL](SOURCE-MODEL.md#arrays)). Keys are fixed at allocation,
   so a bound holds in every world.
 
 A `dict` clause adds readonly **index contracts** $\overline{\theta{:}D}$,
@@ -194,7 +194,7 @@ each over a **key class** $\theta$ (`IndexKeys`): every string key
 ($\mathsf{numeric}$, `[k: number]`), or every symbol key ($\mathsf{symbols}$,
 `[k: symbol]`). A canonical numeric key is a string some number's `ToString`
 spells, the keys `o[n]` reaches for a number $n$
-([DESIGN](DESIGN.md#index-signatures)):
+([SOURCE-MODEL](SOURCE-MODEL.md#index-signatures)):
 
 ```math
 \mathsf{str}(s)\in\mathsf{strings},\qquad
@@ -236,7 +236,7 @@ The calculus adds no key to an existing object; a program adds one by
 copying its own object ([key-adding writes](PROGRAM-TYPING.md#key-adding-writes)).
 That TypeScript lets code holding a mutable dictionary add keys of its class
 at $C$ is a trust assumption
-([DESIGN.md](DESIGN.md#writable-string-index-signatures)); covering keeps
+([SOURCE-MODEL](SOURCE-MODEL.md#writable-string-index-signatures)); covering keeps
 every type the object is met at true of it with such a key: no own-key bound
 of a type covering a writable index says a key of its class is absent
 ($b\ \mathsf{keeps}\ \theta$ below). Index contracts are guarded through the world, so a
@@ -362,7 +362,7 @@ No class is callable and no function is constructible, so `ctors` meets
 neither `arrs` nor `callable`. With no signature, `ctors [] []` is any class.
 TypeScript's `Function` is the union of the two empty forms, a value with
 closed invocation code or a class
-([library types](PROGRAM-TYPING.md#library-types)):
+([library types](SOURCE-CONTRACTS.md#library-types)):
 
 ```math
 ⟦\mathtt{Function}⟧_k(W,v)\iff
@@ -377,7 +377,7 @@ constraining no key, $\mathsf{Ref}(\varepsilon;\varepsilon;\varepsilon;\varepsil
 whose meaning is $v=\ell$ for some $\mathit{flds}$ (arrays and instances
 included, their store and prototype being own keys it does not constrain);
 and `{}` adds every primitive but `null` and `undefined`
-([library types](PROGRAM-TYPING.md#library-types)):
+([library types](SOURCE-CONTRACTS.md#library-types)):
 
 ```math
 ⟦\mathtt{object}⟧_k(W,v)\iff
@@ -440,7 +440,7 @@ A label is one of four kinds of **row**:
   other type parameters, `U ⊓ T` for a binder bounded by another,
   `U extends T`, whose clauses are then `T`'s, or every value.
   [Instances](#instances-of-a-scheme-row) give it its meaning at each
-  instance, and [PROGRAM-TYPING.md](PROGRAM-TYPING.md#binders-met-with-ground-types) says how
+  instance, and [SOURCE-CONTRACTS](SOURCE-CONTRACTS.md#binders-met-with-ground-types) says how
   it is lowered. In an equation graph a part $`p`$ or $`q`$ may also be a
   scheme row, whose members the meet's are too
   ([RECURSIVE-EQUATIONS §2.2](RECURSIVE-EQUATIONS.md#22-meaning)).
@@ -487,7 +487,7 @@ reassignment; for the whole graph checker this is a theorem,
 `Parametricity.accept_reassign`, and a generic body checked with its binders
 as parameter rows is safe at every assignment of them
 ([Reynolds 1983](REFERENCES.md#reynolds-1983))
-([PROGRAM-TYPING.md](PROGRAM-TYPING.md#overloads-polymorphism-and-binding)). A member of a scheme row meets each instance's signatures,
+([CALLABLES](CALLABLES.md#overloads-polymorphism-and-binding)). A member of a scheme row meets each instance's signatures,
 and a function meeting them at every instantiation is a member: both unfold
 the definition of scheme membership.
 
@@ -678,7 +678,7 @@ keys the target lists or the source excludes:
 
 So a fresh array object, own keys among its store and prototype, is an array,
 own keys outside `ArrayProto`'s; and an array type is covered by another with
-the same exclusion. A `dict` target also needs each readonly index contract within some source one over as many keys ($\theta'\sqsubseteq\theta$: `IndexKeys.within`), and each writable index contract equivalent to a writable source one over as many keys, so a mutable dictionary is invariant and a readonly one is never mutable. Code holding a writable index may add keys of its class at its contract (the trust boundary, [DESIGN](DESIGN.md#writable-string-index-signatures)), so a writable target's contract must also be within every source index and optional field over a key of its class ($\theta\between\theta'$: the classes overlap; $\theta'\ni_?\kappa$: the class may admit the key), and every source own-key bound must **keep** its class: say no key of it absent. A bound listing keys keeps none; one excluding keys keeps a class that may admit none of them but the model's own prototype and store keys, which no code adds as a property (`KeyBound.keeps`, `KeepsKeys`). A writable index whose contract no value meets ($\varnothing(C')$: plain rows of no clause, `Uninhabited`) takes no key, so it needs no kept bound:
+the same exclusion. A `dict` target also needs each readonly index contract within some source one over as many keys ($\theta'\sqsubseteq\theta$: `IndexKeys.within`), and each writable index contract equivalent to a writable source one over as many keys, so a mutable dictionary is invariant and a readonly one is never mutable. Code holding a writable index may add keys of its class at its contract (the trust boundary, [SOURCE-MODEL](SOURCE-MODEL.md#writable-string-index-signatures)), so a writable target's contract must also be within every source index and optional field over a key of its class ($\theta\between\theta'$: the classes overlap; $\theta'\ni_?\kappa$: the class may admit the key), and every source own-key bound must **keep** its class: say no key of it absent. A bound listing keys keeps none; one excluding keys keeps a class that may admit none of them but the model's own prototype and store keys, which no code adds as a property (`KeyBound.keeps`, `KeepsKeys`). A writable index whose contract no value meets ($\varnothing(C')$: plain rows of no clause, `Uninhabited`) takes no key, so it needs no kept bound:
 
 ```math
 b\ \mathsf{keeps}\ \theta\iff b=\mathsf{outside}\,N\land
@@ -845,7 +845,7 @@ as receiver: `Array.prototype[Symbol.iterator]` at `number` covers
 a class instance's methods are its prototype chain's closures, whose
 receiver is the class's instance type, or the type a `this` parameter states,
 which the instance type's member states its host must meet
-([classes](PROGRAM-TYPING.md#classes)). Each premise that names $\kappa$ passes it on unchanged:
+([classes](SOURCE-CONTRACTS.md#classes)). Each premise that names $\kappa$ passes it on unchanged:
 
 ```math
 \frac{(F,L,M)\in\kappa\quad

@@ -148,7 +148,7 @@ Do not add substantial machinery for behavior rarely useful in real programs
 unless its utility justifies the cost. An explicit, enforced restriction is an
 acceptable design decision; completeness for all of TypeScript is not the goal.
 Choose the restriction by the behavior it excludes, not by a particular failing
-example. Document it in DESIGN.md, enforce it at the source/semantic boundary,
+example. Document it in SOURCE-FRAGMENT.md, enforce it at the source/semantic boundary,
 and state the same requirement for external code where relevant. Keep a small
 control showing that excluded behavior cannot silently enter the admitted
 fragment. Do not erase a contract or ignore a possible runtime action: a
@@ -186,7 +186,7 @@ separate review obligations, even when every Lean proof and suite passes.
   external code. Keep these key bounds and the prototype's undefined hook view:
   numeric elements alone do not justify implicit conversion. The recursive
   conversion contract and the rationale for excluding custom hooks live in
-  [prototype contracts](PROGRAM-TYPING.md#prototype-contracts).
+  [prototype contracts](SOURCE-CONTRACTS.md#prototype-contracts).
 - **Test the unproved boundary independently.** A producer-side refusal needs
   a verifier test bypassing that producer when annotation interpretation is
   involved. For native-contract repairs, execute the actual negative source
@@ -211,7 +211,7 @@ Preserve the presence mode through every graph/claim mapping and distinguish
 array-store metadata from argument packs, which hold values and have no holes.
 
 For inferred callable effects, follow the
-[elaboration/certification boundary](DESIGN.md#inferred-call-effects-elaboration-and-certification).
+[elaboration/certification boundary](SOURCE-MODEL.md#inferred-call-effects-elaboration-and-certification).
 Annotation translation must not strengthen an ordinary arrow. Producer inference
 proposes a qualified signature; definition evidence must prove both safety and
 the effect before application consumes it. Never recognize callback syntax at
@@ -316,7 +316,7 @@ fragment; do not restore acceptance by increasing trust silently.
   specifications and issues by a link to an entry of
   [REFERENCES.md](REFERENCES.md), adding the entry there.
 - Status: progress is written once, in the
-  [status table](DESIGN.md#status) of DESIGN.md. A commit that moves an item
+  [status table](WORK.md#status) of WORK.md. A commit that moves an item
   updates its row. A row states the nature of its work: an investigation whose cause is
   unknown is its own row, named as one, never a leftover of a finished
   stage; a fix gets a row once its cause is established. Elsewhere only three status-like statements are allowed:

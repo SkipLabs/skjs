@@ -4,7 +4,7 @@ The stateful development in [lean/Verification](lean/Verification)
 provides the semantic foundation for the positive-type rules specified in
 [POSITIVE-TYPES.md](POSITIVE-TYPES.md). This is the semantics used by the current verifier. [PROGRAM-TYPING.md](PROGRAM-TYPING.md) specifies the proved program
 typing system and checked control-flow graphs. The
-[fragment boundary](DESIGN.md#fragment-boundary)
+[fragment boundary](SOURCE-FRAGMENT.md#fragment-boundary)
 distinguishes the supported source fragment from model-only features.
 
 ## Operational language
@@ -89,7 +89,7 @@ value. It is the one test that reads the heap (`tagHoldsIn`, `keyInChain`):
 bounded by the heap's length, so a chain the heap makes cyclic, which no
 JavaScript object has, answers false. Keys are fixed at allocation and no
 source writes a prototype, so its answer never changes. It is `in` for the
-keys the lowering admits ([DESIGN](DESIGN.md#guards)); JavaScript's `in`
+keys the lowering admits ([SOURCE-MODEL](SOURCE-MODEL.md#guards)); JavaScript's `in`
 throws on a primitive. For $\kappa_C$, the key only class `C`'s prototype
 object owns, it is `instanceof C`: an object along whose chain that
 prototype is, and `false` of a primitive, as JavaScript's `instanceof`
@@ -144,7 +144,7 @@ takes none of it, as JavaScript's function owns no enumerable property. A
 value the heap lacks, or a term that is not a value there, reads as
 `undefined`, so the step never depends on one (`heapVal`). The step is stuck
 on a string. It allocates nothing itself; the `makeAt` it steps to does, as
-a literal's. Symbol-keyed fields are not read ([DESIGN](DESIGN.md#object-literals)).
+a literal's. Symbol-keyed fields are not read ([SOURCE-MODEL](SOURCE-MODEL.md#object-literals)).
 
 **Binary operators.** $a\mathbin{op}b$ (`Tm.arith`) evaluates $a$, then $b$
 (`arithC1`, `arithC2`), then takes one step where the operator answers for the
@@ -390,7 +390,7 @@ in the heap $h$. This is the usual store/heap pair of an ML-style operational
 semantics. A binding may *hold* an object: $\rho(x)=\mathsf{obj}(\ell,c)$. Below,
 $\ell$ abbreviates the plain-object value $\mathsf{obj}(\ell,\mathsf{absent})$.
 A function object carries graph code at the same kind of heap identity;
-[callable contracts](PROGRAM-TYPING.md#callables) additionally constrain that code.
+[callable contracts](CALLABLES.md#callables) additionally constrain that code.
 
 Because the calculus is nameless, a binding is really a de Bruijn position, and
 the implementation calls it a **slot**: environments are lists, and pushing a
@@ -528,7 +528,7 @@ assumption must establish this promise before any imported runtime value is
 claimed to inhabit the interface.
 
 This supplies the call component of the existing
-[callable-object equation](PROGRAM-TYPING.md#types-describe-behaviour-not-internal-storage):
+[callable-object equation](CALLABLES.md#types-describe-behaviour-not-internal-storage):
 
 ```math
 \mathsf{Callable}(L;P)=\mathsf{Fun}\cap\mathsf{Props}(P)
@@ -634,9 +634,9 @@ behavior, including across external calls. Under that premise, `map` on a dense
 array can use callback heap preservation to retain source presence throughout
 traversal and hence result density. An unrestricted callback justifies only a
 sparse result. The host premise is explicit in the
-[boundary](DESIGN.md#exact-contracts-and-native-effects); custom species are
+[boundary](SOURCE-MODEL.md#exact-contracts-and-native-effects); custom species are
 outside this semantics. Native compliance remains a separate review obligation,
-not a consequence of `PromiseWith`'s Lean proofs. The [planned typing rules](PROGRAM-TYPING.md#certifying-inferred-call-effects)
+not a consequence of `PromiseWith`'s Lean proofs. The [planned typing rules](SOURCE-ELABORATION.md#certifying-inferred-call-effects)
 state where the callback guarantee is established and consumed.
 
 ## Argument-list preparation
@@ -718,7 +718,7 @@ value belonging to `A`, or it throws a closed value, or it can step with one
 budget spent, preserving heap satisfaction in an admissible extension of the
 truncated world. This is partial correctness/safety, not termination, and a
 throw is an outcome, as a value is: a type says what a value is, never that
-none is thrown ([Design](DESIGN.md#throws)). The model is step-indexed
+none is thrown ([SOURCE-MODEL](SOURCE-MODEL.md#throws)). The model is step-indexed
 ([Appel and McAllester 2001](REFERENCES.md#appel-and-mcallester-2001)) with worlds for mutable state ([Ahmed 2004](REFERENCES.md#ahmed-2004)); the
 safety shape is that of [Wright and Felleisen 1994](REFERENCES.md#wright-and-felleisen-1994).
 
@@ -987,7 +987,7 @@ ordinary arrow cannot promise preservation of captured current contents.
 
 [Program typing](PROGRAM-TYPING.md#current-content-rules-semantic-layer) specifies
 the operation and composition rules using this predicate;
-[Design](DESIGN.md#current-content-assertions) owns the graph-integration plan.
+[SOURCE-MODEL](SOURCE-MODEL.md#current-content-assertions) owns the graph-integration plan.
 
 ## What the checked development establishes
 
@@ -1058,6 +1058,6 @@ bound function's reflective properties (`name`, `length`) are not modelled,
 and the source forms that would need them are refused. What the source
 fragment admits is summarised in the
 [README](README.md#current-source-fragment); what it refuses, on principle or
-as a model limit, is the [fragment boundary](DESIGN.md#fragment-boundary),
+as a model limit, is the [fragment boundary](SOURCE-FRAGMENT.md#fragment-boundary),
 and the open work is
-[next steps](DESIGN.md#next-steps).
+[next steps](WORK.md#next-steps).

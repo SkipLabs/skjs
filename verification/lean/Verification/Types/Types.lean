@@ -452,7 +452,7 @@ agrees with `A` below the level, so a write of an `A` value to it keeps every
 alias's guarantee. Like the view, it has no prototype and says nothing of an
 absent key. The calculus adds no key to an existing object; that TypeScript
 lets code holding the dictionary add keys at `A` is the trust boundary
-([DESIGN.md](../../../DESIGN.md#writable-string-index-signatures)). -/
+([Source index signatures](../../../SOURCE-CONTRACTS.md#index-signatures)). -/
 def dictCellT (K : IndexKeys) (A : Fam) : Fam := fun k W v =>
   ∃ (flds : List (PropKey × Nat)) (oid : Nat), v = .objAt flds .absent oid ∧
     flds.lookup CallArguments.protoField = none ∧
@@ -600,7 +600,7 @@ def KeyBound.keeps (K : KeyBound) (C : IndexKeys) : Bool :=
 
 /-- **A kept bound survives a key of its class.** Code holding an object at a
 writable index may add a key the index's class admits
-([DESIGN.md](../../../DESIGN.md#writable-string-index-signatures)); a bound
+([Source index signatures](../../../SOURCE-CONTRACTS.md#index-signatures)); a bound
 that keeps the class stays true of the object with the key. -/
 theorem ownKeysT_keeps {K : KeyBound} {C : IndexKeys} (hk : K.keeps C = true) {k : Nat}
     {W : WorldT k} {flds : List (PropKey × Nat)} {f : PropKey} {l : Nat}
