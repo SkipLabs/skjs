@@ -6,7 +6,6 @@ open Source
 open Type_queries
 module Make (S : Analysis_state.Scope) = struct
 open Analysis_state.View(S)
-include Analysis_state.View(S)
 include Closure_offers.Make(S)
 include Execution_analysis.Make(S)
 include Claim_collection.Make(S)

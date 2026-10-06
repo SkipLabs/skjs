@@ -56,16 +56,31 @@ const expectSubset = (what: string, names: Set<string>, from: Set<string>, allow
   checked++;
 };
 
+// Equation lowering reads declarations and claim labels across these owners.
+const equationReaders = [
+  "lean/Verification/Source/EquationTrees.lean",
+  "lean/Verification/Source/EquationDeclarations.lean",
+  "lean/Verification/Source/EquationClaimWire.lean",
+  "lean/Verification/Source/EquationState.lean",
+  "lean/Verification/Source/EquationInterning.lean",
+  "lean/Verification/Source/EquationCore.lean",
+  "lean/Verification/Source/EquationAnnotations.lean",
+  "lean/Verification/Source/EquationInstances.lean",
+  "lean/Verification/Source/EquationFinishing.lean",
+  "lean/Verification/Source/EquationSource.lean",
+  "lean/Verification/Source/EquationLowering.lean",
+];
+
 // The Fragment AST and its declaration document.
 {
   const ts = declared(["tools/fragment.mts", "tools/declaration-types.mts", "tools/claim.mts"]);
   const leanNames = lean(["lean/Verification/Source/Fragment.lean",
-    "lean/Verification/Source/EquationLowering.lean"]);
+    ...equationReaders]);
   expectSubset("Lean reads of the Fragment", leanNames, ts, {
-    decl: "a source-claims label, lowered in EquationLowering.lean",
-    binder: "a source-claims label, lowered in EquationLowering.lean",
-    meet: "a source-claims label, lowered in EquationLowering.lean",
-    types: "the source-claims document's rows, lowered in EquationLowering.lean",
+    decl: "a source-claims label, read by equation lowering",
+    binder: "a source-claims label, read by equation lowering",
+    meet: "a source-claims label, read by equation lowering",
+    types: "the source-claims document's rows, read by equation lowering",
   });
   expectSubset("OCaml reads of the Fragment", ocamlReads("ocaml-producer/source.ml"), ts, {});
   expectSubset("Fragment fields Lean ignores", ts, leanNames, {
@@ -80,7 +95,7 @@ const expectSubset = (what: string, names: Set<string>, from: Set<string>, allow
 {
   const ts = declared(["tools/source-claims.mts", "tools/type-graph.mts"]);
   const leanNames = lean(["lean/Verification/Source/SourceClaimWire.lean",
-    "lean/Verification/Source/EquationLowering.lean"], true);
+    ...equationReaders], true);
   expectSubset("OCaml writes of SourceClaims", ocamlWrites("ocaml-producer/claims.ml"), ts, {});
   expectSubset("SourceClaims fields Lean ignores", declared(["tools/source-claims.mts"]), leanNames, {
     labels: "a tuple element's label, not a field",

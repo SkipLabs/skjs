@@ -254,6 +254,18 @@ requires every extracted plan to cross an exhaustive conversion before
 checks evidence. That entry point also owns the theorem connecting its exact
 success condition to safety of every accepted function.
 
+[Equation lowering](lean/Verification/Source/EquationLowering.lean) turns
+source declarations, annotations and claim labels into recursive equations.
+Its [core](lean/Verification/Source/EquationCore.lean) handles mutually recursive
+type constructors and declaration references; separate modules own
+[declaration decoding](lean/Verification/Source/EquationDeclarations.lean),
+[claim-row decoding](lean/Verification/Source/EquationClaimWire.lean),
+[annotation traversal](lean/Verification/Source/EquationAnnotations.lean),
+[instance matching](lean/Verification/Source/EquationInstances.lean), and
+[final validation](lean/Verification/Source/EquationFinishing.lean).
+[Construction state](lean/Verification/Source/EquationState.lean) carries pending
+rows and bound obligations through those stages.
+
 The main Lean entry points are:
 
 | Area | Entry points |

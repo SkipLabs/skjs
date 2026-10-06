@@ -8,6 +8,7 @@
 open Source
 open Proposal_types
 module Make (S : Analysis_state.Scope) = struct
+open Analysis_state.View(S)
 open Analysis_context.Make(S)
 module Values = Expression_values.Make(S)
 module Objects = Expression_objects.Make(S)

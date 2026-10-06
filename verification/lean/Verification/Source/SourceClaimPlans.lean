@@ -26,7 +26,8 @@ def FunctionPlan.requests {σ ι : Type} : List (FunctionPlan σ ι) → List (S
   | [] => []
   | .graph _ _ request :: rest => request :: FunctionPlan.requests rest
 
-/-- The sole conversion into the verified-plan type. Exhaustive matching makes
+/-- The conversion into the verified-plan type used by the acceptance path.
+Exhaustive matching makes
 a new `FunctionPlan` constructor a compile error here. -/
 def FunctionPlan.certify {σ ι : Type} : FunctionPlan σ ι → Except String (CertifiedPlan σ ι)
   | .graph name pos request => pure (.graph name pos request)

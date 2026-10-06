@@ -1,6 +1,6 @@
 import Verification.Source.SourceClaimWire
 import Verification.Source.SourceClaimDiagnostics
-import Verification.Source.FlowJson
+import Verification.Source.FlowGraph
 import Verification.Source.SourceFacts
 
 namespace Verification.SourceClaimJson

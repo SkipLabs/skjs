@@ -4,6 +4,7 @@ open Source
 open Type_queries
 open Proposal_diagnostics
 module Make (S : Analysis_state.Scope) = struct
+open Analysis_state.View(S)
 open Analysis_context.Make(S)
   let target_contract (expr:Analysis_state.expression_infer) env (target:expr) = match target.node with
     | Id n ->

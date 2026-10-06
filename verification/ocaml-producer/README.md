@@ -116,7 +116,8 @@ expression, binding and statement components share that pass state; the pass
 coordinator connects their recursive operations. Graph successors receive
 snapshots of path metadata, and node outputs retain the claims from the latest
 visit. These boundaries describe state ownership; the components still share
-mutable pass state.
+mutable pass state. Components access it explicitly through `Analysis_state.View`;
+`Analysis_context.Make` composes their analysis operations.
 
 Lean's final lowering consumes the same plan builders, with the claims used
 for type-directed operations. It reconstructs plans from Fragment when checking

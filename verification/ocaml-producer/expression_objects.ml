@@ -5,6 +5,7 @@ open Type_queries
 open Proposal_diagnostics
 open Object_spread
 module Make (S : Analysis_state.Scope) = struct
+open Analysis_state.View(S)
 open Analysis_context.Make(S)
 module Support = Expression_support.Make(S)
 let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analysis_state.body_infer) ?expected env (e:Source.expr) =
