@@ -1,0 +1,27 @@
+<section id="twice" data-transition="fade" style="background:#14213D;color:#F4F1EA;font-family:'STIX Two Text', Georgia, serif;padding:128px 128px 160px;display:flex;flex-direction:column;gap:40px">
+<h2 style="font-size:60px;font-weight:600;line-height:1.1;color:#F4F1EA">Resolution can happen twice</h2>
+<hr style="width:1664px;border-top:2px solid #F0A35E">
+<p style="font-family:Inconsolata, 'Courier New', monospace;font-size:28px;line-height:1.45;background:#0F1A30;border:1px solid #2E4068;border-radius:4px;padding:24px 36px;color:#F4F1EA"><span style="color:#D7A6F0">const</span> o = { n: <span style="color:#F2B8A0">1</span> };&#160;&#160;<span style="color:#D7A6F0">const</span> p = <span style="color:#7FD1C7">Promise</span>.resolve(o);&#160;&#160;<span style="color:#7FD1C7">Object</span>.assign(o, { then: (r) =&gt; r(<span style="color:#F2B8A0">42</span>) });</p>
+<div style="display:grid;grid-template-columns:50fr 50fr">
+<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B;font-weight:600;border-bottom:2px solid #8A97AD">Operation on p</p>
+<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B;font-weight:600;border-bottom:2px solid #8A97AD">Fulfills with</p>
+<p style="font-family:Inconsolata, 'Courier New', monospace;font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B"><span style="color:#D7A6F0">await</span> p</p>
+<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">the object o</p>
+<p style="font-family:Inconsolata, 'Courier New', monospace;font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B"><span style="color:#7FD1C7">Promise</span>.resolve(p)</p>
+<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">the object o (it returns p itself)</p>
+<p style="font-family:Inconsolata, 'Courier New', monospace;font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B"><span style="color:#7FD1C7">Promise</span>.all([p]) element</p>
+<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">the object o</p>
+<p style="font-family:Inconsolata, 'Courier New', monospace;font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B"><span style="color:#D7A6F0">async</span> () =&gt; p</p>
+<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">42</p>
+<p style="font-family:Inconsolata, 'Courier New', monospace;font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">p.then(), p.then(x =&gt; x)</p>
+<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">42</p>
+<p style="font-family:Inconsolata, 'Courier New', monospace;font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">p.catch(…), p.finally(…)</p>
+<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">42</p>
+<p style="font-family:Inconsolata, 'Courier New', monospace;font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B"><span style="color:#D7A6F0">new</span> <span style="color:#7FD1C7">Promise</span>(r =&gt; r(p))</p>
+<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">42</p>
+</div>
+<p style="font-size:30px;line-height:1.4">Observing a fulfillment value is safe at any payload; resolving it again is safe only if it stays non-thenable.</p>
+<p style="position:absolute;left:128px;bottom:64px;width:1300px;font-size:24px;color:#8A97AD">Calcagno · Typing Promise Resolution · observed with Node</p>
+<p style="position:absolute;right:128px;bottom:64px;width:200px;font-size:24px;color:#8A97AD;text-align:right">7 / 14</p>
+<aside>Observed with Node. await, Promise.resolve and Promise.all read the native promise's fulfillment value once. Async return, then, catch, finally and the executor's resolver resolve a fresh promise with that value, which calls a then the object acquired after the original promise fulfilled.</aside>
+</section>

@@ -1,0 +1,13 @@
+<section id="qualified" data-transition="fade" style="background:#14213D;color:#F4F1EA;font-family:'STIX Two Text', Georgia, serif;padding:128px 128px 160px;display:flex;flex-direction:column;gap:40px">
+<h2 style="font-size:60px;font-weight:600;line-height:1.1;color:#F4F1EA">4. Generic <span style="color:#7FD1C7">Awaited</span>&lt;<i><span style="color:#A9C7FF">T</span></i>&gt;: qualified binders</h2>
+<hr style="width:1664px;border-top:2px solid #F0A35E">
+<div style="display:flex;flex-direction:column;gap:16px;background:#1C2B4D;border-left:6px solid #F0A35E;padding:32px 40px">
+<p style="font-size:32px;line-height:1.4"><b>Definition</b> (qualified binder). A binder <i><span style="color:#A9C7FF">T</span></i> used with <span style="color:#7FD1C7">Awaited</span> comes with two companions: an observation <i><span style="color:#A9C7FF">O</span></i>, what <span style="color:#D7A6F0">await</span> yields, and a result <i><span style="color:#A9C7FF">R</span></i>, what a fresh resolution yields.</p>
+<p style="font-size:32px;line-height:1.4">A generic function means: it meets its signature at <b>every</b> assignment of types to (<i><span style="color:#A9C7FF">T</span></i>, <i><span style="color:#A9C7FF">O</span></i>, <i><span style="color:#A9C7FF">R</span></i>) with</p>
+<p style="font-size:34px;line-height:1.4;text-align:center"><i><span style="color:#A9C7FF">R</span></i> ≤ <i><span style="color:#A9C7FF">N</span></i>,&#160;&#160; Resolves(<i><span style="color:#A9C7FF">T</span></i>, <i><span style="color:#A9C7FF">R</span></i>),&#160;&#160; Observes(<i><span style="color:#A9C7FF">T</span></i>, <i><span style="color:#A9C7FF">O</span></i>),&#160;&#160; Resolves(<i><span style="color:#A9C7FF">O</span></i>, <i><span style="color:#A9C7FF">R</span></i>)</p>
+</div>
+<p style="font-size:30px;line-height:1.4"><span style="color:#7FD1C7">Awaited</span>&lt;<i><span style="color:#A9C7FF">T</span></i>&gt; means <i><span style="color:#A9C7FF">R</span></i>. Since <i><span style="color:#A9C7FF">R</span></i> is never thenable, resolving it again changes nothing.</p>
+<p style="position:absolute;left:128px;bottom:64px;width:1300px;font-size:24px;color:#8A97AD">Calcagno · Typing Promise Resolution · implementation in progress, uncommitted, status of 7 October 2026</p>
+<p style="position:absolute;right:128px;bottom:64px;width:200px;font-size:24px;color:#8A97AD;text-align:right">9 / 14</p>
+<aside>This is the meaning of a qualified scheme in codex's semantics (descriptorDomain in ResolutionDescriptors.lean): the scheme's reassignments are restricted to coherent descriptor tuples. A call supplies one such tuple, a descriptor. The relations are fixed outside the recursive type graph.</aside>
+</section>

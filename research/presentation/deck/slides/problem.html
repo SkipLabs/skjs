@@ -1,0 +1,16 @@
+<section id="problem" data-transition="fade" style="background:#14213D;color:#F4F1EA;font-family:'STIX Two Text', Georgia, serif;padding:128px 128px 160px;display:flex;flex-direction:column;gap:40px">
+<h2 style="font-size:60px;font-weight:600;line-height:1.1;color:#F4F1EA">1. Generic forwarding has no sound type</h2>
+<hr style="width:1664px;border-top:2px solid #F0A35E">
+<p style="font-family:Inconsolata, 'Courier New', monospace;font-size:32px;line-height:1.5;background:#0F1A30;border:1px solid #2E4068;border-radius:4px;padding:28px 36px;color:#F4F1EA"><span style="color:#D7A6F0">async function</span> wrap&lt;T&gt;(x: T): <span style="color:#7FD1C7">Promise</span>&lt;<span style="color:#7FD1C7">Awaited</span>&lt;T&gt;&gt; { <span style="color:#D7A6F0">return</span> x; }</p>
+<p style="font-size:32px;line-height:1.4">The verifier's trusted contracts today:</p>
+<div style="display:grid;grid-template-columns:320px 1fr;gap:16px 24px;background:#1C2B4D;border-left:6px solid #F0A35E;padding:32px 48px">
+<p style="font-size:36px;line-height:1.4;text-align:right"><span style="color:#F0A35E">%Await%</span> :</p>
+<p style="font-size:36px;line-height:1.4">∀<i><span style="color:#A9C7FF">T</span></i>, <i><span style="color:#A9C7FF">U</span></i> ≤ <span style="color:#7FD1C7">Prim</span>. (<span style="color:#7FD1C7">Promise</span>&lt;<i><span style="color:#A9C7FF">T</span></i>&gt; | <i><span style="color:#A9C7FF">U</span></i>) ⇒ <i><span style="color:#A9C7FF">T</span></i> | <i><span style="color:#A9C7FF">U</span></i></p>
+<p style="font-size:36px;line-height:1.4;text-align:right"><span style="color:#F0A35E">%AsyncReturn%</span> :</p>
+<p style="font-size:36px;line-height:1.4">∀<i><span style="color:#A9C7FF">T</span></i>, <i><span style="color:#A9C7FF">U</span></i> ≤ <span style="color:#7FD1C7">Prim</span>. (<i><span style="color:#A9C7FF">T</span></i> | <span style="color:#7FD1C7">Promise</span>&lt;<i><span style="color:#A9C7FF">U</span></i>&gt;) ⇒ <span style="color:#7FD1C7">Promise</span>&lt;<i><span style="color:#A9C7FF">T</span></i> | <i><span style="color:#A9C7FF">U</span></i>&gt;</p>
+</div>
+<p style="font-size:32px;line-height:1.4"><i><span style="color:#A9C7FF">T</span></i> may be a promise or an object, and no type says what x becomes once a promise resolves with it. So wrap is refused.</p>
+<p style="position:absolute;left:128px;bottom:64px;width:1200px;font-size:24px;color:#8A97AD">Calcagno · Typing Promise Resolution</p>
+<p style="position:absolute;right:128px;bottom:64px;width:200px;font-size:24px;color:#8A97AD;text-align:right">3 / 14</p>
+<aside>The two trusted contracts bound the non-promise side to primitives, on which resolution never calls then. That keeps them sound but rules out any generic forwarder.</aside>
+</section>

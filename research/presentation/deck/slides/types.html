@@ -1,0 +1,14 @@
+<section id="types" data-transition="fade" style="background:#14213D;color:#F4F1EA;font-family:'STIX Two Text', Georgia, serif;padding:128px 128px 160px;display:flex;flex-direction:column;gap:40px">
+<h2 style="font-size:60px;font-weight:600;line-height:1.1;color:#F4F1EA">Definitions</h2>
+<hr style="width:1664px;border-top:2px solid #F0A35E">
+<div style="display:flex;flex-direction:column;gap:28px">
+<p style="font-size:36px;line-height:1.4"><span style="color:#7FD1C7">Prim</span>: the primitives. <span style="color:#7FD1C7">Obj</span>: every other value.</p>
+<p style="font-size:36px;line-height:1.4"><b>Thenable</b>: an object with a callable then.</p>
+<p style="font-size:36px;line-height:1.4"><b>Resolution</b>: a primitive or non-thenable fulfills the promise; a thenable's then is called.</p>
+<p style="font-size:36px;line-height:1.4"><span style="color:#7FD1C7">Promise</span>&lt;<i><span style="color:#A9C7FF">B</span></i>&gt;: a native promise whose fulfillment values lie in <i><span style="color:#A9C7FF">B</span></i>.</p>
+<p style="font-size:36px;line-height:1.4"><i><span style="color:#A9C7FF">N</span></i>: values that can never have a callable then.</p>
+</div>
+<p style="position:absolute;left:128px;bottom:64px;width:1200px;font-size:24px;color:#8A97AD">Calcagno · Typing Promise Resolution</p>
+<p style="position:absolute;right:128px;bottom:64px;width:200px;font-size:24px;color:#8A97AD;text-align:right">4 / 14</p>
+<aside>Resolution follows ECMA-262, which looks up then only on objects; a thenable's then runs in a later job. A Promise may also reject or stay pending. N includes primitives, readonly arrays, and records whose type rules out then for their lifetime.</aside>
+</section>
