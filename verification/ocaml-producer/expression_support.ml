@@ -39,32 +39,41 @@ open S
         {name;optional=false;read=Option.get t;write=None;host=false;receivers=[]}) fields))
     | _ when nested -> quietly (fun () -> expr env e)
     | _ -> None
-  (* `await e` and an async body's `return e` (the intrinsics `%Await%` and
-     `%AsyncReturn%`) of a value that may be an object other than a promise
-     the intrinsic names, or of a type parameter or `unknown`. *)
+  (* Explain an unsupported resolution contract. Bounded parameters are
+     classified through their declared bounds; this query supplies only a
+     diagnostic, while Lean checks the actual instance and its bounds. *)
   let explain_thenable (e:expr) (target:expr) (signature:Semantic.signature) actuals =
     match target.node,signature.params,actuals with
-    | Id ("%Await%" | "%AsyncReturn%" as n),[param],[actual] ->
+    | Id ("%Await%" | "%AsyncReturn%" | "%PromiseResolve%" as n),[param],[actual] ->
       let rec shallow = function
         | Atoms xs -> xs | Union ts -> List.concat_map shallow ts | Rigid _ | Meet _ -> [] in
       let promises = List.filter_map (function Named (id,_) -> Some id | _ -> None) (shallow param) in
-      let rec atoms seen = function
-        | Union ts -> List.concat_map (atoms seen) ts
-        | Atoms xs -> List.concat_map (function
-            | Named (id,_) as a when List.mem id promises -> [a]
-            | Named (id,args) as a when not (List.mem id seen) ->
-              (try atoms (id::seen) (definition declarations id args) with Json.Error _ -> [a])
-            | a -> [a]) xs
-        | Rigid _ | Meet _ -> [Top] in
-      let settled = function
-        | Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Bigint | BigintLit _ | Symbol -> true
-        | Named (id,_) -> List.mem id promises
-        | _ -> false in
-      if not (List.for_all settled (atoms [] actual)) then
+      let rec settled allow_objects allow_promises seen seen_rigids = function
+        | Union ts -> List.for_all (settled allow_objects allow_promises seen seen_rigids) ts
+        | Meet (t,ts) -> List.exists (settled allow_objects allow_promises seen seen_rigids) (t::ts)
+        | Rigid r -> not (List.mem r seen_rigids) && (match S.rigid_bound r with
+            | Some bound -> settled allow_objects allow_promises seen (r::seen_rigids) bound
+            | None -> false)
+        | Atoms xs -> List.for_all (function
+            | Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Bigint | BigintLit _ | Symbol -> true
+            | Named (id,args) when List.mem id promises ->
+              allow_promises && (n <> "%AsyncReturn%" || List.for_all (settled true false seen seen_rigids) args)
+            | Named (id,args) when not (List.mem id seen) ->
+              (try settled allow_objects allow_promises (id::seen) seen_rigids (definition declarations id args)
+               with Json.Error _ -> false)
+            | Shape {elements=Some _;_} -> allow_objects
+            | Shape shape when allow_objects ->
+              (try settled false false seen seen_rigids
+                (Type_queries.field_type (S.rigid_bounds ()) declarations [] (Atoms [Shape shape]) (Name "then"))
+               with Json.Error _ -> false)
+            | _ -> false) xs in
+      if not (settled (n <> "%Await%") true [] [] actual) then
         S.explain e.pos (if n = "%Await%"
-          then "an await of a non-promise object, or of a value of a type parameter or `unknown`: " ^ thenable_reason
-          else "the result of an async function that may be an object other than a promise: " ^ thenable_reason
-            ^ "; the promise of an async function is settled to a primitive or adopts a promise of one")
+          then "the modeled await requires a native promise or a primitive: " ^ thenable_reason
+          else if n = "%PromiseResolve%" then
+            "Promise.resolve requires an ordinary native promise or a stably non-thenable value: " ^ thenable_reason
+          else "fresh async resolution requires a stably non-thenable payload, also when adopting a native promise: "
+            ^ thenable_reason ^ "; primitives, ordinary arrays and lifetime primitive `then` contracts establish this bound")
     | _ -> ()
   (* A name `Array.isArray` found an array of, where it was `unknown`, used
      where every array would do. *)

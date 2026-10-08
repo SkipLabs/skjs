@@ -23,7 +23,7 @@
  * A global declared outside the standard library, such as Node's `process`,
  * is read as its declaration states, member by member (`selectGlobal`). */
 import type { DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaration-types.mts";
-import { asyncCompleteName, asyncReturnName, newPromiseName, promiseAllName, promiseRejectName } from "./intrinsics.mts";
+import { asyncCompleteName, promiseResolveName, newPromiseName, promiseAllName, promiseRejectName } from "./intrinsics.mts";
 
 type AtomName = Extract<TypeTerm, { k: "atom" }>["name"];
 
@@ -50,7 +50,7 @@ export type GlobalEntry = {
   test?: "isArray";
   /** The call is a call of this intrinsic (`intrinsics.mts`), which states
    * the same step: the parser writes `Promise.resolve(v)` as
-   * `%AsyncReturn%(v)`, and the member joins no value. */
+   * `%PromiseResolve%(v)`, and the member joins no value. */
   intrinsic?: string;
   /** The signature read instead of the declared one: its own binders, its
    * parameters, which a call may not exceed, and its result. What the host
@@ -177,12 +177,11 @@ export const globalsOverlay: readonly GlobalEntry[] = [
         result: { k: "object", fields: [], stringIndex: null, calls: [], span: at,
           prototype: { k: "object", fields: [{ name: "message", optional: false, readonly: true,
             type: atom("string"), span: at }], stringIndex: null, calls: [], span: at } } } })),
-  // A promise settled to the value, as an async function's return is: the
-  // intrinsic `%AsyncReturn%`, whose bound admits only a primitive, which
-  // is never a thenable JavaScript would adopt instead. Without a value, the
-  // promise settles to `undefined`, as an async function's completion.
+  // PromiseResolve retains a native promise with the realm's standard
+  // constructor, and freshly resolves stably non-thenable values. Without a
+  // value, the promise settles to `undefined`, as an async completion does.
   { global: "Promise", member: "resolve", signature: "resolve<T>(value: T): Promise<Awaited<T>>;",
-    intrinsic: asyncReturnName },
+    intrinsic: promiseResolveName },
   { global: "Promise", member: "resolve", signature: "resolve(): Promise<void>;", intrinsic: asyncCompleteName },
   // `%PromiseAll%`: an array of promises, each settling to its type
   // argument as `%Await%` assumes, gives a promise of the array of their
@@ -244,7 +243,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // `%NewPromise%`: the executor is called at once with the promise's
   // resolving functions, and a throw out of it rejects the promise. The
   // declared `resolve` adopts a thenable (`T | PromiseLike<T>`); stated, it
-  // takes a primitive, `%AsyncReturn%`'s bound, on which it settles.
+  // takes a primitive, on which it settles.
   { global: "Promise",
     signature: "new <T>(executor: (resolve: (value: T | PromiseLike<T>) => void, reject: (reason?: any) => void) => void): Promise<T>;",
     intrinsic: newPromiseName },

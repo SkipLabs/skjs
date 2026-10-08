@@ -513,6 +513,7 @@ export function substitute(term: TypeTerm, args: readonly TypeTerm[]): TypeTerm 
       stringIndex: term.stringIndex && { ...term.stringIndex, value: go(term.stringIndex.value) },
       ...(term.numberIndex ? { numberIndex: { ...term.numberIndex, value: go(term.numberIndex.value) } } : {}),
       ...(term.symbolIndex ? { symbolIndex: { ...term.symbolIndex, value: go(term.symbolIndex.value) } } : {}),
+      ...(term.prototype ? { prototype: go(term.prototype) } : {}),
       calls: term.calls.map(fn) };
     case "function": return fn(term);
     case "constructor": return { ...term, params: term.params.map(go), rest: term.rest && go(term.rest),

@@ -804,7 +804,7 @@ a call of an [intrinsic](#async-functions-and-await) stating the same step
      {⟦\mathsf{new}\ x(\vec e)⟧=\iota(⟦\vec e⟧)}\ \textsf{library-construct-intrinsic}
 ```
 
-`Promise.resolve(v)` is `%AsyncReturn%(v)`, `Promise.resolve()` is
+`Promise.resolve(v)` is `%PromiseResolve%(v)`, `Promise.resolve()` is
 `%AsyncComplete%()`, `Promise.all` is `%PromiseAll%`, `Promise.reject` is
 `%PromiseReject%` and `new Promise` is `%NewPromise%`.
 
@@ -841,14 +841,27 @@ The parser writes each async form as a call of an intrinsic, a value named
 ```
 
 in an async function, arrow or function expression's own body. The
-declaration reader lists the intrinsics among the module's values, with $`P`$
-the primitives (the values that are never thenables):
+declaration reader lists the intrinsics among the module's values. Let $`P`$
+be the primitive types, and $`N`$ the supported stable non-thenable types:
+
+```math
+\begin{aligned}
+P&=\mathsf{null}\mid\mathsf{undefined}\mid\mathsf{boolean}\mid\mathsf{number}\mid\mathsf{string}\mid\mathsf{bigint}\mid\mathsf{symbol}\\
+N&=P\mid\{\,\mathtt{readonly\ then?}:P\,\}\mid\mathsf{readonly\ unknown[]}
+\end{aligned}
+```
+
+The record arm requires a lifetime read contract for `then`, or its absence;
+an observation of its current contents is insufficient. Ordinary arrays
+exclude an own `then` and have stable standard prototypes without one,
+including for external arrays. These contracts make every value of $`N`$
+non-thenable throughout its lifetime. The intrinsic signatures are:
 
 ```math
 \begin{aligned}
 \mathtt{\%Await\%}&:\forall T,\,U\le P.\ (\mathit{value}:\mathsf{Promise}\langle T\rangle\mid U)\Rightarrow T\mid U\\
-\mathtt{\%AsyncReturn\%}&:\forall T\le P,\,U\le P.\ (\mathit{value}:T\mid\mathsf{Promise}\langle U\rangle)\Rightarrow\mathsf{Promise}\langle T\mid U\rangle
-\qquad P=\mathsf{null}\mid\mathsf{undefined}\mid\mathsf{boolean}\mid\mathsf{number}\mid\mathsf{string}\mid\mathsf{bigint}\mid\mathsf{symbol}\\
+\mathtt{\%AsyncReturn\%}&:\forall T\le N,\,U\le N.\ (\mathit{value}:T\mid\mathsf{Promise}\langle U\rangle)\Rightarrow\mathsf{Promise}\langle T\mid U\rangle\\
+\mathtt{\%PromiseResolve\%}&:\forall T,\,U\le N.\ (\mathit{value}:\mathsf{Promise}\langle T\rangle\mid U)\Rightarrow\mathsf{Promise}\langle T\mid U\rangle\\
 \mathtt{\%AsyncComplete\%}&:()\Rightarrow\mathsf{Promise}\langle\mathsf{void}\rangle\\
 \mathtt{\%PromiseAll\%}&:\forall T.\ (\mathit{values}:\mathsf{readonly}\ \mathsf{Promise}\langle T\rangle[\,])\Rightarrow\mathsf{Promise}\langle T[\,]\rangle\\
 \mathtt{\%PromiseReject\%}&:\forall T.\ (\mathit{reason}:\mathsf{unknown})\Rightarrow\mathsf{Promise}\langle T\rangle\\
@@ -862,34 +875,82 @@ annotation, they derive:
 ```math
 \frac{\Gamma\vdash e:\mathsf{Promise}\langle A\rangle\mid B\quad B\le P}{\Gamma\vdash\mathsf{await}\ e:A\mid B}\ \textsf{await}
 \qquad
-\frac{\Gamma\vdash e:A\mid\mathsf{Promise}\langle B\rangle\quad A\le P\quad B\le P\quad \mathsf{Promise}\langle A\mid B\rangle\le R}{\Gamma\vdash_R\mathsf{return}\ e}\ \textsf{async-return}
+\frac{\Gamma\vdash e:A\mid\mathsf{Promise}\langle B\rangle\quad A\le N\quad B\le N\quad \mathsf{Promise}\langle A\mid B\rangle\le R}{\Gamma\vdash_R\mathsf{return}\ e}\ \textsf{async-return}
 \qquad
 \frac{\mathsf{Promise}\langle\mathsf{void}\rangle\le R}{\Gamma\vdash_R\text{completion}}\ \textsf{async-complete}
 ```
 
-`Promise<void>` is `Promise<unknown>` (`void` is top), so a void async
-function may only complete. A throw in an async body leaves it as a throw.
+`Promise<void>` is `Promise<unknown>` (`void` is top); async completion
+fulfills it with `undefined`. A throw in an async body leaves it as a throw.
 A non-promise operand is awaited at its own type only where it is a
-primitive ($`U\le P`$): `await` calls an object's callable `then` instead. A
-value of type `Promise<A>` is a realm promise
-([trust surface](DESIGN.md#trust-surface)), which resolution never fulfills
-with a thenable, since it adopts one, so awaiting it yields an $`A`$ at any
-$`A`$; a returned promise of a primitive is adopted the same way. The source
-builds no object with a `then` member (`fragment-parse.mts`), which could
-pass for a promise. A trusted generic signature instantiated at a thenable
-`T` would state a promise of it, which a realm promise never is (it adopts
-the thenable), so each binder a `Promise` or `PromiseLike` argument of an
-imported, ambient or library signature or method names is bounded by
+primitive ($`U\le P`$): resolution of an object may call its `then`.
 
-```math
-N=P\mid\{\,\mathtt{readonly\ then?}:P\,\}\mid\mathsf{readonly\ unknown[]}
-```
+**Native promise invariant.** `Promise<A>` denotes a native promise of the
+current realm, with the stable standard `Promise.prototype` and constructor.
+Its declared members and `constructor` are inherited; it owns none of those
+keys. The constructor's species behavior is standard. These requirements
+apply to external values and code as well as the checked source. The
+annotation's prototype and own-key bounds prevent a writable structural
+alias from replacing those members. Reading `constructor` yields `unknown`;
+the inherited constructor is present. The source refuses objects with a
+`then` member that could forge a promise. The native identity and standard
+prototype behavior remain [host assumptions](DESIGN.md#trust-surface). Source
+augmentations of the standard `Promise` interface are refused: native
+factory results meet the reviewed standard declaration, and an augmentation
+cannot add a runtime field or method contract to those results.
 
-the types no thenable inhabits (`promisedBinders`); the client's own generic
-bodies are checked at every instantiation instead. The producer infers $`T`$ and $`U`$ as TypeScript infers a
-union with one bare binder: an object part of the operand goes to the
-`Promise` arm, a primitive to the bare binder, and an arm nothing reaches is
-inferred at `never`. A `Promise` method's binder written beside a
+Under this invariant, the [ECMA-262 operations](REFERENCES.md#ecma-262) give
+the following contracts. `Promise.resolve(p)` preserves an existing native
+promise through its standard constructor identity path. `await` observes its
+fulfillment value without resolving that value again. `Promise.all` obtains each input
+through the same native identity path and stores its fulfillment value in a
+fresh ordinary array. Thus both operations admit arbitrary payload types.
+A fulfilled record may acquire a callable `then` through external mutation;
+that does not alter its existing promise's fulfillment value. Fresh
+resolution of that record can adopt its `then` instead. In particular,
+`catch` and `finally` forward a fulfilled receiver's value by resolving a
+fresh promise, so their receiver payload must remain non-thenable.
+
+**Stable non-thenable inputs.** Async return checks that its ordinary input
+and adopted native payload satisfy $`N`$. Its resulting promise may then
+be used at a wider result annotation, including `Promise<unknown>`, while
+the intrinsic's payload arguments retain their checked bounds. A bounded
+numeric parameter and a generic array can retain their precise types. An
+open record without the lifetime `then` contract fails the input obligation.
+
+`Promise.resolve(value)` requires that same stability for an ordinary value.
+Its native identity arm admits an arbitrary payload type. Consequently a
+native promise containing an open record can be returned by `Promise.resolve`
+while forwarding it through async return requires additional evidence.
+
+The reaction methods quantify a receiver payload $`U\le N`$ at each call.
+`catch` returns `Promise<U | R>`, where $`R\le N`$ is the rejection
+callback's result type; `finally` returns `Promise<U>`. This requirement
+applies to the operation. `Promise<T>` itself admits arbitrary payload
+types, including records, and retains covariance.
+
+A `finally` callback must return a value of $`N`$ or a native
+`Promise<unknown>`. The native operation resolves the callback result before
+forwarding the receiver's value. An open record result could hide a `then`
+that mutates captured storage; discarding its value does not prevent those
+effects. A native cleanup promise uses the constructor identity path, and
+its fulfillment value is discarded. Its payload therefore needs no
+non-thenable bound.
+
+The declaration reader bounds by $`N`$ each binder named by a `Promise` or
+`PromiseLike` argument of a collected imported, ambient or library signature
+or method (`promisedBinders`). This restriction supports signatures whose
+result construction resolves their payloads. Reviewed intrinsics retain the
+explicit operation-specific bounds stated above. The client's generic bodies are
+checked at every admitted instantiation. The producer proposes intrinsic
+arguments from the operand, receiver and expected result. Its union inference
+assigns operand parts to matching structured arms or the bare binder; an
+unused arm contributes `never`. When comparing named result types, context
+supplies missing candidates while retaining those supplied by arguments,
+including `never` for an unused arm. This proposal heuristic assumes no
+variance of the named type: Lean checks the complete substituted parameter,
+result and binder bounds before accepting an instance.
+A `Promise` method's binder written beside a
 `PromiseLike` of itself is inferred the same way: `then`'s callback returns
 `TResult1 | PromiseLike<TResult1>` and `catch`'s `TResult | PromiseLike<TResult>`,
 so a callback returning a promise of $`U`$, or a primitive $`V`$, instantiates

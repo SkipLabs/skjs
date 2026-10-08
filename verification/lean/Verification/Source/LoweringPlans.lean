@@ -530,7 +530,9 @@ receiver, claimed at `B`, in slot `ri`. -/
 
 /-- Whether a write of `fld` to an object of type `B` may add the key: some
 plain-object clause states it neither as a field, a view nor a method, and
-none as a readonly optional field, which grants no write. -/
+none as a readonly optional field or a persistent forbidden own key. A copy
+may extend a fresh object's finite allowed-key bound. The ordinary write
+obligation checks writes at a forbidden key against the retained bound. -/
 @[nospecialize] private def mayLack (G : PositiveGraphs.NormalGraph ι) (B : Ty ι) (fld : PropKey) : Bool :=
   let cs := PositiveRules.expand G B
   let optionalView := fun (os : List (OptionalField (Ty ι))) => os.any fun o => o.key == fld && o.readonly
@@ -539,7 +541,8 @@ none as a readonly optional field, which grants no write. -/
       !((fs :: rs).flatten ++ vs).any (·.1 == fld) && !ms.any (·.key == fld)
     | _ => false) &&
   !cs.any fun c => match c with
-    | .refs _ _ _ os _ _ | .dict _ _ _ _ os _ _ _ => optionalView os
+    | .refs _ _ _ os _ ks | .dict _ _ _ _ os _ ks _ =>
+      optionalView os || ks.any (fun K => !K.among && !K.admits fld)
     | _ => false
 
 /-- Whether no value of a type owns `__proto__`: `Object.assign` sets a

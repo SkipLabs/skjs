@@ -611,6 +611,138 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     const xs = Loud.from([1, 2]); built = 0;
     const result = doubled(xs);
     JSON.stringify([result instanceof Loud, built, Array.from(result)]);`), "[true,1,[2,4]]");
+  // Exact observation uses the native identity and ordinary constructor.
+  // A fulfilled record may acquire a then member before it is observed.
+  assert.equal(await runExample("native-promise-record-observation", `(async () => {
+    const record = { n: 1 };
+    const p = Promise.resolve(record);
+    Object.assign(record, { then: resolve => resolve(42) });
+    const observed = [await read(p), await readAll([p]), (await gather([p]))[0].n];
+    Object.assign(p, { constructor: undefined });
+    const changed = [await read(p), await readAll([p]), (await gather([p]))[0]];
+    return JSON.stringify([observed, changed]);
+  })()`), "[[1,1,1],[null,null,42]]");
+  // A genuine native subclass has no own constructor, but its inherited
+  // constructor differs from the current realm's ordinary Promise.
+  assert.equal(await runExample("native-promise-record-observation", `(async () => {
+    class Derived extends Promise {}
+    const record = { n: 1 };
+    const p = new Derived(resolve => resolve(record));
+    Object.assign(record, { then: resolve => resolve(42) });
+    return JSON.stringify([p instanceof Promise, Object.hasOwn(p, "constructor"), await read(p)]);
+  })()`), "[true,false,null]", "native identity and own-key exclusion also require the standard inherited constructor");
+  // Reaction construction observes Symbol.species. External changes to it
+  // execute construction outside the reviewed native operation's contract.
+  assert.equal(await runExample("native-promise-reactions", `(async () => {
+    let constructions = 0;
+    class Counted extends Promise { constructor(executor) { super(executor); constructions++; } }
+    const p = Promise.resolve(3);
+    Object.defineProperty(Promise, Symbol.species, { value: Counted });
+    const result = await finalized(p);
+    return JSON.stringify([result, constructions > 0]);
+  })()`), "[3,true]", "the host premise fixes standard species behavior for reaction construction");
+  assert.equal(await runExample("invalid-native-promise-constructor-intersection", `(async () => {
+    const record = { n: 1 };
+    const p = Promise.resolve(record);
+    Object.assign(record, { then: resolve => resolve(42) });
+    Object.assign(p, { constructor: Promise });
+    return await modifyAndRead(p);
+  })()`), undefined,
+    "the actual constructor write through a typed structural alias invalidates the numeric result");
+  // Native catch and finally construct a promise that re-adopts the payload.
+  for (const file of ["invalid-native-promise-catch-record", "invalid-native-promise-catch-record-explicit", "invalid-native-promise-finally-record"])
+    assert.equal(await runExample(file, `(async () => {
+      const record = { n: 1 };
+      const p = Promise.resolve(record);
+      Object.assign(record, { then: resolve => resolve(42) });
+      return await forward(p);
+    })()`), 42, `${file}: native result construction adopts the record's added then member`);
+  assert.equal(await runExample("native-promise-reactions", `(async () => {
+    const record = { n: 1 };
+    const p = Promise.resolve(record);
+    Object.assign(record, { then: resolve => resolve(42) });
+    return JSON.stringify([await caught(Promise.resolve(2)), await finalized(Promise.resolve(3)), await mapped(p), await finalizedPromise(Promise.resolve(4), p)]);
+  })()`), "[2,3,1,4]");
+  // The external callback returns without mutating the cell. Only the hidden
+  // then hook, absent from its open record contract, corrupts the typed cell.
+  assert.equal(await runExample("invalid-native-promise-finally-cleanup", `
+    function callbackResult(cell) {
+      return { tag: 1, then(resolve) { cell.value = "changed"; resolve(undefined); } };
+    }
+    forward(Promise.resolve(4), { value: 1 });`), "changed",
+    "finally cannot invoke an unconstrained cleanup result's hidden then hook");
+  assert.equal(await runExample("invalid-native-promise-augmentation", `(async () => {
+    const record = { n: 1 };
+    const p = Promise.resolve(record);
+    Object.assign(record, { then: resolve => resolve(42) });
+    Object.assign(p, { constructor: Promise });
+    return await read(p);
+  })()`), undefined, "a source merge cannot relax the native constructor invariant");
+  assert.equal(runExample("invalid-native-promise-extra-field", "ownValue()"), undefined,
+    "a source merge cannot manufacture fields on an async function's native promise result");
+  assert.equal(await runExample("native-promise-catch-explicit", `caughtString(Promise.reject("failure"))`), "fallback");
+  assert.equal(runExample("invalid-native-promise-copy", "fake(Promise.resolve(1)).then"), undefined,
+    "a source spread copies no inherited native promise methods");
+  assert.equal(runExample("native-promise-constructor-read", "constructorValue(Promise.resolve(1)) === Promise"), true,
+    "excluding an own constructor keeps the inherited native constructor observable");
+  assert.equal(await runExample("native-promise-qualified-return", `(async () => {
+    let adoptedElements = 0;
+    const element = { then(resolve) { adoptedElements++; resolve(42); } };
+    const array = [element];
+    const record = { tag: 1, then: 0 };
+    return JSON.stringify([
+      await stable(2), await fromNumber(3), await fromNative(Promise.resolve(4)),
+      await stableUnknown(5), await adoptUnknown(Promise.resolve(6)),
+      await stableArray(array) === array, await adoptArray(Promise.resolve(array)) === array,
+      await resolvedArray(array) === array, await stableRecord(record) === record,
+      widenResult(wrap) === wrap, adoptedElements
+    ]);
+  })()`), "[2,3,4,5,6,true,true,true,true,true,0]",
+    "stable generic resolution preserves its payload, and resolving an array does not adopt its elements");
+  assert.equal(await runExample("invalid-native-promise-qualified-view", `
+    unstableView({ tag: 1, then(resolve) { resolve(42); } });`), 42,
+    "an open record view does not establish the explicit non-thenable bound used by fresh resolution");
+  // PromiseResolve's native branch returns the same promise even if its
+  // fulfilled record later acquires then. Its mixed fresh branch admits a
+  // primitive, and a stable record's explicit bound preserves its identity.
+  assert.equal(await runExample("native-promise-resolve-identity", `(async () => {
+    let adopted = 0;
+    const record = { n: 1 };
+    const p = Promise.resolve(record);
+    Object.assign(record, { then(resolve) { adopted++; resolve(42); } });
+    const stable = { tag: 1, then: 0 };
+    return JSON.stringify([nativeIdentity(p) === p, nativeWiden(p) === p,
+      mixedIdentity(p) === p, await readIdentity(p), adopted,
+      await mixedIdentity(2), await freshStable(stable) === stable]);
+  })()`), "[true,true,true,1,0,2,true]",
+    "native resolution observes its existing payload through constructor identity");
+  assert.equal(await runExample("invalid-native-promise-async-record-forward", `(async () => {
+    const record = { n: 1 };
+    const p = Promise.resolve(record);
+    Object.assign(record, { then(resolve) { resolve(42); } });
+    return await forward(p);
+  })()`), 42, "fresh async forwarding re-adopts the native promise's fulfilled record");
+  assert.equal(await runExample("invalid-native-promise-resolve-receiver", `class Other extends Promise {}
+    (async () => {
+    const cell = { value: 1 };
+    const record = { tag: 1 };
+    const p = Promise.resolve(record);
+    Object.assign(record, { then(resolve) { cell.value = "changed"; resolve(42); } });
+    return await forward(p, cell);
+  })()`), "changed", "a different PromiseResolve receiver constructs and adopts instead of taking native identity");
+  for (const [file, fn, native] of [
+    ["invalid-native-promise-async-unknown-value", "openValue", false],
+    ["invalid-native-promise-async-unknown-native", "openNative", true],
+    ["invalid-native-promise-resolve-input", "openResolve", false],
+  ] as const)
+    assert.equal(await runExample(file, `(async () => {
+      const cell = { value: 1 };
+      const record = {};
+      const input = ${native ? "Promise.resolve(record)" : "record"};
+      Object.assign(record, { then(resolve) { cell.value = "changed"; resolve(42); } });
+      await ${fn}(input);
+      return cell.value;
+    })()`), "changed", `${file}: widening the result leaves the hidden then hook's heap effect observable`);
   process.stdout.write("native-contract counterexamples run under Node: as the contracts say\n");
 }
 
@@ -1342,6 +1474,156 @@ checkDefaults(verifier, run("default-parameter-scope"));
 checkEarlyDefault(verifier, run("invalid-default-invocation"));
 checkSchemeDefaults(verifier, run("generic-default"));
 process.stdout.write("forged claims at each kind of point: read and checked there\n");
+
+{
+  // Own-key exclusion preserves the inherited constructor read. A forged
+  // undefined claim must fail both search and evidence consumption.
+  const artifacts = run("native-promise-constructor-read");
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const claims = readClaims(artifacts);
+  const fn = must(claims.functions.find(f => f.name === "constructorValue"), "constructorValue's claims");
+  const at = source.indexOf("p.constructor");
+  must(fn.expressions.find(e => e.pos[0] === at && e.pos[1] === at + "p.constructor".length),
+    "the inherited constructor read").type = [rowOf(claims, "undef")];
+  const forged = writeClaims(artifacts, "forged-native-constructor-undefined", claims);
+  refusedAt(artifacts, forged, "forged-native-constructor-undefined",
+    `source expression obligation at [${at},${at + "p.constructor".length})`);
+  invoke(forged, join(artifacts, "evidence.json"), artifacts);
+  // A fresh source object has no native promise prototype or identity.
+  // Forging a native claim at its allocation must fail both verifier entries.
+  const allocatedClaims = readClaims(artifacts);
+  const allocatedFn = must(allocatedClaims.functions.find(f => f.name === "freshRecord"), "freshRecord's claims");
+  const allocatedAt = source.indexOf("{}", source.indexOf("function freshRecord"));
+  must(allocatedFn.expressions.find(e => e.pos[0] === allocatedAt && e.pos[1] === allocatedAt + 2),
+    "the fresh record allocation").type = must(allocatedFn.params.find(p => p.name === "p"), "the native parameter").type;
+  const allocated = writeClaims(artifacts, "forged-native-introduction", allocatedClaims);
+  refusedAt(artifacts, allocated, "forged-native-introduction",
+    `source expression obligation at [${allocatedAt},${allocatedAt + 2})`);
+  invoke(allocated, join(artifacts, "evidence.json"), artifacts);
+  // A forged proposal for a direct write starts with a valid native input.
+  // Borrow evidence from a weakened constructor contract, then require the
+  // native contract to refuse it at its ordinary write obligation.
+  const write = run("invalid-native-promise-constructor-write");
+  const weakAst: Ast = JSON.parse(readFileSync(join(write, "fragment.json"), "utf8"));
+  const promise = must(weakAst.declarations.definitions.find(d =>
+    d.declaration.name === "Promise" && d.declaration.module.startsWith("typescript/lib/")),
+    "the native Promise declaration");
+  assert(promise.expression.k === "object" && promise.expression.prototype?.k === "object");
+  promise.expression.prototype.fields = promise.expression.prototype.fields.filter(f => f.name !== "constructor");
+  promise.expression.fields.push({ name: "constructor", optional: false, readonly: false,
+    type: { k: "atom", name: "unknown", span: [0, 0] }, span: [0, 0] });
+  const weak = join(write, "weakened-native-constructor.json");
+  writeFileSync(weak, JSON.stringify(weakAst));
+  const lowered = spawnSync(verifier, ["--lower-control-flow", weak], { encoding: "utf8", timeout: 30_000 });
+  assert.equal(lowered.status, 0, lowered.stderr);
+  const flow = join(write, "weakened-native-flow.json");
+  writeFileSync(flow, lowered.stdout);
+  const proposed = spawnSync(producerExecutable, [weak, flow], { encoding: "utf8", timeout: 30_000 });
+  assert.equal(proposed.status, 0, proposed.stderr);
+  const borrowedClaims = join(write, "weakened-native-claims.json");
+  writeFileSync(borrowedClaims, proposed.stdout);
+  const borrowed = produceWith(write, borrowedClaims, "weakened-native-constructor", weak);
+  assert.equal(borrowed.status, 0, borrowed.stdout + borrowed.stderr);
+  const refusedWrite = produceWith(write, borrowedClaims, "forged-native-constructor-write");
+  assert.equal(refusedWrite.status, 1, refusedWrite.stdout + refusedWrite.stderr);
+  const writeFailure = readDiagnostic(refusedWrite.stdout + refusedWrite.stderr);
+  assert.equal(writeFailure?.kind, "node-typing");
+  assert.ok(writeFailure?.source?.sourceMap?.pos, "the native write refusal is located");
+  assert.ok(writeFailure?.sequent && typeof writeFailure.sequent.term === "object" && "writeAt" in writeFailure.sequent.term);
+  assert.equal(writeFailure.sequent.term.writeAt.field, "constructor");
+  invoke(borrowedClaims, join(write, "weakened-native-constructor-evidence.json"), write);
+  // The verifier interprets these impossible native input annotations before
+  // consuming any evidence. It refuses them independently of producer choices.
+  for (const file of ["invalid-native-promise-constructor-intersection", "invalid-native-promise-array-then"]) {
+    const invalid = run(file);
+    const searched = produceWith(invalid, join(invalid, "claims.json"), "native-input-annotation");
+    assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+    assert.match(searched.stdout + searched.stderr, /intersection is empty/);
+    assert.match(invoke(join(invalid, "claims.json"), join(artifacts, "evidence.json"), invalid),
+      /intersection is empty/);
+  }
+}
+
+{
+  // Widening a generic wrapper's result preserves its input qualification.
+  // Forging an unbounded target must fail search and accepted-evidence replay.
+  const artifacts = run("native-promise-qualified-return");
+  const ast: Ast = JSON.parse(readFileSync(join(artifacts, "fragment.json"), "utf8"));
+  const target = must(ast.declarations.definitions.find(d => d.declaration.name === "NumericUnknownWrapper"),
+    "the result-widened generic wrapper declaration").expression;
+  assert.ok(target.k === "scheme" && target.binders.length === 1);
+  must(target.binders[0], "the retained numeric input binder").bound = null;
+  const forged = join(artifacts, "forged-generic-input-bound.json");
+  writeFileSync(forged, JSON.stringify(ast));
+  const claims = join(artifacts, "claims.json");
+  const searched = produceWith(artifacts, claims, "forged-generic-input-bound", forged);
+  assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const at = source.indexOf("wrapper;", source.indexOf("function widenResult"));
+  assert.ok((searched.stdout + searched.stderr).includes(
+    `source expression obligation at [${at},${at + "wrapper".length})`), searched.stdout + searched.stderr);
+  invoke(claims, join(artifacts, "evidence.json"), artifacts, forged);
+}
+
+{
+  // Scheme matching must keep both the native receiver bound and finally's
+  // fixed cleanup result contract. These forged methods broaden one operand.
+  const artifacts = run("native-promise-reactions");
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const at = source.indexOf("p.finally");
+  for (const part of ["receiver", "cleanup"] as const) {
+    const claims = readClaims(artifacts);
+    const fn = must(claims.functions.find(f => f.name === "finalized"), "finalized's claims");
+    const method = must(fn.expressions.find(e => e.pos[0] === at && e.pos[1] === at + "p.finally".length),
+      "finally's read claim").type;
+    assert.ok(Array.isArray(method) && method.length === 1 && typeof method[0] === "number");
+    const row = must(claims.types[method[0]], "finally's callable row");
+    const arrow = must(row.flatMap(c => typeof c === "object" && "arrs" in c ? c.arrs.arrows : [])
+      .find(a => a.arguments.length === 1), "finally's method signature");
+    const top = [rowOf(claims, "top")];
+    if (part === "receiver") arrow.receiver = top;
+    else {
+      const callback = must(arrow.arguments[0].flatMap(label => typeof label === "number" ?
+        must(claims.types[label], "the cleanup row").flatMap(c =>
+          typeof c === "object" && "arrs" in c ? c.arrs.arrows : []) : [])
+        .find(a => a.arguments.length === 0), "the cleanup signature");
+      callback.result = top;
+    }
+    const forged = writeClaims(artifacts, `forged-finally-${part}`, claims);
+    refusedAt(artifacts, forged, `forged-finally-${part}`,
+      `source expression obligation at [${at},${at + "p.finally".length})`);
+    invoke(forged, join(artifacts, "evidence.json"), artifacts);
+  }
+}
+
+{
+  // The native identity arm leaves the fresh arm unused, instantiated at
+  // never. A forged open payload there still has to satisfy its native
+  // intrinsic's bound. Async direct and native-payload instances retain the
+  // same obligation when their source result is independently widened.
+  for (const [file, functionName, binder] of [
+    ["native-promise-resolve-identity", "nativeIdentity", "U"],
+    ["native-promise-qualified-return", "stableUnknown", "T"],
+    ["native-promise-qualified-return", "adoptUnknown", "U"],
+  ] as const) {
+    const artifacts = run(file);
+    const claims = readClaims(artifacts);
+    const fn = must(claims.functions.find(f => f.name === functionName), `${functionName}'s claims`);
+    const site = must(fn.expressions.find(e => e.instantiate?.some(i => i.name === binder)),
+      "the consumed intrinsic instance");
+    const image = must(site.instantiate?.find(i => i.name === binder), "the payload instance");
+    image.type = functionName === "nativeIdentity" ? { param: "A" } : [rowOf(claims, "top")];
+    const name = `forged-native-payload-${functionName}`;
+    const forged = writeClaims(artifacts, name, claims);
+    const searched = produceWith(artifacts, forged, name);
+    const detail = searched.stdout + searched.stderr;
+    assert.equal(searched.status, 1, detail);
+    assert.ok(detail.includes(`source direct obligation at [${site.pos[0]},${site.pos[1]})`), detail);
+    assert.match(detail, /quantified call does not satisfy the closure's bound/);
+    assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts),
+      /quantified call does not satisfy the closure's bound/);
+  }
+}
 
 for (const [file, arity, accepted] of [
   ["closure-result-contract", 2, true], ["closure-graph-captured-cell", 0, false],

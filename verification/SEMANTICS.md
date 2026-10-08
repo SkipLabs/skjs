@@ -815,7 +815,7 @@ owns no key that prototype provides. The model states it in the meaning of
 types, not in the heap premise: the tested value is in a slot, not in the heap,
 and it came from an input, a read, a call's result or an allocation, each of
 which a type describes. With $\mathcal R$ the graph's realm (`ArrayRealm`: the
-row of `ArrayProto` and its declared keys plus `constructor`):
+row of `ArrayProto` and its declared keys plus `constructor` and `then`):
 
 ```math
 \mathsf{Arr}_{\mathcal R}{}_n(W,v)\iff\forall\mathit{flds}.\;

@@ -234,11 +234,19 @@ let plain_arms declarations t =
       | Shape {elements=None;calls=[];_} | Exact _ -> true | _ -> false) atoms -> Some atoms
   | _ -> None
 let arm_fields = function Shape {fields;_} | Exact fields -> fields | _ -> []
+(* Prototype-backed records exclude their prototype's own keys. A proposal
+   for key growth must retain that bound, just as the exported row does. *)
+let excludes_key arm name =
+  match List.find_opt (fun (f:Semantic.field) -> f.name = Name "[[proto]]") (arm_fields arm) with
+  | Some {read=Atoms [Shape proto];_} ->
+    List.exists (fun (f:Semantic.field) -> f.name=name) proto.fields
+  | _ -> false
 let may_lack declarations t name =
   match plain_arms declarations t with
   | Some atoms ->
     List.exists (fun a -> not (List.exists (fun (f:Semantic.field) ->
       f.name=name && not f.optional) (arm_fields a))) atoms
+    && not (List.exists (fun a -> excludes_key a name) atoms)
     && not (List.exists (fun a -> List.exists (fun (f:Semantic.field) ->
       f.name=name && f.optional && f.write=None) (arm_fields a)) atoms)
   | None -> false

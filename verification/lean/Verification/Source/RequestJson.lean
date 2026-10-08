@@ -196,13 +196,14 @@ every other name in double brackets. -/
 def reservedKey (k : PropKey) : Bool :=
   k == CallArguments.arrayStoreField || k == CallArguments.protoField || bracketed k
 
-/-- The keys an ordinary array cannot own: its prototype's declared keys and
-`constructor`. The latter preserves the realm's standard species construction.
+/-- The keys an ordinary array cannot own: its prototype's declared keys,
+`constructor` and `then`. These preserve standard species construction and
+the array's non-thenable contract during native promise resolution.
 Sorted, each once, with the model's reserved keys aside. -/
 def arrayExcludedKeys (ks : List PropKey) : List PropKey :=
-  (((PropKey.str "constructor" :: ks).filter fun k => !reservedKey k).eraseDups).mergeSort PropKey.before
+  (((PropKey.str "constructor" :: PropKey.str "then" :: ks).filter fun k => !reservedKey k).eraseDups).mergeSort PropKey.before
 
-/-- The excluded array keys: `constructor` and the prototype row's fields', views', optional fields'
+/-- The excluded array keys: `constructor`, `then` and the prototype row's fields', views', optional fields'
 and methods', the reserved keys aside. -/
 @[nospecialize] def arrayExcludedKeysOf : List (Clause (List ι)) → List PropKey
   | [.refs a bs vs os ms _] =>

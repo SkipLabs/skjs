@@ -122,18 +122,35 @@ arrows, each target matched against one of the scheme's; unmatched binders
 stand for themselves. -/
 def unifyScheme (unfold : Unfold) (s : SchemeRow Tree) (L : PositiveRules.Ops Tree) (M : List (RestArrow (List Tree))) :
     Option (List (Tree × List Tree)) := do
-  let unifyArrow (θ : List (Tree × List Tree)) (p q : List (List Tree)) : Option (List (Tree × List Tree)) :=
+  let unifyArrow (relaxed : Bool) (θ : List (Tree × List Tree)) (p q : List (List Tree)) : Option (List (Tree × List Tree)) :=
     if p.length != q.length then none
-    else (p.zip q).foldlM (fun θ (x, y) => unifyUnion unfold unfoldDepth s.binders θ x y) θ
-  -- A receiver a scheme states as every value admits any: it is not matched.
-  -- The arguments come first, as TypeScript infers from them: the result
-  -- (`Promise<T | TResult>` at `Promise<number>`) then checks their choice.
+    else (p.zip q).foldlM (fun θ (x, y) =>
+      -- Fixed operands determine no binder. Keep their original images in
+      -- the proposal; image equality and signature inclusion check them,
+      -- including a target's equivalent spelling of a fixed callback type.
+      if relaxed && !x.any (mentionsAny s.binders ·) then some θ
+      else unifyUnion unfold unfoldDepth s.binders θ x y) θ
+  -- A receiver may determine its own payload binder. Try matching it first;
+  -- a receiver admitting every value need not match the target's spelling.
+  -- These are proposals: the image and signature checks validate every
+  -- receiver, argument, result and bound independently.
   let body (a : Arrow (List Tree)) := a.arguments ++ [a.result]
-  let θ ← L.foldlM (fun θ q => s.signatures.findSome? fun p =>
-    if !p.effect.covers q.effect then none else unifyArrow θ (body p) (body q)) []
-  M.foldlM (fun θ q => s.variadic.findSome? fun p =>
-    if !p.effect.covers q.effect then none
-    else unifyArrow θ (p.arguments.2 :: p.result :: p.arguments.1) (q.arguments.2 :: q.result :: q.arguments.1)) θ
+  let θ ← L.foldlM (fun θ q =>
+    let matchOne relaxed := s.signatures.findSome? fun p =>
+      if !p.effect.covers q.effect then none else
+        (unifyArrow relaxed θ (p.receiver :: body p) (q.receiver :: body q)).orElse fun _ =>
+          unifyArrow relaxed θ (body p) (body q)
+    -- Preserve exact overload selection before proposing an equivalent
+    -- spelling of a fixed operand.
+    (matchOne false).orElse fun _ => matchOne true) []
+  M.foldlM (fun θ q =>
+    let matchOne relaxed := s.variadic.findSome? fun p =>
+      if !p.effect.covers q.effect then none
+      else
+        let body (a : RestArrow (List Tree)) := a.arguments.2 :: a.result :: a.arguments.1
+        (unifyArrow relaxed θ (p.receiver :: body p) (q.receiver :: body q)).orElse fun _ =>
+          unifyArrow relaxed θ (body p) (body q)
+    (matchOne false).orElse fun _ => matchOne true) θ
 
 /-- An equation graph's proposal: instances by matching, images by
 structural substitution. -/

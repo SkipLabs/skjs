@@ -138,18 +138,29 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) (signature:signature) ac
   let foreign = ref [] in
   let alien t = !foreign <> []
     && substitute (List.map (fun id -> id,ValueArgument (Atoms [])) !foreign) t <> t in
-  let rec constrain ?(depth=0) left right =
-    let constrain = constrain ~depth:(depth+1) in
+  let actual_candidates = ref [] in
+  let rec constrain ?(depth=0) ?(output=false) ?(contextual=false) left right =
+    let contextual_reverse = constrain ~depth:(depth+1) ~output ~contextual:output in
+    let constrain = constrain ~depth:(depth+1) ~output ~contextual in
     match local left,local right with
     | Some x,Some y -> edges := (x,y)::!edges
-    | None,Some y -> if not (alien left) then y.lower <- add y.lower left
+    | None,Some y ->
+      if not (alien left) && not (contextual && List.mem y.identity !actual_candidates) then
+        y.lower <- add y.lower left
     | Some x,None -> if not (alien right) then x.upper <- add x.upper right
     | None,None when depth > 8 -> ()
     | None,None -> (match left,right with
       (* One declaration's applications: their arguments, both ways, as no
          variance is known here. *)
       | Atoms [Named (a,xs)],Atoms [Named (b,ys)] when a=b && List.length xs=List.length ys ->
-      List.iter2 (fun x y -> constrain x y; constrain y x) xs ys
+      List.iter2 (fun x y ->
+        constrain x y;
+        (* Context supplies a missing candidate, while an actual lower
+           candidate keeps its precision, including an unused union arm
+           inferred as never. The full named result relation remains a Lean
+           obligation; this assumes no variance. Input comparisons constrain
+           the arguments both ways. *)
+        contextual_reverse y x) xs ys
       | Atoms [Named _],_ | _,Atoms [Named _] ->
       let open_ t = match t with Atoms [Named _] -> expand t | _ -> Some t in
       (match open_ left,open_ right with
@@ -272,7 +283,19 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) (signature:signature) ac
         (* An object part goes to an arm whose binders it can fix; a
            ground arm takes only a part it names. *)
         let open_arm = Semantic.mentions_rigid in
+        (* An array part fixes an array arm, through a named declaration,
+           and otherwise the fallback binder. Objectness alone would route
+           an array to an unrelated ordinary object arm. *)
+        let rec array_arm depth = function
+          | Atoms atoms -> List.exists (function
+              | Shape {elements=Some _;_} -> true
+              | Named _ as a when depth > 0 -> (match expand (Atoms [a]) with
+                  | Some t -> array_arm (depth-1) t | None -> false)
+              | _ -> false) atoms
+          | Union ts -> List.exists (array_arm depth) ts
+          | Rigid _ | Meet _ -> false in
         let heads piece arm = match piece,arm with
+          | Atoms [Shape {elements=Some _;_}],_ when open_arm arm -> array_arm 4 arm
           | Atoms [x],Atoms ys when objective x && open_arm arm -> List.exists objective ys
           | Atoms [x],Atoms ys -> List.mem x ys
           | _ -> false in
@@ -326,7 +349,9 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) (signature:signature) ac
   Option.iter (fun r -> constrain r signature.receiver) receiver;
   (* Where the call's value is expected at a type, its result must fit it, as
      TypeScript infers from the return position too. *)
-  Option.iter (fun t -> constrain signature.result t) expected;
+  actual_candidates := List.filter_map (fun (v:variable) ->
+    if v.lower = [] then None else Some v.identity) variables;
+  Option.iter (fun t -> constrain ~output:true signature.result t) expected;
   let unconstrained = List.filter_map (fun (v:variable) ->
     if v.lower = [] && v.upper = []
        && not (List.exists (fun ((a:variable),(b:variable)) ->

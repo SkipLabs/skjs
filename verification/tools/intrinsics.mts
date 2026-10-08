@@ -14,10 +14,10 @@
  *   which is never a thenable, yields the primitive itself. Other jobs may
  *   run in between, as they may during any call.
  * - `return e` in an async function is `return %AsyncReturn%(e)`: the promise
- *   the call returned settles to `e` where `e` is a primitive, and adopts `e`
- *   where it is a promise of a primitive, settling to what `e` settles to.
- *   No other object is admitted, since JavaScript adopts a thenable object
- *   instead of settling to it.
+ *   the call returned settles to `e` where `e` stays non-thenable, and adopts
+ *   `e` where it is a promise of a value that stays non-thenable, settling to
+ *   what `e` settles to. The lifetime `then` contract and the ordinary array
+ *   invariant establish this bound alongside primitives.
  * - Completing an async function is `return %AsyncComplete%()`: its promise
  *   settles to `undefined`, which `Promise<void>` admits.
  * - `for (const x of xs)` steps the iteration intrinsic the iterable's type
@@ -57,20 +57,23 @@
  *   accessor or proxy, DESIGN.md "Trust surface").
  *
  * The reviewed overlay of library globals (`library-globals.mts`) reads some
- * members as these: `Promise.resolve(v)` is `%AsyncReturn%(v)`, a promise
- * settled to `v`, `Promise.resolve()` is `%AsyncComplete%()`, and
+ * members as these: `Promise.resolve(v)` is `%PromiseResolve%(v)`, which
+ * retains a native promise through its constructor identity path or freshly
+ * resolves a stably non-thenable value. `Promise.resolve()` is
+ * `%AsyncComplete%()`, and
  * `Promise.all(ps)` is `%PromiseAll%(ps)`: a promise of the array of what
  * the promises settle to, in order, settling once each has. The array is
  * fresh and owns no `then`, so it is not adopted. `Promise.reject(r)` is
  * `%PromiseReject%(r)`, a promise rejected with `r`, whose await throws, and
  * `new Promise(executor)` is `%NewPromise%(executor)`: the executor is
  * called at once with the promise's resolving functions, and resolving
- * settles the promise to a primitive, as `%AsyncReturn%` does. */
+ * settles the promise to a primitive. */
 import type { TypeTerm } from "./declaration-types.mts";
 
 export const intrinsicModule = "skjs/intrinsics";
 export const awaitName = "%Await%";
 export const asyncReturnName = "%AsyncReturn%";
+export const promiseResolveName = "%PromiseResolve%";
 export const asyncCompleteName = "%AsyncComplete%";
 export const iterateName = "%Iterate%";
 const iteratePrefix = "%Iterate:";
@@ -92,7 +95,7 @@ type AtomName = Extract<TypeTerm, { k: "atom" }>["name"];
 const span: [number, number] = [0, 0];
 const atom = (name: AtomName): TypeTerm => ({ k: "atom", name, span });
 const binder: TypeTerm = { k: "binder", name: "T", span };
-/** A second binder, for the primitives a step passes through unchanged. */
+/** A second binder for the other input payload. */
 const other: TypeTerm = { k: "binder", name: "U", span };
 const either = (...parts: TypeTerm[]): TypeTerm => ({ k: "union", span, parts });
 const fn = (params: TypeTerm[], result: TypeTerm): Signature =>
@@ -102,9 +105,8 @@ const primitives: AtomName[] = ["null", "undefined", "boolean", "number", "strin
 const primitive: TypeTerm = { k: "union", span, parts: primitives.map(atom) };
 /** The types no thenable inhabits: primitives, arrays (whose prototype holds
  * no `then`, and to which no step adds one), and objects whose `then` reads
- * a primitive or nothing. A trusted generic signature is truthful about a
- * promise of its type parameter only where the parameter is instantiated at
- * one: a realm promise resolved with a thenable adopts it. */
+ * a primitive or nothing. Fresh resolution preserves its literal payload
+ * type at these types; resolving a thenable adopts its result. */
 export const nonThenable: TypeTerm = { k: "union", span, parts: [...primitives.map(atom),
   { k: "object", span, stringIndex: null, calls: [],
     fields: [{ name: "then", optional: true, readonly: true, type: primitive, span }] },
@@ -188,10 +190,13 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     // settles to, or the primitive itself.
     [awaitName]: () => ({ typeParams: [{ name: "T", bound: null }, { name: "U", bound: primitive }],
       type: fn([either(promise(binder), other)], either(binder, other)) }),
-    // Settling to a primitive `T`, or adopting a promise of a primitive `U`:
-    // adoption calls its `then`, which passes a `U`, and settles to it.
-    [asyncReturnName]: () => ({ typeParams: [{ name: "T", bound: primitive }, { name: "U", bound: primitive }],
+    // Fresh resolution requires either payload to stay non-thenable.
+    [asyncReturnName]: () => ({ typeParams: [{ name: "T", bound: nonThenable }, { name: "U", bound: nonThenable }],
       type: fn([either(binder, promise(other))], promise(either(binder, other))) }),
+    // PromiseResolve returns an ordinary native input itself. The other
+    // arm resolves a fresh promise, requiring its payload to stay non-thenable.
+    [promiseResolveName]: () => ({ typeParams: [{ name: "T", bound: null }, { name: "U", bound: nonThenable }],
+      type: fn([either(promise(binder), other)], promise(either(binder, other))) }),
     [asyncCompleteName]: () => ({ typeParams: [], type: fn([], promise(atom("void"))) }),
     [iterateName]: () => ({ typeParams: [{ name: "T", bound: null }],
       type: fn([{ k: "array", presence: "readable", readonly: true, element: binder, span }], step) }),
@@ -204,8 +209,8 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
       type: fn([atom("unknown")], promise(binder)) }),
     // `new Promise(executor)`: the executor runs at once, given functions
     // that settle the promise to their argument, or reject it; a throw out
-    // of the executor rejects it. The bound is `%AsyncReturn%`'s: resolving
-    // with a thenable would adopt it instead of settling to it.
+    // of the executor rejects it. This constructor contract admits primitive
+    // payloads; resolving with a thenable would adopt it instead.
     [newPromiseName]: () => ({ typeParams: [{ name: "T", bound: primitive }],
       type: fn([fn([fn([binder], atom("void")), fn([atom("unknown")], atom("void"))], atom("void"))],
         promise(binder)) }),

@@ -163,7 +163,7 @@ An array is one store of element locations under the reserved
 store key and one object holding `Array.prototype` under `[[proto]]`, read
 through the one array shape (`arrayClauseOf`,
 [arrays](POSITIVE-TYPES.md#arrays)). Its own keys exclude the members declared by
-`ArrayProto` and `constructor`, so `xs.map` reaches the prototype
+`ArrayProto`, `constructor` and `then`, so `xs.map` reaches the prototype
 and ordinary construction cannot be overridden; it may own other keys,
 as Skip's runtime tags managed arrays with a symbol key. Stores may be sparse;
 source `T[]` requires **readability**: every in-bounds read, including a hole's
@@ -284,14 +284,14 @@ the source type even when `U` admits holes. These are ordinary
 qualified callback types, including when the callback is returned or bound.
 
 **Ordinary array construction is part of the admitted semantics.** An array
-owns no `constructor` key, and the realm's `Array.prototype.constructor`,
+owns neither `constructor` nor `then`, and the realm's `Array.prototype.constructor`,
 `Array[Symbol.species]` and relevant prototype links retain their standard
-behavior. External code must preserve the same invariant for values it supplies
+behavior; `Array.prototype` and `Object.prototype` have no `then`. External code must preserve the same invariant for values it supplies
 and across calls. This is an explicit host assumption, like the restrictions on
 proxies and accessors; it is not a theorem about arbitrary JavaScript.
 
 The own-key part is stated in the existing array contract and realm invariant:
-`RequestJson.arrayExcludedKeys` adds `constructor` to the prototype's declared
+`RequestJson.arrayExcludedKeys` adds `constructor` and `then` to the prototype's declared
 keys. Arrays cannot acquire it through an invariant-preserving allocation,
 structural alias or write. The fragment also refuses custom species definitions,
 array subclass construction and the unreviewed prototype-changing APIs. It

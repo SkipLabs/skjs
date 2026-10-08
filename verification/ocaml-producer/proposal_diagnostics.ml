@@ -142,9 +142,8 @@ let exact_optional_reason =
   "the pipeline reads `f?: T` exactly, as absent or a `T` (as `exactOptionalPropertyTypes` does), \
    where the default reading of TypeScript also admits a present `undefined`; `f?: T | undefined` states it"
 let thenable_reason =
-  "JavaScript adopts a thenable, calling its `then`, instead of settling to it, and a record type does \
-   not rule out a `then`, its own or one on its prototype (a `PromiseLike` is one), so the model admits only a \
-   realm promise or a primitive there"
+  "JavaScript adopts a thenable, calling its `then`, instead of settling to it; an open record can hide a \
+   callable `then`, its own or one on its prototype (a `PromiseLike` is one)"
 let symbol_copy_reason =
   "the copy is stated at its string keys only, and JavaScript also copies an own enumerable \
    symbol-keyed property, so the result states no symbol key"

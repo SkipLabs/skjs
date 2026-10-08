@@ -1465,11 +1465,12 @@ export function collectDeclarations(file: string, options: {
     definitions.push(...selections, ...primitiveProtos);
     // First, so its row follows the four fixed ones in every table.
     definitions.unshift(...arrayProto);
-    // A trusted generic signature instantiated at a thenable type states a
-    // promise of it, which a realm promise never is: each type parameter a
-    // `Promise` or `PromiseLike` argument names is bounded by `nonThenable`,
-    // for imported, ambient and library signatures and methods (DESIGN.md,
-    // "Trust surface"). The client's own bodies are checked instead.
+    // Trusted generic promise results have a stable non-thenable payload
+    // contract, so fresh resolution preserves that payload. Bound each
+    // type parameter a Promise or PromiseLike position names accordingly
+    // (SOURCE-CONTRACTS.md, "Async functions and await"). An existing
+    // fulfilled promise may retain an object that later acquires then.
+    // The client's own bodies are checked at their source annotations.
     const clientModule = idOf(client);
     const trustedValues = values.map(v => v.binding.specifier === intrinsicModule ? v :
       { ...v, typeParams: promisedBinders(v.typeParams, v.type), type: promisedMethods(v.type) });
@@ -1510,6 +1511,9 @@ function promisedNames(type: TypeTerm): Set<string> {
         for (const f of t.fields) visit(f.type, inside);
         for (const c of t.calls) visit(c, inside);
         if (t.stringIndex) visit(t.stringIndex.value, inside);
+        if (t.numberIndex) visit(t.numberIndex.value, inside);
+        if (t.symbolIndex) visit(t.symbolIndex.value, inside);
+        if (t.prototype) visit(t.prototype, inside);
         return;
       case "function": case "constructor":
         for (const p of t.params) visit(p, inside);
@@ -1535,7 +1539,8 @@ function promisedBinders<B extends { name: string; bound: TypeTerm | null }>(bin
  * bounded by `nonThenable`. */
 function promisedMethods(type: TypeTerm): TypeTerm {
   if (type.k === "object")
-    return { ...type, fields: type.fields.map(f => ({ ...f, type: promisedMethods(f.type) })) };
+    return { ...type, fields: type.fields.map(f => ({ ...f, type: promisedMethods(f.type) })),
+      ...(type.prototype ? { prototype: promisedMethods(type.prototype) } : {}) };
   if (type.k === "scheme") return { ...type, binders: promisedBinders(type.binders, type) };
   if (type.k === "union" || type.k === "intersection") return { ...type, parts: type.parts.map(promisedMethods) };
   return type;
@@ -2122,7 +2127,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
         }) });
       continue;
     }
-    const expression = ts.isTypeAliasDeclaration(node)
+    let expression = ts.isTypeAliasDeclaration(node)
       ? parse(node.type)
       : ts.isClassDeclaration(node)
         ? classInstance(scope, node, [node.getStart(source), node.end])
@@ -2132,6 +2137,73 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
             return members(scopeOf(file), part.members, part,
               [part.getStart(file), part.end], true);
           }), (at, message) => scope.fail(at, message), node);
+    // Native promise observation uses PromiseResolve's constructor equality
+    // fast path. Its standard constructor and methods are inherited, and a
+    // promise owns none of those keys. The ordinary prototype/own-key
+    // contracts preserve this requirement through structural writable aliases.
+    if (parts.some(part => ts.isInterfaceDeclaration(part) && part.name.text === "Promise" &&
+        isLibraryModule(identityOf(part).module))) {
+      if (parts.some(part => !isLibraryModule(identityOf(part).module)))
+        scope.fail(node, "a source augmentation of native Promise is outside the fragment: native factories must meet the realm's reviewed Promise contract");
+      if (expression.k !== "object" || expression.prototype || expression.stringIndex ||
+          expression.numberIndex || expression.symbolIndex || expression.calls.length)
+        throw Error("the native Promise declaration must be an ordinary interface");
+      const span = expression.span;
+      const payload: TypeTerm = { k: "binder", name: "NativePayload", span };
+      const promiseAt = (arg: TypeTerm): TypeTerm => ({ k: "reference", args: [arg], span,
+        reference: { name: "Promise", span, arguments: [span], target: identity } });
+      // catch and finally forward a fulfilled input by resolving a fresh
+      // promise. The receiver's payload must therefore stay non-thenable.
+      // The payload binder belongs to the callable, preserving covariance of
+      // Promise itself and requiring the bound at every actual receiver.
+      const nativeFields = expression.fields.map(field => {
+        if (field.name !== "catch" && field.name !== "finally") return field;
+        const type = field.type;
+        const binders = type.k === "scheme" ? type.binders : [];
+        const signatures = type.k === "scheme" ? type.signatures : type.k === "function" ? [type] : [];
+        if (!signatures.length || parameters.length !== 1)
+          throw Error(`the native Promise.${field.name} declaration has an unsupported signature`);
+        const receiver = promiseAt(payload);
+        // finally assimilates the cleanup result even though its public
+        // declaration discards that result. Native cleanup promises use the
+        // constructor fast path; other results must be stably non-thenable.
+        const amended = signatures.map(signature => {
+          let callbacks = 0;
+          const cleanup = (type: TypeTerm): TypeTerm => {
+            if (type.k === "union") return { ...type, parts: type.parts.map(cleanup) };
+            if (type.k === "atom" && (type.name === "undefined" || type.name === "null")) return type;
+            if (type.k !== "function" || type.params.length || type.rest ||
+                type.receiver || type.result.k !== "atom" || type.result.name !== "void")
+              throw Error("the native Promise.finally cleanup parameter has an unsupported signature");
+            callbacks++;
+            return { ...type, result: { k: "union", span,
+              parts: [nonThenable, promiseAt({ k: "atom", name: "unknown", span })] } };
+          };
+          const params = field.name === "finally" ? signature.params.map(cleanup) : signature.params;
+          if (field.name === "finally" && (params.length !== 1 || callbacks !== 1))
+            throw Error("the native Promise.finally declaration must take one optional cleanup callback");
+          return { ...signature, receiver, params, result: substitute(signature.result, [payload]) };
+        });
+        const updated: TypeTerm = { k: "scheme", span: type.span,
+          binders: [...binders, { name: "NativePayload", bound: null, default: null, span }],
+          signatures: amended };
+        return { ...field, readonly: true, type: updated };
+      });
+      // Method members already describe lookup along the receiver's prototype
+      // chain. Keep their host-relative contracts on the receiver; the
+      // prototype slots state presence and prohibit own replacements.
+      const isMethod = (type: TypeTerm): boolean =>
+        (type.k === "scheme" && type.signatures.every(signature => signature.receiver?.k === "self")) ||
+        (type.k === "function" && type.receiver?.k === "self") ||
+        (type.k === "intersection" && type.parts.every(isMethod));
+      const methods = nativeFields.filter(field => isMethod(field.type));
+      expression = { ...expression, fields: methods,
+        prototype: { ...expression, fields: [...nativeFields.map(field =>
+          isMethod(field.type) ? { ...field, readonly: true,
+            type: { k: "atom" as const, name: "unknown" as const, span } } : field),
+          { name: "constructor", optional: false, readonly: true,
+            type: { k: "atom", name: "unknown", span }, span }] } };
+    }
     // A class's `implements` clauses are obligations on the class, not part of
     // its instance type; the class it extends is a base of that type, as an
     // interface's are.
