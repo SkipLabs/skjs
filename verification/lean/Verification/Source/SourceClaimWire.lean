@@ -22,7 +22,7 @@ inductive ClaimType (ι : Type) where
   | param : String → ClaimType ι
   | array : ClaimType ι → ClaimType ι
   /-- Binders, receiver, parameters, rest element and result. -/
-  | scheme : List (String × Option (ClaimType ι)) → ClaimType ι → List (ClaimType ι) → Option (ClaimType ι) →
+  | scheme : List (ResolutionWire.Binder (ClaimType ι)) → ClaimType ι → List (ClaimType ι) → Option (ClaimType ι) →
       ClaimType ι → CallEffects.Effect → ClaimType ι
   | unavailable : String → ClaimType ι
   deriving Repr, BEq, Inhabited
@@ -35,7 +35,8 @@ private partial def ClaimType.toJson [ToJson ι] : ClaimType ι → Json
   | .param name => Json.mkObj [("param", Lean.toJson name)]
   | .scheme typeParams receiver params rest result effect => Json.mkObj [("scheme", Json.mkObj [
       ("typeParams", Lean.toJson (typeParams.map fun p => Json.mkObj [
-        ("name", Lean.toJson p.1), ("bound", p.2.map ClaimType.toJson |>.getD Json.null)])),
+        ("name", Lean.toJson p.name), ("bound", p.bound.map ClaimType.toJson |>.getD Json.null),
+        ("resolution", Lean.toJson p.resolution)])),
       ("this", ClaimType.toJson receiver),
       ("params", Lean.toJson (params.map ClaimType.toJson)),
       ("rest", rest.map ClaimType.toJson |>.getD Json.null),
@@ -63,12 +64,15 @@ private partial def ClaimType.fromJson [FromJson ι] (j : Json) : Except String 
       fieldsExactly j ["scheme"]
       fieldsExactly s ["typeParams", "this", "params", "rest", "result", "effect"]
       let typeParams ← (← jArr s "typeParams").mapM fun p => do
-        fieldsExactly p ["name", "bound"]
+        fieldsExactly p ["name", "bound", "resolution"]
         let name ← jStr (← jField p "name")
         let bound ← jField p "bound"
         let bound ← if bound == .null then pure none else do
           pure (some (← ClaimType.fromJson bound))
-        return (name, bound)
+        let rawResolution ← jField p "resolution"
+        let resolution ← if rawResolution == .null then pure none else some <$> fromJson? rawResolution
+        return (⟨name, bound, resolution⟩ : ResolutionWire.Binder (ClaimType ι))
+      ResolutionWire.validateOwnership (typeParams.map fun p => (p.name, p.resolution))
       let receiver ← ClaimType.fromJson (← jField s "this")
       let params ← (← jArr s "params").mapM ClaimType.fromJson
       let rest ← jField s "rest"
@@ -112,7 +116,17 @@ producer's proposed elimination, re-checked here; it is never itself evidence. -
 structure Instantiation (ι : Type) where
   name : String
   type : ClaimType ι
-  deriving ToJson, FromJson, BEq
+  resolution : Option ResolutionWire.Instance
+  deriving ToJson, BEq
+
+instance [FromJson ι] : FromJson (Instantiation ι) where
+  fromJson? j := do
+    fieldsExactly j ["name", "type", "resolution"]
+    let name ← jStr (← jField j "name")
+    if name.isEmpty then throw "empty instantiation binder"
+    let rawResolution ← jField j "resolution"
+    let resolution ← if rawResolution == .null then pure none else some <$> fromJson? rawResolution
+    return ⟨name, ← fromJson? (← jField j "type"), resolution⟩
 
 structure Expression (ι : Type) where
   point : String
@@ -245,8 +259,8 @@ private partial def validType (T : EquationStore.State) : ClaimType Tree → Boo
   | .scheme typeParams receiver params rest result _effect =>
       -- With no binders of its own this is a callable that mentions an
       -- enclosing rigid parameter, such as a returned `() => T`.
-      (typeParams.map Prod.fst).eraseDups.length == typeParams.length &&
-      typeParams.all (fun p => !p.1.isEmpty && p.2.all (validType T)) &&
+      (ResolutionWire.validateOwnership (typeParams.map fun p => (p.name, p.resolution))).isOk &&
+      typeParams.all (fun p => p.bound.all (validType T)) &&
       validType T receiver && params.all (validType T) && rest.all (validType T) &&
       validType T result
   | .unavailable reason => !reason.isEmpty
@@ -277,7 +291,9 @@ private def validInterior (T : EquationStore.State) (entries : List (Entry Tree)
   (entries.map (fun e => (e.point,e.start))).eraseDups.length == entries.length &&
   (expressions.map (fun e => (e.point,e.pos))).eraseDups.length == expressions.length &&
   entries.all (fun e => validBindings T e.bindings) &&
-  expressions.all (fun e => validSpan e.pos && validType T e.type && validCurrent T e.type e.current)
+  expressions.all (fun e => validSpan e.pos && validType T e.type && validCurrent T e.type e.current &&
+    e.instantiate.all (fun is => (is.map (·.name)).eraseDups.length == is.length &&
+      is.all (fun i => !i.name.isEmpty && validType T i.type)))
 private def validContracts (T : EquationStore.State) (cs : List (StorageContract Tree)) : Bool :=
   (cs.map (fun c => (c.pos,c.name))).eraseDups.length == cs.length &&
   cs.all (fun c => validSpan c.pos && !c.name.isEmpty && validType T c.type)

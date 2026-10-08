@@ -1,4 +1,6 @@
 import Verification.Programs.ProgramTyping
+-- ../Types/QualifiedGraphs.lean interprets graphs whose binders carry resolution descriptors; without it lexical body checking has no instance comparison.
+import Verification.Types.QualifiedGraphs
 
 /-! Finite program evidence checked against the declarative rules. Each node
 states its sequent explicitly. The external entry point also checks that the
@@ -617,9 +619,60 @@ theorem checkMemberProofs_accepted [DecidableEq ι] (G : NormalGraph ι)
   · change (false = true) ↔ False
     simp
 
+/-- Body subsumption can instantiate a qualified callable with the complete
+resolution group from its enclosing scheme. Ordinary comparisons and all
+instance-image, kind, signature and bound checks use the shared checker. -/
+@[nospecialize] def lexicalBodyCheck [DecidableEq ι] (G : NormalGraph ι)
+    (images : PositiveCertificates.InstanceImageCheck G) (source : SchemeRow ι)
+    (A B : Ty ι) (proof : PositiveCertificates.SubtypeChoices ι) : Bool :=
+  PositiveCertificates.checkUsing G images A B proof ||
+    match expand G B, proof.instantiation with
+    | [.arrs L M], some inst =>
+      (QualifiedGraphs.compareLexicalInstance G images source
+        (fun U V state => (PositiveCertificates.ComparisonResult.fromBool
+          (PositiveCertificates.checkUsing G images U V proof), state))
+        () A L M inst ()).1.accepted
+    | _, _ => false
+
+/-- The lexical check supplies precisely the subsumption premise consumed by
+program typing, at an assignment permitted by the enclosing scheme. -/
+@[nospecialize] def lexicalBodySubtyping [DecidableEq ι] (G : NormalGraph ι)
+    (images : PositiveCertificates.InstanceImageCheck G) (source : SchemeRow ι)
+    {C : ResolutionDescriptors.Capabilities} {N : Fam}
+    (domain : G.domain = ResolutionDescriptors.descriptorDomain C N)
+    (η : MixedAssignment ι) (As : List MixedFamily)
+    (length : As.length = source.binders.length) (allowed : G.domain.allowed source As) :
+    BodySubtyping (reassign G (assign η source.binders As)) where
+  check := lexicalBodyCheck G images source
+  sound := by
+    intro A B proof checked
+    simp only [lexicalBodyCheck, Bool.or_eq_true] at checked
+    rcases checked with ordinary | lexical
+    · exact fun n W v hv => PositiveCertificates.checkUsing_sound ordinary
+        (assign η source.binders As) n W (.inl v) hv
+    · split at lexical
+      · rename_i L M inst target instanced
+        have bounds : ∀ U V (prior : Unit),
+            (PositiveCertificates.ComparisonResult.fromBool
+              (PositiveCertificates.checkUsing G images U V proof)).accepted = true →
+            FamLe (mixedMeaning G (assign η source.binders As) U)
+              (mixedMeaning G (assign η source.binders As) V) := by
+          intro U V _ h
+          exact PositiveCertificates.checkUsing_sound
+            (by simpa only [PositiveCertificates.ComparisonResult.accepted_fromBool] using h) _
+        have step := QualifiedGraphs.compareLexicalInstance_sound G images source domain
+          η As length allowed bounds lexical
+        intro n W v hv
+        exact mixed_of_expand target (step n W v hv)
+      · cases lexical
+
+#print axioms lexicalBodySubtyping
+
 /-- Only finite, syntactic premises of one rule. -/
 @[nospecialize] def LocalUsing [DecidableEq ι] (G : NormalGraph ι) (images : PositiveCertificates.InstanceImageCheck G) (j : Sequent ι) (r : Rule ι) (ps : List (Sequent ι))
-    (codes : CodeEntry ι → Bool := fun _ => false) : Prop :=
+    (codes : CodeEntry ι → Bool := fun _ => false)
+    (subtype : Ty ι → Ty ι → PositiveCertificates.SubtypeChoices ι → Bool :=
+      PositiveCertificates.checkUsing G images) : Prop :=
   match r, j.term, ps with
   | .var, .var i, [] => j.context[i]? = some j.type
   | .nul, .nul, [] => Represents G j.type .nul
@@ -887,7 +940,7 @@ theorem checkMemberProofs_accepted [DecidableEq ι] (G : NormalGraph ι)
     | _ => False
   | .sub proof, _, [jt] =>
     jt.context = j.context ∧ jt.term = j.term ∧
-    PositiveCertificates.checkUsing G images jt.type j.type proof = true
+    subtype jt.type j.type proof = true
   | .throw, .throw a, [ja] => ja.context = j.context ∧ ja.term = a
   | .merge, .merge d a b, [ja, jb] =>
     ja.context = j.context ∧ ja.term = a ∧ jb.context = j.context ∧ jb.term = b ∧
@@ -896,7 +949,9 @@ theorem checkMemberProofs_accepted [DecidableEq ι] (G : NormalGraph ι)
 
 instance [DecidableEq ι] (G : NormalGraph ι) (images : PositiveCertificates.InstanceImageCheck G)
     (j : Sequent ι) (r : Rule ι) (ps)
-    (codes : CodeEntry ι → Bool) : Decidable (LocalUsing G images j r ps codes) := by
+    (codes : CodeEntry ι → Bool)
+    (subtype : Ty ι → Ty ι → PositiveCertificates.SubtypeChoices ι → Bool) :
+    Decidable (LocalUsing G images j r ps codes subtype) := by
   unfold LocalUsing
   split <;> try infer_instance
   all_goals try dsimp [Represents, Answers]
@@ -1042,6 +1097,75 @@ which is what a generic closure's creation needs (`HasTyUsing.funScheme`). -/
 theorem codesSound_none (G : NormalGraph ι) : CodesSound G (fun _ => false) := by
   intro c h; cases h
 
+/-- A generic body's code entries hold at the assignments admitted by its
+own scheme. All three resolution projections are retained by that assignment. -/
+@[nospecialize] def SchemeCodesSound (G : NormalGraph ι) (s : SchemeRow ι)
+    (codes : CodeEntry ι → Bool) : Prop :=
+  ∀ c, codes c = true → ∀ η As, As.length = s.binders.length →
+    G.domain.allowed s As → c.Spec (reassign G (assign η s.binders As))
+
+/-- Unconditionally checked code also meets a scheme's permitted assignments. -/
+theorem CodesSound.scheme {G : NormalGraph ι} {codes : CodeEntry ι → Bool}
+    (h : CodesSound G codes) (s : SchemeRow ι) : SchemeCodesSound G s codes :=
+  fun c hc η As _ _ => h c hc (assign η s.binders As)
+
+/-- Checked signatures use the body's actual permitted binder assignment. -/
+theorem schemeOffersChecked_sound [DecidableEq ι] {G : NormalGraph ι}
+    {s : SchemeRow ι} {codes : CodeEntry ι → Bool}
+    (hcodes : SchemeCodesSound G s codes) {arity : Nat} {E : List Tm}
+    {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {start : Nat}
+    {Cs : List (Ty ι)} {rest : Bool} {stores : List (Ty ι)}
+    (h : offersChecked G codes arity E K start Cs rest s.signatures s.variadic stores = true)
+    (η : MixedAssignment ι) (As : List MixedFamily)
+    (hlen : As.length = s.binders.length) (ha : G.domain.allowed s As) :
+    CodeOffers (reassign G (assign η s.binders As)) arity E K start Cs rest
+      s.signatures s.variadic stores := by
+  cases rest with
+  | false =>
+    simp only [offersChecked, List.all_eq_true] at h
+    exact fun p hp => hcodes _ (h p hp) η As hlen ha
+  | true =>
+    simp only [offersChecked, Bool.and_eq_true, List.all_eq_true, beq_iff_eq,
+      decide_eq_true_eq, List.isEmpty_iff] at h
+    obtain ⟨⟨hL, hslen⟩, hall⟩ := h
+    exact ⟨hL, hslen, fun q hq => ⟨(hall q hq).1.1, (hall q hq).1.2,
+      hcodes _ (hall q hq).2 η As hlen ha⟩⟩
+
+/-- The checker establishes code formation independently of whether a scheme
+has an admitted instance. -/
+theorem offersChecked_shape [DecidableEq ι] {G : NormalGraph ι}
+    {codes : CodeEntry ι → Bool} {arity E K start Cs rest L S stores}
+    (h : offersChecked G codes arity E K start Cs rest L S stores = true) :
+    CodeOffersShape G arity rest L S stores := by
+  cases rest with
+  | false => trivial
+  | true =>
+    simp only [offersChecked, Bool.and_eq_true, List.all_eq_true, beq_iff_eq,
+      decide_eq_true_eq, List.isEmpty_iff] at h
+    exact ⟨h.1.1, h.1.2, fun q hq => (h.2 q hq).1⟩
+
+/-- A generic closure is certified by its code table at the scheme's permitted
+assignments and by the ordinary capture and code-formation checks. -/
+theorem funScheme_of_checked [DecidableEq ι] {G : NormalGraph ι}
+    {images : PositiveCertificates.InstanceImageCheck G} {subtyping : BodySubtyping G}
+    {Γ : List (Ty ι)} {j : ι} {s : SchemeRow ι}
+    {codes : CodeEntry ι → Bool} (hcodes : SchemeCodesSound G s codes)
+    {arity start : Nat} {E : List Tm}
+    {K : List (ControlFlow.Continuation × Option ControlFlow.Target)}
+    {caps : List (Ty ι × Nat)} {rest : Bool} {stores : List (Ty ι)}
+    (hp : G.params j = false) (hs : G.schemes j = some s)
+    (hc : offersChecked G codes arity E K start (caps.map Prod.fst) rest
+      s.signatures s.variadic stores = true)
+    (hfree : capturesFree G s (caps.map Prod.fst) = true)
+    (hlt : ∀ c ∈ caps, c.2 < Γ.length)
+    (hcap : ∀ c ∈ caps, HasTyUsing G images (subtyping := subtyping) Γ (.var c.2) c.1) :
+    HasTyUsing G images (subtyping := subtyping) Γ
+      (.makeFn (.graph arity E K start (caps.map fun c => .var c.2) .call rest) .nul) [j] :=
+  .funScheme hp hs (schemeOffersChecked_sound hcodes hc) (offersChecked_shape hc) hfree hlt hcap
+
+#print axioms schemeOffersChecked_sound
+#print axioms funScheme_of_checked
+
 /-- A checked offer holds at every assignment: each entry does (`CodesSound`),
 and a store type is read through the graph's rows only. -/
 theorem offersChecked_sound [DecidableEq ι] {G : NormalGraph ι} {codes : CodeEntry ι → Bool}
@@ -1065,13 +1189,13 @@ theorem offersChecked_sound [DecidableEq ι] {G : NormalGraph ι} {codes : CodeE
 /-- Premises naming slots of the context are the captures of graph code: each
 a slot below the context's length, typed there. -/
 theorem caps_of_local [DecidableEq ι] {G : NormalGraph ι}
-    {images : PositiveCertificates.InstanceImageCheck G} {Γ : List (Ty ι)}
+    {images : PositiveCertificates.InstanceImageCheck G} {subtyping : BodySubtyping G} {Γ : List (Ty ι)}
     {ps : List (Sequent ι)} (hctx : ∀ q ∈ ps, q.context = Γ)
     (hslots : capSlotsBelow (ps.map Sequent.term) Γ.length = true)
-    (hp : ∀ p ∈ ps, HasTyUsing G images p.context p.term p.type) :
+    (hp : ∀ p ∈ ps, HasTyUsing G images (subtyping := subtyping) p.context p.term p.type) :
     ∃ caps : List (Ty ι × Nat), caps.map (fun c => Tm.var c.2) = ps.map Sequent.term ∧
       caps.map Prod.fst = ps.map Sequent.type ∧ (∀ c ∈ caps, c.2 < Γ.length) ∧
-      ∀ c ∈ caps, HasTyUsing G images Γ (.var c.2) c.1 := by
+      ∀ c ∈ caps, HasTyUsing G images (subtyping := subtyping) Γ (.var c.2) c.1 := by
   unfold capSlotsBelow at hslots
   split at hslots
   · rename_i slots hvs
@@ -1088,7 +1212,7 @@ theorem caps_of_local [DecidableEq ι] {G : NormalGraph ι}
     have hlt : ∀ c ∈ caps, c.2 < Γ.length := fun c hc => by
       have := List.of_mem_zip hc
       exact of_decide_eq_true (List.all_eq_true.mp hslots c.2 this.2)
-    have hcap : ∀ c ∈ caps, HasTyUsing G images Γ (.var c.2) c.1 := fun c hc => by
+    have hcap : ∀ c ∈ caps, HasTyUsing G images (subtyping := subtyping) Γ (.var c.2) c.1 := fun c hc => by
       obtain ⟨i, hi, hci⟩ := List.mem_iff_getElem.mp hc
       have hi' : i < ps.length := by simp [caps] at hi; omega
       have hsl : i < slots.length := by simp [caps] at hi; omega
@@ -1107,15 +1231,15 @@ theorem caps_of_local [DecidableEq ι] {G : NormalGraph ι}
 /-- A graph code creation whose captures are slots and whose signatures the
 table has checked is derivable. -/
 theorem funGraph_of_local [DecidableEq ι] {G : NormalGraph ι}
-    {images : PositiveCertificates.InstanceImageCheck G} {Γ : List (Ty ι)} {A : Ty ι}
+    {images : PositiveCertificates.InstanceImageCheck G} {subtyping : BodySubtyping G} {Γ : List (Ty ι)} {A : Ty ι}
     {codes : CodeEntry ι → Bool} (hcodes : CodesSound G codes) {arity start : Nat}
     {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)}
     {rest : Bool} {As : List (Ty ι)}
     {ps : List (Sequent ι)} (hctx : ∀ q ∈ ps, q.context = Γ)
     (hslots : capSlotsBelow (ps.map Sequent.term) Γ.length = true)
     (hok : graphCodesChecked G A codes arity E K start (ps.map Sequent.type) rest As = true)
-    (hp : ∀ p ∈ ps, HasTyUsing G images p.context p.term p.type) :
-    HasTyUsing G images Γ (.makeFn (.graph arity E K start (ps.map Sequent.term) .call rest) .nul) A := by
+    (hp : ∀ p ∈ ps, HasTyUsing G images (subtyping := subtyping) p.context p.term p.type) :
+    HasTyUsing G images (subtyping := subtyping) Γ (.makeFn (.graph arity E K start (ps.map Sequent.term) .call rest) .nul) A := by
   obtain ⟨caps, hvar, hfst, hlt, hcap⟩ := caps_of_local hctx hslots hp
   rw [← hvar]
   unfold graphCodesChecked at hok
@@ -1131,9 +1255,9 @@ theorem funGraph_of_local [DecidableEq ι] {G : NormalGraph ι}
       · rename_i hpar
         obtain ⟨s', hq, he⟩ := Option.map_eq_some_iff.mp hs
         cases he
-        exact HasTyUsing.funScheme (caps := caps) (E := E) (K := K) (start := start) (arity := arity)
-          (by simpa using hpar) hq (by rw [hfst]; exact offersChecked_sound hcodes hok.2)
-          (by rw [hfst]; exact hok.1) hlt hcap
+        exact funScheme_of_checked (caps := caps) (E := E) (K := K) (start := start) (arity := arity)
+          (hcodes.scheme s) (by simpa using hpar) hq
+          (by rw [hfst]; exact hok.2) (by rw [hfst]; exact hok.1) hlt hcap
     · cases hs
   · split at hok
     · rename_i L S hL
@@ -1142,9 +1266,9 @@ theorem funGraph_of_local [DecidableEq ι] {G : NormalGraph ι}
     · contradiction
 
 theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
-    {images : PositiveCertificates.InstanceImageCheck G} {j r ps} {codes : CodeEntry ι → Bool}
-    (hl : LocalUsing G images j r ps codes) (hcodes : CodesSound G codes)
-    (hp : ∀ p ∈ ps, HasTyUsing G images p.context p.term p.type) : HasTyUsing G images j.context j.term j.type := by
+    {images : PositiveCertificates.InstanceImageCheck G} {subtyping : BodySubtyping G} {j r ps} {codes : CodeEntry ι → Bool}
+    (hl : LocalUsing G images j r ps codes subtyping.check) (hcodes : CodesSound G codes)
+    (hp : ∀ p ∈ ps, HasTyUsing G images (subtyping := subtyping) p.context p.term p.type) : HasTyUsing G images (subtyping := subtyping) j.context j.term j.type := by
   rcases j with ⟨Γ, t, A⟩
   unfold LocalUsing at hl
   split at hl <;> (try dsimp only at *) <;> (try subst t)
@@ -1182,7 +1306,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
       obtain ⟨rfl, hnd, hlen, hterms, hctx, rfl, hcaps, hslots, hok⟩ := hl
       have hctxd : ∀ q ∈ ps.drop ns.length, q.context = Γ :=
         fun q hq => hctx q (List.mem_of_mem_drop hq)
-      have hpd : ∀ q ∈ ps.drop ns.length, HasTyUsing G images q.context q.term q.type :=
+      have hpd : ∀ q ∈ ps.drop ns.length, HasTyUsing G images (subtyping := subtyping) q.context q.term q.type :=
         fun q hq => hp q (List.mem_of_mem_drop hq)
       obtain ⟨caps', hvar, hfst, hlt, hcap⟩ :=
         caps_of_local hctxd (by rw [hcaps]; exact hslots) hpd
@@ -1209,7 +1333,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
         simp only [parts, List.map_map, Function.comp_def]
         rw [List.zip_map_right]
         simp []
-      have hpart : ∀ p ∈ parts, HasTyUsing G images Γ p.2.2 p.2.1 := by
+      have hpart : ∀ p ∈ parts, HasTyUsing G images (subtyping := subtyping) Γ p.2.2 p.2.1 := by
         intro p hm
         obtain ⟨r, hr, rfl⟩ := List.mem_map.mp hm
         have hmem := List.of_mem_zip hr
@@ -1234,13 +1358,13 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
       -- The actual premises and the omitted-position premises are the same list,
       -- split at the number of actuals the call writes.
       have ha : ∀ p ∈ (jas.take args.length).map (fun ja => (ja.type,ja.term)),
-          HasTyUsing G images Γ p.2 p.1 := by
+          HasTyUsing G images (subtyping := subtyping) Γ p.2 p.1 := by
         intro p hm
         obtain ⟨ja,hja,rfl⟩ := List.mem_map.mp hm
         have h := hp ja (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_of_mem_take hja)))
         rw [hcontexts ja (List.mem_of_mem_take hja)] at h
         exact h
-      have hu : ∀ A ∈ (jas.drop args.length).map Sequent.type, HasTyUsing G images Γ .undef A := by
+      have hu : ∀ A ∈ (jas.drop args.length).map Sequent.type, HasTyUsing G images (subtyping := subtyping) Γ .undef A := by
         intro A hm
         obtain ⟨ja,hja,rfl⟩ := List.mem_map.mp hm
         have h := hp ja (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_of_mem_drop hja)))
@@ -1576,13 +1700,13 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
       -- The actual premises and the omitted-position premises are the same list,
       -- split at the number of actuals the call writes.
       have ha : ∀ p ∈ (jas.take args.length).map (fun ja => (ja.type,ja.term)),
-          HasTyUsing G images Γ p.2 p.1 := by
+          HasTyUsing G images (subtyping := subtyping) Γ p.2 p.1 := by
         intro p hm
         obtain ⟨ja,hja,rfl⟩ := List.mem_map.mp hm
         have h := hp ja (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_of_mem_take hja)))
         rw [hcontexts ja (List.mem_of_mem_take hja)] at h
         exact h
-      have hu : ∀ A ∈ (jas.drop args.length).map Sequent.type, HasTyUsing G images Γ .undef A := by
+      have hu : ∀ A ∈ (jas.drop args.length).map Sequent.type, HasTyUsing G images (subtyping := subtyping) Γ .undef A := by
         intro A hm
         obtain ⟨ja,hja,rfl⟩ := List.mem_map.mp hm
         have h := hp ja (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_of_mem_drop hja)))
@@ -1699,13 +1823,13 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
     split at hL
     · rename_i L he
       have hxs : ∀ p ∈ (jas.take args.length).map (fun ja => (ja.type, ja.term)),
-          HasTyUsing G images Γ p.2 p.1 := by
+          HasTyUsing G images (subtyping := subtyping) Γ p.2 p.1 := by
         intro p hp'
         obtain ⟨ja, hja, rfl⟩ := List.mem_map.mp hp'
         have h := hp ja (List.mem_cons_of_mem _ (List.mem_of_mem_take hja))
         rw [hctx ja (List.mem_of_mem_take hja)] at h
         exact h
-      have hu : ∀ A ∈ (jas.drop args.length).map Sequent.type, HasTyUsing G images Γ .undef A := by
+      have hu : ∀ A ∈ (jas.drop args.length).map Sequent.type, HasTyUsing G images (subtyping := subtyping) Γ .undef A := by
         intro A hm
         obtain ⟨ja, hja, rfl⟩ := List.mem_map.mp hm
         have h := hp ja (List.mem_cons_of_mem _ (List.mem_of_mem_drop hja))
@@ -1751,6 +1875,39 @@ theorem checkTreeUsing_sound [DecidableEq ι] {G : NormalGraph ι}
     obtain ⟨e, he', rfl⟩ := List.mem_map.mp hp
     exact checkTreeUsing_sound e (he.2 ⟨e, he'⟩ (by simp)) hcodes
 termination_by sizeOf e
+
+/-- Expression evidence under a body's subsumption rule. The rule and every
+premise are checked, including closure captures and the checked code table. -/
+@[nospecialize] def checkTreeWith [DecidableEq ι] (G : NormalGraph ι)
+    (images : PositiveCertificates.InstanceImageCheck G)
+    (subtype : Ty ι → Ty ι → PositiveCertificates.SubtypeChoices ι → Bool)
+    (e : Evidence ι) (codes : CodeEntry ι → Bool := fun _ => false) : Bool :=
+  match e with
+  | .node j r ps => decide (LocalUsing G images j r (ps.map claim) codes subtype) &&
+      ps.attach.all (fun p => checkTreeWith G images subtype p.val codes)
+termination_by sizeOf e
+decreasing_by
+  have := List.sizeOf_lt_of_mem p.property
+  simp only [Evidence.node.sizeOf_spec]
+  omega
+
+theorem checkTreeWith_sound [DecidableEq ι] {G : NormalGraph ι}
+    {images : PositiveCertificates.InstanceImageCheck G} (subtyping : BodySubtyping G)
+    (e : Evidence ι) {codes : CodeEntry ι → Bool}
+    (he : checkTreeWith G images subtyping.check e codes = true)
+    (hcodes : CodesSound G codes) :
+    HasTyUsing G images (subtyping := subtyping)
+      (claim e).context (claim e).term (claim e).type := by
+  cases e with
+  | node j r ps =>
+    simp only [checkTreeWith, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at he
+    apply local_sound he.1 hcodes
+    intro p hp
+    obtain ⟨e, he', rfl⟩ := List.mem_map.mp hp
+    exact checkTreeWith_sound subtyping e (he.2 ⟨e, he'⟩ (by simp)) hcodes
+termination_by sizeOf e
+
+#print axioms checkTreeWith_sound
 
 theorem checkUsing_sound [DecidableEq ι] {G : NormalGraph ι}
     {images : PositiveCertificates.InstanceImageCheck G} {t A e} {codes : CodeEntry ι → Bool}
@@ -1858,7 +2015,7 @@ theorem checkTreeUsing_complete [DecidableEq ι] {G : NormalGraph ι}
     · intro j hj
       obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hj
       exact ih c hc
-  | @funScheme Γ i s arity start E K caps rest As hp hq hspec hcf hlt hcap ih =>
+  | @funScheme Γ i s arity start E K caps rest As hp hq _hspec hshape hcf hlt hcap ih =>
     apply node_complete (r := .funGraph As)
       (j := ⟨Γ, .makeFn (.graph arity E K start (caps.map fun c => .var c.2) .call rest) .nul, [i]⟩)
       (js := caps.map fun c => ⟨Γ, .var c.2, c.1⟩)
@@ -1870,7 +2027,13 @@ theorem checkTreeUsing_complete [DecidableEq ι] {G : NormalGraph ι}
             caps.map Prod.fst := by simp
         simp only [graphCodesChecked, schemeOf, hp, hq, hmap, hcf, Bool.false_eq_true,
           if_false, Option.map_some, Bool.true_and]
-        exact offersChecked_complete (hspec G.env)
+        cases rest with
+        | false => simp [offersChecked]
+        | true =>
+          obtain ⟨hL, hlen, hs⟩ := hshape
+          simpa only [offersChecked, hL, List.isEmpty_nil, hlen, beq_self_eq_true,
+            Bool.and_true, Bool.true_and, List.all_eq_true, Bool.and_eq_true,
+            beq_iff_eq, decide_eq_true_eq] using hs
     · intro j hj
       obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hj
       exact ih c hc

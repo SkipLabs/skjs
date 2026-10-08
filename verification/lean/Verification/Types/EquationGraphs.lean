@@ -490,7 +490,7 @@ rows are not declaration heads: parameters come from a scope; intersections
 require normalization rather than pretending an arbitrary argument is rigid. -/
 def RowTemplate.wellBound (head : Fin sig.length) : RowTemplate sig head → Bool
   | .clauses _ => sig[head].binders.isEmpty
-  | .scheme bs _ bounds _ =>
+  | .scheme bs _ bounds _ _ =>
     decide (bs.map (fun b => b.1.1) = (List.range sig[head].binders.length).map Tree.local) &&
       bounds.all (fun (b, T) => (bs.any fun p => decide (p = b)) &&
         T.all (fun t => t.1.lexical false))
@@ -662,6 +662,7 @@ structure Equations where
   signature : Signature
   body : (head : Fin signature.length) → Template signature head
   realm : Option (ArrayRealm (Label signature)) := none
+  domain : SchemeDomain (Label signature) .mixed := .ordinary
 
 /-- The row of a label that is not a meet. -/
 def Equations.baseRow (equations : Equations) (label : Label equations.signature) :
@@ -734,7 +735,7 @@ def Equations.row (equations : Equations) (label : Label equations.signature) :
   | _ => equations.baseRow label
 
 def Equations.graph (equations : Equations) : NormalGraph (Label equations.signature) :=
-  NormalGraph.ofRowMap equations.row equations.realm
+  NormalGraph.ofRowMap equations.row equations.realm equations.domain
 
 /-- Unfolding an application substitutes into its one finite template. -/
 @[simp] theorem Equations.row_application (equations : Equations) (scope : Scope equations.signature) :

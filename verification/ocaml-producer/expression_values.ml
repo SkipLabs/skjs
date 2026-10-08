@@ -10,6 +10,7 @@ module type Inputs = sig
   include Analysis_capabilities.Offer_operations
   include Analysis_capabilities.Evolution
   include Analysis_capabilities.Expression_publication
+  include Analysis_capabilities.Instance_publication
 end
 module Make (S : Inputs) = struct
 open S
@@ -20,6 +21,21 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
   let const_type = Support.const_type expr in
   let site = e.pos in
   match e.node with
+    | Resolution (observe,owner,operand) ->
+      let actual = expr env operand in
+      let input = if observe then actual else match owner with
+        | Some (input,_) -> Rigid input | None -> actual in
+      let native id = List.exists (fun (d:Source.declaration) -> d.id=id && d.native_promise) declarations in
+      let observation,result,certificate = Inference.resolution_instance ~native
+        ~expand:(expand_named declarations) ~owned:owned_resolution input in
+      let scope = -2_000_000_000 - Source.span_start e.pos in
+      let o={scope;index=1;spelling="#operation:observation"}
+      and r={scope;index=2;spelling="#operation:result"} in
+      publish_substitution e.pos ["T",ResolutionArgument (input,(o,observation),(r,result),certificate)];
+      if observe then observation else
+        (match List.find_opt (fun (d:Source.declaration) -> d.native_promise) declarations with
+        | Some promise -> Atoms [Named (promise.id,[result])]
+        | None -> Proposal_diagnostics.unsupported "fresh resolution requires the reviewed native Promise kernel")
     | Id n ->
       Option.iter (fun expected -> Option.iter (fun c -> offer_class c expected)
         (List.assoc_opt n (path_facts ()).Proposal_flow.classes)) expected;

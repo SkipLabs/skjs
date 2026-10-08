@@ -39,7 +39,7 @@ partial def lowerType (ctx : Ctx) (term : Json) : M Union := do
     fieldsExactly term ["k", "span"]
     return normUnion [← prim "function" (.arrs [] []), ← prim "constructor" (.ctors [])]
   | "scheme" =>
-    let (names, packs) ← schemeBinders ctx.site term
+    let (names, packs, _) ← schemeBinders ctx.site term
     return [← occurrence ctx "scheme" term names (unitBinders names packs) fun h c => .scheme h c term]
   | "pack" => throw s!"{ctx.site}: a pack parameter outside a signature's rest"
   | k => throw s!"{ctx.site}: source type constructor '{k}' outside the graph fragment"
@@ -239,7 +239,7 @@ partial def objectClause (ctx : Ctx) (term : Json) : M (Clause (List Tree)) := d
       match (if optional then none else schemeMethod ty) with
       | some t =>
         let some o := ctx.owner | throw s!"{ctx.site}: a generic method outside a head"
-        let (names, packs) ← (schemeBinders ctx.site t : Except String _)
+        let (names, packs, _) ← (schemeBinders ctx.site t : Except String _)
         let owner ← draft o
         let key := (toJson name).compress
         let m ← alloc s!"method|{o}|{key}"
@@ -324,15 +324,16 @@ partial def termRow (ctx : Ctx) (term : Json) : M (GraphRow Tree (List Tree)) :=
 /-- A scheme's row: its binders the head's locals, its bounds read outside
 them (§3.1). -/
 partial def schemeRow (ctx : Ctx) (term : Json) : M (GraphRow Tree (List Tree)) := do
-  let (names, packs) ← (schemeBinders ctx.site term : Except String _)
+  let (names, packs, resolution) ← (schemeBinders ctx.site term : Except String _)
   let bs ← arr term "binders"
   let inner : Ctx := { ctx with binders := (names.zipIdx.map fun ((n : String), (k : Nat)) =>
     (n, (⟨packs.contains n, [.local k]⟩ : Binding))) ++ ctx.binders }
   let mut bounds : List (Tree × List Tree) := []
-  for (b, k) in bs.toList.zipIdx do
+  for b in bs.toList do
+    let n ← str b "name"
+    let k := names.idxOf n
     let bound ← field b "bound"
     if bound == .null then continue
-    let n ← str b "name"
     if packs.contains n then
       let pack ← match kindOf bound with
         | some "array" => pure [← occurrence ctx "pack" (← field bound "element")
@@ -357,7 +358,7 @@ partial def schemeRow (ctx : Ctx) (term : Json) : M (GraphRow Tree (List Tree)) 
     let effect : CallEffects.Effect ← fromJson? (← field f "effect")
     if restTerm == .null then fixed := fixed ++ [⟨recv, ps, res, effect⟩]
     else rests := rests ++ [⟨recv, (ps, ← lowerRest inner restTerm), res, effect⟩]
-  return .scheme ((List.range names.length).map Tree.local) fixed bounds rests
+  return .scheme ((List.range names.length).map Tree.local) fixed bounds rests resolution
 
 /-- A declaration's row: the source meet of its own members with its bases'
 rows (§8.1, heritage). -/
@@ -394,7 +395,13 @@ bound naming another binder of the unit (`U extends T`) needs no scheme bound
 (the unit reads it as a meet, `SourceClaimJson.binderRows`). -/
 partial def unitRow (_ctx : Ctx) (node : Json) : M (GraphRow Tree (List Tree)) := do
   let tps := (node.getObjValAs? (Array Json) "typeParams").toOption.getD #[]
-  return .scheme ((List.range tps.size).map Tree.local) [] [] []
+  let parameters ← tps.toList.mapM fun p => do
+    let name ← str p "name"
+    let resolution ← (fromJson? (← field p "resolution") : Except String (Option ResolutionWire.Slots))
+    return (name, resolution)
+  ResolutionWire.validateOwnership parameters
+  let names := parameters.flatMap fun (n, s) => ResolutionWire.ownedNames n s
+  return .scheme ((List.range names.length).map Tree.local) [] [] [] (ResolutionWire.groups parameters)
 
 /-- Producer row `n`'s head, lifted over the binder names it mentions
 freely; its row is a job. -/

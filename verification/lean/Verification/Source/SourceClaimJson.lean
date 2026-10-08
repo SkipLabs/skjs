@@ -44,7 +44,7 @@ def produceJson (ast claims : Json) (fileKey : String) (fuel : Nat)
     let known := proofs ++ ExpressionClaims.renderKnownUsing (RequestJson.graph r.toRequest)
       (StoreView.images r.types) r.searchLabels (StoreView.valid r.types) r.nodePlans
     RequestJson.produceResponse r.toRequest fuel [] known r.sourceMap (some r.searchLabels) r.assertions
-      r.cuts r.codeHints
+      r.cuts r.codeHints r.checker
   let evidence := toJson (Bundle.mk cs es)
   let b : Bundle (EquationStore.CheckedLabel F.equations F.primitive) ← decodeStrict evidence
   let checked := checkRequestsResult rs b
@@ -53,8 +53,8 @@ def produceJson (ast claims : Json) (fileKey : String) (fuel : Nat)
   return evidence
 
 /-- Every extracted plan crosses the exhaustive certification boundary, and its
-graph request proves the enclosing execution safe at every assignment of the
-parameter rows, so a generic unit or closure at every instantiation. The
+graph request proves the enclosing execution safe at every assignment admitted
+by its source signature, including its descriptor contract when qualified. The
 graph is `Equations.graph` of the equations the extracted store presents,
 validated by `Equations.ofRaw` (`freezePlans`). -/
 theorem checkJson_safe {ast claims evidence : Json} {fileKey : String}
@@ -67,7 +67,7 @@ theorem checkJson_safe {ast claims evidence : Json} {fileKey : String}
       decodeStrict evidence = .ok b ∧
       checkRequests (CertifiedPlan.requests certified) b = true ∧
       (∀ r c, (r,c) ∈ (CertifiedPlan.requests certified).zip b.functions →
-        ∀ η n W heap ρ, EnvOk (reassign F.equations.graph η) r.inputs ρ n W →
+        ∀ η, r.Admits η → ∀ n W heap ρ, EnvOk (reassign F.equations.graph η) r.inputs ρ n W →
           WorldAdm W → HeapOk n W heap →
           SafeGraph r.program (meaning (reassign F.equations.graph η) r.result)
             n W heap (.at r.start ρ)) := by
@@ -95,8 +95,8 @@ theorem checkJson_safe {ast claims evidence : Json} {fileKey : String}
           rw [hb] at h
           by_cases hx : checkRequests (CertifiedPlan.requests certified) b = true
           · refine ⟨T, plans, rfl, F, frozen, certified, b, hf, hc, hb, hx, ?_⟩
-            intro r c hm η n W heap ρ he hw hh
-            exact checkRequests_safe_at hx hm η n W heap ρ he hw hh
+            intro r c hm η admitted n W heap ρ he hw hh
+            exact checkRequests_safe_at hx hm η admitted n W heap ρ he hw hh
           · simp only [checkRequests] at hx
             simp [hx] at h
 

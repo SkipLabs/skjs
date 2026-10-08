@@ -67,9 +67,9 @@ open S
                 (Type_queries.field_type (S.rigid_bounds ()) declarations [] (Atoms [Shape shape]) (Name "then"))
                with Json.Error _ -> false)
             | _ -> false) xs in
-      if not (settled (n <> "%Await%") true [] [] actual) then
+      if not (settled true true [] [] actual) then
         S.explain e.pos (if n = "%Await%"
-          then "the modeled await requires a native promise or a primitive: " ^ thenable_reason
+          then "the modeled await requires a native promise or a stably non-thenable value: " ^ thenable_reason
           else if n = "%PromiseResolve%" then
             "Promise.resolve requires an ordinary native promise or a stably non-thenable value: " ^ thenable_reason
           else "fresh async resolution requires a stably non-thenable payload, also when adopting a native promise: "

@@ -424,7 +424,7 @@ One line each; the reason is the one the design keeps.
 - **Every guard is a tag test**; strict equality without a singleton narrows
   nothing.
 - **Generic bodies are graph requests over parameter rows**, certified at
-  every assignment; no second typing mechanism for records over binders.
+  every assignment admitted by their source signature.
 - **One row per generic application**, lowered from an empty visit.
 - **Wire formats carry no version and have one shape**; producers and
   consumers are typed against one declaration.
@@ -444,6 +444,7 @@ One line each; the reason is the one the design keeps.
   intersection, and collapsing eventually incompatible reference contracts to
   bottom ([retained constraints](SEMANTICS.md#two-retained-design-constraints);
   contrast [Frisch, Castagna and Benzaken 2008](REFERENCES.md#frisch-castagna-and-benzaken-2008)).
-- **Graph evidence is certified at every assignment of parameter rows**
-  (`Parametricity.accept_reassign`); a checker that read the assignment could
-  not be given its `_reassign` lemma.
+- **Ordinary graph evidence is certified at every assignment of parameter rows**
+  (`Parametricity.accept_reassign`). Qualified body evidence is certified at
+  assignments satisfying the signature’s descriptor constraints
+  (`RequestJson.verify_qualified_safe_at`).

@@ -33,9 +33,16 @@ partial def labelRefs (j : Json) : List String × List Nat :=
 def producerRows (types : Array Json) : Except String ProducerRows := do
   let rows ← types.mapM fun j => (fromJson? j : Except String (GraphRow Json (List Json)))
   let own ← rows.mapM fun r => match r with
-    | .scheme bs .. => bs.mapM fun b => do
-      fieldsExactly b ["binder"]
-      str b "binder"
+    | .scheme bs _ bounds _ resolution => do
+      let binderName (b : Json) : Except String String := do
+        fieldsExactly b ["binder"]
+        str b "binder"
+      let names ← bs.mapM binderName
+      let boundNames ← bounds.mapM fun (b, _) => do
+        return (← binderName b, ([] : List String))
+      let scheme : SchemeRow String := ⟨names, [], boundNames, [], resolution⟩
+      if !scheme.resolutionValid then throw "invalid resolution slot metadata"
+      return names
     | .clauses _ => pure []
     | _ => throw "a producer's row is a clause row or a scheme row; binders and intersections are labels"
   let direct := rows.map fun r => r.operands.foldl (fun (ns, rs) A =>

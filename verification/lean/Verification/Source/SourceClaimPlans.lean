@@ -7,32 +7,32 @@ open EquationGraphs (Tree)
 /-- A unit's plan: its graph request. Every unit is one, a generic unit and a
 generic closure included, their binders parameter rows the graph checks at
 every assignment. -/
-inductive FunctionPlan (σ ι : Type) where
+inductive FunctionPlan (σ ι : Type) [Labels ι] [StoreView σ ι] where
   | graph (name : String) (namePos : Span) (request : SourceRequest σ ι)
 
 /-- A plan admitted by the top-level verified outcome. Graph evidence is
 consumed separately. Adding a source-plan variant cannot silently enter this
 exhaustive boundary through a projection. -/
-inductive CertifiedPlan (σ ι : Type) where
+inductive CertifiedPlan (σ ι : Type) [Labels ι] [StoreView σ ι] where
   | graph (name : String) (namePos : Span) (request : SourceRequest σ ι)
 
-def CertifiedPlan.requests {σ ι : Type} : List (CertifiedPlan σ ι) → List (SourceRequest σ ι)
+def CertifiedPlan.requests {σ ι : Type} [Labels ι] [StoreView σ ι] : List (CertifiedPlan σ ι) → List (SourceRequest σ ι)
   | [] => []
   | .graph _ _ request :: rest => request :: CertifiedPlan.requests rest
 
 /-- Graph projection for search and inspection. This is intentionally not the
 acceptance boundary. -/
-def FunctionPlan.requests {σ ι : Type} : List (FunctionPlan σ ι) → List (SourceRequest σ ι)
+def FunctionPlan.requests {σ ι : Type} [Labels ι] [StoreView σ ι] : List (FunctionPlan σ ι) → List (SourceRequest σ ι)
   | [] => []
   | .graph _ _ request :: rest => request :: FunctionPlan.requests rest
 
 /-- The conversion into the verified-plan type used by the acceptance path.
 Exhaustive matching makes
 a new `FunctionPlan` constructor a compile error here. -/
-def FunctionPlan.certify {σ ι : Type} : FunctionPlan σ ι → Except String (CertifiedPlan σ ι)
+def FunctionPlan.certify {σ ι : Type} [Labels ι] [StoreView σ ι] : FunctionPlan σ ι → Except String (CertifiedPlan σ ι)
   | .graph name pos request => pure (.graph name pos request)
 
-def certifyPlans {σ ι : Type} (plans : List (FunctionPlan σ ι)) : Except String (List (CertifiedPlan σ ι)) :=
+def certifyPlans {σ ι : Type} [Labels ι] [StoreView σ ι] (plans : List (FunctionPlan σ ι)) : Except String (List (CertifiedPlan σ ι)) :=
   plans.mapM FunctionPlan.certify
 
 open EquationGraphs EquationStore in

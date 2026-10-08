@@ -16,6 +16,35 @@ abbrev Ops (ι : Type) := List (Arrow (List ι))
 /-- Rows known, by a proof outside a table, to be below an arrow clause: a
 scheme row, and the fixed and variadic signatures of one of its instances. -/
 abbrev Known (ι : Type) := List (List ι × Ops ι × List (RestArrow (List ι)))
+
+/-- Scheme transport preserves associated positions and independently checks
+protection of observation/result bounds on both rows. -/
+@[nospecialize] def sameResolution [DecidableEq ι] (s t : SchemeRow ι) : Bool :=
+  decide (s.resolution = t.resolution) && s.resolutionValid && t.resolutionValid
+
+theorem resolutionValid_protected [DecidableEq ι] {s : SchemeRow ι}
+    (h : s.resolutionValid = true) : s.protectedSlots := by
+  simp only [SchemeRow.resolutionValid, Bool.or_eq_true] at h
+  rcases h with h | h
+  · have he : s.resolution = [] := List.isEmpty_iff.mp h
+    simp [SchemeRow.protectedSlots, he]
+  · simp only [Bool.and_eq_true, List.all_eq_true] at h
+    intro g hg p hp b hb B hB
+    have hs := h.2 g hg
+    have hn := hs.2 (b, B) hB
+    simp only [bne_iff_ne] at hn
+    simp at hp
+    rcases hp with rfl | rfl
+    · exact hn.1 hb
+    · exact hn.2 hb
+
+theorem sameResolution_allowed [DecidableEq ι] {s t : SchemeRow ι}
+    (domain : SchemeDomain ι k) (h : sameResolution s t = true)
+    (As : List (ParameterFamily k)) : domain.allowed s As ↔ domain.allowed t As := by
+  simp only [sameResolution, Bool.and_eq_true, decide_eq_true_eq] at h
+  exact domain.congr s t h.1.1
+    ⟨fun _ => resolutionValid_protected h.2, fun _ => resolutionValid_protected h.1.2⟩ As
+
 /-- The clauses of a type's clause rows. -/
 @[nospecialize] def clausesOf (G : NormalGraph ι) (S : List ι) : List (Clause (List ι)) := S.flatMap G
 
@@ -860,7 +889,7 @@ checker's own substitution (`sub`), never a certificate's. -/
     (R : List ι → List ι → Prop) (s : SchemeRow ι) (S' : List ι) : Prop :=
   match S' with
   | [j] => match G.schemes j with
-    | some s' => G.params j = false ∧
+    | some s' => G.params j = false ∧ sameResolution s s' = true ∧
       ((s.binders = s'.binders ∧ (∀ b ∈ s.bounds, b ∈ s'.bounds) ∧
           BoundSigsCover G R s s'.signatures s'.variadic) ∨
         match sub with
@@ -1852,7 +1881,8 @@ theorem partSem_support [DecidableEq ι] {G : NormalGraph ι} {D : ι → Prop} 
   · simp only [Bool.false_eq_true, if_false]
     cases hq : G.schemes i with
     | some s =>
-      refine and_congr Iff.rfl (forall_congr' fun As => forall_congr' fun hl => imp_congr ?_ ?_)
+      refine and_congr Iff.rfl (forall_congr' fun As => forall_congr' fun hl =>
+        forall_congr' fun _ => imp_congr ?_ ?_)
       · -- The bounds are read at the scheme's own assignment.
         have hbr : ∀ b ∈ s.bounds, ∀ l ∈ b.2, l ∈ reads G i ∧ l ∈ boundReads G i := by
           intro b hb l hl'
@@ -2254,14 +2284,14 @@ theorem covers_by_scheme_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Opti
       -- At each instance of the source's binders within its bounds, the
       -- bound function meets every signature the source's cover.
       have hat : ∀ oid, ∀ As : List MixedFamily, As.length = s.binders.length →
-          Bounded (fun θ S => (mixedParameters G).bound θ
+          G.domain.allowed s As → Bounded (fun θ S => (mixedParameters G).bound θ
             (setSem (fun l => qDenoteWithArgs G (mixedParameters G) (θ, l))) S) η s As j →
           ∀ L M, BoundSigsCover G R s L M →
           semWithArgs (mixedValues G (assign η s.binders As)) (mixedArgs G (assign η s.binders As))
             (.arrs L M) j U (.objAt [] (.bound u v []) oid) := by
-        intro oid As hl hb' L M hc
+        intro oid As hl hal hb' L M hc
         exact bound_sigs_sound hc (fun k hk => (hre i s As hs).1 k (by omega))
-          (fun k hk => (hre i s As hs).2 k (by omega)) (hall As hl hb') hval
+          (fun k hk => (hre i s As hs).2 k (by omega)) (hall As hl hal hb') hval
           (fun r hrm => hhost r hrm As) (hinvB oid)
       refine ⟨⟨hinv, fun p hp => ?_⟩, ⟨hinv, fun p hp => ?_⟩, fun oid B hB => ?_⟩
       · simp [MethodMembers.Member.of, hcalls] at hp
@@ -2273,12 +2303,13 @@ theorem covers_by_scheme_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Opti
       · rename_i j'
         split at hb
         · rename_i s' hs'
-          obtain ⟨hpj, hcase⟩ := hb
+          obtain ⟨hpj, hord, hcase⟩ := hb
           refine ⟨j', List.mem_singleton_self j', ?_⟩
           show qDenoteWithArgs G (mixedParameters G) (η, j') j U _
           rw [qDenoteWithArgs_unfold]
           simp only [qLayerWithArgs, hpj, hs', Bool.false_eq_true, if_false]
-          refine ⟨hinvB oid, fun As hl hbd => ?_⟩
+          refine ⟨hinvB oid, fun As hl _hal hbd => ?_⟩
+          have hal := (sameResolution_allowed G.domain hord As).mpr _hal
           show semWithArgs (mixedValues G (assign η s'.binders As)) (mixedArgs G (assign η s'.binders As))
               (.arrs s'.signatures s'.variadic) j U (.objAt [] (.bound u v []) oid)
           rcases hcase with ⟨hbs, hbnd, hcov⟩ | hren
@@ -2288,7 +2319,7 @@ theorem covers_by_scheme_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Opti
               rw [hbs] at hbin hw
               exact hbd b (hbnd b hbm) hbin j'' hj'' U' w hw
             rw [← hbs]
-            exact hat oid As (by rw [hbs]; exact hl) hb' _ _ hcov
+            exact hat oid As (by rw [hbs]; exact hl) hal hb' _ _ hcov
           · cases sub with
             | none => exact hren.elim
             | some r =>
@@ -2308,7 +2339,7 @@ theorem covers_by_scheme_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Opti
                 cases w with
                 | inl w => exact hr k (by omega) _ _ hR U' w hw'
                 | inr ws => exact hpa k (by omega) _ _ hR U' ws hw'
-              have hsrc := hat oid As (by rw [hlen]; exact hl) hb' _ _ hcov
+              have hsrc := hat oid As (by rw [hlen]; exact hl) hal hb' _ _ hcov
               rw [← semWithArgs_map_meaning (η := assign η s.binders As)
                 (f := r.substitute (renamingOf s.binders s'.binders)) fun S hS => ?_]
               · exact hsrc
@@ -3140,7 +3171,7 @@ induction over every assignment supplies (`family_sound`). -/
     (i j : ι) : Prop :=
   match G.schemes i, G.schemes j with
   | some s, some s' => G.params i = false ∧ G.params j = false ∧ s.binders = s'.binders ∧
-      (∀ b ∈ s.bounds, b ∈ s'.bounds) ∧
+      (∀ b ∈ s.bounds, b ∈ s'.bounds) ∧ sameResolution s s' = true ∧
       CoversWith G none R known arrows [] (.arrs s.signatures s.variadic) (.arrs s'.signatures s'.variadic)
   | _, _ => False
 
@@ -3150,7 +3181,8 @@ theorem SchemeCoversWith.mono [DecidableEq ι] {G : NormalGraph ι} {R : List ι
     (hc : SchemeCoversWith G R known arrows i j) : SchemeCoversWith G R known arrows' i j := by
   unfold SchemeCoversWith at hc ⊢
   split at hc
-  · exact ⟨hc.1, hc.2.1, hc.2.2.1, hc.2.2.2.1, CoversWith.mono ha hc.2.2.2.2⟩
+  · exact ⟨hc.1, hc.2.1, hc.2.2.1, hc.2.2.2.1, hc.2.2.2.2.1,
+      CoversWith.mono ha hc.2.2.2.2.2⟩
   · exact hc.elim
 
 /-- A row read as a meet part: not a meet row (RECURSIVE-EQUATIONS §3.3). -/
@@ -3772,7 +3804,7 @@ the source, nor any row of a free row's image, is one of those binders. -/
             | none => !s2.binders.contains p) &&
           s.signatures.mapM (sigImg tbl (enter V e.1 e.2.1 s.binders s2.binders)) == some s2.signatures &&
           s.bounds.mapM (boundImg tbl e.2.1 s.binders s2.binders) == some s2.bounds &&
-          s.variadic.mapM (restImg tbl (enter V e.1 e.2.1 s.binders s2.binders)) == some s2.variadic
+          s.variadic.mapM (restImg tbl (enter V e.1 e.2.1 s.binders s2.binders)) == some s2.variadic && sameResolution s s2
       | none => false
     | none, [j] =>
       match G.meets e.1 with
@@ -3905,7 +3937,7 @@ end
             (enter V e.1 e.2.1 s.binders s2.binders)) == some s2.signatures &&
           s.bounds.mapM (boundImg (look e.2.1) e.2.1 s.binders s2.binders) == some s2.bounds &&
           s.variadic.mapM (restImg (look (enter V e.1 e.2.1 s.binders s2.binders))
-            (enter V e.1 e.2.1 s.binders s2.binders)) == some s2.variadic
+            (enter V e.1 e.2.1 s.binders s2.binders)) == some s2.variadic && sameResolution s s2
       | none => false
     | none, [j] =>
       match G.meets e.1 with
@@ -4566,7 +4598,7 @@ theorem table_row_arguments [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTab
             | some t =>
               have hj : G.params j = false := by
                 simp only [hs, ht, Bool.and_eq_true, Bool.not_eq_true'] at hrow
-                exact hrow.1.1.1.1.1.1.1.1
+                exact hrow.1.1.1.1.1.1.1.1.1
               have noArgs : ∀ (σ : MixedAssignment ι) l,
                   G.params l = false → G.schemes l ≠ none →
                   ¬ mixedMeaning G σ [l] n W (.inr vs) := by
@@ -4738,13 +4770,15 @@ theorem table_row_mixed [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable �
             | some s2 =>
             simp only [hs2, Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq, decide_eq_true_eq,
               List.all_eq_true] at hrow
+            obtain ⟨hrow, hord⟩ := hrow
             obtain ⟨⟨⟨⟨⟨⟨⟨⟨hjp, hnd⟩, hlen⟩, hpars⟩, hkinds⟩, hcap⟩, hsigs⟩, hbnds⟩, hrests⟩ := hrow
             rw [singleton, qDenoteWithArgs_unfold, qDenoteWithArgs_unfold]
             simp only [qLayerWithArgs, hpar, hjp, hsch, hs2, Bool.false_eq_true, if_false]
-            change boundedSem _ ηL s _ n W v ↔ boundedSem _ ηR s2 _ n W v
+            change boundedSem _ ηL s _ G.domain n W v ↔ boundedSem _ ηR s2 _ G.domain n W v
             refine and_congr Iff.rfl ?_
             rw [hlen]
-            refine forall_congr' fun As => forall_congr' fun hlA => imp_congr ?_ ?_
+            refine forall_congr' fun As => forall_congr' fun hlA =>
+              imp_congr (sameResolution_allowed G.domain hord As) (imp_congr ?_ ?_)
             · -- Each bound maps to the target's: the same family on the binders,
               -- and the bound types related at the outer assignments.
               obtain ⟨hbmap, hbsome⟩ := mapM_some hbnds
@@ -5056,13 +5090,14 @@ theorem bounded_substitution_elim [DecidableEq ι] {k : ParameterSpace}
     (η : ParameterAssignment k ι) (F : List ι → ParameterFamily k)
     (D : ParameterAssignment k ι → List ι → WorldFamily k.Carrier)
     (s : SchemeRow ι) (θs : List (List ι))
-    (body : List (ParameterFamily k) → Fam)
+    (body : List (ParameterFamily k) → Fam) (domain : SchemeDomain ι k)
     (hlen : θs.length = s.binders.length)
+    (hal : domain.allowed s (θs.map F))
     (hbnd : ∀ b ∈ s.bounds, ∀ U, (s.binders.zip θs).lookup b.1 = some U →
       FamLe (F U).1 (D η b.2)) :
-    FamLe (boundedSem D η s body) (body (θs.map F)) := by
+    FamLe (boundedSem D η s body domain) (body (θs.map F)) := by
   intro n W v h
-  exact h.2 _ (by simp [hlen]) (bounded_substitution η F D s θs hlen hbnd n)
+  exact h.2 _ (by simp [hlen]) hal (bounded_substitution η F D s θs hlen hbnd n)
 
 /-- Substituting a complete binder list changes exactly its bound names. -/
 theorem assignment_substitution [DecidableEq ι] {k : ParameterSpace}
@@ -5144,6 +5179,8 @@ theorem inst_images_sound [DecidableEq ι] {G : NormalGraph ι} (η : MixedAssig
     {tbl : InstTable ι} {θs : List (List ι)} {L : Ops ι}
     {M : List (RestArrow (List ι))}
     (hp : G.params i = false) (hq : G.schemes i = some s) (hlen : θs.length = s.binders.length)
+    (hal : G.domain.allowed s (θs.map fun U =>
+      ⟨mixedMeaning G η U, mixedMeaning_valid G η U⟩))
     (hbnd : ∀ b ∈ s.bounds, ∀ U, (s.binders.zip θs).lookup b.1 = some U →
       FamLe (mixedMeaning G η U) (mixedMeaning G η b.2))
     (himages : InstanceImages G η s.binders θs tbl)
@@ -5162,8 +5199,8 @@ theorem inst_images_sound [DecidableEq ι] {G : NormalGraph ι} (η : MixedAssig
   have hc := bounded_substitution_elim η F
     (fun η' S => mixedMeaning G η' S) s θs
     (fun As => instanceTWithArgs
-      (fun η' S => setSem (fun l => qDenoteWithArgs G (mixedParameters G) (η', l)) S) η s As (graphArguments G))
-    hlen hbnd n W v hs
+      (fun η' S => setSem (fun l => qDenoteWithArgs G (mixedParameters G) (η', l)) S) η s As (graphArguments G)) G.domain
+    hlen hal hbnd n W v hs
   change instanceTWithArgs
     (fun η' S => setSem (fun l => qDenoteWithArgs G (mixedParameters G) (η', l)) S) η s As (graphArguments G) n W v at hc
   have himg : ∀ S S', tyImg tbl (s.binders.zip θs) S = some S' →
@@ -5263,6 +5300,8 @@ theorem inst_mixed_sound [DecidableEq ι] {G : NormalGraph ι} (η : MixedAssign
     {tbl : InstTable ι} {θs : List (List ι)} {D : List ι} {V : FreeMap ι} {L : Ops ι}
     {M : List (RestArrow (List ι))}
     (hp : G.params i = false) (hq : G.schemes i = some s) (hlen : θs.length = s.binders.length)
+    (hal : G.domain.allowed s (θs.map fun U =>
+      ⟨mixedMeaning G η U, mixedMeaning_valid G η U⟩))
     (hbnd : ∀ b ∈ s.bounds, ∀ U, (s.binders.zip θs).lookup b.1 = some U →
       FamLe (mixedMeaning G η U) (mixedMeaning G η b.2))
     (hkinds : instKinds G s.binders θs = true)
@@ -5271,7 +5310,7 @@ theorem inst_mixed_sound [DecidableEq ι] {G : NormalGraph ι} (η : MixedAssign
     (hM : ∀ q ∈ M, ∃ p ∈ s.variadic, instRest G tbl (s.binders.zip θs) p q = true)
     : FamLe (mixedValues G η [i])
       (semWithArgs (mixedValues G η) (graphArguments G η (mixedValues G η)) (.arrs L M)) := by
-  exact inst_images_sound η hp hq hlen hbnd
+  exact inst_images_sound η hp hq hlen hal hbnd
     (table_instanceImages η hlen hkinds hok) hL hM
 
 /-! ## Families of pairs
@@ -5328,7 +5367,7 @@ checker's own substitution, never a certificate's. -/
     (∀ b ∈ s.bounds, ∃ b' ∈ s'.bounds,
       (s.binders.zip s'.binders).lookup b.1 = some b'.1 ∧ R b'.2 b.2) ∧
     (∀ A ∈ (Clause.arrs s'.signatures s'.variadic).operands, ∀ x ∈ r.free A,
-      x ∈ s.binders → x ∈ s'.binders) ∧
+      x ∈ s.binders → x ∈ s'.binders) ∧ sameResolution s s' = true ∧
     CoversWith G none R known arrows [] (.arrs s.signatures s.variadic)
       ((Clause.arrs s'.signatures s'.variadic).map
         (r.substitute (s'.binders.zip (s.binders.map fun p => [p]))))
@@ -5374,13 +5413,14 @@ theorem SchemeCoversAlpha.mono [DecidableEq ι] {G : NormalGraph ι} {sub : Opti
   · left
     unfold SchemeCoversWith at h ⊢
     split at h
-    · exact ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, CoversWith.mono ha h.2.2.2.2⟩
+    · exact ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1,
+        CoversWith.mono ha h.2.2.2.2.2⟩
     · exact h.elim
   · right
     unfold SchemeRenames at h ⊢
     split at h
-    · obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9⟩ := h
-      exact ⟨h1, h2, h3, h4, h5, h6, h7, h8, CoversWith.mono ha h9⟩
+    · obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, hord, h9⟩ := h
+      exact ⟨h1, h2, h3, h4, h5, h6, h7, h8, hord, CoversWith.mono ha h9⟩
     · exact h.elim
 
 theorem OpaqueFamily.mono [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
@@ -5436,10 +5476,11 @@ theorem renames_sound [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssignmen
   unfold SchemeRenames at hc
   split at hc
   · rename_i r s s' hs hs'
-    obtain ⟨hpi, hpj, hlen, hnp, hnq, hkinds, hbnd, hfresh, hcov⟩ := hc
+    obtain ⟨hpi, hpj, hlen, hnp, hnq, hkinds, hbnd, hfresh, hord, hcov⟩ := hc
     rw [qDenoteWithArgs_unfold] at hv ⊢
     simp only [qLayerWithArgs, hpi, hpj, hs, hs', Bool.false_eq_true, if_false] at hv ⊢
-    refine ⟨hv.1, fun As hl hb => ?_⟩
+    refine ⟨hv.1, fun As hl _hal hb => ?_⟩
+    have hal := (sameResolution_allowed G.domain hord As).mpr _hal
     have hb' : Bounded (fun θ S => (mixedParameters G).bound θ
         (setSem (fun l => qDenoteWithArgs G (mixedParameters G) (θ, l))) S) η s As n := by
       intro b hbm hbin k hk U u hu
@@ -5454,7 +5495,7 @@ theorem renames_sound [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssignmen
       | inl w => exact hr k hk _ _ hR U w hu'
       | inr ws => exact hpa k hk _ _ hR U ws hu'
     have hi : semWithArgs (mixedValues G (assign η s.binders As)) (mixedArgs G (assign η s.binders As))
-        (.arrs s.signatures s.variadic) n W v := hv.2 As (by rw [hlen]; exact hl) hb'
+        (.arrs s.signatures s.variadic) n W v := hv.2 As (by rw [hlen]; exact hl) hal hb'
     have hcovered := covers_arrs_sound hcov n (hre i s As hs).1 (hre i s As hs).2 W v hi
     show semWithArgs (mixedValues G (assign η s'.binders As)) (mixedArgs G (assign η s'.binders As))
         (.arrs s'.signatures s'.variadic) n W v
@@ -5481,17 +5522,18 @@ theorem scheme_covers_sound [DecidableEq ι] {G : NormalGraph ι} {η : MixedAss
   unfold SchemeCoversWith at hc
   split at hc
   · rename_i s s' hs hs'
-    obtain ⟨hpi, hpj, hbs, hbnd, hcov⟩ := hc
+    obtain ⟨hpi, hpj, hbs, hbnd, hord, hcov⟩ := hc
     rw [qDenoteWithArgs_unfold] at hv ⊢
     simp only [qLayerWithArgs, hpi, hpj, hs, hs', Bool.false_eq_true, if_false] at hv ⊢
-    refine ⟨hv.1, fun As hl hb => ?_⟩
+    refine ⟨hv.1, fun As hl _hal hb => ?_⟩
+    have hal := (sameResolution_allowed G.domain hord As).mpr _hal
     have hb' : Bounded (fun θ S => (mixedParameters G).bound θ
         (setSem (fun l => qDenoteWithArgs G (mixedParameters G) (θ, l))) S) η s As n := by
       intro b hbm hbin j hj U u hu
       rw [hbs] at hbin hu
       exact hb b (hbnd b hbm) hbin j hj U u hu
     have hi : semWithArgs (mixedValues G (assign η s.binders As)) (mixedArgs G (assign η s.binders As))
-        (.arrs s.signatures s.variadic) n W v := hv.2 As (by rw [hbs]; exact hl) hb'
+        (.arrs s.signatures s.variadic) n W v := hv.2 As (by rw [hbs]; exact hl) hal hb'
     show semWithArgs (mixedValues G (assign η s'.binders As)) (mixedArgs G (assign η s'.binders As))
         (.arrs s'.signatures s'.variadic) n W v
     rw [← hbs]
@@ -6224,6 +6266,8 @@ each within its bound, the instance table and its domain's free rows. -/
     (M : List (RestArrow (List ι))) : Prop :=
   ∃ (i : ι) (s : SchemeRow ι) (tbl : InstTable ι) (θs : List (List ι)) (D : List ι) (V : FreeMap ι),
     S = [i] ∧ G.params i = false ∧ G.schemes i = some s ∧ θs.length = s.binders.length ∧
+    (∀ η, G.domain.allowed s (θs.map fun U =>
+      ⟨mixedMeaning G η U, mixedMeaning_valid G η U⟩)) ∧
     instKinds G s.binders θs = true ∧
     (∀ b ∈ s.bounds, ∀ U, (s.binders.zip θs).lookup b.1 = some U →
       ∀ η, FamLe (mixedMeaning G η U) (mixedMeaning G η b.2)) ∧
@@ -6238,9 +6282,9 @@ every derivation over `G` is one over each reassignment. -/
 /-- A checked instance's values meet its arrows, at every assignment. -/
 theorem InstArrs.mixed_sound [DecidableEq ι] {G : NormalGraph ι} {S L M} (h : InstArrs G S L M) :
     ∀ η, FamLe (mixedValues G η S) (mixedSem G η (.arrs L M)) := by
-  obtain ⟨i, s, tbl, θs, D, V, rfl, hp, hq, hlen, hkinds, hbnd, hok, hL, hM⟩ := h
+  obtain ⟨i, s, tbl, θs, D, V, rfl, hp, hq, hlen, hal, hkinds, hbnd, hok, hL, hM⟩ := h
   intro η n W v hv
-  exact ⟨inst_mixed_sound η hp hq hlen (fun b hb U hU => hbnd b hb U hU η) hkinds hok hL hM n W v hv,
+  exact ⟨inst_mixed_sound η hp hq hlen (hal η) (fun b hb U hU => hbnd b hb U hU η) hkinds hok hL hM n W v hv,
     realmInvariant_of_not_record rfl n W v⟩
 
 #print axioms covers_presence_sound

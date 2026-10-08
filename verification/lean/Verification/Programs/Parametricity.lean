@@ -222,6 +222,37 @@ theorem Local_reassign (j : Sequent ι) (r : Rule ι) (ps : List (Sequent ι))
     allocRealm_reassign]
   rfl
 
+/-- A body's explicit subsumption procedure is held fixed while its
+semantic assignment changes. Its soundness is supplied at that assignment. -/
+theorem LocalWith_reassign (j : Sequent ι) (r : Rule ι) (ps : List (Sequent ι))
+    (codes : CodeEntry ι → Bool)
+    (subtype : Ty ι → Ty ι → SubtypeChoices ι → Bool) :
+    LocalUsing (reassign G η) (images.reassign η) j r ps codes subtype =
+      LocalUsing G images j r ps codes subtype := by
+  unfold LocalUsing MemberProofsUsing
+  simp only [check_fun_reassign, CallProofs_reassign, RestProofs_reassign,
+    graphCodesChecked_reassign, allocRealm_reassign]
+  rfl
+
+theorem checkTreeWith_reassign
+    (subtype : Ty ι → Ty ι → SubtypeChoices ι → Bool)
+    (e : ProgramCertificates.Evidence ι) (codes : CodeEntry ι → Bool) :
+    checkTreeWith (reassign G η) (images.reassign η) subtype e codes =
+      checkTreeWith G images subtype e codes := by
+  match e with
+  | .node j r ps =>
+    rw [checkTreeWith, checkTreeWith]
+    simp only [LocalWith_reassign]
+    congr 1
+    congr 1
+    funext x
+    exact checkTreeWith_reassign subtype x.val codes
+termination_by sizeOf e
+decreasing_by
+  have := List.sizeOf_lt_of_mem x.property
+  simp only [ProgramCertificates.Evidence.node.sizeOf_spec]
+  omega
+
 theorem checkTree_reassign (e : ProgramCertificates.Evidence ι)
     (codes : CodeEntry ι → Bool := fun _ => false) :
     checkTreeUsing (reassign G η) (images.reassign η) e codes = checkTreeUsing G images e codes := by
@@ -262,11 +293,60 @@ theorem checkHandler_reassign (P : Program) (C : ControlFlow.Certificate ι) (no
   simp only [checkHandlerUsing_eq, checkTarget_reassign]
   rfl
 
+theorem checkStepResult_value_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge)
+    (e : StepEvidence ι) (codes : CodeEntry ι → Bool) :
+    (checkStepResult (reassign G η) (images.reassign η) j k e codes).value =
+      (checkStepResult G images j k e codes).value :=
+  checkStep_reassign G η images j k e codes
+
+/-- Descriptor evidence may vary with the assignment while the executable
+body comparison stays fixed. -/
+theorem checkBodyStep_reassign (body : BodySubtyping G)
+    (body' : BodySubtyping (reassign G η)) (same : body'.check = body.check)
+    (j : Sequent ι) (k : HeapKnowledge.Knowledge) (e : StepEvidence ι)
+    (codes : CodeEntry ι → Bool) :
+    ((Checker.withSubtyping (reassign G η) (images.reassign η) body').run j k e codes).value =
+      ((Checker.withSubtyping G images body).run j k e codes).value := by
+  cases e <;> simp only [Checker.withSubtyping, CheckResult.value_bind_const,
+    CheckResult.accepted_ofBool, same, checkTreeWith_reassign,
+    checkStepResult_value_reassign] <;> rfl
+
+theorem checkBodyNode_reassign (body : BodySubtyping G)
+    (body' : BodySubtyping (reassign G η)) (same : body'.check = body.check)
+    (Rty : List ι) (P : Program) (C : ControlFlow.Certificate ι) (node : Node)
+    (c : NodeEvidence ι) (codes : CodeEntry ι → Bool) :
+    checkNodeUsing (reassign G η) (images.reassign η) Rty P C node c codes
+      (Checker.withSubtyping (reassign G η) (images.reassign η) body') =
+    checkNodeUsing G images Rty P C node c codes (Checker.withSubtyping G images body) := by
+  simp only [checkNodeUsing_eq, checkBodyStep_reassign G η images body body' same,
+    checkHandler_reassign, checkTarget_reassign, checkBranchTarget_reassign]
+  rfl
+
+theorem checkBodyGraph_reassign (body : BodySubtyping G)
+    (body' : BodySubtyping (reassign G η)) (same : body'.check = body.check)
+    (Rty : List ι) (P : Program) (C : ControlFlow.Certificate ι)
+    (codes : CodeEntry ι → Bool) :
+    checkGraphUsing (reassign G η) (images.reassign η) Rty P C codes
+      (Checker.withSubtyping (reassign G η) (images.reassign η) body') =
+    checkGraphUsing G images Rty P C codes (Checker.withSubtyping G images body) := by
+  simp only [checkGraphUsing_eq, checkBodyNode_reassign G η images body body' same]
+
+theorem checkBodyEntry_reassign (body : BodySubtyping G)
+    (body' : BodySubtyping (reassign G η)) (same : body'.check = body.check)
+    (Rty : List ι) (P : Program) (C : ControlFlow.Certificate ι) (start : Nat)
+    (inputs : List (List ι)) (codes : CodeEntry ι → Bool) :
+    checkEntryUsing (reassign G η) (images.reassign η) Rty P C start inputs codes
+      (Checker.withSubtyping (reassign G η) (images.reassign η) body') =
+    checkEntryUsing G images Rty P C start inputs codes (Checker.withSubtyping G images body) := by
+  simp only [checkEntryUsing_eq, checkBodyGraph_reassign G η images body body' same]
+
+#print axioms checkBodyEntry_reassign
+
 theorem checkNode_reassign (Rty : List ι) (P : Program) (C : ControlFlow.Certificate ι) (node : Node)
     (c : NodeEvidence ι) (codes : CodeEntry ι → Bool := fun _ => false) :
     checkNodeUsing (reassign G η) (images.reassign η) Rty P C node c codes =
       checkNodeUsing G images Rty P C node c codes := by
-  simp only [checkNodeUsing_eq, checkHandler_reassign, checkStep_reassign, checkTarget_reassign,
+  simp only [checkNodeUsing_eq, Checker.ordinary, checkHandler_reassign, checkStepResult_value_reassign, checkTarget_reassign,
     checkBranchTarget_reassign]
   rfl
 

@@ -414,8 +414,8 @@ theorem value_sound {G : NormalGraph ι} {Γ k i R A ρ n W h}
 heap observation without a specific proved effect rule. -/
 def ordinaryOutput (k : Knowledge) : Knowledge := ⟨[],HeapFacts.shift k.values,HeapLinks.stable (HeapKnowledge.shift k).links⟩
 
-theorem ordinary_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {Γ k t A ρ n W h}
-    (ht : HasTyUsing G images Γ t A) (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h)
+theorem ordinary_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {subtyping : BodySubtyping G} {Γ k t A ρ n W h}
+    (ht : HasTyUsing G images (subtyping := subtyping) Γ t A) (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafePost (meaning G A)
       (fun h' v => HeapKnowledge.Holds (ordinaryOutput k) (push v ρ) h') n W h (instantiate 0 ρ t) := by
@@ -1304,4 +1304,52 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
 #print axioms read_sound
 #print axioms value_sound
 #print axioms ordinary_sound
+/-- An expression-step checker carries the safety theorem required by graph
+composition, including its output heap knowledge. -/
+structure Checker [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) where
+  run : Sequent ι → Knowledge → StepEvidence ι →
+    (CodeEntry ι → Bool) → CheckResult ι Knowledge
+  sound : ∀ {j k e out codes}, (run j k e codes).value = some out →
+    CodesSound G codes → ∀ {ρ n W h},
+    EnvOk G j.context ρ n W → HeapKnowledge.Holds k ρ h →
+    WorldAdm W → HeapOk n W h →
+    SafePost (meaning G j.type)
+      (fun h' v => HeapKnowledge.Holds out (push v ρ) h')
+      n W h (instantiate 0 ρ j.term)
+
+@[nospecialize] def Checker.ordinary [DecidableEq ι] (G : NormalGraph ι)
+    (images : InstanceImageCheck G) : Checker G images where
+  run := fun j k e codes => checkStepResult G images j k e codes
+  sound := by
+    intro j k e out codes hc hcodes ρ n W h he hk hw hh
+    exact checkStep_sound hc hcodes he hk hw hh
+
+/-- Descriptor-aware ordinary expressions use the same heap-forgetting rule
+as ordinary calls. Other effect rules retain their existing checks. -/
+@[nospecialize] def Checker.withSubtyping [DecidableEq ι] (G : NormalGraph ι)
+    (images : InstanceImageCheck G) (subtyping : BodySubtyping G) : Checker G images where
+  run := fun j k step codes => match step with
+    | .ordinary e =>
+      (CheckResult.ofBool (decide (claim e = j ∧ checkScope j.context.length j.term = true) &&
+        checkTreeWith G images subtyping.check e codes)).bind fun _ => pure (ordinaryOutput k)
+    | step => checkStepResult G images j k step codes
+  sound := by
+    intro j k step out codes checked hcodes ρ n W h he hk hw hh
+    cases step with
+    | ordinary e =>
+      simp only [CheckResult.value_bind_const, CheckResult.accepted_ofBool] at checked
+      change (if decide (claim e = j ∧ checkScope j.context.length j.term = true) &&
+        checkTreeWith G images subtyping.check e codes then some (ordinaryOutput k) else none) = some out at checked
+      split at checked
+      · rename_i tests
+        simp only [Bool.and_eq_true, decide_eq_true_eq] at tests
+        cases checked
+        have typed := checkTreeWith_sound subtyping e tests.2 hcodes
+        rw [tests.1.1] at typed
+        exact ordinary_sound typed he hk hw hh
+      · cases checked
+    | _ => exact checkStep_sound checked hcodes he hk hw hh
+
+#print axioms Checker.withSubtyping
+
 end Verification.HeapExpressionRules

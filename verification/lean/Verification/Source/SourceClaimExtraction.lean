@@ -147,6 +147,7 @@ def extractPlans (ast claims : Json) (fileKey : String)
       | some j => Scheme.genericClosures ((j.getObjVal? "body").toOption.getD .null)
       | none => []
     let graphClosures := !closures.isEmpty
+    let mut sourceScheme : Option (SchemeRow Tree) := none
     if !tps.isEmpty then
       -- A generic unit is an ordinary graph request: each binder is read as
       -- its parameter row, a bounded one as its meet with its bound (an
@@ -160,9 +161,16 @@ def extractPlans (ast claims : Json) (fileKey : String)
           "a generic closure inside a generic body has binders of its own")
       let binders := if initClaims.isSome then initBinders else
         ((unitBinders.lookup (f.name, f.namePos)).getD [])
-      if binders.map (·.1) != tps.map (·.name) then
+      if binders.map (·.1) != tps.flatMap (fun p => ResolutionWire.ownedNames p.name p.resolution) then
         throw (sourceRefusal d.types f.namePos .genericValidation
           "a generic unit's binders are not the ones its declaration lowers")
+      let resolution := ResolutionWire.groups (tps.map fun p => (p.name, p.resolution))
+      if !resolution.isEmpty then
+        sourceScheme := some {
+          binders := binders.map (·.2.1)
+          signatures := []
+          bounds := binders.filterMap fun (_, p, B) => B.map (p, ·)
+          resolution }
       let (T, rows) ← match binderRows d.types binders with
         | .ok r => pure r
         | .error reason => throw (sourceRefusal d.types f.namePos .genericValidation reason)
@@ -207,7 +215,8 @@ def extractPlans (ast claims : Json) (fileKey : String)
       if !c.hasScheme then
         for g in generics.filter (fun g => !(initClaims.isSome && classNames.contains g.name)) do
           if (f.body.flatMap Fragment.Stmt.callees).any (·.2.2.1 == g.name) then
-            match Scheme.moduleInstances d.types g f.body c with
+            match Scheme.moduleInstances d.types g f.body c sourceScheme
+              (tps.flatMap fun p => ResolutionWire.ownedNames p.name p.resolution) with
             | .ok (T, slot, reads, calls) =>
               d := { d with types := T }
               -- The callee reads are claimed at the slot's type, which the
@@ -229,7 +238,8 @@ def extractPlans (ast claims : Json) (fileKey : String)
       if c.hasScheme then
         throw (sourceRefusal d.types f.namePos .schemeIntroduction
           "a scheme claim has no quantified closure in its source")
-      return .graph f.name f.namePos (← extractNormalizedFn d.types f c.normalized module)
+      let request ← extractNormalizedFn d.types f c.normalized module
+      return .graph f.name f.namePos { request with sourceScheme }
     -- A generic unit's graph extraction reports where it stops as a
     -- located refusal at the function, as the direct checker's do.
     let plan ← if tps.isEmpty then finish d module c f

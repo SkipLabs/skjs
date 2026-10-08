@@ -124,7 +124,7 @@ def templateProblem (sig : Signature) (h : Header) : GraphRow Tree (List Tree) �
   | .clauses cs =>
     if !h.binders.isEmpty then some s!"a clause row binds no locals, {h.binders.length} declared"
     else cs.zipIdx.findSome? fun (c, ci) => operandsProblem sig h .operand s!"clause {ci}" c.operands
-  | .scheme bs sigs bounds rests =>
+  | .scheme bs sigs bounds rests _ =>
     if bs != (List.range h.binders.length).map Tree.local then
       some s!"a scheme binds exactly its {h.binders.length} locals, in order"
     else
@@ -141,12 +141,12 @@ def templateProblem (sig : Signature) (h : Header) : GraphRow Tree (List Tree) �
 private def toTemplateRow (sig : Signature) (head : Fin sig.length) :
     GraphRow Tree (List Tree) → RowTemplate sig head
   | .clauses cs => .clauses (cs.map (Clause.map (·.filterMap (expressionOf? sig sig[head]))))
-  | .scheme bs sigs bounds rests =>
+  | .scheme bs sigs bounds rests resolution =>
     .scheme (bs.filterMap (referenceOf? sig sig[head]))
       (sigs.map (Arrow.map (·.filterMap (expressionOf? sig sig[head]))))
       (bounds.filterMap fun (b, T) =>
         (referenceOf? sig sig[head] b).map (·, T.filterMap (expressionOf? sig sig[head])))
-      (rests.map (RestArrow.map (·.filterMap (expressionOf? sig sig[head]))))
+      (rests.map (RestArrow.map (·.filterMap (expressionOf? sig sig[head])))) resolution
   | .param .. | .meet .. => .clauses []
 
 private def eraseRow (row : RowTemplate sig head) : GraphRow Tree (List Tree) :=

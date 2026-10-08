@@ -240,7 +240,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   const span = definition.expression.span;
   const parameter: TypeTerm = { k: "binder", name: "T", span };
   const quantified: Extract<TypeTerm, { k: "scheme" }> = {
-    k: "scheme", binders: [{ name: "T", bound: { k: "atom", name: "unknown", span }, default: null, span }],
+    k: "scheme", binders: [{ name: "T", bound: { k: "atom", name: "unknown", span }, default: null, resolution: null, span }],
     signatures: [{ k: "function", effect: "unrestricted", receiver: { k: "atom", name: "unknown", span },
       params: [parameter], rest: null, result: parameter, span }], span,
   };
@@ -743,6 +743,36 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
       await ${fn}(input);
       return cell.value;
     })()`), "changed", `${file}: widening the result leaves the hidden then hook's heap effect observable`);
+  // These values and the wrapper execute in the same realm. An array is a
+  // stable resolution input even when its elements contain then hooks.
+  assert.equal(await runExample("generic-promise-resolution", `(async () => {
+    let elementAdoptions = 0;
+    const values = [{ then(resolve) { elementAdoptions++; resolve(42); } }];
+    let finish;
+    const pending = new Promise(resolve => { finish = resolve; });
+    const waiting = repeated(pending);
+    finish(9);
+    let rejected = false;
+    try { await repeated(Promise.reject("expected")); }
+    catch (reason) { rejected = reason === "expected"; }
+    return JSON.stringify([
+      await numeric(1), await stored(2), await aliasWrap(3),
+      await native(Promise.resolve(4)), await repeated(Promise.resolve(5)),
+      await array(values) === values, await union(Promise.resolve(values)) === values,
+      await waiting, rejected, elementAdoptions,
+    ]);
+  })()`), "[1,2,3,4,5,true,true,9,true,0]",
+    "qualified wrapper forwarding preserves stable arrays, native fulfillment, rejection and pending resolution");
+  assert.equal(runExample("generic-promise-associated-result", `
+    const cell = { value: 6 };
+    JSON.stringify([accept(7), exchange(cell, 8), cell.value]);`), "[7,6,8]",
+    "associated-result storage keeps the numeric input and write contract");
+  assert.equal(await runExample("invalid-generic-promise-unknown-output", `(async () => {
+    const cell = { value: 1 };
+    const input = { n: 1, then(resolve) { cell.value = "changed"; resolve(42); } };
+    await erasedOutputCall(input);
+    return cell.value;
+  })()`), "changed", "an unknown generic output does not constrain a hidden then hook's heap effect");
   process.stdout.write("native-contract counterexamples run under Node: as the contracts say\n");
 }
 
@@ -865,7 +895,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     ({ k: "function", effect: "unrestricted", receiver: { k: "self", span }, params, rest, result, span });
   const scheme = (name: string, signature: Extract<TypeTerm, { k: "function" }>,
       bound: TypeTerm | null = null): TypeTerm =>
-    ({ k: "scheme", binders: [{ name, bound, default: null, span }], signatures: [signature], span });
+    ({ k: "scheme", binders: [{ name, bound, default: null, resolution: null, span }], signatures: [signature], span });
   const runner = (inner: TypeTerm): TypeTerm => scheme("P", method(
     [{ k: "object", fields: [{ name: "id", optional: false, readonly: true, type: inner, span }],
       stringIndex: null, calls: [], span }],

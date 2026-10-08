@@ -56,7 +56,7 @@ export function checkOverloads(verifier: string, artifacts: string): void {
       (c) => {
         const e = c.functions[0]?.arrows?.[0]?.rows[0]?.expressions[0];
         assert(e);
-        e.instantiate = [{ name: "T", type: [1, 2] }];
+        e.instantiate = [{ name: "T", type: [1, 2], resolution: null }];
       },
     ],
     [

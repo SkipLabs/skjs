@@ -1,4 +1,8 @@
 import Verification.Source.EquationLowering
+-- ResolutionCapabilities.lean classifies stable, native and union resolution inputs over the native Promise constructor; without it source requests have no descriptor domain.
+import Verification.Source.ResolutionCapabilities
+-- ../Types/EquationDomains.lean proves that installing the descriptor domain preserves the native Promise region's meaning; without it the store cannot use qualified generics.
+import Verification.Types.EquationDomains
 
 /-! The label store over recursive equations (RECURSIVE-EQUATIONS §8, §9.2).
 Extraction grows the lowering's heads (`EquationLowering.State`), its labels
@@ -139,7 +143,7 @@ def named : Tree → Bool
 def rowLabels (r : GraphRow Tree) : List Tree :=
   match r with
   | .clauses cs => cs.flatMap fun c => c.operands.flatten
-  | .scheme bs sigs bounds rests =>
+  | .scheme bs sigs bounds rests _ =>
     bs ++ sigs.flatMap (fun a => a.operands.flatten) ++ bounds.flatMap (fun (b, U) => b :: U) ++
       rests.flatMap fun a => a.operands.flatten
   | .param l _ _ => [l]
@@ -350,6 +354,13 @@ def eitherImages {ι : Type} [DecidableEq ι] {G : NormalGraph ι} (a b : Instan
     · simp only [ha, Bool.false_or] at h
       exact b.sound bs c hlen hkinds h η
     · exact a.sound bs c hlen hkinds ha η
+  compareAllowed s c := (a.compareAllowed s c).orElse fun _ => b.compareAllowed s c
+  allowed_sound s c h η := by
+    simp only [ComparisonResult.accepted_orElse] at h
+    cases ha : (a.compareAllowed s c).accepted
+    · simp only [ha, Bool.false_or] at h
+      exact b.allowed_sound s c h η
+    · exact a.allowed_sound s c ha η
   -- The second's renaming, variances and `Var` proposal: the finite check
   -- has none.
   sub := b.sub
@@ -410,12 +421,254 @@ def imagesUpTo (E : Equations) (v : Variances E) (budget : SearchBudget := {}) :
         η bs c.instances c.table hlen hkinds
         (by simpa only [compareImagesUpTo_accepted] using checked) }
 
+/-- The native Promise declaration selected by declaration identity. Its
+application has one value argument. -/
+structure NativePromise (E : Equations) where
+  head : Fin E.signature.length
+  arity : E.signature[head].parameters = 1
+  kinds : E.signature[head].kinds = [.value]
+  region : OrdinaryRegion E
+  head_mem : head.val ∈ region.heads
+
+namespace NativePromise
+
+/-- A semantic argument is assigned to a family variable, independent of
+source binder names. -/
+def parameter (E : Equations) : Label E.signature :=
+  ⟨.var 3000000 0 .value, rfl⟩
+
+def application (p : NativePromise E) (A : List (Label E.signature)) : Scope E.signature :=
+  ⟨p.head, [A], by simpa using p.arity.symm⟩
+
+noncomputable def applyFamily (p : NativePromise E) (A : ValueFamily) : Fam :=
+  let η := assign (ParameterAssignment.empty .mixed) [parameter E] [MixedFamily.ofValue A]
+  fun n W v => mixedMeaning E.graph η [(p.application [parameter E]).label] n W (.inl v)
+
+open Classical in
+/-- Extension to arbitrary families for the resolution relation. Descriptors
+supply value families, for which the first branch is selected. -/
+noncomputable def constructor (p : NativePromise E) (A : Fam) : Fam :=
+  if h : ValueFam A then p.applyFamily ⟨A, h⟩ else fun _ _ _ => False
+
+theorem constructor_valid (p : NativePromise E) (A : Fam) (h : ValueFam A) :
+    ValueFam (p.constructor A) := by
+  classical
+  simp only [constructor, dif_pos h]
+  exact (MixedFamily.value ⟨_, mixedMeaning_valid _ _ _⟩).2
+
+/-- The actual source application denotes the fixed native constructor at
+its argument's value meaning. The sort check excludes argument packs. -/
+theorem application_meaning (p : NativePromise E)
+    (η : MixedAssignment (Label E.signature)) (A : List (Label E.signature))
+    (kind : E.graph.hasKind .value A = true) :
+    (fun n W v => mixedMeaning E.graph η [(p.application A).label] n W (.inl v)) =
+      p.constructor (fun n W v => mixedMeaning E.graph η A n W (.inl v)) := by
+  classical
+  let V : ValueFamily := MixedFamily.value ⟨_, mixedMeaning_valid E.graph η A⟩
+  have valid : ValueFam (fun n W v => mixedMeaning E.graph η A n W (.inl v)) := V.2
+  simp only [constructor, dif_pos valid]
+  change _ = p.applyFamily V
+  let θ := assign (ParameterAssignment.empty .mixed) [parameter E] [MixedFamily.ofValue V]
+  have kp : E.graph.parameterKinds (parameter E) = some .value := by
+    simp [parameter, Equations.graph, NormalGraph.ofRowMap, Equations.row,
+      Equations.baseRow, Label.view]
+  have argument : mixedMeaning E.graph η A = mixedMeaning E.graph θ [parameter E] := by
+    rw [mixedMeaning_parameter _ _ _ _ kp]
+    simp only [θ, assign_cons_head]
+    funext n W x
+    cases x with
+    | inl v => simp [selectParameter, MixedFamily.ofValue, V, MixedFamily.value]
+    | inr vs => simp [selectParameter, mixedMeaning_noArguments E.graph η A kind]
+  have same := E.application_congr (p.application A) (p.application [parameter E]) η θ
+    rfl rfl (by
+      intro i hi hj
+      have : i = 0 := by simpa [application] using hi
+      subst i
+      exact argument)
+  exact congrArg (fun F => fun n W v => F n W (.inl v)) same
+
+/-- Install a source descriptor domain while retaining the checked native
+dependency region. -/
+def withDomain (p : NativePromise E) (domain : SchemeDomain (Label E.signature) .mixed) :
+    NativePromise { E with domain := domain } where
+  head := p.head
+  arity := p.arity
+  kinds := p.kinds
+  region := ⟨p.region.heads, p.region.closed,
+    fun h hh => by simpa only [Equations.ordinaryTemplate_domain] using p.region.ordinary h hh,
+    p.region.realm⟩
+  head_mem := p.head_mem
+
+theorem applyFamily_domain (p : NativePromise E)
+    (domain : SchemeDomain (Label E.signature) .mixed) (A : ValueFamily) :
+    (p.withDomain domain).applyFamily A = p.applyFamily A := by
+  let root := (p.application [parameter E]).label
+  have hroot : root.withinHeads (· ∈ p.region.heads) := by
+    intro h hh
+    have he : h = p.head.val := by
+      simpa [root, application, Scope.label, Scope.rawArgs, parameter, Tree.dependencyHeads,
+        Args.ofList, Types.ofList, Args.dependencyHeads, Types.dependencyHeads] using hh
+    exact he ▸ p.head_mem
+  let η := assign (ParameterAssignment.empty .mixed) [parameter E] [MixedFamily.ofValue A]
+  have he := p.region.denote domain η root hroot
+  funext n W v
+  change (∃ i ∈ [root], qDenoteWithArgs _ _ (η,i) n W v) =
+    (∃ i ∈ [root], qDenoteWithArgs _ _ (η,i) n W v)
+  simp only [List.mem_singleton, exists_eq_left]
+  simpa only [Equations.graph_domain] using congrFun (congrFun (congrFun he n) W) v
+
+/-- The native constructor is fixed before the descriptor domain is installed. -/
+theorem constructor_domain (p : NativePromise E)
+    (domain : SchemeDomain (Label E.signature) .mixed) :
+    (p.withDomain domain).constructor = p.constructor := by
+  classical
+  funext A
+  unfold constructor
+  split
+  · exact p.applyFamily_domain domain _
+  · rfl
+
+#print axioms constructor_domain
+
+/-- The native arm reads the exact constructor application and checks the
+payload sort. The certificate cannot substitute a structural lookalike. -/
+def payload (p : NativePromise E) (l : Label E.signature) :
+    Option { A : List (Label E.signature) //
+      l = (p.application A).label ∧ E.graph.hasKind .value A = true } :=
+  match l.view with
+  | .application scope => match scope.arguments with
+    | [A] => if h : l = (p.application A).label ∧ E.graph.hasKind .value A = true then
+        some ⟨A, h⟩ else none
+    | _ => none
+  | _ => none
+
+/-- Native descriptor construction uses the actual source application's
+meaning, and retains the child's literal observation and stable result. -/
+def descriptor (p : NativePromise E) (N : Fam)
+    (d : ResolutionDescriptors.Descriptor (ResolutionCapabilities.capabilities p.constructor N) N) :
+    ResolutionDescriptors.Descriptor (ResolutionCapabilities.capabilities p.constructor N) N :=
+  ResolutionCapabilities.native p.constructor N p.constructor_valid d
+
+theorem descriptor_input (p : NativePromise E) (N : Fam)
+    (η : MixedAssignment (Label E.signature)) (l : Label E.signature)
+    (A : { A : List (Label E.signature) //
+      l = (p.application A).label ∧ E.graph.hasKind .value A = true })
+    (d : ResolutionDescriptors.Descriptor (ResolutionCapabilities.capabilities p.constructor N) N)
+    (child : d.input = fun n W v => mixedMeaning E.graph η A.1 n W (.inl v)) :
+    (p.descriptor N d).input =
+      (fun n W v => mixedMeaning E.graph η [l] n W (.inl v)) := by
+  obtain ⟨A, rfl, kind⟩ := A
+  change p.constructor d.input = _
+  rw [child]
+  exact (p.application_meaning η A kind).symm
+
+#print axioms descriptor_input
+#print axioms application_meaning
+#print axioms constructor_valid
+
+end NativePromise
+
+/-- The native constructor and the closed stable-value bound used by source
+resolution descriptors. Both belong to the checked ordinary region. -/
+structure ResolutionContext (E : Equations) where
+  promise : NativePromise E
+  stable : List (Label E.signature)
+  within : ∀ l ∈ stable, l.withinHeads (· ∈ promise.region.heads)
+  closed : ∀ l ∈ stable, l.free = []
+
+namespace ResolutionContext
+
+noncomputable def stableFamily (c : ResolutionContext E) : Fam :=
+  fun n W v => mixedMeaning E.graph (ParameterAssignment.empty .mixed) c.stable n W (.inl v)
+
+def domain (c : ResolutionContext E) : SchemeDomain (Label E.signature) .mixed :=
+  ResolutionDescriptors.descriptorDomain
+    (ResolutionCapabilities.capabilities c.promise.constructor c.stableFamily) c.stableFamily
+
+def withDomain (c : ResolutionContext E) (D : SchemeDomain (Label E.signature) .mixed) :
+    ResolutionContext { E with domain := D } where
+  promise := c.promise.withDomain D
+  stable := c.stable
+  within := c.within
+  closed := c.closed
+
+theorem stableFamily_domain (c : ResolutionContext E)
+    (D : SchemeDomain (Label E.signature) .mixed) :
+    (c.withDomain D).stableFamily = c.stableFamily := by
+  funext n W v
+  change (∃ l ∈ c.stable, qDenoteWithArgs _ _ (_,l) n W v) =
+    (∃ l ∈ c.stable, qDenoteWithArgs _ _ (_,l) n W v)
+  apply propext
+  constructor <;> rintro ⟨l, hl, hv⟩ <;> refine ⟨l, hl, ?_⟩
+  · have he := c.promise.region.denote D (ParameterAssignment.empty .mixed) l (c.within l hl)
+    simpa only [Equations.graph_domain, he] using hv
+  · have he := c.promise.region.denote D (ParameterAssignment.empty .mixed) l (c.within l hl)
+    simpa only [Equations.graph_domain, he] using hv
+
+theorem domain_fixed (c : ResolutionContext E)
+    (D : SchemeDomain (Label E.signature) .mixed) :
+    (c.withDomain D).domain = c.domain := by
+  unfold domain
+  rw [stableFamily_domain]
+  change ResolutionDescriptors.descriptorDomain
+    (ResolutionCapabilities.capabilities (c.promise.withDomain D).constructor c.stableFamily)
+      c.stableFamily = _
+  rw [NativePromise.constructor_domain]
+
+theorem stable_meaning (c : ResolutionContext E)
+    (η : MixedAssignment (Label E.signature)) :
+    (fun n W v => mixedMeaning E.graph η c.stable n W (.inl v)) = c.stableFamily := by
+  have he := E.agree_free η (ParameterAssignment.empty .mixed) c.stable (by
+    intro l hl p hp
+    simp only [c.closed l hl, List.not_mem_nil] at hp)
+  exact congrArg (fun F => fun n W v => F n W (.inl v)) he
+
+#print axioms domain_fixed
+#print axioms stable_meaning
+
+end ResolutionContext
+
+/-- Validate the retained intrinsic bound against the native dependency region. -/
+def resolutionContext (s : State) (p : NativePromise E) :
+    Except String (Option (ResolutionContext E)) := do
+  let some raw := s.nativeStable | return none
+  let stable ← closedUnion E "native stable-value bound" raw
+  if checked : (∀ l ∈ stable, l.withinHeads (· ∈ p.region.heads)) ∧
+      (∀ l ∈ stable, l.free = []) then
+    return some ⟨p, stable, checked.1, checked.2⟩
+  else throw "native stable-value bound must be closed within the ordinary dependency region"
+
+/-- Native identity comes from the declaration document; a user declaration
+with the same display name does not select a native constructor. -/
+def nativePromise (s : State) (E : Equations) : Except String (Option (NativePromise E)) := do
+  let candidates := (List.range s.heads.size).filter fun h =>
+    match (s.heads[h]?).map Draft.kind with
+    | some (.declaration i) => s.doc[i]?.any fun d =>
+        d.name == "Promise" &&
+        ((d.identity.getObjValAs? String "module").toOption.getD "").startsWith "typescript/lib/"
+    | _ => false
+  match candidates with
+  | [] => return none
+  | [h] =>
+    if hi : h < E.signature.length then
+      if ha : E.signature[h].parameters = 1 then
+        if hk : E.signature[h].kinds = [.value] then
+          let some region := E.checkOrdinaryRegion (h :: (s.nativeStable.getD []).flatMap Tree.dependencyHeads)
+            | throw "native Promise dependencies require ordinary quantified library definitions"
+          return some ⟨⟨h, hi⟩, ha, hk, region.1, region.2 h List.mem_cons_self⟩
+        else throw "native Promise requires one value parameter"
+      else throw "native Promise requires one type argument"
+    else throw "native Promise head is outside the frozen equations"
+  | _ => throw "multiple native Promise declarations"
+
 /-- The store of a checked request: the extracted heads, whose validated
 equations are `E`, and their variances, computed as checks ask for them and
 shared by every request over the store. It no longer grows. -/
 structure Checked (E : Equations) (p : Primitive E) where
   heads : State
   variances : Variances E := E.variances
+  promise : Option (NativePromise E) := none
+  resolution : Option { c : ResolutionContext E // E.domain = c.domain } := none
 
 section
 variable {E : Equations} {p : Primitive E}
@@ -479,7 +732,22 @@ def freeze (s : State) : Except String Frozen := do
   let E := { E with realm := if s.arrays then realmOf E s.proto s.excluded else none }
   let E := E.memo
   let ⟨p⟩ ← primitive E
-  return ⟨E, p, { heads := s }⟩
+  let promise ← nativePromise s E
+  match promise with
+  | none => return ⟨E, p, { heads := s }⟩
+  | some native =>
+    match ← resolutionContext s native with
+    | none => return ⟨E, p, { heads := s, promise := some native }⟩
+    | some context =>
+      let D := context.domain
+      let E' := { E with domain := D }
+      let p' : Primitive E' := ⟨p.nul, p.tru, p.fls, p.undef⟩
+      let context' := context.withDomain D
+      let store : Checked E' p' := {
+        heads := s
+        promise := some context'.promise
+        resolution := some ⟨context', (context.domain_fixed D).symm⟩ }
+      return ⟨E', p', store⟩
 
 #print axioms equivalent_sound
 

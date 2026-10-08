@@ -1,4 +1,5 @@
 import Verification.Source.EquationCore
+import Verification.Source.ResolutionWire
 
 /-! Section references follow `verification/RECURSIVE-EQUATIONS.md`. -/
 namespace Verification.EquationLowering
@@ -19,12 +20,34 @@ def unitTerms (node : Json) : Json :=
   .arr (tps.map (·.getObjValD "bound") ++ params.map (·.getObjValD "type") ++
     #[node.getObjValD "retType", node.getObjValD "result", node.getObjValD "type"])
 
+/-- Decode ownership before allocating source input and associated slots. -/
+def sourceParameters (tps : Array Json) : Except String (List (String × Option ResolutionWire.Slots)) := do
+  let parameters ← tps.toList.mapM fun p => do
+    fieldsExactly p ["name", "bound", "resolution"]
+    return (← str p "name", ← fromJson? (← field p "resolution"))
+  ResolutionWire.validateOwnership parameters
+  return parameters
+
+/-- Expanded allocation entries. Qualification remains on the owning scheme;
+associated observation and result slots have no independent bounds. -/
+def expandedSourceParameters (tps : Array Json) : Except String (Array Json) := do
+  let parameters ← sourceParameters tps
+  return (tps.toList.zip parameters).flatMap (fun (p, (name, slots)) =>
+    let entry (n : String) (bound : Json) := Json.mkObj [
+      ("name", toJson n), ("bound", bound), ("resolution", .null)]
+    entry name (p.getObjValD "bound") ::
+      (slots.map fun s => [entry s.observation .null, entry s.result .null]).getD []) |>.toArray
+
+def sourceNames (tps : Array Json) : Except String (List String) := do
+  return (← sourceParameters tps).flatMap fun (n, s) => ResolutionWire.ownedNames n s
+
 /-- Enter a generic unit's binders: the unit is a head of its own, lifted over
 the enclosing binders its scheme names, whose binders are `bound(f, A⃗, j)`,
 met with its bound when it has one (§8.1). -/
 def enterUnit (path : String) (scope : List (String × Binding)) (node : Json) (tps : Array Json) :
     M (List (String × Binding)) := do
-  let names ← tps.toList.mapM fun p => (str p "name" : Except String String)
+  let tps ← expandedSourceParameters tps
+  let names ← sourceNames tps
   let ctx : Ctx := { binders := scope, site := path, source := true }
   let items := (mentions names (unitTerms node)).filter fun it => match it with
     | .binder n => (scope.lookup n).isSome
@@ -55,7 +78,8 @@ is decided where the unit or closure is checked (`EquationStore.rebind`). A
 name used as an argument pack is a placeholder of that kind. -/
 def bindNames (scope : List (String × Binding)) (bounds : List (Tree × Union)) (node : Json)
     (tps : Array Json) : M (List (String × Binding) × List (Tree × Union)) := do
-  let names ← tps.toList.mapM fun p => (str p "name" : Except String String)
+  let tps ← expandedSourceParameters tps
+  let names ← sourceNames tps
   let bound ← names.mapM fun n => do
     let pack := (binderUse n node).pack
     return (n, (⟨pack, [← placeholder n (if pack then .arguments else .value)]⟩ : Binding))
@@ -105,7 +129,7 @@ partial def walk (path : String) (scope : List (String × Binding)) (bounds : Li
         let .arr values := value | throw s!"{here}: type arguments are a list"
         for (v, i) in values.toList.zipIdx do
           out := out ++ [(s!"{here}/{i}", ← lowerType { ctx with site := s!"{here}/{i}" } v)]
-      else out := out ++ (← walk here scope bounds value)
+      else if name != "resolution" then out := out ++ (← walk here scope bounds value)
     return out
   | _ => return []
 

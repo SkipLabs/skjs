@@ -232,9 +232,15 @@ did not mention grow it, and the request carries the result. -/
       first := store
     let entry ← emit .nul (.effect first) inputs [Labels.nul]
     return (inputs, R, entry)
-  return ⟨⟨built.types, built.program, built.claims, R, entry.label, inputs, built.codes⟩,
-    built.obligations, built.source.sourceMap, built.source.assertions, built.source.cuts, built.hints, built.codeSources,
-    built.nodePlans⟩
+  return {
+    toRequest := ⟨built.types, built.program, built.claims, R, entry.label, inputs, built.codes⟩
+    obligations := built.obligations
+    sourceMap := built.source.sourceMap
+    assertions := built.source.assertions
+    cuts := built.source.cuts
+    hints := built.hints
+    codeSources := built.codeSources
+    nodePlans := built.nodePlans }
 
 end
 

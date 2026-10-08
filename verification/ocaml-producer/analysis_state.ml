@@ -44,6 +44,7 @@ type t = {
   assumed: (Json.t * ty) list;
   env0: env;
   rigid_bounds: (Semantic.rigid * ty) list ref;
+  resolution_parameters: Semantic.quantifier list;
   writes: (Json.t * ty) list ref;
   typing_roots: (string * Execution.plan * env) list ref;
   executions: (string * Json.t, Execution.plan) Hashtbl.t;
@@ -56,12 +57,14 @@ type t = {
 let create diagnostics flows offered declarations module_functions bounds assumed (f:Source.fn) =
   let flows=List.map (fun (g:Flow.graph) -> {g with Flow.nodes=Array.copy g.Flow.nodes}) flows in
   let executions = Hashtbl.create 128 and expression_hints = Hashtbl.create 128 in
+  let resolution_parameters = ref f.quantified in
   List.iter (fun (graph:Flow.graph) -> Array.iter (fun (node:Flow.node) ->
     List.iter (fun (source,plan) -> Hashtbl.replace executions (node.Flow.point,source) plan)
       node.Flow.executions) graph.Flow.nodes) flows;
   let rec register_expression (e:Source.expr) =
     Hashtbl.replace expression_hints e.pos e;
     (match e.node with
+     | Lambda (_,quantified,_,_,_,_,_) -> resolution_parameters := quantified @ !resolution_parameters
      | NullishAssign (name,source,_) ->
        Hashtbl.replace expression_hints source {pos=source;node=Id name}
      | _ -> ());
@@ -70,7 +73,8 @@ let create diagnostics flows offered declarations module_functions bounds assume
   let env0 = List.map (fun (n,t) ->
     n,if List.exists (assigns n) f.body then cell t else Value (arms declarations t)) f.params in
   { diagnostics; flows; offered; declarations; module_functions; assumed; env0;
-    executions; expression_hints; rigid_bounds=ref bounds; writes=ref [];
+    executions; expression_hints; rigid_bounds=ref bounds;
+    resolution_parameters = !resolution_parameters; writes=ref [];
     typing_roots=ref []; block_result=ref (Some f.result);
     block_returned=ref (ref []); following=Hashtbl.create 64;
     local=ref { entries=[]; expressions=[]; instantiations=[]; current_point="";
@@ -130,6 +134,8 @@ module Access (S : sig val state : t end) = struct
   let current_point () = (!local).current_point
   let rigid_bounds () = !(state.rigid_bounds)
   let rigid_bound r = List.assoc_opt r (rigid_bounds ())
+  let owned_resolution r = List.find_map (fun (q:Semantic.quantifier) ->
+    if q.identity=r then q.resolution else None) state.resolution_parameters
   let field_type declarations seen t key = Type_queries.field_type (rigid_bounds ()) declarations seen t key
   let index_type declarations seen t key = Type_queries.index_type (rigid_bounds ()) declarations seen t key
   let module_names = List.map fst state.module_functions

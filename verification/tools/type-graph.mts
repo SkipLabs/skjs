@@ -136,7 +136,8 @@ export type Row<L = number> = Clause<L>[];
  * (`POSITIVE-TYPES.md`, "Parameter and scheme rows"). */
 export type ParamRow = { kind: "value" | "arguments"; name: string; param: number };
 export type SchemeRow<L = number> = { scheme: { binders: L[]; signatures: Arrow<L>[];
-  bounds?: [binder: L, bound: Labels<L>][]; variadic?: RestArrow<L>[] } };
+  bounds?: [binder: L, bound: Labels<L>][]; variadic?: RestArrow<L>[];
+  resolution?: { input: number; observation: number; result: number }[] } };
 export type MeetRow = { meet: number; clauses: Row };
 export type GraphRow = Row | ParamRow | SchemeRow | MeetRow;
 export type TypeGraph = GraphRow[];
@@ -442,7 +443,7 @@ export function decodeGraph(value: unknown): TypeGraph {
     }
     if (isRecord(row) && "scheme" in row) {
       const r = objOptional(obj(row, ["scheme"]).scheme, ["binders", "signatures"],
-        ["bounds", "variadic"]);
+        ["bounds", "variadic", "resolution"]);
       array(r.binders).forEach((b) => labels([b]));
       arrows(r.signatures);
       if ("bounds" in r)
@@ -453,6 +454,19 @@ export function decodeGraph(value: unknown): TypeGraph {
           labels(pair[1]);
         });
       if ("variadic" in r) variadic(r.variadic);
+      if ("resolution" in r) {
+        const owned = new Set<number>();
+        const binders = array(r.binders);
+        for (const group of array(r.resolution)) {
+          const slots = obj(group, ["input", "observation", "result"]);
+          for (const slot of [slots.input, slots.observation, slots.result]) {
+            if (typeof slot !== "number" || !Number.isSafeInteger(slot) || slot < 0 ||
+                slot >= binders.length || owned.has(slot))
+              throw Error("resolution slots must be distinct binder positions");
+            owned.add(slot);
+          }
+        }
+      }
       return;
     }
     clauses(row);
@@ -560,7 +574,8 @@ export function rowText(row: GraphRow): string {
   if ("meet" in row)
     return `#${row.meet} & (${row.clauses.length ? row.clauses.map(clauseText).join(" | ") : "never"})`;
   if ("scheme" in row)
-    return `∀ ${row.scheme.binders.map((b) => `#${b}`).join(", ")}. calls[${[
+    return `∀ ${row.scheme.binders.map((b) => `#${b}`).join(", ")}${
+      (row.scheme.resolution ?? []).map(s => ` resolve(${s.input}, ${s.observation}, ${s.result})`).join("")}. calls[${[
       ...row.scheme.signatures.map(arrowText),
       ...(row.scheme.variadic ?? []).map(restArrowText)].join("; ")}]`;
   return row.length ? row.map(clauseText).join(" | ") : "never";

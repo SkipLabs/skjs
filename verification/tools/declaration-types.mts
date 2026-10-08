@@ -17,6 +17,14 @@ export type DeclarationIdentity = {
 /** A property key: a string, or the symbol a `unique symbol` constant
  * denotes, by its index in the document's `symbols`. */
 export type PropertyKey = string | { symbol: number };
+/** A source parameter owns the two hidden projections of its resolution
+ * descriptor. Their names are lexical binders, never source type arguments. */
+export type ResolutionSlots = { observation: string; result: string };
+export type SourceTypeParameter<T> = {
+  name: string;
+  bound: T | null;
+  resolution: ResolutionSlots | null;
+};
 /** A name the client binds to a declaration: an imported name (the span is
  * the import declaration's), one of the client's own declarations, or a
  * global the client names without importing it, such as the standard
@@ -74,8 +82,8 @@ export type TypeTerm =
    * signatures name as `binder` terms by spelling, and its signatures, each
    * with the containing declaration as receiver. A bound or default is stated
    * as written; which bounds are admitted is the reader's decision. */
-  | { k: "scheme"; binders: { name: string; bound: TypeTerm | null; default: TypeTerm | null;
-      span: Span }[]; signatures: Extract<TypeTerm, { k: "function" }>[]; span: Span }
+  | { k: "scheme"; binders: (SourceTypeParameter<TypeTerm> & { default: TypeTerm | null;
+      span: Span })[]; signatures: Extract<TypeTerm, { k: "function" }>[]; span: Span }
   /** A value with call or construct code, of which no signature is known:
    * the meaning of the standard library's `Function` (PROGRAM-TYPING.md,
    * "Library types"). Nothing may be called or constructed through it. */
@@ -113,7 +121,7 @@ export type ValueRoot = {
   declaration: DeclarationIdentity;
   construct: boolean;
   /** A generic declaration's binders, which `type` names as `binder` terms. */
-  typeParams: { name: string; bound: TypeTerm | null }[];
+  typeParams: SourceTypeParameter<TypeTerm>[];
   type: TypeTerm;
 };
 export type DeclarationDocument = {

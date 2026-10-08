@@ -29,7 +29,7 @@ private partial def exprSitesCore (includeBodies : Bool) : Fragment.Expr → Sit
     if !includeBodies then ([],[p],[p]) else
     defaults.attach.foldl (fun acc ⟨d,_⟩ => joinSites acc (exprSitesCore includeBodies d.2))
       (joinSites ([],[p],[p]) (exprSitesCore includeBodies e))
-  | .shapeTest p _ _ e | .not p e | .unary p _ e | .cast p _ e | .read p _ e => joinSites ([],[p],[]) (exprSitesCore includeBodies e)
+  | .resolution p _ _ e | .shapeTest p _ _ e | .not p e | .unary p _ e | .cast p _ e | .read p _ e => joinSites ([],[p],[]) (exprSitesCore includeBodies e)
   | .alloc p _ es | .build p _ es => es.foldl (fun acc a => joinSites acc (exprSitesCore includeBodies a)) ([],[p],[])
   | .withValue p a b _ _ | .write p _ a b | .singletonTest p _ _ _ a b | .equality p _ a b | .coalesce p a b | .logical p _ a b => joinSites ([],[p],[]) (joinSites (exprSitesCore includeBodies a) (exprSitesCore includeBodies b))
   -- An assignment is an expression site, and the name it assigns is not one:

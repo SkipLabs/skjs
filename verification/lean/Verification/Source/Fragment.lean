@@ -1,4 +1,6 @@
 import Verification.Types.CellUnion
+-- ResolutionWire.lean reads resolution slots and operations on the wire; without it the fragment cannot represent a resolution-qualified binder.
+import Verification.Source.ResolutionWire
 
 /-! # The fragment language
 
@@ -455,16 +457,27 @@ binders; the source decoder that consumes the expression checks that scope. -/
 structure TypeParam where
   name : String
   bound : Option Json
+  resolution : Option ResolutionWire.Slots
 
 def decodeTypeParam (j : Json) : Except String TypeParam := do
-  fieldsExactly j ["name", "bound"]
+  fieldsExactly j ["name", "bound", "resolution"]
   let name ← jStr (← jField j "name")
   if name.isEmpty then throw "empty type-parameter name"
   let b ← jField j "bound"
-  return ⟨name, if b == Json.null then none else some b⟩
+  let r ← jField j "resolution"
+  let resolution ← if r == .null then pure none else some <$> fromJson? r
+  ResolutionWire.validateOwnership [(name, resolution)]
+  return ⟨name, if b == Json.null then none else some b, resolution⟩
+
+def decodeTypeParams (raw : List Json) : Except String (List TypeParam) := do
+  let parameters ← raw.mapM decodeTypeParam
+  ResolutionWire.validateOwnership (parameters.map fun p => (p.name, p.resolution))
+  return parameters
 
 mutual
 inductive Expr where
+  /-- A checked descriptor operation retains its owning source binder. -/
+  | resolution (pos : Span) (operation : ResolutionWire.Operation) (binder : Option String) (e : Expr)
   | var (pos : Span) (name : String)
   | lit (pos : Span) (v : Claim.Val)
   | logical (pos : Span) (andOp : Bool) (left right : Expr)
@@ -678,7 +691,7 @@ partial def Expr.freeNames : Expr → List String
     -- An ordinary function binds its own `this`; an arrow captures it.
     ((ds.flatMap fun d => d.2.freeNames) ++ b.freeNames).filter
       (fun n => !(ps.map Prod.fst).contains n && (receiver.isNone || n != "this"))
-  | .shapeTest _ _ _ e | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .ctor _ e => e.freeNames
+  | .resolution _ _ _ e | .shapeTest _ _ _ e | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .ctor _ e => e.freeNames
   | .construct _ f args _ => f.freeNames ++ args.flatMap Expr.freeNames
   | .alloc _ _ es | .build _ _ es | .arrayLit _ es => es.flatMap Expr.freeNames
   | .logical _ _ a b | .coalesce _ a b | .equality _ _ a b
@@ -709,7 +722,7 @@ partial def Expr.callees : Expr → List (Span × Span × String × List Json)
   | .lambda _ _ _ ps ds _ _ b =>
     ((ds.flatMap fun d => d.2.callees) ++ b.callees).filter
       (fun c => !(ps.map Prod.fst).contains c.2.2.1)
-  | .shapeTest _ _ _ e | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .ctor _ e => e.callees
+  | .resolution _ _ _ e | .shapeTest _ _ _ e | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .ctor _ e => e.callees
   | .construct p f args ts =>
     (match f with | .var q n => [(p, q, n, ts)] | _ => []) ++ f.callees ++ args.flatMap Expr.callees
   | .alloc _ _ es | .build _ _ es | .arrayLit _ es => es.flatMap Expr.callees
@@ -830,6 +843,7 @@ abbrev Expr.lam (p : Span) (name : String) (arg result : Json) (body : Expr) : E
 abbrev Expr.app (p : Span) (callee arg : Expr) : Expr := .call p callee [arg] [] []
 
 def Expr.span : Expr → Span
+  | .resolution p _ _ _ => p
   | .ifBody p _ _ _ | .equality p _ _ _ | .singletonTest p _ _ _ _ _ | .coalesce p _ _ | .logical p _ _ _ => p
   | .index p _ _ _ | .indexWrite p _ _ _ _ | .arith p _ _ _ | .update p _ _ _ _ | .logicalAssign p _ _ _ => p
   | .comma p _ _ | .inKeys p _ _ | .optional p _ _ _ | .block p _ => p
@@ -973,6 +987,15 @@ mutual
 partial def decodeExpr (j : Json) : Except String Expr := do
   let p ← jSpan j "pos"
   match ← jStr (← jField j "k") with
+  | "resolution" =>
+    fieldsExactly j ["k", "pos", "operation", "binder", "e"]
+    let rawBinder ← jField j "binder"
+    let binder ← if rawBinder == .null then pure none else do
+      let name ← jStr rawBinder
+      if name.isEmpty then throw "empty qualified resolution binder"
+      pure (some name)
+    return .resolution p (← fromJson? (← jField j "operation")) binder
+      (← decodeExpr (← jField j "e"))
   | "id" => return .var p (← jStr (← jField j "name"))
   -- No declaration can bind the name `this`, so it names the receiver slot.
   | "this" =>
@@ -1199,7 +1222,7 @@ partial def decodeExpr (j : Json) : Except String Expr := do
           | r => do
             fieldsExactly r ["type","strict"]
             pure (some (← jField r "type", ← (← jField r "strict").getBool?))
-        pure ((← (← raw.getArr?).toList.mapM decodeTypeParam), receiver)
+        pure ((← decodeTypeParams (← raw.getArr?).toList), receiver)
       | none => do
         fieldsExactly j ["k","pos","params","result","body"]
         pure ([], none)
@@ -1353,7 +1376,7 @@ end
 
 
 def decodeFn (j : Json) : Except String (Fn × List TypeParam) := do
-  let typeParams ← (← jArr j "typeParams").mapM decodeTypeParam
+  let typeParams ← decodeTypeParams (← jArr j "typeParams")
   return (⟨← jStr (← jField j "name"), ← jSpan j "namePos",
     ← (← jArr j "params").mapM (fun p => do
       let rest ← match (p.getObjVal? "rest").toOption with

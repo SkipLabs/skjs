@@ -231,11 +231,12 @@ theorem checkHandlerUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Ins
 
 @[nospecialize] def checkNodeResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (Rty : Ty ι)
     (P : Program) (C : Certificate ι) (node : Node) (c : NodeEvidence ι)
-    (codes : CodeEntry ι → Bool := fun _ => false) : CheckResult ι Unit :=
+    (codes : CodeEntry ι → Bool := fun _ => false)
+    (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images) : CheckResult ι Unit :=
   (CheckResult.ofBool (decide ((claim c.expression).term = node.expression))).bind fun _ =>
   (checkHandlerResult G images P C node c).bind fun _ =>
   (CheckResult.ofBool (checkScope (entry c).length node.expression)).bind fun _ =>
-  ((HeapExpressionRules.checkStepResult G images (claim c.expression) c.knowledge
+  ((checker.run (claim c.expression) c.knowledge
     (c.effect.getD (.ordinary c.expression)) codes).expect c.output).bind fun _ =>
   match node.continuation, c.edges with
   | .ret, [] => CheckResult.ofBool (decide (result c = Rty))
@@ -256,18 +257,20 @@ theorem checkHandlerUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Ins
 
 @[nospecialize] def checkNodeUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (Rty : Ty ι)
     (P : Program) (C : Certificate ι) (node : Node) (c : NodeEvidence ι)
-    (codes : CodeEntry ι → Bool := fun _ => false) : Bool :=
-  (checkNodeResult G images Rty P C node c codes).accepted
+    (codes : CodeEntry ι → Bool := fun _ => false)
+    (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images) : Bool :=
+  (checkNodeResult (checker := checker) G images Rty P C node c codes).accepted
 
 theorem checkNodeUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (Rty : Ty ι)
     (P : Program) (C : Certificate ι) (node : Node) (c : NodeEvidence ι)
-    (codes : CodeEntry ι → Bool) :
-    checkNodeUsing G images Rty P C node c codes = (
+    (codes : CodeEntry ι → Bool)
+    (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images) :
+    checkNodeUsing (checker := checker) G images Rty P C node c codes = (
   decide ((claim c.expression).term = node.expression) &&
   checkHandlerUsing G images P C node c &&
   checkScope (entry c).length node.expression &&
-  decide (HeapExpressionRules.checkStepUsing G images (claim c.expression) c.knowledge
-    (c.effect.getD (.ordinary c.expression)) codes = some c.output) &&
+  decide ((checker.run (claim c.expression) c.knowledge
+    (c.effect.getD (.ordinary c.expression)) codes).value = some c.output) &&
   match node.continuation, c.edges with
   | .ret, [] => decide (result c = Rty)
   | .bind l, [p] => checkTargetUsing G images P C (result c :: entry c) l p c.output
@@ -284,7 +287,7 @@ theorem checkNodeUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Instan
   ) := by
   simp only [checkNodeUsing, checkNodeResult, CheckResult.accepted_bind,
     CheckResult.accepted_ofBool, CheckResult.accepted_expect, checkHandlerUsing,
-    HeapExpressionRules.checkStepUsing, Bool.and_assoc]
+    Bool.and_assoc]
   congr 1
   cases node.continuation <;> cases c.edges <;>
     (try (rename_i p ps; cases ps <;> (try (rename_i q qs; cases qs)))) <;>
@@ -293,24 +296,27 @@ theorem checkNodeUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Instan
 
 /-- Enumeration comes from the program, not a certificate-supplied edge list. -/
 @[nospecialize] def checkGraphResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (Rty : Ty ι)
-    (P : Program) (C : Certificate ι) (codes : CodeEntry ι → Bool := fun _ => false) : CheckResult ι Unit :=
+    (P : Program) (C : Certificate ι) (codes : CodeEntry ι → Bool := fun _ => false)
+    (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images) : CheckResult ι Unit :=
   (CheckResult.ofBool (decide (P.length = C.length))).bind fun _ =>
   (CheckResult.all (List.range P.length) fun l =>
     match P[l]?, C[l]? with
-    | some node, some c => (checkNodeResult G images Rty P C node c codes).at (.node l)
+    | some node, some c => (checkNodeResult (checker := checker) G images Rty P C node c codes).at (.node l)
     | _, _ => failure).bind fun _ =>
   CheckResult.ofBool (P.all (fun node => ObjectCoherence.sourceTerm node.expression))
 
 @[nospecialize] def checkGraphUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (Rty : Ty ι)
-    (P : Program) (C : Certificate ι) (codes : CodeEntry ι → Bool := fun _ => false) : Bool :=
-  (checkGraphResult G images Rty P C codes).accepted
+    (P : Program) (C : Certificate ι) (codes : CodeEntry ι → Bool := fun _ => false)
+    (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images) : Bool :=
+  (checkGraphResult (checker := checker) G images Rty P C codes).accepted
 
 theorem checkGraphUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (Rty : Ty ι)
-    (P : Program) (C : Certificate ι) (codes : CodeEntry ι → Bool) :
-    checkGraphUsing G images Rty P C codes = (
+    (P : Program) (C : Certificate ι) (codes : CodeEntry ι → Bool)
+    (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images) :
+    checkGraphUsing (checker := checker) G images Rty P C codes = (
   decide (P.length = C.length) && (List.range P.length).all (fun l =>
     match P[l]?, C[l]? with
-    | some node, some c => checkNodeUsing G images Rty P C node c codes
+    | some node, some c => checkNodeUsing (checker := checker) G images Rty P C node c codes
     | _, _ => false) && P.all (fun node => ObjectCoherence.sourceTerm node.expression)
   ) := by
   simp only [checkGraphUsing, checkGraphResult, CheckResult.accepted_bind,
@@ -383,8 +389,9 @@ theorem handler_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIm
     exact ⟨T, _, hc.1, target_sound hc.2, fun v h' => handlerFacts_holds hk v h'⟩
   · contradiction
 
-theorem node_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {Rty P C node c}
-    {codes : CodeEntry ι → Bool} (hc : checkNodeUsing G images Rty P C node c codes = true)
+theorem node_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+    {checker : HeapExpressionRules.Checker G images} {Rty P C node c}
+    {codes : CodeEntry ι → Bool} (hc : checkNodeUsing (checker := checker) G images Rty P C node c codes = true)
     (hcodes : CodesSound G codes := by exact Verification.ProgramCertificates.codesSound_none _) :
     ExpressionOk G c node.expression ∧
     ContinuationOk G Rty C (entry c) (result c) c.output node.continuation ∧
@@ -392,7 +399,7 @@ theorem node_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImage
   simp only [checkNodeUsing_eq, Bool.and_eq_true, decide_eq_true_eq] at hc
   refine ⟨?_, ?_, fun ρ h hk => handler_sound hc.1.1.1.2 hk⟩
   · intro n W h ρ he hf hw hh
-    have ht := HeapExpressionRules.checkStep_sound hc.1.2 hcodes he hf hw hh
+    have ht := checker.sound hc.1.2 hcodes he hf hw hh
     simpa only [entry, result, hc.1.1.1.1] using ht
   · have hk := hc.2
     split at hk <;> (try (rename_i hcont hedges; rw [hcont]))
@@ -407,8 +414,9 @@ theorem node_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImage
       exact ⟨branch_target_sound hk.1, branch_target_sound hk.2⟩
     · contradiction
 
-theorem graph_node [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {Rty P C c} {l : Nat}
-    {codes : CodeEntry ι → Bool} (hg : checkGraphUsing G images Rty P C codes = true)
+theorem graph_node [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+    {checker : HeapExpressionRules.Checker G images} {Rty P C c} {l : Nat}
+    {codes : CodeEntry ι → Bool} (hg : checkGraphUsing (checker := checker) G images Rty P C codes = true)
     (hcodes : CodesSound G codes) (hc : C[l]? = some c) :
     ∃ node : Node, P[l]? = some node ∧ ExpressionOk G c node.expression ∧
       ContinuationOk G Rty C (entry c) (result c) c.output node.continuation ∧
@@ -450,8 +458,9 @@ theorem branch_target_state [DecidableEq ι] {G : NormalGraph ι} {Rty C Γ q l 
 /-- One checked graph transition preserves the point assertions. Keeping this
 step lemma separate lets additional postconditions reuse exactly the same
 control-flow and handler reasoning as ordinary safety. -/
-theorem state_progress [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {Rty P C}
-    {codes : CodeEntry ι → Bool} (hg : checkGraphUsing G images Rty P C codes = true)
+theorem state_progress [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+    {checker : HeapExpressionRules.Checker G images} {Rty P C}
+    {codes : CodeEntry ι → Bool} (hg : checkGraphUsing (checker := checker) G images Rty P C codes = true)
     (hcodes : CodesSound G codes)
     {n W h s} (hw : WorldAdm W) (hh : HeapOk (n+1) W h)
     (hs : StateOk G Rty C (n+1) W h s) :
@@ -527,8 +536,9 @@ theorem state_progress [DecidableEq ι] {G : NormalGraph ι} {images : InstanceI
 
 
 /-- Global safety is by execution budget, not by acyclicity or graph unfolding. -/
-theorem state_safe [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {Rty P C}
-    {codes : CodeEntry ι → Bool} (hg : checkGraphUsing G images Rty P C codes = true)
+theorem state_safe [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+    {checker : HeapExpressionRules.Checker G images} {Rty P C}
+    {codes : CodeEntry ι → Bool} (hg : checkGraphUsing (checker := checker) G images Rty P C codes = true)
     (hcodes : CodesSound G codes) :
     ∀ n W h s, WorldAdm W → HeapOk n W h → StateOk G Rty C n W h s →
       SafeGraph P (meaning G Rty) n W h s := by
@@ -542,8 +552,9 @@ theorem state_safe [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImage
     · exact .inr ⟨U,h',s',hx,hu,st,hok,ih U h' s' hu hok hs'⟩
 
 /-- Safety from any checked entry and concrete environment meeting its claim. -/
-theorem accepted_entry_safe [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {Rty P C l c}
-    {codes : CodeEntry ι → Bool} (hg : checkGraphUsing G images Rty P C codes = true)
+theorem accepted_entry_safe [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+    {checker : HeapExpressionRules.Checker G images} {Rty P C l c}
+    {codes : CodeEntry ι → Bool} (hg : checkGraphUsing (checker := checker) G images Rty P C codes = true)
     (hcodes : CodesSound G codes) (hc : C[l]? = some c)
     (n W h ρ) (he : EnvOk G (entry c) ρ n W) (hf : HeapKnowledge.Holds c.knowledge ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafeGraph P (meaning G Rty) n W h (.at l ρ) :=
@@ -552,22 +563,25 @@ theorem accepted_entry_safe [DecidableEq ι] {G : NormalGraph ι} {images : Inst
 /-- The external input contract is independent of the supplied point claims. -/
 @[nospecialize] def checkEntryResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (Rty : Ty ι)
     (P : Program) (C : Certificate ι) (start : Nat) (inputs : List (Ty ι))
-    (codes : CodeEntry ι → Bool := fun _ => false) : CheckResult ι Unit :=
-  (checkGraphResult G images Rty P C codes).bind fun _ =>
+    (codes : CodeEntry ι → Bool := fun _ => false)
+    (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images) : CheckResult ι Unit :=
+  (checkGraphResult (checker := checker) G images Rty P C codes).bind fun _ =>
   match C[start]? with
   | some c => CheckResult.ofBool (decide (entry c = inputs ∧ c.knowledge = ⟨[],[],[]⟩))
   | none => failure
 
 @[nospecialize] def checkEntryUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (Rty : Ty ι)
     (P : Program) (C : Certificate ι) (start : Nat) (inputs : List (Ty ι))
-    (codes : CodeEntry ι → Bool := fun _ => false) : Bool :=
-  (checkEntryResult G images Rty P C start inputs codes).accepted
+    (codes : CodeEntry ι → Bool := fun _ => false)
+    (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images) : Bool :=
+  (checkEntryResult (checker := checker) G images Rty P C start inputs codes).accepted
 
 theorem checkEntryUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (Rty : Ty ι)
     (P : Program) (C : Certificate ι) (start : Nat) (inputs : List (Ty ι))
-    (codes : CodeEntry ι → Bool) :
-    checkEntryUsing G images Rty P C start inputs codes = (
-  checkGraphUsing G images Rty P C codes && match C[start]? with
+    (codes : CodeEntry ι → Bool)
+    (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images) :
+    checkEntryUsing (checker := checker) G images Rty P C start inputs codes = (
+  checkGraphUsing (checker := checker) G images Rty P C codes && match C[start]? with
     | some c => decide (entry c = inputs ∧ c.knowledge = ⟨[],[],[]⟩)
     | none => false
   ) := by
@@ -575,8 +589,9 @@ theorem checkEntryUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Insta
   congr 1
   cases C[start]? <;> simp only [CheckResult.accepted_ofBool] <;> rfl
 
-theorem accepted_inputs_safe [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {Rty P C start inputs}
-    {codes : CodeEntry ι → Bool} (hc : checkEntryUsing G images Rty P C start inputs codes = true) (n W h ρ)
+theorem accepted_inputs_safe [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+    {checker : HeapExpressionRules.Checker G images} {Rty P C start inputs}
+    {codes : CodeEntry ι → Bool} (hc : checkEntryUsing (checker := checker) G images Rty P C start inputs codes = true) (n W h ρ)
     (he : EnvOk G inputs ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h)
     (hcodes : CodesSound G codes := by exact Verification.ProgramCertificates.codesSound_none _) :
     SafeGraph P (meaning G Rty) n W h (.at start ρ) := by

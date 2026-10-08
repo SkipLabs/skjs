@@ -33,7 +33,7 @@ const DOCS = "verification";
 
 /** A rule-bearing inductive: the acceptance language the docs describe. */
 const DECLARATIONS: readonly { type: string; file: string; what: string }[] = [
-  { type: "HasTyUsing", file: "Programs/ProgramTyping.lean", what: "typing rules" },
+  { type: "HasTyWith", file: "Programs/ProgramTyping.lean", what: "typing rules" },
   { type: "Rule", file: "Programs/ProgramCertificates.lean", what: "evidence rules" },
   {
     type: "ArrowCert",
@@ -82,8 +82,11 @@ function declarationBody(text: string, name: string): string[] {
     new RegExp(`^inductive ${name}\\b`).test(l),
   );
   assert.notEqual(start, -1, `no \`inductive ${name}\` to read`);
+  // A header may continue over several lines; the body follows its `where`.
+  let header = start;
+  while (header < lines.length && !/\bwhere\s*$/.test(lines[header])) header++;
   const body: string[] = [];
-  for (const line of lines.slice(start + 1)) {
+  for (const line of lines.slice(header + 1)) {
     if (line.trim() === "") continue;
     if (!/^\s/.test(line)) break;
     body.push(line);

@@ -9,6 +9,40 @@ type instantiation = {
   result: ty;
 }
 
+(* Descriptor images are candidates tied to one input and one checked finite
+   construction. Hidden projections never become independent solver variables. *)
+let resolution_instance ~native ~expand ~owned input =
+  let rec describe seen input = match input with
+    | Rigid r -> (match owned r with
+      | Some (observation,result) -> Rigid observation,Rigid result,BinderResolution r.spelling
+      | None -> input,input,StableResolution)
+    | Union inputs -> arms seen inputs
+    | Atoms (_::_::_ as atoms) -> arms seen (List.map (fun atom -> Atoms [atom]) atoms)
+    | Atoms [Named (id,[payload])] when native id ->
+      let _,result,child = describe seen payload in
+      payload,result,NativeResolution child
+    | Atoms [Named (id,_)] when not (List.mem id seen) -> (match expand input with
+      | Some body when body<>input ->
+        let observation,result,certificate = describe (id::seen) body in
+        (match certificate with StableResolution -> input,input,certificate
+          | _ -> observation,result,certificate)
+      | _ -> input,input,StableResolution)
+    | Atoms _ | Meet _ -> input,input,StableResolution
+  and arms seen inputs =
+    let descriptors = List.map (describe seen) inputs in
+    List.fold_left union (Atoms []) (List.map (fun (o,_,_) -> o) descriptors),
+    List.fold_left union (Atoms []) (List.map (fun (_,r,_) -> r) descriptors),
+    UnionResolution (List.map (fun (_,_,certificate) -> certificate) descriptors) in
+  describe [] input
+
+let qualify_substitution ~native ~expand ~owned quantified solution =
+  List.map (fun (identity,argument) ->
+    match List.find_opt (fun (q:quantifier) -> q.identity=identity) quantified,argument with
+    | Some {resolution=Some (o,r);_},ValueArgument input ->
+      let observation,result,certificate = resolution_instance ~native ~expand ~owned input in
+      identity,ResolutionArgument (input,(o,observation),(r,result),certificate)
+    | _,_ -> identity,argument) solution
+
 let unsupported s = Json.fail ("unsupported: " ^ s)
 
 (* [meet] rebuilds an intersection of a declaration's equation (`Meet`) once
@@ -17,8 +51,12 @@ let unsupported s = Json.fail ("unsupported: " ^ s)
 let rec substitute ?meet solution = function
   | Rigid identity as original ->
     (match List.assoc_opt identity solution with
-    | None -> original
+    | None -> Option.value (List.find_map (fun (_,argument) -> match argument with
+        | ResolutionArgument (_, (o,observation), (r,result), _) ->
+          if identity=o then Some observation else if identity=r then Some result else None
+        | ValueArgument _ | PackArgument _ -> None) solution) ~default:original
     | Some (ValueArgument t) -> t
+    | Some (ResolutionArgument (input,_,_,_)) -> input
     | Some (PackArgument _) -> unsupported ("pack substitution used as a value type: " ^ identity.spelling))
   | Atoms atoms -> Atoms (List.map (substitute_atom ?meet solution) atoms)
   | Union types -> List.fold_left union (Atoms []) (List.map (substitute ?meet solution) types)
@@ -40,7 +78,7 @@ and substitute_pack ?meet solution = function
     (match List.assoc_opt identity solution with
     | None -> original
     | Some (PackArgument p) -> p
-    | Some (ValueArgument _) -> unsupported ("value substitution used as an argument pack: " ^ identity.spelling))
+    | Some (ValueArgument _ | ResolutionArgument _) -> unsupported ("value substitution used as an argument pack: " ^ identity.spelling))
   | Pack sequence -> Pack (substitute_sequence ?meet solution sequence)
 and substitute_sequence ?meet solution sequence = {
   sequence with
@@ -50,6 +88,9 @@ and substitute_sequence ?meet solution sequence = {
 and substitute_argument ?meet solution = function
   | ValueArgument t -> ValueArgument (substitute ?meet solution t)
   | PackArgument p -> PackArgument (substitute_pack ?meet solution p)
+  | ResolutionArgument (input,(o,observation),(r,result),certificate) ->
+    ResolutionArgument (substitute ?meet solution input,
+      (o,substitute ?meet solution observation),(r,substitute ?meet solution result),certificate)
 and substitute_shape ?meet solution shape = {
   fields=List.map (fun field -> {field with
     read=substitute ?meet solution field.read;
@@ -64,7 +105,7 @@ and substitute_shape ?meet solution shape = {
 and substitute_signature ?meet solution signature =
   (* A nested quantifier shadows only its own identities. Outer solutions still
      pass through the nested scheme's bounds and body. *)
-  let local = List.map (fun q -> q.identity) signature.quantified in
+  let local = List.concat_map quantifier_identities signature.quantified in
   let solution = List.filter (fun (identity,_) -> not (List.mem identity local)) solution in
   { signature with quantified=List.map (fun q -> {q with
       bound=Option.map (substitute_argument ?meet solution) q.bound;
@@ -116,7 +157,8 @@ let upper_candidate = function
 
 (* [expand] gives a declaration's equation, to compare a class instance with
    the interface application a signature names (`new () => Mapper<K, V, K2, V2>`). *)
-let infer ?receiver ?expected ?(expand = fun _ -> None) (signature:signature) actuals =
+let infer ?receiver ?expected ?(expand = fun _ -> None) ?(native = fun _ -> false)
+    ?(owned = fun _ -> None) (signature:signature) actuals =
   if signature.quantified=[] then unsupported "generic inference requires a quantified signature";
   if signature.rest_pack<>None then unsupported "pack inference requires an argument-list candidate";
   let domains = match signature.variadic with
@@ -208,9 +250,13 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) (signature:signature) ac
       Atoms [Shape {calls=[e];fields=[];indexes=[];elements=None}]
         when a.quantified<>[] && List.length a.quantified=List.length e.quantified
           && List.length a.params=List.length e.params ->
-      let renaming = List.map2 (fun (x:quantifier) (y:quantifier) ->
-        x.identity,ValueArgument (Rigid y.identity)) a.quantified e.quantified in
-      foreign := List.map (fun (q:quantifier) -> q.identity) e.quantified @ !foreign;
+      let renaming = List.concat (List.map2 (fun (x:quantifier) (y:quantifier) ->
+        let hidden = match x.resolution,y.resolution with
+          | Some (xo,xr),Some (yo,yr) -> [xo,ValueArgument (Rigid yo);xr,ValueArgument (Rigid yr)]
+          | None,None -> []
+          | _ -> unsupported "generic signatures have incompatible resolution qualifications" in
+        (x.identity,ValueArgument (Rigid y.identity))::hidden) a.quantified e.quantified) in
+      foreign := List.concat_map quantifier_identities e.quantified @ !foreign;
       let a = substitute_signature renaming {a with quantified=[]} in
       List.iter2 (fun p q -> constrain q p) a.params e.params;
       constrain a.result e.result
@@ -294,7 +340,21 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) (signature:signature) ac
               | _ -> false) atoms
           | Union ts -> List.exists (array_arm depth) ts
           | Rigid _ | Meet _ -> false in
+        (* Inference may receive a native Promise already expanded to its
+           record shape. Its required fields must be present before that arm
+           can contribute payload constraints; Lean checks the full contract. *)
+        let rec native_piece depth id arm = function
+          | Atoms [Named (actual,_)] when actual=id -> true
+          | Atoms [Named _] as t when depth > 0 -> (match expand t with
+              | Some t -> native_piece (depth-1) id arm t | None -> false)
+          | Atoms [Shape actual] -> (match expand arm with
+              | Some (Atoms [Shape expected]) ->
+                List.for_all (fun (f:field) -> f.optional ||
+                  List.exists (fun (g:field) -> g.name=f.name) actual.fields) expected.fields
+              | _ -> false)
+          | _ -> false in
         let heads piece arm = match piece,arm with
+          | _,Atoms [Named (id,_)] when native id -> native_piece 4 id arm piece
           | Atoms [Shape {elements=Some _;_}],_ when open_arm arm -> array_arm 4 arm
           | Atoms [x],Atoms ys when objective x && open_arm arm -> List.exists objective ys
           | Atoms [x],Atoms ys -> List.mem x ys
@@ -360,6 +420,7 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) (signature:signature) ac
   List.iter (fun (q:quantifier) ->
     Option.iter (function
       | ValueArgument t -> constrain (Rigid q.identity) t
+      | ResolutionArgument (input,_,_,_) -> constrain (Rigid q.identity) input
       | PackArgument _ -> unsupported "pack inference requires an argument-list candidate") q.bound) signature.quantified;
   let saturate () =
     let changed = ref true in
@@ -482,5 +543,6 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) (signature:signature) ac
         if identity = q.identity then identity,ValueArgument (substitute substitution default)
         else identity,argument) substitution
     | _ -> substitution) substitution signature.quantified in
+  let substitution = qualify_substitution ~native ~expand ~owned signature.quantified substitution in
   let result = substitute substitution signature.result in
   {substitution;result}

@@ -344,10 +344,10 @@ theorem schemeCoversWith_complete [DecidableEq ι] {G : NormalGraph ι}
   unfold SchemeCoversWith at hc
   split at hc
   · rename_i s s' hs hs'
-    obtain ⟨es, he⟩ := checkClauseWith_complete (R := R) (self := []) hc.2.2.2.2
+    obtain ⟨es, he⟩ := checkClauseWith_complete (R := R) (self := []) hc.2.2.2.2.2
     refine ⟨es, ?_⟩
     simp only [SchemeCoversWith, hs, hs']
-    exact ⟨hc.1, hc.2.1, hc.2.2.1, hc.2.2.2.1, of_decide_eq_true he⟩
+    exact ⟨hc.1, hc.2.1, hc.2.2.1, hc.2.2.2.1, hc.2.2.2.2.1, of_decide_eq_true he⟩
   · exact hc.elim
 
 /-- Declarative quantified coverage up to renaming has checked evidence. -/
@@ -362,11 +362,11 @@ theorem schemeCoversAlpha_complete [DecidableEq ι] {G : NormalGraph ι} {sub : 
   · unfold SchemeRenames at hc
     split at hc
     · rename_i r s s' hs hs'
-      obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9⟩ := hc
-      obtain ⟨es, he⟩ := checkClauseWith_complete (R := R) (self := []) h9
+      obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10⟩ := hc
+      obtain ⟨es, he⟩ := checkClauseWith_complete (R := R) (self := []) h10
       refine ⟨es, .inr ?_⟩
       simp only [SchemeRenames, hs, hs']
-      exact ⟨h1, h2, h3, h4, h5, h6, h7, h8, of_decide_eq_true he⟩
+      exact ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, of_decide_eq_true he⟩
     · exact hc.elim
 
 /-- Declarative clause coverage has checked evidence. -/
@@ -702,19 +702,19 @@ theorem opaqueFamily_complete [DecidableEq ι] {G : NormalGraph ι} {sub : Optio
     · unfold SchemeCoversWith at hc
       split at hc
       · rename_i s s' hs hs'
-        obtain ⟨es, he⟩ := checkClauseWith_complete (R := R) (self := []) hc.2.2.2.2
+        obtain ⟨es, he⟩ := checkClauseWith_complete (R := R) (self := []) hc.2.2.2.2.2
         refine ⟨es, .inr (.inr (.inr (.inr (.inr ⟨j, hj, .inl ?_⟩))))⟩
         simp only [SchemeCoversWith, hs, hs']
-        exact ⟨hc.1, hc.2.1, hc.2.2.1, hc.2.2.2.1, of_decide_eq_true he⟩
+        exact ⟨hc.1, hc.2.1, hc.2.2.1, hc.2.2.2.1, hc.2.2.2.2.1, of_decide_eq_true he⟩
       · exact hc.elim
     · unfold SchemeRenames at hc
       split at hc
       · rename_i r s s' hs hs'
-        obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9⟩ := hc
-        obtain ⟨es, he⟩ := checkClauseWith_complete (R := R) (self := []) h9
+        obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10⟩ := hc
+        obtain ⟨es, he⟩ := checkClauseWith_complete (R := R) (self := []) h10
         refine ⟨es, .inr (.inr (.inr (.inr (.inr ⟨j, hj, .inr ?_⟩))))⟩
         simp only [SchemeRenames, hs, hs']
-        exact ⟨h1, h2, h3, h4, h5, h6, h7, h8, of_decide_eq_true he⟩
+        exact ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, of_decide_eq_true he⟩
       · exact hc.elim
   obtain ⟨es, he⟩ := collect S _ (fun i es es' hm h => by
     rcases h with h | h | h | h | h | ⟨j, hj, hc⟩
@@ -1082,7 +1082,7 @@ theorem mapResultsState_mem (f : β → σ → α × σ) (xs : List β) (state :
       exact ⟨y, List.mem_cons_of_mem x hy, prior, produced⟩
 
 /-- The representation-specific checks, with their semantic obligations:
-the image check of instances, and, for a representation with one, the
+the image and admissibility checks of instances, and, for a representation with one, the
 renaming, the sound entries instances may cite (a representation's computed
 variances) and the verified proposal of `Var` instances. Supplied by
 verified code, never read from a certificate. Bound, kind, signature and
@@ -1091,6 +1091,11 @@ structure InstanceImageCheck [DecidableEq ι] (G : NormalGraph ι) where
   compare : List ι → Instance ι → ComparisonResult Unit
   sound : ∀ bs c, c.instances.length = bs.length → instKinds G bs c.instances = true →
     (compare bs c).accepted = true → ∀ η, InstanceImages G η bs c.instances c.table
+  /-- Admissibility is checked independently of substitution images. -/
+  compareAllowed : SchemeRow ι → Instance ι → ComparisonResult Unit
+  allowed_sound : ∀ s c, (compareAllowed s c).accepted = true → ∀ η,
+    G.domain.allowed s (c.instances.map fun U =>
+      ⟨mixedMeaning G η U, mixedMeaning_valid G η U⟩)
   sub : Option (Renaming G) := none
   base : Base G := {}
   gen : ι → List ι → List (Nat × List (List ι)) := fun _ _ => []
@@ -1102,10 +1107,15 @@ structure InstanceImageCheck [DecidableEq ι] (G : NormalGraph ι) where
     (images : InstanceImageCheck G) (bs : List ι) (c : Instance ι) : Bool :=
   (images.compare bs c).accepted
 
-/-- The original finite closed-table implementation. -/
+/-- Finite closed-table images use the domain's proved ordinary admission law. -/
 @[nospecialize] def finiteInstanceImages [DecidableEq ι] (G : NormalGraph ι) : InstanceImageCheck G where
   compare := fun _ c => ComparisonResult.fromBool (TableOk G c.table c.domain c.free)
   sound := fun _ _ hlen hkinds hok η => table_instanceImages η hlen hkinds (by simpa only [ComparisonResult.accepted_fromBool] using hok)
+  compareAllowed := fun s _ => ComparisonResult.fromBool s.resolution.isEmpty
+  allowed_sound := by
+    intro s c h η
+    apply G.domain.ordinary_allowed
+    exact List.isEmpty_iff.mp (by simpa only [ComparisonResult.accepted_fromBool] using h)
 
 /-- The same check at a reassignment of the graph's parameter rows. Its
 obligation quantifies over every assignment and reads no `env`, so one proof
@@ -1114,6 +1124,8 @@ serves every reassignment (`Parametricity`). -/
     (η : MixedAssignment ι) : InstanceImageCheck (PositiveRules.reassign G η) where
   compare := images.compare
   sound := images.sound
+  compareAllowed := images.compareAllowed
+  allowed_sound := images.allowed_sound
   sub := images.sub.map fun r => r.reassign η
   base := images.base.reassign η
   gen := images.gen
@@ -1596,12 +1608,13 @@ engine. The identity value represents a binder absent from this instance. -/
   | none => (.established empty, state)
   | some U => compare U b.2 state
 
-/-- The instance rule validates kinds, signature images and the representation's
-image table, then asks its enclosing subtype operation to discharge every bound.
-Successful bound comparisons retain their proposal data. -/
+/-- The instance rule validates kinds, signature images, admissibility and the
+representation's image table, then asks its enclosing subtype operation to
+discharge every bound. Successful bound comparisons retain their proposal data. -/
 @[nospecialize] def compareInstArrsState [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (compare : List ι → List ι → σ → ComparisonResult α × σ) (empty : α)
-    (S : List ι) (L : Ops ι) (M : List (RestArrow (List ι))) (c : Instance ι) (state : σ) :
+    (S : List ι) (L : Ops ι) (M : List (RestArrow (List ι))) (c : Instance ι) (state : σ)
+    (admission : SchemeRow ι → Instance ι → ComparisonResult Unit := images.compareAllowed) :
     ComparisonResult (List α) × σ :=
   match S with
   | [i] =>
@@ -1611,7 +1624,7 @@ Successful bound comparisons retain their proposal data. -/
           instKinds G s.binders c.instances &&
           (L.all fun q => s.signatures.any fun p => instSig G c.table (s.binders.zip c.instances) p q) &&
           (M.all fun q => s.variadic.any fun p => instRest G c.table (s.binders.zip c.instances) p q) then
-        match images.compare s.binders c with
+        match (images.compare s.binders c).andThen (fun _ => admission s c) with
         | .established _ =>
           ComparisonResult.collectState (compareBoundState compare empty s.binders c.instances) s.bounds state
         | .notEstablished => (.notEstablished, state)
@@ -1622,12 +1635,17 @@ Successful bound comparisons retain their proposal data. -/
 
 /-- State carried between bound premises affects search reuse, while each
 established premise has its own semantic justification. -/
-theorem compareInstArrsState_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+theorem compareInstArrsState_sound_at [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     {compare : List ι → List ι → σ → ComparisonResult α × σ} {empty S L M c state}
+    {admission : SchemeRow ι → Instance ι → ComparisonResult Unit}
+    (η : MixedAssignment ι)
+    (hadmission : ∀ s c, (admission s c).accepted = true →
+      G.domain.allowed s (c.instances.map fun U =>
+        ⟨mixedMeaning G η U, mixedMeaning_valid G η U⟩))
     (hc : ∀ U V prior, (compare U V prior).1.accepted = true →
-      ∀ η, FamLe (mixedMeaning G η U) (mixedMeaning G η V))
-    (h : (compareInstArrsState G images compare empty S L M c state).1.accepted = true) :
-    ∀ η, FamLe (mixedValues G η S) (mixedSem G η (.arrs L M)) := by
+      FamLe (mixedMeaning G η U) (mixedMeaning G η V))
+    (h : (compareInstArrsState G images compare empty S L M c state admission).1.accepted = true) :
+    FamLe (mixedValues G η S) (mixedSem G η (.arrs L M)) := by
   unfold compareInstArrsState at h
   split at h
   · rename_i i
@@ -1640,21 +1658,39 @@ theorem compareInstArrsState_sound [DecidableEq ι] {G : NormalGraph ι} {images
           simp only [Bool.and_eq_true, Bool.not_eq_true', List.all_eq_true, List.any_eq_true,
             beq_iff_eq] at shape
           obtain ⟨⟨⟨⟨hp, hlen⟩, hkinds⟩, hL⟩, hM⟩ := shape
-          have himg : (images.compare s.binders c).accepted = true := by rw [imagesOk]; rfl
-          intro η n W v hv
-          refine ⟨inst_images_sound η hp hs hlen ?_
+          have checked : ((images.compare s.binders c).andThen
+              (fun _ => admission s c)).accepted = true := by rw [imagesOk]; rfl
+          simp only [ComparisonResult.accepted_andThen, Bool.and_eq_true] at checked
+          have himg := checked.1
+          intro n W v hv
+          refine ⟨inst_images_sound η hp hs hlen (hadmission s c checked.2) ?_
             (images.sound s.binders c hlen hkinds himg η) hL hM n W v hv,
             realmInvariant_of_not_record rfl n W v⟩
           intro b hb U hU
           obtain ⟨prior, checked⟩ := ComparisonResult.collectState_sound _ _ _ h b hb
           unfold compareBoundState at checked
           rw [hU] at checked
-          exact hc U b.2 prior checked η
+          exact hc U b.2 prior checked
         · cases h
         · cases h
       · cases h
     · cases h
   · cases h
+
+/-- Unconditional instance evidence is the special case valid at every
+assignment. The executable instance check is shared with scoped evidence. -/
+theorem compareInstArrsState_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+    {compare : List ι → List ι → σ → ComparisonResult α × σ} {empty S L M c state}
+    (hc : ∀ U V prior, (compare U V prior).1.accepted = true →
+      ∀ η, FamLe (mixedMeaning G η U) (mixedMeaning G η V))
+    (h : (compareInstArrsState G images compare empty S L M c state).1.accepted = true) :
+    ∀ η, FamLe (mixedValues G η S) (mixedSem G η (.arrs L M)) := by
+  intro η
+  exact compareInstArrsState_sound_at η
+    (fun s c hc => images.allowed_sound s c hc η)
+    (fun U V prior h => hc U V prior h η) h
+
+#print axioms compareInstArrsState_sound_at
 
 /-- Quantified instantiation establishes a value, rather than an argument pack. -/
 theorem compareInstArrsState_source [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}

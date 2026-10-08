@@ -158,7 +158,7 @@ def proposeLabels {sig : Signature} (unfold : Unfold) (s : SchemeRow (Label sig)
     (M : List (RestArrow (List (Label sig)))) : Option (List (List (Label sig)) × InstTable (Label sig)) := do
   let tree (U : List (Label sig)) : List Tree := U.map (·.1)
   let s' : SchemeRow Tree := ⟨tree s.binders, s.signatures.map (Arrow.map tree),
-    s.bounds.map (fun (b, U) => (b.1, tree U)), s.variadic.map (RestArrow.map tree)⟩
+    s.bounds.map (fun (b, U) => (b.1, tree U)), s.variadic.map (RestArrow.map tree), s.resolution⟩
   let θ ← unifyScheme unfold s' (L.map (Arrow.map tree)) (M.map (RestArrow.map tree))
   let θs ← s.binders.mapM fun b => ((θ.lookup b.1).getD [b.1]).mapM Label.ofTree?
   let κ : PositiveRules.Ctx (Label sig) := s.binders.zip θs

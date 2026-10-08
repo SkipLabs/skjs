@@ -3,11 +3,25 @@ open Semantic
 let unsupported s = fail ("unsupported: " ^ s)
 let text k j = str (field k j)
 let items k j = list (field k j)
+let resolution_slots scope index j = match field "resolution" j with
+  | Null -> None
+  | Object fields as slots ->
+    if List.sort String.compare (List.map fst fields) <> ["observation";"result"] then
+      fail "invalid resolution slot fields";
+    let slot offset key = {scope;index=3*index+offset;spelling=text key slots} in
+    let observation=slot 1 "observation" and result=slot 2 "result" in
+    if observation.spelling = "" || result.spelling = "" ||
+       observation.spelling = result.spelling ||
+       List.mem (text "name" j) [observation.spelling;result.spelling] then
+      fail "resolution slots must be distinct lexical names";
+    Some (observation,result)
+  | _ -> fail "expected nullable resolution slots"
 (* Where a source type's names resolve. A function annotation reads its
    enclosing binders by spelling; a declaration body reads its own parameters
    by position and its method receiver as the declaration. A reference names
    its declaration by identity. *)
 type type_context = { bindings: (string * type_argument) list;
+                      resolutions: (string * (rigid * (rigid * rigid))) list;
                       owner: string option; positional: rigid list;
                       arity: (string * (int * int)) list;
                       symbolic: (string * (rigid * ty)) list;
@@ -55,7 +69,11 @@ let rec binder_use name = function
     else if get "k" = Some (String "scheme") &&
       (match get "binders" with
       | Some (Array binders) -> List.exists (function
-          | Object binder -> List.assoc_opt "name" binder = Some (String name)
+          | Object binder -> List.assoc_opt "name" binder = Some (String name) ||
+            (match List.assoc_opt "resolution" binder with
+            | Some (Object slots) -> List.exists (fun key ->
+              List.assoc_opt key slots = Some (String name)) ["observation";"result"]
+            | _ -> false)
           | Null | Bool _ | Number _ | String _ | Array _ -> false) binders
       | Some (Null | Bool _ | Number _ | String _ | Object _) | None -> false)
     then false,false
@@ -119,11 +137,17 @@ let rec source_type ctx j =
         | Number n :: _ -> int_of_string n
         | _ -> fail "empty source span" in
       let scope = -1_000_000_000 - start in
-      let identities = List.mapi (fun index b -> {scope;index;spelling=text "name" b}) binders in
+      let identities = List.mapi (fun index b -> {scope;index=3*index;spelling=text "name" b}) binders in
+      let resolutions = List.mapi (resolution_slots scope) binders in
+      let qualified = List.filter_map Fun.id resolutions in
+      if qualified <> [] && List.length binders <> 1 then
+        unsupported "a resolution-qualified scheme has exactly one source parameter";
       let inner = {ctx with bindings =
         List.map (fun (r:rigid) -> r.spelling,
           if List.mem r.spelling packs then PackArgument (PackParameter r)
-          else ValueArgument (Rigid r)) identities @ ctx.bindings} in
+          else ValueArgument (Rigid r)) identities @
+        List.concat_map (fun (observation,result) -> List.map (fun (r:rigid) ->
+          r.spelling,ValueArgument (Rigid r)) [observation;result]) qualified @ ctx.bindings} in
       let pack_bound t = match text "k" t with
         | "array" -> Pack {required=[];optional_elements=[];
             rest=Some (source_type ctx (field "element" t));readonly=false;presence=Dense}
@@ -131,9 +155,9 @@ let rec source_type ctx j =
           Pack {required=List.map (source_type ctx) (items "required" t);
             optional_elements=[];rest=None;readonly=false;presence=Dense}
         | _ -> unsupported "a pack parameter's bound is an array or a tuple" in
-      let quantified = List.map2 (fun identity b ->
+      let quantified = List.map2 (fun (identity,resolution) b ->
         let pack = List.mem identity.spelling packs in
-        {identity;bound=(match field "bound" b with
+        {identity;resolution;bound=(match field "bound" b with
           | Null -> None
           | t when pack -> Some (PackArgument (pack_bound t))
           | t -> Some (ValueArgument (source_type ctx t)));
@@ -143,7 +167,7 @@ let rec source_type ctx j =
           | Null -> None
           | _ when pack -> None
           | t -> Some (source_type inner t))})
-        identities binders in
+        (List.combine identities resolutions) binders in
       let calls = List.map (fun f -> match source_type inner f with
         | Atoms [Shape {fields=[];indexes=[];calls=[s];elements=None}] -> {s with quantified}
         | _ -> unsupported "generic method signature") signatures in
@@ -266,6 +290,7 @@ let rec source_type ctx j =
     | None -> fail "declaration parameter index outside declaration")
   | "binder" -> (match List.assoc_opt (text "name" j) ctx.bindings with
     | Some (ValueArgument t) -> t
+    | Some (ResolutionArgument (input,_,_,_)) -> input
     | Some (PackArgument _) -> unsupported "a type parameter types both a rest parameter's argument list and a value: an argument list is not a runtime value"
     | None -> fail "unbound rigid parameter")
   | "intersection" ->
@@ -308,7 +333,7 @@ and source_pack ctx j =
   if text "k" j <> "binder" then unsupported "a pack rest must name a type parameter";
   match List.assoc_opt (text "name" j) ctx.bindings with
   | Some (PackArgument p) -> p
-  | Some (ValueArgument _) -> unsupported "a type parameter types both a value and a rest parameter's argument list: an argument list is not a runtime value"
+  | Some (ValueArgument _ | ResolutionArgument _) -> unsupported "a type parameter types both a value and a rest parameter's argument list: an argument list is not a runtime value"
   | None -> fail "unbound pack parameter"
 
 type literal = LNull | LUndefined | LBool of bool | LNumber of string | LString of string
@@ -335,10 +360,18 @@ let quantify binders scope parameters =
       let spelling=text "name" p in
       if List.exists (fun (q:quantifier) -> q.identity.spelling=spelling) accumulated
       then Json.fail "duplicate type parameter";
-      let identity={scope;index;spelling} in
+      let identity={scope;index=3*index;spelling} in
+      let resolution=resolution_slots scope index p in
+      if resolution <> None && List.length parameters <> 1 then
+        unsupported "a resolution-qualified signature has exactly one source parameter";
       let quantified={identity;bound=Option.map (fun t -> ValueArgument t)
-        (optional_type binders (field "bound" p));default=None} in
-      let binders={binders with bindings=(spelling,ValueArgument (Rigid identity))::binders.bindings} in
+        (optional_type binders (field "bound" p));default=None;resolution} in
+      let hidden = match resolution with None -> [] | Some (observation,result) ->
+        List.map (fun (r:rigid) -> r.spelling,ValueArgument (Rigid r)) [observation;result] in
+      let resolutions = match resolution with None -> binders.resolutions
+        | Some slots -> (spelling,(identity,slots))::binders.resolutions in
+      let binders={binders with bindings=(spelling,ValueArgument (Rigid identity))::hidden @ binders.bindings;
+        resolutions} in
       loop (index+1) binders (quantified::accumulated) rest in
   loop 0 binders [] parameters
 (* A binary operator on primitive operands: arithmetic, or a comparison. *)
@@ -355,6 +388,7 @@ type logical = Nullish | OrElse | AndAlso
 type expr = { pos: Json.t; node: expr_node }
 and expr_node =
   | Id of string | Literal of literal | Not of expr | Arith of arithmetic * expr * expr
+  | Resolution of bool * (rigid * (rigid * rigid)) option * expr
   (* `a && b` (true) or `a || b` (false): the left operand's value, or the
      right's where the left is truthy (`&&`) or falsy (`||`). *)
   | Logical of bool * expr * expr
@@ -477,7 +511,7 @@ and stmt_node =
   | Closing of stmt list * stmt list
 and fn = { quantified: quantifier list; name: string; name_pos: Json.t; params: (string * ty) list;
            rest: bool; result: ty; body: stmt list }
-type declaration = { id: string; parameters: rigid list;
+type declaration = { id: string; native_promise: bool; parameters: rigid list;
   defaults: ty option list; bases: ty list; expression: ty }
 (* `init` is the module's top-level code, run once after its function
    declarations exist. *)
@@ -506,7 +540,8 @@ let chain_name = "?."
 let rec children e = match e.node with
   | Id _ | Literal _ -> []
   | BlockBody ss -> List.concat_map statement_children ss
-  | Not e | TypeofTest (_,_,e) | Read (e,_) | Ctor e | Cast (_,_,e) | Unary (_,e) -> [e]
+  | Not e | TypeofTest (_,_,e) | Read (e,_) | Ctor e | Cast (_,_,e) | Unary (_,e)
+  | Resolution (_,_,e) -> [e]
   | Assign (_,e) | NullishAssign (_,_,e) -> [e]
   | Update (_,t,r,_) -> t :: Option.to_list r
   | LogicalAssign (_,a,b) | Comma (a,b) | HasKey (a,b) | InstanceTest (_,a,b) -> [a;b]
@@ -587,7 +622,7 @@ let rec heap_preserving_expr ?(inline=false) ~readable ~callable values (e:expr)
   | Write _ | Assign _ | Update _ | LogicalAssign _ | NullishAssign _
   | ArrayAssign _ | Invoke _ | Apply _ | Ctor _ | New _
   | Optional _ | Index _ | IndexWrite _ | Bind _ | ObjectAssign _
-  | WithFields _ -> false
+  | WithFields _ | Resolution _ -> false
 and heap_preserving_stmts ~readable ~callable values = function
   | [] -> true
   | s::rest ->
@@ -613,6 +648,16 @@ let arithmetic = function
 let rec expr binders j =
   let sub k = expr binders (field k j) in
   let node = match text "k" j with
+  | "resolution" ->
+    let observe = match text "operation" j with
+      | "observe" -> true | "fresh" -> false | _ -> fail "unknown resolution operation" in
+    let owner = match field "binder" j with
+      | Null -> None
+      | String name -> (match List.assoc_opt name binders.resolutions with
+        | Some descriptor -> Some descriptor
+        | None -> fail "resolution operation has no owned descriptor")
+      | _ -> fail "expected nullable resolution owner" in
+    Resolution (observe,owner,sub "e")
   | "id" -> Id (text "name" j) | "lit" -> Literal (literal (field "lit" j))
   | "this" -> Id "this"
   | "not" -> Not (sub "e")
@@ -778,9 +823,10 @@ let decode ast =
     let id = identity (field "declaration" definition) in
     let parameters = List.mapi (fun i p -> {scope= -1-index;index=i;spelling=text "name" p})
       (items "parameters" definition) in
-    let body = source_type {bindings=[];owner=Some id;positional=parameters;arity;symbolic=[];
+    let body = source_type {bindings=[];resolutions=[];owner=Some id;positional=parameters;arity;symbolic=[];
       own=true;self_owner=true} in
-    {id;parameters;
+    {id;native_promise=(text "name" (field "declaration" definition)="Promise" &&
+       String.starts_with ~prefix:"typescript/lib/" (text "module" (field "declaration" definition)));parameters;
      defaults=List.map (fun p -> match field "default" p with
        | Null -> None | j -> Some (body j)) (items "parameters" definition);
      bases=List.map body (items "bases" definition);
@@ -805,7 +851,7 @@ let decode ast =
         Some (d.id,(parameter,body))
       | _ -> None)
     | _ -> None) definitions in
-  let top={bindings=[];owner=None;positional=[];arity;symbolic;own=false;self_owner=false} in
+  let top={bindings=[];resolutions=[];owner=None;positional=[];arity;symbolic;own=false;self_owner=false} in
   (* A generic class's binders are in scope in its members: one binder per
      spelling for the whole top-level code, as Lean reads them. *)
   let rec class_params = function
@@ -837,7 +883,7 @@ let decode ast =
       (items "values" document);
     functions=List.mapi (fun scope f ->
       let parameters = items "typeParams" f in
-      let initial={bindings=[];owner=None;positional=[];arity;symbolic;own=false;self_owner=false} in
+      let initial={bindings=[];resolutions=[];owner=None;positional=[];arity;symbolic;own=false;self_owner=false} in
       let binders,quantified = quantify initial scope parameters in
       {quantified;name=text "name" f; name_pos=field "namePos" f;
       params=List.map (fun p -> text "name" p,source_type binders (field "type" p)) (items "params" f);

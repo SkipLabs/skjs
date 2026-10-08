@@ -26,8 +26,12 @@ The file object has these fields:
 | `functions` | Function definitions to check. |
 
 Each function contains `name`, `namePos`, `typeParams`, `params`, `retType`
-and `body`. A type parameter has `name` and `bound`, with `null` for an absent
-bound. Each parameter has `name`, `pos` and `type`, with `rest: true` for a
+and `body`. A type parameter has `name`, `bound` and `resolution`, with `null`
+for an absent bound. `resolution` is `null`, or
+`{"observation": o, "result": r}` for a parameter whose `Awaited<T>` the
+signature mentions: two distinct names the parameter owns, naming its
+observed payload and its resolved result. No two owned names in one signature
+coincide. Each parameter has `name`, `pos` and `type`, with `rest: true` for a
 rest parameter. Annotations are source type terms; their declaration references
 name the declaration resolved by TypeScript.
 
@@ -119,6 +123,7 @@ or a `blockBody`.
 | `callWithReceiver` | `callee`, `receiver`, ordered `args`. |
 | `bindWithReceiver` | `callee`, `receiver`, ordered saved-prefix `args`. |
 | `applyWithReceiver` | `callee`, `receiver`, and `list`, or `null` for an omitted argument list. |
+| `resolution` | `e`, `operation` (`observe` for `await`, `fresh` for an async return) and `binder`, the resolution-qualified parameter whose descriptor the operation uses, or `null`. |
 
 These operands remain distinct in the tree. Lean's execution plans save their
 values in source evaluation order before performing the invocation. Closure

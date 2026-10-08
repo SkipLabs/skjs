@@ -65,7 +65,7 @@ partial def readOnly : Fragment.Expr → Bool
   | .ifBody _ c t e => readOnly c && readOnly t && readOnly e
   | .alloc .. | .build .. | .write .. | .indexWrite .. | .update .. | .logicalAssign .. | .assign .. | .arrayLit .. | .elemWrite .. | .arrayAssign .. | .nullishAssign .. | .lambda .. | .withValue .. | .bindWithReceiver ..
   | .callWithReceiver .. | .applyWithReceiver .. | .call .. | .invoke .. | .ctor .. | .construct .. | .block ..
-  | .objectAssign .. => false
+  | .resolution .. | .objectAssign .. => false
 
 /-- The other operand of a singleton comparison, when saving the tested read
 before it changes nothing: a literal, a name, or one field read. Each is

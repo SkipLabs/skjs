@@ -94,6 +94,8 @@ structure State where
   fresh : Array String := #[]
   /-- The realm's array prototype head, once lowered. -/
   proto : Option Nat := none
+  /-- The stable-value bound of the source's reviewed async-return intrinsic. -/
+  nativeStable : Option Union := none
   /-- Each array or tuple annotation's parts, by its path. -/
   arrayAnnotations : List (String × ArrayParts) := []
   /-- The producer's rows the claims name (§9.1). -/

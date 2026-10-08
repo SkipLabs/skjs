@@ -23,8 +23,8 @@ const declared = (files: string[], before?: string) => new Set(files.flatMap((fi
 
 /** Field names a Lean file reads or states: explicit field reads, exact field
  * lists and, where a file decodes structures with `FromJson`, their fields. */
-const lean = (files: string[], structures = false) => new Set(files.flatMap((file) => {
-  const s = read(file).replace(/\/-[\s\S]*?-\//g, "").replace(/--.*/g, "");
+const lean = (files: string[], structures = false, before?: string) => new Set(files.flatMap((file) => {
+  const s = (before ? read(file).split(before)[0] ?? "" : read(file)).replace(/\/-[\s\S]*?-\//g, "").replace(/--.*/g, "");
   const exact = [...s.matchAll(/fieldsExactly\s+\S+\s+\[([^\]]*)\]/g)]
     .flatMap((m) => [...(m[1] ?? "").matchAll(/"(\w+)"/g)].flatMap(captured));
   // Plain and parenthesized arguments separately, since one read can nest in
@@ -74,11 +74,10 @@ const equationReaders = [
 // The Fragment AST and its declaration document.
 {
   const ts = declared(["tools/fragment.mts", "tools/declaration-types.mts", "tools/claim.mts"]);
-  const leanNames = lean(["lean/Verification/Source/Fragment.lean",
-    ...equationReaders]);
+  const leanNames = new Set([...lean(["lean/Verification/Source/Fragment.lean",
+    ...equationReaders]), ...lean(["lean/Verification/Source/ResolutionWire.lean"], false, "inductive Certificate")]);
   expectSubset("Lean reads of the Fragment", leanNames, ts, {
     decl: "a source-claims label, read by equation lowering",
-    binder: "a source-claims label, read by equation lowering",
     meet: "a source-claims label, read by equation lowering",
     types: "the source-claims document's rows, read by equation lowering",
   });
@@ -86,16 +85,15 @@ const equationReaders = [
   expectSubset("Fragment fields Lean ignores", ts, leanNames, {
     arguments: "a reference's argument spans are provenance",
     kind: "a root binding's kind is provenance",
-    module: "a declaration identity is compared whole",
     v: "a literal atom's value is read by the claim decoder",
   });
 }
 
 // The SourceClaims document and its type table.
 {
-  const ts = declared(["tools/source-claims.mts", "tools/type-graph.mts"]);
+  const ts = declared(["tools/source-claims.mts", "tools/type-graph.mts", "tools/declaration-types.mts"]);
   const leanNames = lean(["lean/Verification/Source/SourceClaimWire.lean",
-    ...equationReaders], true);
+    "lean/Verification/Source/ResolutionWire.lean", ...equationReaders], true);
   expectSubset("OCaml writes of SourceClaims", ocamlWrites("ocaml-producer/claims.ml"), ts, {});
   expectSubset("SourceClaims fields Lean ignores", declared(["tools/source-claims.mts"]), leanNames, {
     labels: "a tuple element's label, not a field",

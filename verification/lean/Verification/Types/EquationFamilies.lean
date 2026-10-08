@@ -117,7 +117,7 @@ theorem Equations.scheme_binders (equations : Equations) (i : Label equations.si
   · intro scope hs
     have hv := (equations.body scope.head).2
     cases hb : (equations.body scope.head).1 with
-    | scheme bs sigs bounds rests =>
+    | scheme bs sigs bounds rests resolution =>
       simp only [hb, RowTemplate.wellBound, Bool.and_eq_true_iff, decide_eq_true_eq] at hv
       simp only [Equations.graph, NormalGraph.ofRowMap, Equations.row, Equations.baseRow, Scope.view_label,
         Template.instantiate, hb, GraphRow.map, Option.some.injEq] at hs
@@ -299,7 +299,7 @@ def clausePolar : Clause α → List (Variance × α)
 /-- A template's operands with their polarities; a scheme's bounds are `inv`. -/
 def rowPolar : GraphRow Tree (List Tree) → List (Variance × List Tree)
   | .clauses cs => cs.flatMap clausePolar
-  | .scheme _ sigs bounds rests =>
+  | .scheme _ sigs bounds rests _ =>
     sigs.flatMap arrowPolar ++ bounds.map (fun b => (.inv, b.2)) ++ rests.flatMap restPolar
   | _ => []
 

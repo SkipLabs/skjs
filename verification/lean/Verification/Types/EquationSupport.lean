@@ -162,7 +162,7 @@ theorem Args.instantiate_support (scope : Scope sig) (args : Args)
         (Bool.and_eq_true_iff.mp lexical).2 p hp
 end
 
-private theorem clause_operands_map (f : α → β) (c : Clause α) :
+theorem clause_operands_map (f : α → β) (c : Clause α) :
     (c.map f).operands = c.operands.map f := by
   cases c <;> simp [Clause.map, Clause.operands, Tuple.map, Tuple.operands,
     mapFields, OptionalField.map, MethodMembers.Sig.map, MethodMembers.Sig.operands,
@@ -267,7 +267,7 @@ private theorem Equations.row_support (equations : Equations) (label : Label equ
           omega
       · simp [boundReads, Equations.graph, NormalGraph.ofRowMap, Equations.row, Equations.baseRow,
           Template.instantiate, hb, GraphRow.map]
-    | scheme bs sigs bounds rests =>
+    | scheme bs sigs bounds rests resolution =>
       simp only [hb, RowTemplate.wellBound, Bool.and_eq_true_iff, decide_eq_true_eq] at hv
       simp only [NormalGraph.params, equations.kind_application, Option.isSome_none,
         Bool.false_eq_true, false_implies, true_and]

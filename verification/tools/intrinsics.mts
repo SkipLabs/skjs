@@ -10,8 +10,8 @@
  * to.
  *
  * - `await e` is `%Await%(e)`: a promise settles, if ever, to a value of its
- *   type argument, and awaiting it yields that value; awaiting a primitive,
- *   which is never a thenable, yields the primitive itself. Other jobs may
+ *   type argument, and awaiting it yields that value; awaiting a stably
+ *   non-thenable value yields the value itself. Other jobs may
  *   run in between, as they may during any call.
  * - `return e` in an async function is `return %AsyncReturn%(e)`: the promise
  *   the call returned settles to `e` where `e` stays non-thenable, and adopts
@@ -68,7 +68,7 @@
  * `new Promise(executor)` is `%NewPromise%(executor)`: the executor is
  * called at once with the promise's resolving functions, and resolving
  * settles the promise to a primitive. */
-import type { TypeTerm } from "./declaration-types.mts";
+import type { SourceTypeParameter, TypeTerm } from "./declaration-types.mts";
 
 export const intrinsicModule = "skjs/intrinsics";
 export const awaitName = "%Await%";
@@ -138,16 +138,16 @@ const step: Signature = stepOf(binder);
  * `library` gives a reference to a standard library interface at arguments.
  * Each is listed only for a file that iterates such a value. */
 export function iterationIntrinsic(name: string, library: (name: "Set" | "Map" | "Iterator", args: TypeTerm[]) => TypeTerm):
-    { name: string; typeParams: { name: string; bound: TypeTerm | null }[]; type: Signature } {
+    { name: string; typeParams: SourceTypeParameter<TypeTerm>[]; type: Signature } {
   const spread = name.startsWith(spreadPrefix);
   const kind = spread ? iteratePrefix + name.slice(spreadPrefix.length) : name;
   const key: TypeTerm = { k: "binder", name: "K", span };
   const value: TypeTerm = { k: "binder", name: "V", span };
-  const t = [{ name: "T", bound: null }];
-  const [typeParams, param, element]: [{ name: string; bound: TypeTerm | null }[], TypeTerm, TypeTerm] =
+  const t = [{ name: "T", bound: null, resolution: null }];
+  const [typeParams, param, element]: [SourceTypeParameter<TypeTerm>[], TypeTerm, TypeTerm] =
     kind === iterateStringName ? [[], atom("string"), atom("string")]
     : kind === iterateSetName ? [t, library("Set", [binder]), binder]
-    : kind === iterateMapName ? [[{ name: "K", bound: null }, { name: "V", bound: null }], library("Map", [key, value]),
+    : kind === iterateMapName ? [[{ name: "K", bound: null, resolution: null }, { name: "V", bound: null, resolution: null }], library("Map", [key, value]),
       { k: "tuple", presence: "dense", readonly: false, required: [key, value], optional: [], rest: null, span }]
     : kind === iterateIteratorName ? [t, library("Iterator", [binder]), binder]
     : (() => { throw Error(`no iteration intrinsic ${name}`); })();
@@ -175,8 +175,8 @@ export const restFromName = (k: number): string => `%RestFrom:${k}%`;
  * whatever the first `k` hold, so a union of tuples of different lengths
  * meets it arm by arm: `[number] | [number, string]` at `T = string`. */
 export function restFromIntrinsic(k: number):
-    { name: string; typeParams: { name: string; bound: TypeTerm | null }[]; type: Signature } {
-  return { name: restFromName(k), typeParams: [{ name: "T", bound: null }],
+    { name: string; typeParams: SourceTypeParameter<TypeTerm>[]; type: Signature } {
+  return { name: restFromName(k), typeParams: [{ name: "T", bound: null, resolution: null }],
     type: fn([{ k: "tuple", presence: "readable", readonly: true, required: [], optional: Array.from({ length: k }, () => atom("unknown")),
       rest: binder, span }], { k: "array", presence: "readable", readonly: false, element: binder, span }) };
 }
@@ -184,39 +184,39 @@ export function restFromIntrinsic(k: number):
 /** The intrinsics' binders and signatures, given the standard library's
  * `Promise` applied to an argument. */
 export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: ReadonlySet<string>):
-  { name: string; typeParams: { name: string; bound: TypeTerm | null }[]; type: Signature }[] {
-  const definitions: Record<string, () => { typeParams: { name: string; bound: TypeTerm | null }[]; type: Signature }> = {
-    // `await` of a promise of `T` or of a primitive `U`: what the promise
-    // settles to, or the primitive itself.
-    [awaitName]: () => ({ typeParams: [{ name: "T", bound: null }, { name: "U", bound: primitive }],
+  { name: string; typeParams: SourceTypeParameter<TypeTerm>[]; type: Signature }[] {
+  const definitions: Record<string, () => { typeParams: SourceTypeParameter<TypeTerm>[]; type: Signature }> = {
+    // `await` observes a native promise payload or preserves a stably
+    // non-thenable value at its own type.
+    [awaitName]: () => ({ typeParams: [{ name: "T", bound: null, resolution: null }, { name: "U", bound: nonThenable, resolution: null }],
       type: fn([either(promise(binder), other)], either(binder, other)) }),
     // Fresh resolution requires either payload to stay non-thenable.
-    [asyncReturnName]: () => ({ typeParams: [{ name: "T", bound: nonThenable }, { name: "U", bound: nonThenable }],
+    [asyncReturnName]: () => ({ typeParams: [{ name: "T", bound: nonThenable, resolution: null }, { name: "U", bound: nonThenable, resolution: null }],
       type: fn([either(binder, promise(other))], promise(either(binder, other))) }),
     // PromiseResolve returns an ordinary native input itself. The other
     // arm resolves a fresh promise, requiring its payload to stay non-thenable.
-    [promiseResolveName]: () => ({ typeParams: [{ name: "T", bound: null }, { name: "U", bound: nonThenable }],
+    [promiseResolveName]: () => ({ typeParams: [{ name: "T", bound: null, resolution: null }, { name: "U", bound: nonThenable, resolution: null }],
       type: fn([either(promise(binder), other)], promise(either(binder, other))) }),
     [asyncCompleteName]: () => ({ typeParams: [], type: fn([], promise(atom("void"))) }),
-    [iterateName]: () => ({ typeParams: [{ name: "T", bound: null }],
+    [iterateName]: () => ({ typeParams: [{ name: "T", bound: null, resolution: null }],
       type: fn([{ k: "array", presence: "readable", readonly: true, element: binder, span }], step) }),
-    [promiseAllName]: () => ({ typeParams: [{ name: "T", bound: null }],
+    [promiseAllName]: () => ({ typeParams: [{ name: "T", bound: null, resolution: null }],
       type: fn([{ k: "array", presence: "readable", readonly: true, element: promise(binder), span }],
         promise({ k: "array", presence: "dense", readonly: false, element: binder, span })) }),
     // A promise rejected with the reason: awaiting it throws, so it is a
     // promise of every type, never settling to a value.
-    [promiseRejectName]: () => ({ typeParams: [{ name: "T", bound: null }],
+    [promiseRejectName]: () => ({ typeParams: [{ name: "T", bound: null, resolution: null }],
       type: fn([atom("unknown")], promise(binder)) }),
     // `new Promise(executor)`: the executor runs at once, given functions
     // that settle the promise to their argument, or reject it; a throw out
     // of the executor rejects it. This constructor contract admits primitive
     // payloads; resolving with a thenable would adopt it instead.
-    [newPromiseName]: () => ({ typeParams: [{ name: "T", bound: primitive }],
+    [newPromiseName]: () => ({ typeParams: [{ name: "T", bound: primitive, resolution: null }],
       type: fn([fn([fn([binder], atom("void")), fn([atom("unknown")], atom("void"))], atom("void"))],
         promise(binder)) }),
     // The entries a `for...in` over a dictionary visits, each read at its
     // step: a fresh `[key, value]` array per key, then `null`.
-    [iterateForInName]: () => ({ typeParams: [{ name: "V", bound: null }],
+    [iterateForInName]: () => ({ typeParams: [{ name: "V", bound: null, resolution: null }],
       type: fn([{ k: "object", span, fields: [], calls: [],
         stringIndex: { readonly: true, value: { k: "binder", name: "V", span }, span } }],
         stepOf({ k: "tuple", presence: "dense", readonly: false,
@@ -225,7 +225,7 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
       type: fn([atom("unknown")], { k: "array", presence: "readable", readonly: true, element: atom("string"), span }) }),
     [hasPropertyName]: () => ({ typeParams: [],
       type: fn([either(atom("string"), atom("number"), atom("symbol")), atom("object")], atom("boolean")) }),
-    [elementAtName]: () => ({ typeParams: [{ name: "T", bound: null }],
+    [elementAtName]: () => ({ typeParams: [{ name: "T", bound: null, resolution: null }],
       type: fn([{ k: "array", presence: "readable", readonly: true, element: binder, span }, atom("number")],
         either(binder, atom("undefined"))) }),
   };

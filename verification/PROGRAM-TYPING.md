@@ -57,7 +57,8 @@ it exists. This is a finite syntactic equality, not a
 semantic-equivalence oracle. Below, writing a constructor as a type abbreviates
 such a view of its graph labels.
 
-The judgment $`\Gamma\vdash_G t:A`$ is `HasTyUsing G images`. Its rules are
+The judgment $`\Gamma\vdash_G t:A`$ is `HasTyWith G images subtyping`, and
+`HasTyUsing G images` is its instance at the ordinary subtyping checker. Its rules are
 stated once, for every proved image checker `images` (an
 [`InstanceImageCheck`](RECURSIVE-EQUATIONS.md#3-metatheory)): the checker
 decides whether an instance table's named images are substitution images (over
@@ -68,8 +69,10 @@ equations, or types proved equal to them), and it carries the proof
 \ \Longrightarrow\ \forall\eta.\ \mathrm{InstanceImages}_G(\eta,\vec b,c).
 ```
 
-Subtype certificates in `sub` and in member coverage are checked by
-`PositiveCertificates.checkUsing` with that checker, and every rule's soundness
+Subtype certificates in `sub` are checked by the body's subtyping checker
+(`BodySubtyping`), which carries its own soundness proof; the ordinary one is
+`PositiveCertificates.checkUsing` with the image checker, which also checks
+member coverage, and every rule's soundness
 depends on it only through this implication. Over equations the checker also
 carries the renaming and the computed variances, with which `subset` and `fallback`
 steps apply `Var` ([RECURSIVE-EQUATIONS §4.3](RECURSIVE-EQUATIONS.md#43-variance)),
@@ -223,7 +226,10 @@ each table entry the store its frame starts with (`CodeEntry.store`).
 A generic closure is graph code at a scheme row $`j`$, $`G(j)=\forall\vec p.\,(L,S)`$
 with binders $`\vec p`$ (parameter rows) and signatures $`L`$ and $`S`$ over them
 (`HasTyUsing.funScheme`). Its code is checked once, at the scheme's own signatures:
-a table entry holds at every assignment, so at every instantiation of $`\vec p`$.
+a table entry holds at every assignment of $`\vec p`$ the graph's domain admits
+(`G.domain.allowed`), so at every instantiation of $`\vec p`$; for an
+unqualified row every assignment is admitted. The arity and rest-store
+requirements are checked once, independently of the assignment (`CodeOffersShape`).
 Its captures' types read none of $`\vec p`$ (`capturesFree`: their free parameter
 rows, computed and checked by `FreeOk`,
 exclude the binders), so a capture means at every instantiation what it means
@@ -231,7 +237,7 @@ here (`meaning_assign_free`):
 
 ```math
 \frac{G(j)=\forall\vec p.\,(L,S)
-      \quad\forall\eta.\;\mathrm{Offers}_{G[\eta]}(\kappa,\vec C,L,S)
+      \quad\forall\eta\,\vec B\in\mathrm{allowed}(j).\;\mathrm{Offers}_{G[\eta,\vec p:=\vec B]}(\kappa,\vec C,L,S)
       \quad\mathrm{fv}(\vec C)\cap\vec p=\emptyset
       \quad\forall i.\;\Gamma\vdash_G x_i:C_i}
      {\Gamma\vdash_G \mathsf{make}(\kappa[\vec x],\mathsf{null}):j}\ (\texttt{funScheme})

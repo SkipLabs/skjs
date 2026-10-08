@@ -397,7 +397,8 @@ theorem Equations.scheme_step (equations : Equations) (apps : equations.Applicat
     (bounds : List (Reference equations.signature equations.signature[head] ×
       List (Expression equations.signature equations.signature[head])))
     (rests : List (RestArrow (List (Expression equations.signature equations.signature[head]))))
-    (body : (equations.body head).1 = .scheme bs sigs bounds rests) (W : WorldT n) (v : Val) :
+    (resolution : List ResolutionSlots)
+    (body : (equations.body head).1 = .scheme bs sigs bounds rests resolution) (W : WorldT n) (v : Val) :
     qDenoteWithArgs equations.graph (mixedParameters equations.graph)
       (η, (Scope.mk head A ha).label) n W v ↔
     qDenoteWithArgs equations.graph (mixedParameters equations.graph)
@@ -409,7 +410,7 @@ theorem Equations.scheme_step (equations : Equations) (apps : equations.Applicat
     let scope : Scope equations.signature := ⟨head, C, hc⟩
     let inst := fun es => es.flatMap (Expression.instantiate scope)
     ⟨scope.binders, sigs.map (Arrow.map inst),
-      bounds.map (fun p => (p.1.instantiate scope, inst p.2)), rests.map (RestArrow.map inst)⟩
+      bounds.map (fun p => (p.1.instantiate scope, inst p.2)), rests.map (RestArrow.map inst), resolution⟩
   have valid := (equations.body head).2
   simp only [body, RowTemplate.wellBound, Bool.and_eq_true_iff, decide_eq_true_eq] at valid
   have row (C) (hc : C.length = equations.signature[head].parameters) :
@@ -426,6 +427,53 @@ theorem Equations.scheme_step (equations : Equations) (apps : equations.Applicat
     obtain ⟨r, hr, he⟩ := List.any_eq_true.mp h
     have he' : r = p.1 := of_decide_eq_true he
     exact he' ▸ hr
+  have localRefs : ∀ r ∈ bs,
+      ∃ slot : Fin equations.signature[head].binders.length, r.1.1 = Tree.local slot.val := by
+    intro r hr
+    have hmem : r.1.1 ∈ (List.range equations.signature[head].binders.length).map Tree.local := by
+      rw [← valid.1]
+      exact List.mem_map.mpr ⟨r, hr, rfl⟩
+    obtain ⟨i, hi, he⟩ := List.mem_map.mp hmem
+    exact ⟨⟨i, List.mem_range.mp hi⟩, he.symm⟩
+  have reference_injective (C) (hc : C.length = equations.signature[head].parameters) :
+      ∀ r ∈ bs, ∀ t ∈ bs, r.instantiate (Scope.mk head C hc) =
+        t.instantiate (Scope.mk head C hc) → r = t := by
+    intro r hr t ht he
+    obtain ⟨i, hi⟩ := localRefs r hr
+    obtain ⟨j, hj⟩ := localRefs t ht
+    rw [r.instantiate_local (Scope.mk head C hc) i hi,
+      t.instantiate_local (Scope.mk head C hc) j hj] at he
+    have hij := (Scope.mk head C hc).bound_injective he
+    apply Subtype.ext
+    apply Subtype.ext
+    rw [hi, hj, hij]
+  have at_slot (C) (hc : C.length = equations.signature[head].parameters)
+      (r : Reference equations.signature equations.signature[head]) (hr : r ∈ bs) (p : Nat) :
+      (Scope.mk head C hc).binders[p]? = some (r.instantiate (Scope.mk head C hc)) ↔ bs[p]? = some r := by
+    rw [← (Scope.mk head C hc).instantiate_binders bs valid.1, List.getElem?_map]
+    constructor
+    · intro h
+      obtain ⟨t, ht, he⟩ := Option.map_eq_some_iff.mp h
+      have htr : t = r := reference_injective C hc
+        t (List.mem_of_getElem? ht) r hr he
+      rwa [htr] at ht
+    · intro h
+      simp [h]
+  have protect (C) (hc : C.length = equations.signature[head].parameters)
+      (D) (hd : D.length = equations.signature[head].parameters) :
+      (make C hc).protectedSlots → (make D hd).protectedSlots := by
+    intro h g hg p hp z hget Z hbound
+    change (Scope.mk head D hd).binders[p]? = some z at hget
+    change (z, Z) ∈ bounds.map (fun t =>
+      (t.1.instantiate (Scope.mk head D hd), t.2.flatMap (Expression.instantiate (Scope.mk head D hd)))) at hbound
+    obtain ⟨⟨r, es⟩, hm, he⟩ := List.mem_map.mp hbound
+    have hz : z = r.instantiate (Scope.mk head D hd) := (congrArg Prod.fst he).symm
+    subst z
+    have hlookup := (at_slot C hc r (in_bs (r, es) hm) p).mpr
+      ((at_slot D hd r (in_bs (r, es) hm) p).mp hget)
+    apply h g hg p hp (r.instantiate (Scope.mk head C hc)) hlookup
+      (es.flatMap (Expression.instantiate (Scope.mk head C hc)))
+    exact List.mem_map.mpr ⟨(r, es), hm, rfl⟩
   have bound_types : ∀ p ∈ bounds,
       Agree (mixedMeaning equations.graph η (p.2.flatMap (Expression.instantiate a)))
         (mixedMeaning equations.graph θ (p.2.flatMap (Expression.instantiate b))) n := by
@@ -443,7 +491,9 @@ theorem Equations.scheme_step (equations : Equations) (apps : equations.Applicat
   dsimp only [qLayerWithArgs]
   rw [if_neg hpa, if_neg hpb, row A ha, row B hb]
   simp only [schemeSemWithArgs, boundedSem, lengths]
-  refine and_congr Iff.rfl (forall_congr' fun As => forall_congr' fun hlen => imp_congr ?_ ?_)
+  refine and_congr Iff.rfl (forall_congr' fun As => forall_congr' fun hlen =>
+    imp_congr (equations.graph.domain.congr (make A ha) (make B hb) rfl
+      ⟨protect A ha B hb, protect B hb A ha⟩ As) (imp_congr ?_ ?_))
   · have assigned : ∀ r ∈ bs,
         (assign η a.binders As).1 (r.instantiate a) =
           (assign θ b.binders As).1 (r.instantiate b) := by
@@ -504,8 +554,8 @@ theorem Equations.values_step (equations : Equations) (apps : equations.Applicat
   simp only [mixedValues, Tower.setSem, List.mem_singleton, exists_eq_left]
   cases body : (equations.body ha).1 with
   | clauses cs => exact equations.clauses_step apps ha A B va vb η θ args cs body W v
-  | scheme bs sigs bounds rests =>
-    exact equations.scheme_step apps ha A B va vb η θ args bs sigs bounds rests body W v
+  | scheme bs sigs bounds rests resolution =>
+    exact equations.scheme_step apps ha A B va vb η θ args bs sigs bounds rests resolution body W v
   | param label name kind =>
     have h := (equations.body ha).2
     simp [body, RowTemplate.wellBound] at h
@@ -678,7 +728,7 @@ theorem Equations.arguments_step (equations : Equations) (apps : equations.Appli
     · rintro ⟨c', hc', hv⟩
       obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hc'
       exact ⟨_, List.mem_map.mpr ⟨c, hc, rfl⟩, (congr c).mpr hv⟩
-  | scheme bs sigs bounds rests =>
+  | scheme bs sigs bounds rests resolution =>
     simp [NormalGraph.clauses, NormalGraph.plain, NormalGraph.params, Equations.graph,
       NormalGraph.ofRowMap, Equations.row, Equations.baseRow, Template.instantiate, body, GraphRow.map, GraphRow.union]
   | param label name kind =>

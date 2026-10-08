@@ -6,7 +6,11 @@ import * as ts from "typescript/unstable/ast";
 import type { Identifier, Node, SourceFile, TypeAliasDeclaration, TypeElement, TypeNode, TypeReferenceNode } from "typescript/unstable/ast";
 import type { Span } from "./span.mts";
 import { childrenOf } from "./syntax.mts";
-import type { PropertyKey, TypeTerm } from "./declaration-types.mts";
+import type { PropertyKey, ResolutionSlots, TypeTerm } from "./declaration-types.mts";
+
+export const resolutionSlots = (name: string): ResolutionSlots => ({
+  observation: `#observe:${name}`, result: `#resolve:${name}`,
+});
 
 // Numeric literals in the fragment are plain decimals; every other spelling
 // (hex, binary, octal, separators) is outside it. A bigint literal is read as
@@ -39,7 +43,8 @@ export function visitType(term: TypeTerm, visit: (term: TypeTerm, bound: Readonl
     case "pack": go(term.of); return;
     case "reference": term.args.forEach(go); return;
     case "scheme": {
-      const inner = new Set([...bound, ...term.binders.map(binder => binder.name)]);
+      const inner = new Set([...bound, ...term.binders.flatMap(binder => [binder.name,
+        ...(binder.resolution ? [binder.resolution.observation, binder.resolution.result] : [])])]);
       const scoped = (part: TypeTerm): void => visitType(part, visit, inner);
       term.binders.forEach(binder => {
         if (binder.bound) scoped(binder.bound);
@@ -167,6 +172,13 @@ export type TermScope = {
   fail(node: Node | null, message: string): never;
   /** A type reference: a binder in scope or a declaration. */
   named(node: TypeReferenceNode, span: Span, read: (node: TypeNode) => TypeTerm): TypeTerm;
+  /** The resolved standard-library Awaited alias. Its associated projection
+   * is read only through the enclosing descriptor scope. */
+  awaited?(node: TypeReferenceNode): boolean;
+  associated?(input: TypeTerm, span: Span, node: TypeReferenceNode): TypeTerm;
+  /** A resolved associated-result alias expanded in this lexical scope. */
+  associatedAlias?(node: TypeReferenceNode): TypeAliasDeclaration | null;
+  expandingAliases?: ReadonlySet<TypeAliasDeclaration>;
   /** An annotation states records as the source fragment always has: named,
    * required fields and at most one readonly string index. A declaration body
    * states what its equation says, and Lean decides what lowers. */
@@ -397,6 +409,46 @@ function readTypeTerm(scope: TermScope, node: TypeNode | undefined, at: Node | n
   if (ts.isTypeReferenceNode(node)) {
     if (node.typeName.kind !== ts.SyntaxKind.Identifier)
       return scope.fail(node, "type reference outside the fragment");
+    if (scope.awaited?.(node)) {
+      const [argument, ...others] = node.typeArguments ?? [];
+      if (!argument || others.length) return scope.fail(node, "Awaited requires one type argument");
+      if (!scope.associated) return scope.fail(node, "Awaited requires a resolution-qualified scope");
+      return scope.associated(typeTerm(scope, argument), span, node);
+    }
+    const alias = scope.associatedAlias?.(node);
+    if (alias) {
+      if (scope.expandingAliases?.has(alias)) return scope.fail(node,
+        "a recursive associated-result alias is outside the fragment");
+      const parameters = alias.typeParameters ?? [];
+      const arguments_ = node.typeArguments ?? [];
+      if (arguments_.length !== parameters.length || parameters.some(p => p.constraint || p.defaultType))
+        return scope.fail(node, "an associated-result alias requires all unbounded arguments explicitly");
+      const inputs = arguments_.map(argument => typeTerm(scope, argument));
+      const expandingAliases = new Set(scope.expandingAliases ?? []);
+      expandingAliases.add(alias);
+      const inner: TermScope = { ...scope, source: alias.getSourceFile(), expandingAliases,
+        awaited: reference => {
+          const name = reference.typeName;
+          return !(ts.isIdentifier(name) && parameters.some(p => p.name.text === name.text)) &&
+            (scope.awaited?.(reference) ?? false);
+        },
+        associatedAlias: reference => {
+          const name = reference.typeName;
+          return ts.isIdentifier(name) && parameters.some(p => p.name.text === name.text)
+            ? null : scope.associatedAlias?.(reference) ?? null;
+        },
+        named(reference, position, read) {
+          const name = reference.typeName;
+          const index = ts.isIdentifier(name)
+            ? parameters.findIndex(p => p.name.text === name.text) : -1;
+          if (index < 0) return scope.named(reference, position, read);
+          const input = inputs[index];
+          if (!input || reference.typeArguments?.length) return scope.fail(reference,
+            "an alias parameter takes no type arguments");
+          return input;
+        } };
+      return typeTerm(inner, alias.type, alias);
+    }
     return scope.named(node, span, part => typeTerm(scope, part));
   }
   if (computedForm(node) !== null && scope.computed)
@@ -579,8 +631,24 @@ export function signature(scope: TermScope, parameters: readonly ts.ParameterDec
 function quantified(scope: TermScope, typeParameters: readonly ts.TypeParameterDeclaration[],
     parameters: readonly ts.ParameterDeclaration[], result: TypeNode, at: Node, span: Span) {
   const own = typeParameters.map(p => p.name.text);
+  const binders: Extract<TypeTerm, { k: "scheme" }>["binders"] = typeParameters.map(p => ({
+    name: p.name.text, bound: null, resolution: null, default: null,
+    span: spanOf(scope, p) }));
   const inner: TermScope = {
     ...scope,
+    awaited: node => !(ts.isIdentifier(node.typeName) && own.includes(node.typeName.text)) &&
+      (scope.awaited?.(node) ?? false),
+    associatedAlias: node => ts.isIdentifier(node.typeName) && own.includes(node.typeName.text)
+      ? null : scope.associatedAlias?.(node) ?? null,
+    associated(input, span, node) {
+      const binder = input.k === "binder" ? binders.find(b => b.name === input.name) : undefined;
+      if (!binder) return scope.associated?.(input, span, node) ??
+        scope.fail(node, "Awaited requires the input of a resolution-qualified parameter");
+      if (binders.length !== 1) return scope.fail(node,
+        "a resolution-qualified scheme has exactly one source parameter");
+      binder.resolution ??= resolutionSlots(binder.name);
+      return { k: "binder", name: binder.resolution.result, span };
+    },
     named(node, span, read) {
       if (ts.isIdentifier(node.typeName) && own.includes(node.typeName.text)) {
         if (node.typeArguments?.length) scope.fail(node, "a type parameter takes no type arguments");
@@ -589,12 +657,12 @@ function quantified(scope: TermScope, typeParameters: readonly ts.TypeParameterD
       return scope.named(node, span, read);
     },
   };
-  const binders = typeParameters.map(p => ({
-    name: p.name.text,
-    bound: p.constraint ? typeTerm(inner, p.constraint, p) : null,
-    default: p.defaultType ? typeTerm(inner, p.defaultType, p) : null,
-    span: spanOf(scope, p),
-  }));
+  for (const [index, p] of typeParameters.entries()) {
+    const binder = binders[index];
+    if (!binder) return scope.fail(p, "missing type parameter");
+    binder.bound = p.constraint ? typeTerm(inner, p.constraint, p) : null;
+    binder.default = p.defaultType ? typeTerm(inner, p.defaultType, p) : null;
+  }
   return { binders, forms: signatures(inner, parameters, result, at, span) };
 }
 
@@ -927,6 +995,7 @@ export function classInstance(scope: TermScope, node: ts.ClassDeclaration, span:
         };
         const binders = member.typeParameters.map(p => ({
           name: p.name.text,
+    resolution: null,
           bound: p.constraint ? typeTerm(inner, p.constraint, p) : null,
           default: p.defaultType ? typeTerm(inner, p.defaultType, p) : null,
           span: spanOf(scope, p),

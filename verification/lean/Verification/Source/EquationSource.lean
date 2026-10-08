@@ -28,6 +28,7 @@ structure GenericValue where
   name : String
   pos : Nat × Nat
   binders : List String
+  resolution : List ResolutionSlots
   type : Except String GenericType
   bounds : List (String × Option Union)
 
@@ -80,14 +81,15 @@ Its declared bounds are checked at each instance a call names
 private def genericOf (name : String) (pos : Nat × Nat) (path : String) (node : Json) (tps : Array Json)
     (type : List (String × Binding) → M GenericType) : M GenericValue := do
   let (scope, _) ← bindNames [] [] node tps
-  let binders ← tps.toList.mapM fun p => (str p "name" : Except String String)
+  let parameters ← sourceParameters tps
+  let binders := parameters.flatMap fun (n, r) => ResolutionWire.ownedNames n r
   let t ← tryCatch (do return Except.ok (← type scope)) fun e => pure (.error e)
   let bounds ← tps.toList.mapM fun p => do
     let n ← (str p "name" : Except String String)
     let b := p.getObjValD "bound"
     if b == .null then return (n, none)
     return (n, some (← lowerType { binders := scope, site := s!"{path}: the bound of {n}", checkBounds := false } b))
-  return { name, pos, binders, type := t, bounds }
+  return { name, pos, binders, resolution := ResolutionWire.groups parameters, type := t, bounds }
 
 /-- Everything the source path lowers, in one run: the declarations, every
 annotation, the imported values, the generic units' binders, the producer's
@@ -196,8 +198,16 @@ def lowerSource (ast claims : Json) : M (List (String × Union) × List (String 
     else
       let _ ← enterUnit path [] v tps
       units := units ++ [(path, (((← get).unitBinders.lookup path).getD []))]
-      generics := generics ++ [← genericOf name span path v tps fun scope => do
-        genericType { binders := scope, site := path, checkBounds := false } (← field v "type")]
+      let generic ← genericOf name span path v tps fun scope => do
+        genericType { binders := scope, site := path, checkBounds := false } (← field v "type")
+      generics := generics ++ [generic]
+      let identity ← field v "declaration"
+      if name == "%AsyncReturn%" &&
+          (identity.getObjValAs? String "module").toOption == some "skjs/intrinsics" &&
+          (identity.getObjValAs? String "name").toOption == some "%AsyncReturn%" then
+        let some (some stable) := generic.bounds.lookup "T"
+          | throw "the async-return intrinsic requires its stable-value bound"
+        modify fun s => { s with nativeStable := some stable }
   -- The producer's rows and the claims.
   let types ← arr claims "types"
   let P ← (producerRows types : Except String ProducerRows)

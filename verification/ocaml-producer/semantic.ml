@@ -59,10 +59,16 @@ and index_signature = { keys: index_keys; value: ty; writable: ty option }
    travel through their own substitution projection, never through [ty]. *)
 and pack = PackParameter of rigid | Pack of sequence
 and type_argument = ValueArgument of ty | PackArgument of pack
+  | ResolutionArgument of ty * (rigid * ty) * (rigid * ty) * resolution_certificate
+and resolution_certificate = StableResolution
+  | NativeResolution of resolution_certificate
+  | UnionResolution of resolution_certificate list
+  | BinderResolution of string
 (* [default]: the value binder's declared default (`TResult2 = never`), the
    instance a call takes where nothing constrains the binder. It is inference
    input, not part of the signature's type: claims state the instance. *)
-and quantifier = { identity: rigid; bound: type_argument option; default: ty option }
+and quantifier = { identity: rigid; bound: type_argument option; default: ty option;
+                   resolution: (rigid * rigid) option }
 (* `receiver` is the `this` value a call may pass: `Top` for a signature
    indifferent to it. `variadic` is the contract of each actual after `params`,
    for a signature that takes any number of them; `rest_pack` the type of all
@@ -72,6 +78,8 @@ and signature = { quantified: quantifier list; receiver: ty; params: ty list;
                   variadic: ty option; rest_pack: pack option; result: ty; call_effect: call_effect }
 and sequence = { required: ty list; optional_elements: ty list; rest: ty option; readonly: bool; presence: array_presence }
 and shape = { fields: field list; indexes: index_signature list; calls: signature list; elements: sequence option }
+let quantifier_identities (q:quantifier) = q.identity ::
+  (match q.resolution with None -> [] | Some (observation,result) -> [observation;result])
 (* An immutable annotated binding may retain a separately inferred effect on
    exactly the same call signature. Every other annotation component remains
    unchanged; this never strengthens an ordinary input annotation by itself. *)

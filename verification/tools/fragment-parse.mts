@@ -39,7 +39,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { Atom } from "./claim.mts";
 import type { DeclarationIdentity, PropertyKey, TypeTerm } from "./declaration-types.mts";
-import { bigintText, CLASS_ACCESS, numericLexeme, GENERIC_METHOD_RECEIVER, classMemberRefusal, computedAlias, computedForm, numericKey, optionalTerm, restPositions, restRefusal, restTerm, signature, substitute, typeTerm, visitType,
+import { bigintText, CLASS_ACCESS, numericLexeme, GENERIC_METHOD_RECEIVER, classMemberRefusal, computedAlias, computedForm, numericKey, optionalTerm, resolutionSlots, restPositions, restRefusal, restTerm, signature, substitute, typeTerm, visitType,
   type TermScope } from "./type-term.mts";
 import type {
   Ast,
@@ -396,6 +396,10 @@ class Gate {
    * one file-wide set, makes nested quantified callables representable without
    * conflating an inner binder with an outer binder of the same spelling. */
   private readonly typeParamScopes: Map<string, string>[] = [];
+  private readonly resolutionScopes: TypeParamAst[][] = [];
+  readonly resolutionAliases = new Map<string, TypeAliasDeclaration>();
+  standardAwaited = false;
+  private qualificationHeader = false;
   /** Local spelling to the arity and identity of its declaration root. A
    * reference names the declaration TypeScript resolved the spelling to. */
   /** The equations of the declared aliases that name an array, a tuple or
@@ -571,6 +575,7 @@ class Gate {
     const local = new Map<string, string>();
     const result: TypeParamAst[] = [];
     this.typeParamScopes.unshift(local);
+    this.resolutionScopes.unshift(result);
     try {
       for (const [index, tp] of (parameters ?? []).entries()) {
         if (tp.defaultType)
@@ -582,19 +587,28 @@ class Gate {
         // use is Lean's to say.
         const bound: TypeTerm | null = tp.constraint ? this.typeOf(tp.constraint) : null;
         const name = rename ? rename(tp, index) : tp.name.text;
-        result.push({ name, bound });
+        result.push({ name, bound, resolution: null });
         local.set(tp.name.text, name);
       }
       return result;
     } catch (error) {
       this.typeParamScopes.shift();
+      this.resolutionScopes.shift();
       throw error;
     }
   }
 
   private leaveTypeParams(): void {
+    this.resolutionScopes.shift();
     if (!this.typeParamScopes.shift())
       throw new Error("internal: no type-parameter scope to leave");
+  }
+
+  private headerTypes<T>(read: () => T): T {
+    const outer = this.qualificationHeader;
+    this.qualificationHeader = true;
+    try { return read(); }
+    finally { this.qualificationHeader = outer; }
   }
 
   /** A class declaration, in module initialization order: one constant per
@@ -1235,6 +1249,14 @@ class Gate {
   private intrinsic(name: string, pos: Span, at: Span, args: Expr[]): Expr {
     return { k: "apply", pos, callee: { k: "id", pos: at, name }, args };
   }
+  private resolutionOwner(): TypeParamAst | undefined {
+    return this.resolutionScopes.flat().find(p => p.resolution !== null);
+  }
+  private freshReturn(pos: Span, keyword: Span, e: Expr): Expr {
+    const owner = this.resolutionOwner();
+    return owner ? { k: "resolution", pos, operation: "fresh", binder: owner.name, e }
+      : this.intrinsic(asyncReturnName, pos, keyword, [e]);
+  }
 
   /** A spread argument's operand. Over a string, a `Set`, a `Map` or a host
    * collection iterator, which TypeScript's type of it decides, `...x` is
@@ -1274,6 +1296,9 @@ class Gate {
    * an intrinsic call or read is given is a node or a token of the source. */
   private awaitExpr(node: ts.AwaitExpression): Expr {
     const start = node.getStart(this.file);
+    const owner = this.resolutionOwner();
+    if (owner) return { k: "resolution", pos: this.span(node), operation: "observe",
+      binder: owner.name, e: this.expr(node.expression) };
     return this.intrinsic(awaitName, this.span(node), [start, start + "await".length],
       [this.expr(node.expression)]);
   }
@@ -1309,6 +1334,24 @@ class Gate {
     return {
       source: this.file,
       annotation: true,
+      awaited: node => this.standardAwaited && ts.isIdentifier(node.typeName) &&
+        node.typeName.text === "Awaited" && !this.hasTypeParam("Awaited"),
+      associatedAlias: node => ts.isIdentifier(node.typeName) && !this.hasTypeParam(node.typeName.text)
+        ? this.resolutionAliases.get(node.typeName.text) ?? null : null,
+      associated: (input, span, node) => {
+        const owner = input.k === "binder" ? this.resolutionScopes.flat()
+          .find(p => p.name === input.name) : undefined;
+        if (!owner) return this.fail(node, "Awaited requires the input of a resolution-qualified parameter");
+        if (!owner.resolution) {
+          if (!this.qualificationHeader) return this.fail(node,
+            "Awaited cannot add a qualification to an ordinary function body");
+          const parameters = this.resolutionScopes.find(ps => ps.includes(owner));
+          if (parameters?.length !== 1) return this.fail(node,
+            "a resolution-qualified signature has exactly one source parameter");
+          owner.resolution = resolutionSlots(owner.name);
+        }
+        return { k: "binder", name: owner.resolution.result, span };
+      },
       fail: (node, message) => this.fail(node, message),
       enumerated: (node, span) => {
         // `E.A`, a member's literal type, and `typeof E`, the enum's object.
@@ -3844,7 +3887,7 @@ class Gate {
         k: "return",
         pos: this.span(node),
         e: this.asyncBody
-          ? this.intrinsic(asyncReturnName, this.span(node), keyword, [e])
+          ? this.freshReturn(this.span(node), keyword, e)
           : e,
       };
     }
@@ -4089,6 +4132,12 @@ class Gate {
     const typeParams = this.enterTypeParams(node.typeParameters);
     try {
       this.asyncBody = isAsync;
+      const { retType, parameterTypes } = this.headerTypes(() => ({
+        retType: this.typeOf(node.type),
+        parameterTypes: node.parameters.map(p => p.dotDotDotToken ? this.restType(p)
+          : p.questionToken || p.initializer ? this.optionalTypeOf(p.type, p)
+          : this.typeOf(p.type, p)),
+      }));
       // A parameter written as a pattern or with a default binds a hidden
       // name, which the caller's argument initializes; a `destructure` over
       // it, first in the body in parameter order, binds the source's names,
@@ -4118,9 +4167,7 @@ class Gate {
           return {
             name: this.local(p.name),
             pos: this.span(p.name),
-            type: p.dotDotDotToken ? this.restType(p) : p.questionToken
-              ? this.optionalTypeOf(p.type, p)
-              : this.typeOf(p.type, p),
+            type: parameterTypes[i] ?? this.fail(p, "missing parameter contract"),
             ...(p.dotDotDotToken ? { rest: true as const } : {}),
           };
         }
@@ -4137,9 +4184,7 @@ class Gate {
           name: hidden,
           pos: at,
           // A caller may pass `undefined` where there is a default.
-          type: p.questionToken || p.initializer
-            ? this.optionalTypeOf(p.type, p)
-            : this.typeOf(p.type, p),
+          type: parameterTypes[i] ?? this.fail(p, "missing parameter contract"),
         };
       });
       this.initializedBefore(node, params.map((p): [PatternAst, Expr | null] => {
@@ -4153,7 +4198,7 @@ class Gate {
         namePos: this.span(node.name),
         typeParams,
         params,
-        retType: this.typeOf(node.type),
+        retType,
         body: isAsync ? this.asyncCompletion(node.body, body) : body,
       };
     } finally {
@@ -4979,6 +5024,13 @@ export function parseFile(file: string, carriesContext = false,
         library: ([start, end], library) => {
           const node = globalNodes.find(n => n.getStart(source) === start && n.end === end);
           if (node) gate.libraryTypes.set(node.text, library);
+        },
+        awaited: () => { gate.standardAwaited = true; },
+        associatedAlias: (name, identity) => {
+          const alias = aliasNodes.find(node => node.name.text === name &&
+            node.getStart(source) === identity.span[0] && node.end === identity.span[1]);
+          if (alias) gate.resolutionAliases.set(name, alias);
+          else gate.fail(null, "an external associated-result alias requires retained symbol resolution");
         },
         ...(seen ? { seen } : {}) });
       gate.symbolIdentities = declarations.symbols;

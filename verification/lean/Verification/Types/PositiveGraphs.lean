@@ -158,6 +158,67 @@ theorem selectParameter_valid (kind : Option ParameterKind) {A : WorldFamily Par
   funext n W x
   cases x <;> simp [selectParameter]
 
+open Classical in
+/-- A single binder is restricted to all of its declared bounds. -/
+noncomputable def restrictArg
+    (D : ParameterAssignment k ι → List ι → WorldFamily k.Carrier)
+    (η : ParameterAssignment k ι) (bounds : List (ι × List ι))
+    (hD : ∀ S, Adm (D η S)) (b : ι) (A : ParameterFamily k) : ParameterFamily k :=
+  ⟨fun n W v => A.1 n W v ∧ ∀ B, (b, B) ∈ bounds → D η B n W v,
+    ⟨⟨fun n W v h => ⟨A.2.1.down n W v h.1,
+        fun B hB => (hD B).down n W v (h.2 B hB)⟩,
+      fun n W W' hx v h => ⟨A.2.1.mono n W W' hx v h.1,
+        fun B hB => (hD B).mono n W W' hx v (h.2 B hB)⟩⟩,
+      fun n W v h => A.2.2 n W v h.1⟩⟩
+
+theorem restrictArg_eq_of_noBounds
+    (D : ParameterAssignment k ι → List ι → WorldFamily k.Carrier)
+    (η : ParameterAssignment k ι) (bounds : List (ι × List ι))
+    (hD : ∀ S, Adm (D η S)) (b : ι) (A : ParameterFamily k)
+    (h : ∀ B, (b, B) ∉ bounds) : restrictArg D η bounds hD b A = A := by
+  apply Subtype.ext
+  funext n W v
+  apply propext
+  exact ⟨fun hv => hv.1, fun hv => ⟨hv, fun B hB => (h B hB).elim⟩⟩
+
+/-- An instance with each binder's family cut down to its bounds. -/
+noncomputable def restrictArgs (D : ParameterAssignment k ι → List ι → WorldFamily k.Carrier) (η : ParameterAssignment k ι)
+    (bounds : List (ι × List ι)) (hD : ∀ S, Adm (D η S)) :
+    List ι → List (ParameterFamily k) → List (ParameterFamily k)
+  | b :: bs, A :: As => restrictArg D η bounds hD b A :: restrictArgs D η bounds hD bs As
+  | _, _ => []
+
+/-- Positional lookup commutes with the existing binder restriction. -/
+theorem restrictArgs_lookup
+    (D : ParameterAssignment k ι → List ι → WorldFamily k.Carrier)
+    (η : ParameterAssignment k ι) (bounds : List (ι × List ι)) (hD : ∀ S, Adm (D η S)) :
+    ∀ (bs : List ι) (As : List (ParameterFamily k)) (j : Nat) (A : ParameterFamily k),
+      As.length = bs.length → As[j]? = some A →
+      ∃ b, bs[j]? = some b ∧
+        (restrictArgs D η bounds hD bs As)[j]? = some (restrictArg D η bounds hD b A)
+  | [], As, _, _, hl, ha => by
+      cases As with
+      | nil => simp at ha
+      | cons A As => simp at hl
+  | _ :: _, [], _, _, hl, _ => by simp at hl
+  | b :: bs, A :: As, 0, B, _, ha => by
+      simp only [List.getElem?_cons_zero, Option.some.injEq] at ha
+      subst B
+      exact ⟨b, rfl, rfl⟩
+  | b :: bs, A :: As, j+1, B, hl, ha => by
+      simp only [List.length_cons, Nat.add_right_cancel_iff] at hl
+      simp only [List.getElem?_cons_succ] at ha
+      obtain ⟨b', hb', hA'⟩ := restrictArgs_lookup D η bounds hD bs As j B hl ha
+      exact ⟨b', by simpa using hb', by simpa [restrictArgs] using hA'⟩
+
+/-- Positions of a retained resolution input, literal observation and associated
+result among a scheme's binders. Positions survive label renaming. -/
+structure ResolutionSlots where
+  input : Nat
+  observation : Nat
+  result : Nat
+  deriving DecidableEq, BEq, Repr, Inhabited
+
 /-- A quantified callable: its binders, which are parameter rows, and the
 signatures `(receiver, parameters, result)` each of its instances meets. -/
 structure SchemeRow (ι : Type) where
@@ -170,7 +231,257 @@ structure SchemeRow (ι : Type) where
   /-- Variadic signatures `(receiver, parameters, rest, result)`, the rest an
   argument-list type; a binder may be one. -/
   variadic : List (RestArrow (List ι)) := []
+  /-- Associated slots are part of the generic contract. -/
+  resolution : List ResolutionSlots := []
   deriving DecidableEq, Repr
+
+/-- Associated observation and result slots have no independent bounds.
+Input bounds retain the associated contracts when narrowing a substitution. -/
+def SchemeRow.protectedSlots (s : SchemeRow ι) : Prop :=
+  ∀ g ∈ s.resolution, ∀ p ∈ [g.observation, g.result],
+    ∀ b, s.binders[p]? = some b → ∀ B, (b, B) ∉ s.bounds
+
+/-- Structural substitution retains the associated slot positions. -/
+def SchemeRow.map (binding : ι → κ) (operand : List ι → List κ)
+    (s : SchemeRow ι) : SchemeRow κ where
+  binders := s.binders.map binding
+  signatures := s.signatures.map (Arrow.map operand)
+  bounds := s.bounds.map (fun b => (binding b.1, operand b.2))
+  variadic := s.variadic.map (RestArrow.map operand)
+  resolution := s.resolution
+
+/-- The finite graph boundary checks position identity and all protected
+bounds separately from semantic instance membership. -/
+@[nospecialize] def SchemeRow.resolutionValid [DecidableEq ι] (s : SchemeRow ι) : Bool :=
+  s.resolution.isEmpty ||
+    (decide s.binders.Nodup &&
+      decide (s.resolution.flatMap (fun g => [g.input, g.observation, g.result])).Nodup &&
+      s.resolution.all (fun g =>
+        g.input < s.binders.length && g.observation < s.binders.length && g.result < s.binders.length &&
+        s.bounds.all (fun b => s.binders[g.observation]? != some b.1 && s.binders[g.result]? != some b.1)))
+
+open Classical in
+/-- The assignment with each binder given the family at its position. -/
+noncomputable def assign (η : ParameterAssignment k ι) (bs : List ι) (As : List (ParameterFamily k)) :
+    ParameterAssignment k ι :=
+  ⟨fun i => match (bs.zip As).lookup i with
+      | some A => A.1
+      | none => η.1 i,
+   fun i => by
+      cases h : (bs.zip As).lookup i with
+      | some A => simpa [h] using A.2
+      | none => simpa [h] using η.2 i⟩
+
+open Classical in
+/-- A binder is given the family at its position. -/
+theorem assign_map_mem (η : ParameterAssignment k ι) (bs : List ι) (F : ι → ParameterFamily k) {i : ι}
+    (h : i ∈ bs) : (assign η bs (bs.map F)).1 i = (F i).1 := by
+  have hl : (bs.zip (bs.map F)).lookup i = some (F i) := by
+    induction bs with
+    | nil => cases h
+    | cons b bs ih =>
+      simp only [List.map_cons, List.zip_cons_cons, List.lookup_cons]
+      by_cases hb : i = b
+      · subst hb; simp
+      · have hi : i ∈ bs := (List.mem_cons.mp h).resolve_left hb
+        rw [beq_false_of_ne hb]; simp [ih hi]
+  simp [assign, hl]
+
+open Classical in
+/-- Any other row keeps its family. -/
+theorem assign_map_nmem (η : ParameterAssignment k ι) (bs : List ι) (F : ι → ParameterFamily k) {i : ι}
+    (h : i ∉ bs) : (assign η bs (bs.map F)).1 i = η.1 i := by
+  have hl : (bs.zip (bs.map F)).lookup i = none := by
+    induction bs with
+    | nil => rfl
+    | cons b bs ih =>
+      simp only [List.map_cons, List.zip_cons_cons, List.lookup_cons]
+      have hb : i ≠ b := fun e => h (e ▸ List.mem_cons_self)
+      have hi : i ∉ bs := fun hi => h (List.mem_cons_of_mem _ hi)
+      rw [beq_false_of_ne hb]; simp [ih hi]
+  simp [assign, hl]
+
+open Classical in
+/-- A row that is no binder keeps its family, whatever the binders are given. -/
+theorem assign_nmem (η : ParameterAssignment k ι) (bs : List ι) (As : List (ParameterFamily k)) {i : ι}
+    (h : i ∉ bs) : (assign η bs As).1 i = η.1 i := by
+  have hl : (bs.zip As).lookup i = none := by
+    induction bs generalizing As with
+    | nil => rfl
+    | cons b bs ih =>
+      cases As with
+      | nil => rfl
+      | cons A As =>
+        simp only [List.zip_cons_cons, List.lookup_cons]
+        have hb : i ≠ b := fun e => h (e ▸ List.mem_cons_self)
+        rw [beq_false_of_ne hb]
+        exact ih As fun hi => h (List.mem_cons_of_mem _ hi)
+  simp [assign, hl]
+
+open Classical in
+private theorem lookup_zip_some {bs : List ι} {As : List (ParameterFamily k)} {p : ι}
+    (h : p ∈ bs) (hl : As.length = bs.length) : ∃ A, (bs.zip As).lookup p = some A := by
+  induction bs generalizing As with
+  | nil => cases h
+  | cons b bs ih =>
+    cases As with
+    | nil => simp at hl
+    | cons A As =>
+      simp only [List.zip_cons_cons, List.lookup_cons]
+      by_cases hb : p = b
+      · subst hb; simp
+      · rw [beq_false_of_ne hb]
+        exact ih ((List.mem_cons.mp h).resolve_left hb) (by simpa using hl)
+
+open Classical in
+private theorem mem_of_lookup_zip {bs : List ι} {As : List (ParameterFamily k)} {p : ι} {A}
+    (h : (bs.zip As).lookup p = some A) : p ∈ bs := by
+  induction bs generalizing As with
+  | nil => simp at h
+  | cons b bs ih =>
+    cases As with
+    | nil => simp at h
+    | cons A' As =>
+      simp only [List.zip_cons_cons, List.lookup_cons] at h
+      by_cases hb : p = b
+      · exact hb ▸ List.mem_cons_self
+      · rw [beq_false_of_ne hb] at h
+        exact List.mem_cons_of_mem _ (ih h)
+
+open Classical in
+/-- A binder is given the same family whatever the rest of the assignment. -/
+theorem assign_mem_eq (η η' : ParameterAssignment k ι) (bs : List ι) (As : List (ParameterFamily k)) {p : ι}
+    (h : p ∈ bs) (hl : As.length = bs.length) :
+    (assign η bs As).1 p = (assign η' bs As).1 p := by
+  obtain ⟨A, hA⟩ := lookup_zip_some h hl
+  simp [assign, hA]
+
+open Classical in
+/-- Reassigning disjoint binders commutes. -/
+theorem assign_comm (η : ParameterAssignment k ι) {bs cs : List ι} (As Bs : List (ParameterFamily k))
+    (hd : ∀ p ∈ bs, p ∉ cs) :
+    assign (assign η bs As) cs Bs = assign (assign η cs Bs) bs As := by
+  apply Subtype.ext
+  funext p
+  show (match (cs.zip Bs).lookup p with
+      | some B => B.1
+      | none => match (bs.zip As).lookup p with | some A => A.1 | none => η.1 p) =
+    (match (bs.zip As).lookup p with
+      | some A => A.1
+      | none => match (cs.zip Bs).lookup p with | some B => B.1 | none => η.1 p)
+  cases hc : (cs.zip Bs).lookup p with
+  | none => simp
+  | some B =>
+    have hp : p ∉ bs := fun hb => hd p hb (mem_of_lookup_zip hc)
+    have hn : (bs.zip As).lookup p = none := by
+      cases hb : (bs.zip As).lookup p with
+      | none => rfl
+      | some A => exact absurd (mem_of_lookup_zip hb) hp
+    simp [hn]
+
+open Classical in
+theorem assign_cons_head (η : ParameterAssignment k ι) (b : ι) (bs : List ι) (A : ParameterFamily k)
+    (As : List (ParameterFamily k)) : (assign η (b :: bs) (A :: As)).1 b = A.1 := by
+  simp [assign, List.lookup_cons]
+
+open Classical in
+theorem assign_cons_ne (η : ParameterAssignment k ι) {b p : ι} (bs : List ι) (A : ParameterFamily k)
+    (As : List (ParameterFamily k)) (h : p ≠ b) :
+    (assign η (b :: bs) (A :: As)).1 p = (assign η bs As).1 p := by
+  have : ((b :: bs).zip (A :: As)).lookup p = (bs.zip As).lookup p := by
+    rw [List.zip_cons_cons, List.lookup_cons, beq_false_of_ne h]
+  simp only [assign, this]
+
+/-- An instance is bounded below `n`: each bounded binder's family lies below
+its bound at every level under `n`. Only levels below `n` are read, which keeps
+the fixed point contractive. -/
+def Bounded (D : ParameterAssignment k ι → List ι → WorldFamily k.Carrier) (η : ParameterAssignment k ι) (s : SchemeRow ι)
+    (As : List (ParameterFamily k)) (n : Nat) : Prop :=
+  ∀ b ∈ s.bounds, b.1 ∈ s.binders → ∀ j, j < n → ∀ (U : WorldT j) u,
+    (assign η s.binders As).1 b.1 j U u → D η b.2 j U u
+
+theorem restrictArgs_length (D : ParameterAssignment k ι → List ι → WorldFamily k.Carrier) (η : ParameterAssignment k ι)
+    (bounds : List (ι × List ι)) (hD : ∀ S, Adm (D η S)) :
+    ∀ (bs : List ι) (As : List (ParameterFamily k)), As.length = bs.length →
+      (restrictArgs D η bounds hD bs As).length = bs.length
+  | [], _, _ => by simp [restrictArgs]
+  | _ :: _, [], h => by simp at h
+  | b :: bs, A :: As, h => by
+    simp only [restrictArgs, List.length_cons]
+    rw [restrictArgs_length D η bounds hD bs As (by simpa using h)]
+
+/-- A restricted binder's family is its family within its bounds. -/
+theorem assign_restrict (D : ParameterAssignment k ι → List ι → WorldFamily k.Carrier) (η' η : ParameterAssignment k ι)
+    (bounds : List (ι × List ι)) (hD : ∀ S, Adm (D η S)) :
+    ∀ (bs : List ι) (As : List (ParameterFamily k)) (p : ι) (n : Nat) (W : WorldT n) (v : k.Carrier),
+      As.length = bs.length →
+      ((assign η' bs (restrictArgs D η bounds hD bs As)).1 p n W v ↔
+        (assign η' bs As).1 p n W v ∧ (p ∈ bs → ∀ B, (p, B) ∈ bounds → D η B n W v))
+  | [], As, p, n, W, v, _ => by simp [restrictArgs, assign]
+  | _ :: _, [], _, _, _, _, h => by simp at h
+  | b :: bs, A :: As, p, n, W, v, h => by
+    by_cases hb : p = b
+    · subst hb
+      simp only [restrictArgs]
+      rw [assign_cons_head, assign_cons_head]
+      simp [restrictArg]
+    · simp only [restrictArgs]
+      rw [assign_cons_ne _ _ _ _ hb, assign_cons_ne _ _ _ _ hb,
+        assign_restrict D η' η bounds hD bs As p n W v (by simpa using h)]
+      simp [hb]
+
+/-- A fixed universe of allowed substitutions. Bound restriction may narrow
+all associated slots together while preserving their meaning below the bound
+checking level. The universe reads no recursive graph approximation or ambient assignment. -/
+structure SchemeDomain (ι : Type) (k : ParameterSpace) where
+  allowed : SchemeRow ι → List (ParameterFamily k) → Prop
+  /-- Every unqualified row admits its ordinary substitutions. -/
+  ordinary_allowed : ∀ s As, s.resolution = [] → allowed s As
+  /-- Renaming labels preserves the positional qualification contract. -/
+  congr : ∀ s t, s.resolution = t.resolution →
+    (s.protectedSlots ↔ t.protectedSlots) → ∀ As, allowed s As ↔ allowed t As
+  /-- An admitted tuple satisfying the bounds below n has an admitted
+  extension satisfying them below n+1, with the same meaning below n. -/
+  complete : ∀ (D : ParameterAssignment k ι → List ι → WorldFamily k.Carrier)
+    (η : ParameterAssignment k ι) (s : SchemeRow ι) (_hD : ∀ S, Adm (D η S))
+    (As : List (ParameterFamily k)), As.length = s.binders.length → allowed s As →
+    ∀ n, Bounded D η s As n → ∃ Bs,
+      Bs.length = s.binders.length ∧ allowed s Bs ∧ Bounded D η s Bs (n+1) ∧
+      ∀ p, Agree ((assign η s.binders Bs).1 p) ((assign η s.binders As).1 p) n
+
+/-- Input-wise restriction is one sufficient construction of a domain.
+Domains may instead update associated slots together with their input. -/
+def SchemeDomain.ofRestrict
+    (allowed : SchemeRow ι → List (ParameterFamily k) → Prop)
+    (ordinary_allowed : ∀ s As, s.resolution = [] → allowed s As)
+    (congr : ∀ s t, s.resolution = t.resolution →
+      (s.protectedSlots ↔ t.protectedSlots) → ∀ As, allowed s As ↔ allowed t As)
+    (restrict : ∀ (D : ParameterAssignment k ι → List ι → WorldFamily k.Carrier)
+      (η : ParameterAssignment k ι) (s : SchemeRow ι) (hD : ∀ S, Adm (D η S))
+      (As : List (ParameterFamily k)), As.length = s.binders.length → allowed s As →
+      allowed s (restrictArgs D η s.bounds hD s.binders As)) : SchemeDomain ι k where
+  allowed := allowed
+  ordinary_allowed := ordinary_allowed
+  congr := congr
+  complete := by
+    intro D η s hD As hl ha n hb
+    let Bs := restrictArgs D η s.bounds hD s.binders As
+    refine ⟨Bs, restrictArgs_length _ _ _ _ _ _ hl, restrict D η s hD As hl ha, ?_, ?_⟩
+    · intro b hbm hbin j _ U u hu
+      exact ((assign_restrict D η η s.bounds hD s.binders As b.1 j U u hl).mp hu).2 hbin b.2 hbm
+    · intro p j hj U u
+      rw [assign_restrict D η η s.bounds hD s.binders As p j U u hl]
+      exact ⟨fun h => h.1, fun hu => ⟨hu, fun hps B hB => hb (p, B) hB hps j hj U u hu⟩⟩
+
+@[simp] theorem SchemeDomain.ofRestrict_allowed {allowed ordinary congr restrict}
+    (s : SchemeRow ι) (As : List (ParameterFamily k)) :
+    (SchemeDomain.ofRestrict allowed ordinary congr restrict).allowed s As = allowed s As := rfl
+
+/-- Ordinary quantification permits ordinary rows. A qualified row requires an
+explicit domain whose substitutions retain its associated contracts. -/
+def SchemeDomain.ordinary : SchemeDomain ι k :=
+  .ofRestrict (fun s _ => s.resolution = []) (fun _ _ h => h)
+    (by intro s t h _ As; rw [h]) (fun _ _ _ _ _ _ h => h)
 
 /-- What the realm's arrays are, as a graph states it: the type of
 `Array.prototype` (`ArrayProto`) and the keys that prototype provides, none
@@ -194,6 +505,8 @@ structure NormalGraph (ι : Type) where
   meetParams : ι → List ι := fun _ => []
   /-- What the parameter rows mean. Semantic only. -/
   env : MixedAssignment ι := ParameterAssignment.empty .mixed
+  /-- The reviewed substitution universe is fixed across the graph's tower. -/
+  domain : SchemeDomain ι .mixed := .ordinary
   /-- The realm's arrays, where the graph states them: then every record and
   dictionary type is of objects meeting the array invariant
   (`realmInvariant`). A graph without arrays states none. -/
@@ -523,138 +836,6 @@ signatures' rows at reassignments of its binders. -/
 
 variable {k : ParameterSpace}
 
-open Classical in
-/-- The assignment with each binder given the family at its position. -/
-noncomputable def assign (η : ParameterAssignment k ι) (bs : List ι) (As : List (ParameterFamily k)) :
-    ParameterAssignment k ι :=
-  ⟨fun i => match (bs.zip As).lookup i with
-      | some A => A.1
-      | none => η.1 i,
-   fun i => by
-      cases h : (bs.zip As).lookup i with
-      | some A => simpa [h] using A.2
-      | none => simpa [h] using η.2 i⟩
-
-open Classical in
-/-- A binder is given the family at its position. -/
-theorem assign_map_mem (η : ParameterAssignment k ι) (bs : List ι) (F : ι → ParameterFamily k) {i : ι}
-    (h : i ∈ bs) : (assign η bs (bs.map F)).1 i = (F i).1 := by
-  have hl : (bs.zip (bs.map F)).lookup i = some (F i) := by
-    induction bs with
-    | nil => cases h
-    | cons b bs ih =>
-      simp only [List.map_cons, List.zip_cons_cons, List.lookup_cons]
-      by_cases hb : i = b
-      · subst hb; simp
-      · have hi : i ∈ bs := (List.mem_cons.mp h).resolve_left hb
-        rw [beq_false_of_ne hb]; simp [ih hi]
-  simp [assign, hl]
-
-open Classical in
-/-- Any other row keeps its family. -/
-theorem assign_map_nmem (η : ParameterAssignment k ι) (bs : List ι) (F : ι → ParameterFamily k) {i : ι}
-    (h : i ∉ bs) : (assign η bs (bs.map F)).1 i = η.1 i := by
-  have hl : (bs.zip (bs.map F)).lookup i = none := by
-    induction bs with
-    | nil => rfl
-    | cons b bs ih =>
-      simp only [List.map_cons, List.zip_cons_cons, List.lookup_cons]
-      have hb : i ≠ b := fun e => h (e ▸ List.mem_cons_self)
-      have hi : i ∉ bs := fun hi => h (List.mem_cons_of_mem _ hi)
-      rw [beq_false_of_ne hb]; simp [ih hi]
-  simp [assign, hl]
-
-open Classical in
-/-- A row that is no binder keeps its family, whatever the binders are given. -/
-theorem assign_nmem (η : ParameterAssignment k ι) (bs : List ι) (As : List (ParameterFamily k)) {i : ι}
-    (h : i ∉ bs) : (assign η bs As).1 i = η.1 i := by
-  have hl : (bs.zip As).lookup i = none := by
-    induction bs generalizing As with
-    | nil => rfl
-    | cons b bs ih =>
-      cases As with
-      | nil => rfl
-      | cons A As =>
-        simp only [List.zip_cons_cons, List.lookup_cons]
-        have hb : i ≠ b := fun e => h (e ▸ List.mem_cons_self)
-        rw [beq_false_of_ne hb]
-        exact ih As fun hi => h (List.mem_cons_of_mem _ hi)
-  simp [assign, hl]
-
-open Classical in
-private theorem lookup_zip_some {bs : List ι} {As : List (ParameterFamily k)} {p : ι}
-    (h : p ∈ bs) (hl : As.length = bs.length) : ∃ A, (bs.zip As).lookup p = some A := by
-  induction bs generalizing As with
-  | nil => cases h
-  | cons b bs ih =>
-    cases As with
-    | nil => simp at hl
-    | cons A As =>
-      simp only [List.zip_cons_cons, List.lookup_cons]
-      by_cases hb : p = b
-      · subst hb; simp
-      · rw [beq_false_of_ne hb]
-        exact ih ((List.mem_cons.mp h).resolve_left hb) (by simpa using hl)
-
-open Classical in
-private theorem mem_of_lookup_zip {bs : List ι} {As : List (ParameterFamily k)} {p : ι} {A}
-    (h : (bs.zip As).lookup p = some A) : p ∈ bs := by
-  induction bs generalizing As with
-  | nil => simp at h
-  | cons b bs ih =>
-    cases As with
-    | nil => simp at h
-    | cons A' As =>
-      simp only [List.zip_cons_cons, List.lookup_cons] at h
-      by_cases hb : p = b
-      · exact hb ▸ List.mem_cons_self
-      · rw [beq_false_of_ne hb] at h
-        exact List.mem_cons_of_mem _ (ih h)
-
-open Classical in
-/-- A binder is given the same family whatever the rest of the assignment. -/
-theorem assign_mem_eq (η η' : ParameterAssignment k ι) (bs : List ι) (As : List (ParameterFamily k)) {p : ι}
-    (h : p ∈ bs) (hl : As.length = bs.length) :
-    (assign η bs As).1 p = (assign η' bs As).1 p := by
-  obtain ⟨A, hA⟩ := lookup_zip_some h hl
-  simp [assign, hA]
-
-open Classical in
-/-- Reassigning disjoint binders commutes. -/
-theorem assign_comm (η : ParameterAssignment k ι) {bs cs : List ι} (As Bs : List (ParameterFamily k))
-    (hd : ∀ p ∈ bs, p ∉ cs) :
-    assign (assign η bs As) cs Bs = assign (assign η cs Bs) bs As := by
-  apply Subtype.ext
-  funext p
-  show (match (cs.zip Bs).lookup p with
-      | some B => B.1
-      | none => match (bs.zip As).lookup p with | some A => A.1 | none => η.1 p) =
-    (match (bs.zip As).lookup p with
-      | some A => A.1
-      | none => match (cs.zip Bs).lookup p with | some B => B.1 | none => η.1 p)
-  cases hc : (cs.zip Bs).lookup p with
-  | none => simp
-  | some B =>
-    have hp : p ∉ bs := fun hb => hd p hb (mem_of_lookup_zip hc)
-    have hn : (bs.zip As).lookup p = none := by
-      cases hb : (bs.zip As).lookup p with
-      | none => rfl
-      | some A => exact absurd (mem_of_lookup_zip hb) hp
-    simp [hn]
-
-open Classical in
-theorem assign_cons_head (η : ParameterAssignment k ι) (b : ι) (bs : List ι) (A : ParameterFamily k)
-    (As : List (ParameterFamily k)) : (assign η (b :: bs) (A :: As)).1 b = A.1 := by
-  simp [assign, List.lookup_cons]
-
-open Classical in
-theorem assign_cons_ne (η : ParameterAssignment k ι) {b p : ι} (bs : List ι) (A : ParameterFamily k)
-    (As : List (ParameterFamily k)) (h : p ≠ b) :
-    (assign η (b :: bs) (A :: As)).1 p = (assign η bs As).1 p := by
-  have : ((b :: bs).zip (A :: As)).lookup p = (bs.zip As).lookup p := by
-    rw [List.zip_cons_cons, List.lookup_cons, beq_false_of_ne h]
-  simp only [assign, this]
-
 /-- Two assignments differing at most on `bs`. -/
 def AgreeOff (bs : List ι) (η η' : ParameterAssignment k ι) : Prop := ∀ p, p ∉ bs → η.1 p = η'.1 p
 
@@ -819,27 +1000,21 @@ theorem instanceT_congrWithArgs (P : ArgumentInterpreter ι k) (hP : ArgumentNon
       (fun _ _ => rfl)
       (fun p _ => ⟨h p.receiver, argsAgree_of h p.arguments.1, hP _ _ _ _ m hη h p.arguments.2, h p.result⟩) W v)
 
-/-- An instance is bounded below `n`: each bounded binder's family lies below
-its bound at every level under `n`. Only levels below `n` are read, which keeps
-the fixed point contractive. -/
-def Bounded (D : ParameterAssignment k ι → List ι → WorldFamily k.Carrier) (η : ParameterAssignment k ι) (s : SchemeRow ι)
-    (As : List (ParameterFamily k)) (n : Nat) : Prop :=
-  ∀ b ∈ s.bounds, b.1 ∈ s.binders → ∀ j, j < n → ∀ (U : WorldT j) u,
-    (assign η s.binders As).1 b.1 j U u → D η b.2 j U u
-
 /-- Universal quantification has one implementation for both semantic sorts.
 The body still denotes a runtime callable; its parameters may denote lists. -/
 noncomputable def boundedSem
     (D : ParameterAssignment k ι → List ι → WorldFamily k.Carrier)
     (η : ParameterAssignment k ι) (s : SchemeRow ι)
-    (body : List (ParameterFamily k) → Fam) : Fam := fun n W v =>
+    (body : List (ParameterFamily k) → Fam)
+    (domain : SchemeDomain ι k := .ordinary) : Fam := fun n W v =>
   Invocable v ∧ ∀ As, As.length = s.binders.length →
-    Bounded D η s As n → body As n W v
+    domain.allowed s As → Bounded D η s As n → body As n W v
 
 /-- The assignment carrier is independent of recursive value outputs. A domain
 projects parameter values and derives bounds from those outputs at the same
 level. These laws are precisely what the shared guarded fixed point needs. -/
 structure ParameterInterpretation (ι : Type) (k : ParameterSpace) where
+  domain : SchemeDomain ι k := .ordinary
   parameter : ι → WorldFamily k.Carrier → WorldFamily k.Carrier
   arguments : ArgumentInterpreter ι k
   arguments_nonexp : ArgumentNonExp arguments
@@ -861,6 +1036,7 @@ structure ParameterInterpretation (ι : Type) (k : ParameterSpace) where
 /-- Mixed bounds retain both components. Projecting only their value part would
 make a pack bound vacuous. Argument rows are derived, never unfolded again. -/
 def mixedParameters (G : NormalGraph ι) : ParameterInterpretation ι .mixed where
+  domain := G.domain
   parameter := fun i A => selectParameter (G.parameterKinds i) A
   arguments := graphArguments G
   arguments_nonexp := graphArguments_nonexp G
@@ -900,7 +1076,7 @@ of its binders within their bounds: the same value, in the same world, at all
 of them. -/
 noncomputable def schemeSemWithArgs (I : ParameterInterpretation ι k) (D : ParameterAssignment k ι → List ι → Fam) (η : ParameterAssignment k ι)
     (s : SchemeRow ι) : Fam :=
-  boundedSem (fun θ S => I.bound θ (D θ) S) η s (fun As => instanceTWithArgs D η s As I.arguments)
+  boundedSem (fun θ S => I.bound θ (D θ) S) η s (fun As => instanceTWithArgs D η s As I.arguments) I.domain
 
 /-- A meet row's part, read at the meet's own level (RECURSIVE-EQUATIONS §3.3):
 a parameter's family, a scheme row's instances, or a clause row's clauses. It
@@ -992,7 +1168,7 @@ theorem partSem_congrWithArgs (G : NormalGraph ι) (I : ParameterInterpretation 
       · exact (rowSem_congr G _ _ _ _ _ _ n hE hS (I.arguments_nonexp η η _ _ n (fun _ _ _ _ _ => Iff.rfl) hS) c W v).mp hv
       · exact (rowSem_congr G _ _ _ _ _ _ n hE hS (I.arguments_nonexp η η _ _ n (fun _ _ _ _ _ => Iff.rfl) hS) c W v).mpr hv
     | some s =>
-      refine and_congr Iff.rfl (forall_congr' fun As => forall_congr' fun _ => ?_)
+      refine and_congr Iff.rfl (forall_congr' fun As => forall_congr' fun _ => forall_congr' fun _ => ?_)
       refine imp_congr ?_ ?_
       · unfold Bounded
         refine forall_congr' fun b => forall_congr' fun _ => forall_congr' fun _ =>
@@ -1038,52 +1214,9 @@ def NonExp (X : ParameterAssignment k ι × ι → Fam) : Prop :=
 /-- The invariant of the approximations: admissible and non-expansive. -/
 def QInv (X : ParameterAssignment k ι × ι → Fam) : Prop := (∀ ηi, Adm (X ηi)) ∧ NonExp X
 
-open Classical in
-/-- An instance with each binder's family cut down to its bounds. -/
-noncomputable def restrictArgs (D : ParameterAssignment k ι → List ι → WorldFamily k.Carrier) (η : ParameterAssignment k ι)
-    (bounds : List (ι × List ι)) (hD : ∀ S, Adm (D η S)) :
-    List ι → List (ParameterFamily k) → List (ParameterFamily k)
-  | b :: bs, A :: As =>
-    ⟨fun n W v => A.1 n W v ∧ ∀ B, (b, B) ∈ bounds → D η B n W v,
-     ⟨⟨fun n W v h => ⟨A.2.1.down n W v h.1, fun B hB => (hD B).down n W v (h.2 B hB)⟩,
-       fun n W W' hx v h => ⟨A.2.1.mono n W W' hx v h.1,
-         fun B hB => (hD B).mono n W W' hx v (h.2 B hB)⟩⟩,
-      fun n W v h => A.2.2 n W v h.1⟩⟩ :: restrictArgs D η bounds hD bs As
-  | _, _ => []
-
-theorem restrictArgs_length (D : ParameterAssignment k ι → List ι → WorldFamily k.Carrier) (η : ParameterAssignment k ι)
-    (bounds : List (ι × List ι)) (hD : ∀ S, Adm (D η S)) :
-    ∀ (bs : List ι) (As : List (ParameterFamily k)), As.length = bs.length →
-      (restrictArgs D η bounds hD bs As).length = bs.length
-  | [], _, _ => by simp [restrictArgs]
-  | _ :: _, [], h => by simp at h
-  | b :: bs, A :: As, h => by
-    simp only [restrictArgs, List.length_cons]
-    rw [restrictArgs_length D η bounds hD bs As (by simpa using h)]
-
-/-- A restricted binder's family is its family within its bounds. -/
-theorem assign_restrict (D : ParameterAssignment k ι → List ι → WorldFamily k.Carrier) (η' η : ParameterAssignment k ι)
-    (bounds : List (ι × List ι)) (hD : ∀ S, Adm (D η S)) :
-    ∀ (bs : List ι) (As : List (ParameterFamily k)) (p : ι) (n : Nat) (W : WorldT n) (v : k.Carrier),
-      As.length = bs.length →
-      ((assign η' bs (restrictArgs D η bounds hD bs As)).1 p n W v ↔
-        (assign η' bs As).1 p n W v ∧ (p ∈ bs → ∀ B, (p, B) ∈ bounds → D η B n W v))
-  | [], As, p, n, W, v, _ => by simp [restrictArgs, assign]
-  | _ :: _, [], _, _, _, _, h => by simp at h
-  | b :: bs, A :: As, p, n, W, v, h => by
-    by_cases hb : p = b
-    · subst hb
-      simp only [restrictArgs]
-      rw [assign_cons_head, assign_cons_head]
-      simp
-    · simp only [restrictArgs]
-      rw [assign_cons_ne _ _ _ _ hb, assign_cons_ne _ _ _ _ hb,
-        assign_restrict D η' η bounds hD bs As p n W v (by simpa using h)]
-      simp [hb]
-
-/-- Restricting each instance to its bounds makes universal quantification
-admissible. The argument applies equally to value and list contracts; it does
-not add an approximation delay to list membership. -/
+/-- Completing an admitted instance to the next level of its bounds makes
+universal quantification admissible. Agreement below the current level
+preserves the body, including negative and invariant parameter occurrences. -/
 theorem boundedSem_adm
     (D : ParameterAssignment k ι → List ι → WorldFamily k.Carrier)
     (η : ParameterAssignment k ι) (s : SchemeRow ι)
@@ -1091,26 +1224,16 @@ theorem boundedSem_adm
     (hD : ∀ S, Adm (D η S)) (hbody : ∀ As, Adm (body As))
     (hcongr : ∀ As Bs m,
       (∀ p, Agree ((assign η s.binders As).1 p) ((assign η s.binders Bs).1 p) m) →
-      ∀ W v, body As m W v ↔ body Bs m W v) :
-    Adm (boundedSem D η s body) := by
+      ∀ W v, body As m W v ↔ body Bs m W v)
+    (domain : SchemeDomain ι k := .ordinary) :
+    Adm (boundedSem D η s body domain) := by
   constructor
   · intro n W v h
-    refine ⟨h.1, fun As hl hb => ?_⟩
-    let As' := restrictArgs D η s.bounds hD s.binders As
-    have hl' : As'.length = s.binders.length := restrictArgs_length _ _ _ _ _ _ hl
-    have hb' : Bounded D η s As' (n + 1) := by
-      intro b hbm hbin j _ U u hu
-      exact ((assign_restrict _ η η _ hD _ _ _ _ _ _ hl).mp hu).2 hbin b.2 hbm
-    have hagree : ∀ p, Agree ((assign η s.binders As').1 p) ((assign η s.binders As).1 p) n := by
-      intro p j hj U u
-      rw [assign_restrict _ η η _ hD _ _ _ _ _ _ hl]
-      constructor
-      · exact fun h => h.1
-      · intro hu
-        exact ⟨hu, fun hps B hB => hb (p, B) hB hps j hj U u hu⟩
-    exact (hcongr As' As n hagree _ v).mp ((hbody As').down n W v (h.2 As' hl' hb'))
+    refine ⟨h.1, fun As hl ha hb => ?_⟩
+    obtain ⟨As', hl', ha', hb', hagree⟩ := domain.complete D η s hD As hl ha n hb
+    exact (hcongr As' As n hagree _ v).mp ((hbody As').down n W v (h.2 As' hl' ha' hb'))
   · intro n W W' hx v h
-    exact ⟨h.1, fun As hl hb => (hbody As).mono n W W' hx v (h.2 As hl hb)⟩
+    exact ⟨h.1, fun As hl ha hb => (hbody As).mono n W W' hx v (h.2 As hl ha hb)⟩
 
 /-- A part is admissible, and non-expansive in the assignment. -/
 theorem partSem_invWithArgs (G : NormalGraph ι) (I : ParameterInterpretation ι k)
@@ -1146,7 +1269,7 @@ theorem partSem_invWithArgs (G : NormalGraph ι) (I : ParameterInterpretation ι
       | some s =>
         exact boundedSem_adm _ η s _ (I.bound_adm η _ (hD η))
           (fun As => instanceTWithArgs_adm _ η s As I.arguments)
-          (fun As Bs m h W v => instanceT_congrWithArgs I.arguments I.arguments_nonexp h (fun S => sets _ _ m h S) W v)
+          (fun As Bs m h W v => instanceT_congrWithArgs I.arguments I.arguments_nonexp h (fun S => sets _ _ m h S) W v) I.domain
   · -- non-expansive
     intro k hk W v
     unfold partSemWithArgs
@@ -1170,7 +1293,7 @@ theorem partSem_invWithArgs (G : NormalGraph ι) (I : ParameterInterpretation ι
               (I.arguments_nonexp η η' _ _ k (fun p => Agree.mono (h p) (by omega)) (fun a => Agree.mono (sets η η' m h a) (by omega))) c W v).mpr hv⟩
         exact cl _
       | some s =>
-        refine and_congr Iff.rfl (forall_congr' fun As => forall_congr' fun _ => ?_)
+        refine and_congr Iff.rfl (forall_congr' fun As => forall_congr' fun _ => forall_congr' fun _ => ?_)
         have hre := reassign η η' s.binders As m h
         refine imp_congr ?_ ?_
         · unfold Bounded

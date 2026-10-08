@@ -58,27 +58,31 @@ structure PointClaim (ι : Type) where
 /-- Claims are part of the request, not facts the producer may replace. -/
 @[nospecialize] def acceptResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (R : Ty ι) (P : Program)
     (claims : List (PointClaim ι)) (C : ControlFlow.Certificate ι) (start : Nat)
-    (inputs : List (Ty ι) := []) (codes : CodeEntry ι → Bool := fun _ => false) : CheckResult ι Unit :=
+    (inputs : List (Ty ι) := []) (codes : CodeEntry ι → Bool := fun _ => false)
+    (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images) : CheckResult ι Unit :=
   (CheckResult.ofBool (decide (C.map signature = claims))).bind fun _ =>
-  checkEntryResult G images R P C start inputs codes
+  checkEntryResult (checker := checker) G images R P C start inputs codes
 
 @[nospecialize] def acceptUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (R : Ty ι) (P : Program)
     (claims : List (PointClaim ι)) (C : ControlFlow.Certificate ι) (start : Nat)
-    (inputs : List (Ty ι) := []) (codes : CodeEntry ι → Bool := fun _ => false) : Bool :=
-  (acceptResult G images R P claims C start inputs codes).accepted
+    (inputs : List (Ty ι) := []) (codes : CodeEntry ι → Bool := fun _ => false)
+    (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images) : Bool :=
+  (acceptResult (checker := checker) G images R P claims C start inputs codes).accepted
 
 theorem acceptUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (R : Ty ι) (P : Program)
     (claims : List (PointClaim ι)) (C : ControlFlow.Certificate ι) (start : Nat)
-    (inputs : List (Ty ι)) (codes : CodeEntry ι → Bool) :
-    acceptUsing G images R P claims C start inputs codes = (
-  decide (C.map signature = claims) && checkEntryUsing G images R P C start inputs codes
+    (inputs : List (Ty ι)) (codes : CodeEntry ι → Bool)
+    (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images) :
+    acceptUsing (checker := checker) G images R P claims C start inputs codes = (
+  decide (C.map signature = claims) && checkEntryUsing (checker := checker) G images R P C start inputs codes
   ) := by
   simp only [acceptUsing, acceptResult, CheckResult.accepted_bind,
     CheckResult.accepted_ofBool, checkEntryUsing]
 
 
-theorem accept_claims [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {R P claims C start inputs codes}
-    (hc : acceptUsing G images R P claims C start inputs codes = true) : C.map signature = claims :=
+theorem accept_claims [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+    {checker : HeapExpressionRules.Checker G images} {R P claims C start inputs codes}
+    (hc : acceptUsing (checker := checker) G images R P claims C start inputs codes = true) : C.map signature = claims :=
   by
     simp only [acceptUsing_eq, Bool.and_eq_true, decide_eq_true_eq] at hc
     exact hc.1
@@ -90,8 +94,9 @@ theorem accepted_safe [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIm
     simp only [acceptUsing_eq, Bool.and_eq_true] at hc
     exact accepted_closed_safe hc.2 n
 
-theorem accepted_from_inputs [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {R P claims C start inputs}
-    {codes : CodeEntry ι → Bool} (hc : acceptUsing G images R P claims C start inputs codes = true) (n W h ρ)
+theorem accepted_from_inputs [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+    {checker : HeapExpressionRules.Checker G images} {R P claims C start inputs}
+    {codes : CodeEntry ι → Bool} (hc : acceptUsing (checker := checker) G images R P claims C start inputs codes = true) (n W h ρ)
     (he : EnvOk G inputs ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h)
     (hcodes : ProgramCertificates.CodesSound G codes := by exact Verification.ProgramCertificates.codesSound_none _) :
     SafeGraph P (meaning G R) n W h (.at start ρ) := by
@@ -1151,19 +1156,22 @@ private def failedEdge (P : Program)
     (start : Nat) (hints : List (Ty ι) := []) (inputs : List (Ty ι) := [])
     (suggestions : List (Sequent ι) := []) (known : List (ProgramCertificates.Evidence ι) := [])
     (requirements : List (Nat × HeapKnowledge.Knowledge) := []) (cuts : List Nat := [])
-    (codes : CodeEntry ι → Bool := fun _ => false) : Except (Failure ι) (ControlFlow.Certificate ι) :=
+    (codes : CodeEntry ι → Bool := fun _ => false)
+    (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images) :
+    Except (Failure ι) (ControlFlow.Certificate ι) :=
   match produceRawUsing G images (vocabulary G labels claims (inputs ++ hints)) fuel P claims suggestions known start requirements cuts codes with
   | .error e => .error e
   | .ok C =>
-    let checked := acceptResult G images R P claims C start inputs codes
+    let checked := acceptResult G images R P claims C start inputs codes checker
     if checked.accepted then .ok C
     else match checked.exhaustion with
       | some stop => .error (.exhaustedExpression (stop.nodeLabel.getD start) stop)
       | none => .error ((failedEdge P C).getD .rejected)
 
 theorem produce_checked [DecidableEq ι] [Hashable ι] [Instantiates ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {labels fuel R P claims start hints inputs suggestions known requirements cuts codes C}
-    (h : produceUsing G images labels fuel R P claims start hints inputs suggestions known requirements cuts codes = .ok C) :
-    acceptUsing G images R P claims C start inputs codes = true := by
+    {checker : HeapExpressionRules.Checker G images}
+    (h : produceUsing G images labels fuel R P claims start hints inputs suggestions known requirements cuts codes checker = .ok C) :
+    acceptUsing G images R P claims C start inputs codes checker = true := by
   unfold produceUsing at h
   split at h
   · contradiction

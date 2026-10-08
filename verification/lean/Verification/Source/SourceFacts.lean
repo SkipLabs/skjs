@@ -13,7 +13,7 @@ private partial def assignsExpr (name : String) : Fragment.Expr → Bool
   | .assign _ target _ rhs | .nullishAssign _ target _ rhs => target == name || assignsExpr name rhs
   | .lambda _ _ _ _ defaults _ _ e =>
     defaults.attach.any (fun ⟨d,_⟩ => assignsExpr name d.2) || assignsExpr name e
-  | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .shapeTest _ _ _ e =>
+  | .resolution _ _ _ e | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .shapeTest _ _ _ e =>
     assignsExpr name e
   | .equality _ _ a b | .logical _ _ a b | .coalesce _ a b | .optional _ _ a b
   | .singletonTest _ _ _ _ a b | .write _ _ a b | .withValue _ a b _ _ | .index _ _ a b =>
@@ -112,7 +112,7 @@ partial def escapesExpr (n : String) : Fragment.Expr → Bool
   | e@(.lambda ..) | e@(.ctor ..) | e@(.block ..) | e@(.ifBody ..) | e@(.optional ..)
   | e@(.withValue ..) | e@(.arrayAssign ..) | e@(.assign ..) | e@(.nullishAssign ..) =>
     e.freeNames.contains n
-  | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .shapeTest _ _ _ e => escapesExpr n e
+  | .resolution _ _ _ e | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .shapeTest _ _ _ e => escapesExpr n e
   | .equality _ _ a b | .logical _ _ a b | .coalesce _ a b | .singletonTest _ _ _ _ a b
   | .write _ _ a b | .index _ _ a b | .arith _ _ a b | .elemAt _ a b | .comma _ a b
   | .inKeys _ a b | .logicalAssign _ _ a b => escapesExpr n a || escapesExpr n b
@@ -134,7 +134,7 @@ partial def closureBodies : Fragment.Expr → List (List Fragment.Stmt)
     (match b with | .block _ ss => [ss] | b => closureBodies b)
   | .ctor _ lam => closureBodies lam
   | .var .. | .lit .. => []
-  | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .shapeTest _ _ _ e => closureBodies e
+  | .resolution _ _ _ e | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .shapeTest _ _ _ e => closureBodies e
   | .equality _ _ a b | .logical _ _ a b | .coalesce _ a b | .singletonTest _ _ _ _ a b
   | .write _ _ a b | .index _ _ a b | .arith _ _ a b | .elemAt _ a b | .comma _ a b
   | .inKeys _ a b | .logicalAssign _ _ a b | .optional _ _ a b

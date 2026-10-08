@@ -33,6 +33,8 @@ slots are introduced only after the operand supplying their type is checked. -/
         | .var _ name => observed scope Γ (snapshotName name (← stringKey fld)) ⟨"",some e.span⟩ e.span A fld R
         | _ => persistentObservation ⟨"",some e.span⟩ e.span A fld R
   let p ← match e with
+  | .resolution .. => throw (locatedRefusal (← table) e.span .expressionClaim
+      "qualified resolution operation requires descriptor checking")
   | .equality .. => throw "internal unresolved equality"
   | .block .. => throw "internal extraction error: statements outside a closure body"
   | .objectAssign .. => throw (locatedRefusal (← table) e.span .expressionClaim

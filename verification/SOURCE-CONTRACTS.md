@@ -859,7 +859,7 @@ non-thenable throughout its lifetime. The intrinsic signatures are:
 
 ```math
 \begin{aligned}
-\mathtt{\%Await\%}&:\forall T,\,U\le P.\ (\mathit{value}:\mathsf{Promise}\langle T\rangle\mid U)\Rightarrow T\mid U\\
+\mathtt{\%Await\%}&:\forall T,\,U\le N.\ (\mathit{value}:\mathsf{Promise}\langle T\rangle\mid U)\Rightarrow T\mid U\\
 \mathtt{\%AsyncReturn\%}&:\forall T\le N,\,U\le N.\ (\mathit{value}:T\mid\mathsf{Promise}\langle U\rangle)\Rightarrow\mathsf{Promise}\langle T\mid U\rangle\\
 \mathtt{\%PromiseResolve\%}&:\forall T,\,U\le N.\ (\mathit{value}:\mathsf{Promise}\langle T\rangle\mid U)\Rightarrow\mathsf{Promise}\langle T\mid U\rangle\\
 \mathtt{\%AsyncComplete\%}&:()\Rightarrow\mathsf{Promise}\langle\mathsf{void}\rangle\\
@@ -873,7 +873,7 @@ Instantiated by $`\textsf{instances}`$, with $`R`$ the async function's result
 annotation, they derive:
 
 ```math
-\frac{\Gamma\vdash e:\mathsf{Promise}\langle A\rangle\mid B\quad B\le P}{\Gamma\vdash\mathsf{await}\ e:A\mid B}\ \textsf{await}
+\frac{\Gamma\vdash e:\mathsf{Promise}\langle A\rangle\mid B\quad B\le N}{\Gamma\vdash\mathsf{await}\ e:A\mid B}\ \textsf{await}
 \qquad
 \frac{\Gamma\vdash e:A\mid\mathsf{Promise}\langle B\rangle\quad A\le N\quad B\le N\quad \mathsf{Promise}\langle A\mid B\rangle\le R}{\Gamma\vdash_R\mathsf{return}\ e}\ \textsf{async-return}
 \qquad
@@ -882,8 +882,9 @@ annotation, they derive:
 
 `Promise<void>` is `Promise<unknown>` (`void` is top); async completion
 fulfills it with `undefined`. A throw in an async body leaves it as a throw.
-A non-promise operand is awaited at its own type only where it is a
-primitive ($`U\le P`$): resolution of an object may call its `then`.
+A non-promise operand is awaited at its own type when its lifetime contract
+establishes membership in $`N`$. This includes ordinary arrays and records
+with a stable primitive-valued or absent `then`.
 
 **Native promise invariant.** `Promise<A>` denotes a native promise of the
 current realm, with the stable standard `Promise.prototype` and constructor.

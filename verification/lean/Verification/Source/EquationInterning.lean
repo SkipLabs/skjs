@@ -1,4 +1,5 @@
 import Verification.Source.EquationState
+import Verification.Source.ResolutionWire
 
 /-! Section references follow `verification/RECURSIVE-EQUATIONS.md`. -/
 namespace Verification.EquationLowering
@@ -307,21 +308,26 @@ def unitBinders (names : List String) (packs : List String) : List Binder :=
 
 /-- A scheme's binders, their kinds, and the refusals of forms a scheme
 cannot state. -/
-def schemeBinders (site : String) (term : Json) : Except String (List String × List String) := do
+def schemeBinders (site : String) (term : Json) : Except String (List String × List String × List ResolutionSlots) := do
   fieldsExactly term ["k", "binders", "signatures", "span"]
   let bs ← arr term "binders"
   let sigTerms ← arr term "signatures"
   let refuse (reason : String) : Except String Unit :=
     throw s!"{site}: generic contract at {(term.getObjValD "span").compress}: {reason}; the contract cannot be erased"
-  let names ← bs.toList.mapM fun b => do
-    fieldsExactly b ["name", "bound", "default", "span"]
-    str b "name"
+  let parameters ← bs.toList.mapM fun b => do
+    fieldsExactly b ["name", "bound", "default", "span", "resolution"]
+    let name ← str b "name"
+    let resolution ← (fromJson? (← field b "resolution") : Except String (Option ResolutionWire.Slots))
+    return (name, resolution)
+  ResolutionWire.validateOwnership parameters
+  let names := parameters.flatMap fun (n, s) => ResolutionWire.ownedNames n s
   let own (j : Json) : Bool := names.any fun n => let u := binderUse n j; u.value || u.pack
   if bs.any (fun b => own (b.getObjValD "bound")) then refuse "dependent method bounds are not represented"
   let uses : List (String × BinderUse) := names.map fun n => (n, binderUse n (.arr sigTerms))
   if uses.any (fun (p : String × BinderUse) => p.2.pack && p.2.value) then
     refuse "a binder used as both a value and an argument pack is not represented"
-  return (names, (uses.filter fun (p : String × BinderUse) => p.2.pack).map Prod.fst)
+  return (names, (uses.filter fun (p : String × BinderUse) => p.2.pack).map Prod.fst,
+    ResolutionWire.groups parameters)
 
 def referenceIndex (term : Json) : M Nat := do
   fieldsExactly term ["k", "reference", "args", "span"]

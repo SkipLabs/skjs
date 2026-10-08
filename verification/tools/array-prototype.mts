@@ -468,7 +468,7 @@ function prototype(checker: Checker, at: Node, library: OverlayLibrary, proto: P
     if (!first || (!binders.length && forms.length !== 1))
       throw Error(`${entry.from}.${entry.name} requires a nonempty supported signature family`);
     const type: TypeTerm = binders.length
-      ? { k: "scheme", binders: binders.map(name => ({ name, bound: entry.bounds?.[name] ?? null, default: null, span })),
+      ? { k: "scheme", binders: binders.map(name => ({ name, bound: entry.bounds?.[name] ?? null, resolution: null, default: null, span })),
           signatures: forms.map(f => ({ ...f, receiver: f.receiver ?? receiver })), span }
       : { ...first, receiver: first.receiver ?? receiver };
     const key = ts.isComputedPropertyName(member.name) &&

@@ -5,7 +5,7 @@
  * Every annotation is a source type term, the language of declaration bodies.
  */
 import type { Atom } from "./claim.mts";
-import type { DeclarationDocument, PropertyKey, TypeTerm } from "./declaration-types.mts";
+import type { DeclarationDocument, PropertyKey, SourceTypeParameter, TypeTerm } from "./declaration-types.mts";
 // span.mts declares the source span every Fragment node carries, the one declaration the claims, the diagnostics and the reports share.
 import type { Span } from "./span.mts";
 
@@ -23,6 +23,9 @@ export type UnaryOp = "neg" | "plus" | "bitNot" | "typeof";
 export type TypeofShape = "number" | "string" | "boolean" | "undefined" | "function" | "bigint" | "symbol" | "object";
 export type Expr =
   | { k: "id"; pos: Span; name: string }
+  /** Descriptor observation and fresh settlement, with ownership checked
+   * against the enclosing qualified parameter. */
+  | { k: "resolution"; pos: Span; operation: "observe" | "fresh"; binder: string | null; e: Expr }
   /* `this`: the receiver of the nearest enclosing ordinary function. An arrow
      has no receiver of its own, so inside one this is a capture. */
   | { k: "this"; pos: Span }
@@ -319,10 +322,7 @@ export interface BindingAst {
   init: Expr;
 }
 
-export interface TypeParamAst {
-  name: string;
-  bound: TypeTerm | null;
-}
+export type TypeParamAst = SourceTypeParameter<TypeTerm>;
 
 export interface FunctionAst {
   name: string;

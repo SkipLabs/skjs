@@ -16,6 +16,11 @@ let unsupported s = fail ("unsupported: " ^ s)
 let effect_json = function
   | Unrestricted -> String "unrestricted"
   | PreservesInputHeap -> String "preservesInputHeap"
+let rec resolution_json = function
+  | StableResolution -> Object ["k",String "stable"]
+  | NativeResolution child -> Object ["k",String "native";"child",resolution_json child]
+  | UnionResolution arms -> Object ["k",String "union";"arms",Array (List.map resolution_json arms)]
+  | BinderResolution binder -> Object ["k",String "binder";"binder",String binder]
 let call_contract call_effect receiver arguments result = Object [
   "receiver",receiver; "arguments",arguments; "result",result;
   "effect",effect_json call_effect]
@@ -122,7 +127,12 @@ let encode (proposal : Proposal_types.t) =
     | Shape {fields=[];indexes=[];elements=None;calls=[s]}
         when s.quantified <> [] && List.for_all (fun (q:Semantic.quantifier) ->
           String.contains q.identity.spelling '#' && q.bound = None) s.quantified ->
-      let binders = List.map (fun (q:Semantic.quantifier) -> label_json (Binder q.identity.spelling)) s.quantified in
+      let binders = List.map (fun (q:Semantic.rigid) -> label_json (Binder q.spelling))
+        (List.concat_map quantifier_identities s.quantified) in
+      let _,resolution = List.fold_left (fun (offset,groups) (q:Semantic.quantifier) ->
+        match q.resolution with None -> offset+1,groups
+        | Some _ -> offset+3,groups @ [Object ["input",int offset;
+            "observation",int (offset+1);"result",int (offset+2)]]) (0,[]) s.quantified in
       let signature,variadic = match s.variadic,s.rest_pack with
         | None,None -> [call_contract s.call_effect (labels s.receiver) (Array (List.map labels s.params)) (labels s.result)],[]
         | Some element,None ->
@@ -132,6 +142,7 @@ let encode (proposal : Proposal_types.t) =
             (labels s.result)]
         | _,Some _ -> unsupported "a pack parameter in a generic method's scheme" in
       [Row (intern (Object ["scheme",Object (["binders",Array binders;"signatures",Array signature]
+        @ (if resolution = [] then [] else ["resolution",Array resolution])
         @ (if variadic = [] then [] else ["variadic",Array variadic]))]))]
     | Shape shape ->
       (* An optional field constrains its key only where the object has it:
@@ -306,6 +317,8 @@ let encode (proposal : Proposal_types.t) =
   and argument_contains_symbolic = function
     | ValueArgument t -> contains_symbolic t
     | PackArgument p -> pack_contains_symbolic p
+    | ResolutionArgument (input,(_,observation),(_,result),_) ->
+      List.exists contains_symbolic [input;observation;result]
   in
   let rec claim_type t = match t with
     | Rigid n -> Object ["param",String n.spelling]
@@ -315,8 +328,10 @@ let encode (proposal : Proposal_types.t) =
       if signature.rest_pack <> None then unsupported "a pack parameter in a scheme claim";
       let type_params = Array (List.map (fun (q:Semantic.quantifier) -> Object [
         "name",String q.identity.spelling;
+        "resolution",(match q.resolution with None -> Null | Some (observation,result) ->
+          Object ["observation",String observation.spelling;"result",String result.spelling]);
         "bound",(match q.bound with None -> Null | Some (ValueArgument t) -> claim_type t
-          | Some (PackArgument _) -> unsupported "a pack bound in a scheme claim")])
+          | Some (PackArgument _ | ResolutionArgument _) -> unsupported "a non-value bound in a scheme claim")])
         signature.quantified) in
       Object ["scheme",Object ["effect",effect_json signature.call_effect;"typeParams",type_params;
         "this",claim_type signature.receiver;
@@ -344,7 +359,11 @@ let encode (proposal : Proposal_types.t) =
     | None -> []
     | Some subst -> ["instantiate",Array (List.map (fun (name,t) ->
         Object ["name",String name; "type",(match t with ValueArgument t -> claim_type t
-          | PackArgument p -> pack_labels p)]) subst)]
+          | ResolutionArgument (input,_,_,_) -> claim_type input
+          | PackArgument p -> pack_labels p);
+          "resolution",(match t with
+            | ResolutionArgument (_,_,_,certificate) -> Object ["certificate",resolution_json certificate]
+            | ValueArgument _ | PackArgument _ -> Null)]) subst)]
   in
   let point t extra = Object (extra @ ["type",claim_type t; "current",Null])
   in

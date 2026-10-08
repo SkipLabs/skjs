@@ -36,16 +36,20 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
          are inferred from the receiver and the actuals. Lean checks that the
          claimed instance agrees with them. *)
       let infer_explicit ~receiver ?expected (signature:Semantic.signature) actuals =
+        let native id = List.exists (fun (d:Source.declaration) -> d.id=id && d.native_promise) declarations in
+        let expand = expand_named declarations in
         if List.length type_args > List.length signature.quantified then
           Proposal_diagnostics.unsupported "more explicit type arguments than the callee has binders";
         let fixed = List.mapi (fun i t ->
           (List.nth signature.quantified i).identity,ValueArgument t) type_args in
+        let fixed = Inference.qualify_substitution ~native ~expand ~owned:owned_resolution
+          signature.quantified fixed in
         let partial = Inference.substitute_signature fixed
           {signature with quantified=List.filteri (fun i _ -> i >= List.length type_args)
              signature.quantified} in
         if partial.quantified = [] then fixed,partial.result
         else
-          let inferred = Inference.infer ~expand:(expand_named declarations) ~receiver ?expected partial actuals in
+          let inferred = Inference.infer ~expand ~native ~owned:owned_resolution ~receiver ?expected partial actuals in
           fixed @ inferred.substitution,inferred.result in
       let no_type_arguments () = if type_args <> [] then
         Proposal_diagnostics.unsupported "explicit type arguments on a callee without binders" in

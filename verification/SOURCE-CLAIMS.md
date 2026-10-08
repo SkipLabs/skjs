@@ -188,7 +188,10 @@ primitive table above, so the receiver accepts any value. Its claim is:
 }}
 ```
 
-Every shown scheme field is required. `bound` is `null` or a claim type;
+Every shown scheme field is required. `bound` is `null` or a claim type; a
+type parameter may also carry `resolution`, `null` or
+`{"observation": o, "result": r}` as in the [Fragment](FRAGMENT.md), which
+makes `o` and `r` binders of the same scheme;
 `this` is the required receiver type, `params` is the fixed parameter list,
 and `rest` is `null` or the surplus-element type. Binder names resolve
 lexically; a nested scheme's binders hide outer binders of the same names.
@@ -202,7 +205,11 @@ A call expression can propose an instance with:
  "instantiate":[{"name":"T","type":[1,2]}]}
 ```
 
-Its names must match the callable's binders. Type arguments must be ground:
+Its names must match the callable's binders. An entry may carry `resolution`:
+`null`, or for a resolution-qualified binder `{"certificate": c}`, with `c`
+one of `{"k":"stable"}`, `{"k":"native","child":c}`,
+`{"k":"union","arms":[c, ...]}` or `{"k":"binder","binder":name}`; the
+consumer checks the certificate against the entry's complete input type. Type arguments must be ground:
 unresolved rigid parameters and nested quantified schemes are refused. The
 consumer checks bounds, substitution, the instantiated signature, and the
 source call. A body is certified at its quantified signature, not solely at

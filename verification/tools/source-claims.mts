@@ -11,6 +11,7 @@
 
 import type { Span } from "./span.mts";
 import type { CallEffect, Labels, Row } from "./type-graph.mts";
+import type { SourceTypeParameter } from "./declaration-types.mts";
 export type { Labels, Row } from "./type-graph.mts";
 
 /** A label: a row of the document's own `types`, or a tree naming a row
@@ -37,7 +38,7 @@ export type Label =
  * lexically: its binders shadow enclosing binders only within this value. */
 export interface SchemeClaim<L = Label> {
   effect: CallEffect;
-  typeParams: { name: string; bound: ClaimType<L> | null }[];
+  typeParams: SourceTypeParameter<ClaimType<L>>[];
   /** The receiver a call passes; an unknown row when any is accepted. */
   this: ClaimType<L>;
   params: ClaimType<L>[];
@@ -89,7 +90,14 @@ export interface EntryClaim<L = Label> {
 export interface TypeArgument<L = Label> {
   name: string;
   type: ClaimType<L>;
+  resolution: { certificate: ResolutionCertificate } | null;
 }
+/** Finite descriptor construction, checked against the complete input type. */
+export type ResolutionCertificate =
+  | { k: "stable" }
+  | { k: "native"; child: ResolutionCertificate }
+  | { k: "union"; arms: ResolutionCertificate[] }
+  | { k: "binder"; binder: string };
 
 export interface ExpressionClaim<L = Label> extends Point<L> {
   point: string;

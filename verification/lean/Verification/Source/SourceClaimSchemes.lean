@@ -23,6 +23,7 @@ structure Instantiable where
   name : String
   pos : Span
   binders : List String
+  resolution : List ResolutionSlots := []
   instantiate : List (String × Json) → SourceTypes.Lowering (Json × List (String × Option Json))
 
 /-- A claim with the binder names `θ` names read as it gives them: the source
@@ -33,8 +34,8 @@ partial def rebindClaim (T : EquationStore.State) (θ : List (String × List Tre
   | .union ts => .union (ts.map (rebindClaim T θ))
   | .array e => .array (rebindClaim T θ e)
   | .scheme tps rc ps rest r effect =>
-    let θ := θ.filter fun q => !(tps.map Prod.fst).contains q.1
-    .scheme (tps.map fun q => (q.1, q.2.map (rebindClaim T θ))) (rebindClaim T θ rc)
+    let θ := θ.filter fun q => !(tps.flatMap ResolutionWire.Binder.ownedNames).contains q.1
+    .scheme (tps.map fun q => { q with bound := q.bound.map (rebindClaim T θ) }) (rebindClaim T θ rc)
       (ps.map (rebindClaim T θ)) (rest.map (rebindClaim T θ)) (rebindClaim T θ r) effect
   | c => c
 where
@@ -96,8 +97,8 @@ private partial def subst (θ : List (String × (ClaimType ι))) : ClaimType ι 
   | .union ts => .union (ts.map (subst θ))
   | .param name => (θ.lookup name).getD (.param name)
   | .scheme tps rc ps rest r effect =>
-      let inner := θ.filter fun q => !(tps.map Prod.fst).contains q.1
-      .scheme (tps.map fun q => (q.1, q.2.map (subst inner))) (subst inner rc) (ps.map (subst inner))
+      let inner := θ.filter fun q => !(tps.flatMap ResolutionWire.Binder.ownedNames).contains q.1
+      .scheme (tps.map fun q => { q with bound := q.bound.map (subst inner) }) (subst inner rc) (ps.map (subst inner))
         (rest.map (subst inner)) (subst inner r) effect
   | c => c
 
@@ -125,6 +126,37 @@ def explicitInstance (T : EquationStore.State) (pos : Span) (binders : List Stri
           T.subtypeBudget.rounds rounds visited, T)
   return T
 
+/-- Check a proposed resolution instance in the frozen source equations. The
+associated types are computed by the descriptor checker, never supplied as
+independent type arguments. -/
+def resolutionInstance (T : EquationStore.State) (source : Option (SchemeRow Tree))
+    (sourceNames : List String) (A : List Tree) (certificate : ResolutionWire.Certificate) :
+    Except String (List Tree × List Tree) := do
+  let F ← EquationStore.freeze T
+  let some context := F.store.resolution
+    | throw "resolution instance requires the native descriptor domain"
+  let c := context.1
+  let labels := EquationLowering.closedUnion F.equations "resolution instance"
+  let mut scope : List (SourceResolution.Binding F.equations) := []
+  if let some raw := source then
+    if sourceNames.length != raw.binders.length then
+      throw "resolution scope names do not match its binders"
+    let source : SchemeRow (EquationGraphs.Label F.equations.signature) := {
+      binders := ← labels raw.binders
+      signatures := []
+      bounds := ← raw.bounds.mapM fun (b, U) => do
+        return (← EquationLowering.closedLabel F.equations "resolution bound" b, ← labels U)
+      resolution := raw.resolution }
+    for group in source.resolution do
+      let some name := sourceNames[group.input]? | throw "resolution input slot is missing"
+      let some binding := SourceResolution.lexicalBinding c source name group
+        | throw "invalid lexical resolution group"
+      scope := scope ++ [binding.binding]
+  let input ← labels A
+  let some checked := SourceResolution.check c scope (StoreView.images F.store) 256 input certificate
+    | throw "resolution certificate does not establish its input, observation and stable result"
+  return (checked.observation.map (·.val), checked.result.map (·.val))
+
 /-- A generic module value reached from a unit (a generic module function,
 or a generic imported one): the unit's calls name its instances. Each call's
 type arguments must be ground and name exactly its binders, and every bound,
@@ -137,11 +169,14 @@ holds of the value. Returns the grown table, the slot's type in claim form,
 and the spans of the callee reads and of the calls. A failure carries the table
 its labels index: translating a bound may grow it. -/
 def moduleInstances (T : EquationStore.State) (g : Instantiable)
-    (unit : List Fragment.Stmt) (claims : Function Tree) :
+    (unit : List Fragment.Stmt) (claims : Function Tree)
+    (source : Option (SchemeRow Tree) := none) (sourceNames : List String := []) :
     Except ((DirectObligation.Failure Tree) × EquationStore.State)
       (EquationStore.State × Json × List Span × List Span) := do
   let refuse (pos : Span) (reason : String) : DirectObligation.Failure Tree × EquationStore.State :=
     (.refusal pos .schemeElimination reason, T)
+  let hidden := g.resolution.flatMap fun q => [q.observation, q.result]
+  let publicNames := g.binders.zipIdx.filterMap fun (n, i) => if hidden.contains i then none else some n
   let calls := (unit.flatMap Fragment.Stmt.callees).filter (·.2.2.1 == g.name)
   let graph (A : List Tree) : Json := Json.mkObj [("top", toJson false),
     ("atoms", toJson (A.map fun l => Json.mkObj [("a", toJson "graph"), ("label", toJson l)]))]
@@ -153,17 +188,24 @@ def moduleInstances (T : EquationStore.State) (g : Instantiable)
         | throw (refuse pos s!"a call to the generic function '{g.name}' needs its type arguments")
       let given := inst.map (·.name)
       if given.eraseDups.length != given.length then throw (refuse pos "duplicate type argument")
-      if given.length != g.binders.length || given.any (!g.binders.contains ·) then
+      if given.length != publicNames.length || given.any (!publicNames.contains ·) then
         throw (refuse pos s!"type arguments do not instantiate exactly the binders of '{g.name}'")
-      let θ ← inst.mapM fun i => do
+      let θ ← inst.flatMapM fun i => do
         let A ← (groundOf s!"the type argument for '{i.name}'" i.type).mapError (refuse pos)
-        pure (i.name, A)
+        match g.resolution.find? (fun q => g.binders[q.input]? == some i.name), i.resolution with
+        | none, none => pure [(i.name, A)]
+        | some group, some evidence =>
+          let (O, R) ← (resolutionInstance T source sourceNames A evidence.certificate).mapError (refuse pos)
+          let some observation := g.binders[group.observation]? | throw (refuse pos "missing observation binder")
+          let some result := g.binders[group.result]? | throw (refuse pos "missing result binder")
+          pure [(i.name, A), (observation, O), (result, R)]
+        | _, _ => throw (refuse pos "resolution evidence must match the source parameter's qualification")
       pure (pos, θ, written)
   let mut T := T
   let mut seen : List (List (String × List Tree)) := []
   let mut instances : List Json := []
   for (pos, θ, written) in sites do
-    T ← explicitInstance T pos g.binders written θ
+    T ← explicitInstance T pos publicNames written θ
     if seen.contains θ then continue
     seen := seen ++ [θ]
     let ((callable, bounds), grown) ← ((g.instantiate (θ.map fun (n, A) => (n, graph A))).run T).mapError (refuse pos)
@@ -229,7 +271,7 @@ partial def genericClosures : Json → List GenericClosure
             (j.getObjVal? "typeParams").toOption.bind (·.getArr?.toOption) with
         | some pos, some tps =>
           if tps.isEmpty then [] else
-          match tps.toList.mapM Fragment.decodeTypeParam with
+          match Fragment.decodeTypeParams tps.toList with
           | .ok binders => [⟨pos, binders⟩]
           | .error _ => []
         | _, _ => []
@@ -292,8 +334,8 @@ private partial def mentions (names : List String) : ClaimType Tree → Bool
   | .union ts => ts.any (mentions names)
   | .array e => mentions names e
   | .scheme tps rc ps rest r _effect =>
-    let names := names.filter fun n => !(tps.map Prod.fst).contains n
-    tps.any (fun q => q.2.any (mentions names)) || mentions names rc || ps.any (mentions names) ||
+    let names := names.filter fun n => !(tps.flatMap ResolutionWire.Binder.ownedNames).contains n
+    tps.any (fun q => q.bound.any (mentions names)) || mentions names rc || ps.any (mentions names) ||
       rest.any (mentions names) || mentions names r
   | _ => false
 
@@ -310,7 +352,9 @@ so the meet alone states it. Returns the row and what each binder is read as. -/
 private partial def schemeRowOf (t : ClaimType Tree) : SchemeM (Tree × List (String × Tree)) := do
   if let some (_, l, rows) := (← get).2.find? (·.1 == t) then return (l, rows)
   let .scheme tps rc ps rest r effect := t | throw "not a scheme"
-  let names := tps.map Prod.fst
+  if tps.any (·.resolution.isSome) then
+    throw "qualified callable requires descriptor scheme checking"
+  let names := tps.map (·.name)
   let (T, reg) ← get
   let (T, binders) := EquationStore.binders T names
   set (T, reg)
@@ -323,8 +367,8 @@ private partial def schemeRowOf (t : ClaimType Tree) : SchemeM (Tree × List (St
     return m
   let mut rows : List (String × Tree) := []
   let mut bounds : List (Tree × List Tree) := []
-  for ((n, l), (_, b)) in params.zip tps do
-    match b with
+  for ((n, l), p) in params.zip tps do
+    match p.bound with
     | none => rows := rows ++ [(n, l)]
     | some (.param m) =>
       if !names.contains m then
@@ -401,7 +445,7 @@ def closureRows (T : EquationStore.State) (outer : List (String × Tree))
         | throw "a generic closure has no claim"
       let .scheme tps _ _ _ _ _ := e.type
         | throw "a generic closure is claimed at no scheme"
-      if tps.map Prod.fst != gc.binders.map (·.name) then
+      if tps.map (·.name) != gc.binders.map (·.name) then
         throw "a generic closure's claimed scheme names other binders than its own"
       if gc.binders.any fun b => (enclosing.lookup b.name).isSome then
         throw "a generic closure's binder hides an enclosing binder of its name"
@@ -419,13 +463,15 @@ def closureRows (T : EquationStore.State) (outer : List (String × Tree))
     for (p, q, _, _) in calls do
       for e in c.expressions.filter (·.pos == p) do
         let some inst := e.instantiate | continue
+        if inst.any (·.resolution.isSome) then
+          throw "qualified type arguments require descriptor checking"
         let some callee := c.expressions.find? (fun x => x.pos == q && x.point == e.point) | continue
         let θ := asClaims (scopeAt scopes outer q)
         let .scheme tps rc ps rest r effect := subst θ callee.type | continue
         if tps.isEmpty then continue
         let given := inst.map (·.name)
         if given.eraseDups.length != given.length || given.length != tps.length ||
-            given.any (fun n => !(tps.map Prod.fst).contains n) then
+            given.any (fun n => !(tps.map (·.name)).contains n) then
           throw "type arguments do not instantiate exactly the scheme's binders"
         let θp := asClaims (scopeAt scopes outer p)
         -- A bounded binder is read as a meet row, so its instance is the meet
@@ -437,7 +483,7 @@ def closureRows (T : EquationStore.State) (outer : List (String × Tree))
         let binders := match StoreView.row (← get).1 sl with
           | .scheme bs .. => bs
           | _ => []
-        let nameOf := binders.zip (tps.map Prod.fst)
+        let nameOf := binders.zip (tps.map (·.name))
         let θi ← args.mapM fun (n, U) => do
           let some l := rows.lookup n | pure (n, U)
           let .meet b cs also := StoreView.row (← get).1 l | pure (n, U)
@@ -636,9 +682,10 @@ def classBinders (j : Json) : Except String (List Fragment.TypeParam) := do
   for p in ctorBinderLists j do
     let tp ← Fragment.decodeTypeParam p
     match out.find? (·.name == tp.name) with
-    | some q => if q.bound != tp.bound then
-        throw s!"two generic classes bind '{tp.name}' with different bounds"
+    | some q => if q.bound != tp.bound || q.resolution != tp.resolution then
+        throw s!"two generic classes bind '{tp.name}' with different contracts"
     | none => out := out ++ [tp]
+  ResolutionWire.validateOwnership (out.map fun p => (p.name, p.resolution))
   return out
 
 

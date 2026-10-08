@@ -1703,6 +1703,21 @@ def CodeOffers (G : NormalGraph ι) (arity : Nat) (E : List Tm)
       RestStore G q.2 q.1.arguments.2 ∧
       GraphCodeSpec G arity E K start Cs q.1.fixed (some q.2)
 
+/-- The arity and rest-store requirements of a code offer. -/
+def CodeOffersShape (G : NormalGraph ι) (arity : Nat) (rest : Bool)
+    (L : List (Arrow (Ty ι))) (S : List (RestArrow (Ty ι))) (As : List (Ty ι)) : Prop :=
+  match rest with
+  | false => True
+  | true => L = [] ∧ S.length = As.length ∧ ∀ q ∈ S.zip As,
+      q.1.arguments.1.length = arity ∧ RestStore G q.2 q.1.arguments.2
+
+theorem CodeOffers.shape {G : NormalGraph ι} {arity E K start Cs rest L S As}
+    (h : CodeOffers G arity E K start Cs rest L S As) :
+    CodeOffersShape G arity rest L S As := by
+  cases rest with
+  | false => trivial
+  | true => exact ⟨h.1, h.2.1, fun q hq => ⟨(h.2.2 q hq).1, (h.2.2 q hq).2.1⟩⟩
+
 /-- Graph code with captured values meets the signatures it offers. -/
 theorem offers_sem {G : NormalGraph ι} {arity E K start Cs rest vs n W}
     {L : List (Arrow (Ty ι))} {S : List (RestArrow (Ty ι))}
@@ -1975,24 +1990,37 @@ theorem namedMembers_sem {G : NormalGraph ι} {A : Ty ι} {c : Clause (Ty ι)}
 
 variable [DecidableEq ι]
 
+/-- Subsumption checked at the body's assignment. A qualified body can use
+its enclosing descriptor evidence here; structural subtyping retains its
+independent, universally quantified checker. -/
+structure BodySubtyping (G : NormalGraph ι) where
+  check : Ty ι → Ty ι → PositiveCertificates.SubtypeChoices ι → Bool
+  sound : ∀ {A B proof}, check A B proof = true → FamLe (meaning G A) (meaning G B)
+
+@[nospecialize] def BodySubtyping.ordinary (G : NormalGraph ι)
+    (images : PositiveCertificates.InstanceImageCheck G) : BodySubtyping G where
+  check := PositiveCertificates.checkUsing G images
+  sound := PositiveCertificates.acceptedUsing
+
 /-- Constructor views avoid any semantic normalization assumption. -/
-inductive HasTyUsing (G : NormalGraph ι) (images : PositiveCertificates.InstanceImageCheck G) : List (Ty ι) → Tm → Ty ι → Prop where
-  | var : Γ[i]? = some A → HasTyUsing G images Γ (.var i) A
-  | nul : Represents G A .nul → HasTyUsing G images Γ .nul A
-  | undef : Represents G A .undef → HasTyUsing G images Γ .undef A
-  | tru : Represents G A .bool → HasTyUsing G images Γ .tru A
-  | fls : Represents G A .bool → HasTyUsing G images Γ .fls A
-  | truLit : Represents G A (.boolLit true) → HasTyUsing G images Γ .tru A
-  | flsLit : Represents G A (.boolLit false) → HasTyUsing G images Γ .fls A
-  | numLit : Represents G A (.numLit b) → HasTyUsing G images Γ (.num b) A
+inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.InstanceImageCheck G)
+    (subtyping : BodySubtyping G) : List (Ty ι) → Tm → Ty ι → Prop where
+  | var : Γ[i]? = some A → HasTyWith G images subtyping Γ (.var i) A
+  | nul : Represents G A .nul → HasTyWith G images subtyping Γ .nul A
+  | undef : Represents G A .undef → HasTyWith G images subtyping Γ .undef A
+  | tru : Represents G A .bool → HasTyWith G images subtyping Γ .tru A
+  | fls : Represents G A .bool → HasTyWith G images subtyping Γ .fls A
+  | truLit : Represents G A (.boolLit true) → HasTyWith G images subtyping Γ .tru A
+  | flsLit : Represents G A (.boolLit false) → HasTyWith G images subtyping Γ .fls A
+  | numLit : Represents G A (.numLit b) → HasTyWith G images subtyping Γ (.num b) A
   /-- Every number is a number, as every Boolean is a Boolean. Without this a
   literal claimed at the family rather than at its own singleton has no rule. -/
-  | num : Represents G A .num → HasTyUsing G images Γ (.num b) A
+  | num : Represents G A .num → HasTyWith G images subtyping Γ (.num b) A
   /-- A bigint, at its own singleton or at the family, as a number is. -/
-  | bigintLit : Represents G A (.bigintLit i) → HasTyUsing G images Γ (.bigint i) A
-  | bigint : Represents G A .bigint → HasTyUsing G images Γ (.bigint i) A
-  | strLit : Represents G A (.strLit s) → HasTyUsing G images Γ (.str s) A
-  | str : Represents G A .str → HasTyUsing G images Γ (.str s) A
+  | bigintLit : Represents G A (.bigintLit i) → HasTyWith G images subtyping Γ (.bigint i) A
+  | bigint : Represents G A .bigint → HasTyWith G images subtyping Γ (.bigint i) A
+  | strLit : Represents G A (.strLit s) → HasTyWith G images subtyping Γ (.str s) A
+  | str : Represents G A .str → HasTyWith G images subtyping Γ (.str s) A
   /-- **Graph code.** A function whose body is a control-flow graph, as a
   function body is: the code meets each signature it offers (`CodeOffers`:
   each checked by the graph checker, `GraphCodeSpec`; with a rest, from the
@@ -2005,23 +2033,24 @@ inductive HasTyUsing (G : NormalGraph ι) (images : PositiveCertificates.Instanc
       Represents G F (.arrs L S) →
       CodeOffers G arity E K start (caps.map Prod.fst) rest L S As →
       (∀ c ∈ caps, c.2 < Γ.length) →
-      (∀ c ∈ caps, HasTyUsing G images Γ (.var c.2) c.1) →
-      HasTyUsing G images Γ (.makeFn (.graph arity E K start (caps.map fun c => .var c.2) .call rest) .nul) F
-  /-- **A generic closure.** Graph code at a scheme row: the code meets each
-  signature the scheme offers in the graph reassigned at every assignment of
-  its parameter rows, so at every instantiation of the scheme's binders. Its
-  captures are slots whose types read none of those binders (`FreeOk`, as
-  a free-variable certificate states it), so they mean the same at every instantiation. -/
+      (∀ c ∈ caps, HasTyWith G images subtyping Γ (.var c.2) c.1) →
+      HasTyWith G images subtyping Γ (.makeFn (.graph arity E K start (caps.map fun c => .var c.2) .call rest) .nul) F
+  /-- **A generic closure.** The code meets each signature at every permitted
+  assignment of the scheme's binders. Its captures are slots whose types read
+  none of those binders (`FreeOk`), so they mean the same at every instantiation.
+  Arity and rest-store formation are checked independently of the assignment. -/
   | funScheme {Γ : List (Ty ι)} {j : ι} {s : SchemeRow ι} {arity start : Nat} {E : List Tm}
       {K : List (ControlFlow.Continuation × Option ControlFlow.Target)}
       {caps : List (Ty ι × Nat)} {rest : Bool} {As : List (Ty ι)} :
       G.params j = false → G.schemes j = some s →
-      (∀ η, CodeOffers (reassign G η) arity E K start (caps.map Prod.fst) rest s.signatures
-        s.variadic As) →
+      (∀ η Bs, Bs.length = s.binders.length → G.domain.allowed s Bs →
+        CodeOffers (reassign G (assign η s.binders Bs)) arity E K start
+          (caps.map Prod.fst) rest s.signatures s.variadic As) →
+      CodeOffersShape G arity rest s.signatures s.variadic As →
       capturesFree G s (caps.map Prod.fst) = true →
       (∀ c ∈ caps, c.2 < Γ.length) →
-      (∀ c ∈ caps, HasTyUsing G images Γ (.var c.2) c.1) →
-      HasTyUsing G images Γ (.makeFn (.graph arity E K start (caps.map fun c => .var c.2) .call rest) .nul) [j]
+      (∀ c ∈ caps, HasTyWith G images subtyping Γ (.var c.2) c.1) →
+      HasTyWith G images subtyping Γ (.makeFn (.graph arity E K start (caps.map fun c => .var c.2) .call rest) .nul) [j]
   /-- **A class value.** Construct-only graph code, checked at each construct
   signature from the frame with `undefined` for the receiver `new` passes. -/
   | ctorGraph {Γ : List (Ty ι)} {F U : Ty ι} {L : List (List (Ty ι) × Ty ι)} {arity start : Nat}
@@ -2030,8 +2059,8 @@ inductive HasTyUsing (G : NormalGraph ι) (images : PositiveCertificates.Instanc
       Represents G F (.ctors L) → Represents G U .undef →
       (∀ p ∈ L, GraphCodeSpec G arity E K start (caps.map Prod.fst) ⟨U, p.1, p.2, .unrestricted⟩) →
       (∀ c ∈ caps, c.2 < Γ.length) →
-      (∀ c ∈ caps, HasTyUsing G images Γ (.var c.2) c.1) →
-      HasTyUsing G images Γ (.makeFn (.graph arity E K start (caps.map fun c => .var c.2) .construct) .nul) F
+      (∀ c ∈ caps, HasTyWith G images subtyping Γ (.var c.2) c.1) →
+      HasTyWith G images subtyping Γ (.makeFn (.graph arity E K start (caps.map fun c => .var c.2) .construct) .nul) F
   /-- **A callable object.** The bag is allocated as a record's is, its fields
   named by the program, with graph code that meets the signatures it offers,
   as a function's does. -/
@@ -2042,20 +2071,20 @@ inductive HasTyUsing (G : NormalGraph ι) (images : PositiveCertificates.Instanc
       {parts : List (PropKey × Ty ι × Tm)} :
       Represents G F (.callable (parts.map fun p => (p.1, p.2.1)) [] L S) →
       (parts.map Prod.fst).Nodup →
-      (∀ p ∈ parts, HasTyUsing G images Γ p.2.2 p.2.1) →
+      (∀ p ∈ parts, HasTyWith G images subtyping Γ p.2.2 p.2.1) →
       CodeOffers G arity E K start (caps.map Prod.fst) rest L S As →
       (∀ c ∈ caps, c.2 < Γ.length) →
-      (∀ c ∈ caps, HasTyUsing G images Γ (.var c.2) c.1) →
-      HasTyUsing G images Γ (.makeAt (.graph arity E K start (caps.map fun c => .var c.2) .call rest)
+      (∀ c ∈ caps, HasTyWith G images subtyping Γ (.var c.2) c.1) →
+      HasTyWith G images subtyping Γ (.makeAt (.graph arity E K start (caps.map fun c => .var c.2) .call rest)
         (parts.map Prod.fst) (parts.map fun p => p.2.2)) F
   /-- `new f(args)`: `f` at a construct signature, each actual at its
   parameter. As a call may, `new` may omit trailing positions whose contracts
   admit `undefined`, the value the machine binds there. -/
   | construct {Γ : List (Ty ι)} {f : Tm} {F B : Ty ι} {L : List (List (Ty ι) × Ty ι)}
       {xs : List (Ty ι × Tm)} {Us : List (Ty ι)} :
-      HasTyUsing G images Γ f F → Represents G F (.ctors L) → (xs.map Prod.fst ++ Us, B) ∈ L →
-      (∀ p ∈ xs, HasTyUsing G images Γ p.2 p.1) → (∀ A ∈ Us, HasTyUsing G images Γ .undef A) →
-      HasTyUsing G images Γ (.construct f (xs.map Prod.snd)) B
+      HasTyWith G images subtyping Γ f F → Represents G F (.ctors L) → (xs.map Prod.fst ++ Us, B) ∈ L →
+      (∀ p ∈ xs, HasTyWith G images subtyping Γ p.2 p.1) → (∀ A ∈ Us, HasTyWith G images subtyping Γ .undef A) →
+      HasTyWith G images subtyping Γ (.construct f (xs.map Prod.snd)) B
   /-- A call writes the actuals it writes, and passes the receiver `r`, typed
   at the selected signature's receiver. `Us` are the trailing positions the
   signature declares and this call omits; each admits `undefined`, which is
@@ -2063,31 +2092,31 @@ inductive HasTyUsing (G : NormalGraph ι) (images : PositiveCertificates.Instanc
   | callCallable {effect : Effect} {Γ : List (Ty ι)} {f r : Tm} {F Rt B : Ty ι} {P : List (PropKey × Ty ι)}
       {Ps : List (List (PropKey × Ty ι))} {L : List (Arrow (Ty ι))}
       {S : List (RestArrow (Ty ι))} {xs : List (Ty ι × Tm)} {Us : List (Ty ι)} :
-      HasTyUsing G images Γ f F → Represents G F (.callable P Ps L S) →
-      ⟨Rt, xs.map Prod.fst ++ Us, B, effect⟩ ∈ L → HasTyUsing G images Γ r Rt →
-      (∀ p ∈ xs, HasTyUsing G images Γ p.2 p.1) → (∀ A ∈ Us, HasTyUsing G images Γ .undef A) →
-      HasTyUsing G images Γ (.invoke f r (xs.map Prod.snd)) B
-  | readCallable : HasTyUsing G images Γ a F → Represents G F (.callable P Ps L S) → (f, A) ∈ P →
-      HasTyUsing G images Γ (.readAt f a) A
-  | writeCallable : HasTyUsing G images Γ a F → Represents G F (.callable P Ps L S) → (f, A) ∈ P →
-      HasTyUsing G images Γ b A → Represents G N .nul → HasTyUsing G images Γ (.writeAt f a b) N
+      HasTyWith G images subtyping Γ f F → Represents G F (.callable P Ps L S) →
+      ⟨Rt, xs.map Prod.fst ++ Us, B, effect⟩ ∈ L → HasTyWith G images subtyping Γ r Rt →
+      (∀ p ∈ xs, HasTyWith G images subtyping Γ p.2 p.1) → (∀ A ∈ Us, HasTyWith G images subtyping Γ .undef A) →
+      HasTyWith G images subtyping Γ (.invoke f r (xs.map Prod.snd)) B
+  | readCallable : HasTyWith G images subtyping Γ a F → Represents G F (.callable P Ps L S) → (f, A) ∈ P →
+      HasTyWith G images subtyping Γ (.readAt f a) A
+  | writeCallable : HasTyWith G images subtyping Γ a F → Represents G F (.callable P Ps L S) → (f, A) ∈ P →
+      HasTyWith G images subtyping Γ b A → Represents G N .nul → HasTyWith G images subtyping Γ (.writeAt f a b) N
   | app {effect : Effect} {Γ : List (Ty ι)} {f r : Tm} {F Rt B : Ty ι} {L : List (Arrow (Ty ι))}
       {S : List (RestArrow (Ty ι))} {xs : List (Ty ι × Tm)} {Us : List (Ty ι)} :
-      HasTyUsing G images Γ f F → Represents G F (.arrs L S) →
-      ⟨Rt, xs.map Prod.fst ++ Us, B, effect⟩ ∈ L → HasTyUsing G images Γ r Rt →
-      (∀ p ∈ xs, HasTyUsing G images Γ p.2 p.1) → (∀ A ∈ Us, HasTyUsing G images Γ .undef A) →
-      HasTyUsing G images Γ (.invoke f r (xs.map Prod.snd)) B
-  | letE : HasTyUsing G images Γ a A → HasTyUsing G images (A :: Γ) b B → HasTyUsing G images Γ (.letE a b) B
+      HasTyWith G images subtyping Γ f F → Represents G F (.arrs L S) →
+      ⟨Rt, xs.map Prod.fst ++ Us, B, effect⟩ ∈ L → HasTyWith G images subtyping Γ r Rt →
+      (∀ p ∈ xs, HasTyWith G images subtyping Γ p.2 p.1) → (∀ A ∈ Us, HasTyWith G images subtyping Γ .undef A) →
+      HasTyWith G images subtyping Γ (.invoke f r (xs.map Prod.snd)) B
+  | letE : HasTyWith G images subtyping Γ a A → HasTyWith G images subtyping (A :: Γ) b B → HasTyWith G images subtyping Γ (.letE a b) B
   /-- **Allocation.** One object, one fresh location per named field. The field
   names are distinct, which is what makes the object a map from them. Its own
   keys are exactly those names, so any bound admitting them holds of it. -/
   | alloc {parts : List (PropKey × Ty ι × Tm)} {ks : List KeyBound} :
       (parts.map Prod.fst).Nodup →
-      (∀ p ∈ parts, HasTyUsing G images Γ p.2.2 p.2.1) →
+      (∀ p ∈ parts, HasTyWith G images subtyping Γ p.2.2 p.2.1) →
       Represents G Ref (.refs (parts.map fun p => (p.1, p.2.1)) [] [] [] [] ks) →
       (∀ K ∈ ks, ∀ p ∈ parts, K.admits p.1 = true) →
       allocRealm G (parts.map fun p => (p.1, p.2.1)) = true →
-      HasTyUsing G images Γ (.makeAt .absent (parts.map Prod.fst) (parts.map fun p => p.2.2)) Ref
+      HasTyWith G images subtyping Γ (.makeAt .absent (parts.map Prod.fst) (parts.map fun p => p.2.2)) Ref
   /-- **Allocation at a dictionary.** A literal allocated directly at a
   dictionary type: its fields are the clause's first operand, with no key the
   model keeps for its prototype, and each field whose key an index's class may
@@ -2100,18 +2129,18 @@ inductive HasTyUsing (G : NormalGraph ι) (images : PositiveCertificates.Instanc
       {os : List (OptionalField (Ty ι))} :
       (parts.map Prod.fst).Nodup → CallArguments.protoField ∉ parts.map Prod.fst →
       CallArguments.arrayStoreField ∉ parts.map Prod.fst →
-      (∀ p ∈ parts, HasTyUsing G images Γ p.2.2 p.2.1) →
+      (∀ p ∈ parts, HasTyWith G images subtyping Γ p.2.2 p.2.1) →
       Represents G Ref (.dict (parts.map fun p => (p.1, p.2.1)) [] [] ix os [] [] cs) →
       (∀ p ∈ parts, ∀ y ∈ ix ++ cs, y.1.may p.1 = true → p.2.1 = y.2) →
       (∀ o ∈ os, o.key ∉ parts.map Prod.fst) →
       (∀ o ∈ os, ∀ y ∈ cs, y.1.may o.key = true → o.type = y.2 ∨ PositiveRules.Uninhabited G y.2) →
-      HasTyUsing G images Γ (.makeAt .absent (parts.map Prod.fst) (parts.map fun p => p.2.2)) Ref
+      HasTyWith G images subtyping Γ (.makeAt .absent (parts.map Prod.fst) (parts.map fun p => p.2.2)) Ref
   /-- A named field, of a record or of a dictionary, reads at its contract. -/
-  | read : HasTyUsing G images Γ a Ref → Represents G Ref c → namedMembers c = some (fs, vs) →
-      (f, A) ∈ fs → HasTyUsing G images Γ (.readAt f a) A
+  | read : HasTyWith G images subtyping Γ a Ref → Represents G Ref c → namedMembers c = some (fs, vs) →
+      (f, A) ∈ fs → HasTyWith G images subtyping Γ (.readAt f a) A
   /-- A view field reads at its bound: a capability, never a write permission. -/
-  | readView : HasTyUsing G images Γ a Ref → Represents G Ref c → namedMembers c = some (fs, vs) →
-      (f, A) ∈ vs → HasTyUsing G images Γ (.readAt f a) A
+  | readView : HasTyWith G images subtyping Γ a Ref → Represents G Ref c → namedMembers c = some (fs, vs) →
+      (f, A) ∈ vs → HasTyWith G images subtyping Γ (.readAt f a) A
   /-- **A read through the prototype.** A key one of the object's key bounds
   does not admit is not its own, so the read continues at the prototype, which the
   object holds under the reserved key at `P`; the prototype's field or view
@@ -2121,39 +2150,39 @@ inductive HasTyUsing (G : NormalGraph ι) (images : PositiveCertificates.Instanc
       {gs ws : List (PropKey × Ty ι)} {os' : List (OptionalField (Ty ι))}
       {ms' : List (MethodMembers.Sig (Ty ι))}
       {ks' : List KeyBound} {f : PropKey} {A : Ty ι} :
-      HasTyUsing G images Γ a Ref → Represents G Ref (.refs fs [] vs os ms ks) → K ∈ ks → K.admits f = false →
+      HasTyWith G images subtyping Γ a Ref → Represents G Ref (.refs fs [] vs os ms ks) → K ∈ ks → K.admits f = false →
       (CallArguments.protoField, P) ∈ fs ++ vs → Represents G P (.refs gs [] ws os' ms' ks') →
-      (f, A) ∈ gs ++ ws → HasTyUsing G images Γ (.readAt f a) A
+      (f, A) ∈ gs ++ ws → HasTyWith G images subtyping Γ (.readAt f a) A
   /-- An optional field, writable or readonly, reads at its type or, where the
   object lacks the key, as `undefined`. -/
   | readOptional {a : Tm} {Ref : Ty ι} {fs vs : List (PropKey × Ty ι)} {os : List (OptionalField (Ty ι))}
       {ms : List (MethodMembers.Sig (Ty ι))} {ks : List KeyBound} {f : PropKey} {r : Bool}
       {A U : Ty ι} :
-      HasTyUsing G images Γ a Ref → Represents G Ref (.refs fs [] vs os ms ks) → ⟨f, r, A⟩ ∈ os →
-      Represents G U .undef → HasTyUsing G images Γ (.readAt f a) (A ++ U)
+      HasTyWith G images subtyping Γ a Ref → Represents G Ref (.refs fs [] vs os ms ks) → ⟨f, r, A⟩ ∈ os →
+      Represents G U .undef → HasTyWith G images subtyping Γ (.readAt f a) (A ++ U)
   /-- A dictionary read may miss even when every present value has type `A`.
   An index says nothing of a key its class does not admit, so a key is read
   through one only where its class surely admits it: any string key through
   a string index, a canonical numeric one ("0", "1.5") through a number
   index, a symbol key through a symbol index. -/
-  | readDict {f : PropKey} {K : IndexKeys} : HasTyUsing G images Γ a Ref →
+  | readDict {f : PropKey} {K : IndexKeys} : HasTyWith G images subtyping Γ a Ref →
       Represents G Ref (.dict fs [] vs ix os ms ks cs) →
       (K, A) ∈ ix → K.surely f = true → Represents G U .undef →
-      HasTyUsing G images Γ (.readAt f a) (A ++ U)
+      HasTyWith G images subtyping Γ (.readAt f a) (A ++ U)
   /-- A computed key of the key clause of a class within the index's reads
   through it: a string through a string index, a number through a number
   index or a string one, a symbol through a symbol index. -/
-  | indexDict {K KK : IndexKeys} : HasTyUsing G images Γ a Ref → Represents G Ref (.dict fs [] vs ix os ms ks cs) →
-      HasTyUsing G images Γ key Kt → Represents G Kt (keyClause KK) → KK.within K = true →
+  | indexDict {K KK : IndexKeys} : HasTyWith G images subtyping Γ a Ref → Represents G Ref (.dict fs [] vs ix os ms ks cs) →
+      HasTyWith G images subtyping Γ key Kt → Represents G Kt (keyClause KK) → KK.within K = true →
       (K, A) ∈ ix → Represents G U .undef →
-      HasTyUsing G images Γ (.indexAt a key) (A ++ U)
-  | write : HasTyUsing G images Γ a Ref → Represents G Ref (.refs fs [] vs os ms ks) → (f, A) ∈ fs →
-      HasTyUsing G images Γ b A → Represents G N .nul → HasTyUsing G images Γ (.writeAt f a b) N
+      HasTyWith G images subtyping Γ (.indexAt a key) (A ++ U)
+  | write : HasTyWith G images subtyping Γ a Ref → Represents G Ref (.refs fs [] vs os ms ks) → (f, A) ∈ fs →
+      HasTyWith G images subtyping Γ b A → Represents G N .nul → HasTyWith G images subtyping Γ (.writeAt f a b) N
   /-- A binary operator needs operand types it answers for, pair by pair
   (`Operands`), and yields the family of its result kind: no singleton, since
   the result's value is not typed. -/
-  | arith : HasTyUsing G images Γ a A → HasTyUsing G images Γ b B → OperatorTypes G op A B N →
-      HasTyUsing G images Γ (.arith op a b) N
+  | arith : HasTyWith G images subtyping Γ a A → HasTyWith G images subtyping Γ b B → OperatorTypes G op A B N →
+      HasTyWith G images subtyping Γ (.arith op a b) N
   /-- A literal allocates a store: one fresh location per element, each
   under the position's contract of the tuple the store is claimed at, whose
   bounds the element count respects. -/
@@ -2161,65 +2190,65 @@ inductive HasTyUsing (G : NormalGraph ι) (images : PositiveCertificates.Instanc
       Represents G L (.list T []) → T.required.length ≤ xs.length →
       (T.rest = none → xs.length ≤ T.required.length + T.optional.length) →
       (∀ p ∈ xs.zipIdx, positionTy T p.2 = some p.1.1) →
-      (∀ p ∈ xs, HasTyUsing G images Γ p.2 p.1) → HasTyUsing G images Γ (.arrLit (xs.map Prod.snd)) L
+      (∀ p ∈ xs, HasTyWith G images subtyping Γ p.2 p.1) → HasTyWith G images subtyping Γ (.arrLit (xs.map Prod.snd)) L
   /-- A required position, named by a literal index, reads at its contract. -/
   | elem {Γ : List (Ty ι)} {a i : Tm} {L I A : Ty ι} {T : Tuple (Ty ι)} {b : UInt64} {k : Nat} :
-      HasTyUsing G images Γ a L → Represents G L (.list T []) → HasTyUsing G images Γ i I → Represents G I (.numLit b) →
-      indexOfBits b = some k → T.required[k]? = some A → HasTyUsing G images Γ (.elemAt a i) A
+      HasTyWith G images subtyping Γ a L → Represents G L (.list T []) → HasTyWith G images subtyping Γ i I → Represents G I (.numLit b) →
+      indexOfBits b = some k → T.required[k]? = some A → HasTyWith G images subtyping Γ (.elemAt a i) A
   /-- An optional or rest position, named by a literal index, reads at its
   contract or `undefined`: it may be a hole or past the end. -/
   | elemOpt {Γ : List (Ty ι)} {a i : Tm} {L I A U : Ty ι} {T : Tuple (Ty ι)} {b : UInt64} {k : Nat} :
-      HasTyUsing G images Γ a L → Represents G L (.list T []) → HasTyUsing G images Γ i I → Represents G I (.numLit b) →
+      HasTyWith G images subtyping Γ a L → Represents G L (.list T []) → HasTyWith G images subtyping Γ i I → Represents G I (.numLit b) →
       indexOfBits b = some k → T.required[k]? = none → positionTy T k = some A →
-      Represents G U .undef → HasTyUsing G images Γ (.elemAt a i) (A ++ U)
+      Represents G U .undef → HasTyWith G images subtyping Γ (.elemAt a i) (A ++ U)
   /-- Any numeric index into a homogeneous array reads an element or
   `undefined`; no index is in bounds by type alone. -/
   | elemAny {Γ : List (Ty ι)} {a i : Tm} {L I E U : Ty ι} {ro : Bool} {presence : ArrayPresence} :
-      HasTyUsing G images Γ a L → Represents G L (.list ⟨[], [], some E, ro, presence⟩ []) → HasTyUsing G images Γ i I →
-      Answers G I .isNum true → Represents G U .undef → HasTyUsing G images Γ (.elemAt a i) (E ++ U)
+      HasTyWith G images subtyping Γ a L → Represents G L (.list ⟨[], [], some E, ro, presence⟩ []) → HasTyWith G images subtyping Γ i I →
+      Answers G I .isNum true → Represents G U .undef → HasTyWith G images subtyping Γ (.elemAt a i) (E ++ U)
   /-- A write at a literal index into a position the contract names keeps the
   contract: into the element's location, or a fresh one the store records.
   The index is at most the required length, so the write is in bounds or
   appends at the end: it never leaves a hole, and the store stays dense. -/
   | setElem {Γ : List (Ty ι)} {a i v : Tm} {L I A : Ty ι} {T : Tuple (Ty ι)} {b : UInt64} {k : Nat} :
-      HasTyUsing G images Γ a L → Represents G L (.list T []) → HasTyUsing G images Γ i I → Represents G I (.numLit b) →
+      HasTyWith G images subtyping Γ a L → Represents G L (.list T []) → HasTyWith G images subtyping Γ i I → Represents G I (.numLit b) →
       indexOfBits b = some k → positionTy T k = some A → k ≤ T.required.length →
-      T.readonly = false → HasTyUsing G images Γ v A → HasTyUsing G images Γ (.setElem a i v) L
+      T.readonly = false → HasTyWith G images subtyping Γ v A → HasTyWith G images subtyping Γ (.setElem a i v) L
   | len {Γ : List (Ty ι)} {a : Tm} {L N : Ty ι} {T : Tuple (Ty ι)} :
-      HasTyUsing G images Γ a L → Represents G L (.list T []) → Represents G N .num → HasTyUsing G images Γ (.lenOf a) N
+      HasTyWith G images subtyping Γ a L → Represents G L (.list T []) → Represents G N .num → HasTyWith G images subtyping Γ (.lenOf a) N
   /-- A string's own `length` is a number. -/
   | lenStr {Γ : List (Ty ι)} {a : Tm} {S N : Ty ι} :
-      HasTyUsing G images Γ a S → Answers G S .isStr true → Represents G N .num → HasTyUsing G images Γ (.lenOf a) N
+      HasTyWith G images subtyping Γ a S → Answers G S .isStr true → Represents G N .num → HasTyWith G images subtyping Γ (.lenOf a) N
   /-- A string read at any numeric index is a string, or `undefined` past its
   end or at a key that is not an index. -/
   | elemStr {Γ : List (Ty ι)} {a i : Tm} {S I T U : Ty ι} :
-      HasTyUsing G images Γ a S → Answers G S .isStr true → HasTyUsing G images Γ i I → Answers G I .isNum true →
-      Represents G T .str → Represents G U .undef → HasTyUsing G images Γ (.elemAt a i) (T ++ U)
+      HasTyWith G images subtyping Γ a S → Answers G S .isStr true → HasTyWith G images subtyping Γ i I → Answers G I .isNum true →
+      Represents G T .str → Represents G U .undef → HasTyWith G images subtyping Γ (.elemAt a i) (T ++ U)
   /-- A tag test whose answer the operand's type does not settle is still a
   Boolean: its type holds both literals. -/
-  | test : HasTyUsing G images Γ a A → (.boolLit true) ∈ expand G B → (.boolLit false) ∈ expand G B →
-      HasTyUsing G images Γ (.test k a) B
-  | ifBool : HasTyUsing G images Γ c C → Answers G C .isBool true →
-      HasTyUsing G images Γ t A → HasTyUsing G images Γ e A → HasTyUsing G images Γ (.ite c t e) A
+  | test : HasTyWith G images subtyping Γ a A → (.boolLit true) ∈ expand G B → (.boolLit false) ∈ expand G B →
+      HasTyWith G images subtyping Γ (.test k a) B
+  | ifBool : HasTyWith G images subtyping Γ c C → Answers G C .isBool true →
+      HasTyWith G images subtyping Γ t A → HasTyWith G images subtyping Γ e A → HasTyWith G images subtyping Γ (.ite c t e) A
   /-- The condition still evaluates; its singleton type selects the reachable arm. -/
-  | ifKnown : HasTyUsing G images Γ c C → Represents G C (.boolLit q) →
-      HasTyUsing G images Γ (if q then t else e) A → HasTyUsing G images Γ (.ite c t e) A
+  | ifKnown : HasTyWith G images subtyping Γ c C → Represents G C (.boolLit q) →
+      HasTyWith G images subtyping Γ (if q then t else e) A → HasTyWith G images subtyping Γ (.ite c t e) A
   | ifBoolVar : Γ[i]? = some C → Answers G C .isBool true →
       Represents G T (.boolLit true) → Represents G F (.boolLit false) →
-      HasTyUsing G images (Γ.set i T) t A → HasTyUsing G images (Γ.set i F) e A →
-      HasTyUsing G images Γ (.ite (.var i) t e) A
+      HasTyWith G images subtyping (Γ.set i T) t A → HasTyWith G images subtyping (Γ.set i F) e A →
+      HasTyWith G images subtyping Γ (.ite (.var i) t e) A
   | ifTag : Γ[i]? = some A → Answers G A tag q →
-      (q = true → HasTyUsing G images Γ u B) → (q = false → HasTyUsing G images Γ e B) →
-      HasTyUsing G images Γ (.ite (.test tag (.var i)) u e) B
+      (q = true → HasTyWith G images subtyping Γ u B) → (q = false → HasTyWith G images subtyping Γ e B) →
+      HasTyWith G images subtyping Γ (.ite (.test tag (.var i)) u e) B
   /-- Eliminate a finite union in one immutable environment slot. Every member
   must establish the same term and result, without changing other bindings. -/
   | unionVar : Γ[i]? = some C →
-      (∀ a ∈ C, HasTyUsing G images (Γ.set i [a]) t A) → HasTyUsing G images Γ t A
+      (∀ a ∈ C, HasTyWith G images subtyping (Γ.set i [a]) t A) → HasTyWith G images subtyping Γ t A
   /-- **A copy of a spread.** `[...s]` allocates a fresh store holding the
   elements of the store `s` evaluates to, read where it is written. -/
   | arrCopy {Γ : List (Ty ι)} {s : Tm} {S T E : Ty ι} {presence : ArrayPresence} :
-      HasTyUsing G images Γ s S → SpreadsInto G S E → Represents G T (.list ⟨[], [], some E, false, presence⟩ []) →
-      HasTyUsing G images Γ (.arrLit [.spread s]) T
+      HasTyWith G images subtyping Γ s S → SpreadsInto G S E → Represents G T (.list ⟨[], [], some E, false, presence⟩ []) →
+      HasTyWith G images subtyping Γ (.arrLit [.spread s]) T
   /-- **A variadic call.** The fixed actuals meet the selected signature's
   parameters, less trailing ones `Us` the call omits, each admitting
   `undefined`, and a call that omits a fixed position writes nothing further.
@@ -2229,11 +2258,11 @@ inductive HasTyUsing (G : NormalGraph ι) (images : PositiveCertificates.Instanc
   function's or a callable object's. -/
   | callRest {effect : Effect} {Γ : List (Ty ι)} {f r : Tm} {F Rt : Ty ι}
       {xs : List (Ty ι × Tm)} {Us : List (Ty ι)} {P B : Ty ι} {parts : List (Bool × Ty ι × Tm)} :
-      HasTyUsing G images Γ f F → ⟨Rt, (xs.map Prod.fst ++ Us, P), B, effect⟩ ∈ restSigs G F → HasTyUsing G images Γ r Rt →
-      (∀ p ∈ xs, HasTyUsing G images Γ p.2 p.1) → (∀ A ∈ Us, HasTyUsing G images Γ .undef A) → (Us = [] ∨ parts = []) →
-      (∀ p ∈ parts, HasTyUsing G images Γ p.2.2 p.2.1) →
+      HasTyWith G images subtyping Γ f F → ⟨Rt, (xs.map Prod.fst ++ Us, P), B, effect⟩ ∈ restSigs G F → HasTyWith G images subtyping Γ r Rt →
+      (∀ p ∈ xs, HasTyWith G images subtyping Γ p.2 p.1) → (∀ A ∈ Us, HasTyWith G images subtyping Γ .undef A) → (Us = [] ∨ parts = []) →
+      (∀ p ∈ parts, HasTyWith G images subtyping Γ p.2.2 p.2.1) →
       RestParts G P (parts.map fun p => (p.1, p.2.1)) →
-      HasTyUsing G images Γ (.invoke f r (xs.map Prod.snd ++ parts.map fun p => spreadTerm (p.1, p.2.2))) B
+      HasTyWith G images subtyping Γ (.invoke f r (xs.map Prod.snd ++ parts.map fun p => spreadTerm (p.1, p.2.2))) B
   /-- **A bound function.** `.bind` saved its target, receiver and prefix in
   slots; allocation stores those values, as they are, in a forwarding
   descriptor with no fields. The result takes the positions the target's
@@ -2244,7 +2273,7 @@ inductive HasTyUsing (G : NormalGraph ι) (images : PositiveCertificates.Instanc
       Γ[t]? = some T → ⟨Rt, Ps ++ Ds, R, effect⟩ ∈ callSigs G T →
       Γ[r]? = some Rt → slots.map (Γ[·]?) = Ps.map some →
       Represents G F (.arrs [⟨Rc, Ds, R, effect⟩] []) →
-      HasTyUsing G images Γ (.makeAt (.bound (.var t) (.var r) (slots.map .var)) [] []) F
+      HasTyWith G images subtyping Γ (.makeAt (.bound (.var t) (.var r) (slots.map .var)) [] []) F
   /-- **A bound variadic function.** As `bindE`, for a variadic signature of
   the target whose rest is an element rest: the prefix takes its first fixed
   positions, and past them the element; the result is the positions left, then
@@ -2255,7 +2284,7 @@ inductive HasTyUsing (G : NormalGraph ι) (images : PositiveCertificates.Instanc
       Γ[r]? = some Rt → slots.map (Γ[·]?) = Qs.map some →
       Qs = Ps.take slots.length ++ List.replicate (slots.length - Ps.length) El →
       Represents G F (.arrs [] [⟨Rc, (Ps.drop slots.length, E), R, effect⟩]) →
-      HasTyUsing G images Γ (.makeAt (.bound (.var t) (.var r) (slots.map .var)) [] []) F
+      HasTyWith G images subtyping Γ (.makeAt (.bound (.var t) (.var r) (slots.map .var)) [] []) F
   /-- **A member bound to its host.** The member is read from the object in a
   slot, before anything else runs, and bound to that same object: the bound
   function meets the member's signatures whatever receiver it is later given,
@@ -2270,7 +2299,7 @@ inductive HasTyUsing (G : NormalGraph ι) (images : PositiveCertificates.Instanc
       (∀ q ∈ L, ∃ c ∈ m.calls, CoveredCallUsing G images q c) →
       (∀ s ∈ S, ∃ c ∈ m.rests, CoveredRestUsing G images s c) →
       (∀ T ∈ m.receivers, ∃ p, PositiveCertificates.checkUsing G images O T p = true) →
-      HasTyUsing G images Γ (.letE (.readAt k (.var i)) (.makeAt (.bound (.var 0) (.var (i + 1)) []) [] [])) F
+      HasTyWith G images subtyping Γ (.letE (.readAt k (.var i)) (.makeAt (.bound (.var 0) (.var (i + 1)) []) [] [])) F
   /-- **A member bound to its host, at its quantified signatures.** As
   `bindMember`, the member is read from the object in a slot and bound to that
   same object; a generic method's signatures are a scheme the bound function
@@ -2279,20 +2308,30 @@ inductive HasTyUsing (G : NormalGraph ι) (images : PositiveCertificates.Instanc
   | bindScheme {Γ : List (Ty ι)} {F O : Ty ι} {i : Nat} {k : PropKey}
       {m : MethodMembers.Sig (Ty ι)} :
       Γ[i]? = some O → memberOf G O k = some m → F ∈ m.schemes → expand G F = [] →
-      HasTyUsing G images Γ (.letE (.readAt k (.var i)) (.makeAt (.bound (.var 0) (.var (i + 1)) []) [] [])) F
+      HasTyWith G images subtyping Γ (.letE (.readAt k (.var i)) (.makeAt (.bound (.var 0) (.var (i + 1)) []) [] [])) F
   /-- `throw a` has every type: it never produces a value, and a throw is an
   outcome safety admits. Its operand is typed at a type of its own, since it
   runs first. -/
-  | throw : HasTyUsing G images Γ a A → HasTyUsing G images Γ (.throw a) B
+  | throw : HasTyWith G images subtyping Γ a A → HasTyWith G images subtyping Γ (.throw a) B
   /-- **An allocation from parts.** The accumulator, then the source; the
   result is what `MergeOk` states each pair of their clauses gives: a fresh
   plain object holding the accumulator's own fields and, over them, the own
   enumerable data properties the source has when it is copied, less the
   dropped keys (`ObjectMerge.merge_values_safe`). -/
   | merge {d : List PropKey} {a b : Tm} {A B R : Ty ι} :
-      HasTyUsing G images Γ a A → HasTyUsing G images Γ b B → ObjectMerge.MergeOk G d A B R = true →
-      HasTyUsing G images Γ (.merge d a b) R
-  | sub : HasTyUsing G images Γ t A → PositiveCertificates.checkUsing G images A B cert = true → HasTyUsing G images Γ t B
+      HasTyWith G images subtyping Γ a A → HasTyWith G images subtyping Γ b B → ObjectMerge.MergeOk G d A B R = true →
+      HasTyWith G images subtyping Γ (.merge d a b) R
+  | sub : HasTyWith G images subtyping Γ t A → subtyping.check A B cert = true → HasTyWith G images subtyping Γ t B
+
+/-- Body typing with the ordinary checker as its default. -/
+abbrev HasTyUsing (G : NormalGraph ι) (images : PositiveCertificates.InstanceImageCheck G)
+    (Γ : List (Ty ι)) (t : Tm) (A : Ty ι)
+    (subtyping : BodySubtyping G := BodySubtyping.ordinary G images) : Prop :=
+  HasTyWith G images subtyping Γ t A
+
+namespace HasTyUsing
+export HasTyWith (var nul undef tru fls truLit flsLit numLit num bigintLit bigint strLit str funGraph funScheme ctorGraph callableGraph construct callCallable readCallable writeCallable app letE alloc allocDict read readView readProto readOptional readDict indexDict write arith arrLit elem elemOpt elemAny setElem len lenStr elemStr test ifBool ifKnown ifBoolVar ifTag unionVar arrCopy callRest bindE bindRestE bindMember bindScheme throw merge sub)
+end HasTyUsing
 
 /-- Existing source requests choose the finite checker. The typing rules
 are defined once, in `HasTyUsing`, for every proved image checker. -/
@@ -2350,7 +2389,9 @@ theorem captures_sem {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ : Env} {n : Na
   exact hcapv c (List.mem_of_getElem? hc)
 
 /-- Every derivation is safe in every admissible world and satisfying heap. -/
-theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.InstanceImageCheck G} {Γ t A} (ht : HasTyUsing G images Γ t A) :
+theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.InstanceImageCheck G}
+    {subtyping : BodySubtyping G} {Γ t A}
+    (ht : HasTyUsing G images (subtyping := subtyping) Γ t A) :
     ∀ n W h ρ, EnvOk G Γ ρ n W → WorldAdm W → HeapOk n W h →
       Safe (meaning G A) n W h (instantiate 0 ρ t) := by
   induction ht with
@@ -2400,7 +2441,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hv
       exact (meaning_value (hcapv c hc)).1)
     exact (represents_back hr j V _) ⟨ho.1, ho.2⟩
-  | @funScheme Γ i s arity start E K caps rest Ss hp hq hspec hcf hlt hcap ih =>
+  | @funScheme Γ i s arity start E K caps rest Ss hp hq hspec _hshape hcf hlt hcap ih =>
     obtain ⟨hF, hfree⟩ := capturesFree_sound hcf
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map]
@@ -2422,13 +2463,13 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       cases hc.symm.trans hc'
       exact meaning_assign_free hF (hfree c.1 (List.mem_map_of_mem (List.mem_of_getElem? hc))) As
         (hcapv c (List.mem_of_getElem? hc))
-    have hsig : ∀ As : List MixedFamily,
-        instanceTWithArgs (fun η S => mixedValues G η S) G.env s As (graphArguments G) j U
+    have hsig : ∀ As : List MixedFamily, As.length = s.binders.length →
+        G.domain.allowed s As → instanceTWithArgs (fun η S => mixedValues G η S) G.env s As (graphArguments G) j U
           (Tm.fnObj h.length (.graph arity E K start vs .call rest)) := by
-      intro As
+      intro As hlen hal
       have ho := offers_sem (G := reassign G (assign G.env s.binders As)) (oid := h.length + 1)
         [(codeField, h.length)]
-        (hspec _) (henv As) hsc (by
+        (hspec G.env As hlen hal) (henv As) hsc (by
       intro v hv
       obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hv
       exact (meaning_value (hcapv c hc)).1)
@@ -2437,7 +2478,8 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     change qDenoteWithArgs G (mixedParameters G) (G.env, i) j U _
     rw [qDenoteWithArgs_unfold]
     simp only [qLayerWithArgs, hp, hq, Bool.false_eq_true, if_false]
-    exact ⟨(hsig []).1.1, fun As _ _ => hsig As⟩
+    exact ⟨⟨_, _, _, rfl, rfl, by simpa [Scoped, vs, instantiate] using hsc⟩,
+      fun As hlen hal _ => hsig As hlen hal⟩
   | @ctorGraph Γ F U L arity start E K caps hr hu hspec hlt hcap ih =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map]
@@ -3498,7 +3540,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     exact thrown_safe _ _ _ _ ⟨v, .throwV hv, (meaning_value ha').2⟩
   | sub ht hc ih =>
     intro n W h ρ he hw hh
-    exact Safe_mono n (fun k _ V v hv => PositiveCertificates.acceptedUsing hc k V v hv)
+    exact Safe_mono n (fun k _ V v hv => subtyping.sound hc k V v hv)
       W h _ (ih n W h ρ he hw hh)
 
 /-- The closed-program interface requires scope explicitly, so free source

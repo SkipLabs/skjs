@@ -119,7 +119,7 @@ def Built.store (b : Built) : State :=
   { s with heads := drafts.map owned, keys := keys, jobs := [], processing := [], obligations := [],
            meetChecks := [], unitBinders := [],
            scopes := s.scopes.map (fun (p, bs) => (p, bs.map fun (n, x) => (n, rnB x))),
-           proto := s.proto.map f }
+           proto := s.proto.map f, nativeStable := s.nativeStable.map b.rn }
 
 /-- Source lowering either refuses a form or reports the compared types
 under the compacted equations. The outcome retains unfinished subtype work. -/

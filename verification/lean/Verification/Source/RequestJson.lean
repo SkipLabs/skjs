@@ -138,18 +138,28 @@ instance : FromJson ParameterKind := ⟨fun j => do
   | "arguments" => return .arguments
   | _ => throw "expected parameter kind value or arguments"⟩
 
+/-- Resolution groups retain positions among the scheme's binders. -/
+instance : ToJson ResolutionSlots := ⟨fun s => Json.mkObj [
+  ("input", toJson s.input), ("observation", toJson s.observation), ("result", toJson s.result)]⟩
+
+instance : FromJson ResolutionSlots := ⟨fun j => do
+  fieldsExactly j ["input", "observation", "result"]
+  return ⟨← fromJson? (← jField j "input"), ← fromJson? (← jField j "observation"),
+    ← fromJson? (← jField j "result")⟩⟩
+
 /-- A clause row is spelled as its array of clauses, as every row was before
 scheme rows; a scheme row as
-`{"scheme": {"binders", "signatures", "bounds", "variadic"}}`, its bounds and
-its variadic signatures left out when there are none, a parameter row as
+`{"scheme": {"binders", "signatures", "bounds", "variadic", "resolution"}}`,
+its bounds, variadic signatures and resolution groups left out when empty, a parameter row as
 `{"param": label, "name": name, "kind": "value" | "arguments"}`, and a meet
 row as `{"meet": binder, "clauses": [...]}`, whatever the labels are. -/
 instance [ToJson ι] [ToJson α] : ToJson (GraphRow ι α) := ⟨fun
   | .clauses cs => toJson cs
-  | .scheme bs sigs bounds rests => Json.mkObj [("scheme",
+  | .scheme bs sigs bounds rests resolution => Json.mkObj [("scheme",
       Json.mkObj ([("binders", toJson bs), ("signatures", toJson sigs)] ++
         (if bounds.isEmpty then [] else [("bounds", toJson bounds)]) ++
-        (if rests.isEmpty then [] else [("variadic", toJson rests)])))]
+        (if rests.isEmpty then [] else [("variadic", toJson rests)]) ++
+        (if resolution.isEmpty then [] else [("resolution", toJson resolution)])))]
   | .param l n k => Json.mkObj [("param", toJson l), ("name", toJson n), ("kind", toJson k)]
   | .meet p cs ps => Json.mkObj ([("meet", toJson p), ("clauses", toJson cs)] ++
       (if ps.isEmpty then [] else [("also", toJson ps)]))⟩
@@ -164,12 +174,18 @@ instance [FromJson ι] [FromJson α] : FromJson (GraphRow ι α) := ⟨fun j =>
           | .ok v => fromJson? v
           | .error _ => pure [])
     | .ok b, .error _, .error _ => do
+      fieldsExactly j ["scheme"]
+      let optional := ["bounds", "variadic", "resolution"].filter (fun k => (b.getObjVal? k).isOk)
+      fieldsExactly b (["binders", "signatures"] ++ optional)
       return .scheme (← fromJson? (← b.getObjVal? "binders"))
         (← fromJson? (← b.getObjVal? "signatures"))
         (← match b.getObjVal? "bounds" with
           | .ok v => fromJson? v
           | .error _ => pure [])
         (← match b.getObjVal? "variadic" with
+          | .ok v => fromJson? v
+          | .error _ => pure [])
+        (← match b.getObjVal? "resolution" with
           | .ok v => fromJson? v
           | .error _ => pure [])
     | .error _, .ok l, .error _ => do
@@ -407,22 +423,60 @@ theorem codeTable_eq (r : Request σ ι) (c : Response ι) :
     ProgramCertificates.CheckResult.accepted_ofBool]
   rfl
 
+end
+
+section
+variable {ι : Type} [DecidableEq ι]
+
+/-- A qualified body's executable check and its enclosing descriptor contract.
+The ordinary graph assignment also has a proof for this same check. -/
+structure QualifiedBody (G : NormalGraph ι) (images : PositiveCertificates.InstanceImageCheck G) where
+  source : SchemeRow ι
+  capabilities : ResolutionDescriptors.Capabilities
+  stable : Fam
+  domain : G.domain = ResolutionDescriptors.descriptorDomain capabilities stable
+  body : BodySubtyping G
+  check_eq : body.check = ProgramCertificates.lexicalBodyCheck G images source
+
+/-- Source instances satisfy both the descriptor contract and the declared
+bounds. Each bound is interpreted in the enclosing assignment. -/
+def QualifiedBody.Admits {G : NormalGraph ι}
+    {images : PositiveCertificates.InstanceImageCheck G} (q : QualifiedBody G images) (η : MixedAssignment ι) : Prop :=
+  ∃ θ As, As.length = q.source.binders.length ∧ G.domain.allowed q.source As ∧
+    (∀ n, Bounded (mixedMeaning G) θ q.source As n) ∧
+    η = assign θ q.source.binders As
+
+@[nospecialize] def QualifiedBody.checker {G : NormalGraph ι}
+    {images : PositiveCertificates.InstanceImageCheck G} (q : QualifiedBody G images) :
+    HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.withSubtyping G images q.body
+
+end
+
+section
+variable {σ ι : Type} [Labels ι] [StoreView σ ι]
+
 /-- Validate a request and retain its checked code table for supplemental obligations. -/
-@[nospecialize] def verifyResult (r : Request σ ι) (c : Response ι) :
+@[nospecialize] def verifyResult (r : Request σ ι) (c : Response ι)
+    (checker : HeapExpressionRules.Checker (graph r) (StoreView.images r.types) :=
+      HeapExpressionRules.Checker.ordinary (graph r) (StoreView.images r.types)) :
     ProgramCertificates.CheckResult ι (List (CodeEntry ι)) :=
   (ProgramCertificates.CheckResult.ofBool (validRequest r && validResponse r c)).bind fun _ =>
   (codeTableResult r c).bind fun table =>
-    (CertificateProducer.acceptResult (graph r) (StoreView.images r.types) r.result r.program
+    (CertificateProducer.acceptResult (checker := checker) (graph r) (StoreView.images r.types) r.result r.program
       r.claims c.certificate r.start r.inputs (GraphCode.admits table)).map fun _ => table
 
 /-- This check remains independent of the producer and its search settings. -/
-@[nospecialize] def verify (r : Request σ ι) (c : Response ι) : Bool :=
-  (verifyResult r c).accepted
+@[nospecialize] def verify (r : Request σ ι) (c : Response ι)
+    (checker : HeapExpressionRules.Checker (graph r) (StoreView.images r.types) :=
+      HeapExpressionRules.Checker.ordinary (graph r) (StoreView.images r.types)) : Bool :=
+  (verifyResult r c (checker := checker)).accepted
 
-theorem verify_eq (r : Request σ ι) (c : Response ι) :
-    verify r c = (validRequest r && validResponse r c &&
+theorem verify_eq (r : Request σ ι) (c : Response ι)
+    (checker : HeapExpressionRules.Checker (graph r) (StoreView.images r.types) :=
+      HeapExpressionRules.Checker.ordinary (graph r) (StoreView.images r.types)) :
+    verify r c (checker := checker) = (validRequest r && validResponse r c &&
       match codeTable r c with
-      | some table => CertificateProducer.acceptUsing (graph r) (StoreView.images r.types) r.result r.program
+      | some table => CertificateProducer.acceptUsing (checker := checker) (graph r) (StoreView.images r.types) r.result r.program
           r.claims c.certificate r.start r.inputs (GraphCode.admits table)
       | none => false) := by
   rw [verify, verifyResult, ProgramCertificates.CheckResult.accepted_bind,
@@ -432,11 +486,13 @@ theorem verify_eq (r : Request σ ι) (c : Response ι) :
   cases (codeTableResult r c).value <;> rfl
 
 /-- Successful request validation retains exactly its independently checked table. -/
-theorem verifyResult_value_eq (r : Request σ ι) (c : Response ι) :
-    (verifyResult r c).value =
+theorem verifyResult_value_eq (r : Request σ ι) (c : Response ι)
+    (checker : HeapExpressionRules.Checker (graph r) (StoreView.images r.types) :=
+      HeapExpressionRules.Checker.ordinary (graph r) (StoreView.images r.types)) :
+    (verifyResult r c (checker := checker)).value =
       if validRequest r && validResponse r c then
         (codeTable r c).bind fun table =>
-          if CertificateProducer.acceptUsing (graph r) (StoreView.images r.types) r.result r.program
+          if CertificateProducer.acceptUsing (checker := checker) (graph r) (StoreView.images r.types) r.result r.program
               r.claims c.certificate r.start r.inputs (GraphCode.admits table) then some table else none
       else none := by
   rw [verifyResult, ProgramCertificates.CheckResult.value_bind_const,
@@ -445,9 +501,11 @@ theorem verifyResult_value_eq (r : Request σ ι) (c : Response ι) :
     ProgramCertificates.CheckResult.value_map_const, CertificateProducer.acceptUsing, codeTable]
   rfl
 
-theorem verifyResult_hasTable (r : Request σ ι) (c : Response ι) (table : List (CodeEntry ι)) :
-    (verifyResult r c).value = some table ↔ verify r c = true ∧ codeTable r c = some table := by
-  rw [verifyResult_value_eq, verify_eq]
+theorem verifyResult_hasTable (r : Request σ ι) (c : Response ι) (table : List (CodeEntry ι))
+    (checker : HeapExpressionRules.Checker (graph r) (StoreView.images r.types) :=
+      HeapExpressionRules.Checker.ordinary (graph r) (StoreView.images r.types)) :
+    (verifyResult r c (checker := checker)).value = some table ↔ verify r c (checker := checker) = true ∧ codeTable r c = some table := by
+  rw [verifyResult_value_eq (checker := checker), verify_eq (checker := checker)]
   split <;> cases ht : codeTable r c <;> simp_all
   all_goals split <;> simp_all
 
@@ -600,9 +658,12 @@ table checked before it, not part of this request. -/
 @[nospecialize] def produceGraph (r : Request σ ι) (fuel : Nat) (labels : List ι)
     (suggestions : List (ProgramCertificates.Sequent ι)) (known : List (ProgramCertificates.Evidence ι))
     (sourceMap : SourceMap) (requirements : List (Nat × HeapKnowledge.Knowledge)) (cuts : List Nat)
-    (table : List (CodeEntry ι)) : Except String (ControlFlow.Certificate ι) :=
+    (table : List (CodeEntry ι))
+    (checker : HeapExpressionRules.Checker (graph r) (StoreView.images r.types) :=
+      HeapExpressionRules.Checker.ordinary (graph r) (StoreView.images r.types)) :
+    Except String (ControlFlow.Certificate ι) :=
   match CertificateProducer.produceUsing (graph r) (StoreView.images r.types) labels fuel r.result r.program r.claims r.start [] r.inputs suggestions known
-      requirements cuts (GraphCode.admits table) with
+      requirements cuts (GraphCode.admits table) checker with
   | .ok c => pure c
   | .error e =>
     let location := match e with
@@ -679,7 +740,10 @@ part of the certified request. -/
     (sourceMap : SourceMap := [])
     (searchLabels : Option (List ι) := none)
     (requirements : List (Nat × HeapKnowledge.Knowledge) := []) (cuts : List Nat := [])
-    (codeHints : List CodeHints := []) : Except String (Response ι) := do
+    (codeHints : List CodeHints := [])
+    (checker : HeapExpressionRules.Checker (graph r) (StoreView.images r.types) :=
+      HeapExpressionRules.Checker.ordinary (graph r) (StoreView.images r.types)) :
+    Except String (Response ι) := do
   let labels := searchLabels.getD (StoreView.labels r.types)
   -- Each code against the table of those before it, as `codeTable` checks.
   let mut table : List (CodeEntry ι) := []
@@ -700,9 +764,9 @@ part of the certified request. -/
       let label := stop.nodeLabel.getD q.entry.start
       throw (withDiagnostic "subtype search exhausted during code admission; result is inconclusive"
         (failureDiagnostic (q.asRequest r) fuel hints.sourceMap (.exhaustedExpression label stop)))
-  let C ← produceGraph r fuel labels suggestions known sourceMap requirements cuts table
+  let C ← produceGraph r fuel labels suggestions known sourceMap requirements cuts table checker
   let response := Response.mk C certificates
-  let checked := verifyResult r response
+  let checked := verifyResult r response checker
   if checked.accepted then return response
   throw (match checked.exhaustion with
     | some stop => validationFailure r fuel sourceMap codeHints stop
@@ -722,7 +786,8 @@ part of the certified request. -/
   verifyJson σ request response
   return response
 
-theorem verify_safe {r : Request σ ι} {c : Response ι} (hc : verify r c = true) (n W h ρ)
+theorem verify_safe {r : Request σ ι} {c : Response ι}
+    {checker : HeapExpressionRules.Checker (graph r) (StoreView.images r.types)} (hc : verify r c (checker := checker) = true) (n W h ρ)
     (he : EnvOk (graph r) r.inputs ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafeGraph r.program (meaning (graph r) r.result) n W h (.at r.start ρ) := by
   simp only [verify_eq, Bool.and_eq_true] at hc
@@ -750,6 +815,43 @@ theorem verify_safe_at {r : Request σ ι} {c : Response ι} (hc : verify r c = 
       fun e he η' => codeTable_sound ht e he η'
     exact Parametricity.accepted_at hx η n W h ρ he hw hh hsound
   · contradiction
+
+/-- A request checked using its enclosing scheme's descriptor evidence is
+safe at every admitted tuple of type arguments. The checked program, claims,
+input frame and code table are the same ones used by request acceptance. -/
+theorem verify_qualified_safe_at {r : Request σ ι} {c : Response ι}
+    (source : SchemeRow ι) {C : ResolutionDescriptors.Capabilities} {N : Fam}
+    (domain : (graph r).domain = ResolutionDescriptors.descriptorDomain C N)
+    (body : BodySubtyping (graph r))
+    (bodyCheck : body.check = ProgramCertificates.lexicalBodyCheck (graph r)
+      (StoreView.images r.types) source)
+    (checked : verify r c (HeapExpressionRules.Checker.withSubtyping
+      (graph r) (StoreView.images r.types) body) = true)
+    (η : MixedAssignment ι) (As : List MixedFamily)
+    (length : As.length = source.binders.length) (allowed : (graph r).domain.allowed source As)
+    (_bounded : ∀ m, Bounded (mixedMeaning (graph r)) η source As m)
+    (n W h ρ)
+    (he : EnvOk (reassign (graph r) (assign η source.binders As)) r.inputs ρ n W)
+    (hw : WorldAdm W) (hh : HeapOk n W h) :
+    SafeGraph r.program (meaning (reassign (graph r) (assign η source.binders As)) r.result)
+      n W h (.at r.start ρ) := by
+  simp only [verify_eq, Bool.and_eq_true] at checked
+  have accepted := checked.2
+  split at accepted
+  · rename_i table ht
+    simp only [CertificateProducer.acceptUsing_eq (checker := HeapExpressionRules.Checker.withSubtyping
+      (graph r) (StoreView.images r.types) body), Bool.and_eq_true] at accepted
+    let body' := ProgramCertificates.lexicalBodySubtyping (graph r)
+      (StoreView.images r.types) source domain η As length allowed
+    have same : body'.check = body.check := bodyCheck.symm
+    have hc := (Parametricity.checkBodyEntry_reassign (graph r)
+      (assign η source.binders As) (StoreView.images r.types) body body' same
+      r.result r.program c.certificate r.start r.inputs (GraphCode.admits table)).trans accepted.2
+    exact ControlFlow.accepted_inputs_safe hc n W h ρ he hw hh
+      (fun e he η' => codeTable_sound ht e he η')
+  · contradiction
+
+#print axioms verify_qualified_safe_at
 
 /-- Empty input contracts retain the closed-invocation corollary. -/
 theorem verify_closed_safe {r : Request σ ι} {c : Response ι}

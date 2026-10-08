@@ -14,6 +14,7 @@ inductive GraphRow (ι : Type) (Operand : Type := List ι) where
   | clauses (union : List (Clause Operand))
   | scheme (binders : List ι) (signatures : List (Arrow Operand))
       (bounds : List (ι × Operand)) (variadic : List (RestArrow Operand))
+      (resolution : List ResolutionSlots := [])
   | param (label : ι) (name : String) (kind : ParameterKind)
   | meet (binder : ι) (union : List (Clause Operand)) (also : List ι := [])
   deriving DecidableEq, Repr, Inhabited
@@ -23,10 +24,10 @@ a binding position denotes one label while a type parameter can stand for a
 whole union. In a closed graph the operands are lists of labels. -/
 def GraphRow.map (binding : ι → κ) (operand : α → β) : GraphRow ι α → GraphRow κ β
   | .clauses cs => .clauses (cs.map (Clause.map operand))
-  | .scheme bs sigs bounds rests => .scheme (bs.map binding)
+  | .scheme bs sigs bounds rests resolution => .scheme (bs.map binding)
       (sigs.map (Arrow.map operand))
       (bounds.map fun (b, T) => (binding b, operand T))
-      (rests.map (RestArrow.map operand))
+      (rests.map (RestArrow.map operand)) resolution
   | .param b name kind => .param (binding b) name kind
   | .meet b cs also => .meet (binding b) (cs.map (Clause.map operand)) (also.map binding)
 
@@ -40,7 +41,7 @@ def GraphRow.union : GraphRow ι α → List (Clause α)
 A parameter's identity is metadata, checked separately by the wire boundary. -/
 def GraphRow.operands : GraphRow ι → List (List ι)
   | .clauses cs => cs.flatMap Clause.operands
-  | .scheme bs sigs bounds rests => bs :: sigs.flatMap Arrow.operands ++
+  | .scheme bs sigs bounds rests _ => bs :: sigs.flatMap Arrow.operands ++
       bounds.map (fun b => b.1 :: b.2) ++ rests.flatMap RestArrow.operands
   | .param _ _ _ => []
   | .meet p cs ps => (p :: ps) :: cs.flatMap Clause.operands
@@ -49,11 +50,12 @@ def GraphRow.operands : GraphRow ι → List (List ι)
 finite protocol and equation graphs: no representation gets its own choices
 about parameters, quantification or dependent intersections. -/
 def NormalGraph.ofRowMap (row : ι → GraphRow ι)
-    (realm : Option (ArrayRealm ι) := none) : NormalGraph ι :=
-  { realm
+    (realm : Option (ArrayRealm ι) := none)
+    (domain : SchemeDomain ι .mixed := .ordinary) : NormalGraph ι :=
+  { realm, domain
     rows i := (row i).union
     schemes i := match row i with
-      | .scheme bs sigs bounds rests => some ⟨bs, sigs, bounds, rests⟩
+      | .scheme bs sigs bounds rests resolution => some ⟨bs, sigs, bounds, rests, resolution⟩
       | .clauses .. | .param .. | .meet .. => none
     parameterKinds i := match row i with
       | .param _ _ k => some k

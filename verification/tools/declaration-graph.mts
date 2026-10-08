@@ -21,7 +21,7 @@ import { classInstance, computedAlias, computedForm, expandMapped, mapped, membe
   typeTerm, validateAnnotation, type Mapped, type TermScope } from "./type-term.mts";
 import { arrayPrototype, interfaceOverlay, overlay, primitiveKinds, primitivePrototype, primitivePrototypeName, type OverlayEntry,
   type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
-import { intrinsics, intrinsicModule, iterateIteratorName, iterateMapName, iterateSetName, iterateStringName,
+import { intrinsics, intrinsicModule, asyncReturnName, iterateIteratorName, iterateMapName, iterateSetName, iterateStringName,
   iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName } from "./intrinsics.mts";
 import { globalEntry, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { computedType, enclosingBinders, inferredTerm, literalUnion, type ComputedContext } from "./computed-types.mts";
@@ -275,6 +275,10 @@ export function collectDeclarations(file: string, options: {
    * (`globals`), that TypeScript binds to a library type read at its meaning
    * rather than joining the graph (`LibraryType`). */
   library?: (span: Span, library: LibraryType) => void;
+  /** The standard associated-result alias, resolved at a source name. */
+  awaited?: (span: Span) => void;
+  /** A local alias whose complete body is expanded in the qualified scope. */
+  associatedAlias?: (name: string, declaration: DeclarationIdentity) => void;
   /** The client uses arrays: `Array.prototype`'s contract joins the graph
    * (`array-prototype.mts`), at `arrays`, the first array the client writes. */
   arrays?: Span;
@@ -473,6 +477,27 @@ export function collectDeclarations(file: string, options: {
         throw Error(`TypeScript found ${nodes.length} declarations for ${what}`);
       return node;
     };
+    const awaited = (reference: ts.TypeReferenceNode): boolean => {
+      if (!ts.isIdentifier(reference.typeName)) return false;
+      const target = targetOf(checker, reference.typeName);
+      const declarations = target?.declarations.map(d => d.resolve()) ?? [];
+      const [only] = declarations;
+      return declarations.length === 1 && !!only && ts.isTypeAliasDeclaration(only) &&
+        only.name.text === "Awaited" && isLibraryModule(idOf(only.getSourceFile()));
+    };
+    const associatedAlias = (node: TypeAliasDeclaration, seen = new Set<TypeAliasDeclaration>()): boolean => {
+      if (seen.has(node)) return false;
+      seen.add(node);
+      const visit = (part: Node): boolean => {
+        if (ts.isTypeReferenceNode(part)) {
+          if (awaited(part)) return true;
+          const target = ts.isIdentifier(part.typeName) ? targetOf(checker, part.typeName)?.declarations[0]?.resolve() : undefined;
+          if (target && ts.isTypeAliasDeclaration(target) && associatedAlias(target, seen)) return true;
+        }
+        return part.forEachChild(visit) ?? false;
+      };
+      return visit(node.type);
+    };
     // An interface declared several times is one interface with every
     // declaration's members, as TypeScript merges it; the first declaration is
     // its identity. A same-named value declaration, a constant or a function,
@@ -670,6 +695,11 @@ export function collectDeclarations(file: string, options: {
       return {
         source,
         annotation: false,
+        awaited,
+        associatedAlias: part => {
+          const target = ts.isIdentifier(part.typeName) ? targetOf(checker, part.typeName)?.declarations[0]?.resolve() : undefined;
+          return target && ts.isTypeAliasDeclaration(target) && associatedAlias(target) ? target : null;
+        },
         // An alias's body, its parameters read as the reference's arguments.
         equation: (reference) => {
           const alias = reference.reference.target && aliasNodes.get(aliasKey(reference.reference.target));
@@ -726,7 +756,7 @@ export function collectDeclarations(file: string, options: {
         if (p.defaultType) throw Error(`a type parameter default of an imported value is outside the fragment: ${what}`);
         const bound = p.constraint ? typeTerm(valueScope(node, what, [...names]), p.constraint, p) : null;
         names.push(p.name.text);
-        return { name: p.name.text, bound };
+        return { name: p.name.text, bound, resolution: null };
       });
       return { names, typeParams };
     };
@@ -867,6 +897,7 @@ export function collectDeclarations(file: string, options: {
         throw new DeclarationError(at, error instanceof Error ? error.message : String(error));
       }
     }
+    let resolutionContextAt: Span | undefined;
     for (const span of options.locals ?? []) {
       const declaration = client.statements.find(statement =>
         isTypeDeclaration(statement) &&
@@ -875,6 +906,11 @@ export function collectDeclarations(file: string, options: {
         throw new DeclarationError(span, "TypeScript local declaration missing");
       try {
         const node = lookup(declaration.name, declaration.name.text);
+        if (ts.isTypeAliasDeclaration(node) && associatedAlias(node)) {
+          resolutionContextAt ??= span;
+          options.associatedAlias?.(declaration.name.text, identityOf(node));
+          continue;
+        }
         // A merged interface's later declarations are the same root. An
         // alias TypeScript computes from its parameters has no equation: each
         // reference to it is a computed type.
@@ -893,6 +929,12 @@ export function collectDeclarations(file: string, options: {
       if (!declaration || ts.isTypeParameterDeclaration(declaration) ||
           declaration.getSourceFile().fileName === client.fileName) continue;
       try {
+        if (ts.isTypeAliasDeclaration(declaration) && declaration.name.text === "Awaited" &&
+            isLibraryModule(idOf(declaration.getSourceFile()))) {
+          resolutionContextAt ??= span;
+          options.awaited?.(span);
+          continue;
+        }
         const known = library(identifier, identifier.text);
         if (known) {
           options.library?.(span, known);
@@ -1128,6 +1170,7 @@ export function collectDeclarations(file: string, options: {
       }
     };
     if (options.intrinsics) listIntrinsics(options.intrinsics.span, options.intrinsics.names);
+    if (resolutionContextAt) listIntrinsics(resolutionContextAt, [asyncReturnName]);
     // `k in o` with a key TypeScript types as string literals only is the
     // model's key test, which narrows `o`; any other key, a number, a symbol
     // or a string known only at run time, is the host's `%HasProperty%`.
@@ -1457,7 +1500,7 @@ export function collectDeclarations(file: string, options: {
       try {
         collect(start, seen, definitions, { lookup, identityOf, symbol: symbolOf, privateName: privateNameOf, partners, library, equation,
           libraryInterface, computed: (node, span, read) => computedType(computedContext, node, span, read),
-          keys: keyTypeOf, alias: aliasOf });
+          keys: keyTypeOf, alias: aliasOf, awaited });
       } catch (error) {
         throw new DeclarationError(span, error instanceof Error ? error.message : String(error));
       }
@@ -1767,7 +1810,7 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
           // A generic statement is a scheme over its binders, as a generic
           // interface method is.
           return [stated.binders.length
-            ? { k: "scheme", binders: stated.binders.map(name => ({ name, bound: null, default: null, span: at })),
+            ? { k: "scheme", binders: stated.binders.map(name => ({ name, bound: null, resolution: null, default: null, span: at })),
                 signatures: [form], span: at } satisfies TypeTerm
             : form];
         }
@@ -1866,7 +1909,7 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
       [JSON.stringify({ ...f, type: { ...f.type, span: null } }), f])).values()];
     const [only] = distinct;
     if (distinct.length === 1 && only)
-      return { construct: { declaration: identity, typeParams: only.binders.map(name => ({ name, bound: null })),
+      return { construct: { declaration: identity, typeParams: only.binders.map(name => ({ name, bound: null, resolution: null })),
         type: only.type } };
     if (distinct.some(f => f.binders.length)) throw Error(`${whatNew} selects several generic signatures`);
     const span = spanOf(first);
@@ -2014,6 +2057,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
   computed: NonNullable<TermScope["computed"]>;
   /** The type alias a reference names, if any. */
   alias: (reference: ts.TypeReferenceNode) => TypeAliasDeclaration | null;
+  awaited: NonNullable<TermScope["awaited"]>;
   /** A mapped type's keys as TypeScript computes them. */
   keys: NonNullable<TermScope["keys"]>;
 }): void {
@@ -2082,6 +2126,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
     const scopeOf = (source: SourceFile): TermScope => ({
       source,
       annotation: false,
+      awaited: context.awaited,
       ...(body ? { body } : {}),
       symbol,
       privateName: context.privateName,
@@ -2185,7 +2230,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
           return { ...signature, receiver, params, result: substitute(signature.result, [payload]) };
         });
         const updated: TypeTerm = { k: "scheme", span: type.span,
-          binders: [...binders, { name: "NativePayload", bound: null, default: null, span }],
+          binders: [...binders, { name: "NativePayload", bound: null, resolution: null, default: null, span }],
           signatures: amended };
         return { ...field, readonly: true, type: updated };
       });

@@ -1,5 +1,8 @@
 import Verification.Programs.ExpressionClaims
 import Verification.Programs.DirectObligation
+-- SourceResolution.lean constructs the qualified body checker from the retained
+-- source signature and proves the descriptor evidence used by source instances.
+import Verification.Source.SourceResolution
 
 namespace Verification.SourceExtraction
 open Lean ProgramTyping PositiveRules ControlFlow CertificateProducer RequestJson
@@ -16,7 +19,12 @@ structure CodeSource where
 section
 variable {σ ι : Type} [Labels ι] [StoreView σ ι]
 
-structure SourceRequest (σ ι : Type) extends Request σ ι where
+structure SourceRequest (σ ι : Type) [Labels ι] [StoreView σ ι] extends Request σ ι where
+  /-- The enclosing generic signature, retained through label freezing. -/
+  sourceScheme : Option (PositiveGraphs.SchemeRow ι) := none
+  /-- Constructed from the frozen descriptor domain and source signature. -/
+  qualification : Option (RequestJson.QualifiedBody (RequestJson.graph toRequest)
+    (StoreView.images toRequest.types)) := none
   obligations : List (ExpressionClaims.Required ι)
   sourceMap : SourceMap := []
   assertions : List (Nat × HeapKnowledge.Knowledge) := []
@@ -67,6 +75,19 @@ end
 section
 variable {σ ι : Type} [Labels ι] [StoreView σ ι]
 
+@[nospecialize] def SourceRequest.checker (r : SourceRequest σ ι) :
+    HeapExpressionRules.Checker (RequestJson.graph r.toRequest) (StoreView.images r.types) :=
+  match r.qualification with
+  | none => HeapExpressionRules.Checker.ordinary _ _
+  | some q => q.checker
+
+/-- Unqualified bodies permit every assignment; qualified bodies permit the
+instances of their retained source signature. -/
+def SourceRequest.Admits (r : SourceRequest σ ι) (η : PositiveGraphs.MixedAssignment ι) : Prop :=
+  match r.qualification with
+  | none => True
+  | some q => q.Admits η
+
 /-- Evidence order is source declaration order, independent of export order. -/
 structure Bundle (ι : Type) where
   functions : List (Response ι)
@@ -90,7 +111,6 @@ def checkGraphAssertions (cuts : List Nat) (assertions : List (Nat × HeapKnowle
   r.codeSources.length == c.codes.length &&
   (r.codeSources.zip c.codes).all fun (q, C) => checkGraphAssertions q.cuts q.assertions C
 
-omit [Labels ι] in
 /-- Accepted source evidence has exactly the supplied knowledge at every
 statement entry, even when that knowledge is empty. -/
 theorem checkAssertions_cut {r : (SourceRequest σ ι)} {c : (Response ι)}
@@ -102,7 +122,6 @@ theorem checkAssertions_cut {r : (SourceRequest σ ι)} {c : (Response ι)}
   have h := List.all_eq_true.mp hc.1 l hm
   simpa [hn] using h
 
-omit [Labels ι] in
 theorem checkAssertions_sound {r : (SourceRequest σ ι)} {c : (Response ι)}
     (hc : checkAssertions r c = true) {l k node ρ heap}
     (hm : (l,k) ∈ r.assertions) (hn : c.certificate[l]? = some node)
@@ -116,7 +135,7 @@ theorem checkAssertions_sound {r : (SourceRequest σ ι)} {c : (Response ι)}
 /-- Validate one unit, sharing its checked code table with supplemental obligations. -/
 @[nospecialize] def checkRequestResult (r : SourceRequest σ ι) (c : Response ι)
     (es : List (ProgramCertificates.Evidence ι)) : ProgramCertificates.CheckResult ι Unit :=
-  (verifyResult r.toRequest c).bind fun table =>
+  (verifyResult r.toRequest c r.checker).bind fun table =>
     (ProgramCertificates.CheckResult.ofBool (checkAssertions r c)).bind fun _ =>
     ExpressionClaims.checkAllResult (RequestJson.graph r.toRequest) (StoreView.images r.types)
       (StoreView.valid r.types) r.obligations es (GraphCode.admits table)
@@ -124,7 +143,7 @@ theorem checkAssertions_sound {r : (SourceRequest σ ι)} {c : (Response ι)}
 theorem checkRequestResult_accepted_iff (r : SourceRequest σ ι) (c : Response ι)
     (es : List (ProgramCertificates.Evidence ι)) :
     (checkRequestResult r c es).accepted = true ↔
-      verify r.toRequest c = true ∧ checkAssertions r c = true ∧
+      verify r.toRequest c r.checker = true ∧ checkAssertions r c = true ∧
       ∃ table, codeTable r.toRequest c = some table ∧
         ExpressionClaims.checkAllUsing (RequestJson.graph r.toRequest) (StoreView.images r.types)
           (StoreView.valid r.types) r.obligations es (GraphCode.admits table) = true := by
@@ -132,12 +151,12 @@ theorem checkRequestResult_accepted_iff (r : SourceRequest σ ι) (c : Response 
     Option.any_eq_true]
   constructor
   · rintro ⟨table, ht, hc⟩
-    obtain ⟨hv, htable⟩ := (verifyResult_hasTable _ _ _).mp ht
+    obtain ⟨hv, htable⟩ := (verifyResult_hasTable _ _ _ r.checker).mp ht
     rw [ProgramCertificates.CheckResult.accepted_bind,
       ProgramCertificates.CheckResult.accepted_ofBool] at hc
     exact ⟨hv, (Bool.and_eq_true_iff.mp hc).1, table, htable, (Bool.and_eq_true_iff.mp hc).2⟩
   · rintro ⟨hv, ha, table, ht, ho⟩
-    refine ⟨table, (verifyResult_hasTable _ _ _).mpr ⟨hv, ht⟩, ?_⟩
+    refine ⟨table, (verifyResult_hasTable _ _ _ r.checker).mpr ⟨hv, ht⟩, ?_⟩
     rw [ProgramCertificates.CheckResult.accepted_bind,
       ProgramCertificates.CheckResult.accepted_ofBool]
     exact Bool.and_eq_true_iff.mpr ⟨ha, ho⟩
@@ -189,7 +208,7 @@ theorem checkRequests_pair {rs : List (SourceRequest σ ι)} {b : Bundle ι}
 theorem checkRequests_accepted_iff (rs : List (SourceRequest σ ι)) (b : Bundle ι) :
     checkRequests rs b = true ↔
       rs.length = b.functions.length ∧ rs.length = b.obligations.length ∧
-      (∀ r c, (r,c) ∈ rs.zip b.functions → verify r.toRequest c = true ∧ checkAssertions r c = true) ∧
+      (∀ r c, (r,c) ∈ rs.zip b.functions → verify r.toRequest c r.checker = true ∧ checkAssertions r c = true) ∧
       (∀ r c es, ((r,c),es) ∈ (rs.zip b.functions).zip b.obligations →
         ∃ table, codeTable r.toRequest c = some table ∧
           ExpressionClaims.checkAllUsing (RequestJson.graph r.toRequest) (StoreView.images r.types)
@@ -236,16 +255,26 @@ theorem checkRequests_safe {rs : List (SourceRequest σ ι)} {b : (Bundle ι)}
   obtain ⟨es, _, hunit⟩ := checkRequests_pair h hm
   exact verify_safe ((checkRequestResult_accepted_iff _ _ _).mp hunit).1 n W heap ρ he hw hh
 
-/-- A generic body is safe at every assignment of its parameter meanings. -/
+/-- A generic body is safe at every assignment admitted by its source signature. -/
 theorem checkRequests_safe_at {rs : List (SourceRequest σ ι)} {b : (Bundle ι)}
     (h : checkRequests rs b = true) {r c} (hm : (r,c) ∈ rs.zip b.functions)
-    (η : PositiveGraphs.MixedAssignment ι) (n W heap ρ)
+    (η : PositiveGraphs.MixedAssignment ι) (admitted : r.Admits η) (n W heap ρ)
     (he : EnvOk (reassign (RequestJson.graph r.toRequest) η) r.inputs ρ n W) (hw : WorldAdm W)
     (hh : HeapOk n W heap) :
     SafeGraph r.program (meaning (reassign (RequestJson.graph r.toRequest) η) r.result) n W heap
       (.at r.start ρ) := by
   obtain ⟨es, _, hunit⟩ := checkRequests_pair h hm
-  exact verify_safe_at ((checkRequestResult_accepted_iff _ _ _).mp hunit).1 η n W heap ρ he hw hh
+  have checked := ((checkRequestResult_accepted_iff _ _ _).mp hunit).1
+  cases hq : r.qualification with
+  | none =>
+    simp only [SourceRequest.checker, hq] at checked
+    exact verify_safe_at checked η n W heap ρ he hw hh
+  | some q =>
+    simp only [SourceRequest.checker, hq, QualifiedBody.checker] at checked
+    simp only [SourceRequest.Admits, hq, QualifiedBody.Admits] at admitted
+    obtain ⟨θ, As, length, allowed, bounded, rfl⟩ := admitted
+    exact verify_qualified_safe_at q.source q.domain q.body q.check_eq checked
+      θ As length allowed bounded n W heap ρ he hw hh
 
 /-- Every supplemental claim is a derivable sequent in the same calculus. -/
 theorem checkRequests_obligations {rs : List (SourceRequest σ ι)} {b : (Bundle ι)}
@@ -313,6 +342,13 @@ the extracted one; every label is read as `F`'s. -/
 def SourceRequest.over (F : Frozen) (r : SourceRequest EquationStore.State Tree) :
     Except String (SourceRequest (Checked F.equations F.primitive)
       (CheckedLabel F.equations F.primitive)) := do
+  let sourceScheme ← r.sourceScheme.mapM fun s => do
+    return ({
+      binders := ← relabel s.binders
+      signatures := ← relabel s.signatures
+      bounds := ← relabel s.bounds
+      variadic := ← relabel s.variadic
+      resolution := s.resolution } : PositiveGraphs.SchemeRow (CheckedLabel F.equations F.primitive))
   let obligations ← r.obligations.mapM fun o => do
     return ({ pos := o.pos, sequent := ← relabel o.sequent, plan := ← relabel o.plan,
               role := o.role, context := o.context } : ExpressionClaims.Required _)
@@ -325,7 +361,13 @@ def SourceRequest.over (F : Frozen) (r : SourceRequest EquationStore.State Tree)
   let request : RequestJson.Request (Checked F.equations F.primitive) (CheckedLabel F.equations F.primitive) :=
     { types := F.store, program := r.program, claims := claims, result := result, start := r.start,
       inputs := inputs, codes := codes }
-  return { toRequest := request, obligations := obligations, sourceMap := r.sourceMap,
+  let qualification ← sourceScheme.mapM fun s => do
+    let some context := F.store.resolution
+      | throw "qualified source signature requires the native descriptor domain"
+    let some body := SourceResolution.bodyChecking context.1 context.2 s (StoreView.images F.store)
+      | throw "invalid descriptor groups in the source signature"
+    return body
+  return { toRequest := request, sourceScheme, qualification, obligations := obligations, sourceMap := r.sourceMap,
            assertions := r.assertions, cuts := r.cuts, hints := hints, codeSources := r.codeSources,
            nodePlans := nodePlans }
 
