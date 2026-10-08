@@ -14,7 +14,7 @@ A 14-slide talk summarising [promise-normalization.md](../promise-normalization.
 | `out/slides/*.png`, `out/slides.pdf` | The rendered slides, 1920×1080. |
 | `out/slides.key`, `out/slides.pptx` | The deck for Keynote and PowerPoint: one full-slide image per slide, with the speaker notes. |
 | `out/narration.m4a` | The narration soundtrack alone. |
-| `out/typing-promise-resolution.mp4` | The narrated video, 1080p, 6 min 41 s. |
+| `out/typing-promise-resolution.mp4` | The narrated video, 1080p, 7 min 26 s. |
 
 ## Rebuilding
 

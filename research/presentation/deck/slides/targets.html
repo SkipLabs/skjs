@@ -7,9 +7,9 @@
 <p style="font-family:Inconsolata, 'Courier New', monospace;font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">accept&lt;T&gt;(v: <span style="color:#7FD1C7">Awaited</span>&lt;T&gt;), a cell of <span style="color:#7FD1C7">Awaited</span>&lt;T&gt;, wrap&lt;<span style="color:#7FD1C7">number</span>&gt;</p>
 <p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">verifies</p>
 <p style="font-family:Inconsolata, 'Courier New', monospace;font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B"><span style="color:#D7A6F0">async function</span> wrap&lt;T&gt;(v: T): <span style="color:#7FD1C7">Promise</span>&lt;<span style="color:#7FD1C7">Awaited</span>&lt;T&gt;&gt; { <span style="color:#D7A6F0">return await</span> v; }</p>
-<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">in progress: await and return inside generic bodies</p>
+<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">gap: resolution inside a qualified body is refused</p>
 <p style="font-family:Inconsolata, 'Courier New', monospace;font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B"><span style="color:#D7A6F0">function</span> back&lt;T <span style="color:#D7A6F0">extends</span> <span style="color:#7FD1C7">number</span>&gt;(v: <span style="color:#7FD1C7">Awaited</span>&lt;T&gt;): T</p>
-<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">open: needs a semantic decision (slide 10)</p>
+<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">gap: a result may be wider than T (slide 10)</p>
 <p style="font-family:Inconsolata, 'Courier New', monospace;font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">wrap&lt;{ n: <span style="color:#7FD1C7">number</span> }&gt;(v) <i><span style="color:#8A97AD">// open record</span></i></p>
 <p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">refused</p>
 <p style="font-family:Inconsolata, 'Courier New', monospace;font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">erase <i>(v: T) =&gt; <span style="color:#7FD1C7">Promise</span>&lt;<span style="color:#7FD1C7">Awaited</span>&lt;T&gt;&gt;</i> to <span style="color:#7FD1C7">Promise</span>&lt;<span style="color:#7FD1C7">unknown</span>&gt;</p>
@@ -17,8 +17,8 @@
 <p style="font-family:Inconsolata, 'Courier New', monospace;font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B"><span style="color:#D7A6F0">async</span> (v: <span style="color:#7FD1C7">Promise</span>&lt;{ n: <span style="color:#7FD1C7">number</span> }&gt;) =&gt; v <i><span style="color:#8A97AD">// the 42 case</span></i></p>
 <p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">refused</p>
 </div>
-<p style="font-size:30px;line-height:1.4">Of 888 pipeline cases, 877 meet their expected outcome; the 11 others are generic <span style="color:#7FD1C7">Promise</span> cases still in progress.</p>
-<p style="position:absolute;left:128px;bottom:64px;width:1300px;font-size:24px;color:#8A97AD">Calcagno · Typing Promise Resolution · implementation in progress, uncommitted, status of 7 October 2026</p>
+<p style="font-size:30px;line-height:1.4">All 888 pipeline cases meet their expected outcome; 11 generic <span style="color:#7FD1C7">Promise</span> cases are recorded gaps.</p>
+<p style="position:absolute;left:128px;bottom:64px;width:1300px;font-size:24px;color:#8A97AD">Calcagno · Typing Promise Resolution · as implemented on research/promise-resolution, 8 October 2026</p>
 <p style="position:absolute;right:128px;bottom:64px;width:200px;font-size:24px;color:#8A97AD;text-align:right">12 / 14</p>
-<aside>Status as the implementation reports it, not yet committed. The associated-result case verifies end to end. The generic wrap with return await still waits for await and return inside generic bodies. All refused programs are refused; eight negative cases are refused earlier than their intended obligation or with a different message, which the remaining work settles.</aside>
+<aside>The associated-result case and the number-bounded wrap verify end to end. The generic wrap with return await and back are recorded gaps. Every unsafe program is refused; eight negative cases are refused before their intended check, and are recorded as gaps too.</aside>
 </section>
