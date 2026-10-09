@@ -98,30 +98,6 @@ theorem allowed_descriptor {N : Fam} (C : Capabilities N) (s : SchemeRow ι)
   exact ⟨⟨⟨T.value.1, O.value.1, T.value.2, O.value.2, ho⟩, R.value.1, R.value.2,
     hs, hr, hf⟩, T, O, R, hT, hO, hR, rfl, rfl, rfl⟩
 
-variable {N : Fam} {C : Capabilities N}
-
-/-- A bound tests only the input, below the current level. -/
-def InputBounded (B : Fam) (d : Descriptor C) (n : Nat) : Prop :=
-  ∀ j, j < n → ∀ W v, d.input j W v → B j W v
-
-def quantified (B : Fam) (body : Descriptor C → Fam) : Fam :=
-  fun n W f => Invocable f ∧ ∀ j (hj : j ≤ n) d, InputBounded B d j →
-    body d j (trunc j hj W) f
-
-abbrev Assignment {N : Fam} (C : Capabilities N) := Nat → Descriptor C
-
-/-- Variable renaming carries all three projections of a descriptor. -/
-def substitute (η : Assignment C) (σ : Nat → Nat) : Assignment C :=
-  fun i => η (σ i)
-
-/-- Actual mutable storage uses the same associated family on both reads
-and writes; admissibility needs no covariance rule for writable references. -/
-def storage (η : Assignment C) (i : Nat) : Fam := refT (η i).result
-
-/-- Negative occurrences are ordinary arrow-domain occurrences of R. -/
-def consumer (η : Assignment C) (i : Nat) : Fam :=
-  callsT [(topF, [(η i).result], numT)]
-
 #print axioms Observation.exactStable
 #print axioms Descriptor.exactStable
 #print axioms allowed_observation

@@ -1,5 +1,5 @@
 import Verification.Programs.ProgramTyping
--- ../Types/QualifiedGraphs.lean interprets graphs whose binders carry resolution descriptors; without it lexical body checking has no instance comparison.
+-- ../Types/QualifiedGraphs.lean checks lexical instances of schemes whose binders carry resolution descriptors; without it lexical body checking has no instance comparison.
 import Verification.Types.QualifiedGraphs
 
 /-! Finite program evidence checked against the declarative rules. Each node

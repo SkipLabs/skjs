@@ -1,20 +1,15 @@
--- ResolutionDescriptors.lean defines descriptors relating a generic input to its observation and result; without it qualified graphs have no descriptor to interpret.
+-- ResolutionDescriptors.lean defines descriptors relating a generic input to its observation and result; without it a lexical instance has no descriptor to retain.
 import Verification.Types.ResolutionDescriptors
 import Verification.Types.PositiveCertificates
 
-/- The recursive interpreter quantifies marked schemes over fixed operation
-capabilities, retaining input, observation and result as ordinary families. -/
+/- Lexical instances of schemes whose binders carry resolution descriptors:
+the body assignment retains each group's observation and descriptor, and a
+lexical instance is admitted against its enclosing scheme. -/
 namespace Verification.QualifiedGraphs
 open PositiveGraphs PositiveNormalization ResolutionDescriptors Tower
 open PositiveCertificates (ComparisonResult)
 
 variable {ι : Type} {N : Fam} {C : Capabilities N}
-
-/-- Three ordinary value slots retain the descriptor's associated result. -/
-@[nospecialize] def descriptorArgs (d : Descriptor C) : List MixedFamily :=
-  [MixedFamily.ofValue ⟨d.input, d.input_valid⟩,
-   MixedFamily.ofValue ⟨d.observation, d.observation_valid⟩,
-   MixedFamily.ofValue ⟨d.result, d.result_valid⟩]
 
 open Classical in
 /-- A value binder's assigned family, read through the graph. -/
@@ -251,145 +246,4 @@ theorem compareLexicalInstance_sound [DecidableEq ι] (G : NormalGraph ι)
 
 #print axioms compareLexicalInstance_sound
 
-/-- Metadata linking input, observation and result binders of an existing SchemeRow. Ordinary
-   SchemeRow alone has no relation between independently quantified binders. -/
-structure ResolvingRow (ι : Type) where
-  input : ι
-  observation : ι
-  result : ι
-  distinct : [input,observation,result].Nodup
-  bound : List ι
-  scheme : SchemeRow ι
-  binders : scheme.binders = [input,observation,result]
-  bounds : scheme.bounds = [(input,bound)]
-
-@[nospecialize] noncomputable def graphBound (X : MixedAssignment ι × ι → Fam)
-    (η : MixedAssignment ι) (r : ResolvingRow ι) : Fam :=
-  setSem (fun i => X (η,i)) r.bound
-
-@[nospecialize] noncomputable def graphBody (I : ParameterInterpretation ι .mixed)
-    (X : MixedAssignment ι × ι → Fam) (η : MixedAssignment ι)
-    (r : ResolvingRow ι) (d : Descriptor C) : Fam :=
-  instanceTWithArgs (fun θ S => setSem (fun i => X (θ,i)) S)
-    η r.scheme (descriptorArgs d) I.arguments
-
-@[nospecialize] noncomputable def graphScheme (I : ParameterInterpretation ι .mixed)
-    (X : MixedAssignment ι × ι → Fam) (η : MixedAssignment ι)
-    (r : ResolvingRow ι) : Fam :=
-  quantified (graphBound X η r)
-    (graphBody (C := C) (N := N) I X η r)
-
-theorem graphScheme_layer_congr (I : ParameterInterpretation ι .mixed)
-    (X Y : MixedAssignment ι × ι → Fam) (n : Nat)
-    (h : ∀ z, Agree (X z) (Y z) n)
-    (η : MixedAssignment ι) (r : ResolvingRow ι) (W : WorldT n) (v : Val) :
-    graphScheme (C := C) (N := N) I X η r n W v ↔
-      graphScheme (C := C) (N := N) I Y η r n W v := by
-  unfold graphScheme quantified
-  refine and_congr Iff.rfl (forall_congr' fun q => forall_congr' fun hq => forall_congr' fun d => imp_congr ?_ ?_)
-  · unfold InputBounded
-    refine forall_congr' fun j => forall_congr' fun hj =>
-      forall_congr' fun U => forall_congr' fun u => imp_congr Iff.rfl ?_
-    exact setSem_congr n (fun i => h (η,i)) r.bound j (by omega) U u
-  · exact instanceT_congrWithArgs I.arguments I.arguments_nonexp
-      (fun _ _ _ _ _ => Iff.rfl)
-      (fun S => Agree.mono (setSem_congr n (fun i => h (_,i)) S) hq) (trunc q hq W) v
-
-/-- A rigid intersection part uses the same qualification as its standalone
-   row. Ordinary parameter and scheme parts retain production meaning. -/
-@[nospecialize] noncomputable def part (G : NormalGraph ι) (I : ParameterInterpretation ι .mixed)
-    (qualified : ι → Option (ResolvingRow ι))
-    (X : MixedAssignment ι × ι → Fam) (η : MixedAssignment ι) (i : ι) : Fam :=
-  if G.params i then I.value i (η.1 i) else
-    match qualified i with
-    | some r => graphScheme (C := C) (N := N) I X η r
-    | none => partSemWithArgs G I X η i
-
-theorem part_congr (G : NormalGraph ι) (I : ParameterInterpretation ι .mixed)
-    (qualified : ι → Option (ResolvingRow ι))
-    {X Y : MixedAssignment ι × ι → Fam} {n : Nat}
-    (h : ∀ z, Agree (X z) (Y z) n) (η : MixedAssignment ι) (i : ι)
-    (W : WorldT n) (v : Val) :
-    part (C := C) (N := N) G I qualified X η i n W v ↔
-      part (C := C) (N := N) G I qualified Y η i n W v := by
-  unfold part
-  split
-  · exact Iff.rfl
-  · cases hq : qualified i with
-    | none => exact partSem_congrWithArgs G I h η i W v
-    | some r => exact graphScheme_layer_congr I X Y n h η r W v
-
-@[nospecialize] def usesPart (G : NormalGraph ι) (qualified : ι → Option (ResolvingRow ι)) (i : ι) : Bool :=
-  G.params i || (G.schemes i).isSome || (qualified i).isSome || (G.meets i).isNone
-
-/-- All rigid parts retain their qualified domain. Only the signatures and
-   bounds of a qualified part read recursive approximations; capabilities are fixed. -/
-@[nospecialize] noncomputable def layer (G : NormalGraph ι) (I : ParameterInterpretation ι .mixed)
-    (qualified : ι → Option (ResolvingRow ι))
-    (X : MixedAssignment ι × ι → Fam) : MixedAssignment ι × ι → Fam := fun z =>
-  if usesPart G qualified z.2 then part (C := C) (N := N) G I qualified X z.1 z.2 else
-    match G.meets z.2 with
-    | none => part (C := C) (N := N) G I qualified X z.1 z.2
-    | some (p,cs) => fun n W v =>
-        (part (C := C) (N := N) G I qualified X z.1 p n W v ∧
-          ∀ q ∈ G.meetParams z.2, part (C := C) (N := N) G I qualified X z.1 q n W v) ∧
-        setSem (rowSem G (setSem fun l => X (I.realmAt,l))
-          (setSem fun l => X (z.1,l)) (I.arguments z.1 (setSem fun l => X (z.1,l)))) cs n W v
-
-theorem layer_congr (G : NormalGraph ι) (I : ParameterInterpretation ι .mixed)
-    (qualified : ι → Option (ResolvingRow ι)) :
-    LayerCongr (layer (C := C) (N := N) G I qualified) := by
-  intro X Y n h z W v
-  unfold layer
-  split
-  · exact part_congr G I qualified h z.1 z.2 W v
-  · cases hm : G.meets z.2 with
-    | none => exact part_congr G I qualified h z.1 z.2 W v
-    | some pc =>
-      refine and_congr (and_congr (part_congr G I qualified h z.1 pc.1 W v)
-        (forall_congr' fun q => imp_congr_right fun _ => part_congr G I qualified h z.1 q W v)) ?_
-      have hs := fun S => setSem_congr n (fun i => h (z.1,i)) S
-      have hz := fun S => setSem_congr n (fun i => h (I.realmAt,i)) S
-      constructor <;> rintro ⟨c,hc,hv⟩ <;> refine ⟨c,hc,?_⟩
-      · exact (rowSem_congr G _ _ _ _ _ _ n hz hs
-          (I.arguments_nonexp _ _ _ _ n (fun _ _ _ _ _ => Iff.rfl) hs) c W v).mp hv
-      · exact (rowSem_congr G _ _ _ _ _ _ n hz hs
-          (I.arguments_nonexp _ _ _ _ n (fun _ _ _ _ _ => Iff.rfl) hs) c W v).mpr hv
-
-@[nospecialize] noncomputable def denote (G : NormalGraph ι) (I : ParameterInterpretation ι .mixed)
-    (qualified : ι → Option (ResolvingRow ι)) : MixedAssignment ι × ι → Fam :=
-  Tower.denote (layer (C := C) (N := N) G I qualified)
-
-/-- Values and packs share the qualified recursive interpretation. -/
-@[nospecialize] noncomputable def values (G : NormalGraph ι)
-    (qualified : ι → Option (ResolvingRow ι)) (η : MixedAssignment ι) (S : List ι) : Fam :=
-  setSem (fun i => denote (C := C) (N := N) G (mixedParameters G) qualified (η,i)) S
-
-@[nospecialize] noncomputable def meaning (G : NormalGraph ι)
-    (qualified : ι → Option (ResolvingRow ι)) (η : MixedAssignment ι) (S : List ι) :
-    WorldFamily ParameterSpace.mixed.Carrier :=
-  (mixedParameters G).bound η (values (C := C) (N := N) G qualified η) S
-
-theorem denote_unfold (G : NormalGraph ι) (I : ParameterInterpretation ι .mixed)
-    (qualified : ι → Option (ResolvingRow ι))
-    (z : MixedAssignment ι × ι) (n : Nat) (W : WorldT n) (v : Val) :
-    denote (C := C) (N := N) G I qualified z n W v ↔
-      layer (C := C) (N := N) G I qualified
-        (denote (C := C) (N := N) G I qualified) z n W v :=
-  Tower.denote_unfold (layer_congr G I qualified) z n W v
-
-theorem part_denote (G : NormalGraph ι) (I : ParameterInterpretation ι .mixed)
-    (qualified : ι → Option (ResolvingRow ι)) (η : MixedAssignment ι) (i : ι)
-    (hi : usesPart G qualified i = true) :
-    part (C := C) (N := N) G I qualified (denote (C := C) (N := N) G I qualified) η i =
-      denote (C := C) (N := N) G I qualified (η,i) := by
-  funext n W v
-  apply propext
-  rw [denote_unfold]
-  simp [layer, hi]
-
-#print axioms graphScheme_layer_congr
-#print axioms layer_congr
-#print axioms denote_unfold
-#print axioms part_congr
 end Verification.QualifiedGraphs

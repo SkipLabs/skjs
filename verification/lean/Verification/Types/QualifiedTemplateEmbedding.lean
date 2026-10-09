@@ -1,5 +1,5 @@
 import Verification.Types.PositiveGraphs
-import Verification.Types.QualifiedGraphs
+import Verification.Types.PositiveRules
 
 /- A syntax-preserving import of a closed normal graph. The correspondence is
    proved from mapped production rows, including quantified callable rows and
@@ -366,12 +366,6 @@ def extend (G : NormalGraph ι) (U : NormalGraph (ι ⊕ υ)) : NormalGraph (ι 
     | .inr i => U.meetParams (.inr i)
   realm := G.realm.map (mapRealm Sum.inl)
   domain := U.domain
-
-section QualifiedTarget
-open QualifiedGraphs
-variable {N : Fam} {C : ResolutionDescriptors.Capabilities N}
-
-end QualifiedTarget
 
 section DomainChange
 open PositiveRules
