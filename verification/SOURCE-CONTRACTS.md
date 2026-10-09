@@ -345,11 +345,26 @@ $`(T,O_T,R_T)`$ as a resolution descriptor of the scheme
 
 Resolution qualification is not a subtype bound: it leaves the values of
 $`T`$ unconstrained and restricts which assignments of $`(T,O_T,R_T)`$ are
-admitted, to those satisfying the descriptor relations
-(`ResolutionDescriptors.descriptorDomain`). The body is certified at every
-admitted assignment ([generic closures](PROGRAM-TYPING.md)), and every call
-supplies a certificate classifying its type argument, from which $`O_T`$ and
-$`R_T`$ follow ([claims](SOURCE-CLAIMS.md)).
+admitted, to the descriptors
+(`ResolutionDescriptors.descriptorDomain`):
+
+```math
+\mathsf{Desc}(T,O,R)\iff R\le N\ \land\ \mathsf{Resolves}(T,R)\ \land\
+  \mathsf{Observes}(T,O)\ \land\ \mathsf{Resolves}(O,R)\ \land\
+  \bigl(T\le N\Rightarrow O=T\land R=T\bigr)
+```
+
+$`\mathsf{Resolves}`$ and $`\mathsf{Observes}`$ classify an input as stable,
+a native promise or a union of classified inputs (`ResolutionCapabilities`).
+The last conjunct, stable exactness (`StableExact`), makes a stable input its
+own observation and result: an input of type `number` resolves to exactly
+`number`. A native promise's input is never stable, which the verifier proves
+from the declaration graph: one value of $`\mathsf{Promise}\langle A\rangle`$
+lies outside every clause of $`N`$ (`NativePromiseSeparation.Shape.separate`).
+The body is certified at every admitted assignment
+([generic closures](PROGRAM-TYPING.md)), and every call supplies a certificate
+classifying its type argument, from which $`O_T`$ and $`R_T`$ follow
+([claims](SOURCE-CLAIMS.md)).
 
 ## Explicit type arguments
 

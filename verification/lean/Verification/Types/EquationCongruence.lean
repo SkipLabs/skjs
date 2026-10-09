@@ -491,7 +491,7 @@ theorem Equations.scheme_step (equations : Equations) (apps : equations.Applicat
   dsimp only [qLayerWithArgs]
   rw [if_neg hpa, if_neg hpb, row A ha, row B hb]
   simp only [schemeSemWithArgs, boundedSem, lengths]
-  refine and_congr Iff.rfl (forall_congr' fun As => forall_congr' fun hlen =>
+  refine and_congr Iff.rfl (forall_congr' fun q => forall_congr' fun hq => forall_congr' fun As => forall_congr' fun hlen =>
     imp_congr (equations.graph.domain.congr (make A ha) (make B hb) rfl
       ⟨protect A ha B hb, protect B hb A ha⟩ As) (imp_congr ?_ ?_))
   · have assigned : ∀ r ∈ bs,
@@ -513,18 +513,18 @@ theorem Equations.scheme_step (equations : Equations) (apps : equations.Applicat
       intro p hp
       rw [← b.instantiate_binders bs valid.1]
       exact List.mem_map.mpr ⟨p.1, in_bs p hp, rfl⟩
-    change Bounded (fun ρ S => mixedMeaning equations.graph ρ S) η (make A ha) As n ↔
-      Bounded (fun ρ S => mixedMeaning equations.graph ρ S) θ (make B hb) As n
+    change Bounded (fun ρ S => mixedMeaning equations.graph ρ S) η (make A ha) As q ↔
+      Bounded (fun ρ S => mixedMeaning equations.graph ρ S) θ (make B hb) As q
     constructor
     · intro h p hp _ j hj U u hu
       obtain ⟨p, hsource, rfl⟩ := List.mem_map.mp hp
-      apply (bound_types p hsource j hj U u).mp
+      apply (bound_types p hsource j (by omega) U u).mp
       apply h _ (List.mem_map.mpr ⟨p, hsource, rfl⟩) (mem_a p hsource) j hj U u
       rw [assigned p.1 (in_bs p hsource)]
       exact hu
     · intro h p hp _ j hj U u hu
       obtain ⟨p, hsource, rfl⟩ := List.mem_map.mp hp
-      apply (bound_types p hsource j hj U u).mpr
+      apply (bound_types p hsource j (by omega) U u).mpr
       apply h _ (List.mem_map.mpr ⟨p, hsource, rfl⟩) (mem_b p hsource) j hj U u
       rw [← assigned p.1 (in_bs p hsource)]
       exact hu
@@ -536,7 +536,7 @@ theorem Equations.scheme_step (equations : Equations) (apps : equations.Applicat
       intro e _
       exact equations.signature_expression_agree apps a b rfl η θ args As hlen e.1 e.2.1 e.2.1 e.2.2
     have h := mapped_sem_agree equations.graph (assign η a.binders As) (assign θ b.binders As)
-      _ _ exprs (.arrs sigs rests) W v
+      _ _ (fun es => Agree.mono (exprs es) hq) (.arrs sigs rests) (trunc q hq W) v
     exact h
 
 /-- Every admissible equation head preserves value meaning at the current

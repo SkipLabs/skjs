@@ -132,7 +132,7 @@ theorem lexicalAdmission_sound [DecidableEq ι] (G : NormalGraph ι)
     have et' : (F [t]).value.1 = d.input := et
     have eo' : (F [o]).value.1 = d.observation := eo
     have er' : (F [r]).value.1 = d.result := er
-    refine ⟨F [t], F [o], F [r], ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨F [t], F [o], F [r], ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · simp only [List.getElem?_map, hm.1.1, Option.map_some]; rfl
     · simp only [List.getElem?_map, hm.1.2, Option.map_some]; rfl
     · simp only [List.getElem?_map, hm.2, Option.map_some]; rfl
@@ -140,6 +140,7 @@ theorem lexicalAdmission_sound [DecidableEq ι] (G : NormalGraph ι)
     · rw [et', er']; exact d.resolved
     · rw [et', eo']; exact d.observed
     · rw [eo', er']; exact d.forwarded
+    · rw [et', eo', er']; exact d.exactStable
 
 #print axioms lexicalAdmission_sound
 
@@ -213,14 +214,14 @@ theorem graphScheme_layer_congr (I : ParameterInterpretation ι .mixed)
     graphScheme (C := C) (N := N) I X η r n W v ↔
       graphScheme (C := C) (N := N) I Y η r n W v := by
   unfold graphScheme quantified
-  refine and_congr Iff.rfl (forall_congr' fun d => imp_congr ?_ ?_)
+  refine and_congr Iff.rfl (forall_congr' fun q => forall_congr' fun hq => forall_congr' fun d => imp_congr ?_ ?_)
   · unfold InputBounded
     refine forall_congr' fun j => forall_congr' fun hj =>
       forall_congr' fun U => forall_congr' fun u => imp_congr Iff.rfl ?_
-    exact setSem_congr n (fun i => h (η,i)) r.bound j hj U u
+    exact setSem_congr n (fun i => h (η,i)) r.bound j (by omega) U u
   · exact instanceT_congrWithArgs I.arguments I.arguments_nonexp
       (fun _ _ _ _ _ => Iff.rfl)
-      (fun S => setSem_congr n (fun i => h (_,i)) S) W v
+      (fun S => Agree.mono (setSem_congr n (fun i => h (_,i)) S) hq) (trunc q hq W) v
 
 /-- A rigid intersection part uses the same qualification as its standalone
    row. Ordinary parameter and scheme parts retain production meaning. -/

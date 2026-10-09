@@ -2479,7 +2479,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     rw [qDenoteWithArgs_unfold]
     simp only [qLayerWithArgs, hp, hq, Bool.false_eq_true, if_false]
     exact ⟨⟨_, _, _, rfl, rfl, by simpa [Scoped, vs, instantiate] using hsc⟩,
-      fun As hlen hal _ => hsig As hlen hal⟩
+      fun q hq As hlen hal _ => (instanceTWithArgs_adm _ _ _ _ _).down_le j q hq U _ (hsig As hlen hal)⟩
   | @ctorGraph Γ F U L arity start E K caps hr hu hspec hlt hcap ih =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map]

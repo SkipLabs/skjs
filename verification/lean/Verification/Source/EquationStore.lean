@@ -3,6 +3,8 @@ import Verification.Source.EquationLowering
 import Verification.Source.ResolutionCapabilities
 -- ../Types/EquationDomains.lean proves that installing the descriptor domain preserves the native Promise region's meaning; without it the store cannot use qualified generics.
 import Verification.Types.EquationDomains
+-- ../Types/NativePromiseSeparation.lean proves from the source graph that no native Promise type lies within the stable bound; without it native lifting cannot meet stable exactness.
+import Verification.Types.NativePromiseSeparation
 
 /-! The label store over recursive equations (RECURSIVE-EQUATIONS §8, §9.2).
 Extraction grows the lowering's heads (`EquationLowering.State`), its labels
@@ -545,17 +547,19 @@ def payload (p : NativePromise E) (l : Label E.signature) :
 /-- Native descriptor construction uses the actual source application's
 meaning, and retains the child's literal observation and stable result. -/
 def descriptor (p : NativePromise E) (N : Fam)
+    (separate : ∀ A, ValueFam A → ¬ FamLe (p.constructor A) N)
     (d : ResolutionDescriptors.Descriptor (ResolutionCapabilities.capabilities p.constructor N) N) :
     ResolutionDescriptors.Descriptor (ResolutionCapabilities.capabilities p.constructor N) N :=
-  ResolutionCapabilities.native p.constructor N p.constructor_valid d
+  ResolutionCapabilities.native p.constructor N p.constructor_valid separate d
 
 theorem descriptor_input (p : NativePromise E) (N : Fam)
+    (separate : ∀ A, ValueFam A → ¬ FamLe (p.constructor A) N)
     (η : MixedAssignment (Label E.signature)) (l : Label E.signature)
     (A : { A : List (Label E.signature) //
       l = (p.application A).label ∧ E.graph.hasKind .value A = true })
     (d : ResolutionDescriptors.Descriptor (ResolutionCapabilities.capabilities p.constructor N) N)
     (child : d.input = fun n W v => mixedMeaning E.graph η A.1 n W (.inl v)) :
-    (p.descriptor N d).input =
+    (p.descriptor N separate d).input =
       (fun n W v => mixedMeaning E.graph η [l] n W (.inl v)) := by
   obtain ⟨A, rfl, kind⟩ := A
   change p.constructor d.input = _
@@ -575,11 +579,21 @@ structure ResolutionContext (E : Equations) where
   stable : List (Label E.signature)
   within : ∀ l ∈ stable, l.withinHeads (· ∈ promise.region.heads)
   closed : ∀ l ∈ stable, l.free = []
+  shape : NativePromiseSeparation.Shape E.graph (promise.application [NativePromise.parameter E]).label stable
 
 namespace ResolutionContext
 
 noncomputable def stableFamily (c : ResolutionContext E) : Fam :=
   fun n W v => mixedMeaning E.graph (ParameterAssignment.empty .mixed) c.stable n W (.inl v)
+
+theorem nativeSeparate (c : ResolutionContext E) (A : Fam) (valid : ValueFam A) :
+    ¬ FamLe (c.promise.constructor A) c.stableFamily := by
+  classical
+  unfold NativePromise.constructor
+  rw [dif_pos valid]
+  exact c.shape.separate _ _
+
+#print axioms nativeSeparate
 
 def domain (c : ResolutionContext E) : SchemeDomain (Label E.signature) .mixed :=
   ResolutionDescriptors.descriptorDomain
@@ -591,6 +605,10 @@ def withDomain (c : ResolutionContext E) (D : SchemeDomain (Label E.signature) .
   stable := c.stable
   within := c.within
   closed := c.closed
+  shape := by
+    rw [Equations.graph_domain]
+    exact ⟨c.shape.views, c.shape.methods, c.shape.bounds, c.shape.plain, c.shape.row,
+      c.shape.proto, c.shape.admitted, c.shape.noArray, c.shape.stablePlain, c.shape.reject⟩
 
 theorem stableFamily_domain (c : ResolutionContext E)
     (D : SchemeDomain (Label E.signature) .mixed) :
@@ -635,7 +653,9 @@ def resolutionContext (s : State) (p : NativePromise E) :
   let stable ← closedUnion E "native stable-value bound" raw
   if checked : (∀ l ∈ stable, l.withinHeads (· ∈ p.region.heads)) ∧
       (∀ l ∈ stable, l.free = []) then
-    return some ⟨p, stable, checked.1, checked.2⟩
+    let some shape := NativePromiseSeparation.check E.graph (p.application [NativePromise.parameter E]).label stable
+      | throw "native Promise structure does not establish separation from stable values"
+    return some ⟨p, stable, checked.1, checked.2, shape⟩
   else throw "native stable-value bound must be closed within the ordinary dependency region"
 
 /-- Native identity comes from the declaration document; a user declaration

@@ -45,11 +45,13 @@ def stable (P : Fam → Fam) (N A : Fam) (ha : ValueFam A) (hn : FamLe A N) :
   resolved := .stable ha hn
   observed := .stable ha hn
   forwarded := .stable ha hn
+  exactStable := fun _ => ⟨rfl, rfl⟩
 
 /-- Native lifting preserves the child's associated result and observes its
 input literally, including when that input is itself a native promise. -/
 def native (P : Fam → Fam) (N : Fam)
     (hp : ∀ A, ValueFam A → ValueFam (P A))
+    (separate : ∀ A, ValueFam A → ¬ FamLe (P A) N)
     (d : Descriptor (capabilities P N) N) : Descriptor (capabilities P N) N where
   input := P d.input
   observation := d.input
@@ -61,6 +63,7 @@ def native (P : Fam → Fam) (N : Fam)
   resolved := .native d.resolved
   observed := .native
   forwarded := d.resolved
+  exactStable := fun h => (separate d.input d.input_valid h).elim
 
 /-- Every union arm contributes its input, observation and result. -/
 def union (P : Fam → Fam) (N : Fam)
@@ -75,6 +78,13 @@ def union (P : Fam → Fam) (N : Fam)
   resolved := .union d.resolved e.resolved
   observed := .union d.observed e.observed
   forwarded := .union d.forwarded e.forwarded
+  exactStable := by
+    intro h
+    have hd := d.exactStable (fun n W v hv => h n W v (Or.inl hv))
+    have he := e.exactStable (fun n W v hv => h n W v (Or.inr hv))
+    constructor
+    · rw [hd.1, he.1]
+    · rw [hd.2, he.2]
 
 /-- Finite instance evidence constructs all slots together. A lexical binder
 retains its whole descriptor, including its operation witnesses. -/
@@ -85,11 +95,12 @@ inductive Certificate (P : Fam → Fam) (N : Fam) where
   | binder (descriptor : Descriptor (capabilities P N) N)
 
 def Certificate.denote {P : Fam → Fam} {N : Fam}
-    (hp : ∀ A, ValueFam A → ValueFam (P A)) :
+    (hp : ∀ A, ValueFam A → ValueFam (P A))
+    (separate : ∀ A, ValueFam A → ¬ FamLe (P A) N) :
     Certificate P N → Descriptor (capabilities P N) N
   | .stable A hv hn => ResolutionCapabilities.stable P N A hv hn
-  | .native child => ResolutionCapabilities.native P N hp (child.denote hp)
-  | .union left right => ResolutionCapabilities.union P N (left.denote hp) (right.denote hp)
+  | .native child => ResolutionCapabilities.native P N hp separate (child.denote hp separate)
+  | .union left right => ResolutionCapabilities.union P N (left.denote hp separate) (right.denote hp separate)
   | .binder d => d
 
 #print axioms stable

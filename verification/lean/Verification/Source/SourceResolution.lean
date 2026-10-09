@@ -155,24 +155,18 @@ def native (c : ResolutionContext E) (scope : List (Binding E)) (l : Label E.sig
   result := child.result
   sound η hs := by
     obtain ⟨d, hd, _, hr⟩ := child.sound η hs
-    refine ⟨c.promise.descriptor c.stableFamily d, ?_, hd, hr⟩
-    exact c.promise.descriptor_input c.stableFamily η l payload d hd
+    refine ⟨c.promise.descriptor c.stableFamily c.nativeSeparate d, ?_, hd, hr⟩
+    exact c.promise.descriptor_input c.stableFamily c.nativeSeparate η l payload d hd
 
-/-- A refined input retains its descriptor's observation and result; only
-the input premise is narrowed by a proved subtype comparison. -/
-def narrow (c : ResolutionContext E) (scope : List (Binding E)) {A B : Ty E}
+/-- Equivalent input types retain the same descriptor. -/
+def equivalent (c : ResolutionContext E) (scope : List (Binding E)) {A B : Ty E}
     (child : Checked c scope B)
-    (subtype : ∀ η, FamLe (valueMeaning E η A) (valueMeaning E η B)) : Checked c scope A where
+    (equality : ∀ η, valueMeaning E η A = valueMeaning E η B) : Checked c scope A where
   observation := child.observation
   result := child.result
   sound η hs := by
     obtain ⟨d, hd, ho, hr⟩ := child.sound η hs
-    have hsub : FamLe (valueMeaning E η A) d.input := by rw [hd]; exact subtype η
-    exact ⟨{ d with
-      input := valueMeaning E η A
-      input_valid := (MixedFamily.value ⟨_, mixedMeaning_valid _ _ _⟩).2
-      resolved := ResolutionCapabilities.Resolves.narrow hsub d.resolved
-      observed := ResolutionCapabilities.Observes.narrow hsub d.observed }, rfl, ho, hr⟩
+    exact ⟨d, hd.trans (equality η).symm, ho, hr⟩
 
 /-- Combining union arms retains every arm's observation and result. -/
 def append (c : ResolutionContext E) (scope : List (Binding E))
@@ -205,8 +199,13 @@ def check (c : ResolutionContext E) (scope : List (Binding E))
               observation := b.observation
               result := b.result
               sound := fun _ hs => hs b member }
-            return narrow c scope bound fun η n W v h =>
-              CertificateProducer.comparisonUsing_sound accepted η n W (.inl v) h
+            if reverse : (CertificateProducer.comparisonUsing E.graph images b.input A).accepted = true then
+              return equivalent c scope bound fun η => by
+                funext n W v
+                apply propext
+                exact ⟨fun h => CertificateProducer.comparisonUsing_sound accepted η n W (.inl v) h,
+                  fun h => CertificateProducer.comparisonUsing_sound reverse η n W (.inl v) h⟩
+            else stable c scope A images
           else none
         else none
       else none
@@ -256,7 +255,7 @@ private theorem empty_allowed (c : ResolutionContext E) (source : SchemeRow (Lab
   have observe := ResolutionCapabilities.Observes.stable (P := c.promise.constructor) emptyFamily.value.2 bounded
   exact ⟨emptyFamily, emptyFamily, emptyFamily,
     atPosition _ positions.1, atPosition _ positions.2.1, atPosition _ positions.2.2,
-    bounded, stable, observe, stable⟩
+    bounded, stable, observe, stable, fun _ => ⟨rfl, rfl⟩⟩
 
 /-- Construct the qualified body checker only for a valid source signature,
 using the descriptor domain installed in the frozen equations. -/
@@ -292,6 +291,6 @@ def bodyChecking (c : ResolutionContext E) (domain : E.domain = c.domain)
 
 #print axioms Checked.sound
 #print axioms native
-#print axioms narrow
+#print axioms equivalent
 
 end Verification.SourceResolution

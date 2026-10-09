@@ -453,9 +453,9 @@ denotation is the guarded fixed point of
 ⟦i⟧^\eta=
 \begin{cases}
 \eta(i) & i\ \text{a parameter row},\\[2pt]
-\bigl\{\,v\;\bigm|\;\mathsf{Invocable}(v)\land\forall\vec X.\;
-  \mathsf{Bounded}_n(\vec X)\Rightarrow
-  v\in\mathsf{Calls}(\Sigma^{\eta'})\cap\mathsf{Rests}(\Sigma_\ldots^{\eta'}),\
+\bigl\{\,v\;\bigm|\;\mathsf{Invocable}(v)\land\forall j\le n.\;\forall\vec X\in\mathcal D_s.\;
+  \mathsf{Bounded}_j(\vec X)\Rightarrow
+  v\in_j\mathsf{Calls}(\Sigma^{\eta'})\cap\mathsf{Rests}(\Sigma_\ldots^{\eta'}),\
   \eta'=\eta[\vec p\mapsto\vec X]\,\bigr\}
   & i\ \text{a scheme row},\\[2pt]
 \eta(p)\cap\textstyle\bigcap_{q\in\vec q}\eta(q)\cap\bigcup_{c\in\vec c}⟦c⟧^\eta & i\ \text{the meet row}\ p\sqcap\vec q\sqcap\vec c,\\[2pt]
@@ -463,11 +463,18 @@ denotation is the guarded fixed point of
 \end{cases}
 ```
 
-where $\Sigma^{\eta'}$ reads each signature's types at $\eta'$. $\vec X$
-ranges over admissible mixed families, one per binder, and
-$\mathsf{Bounded}_n(\vec X)$ says each bounded binder's family is below its
-bound, in both components, at every level under $n$, the bound read at the
-scheme's own $\eta$. A variadic signature's rest may be a binder: a **pack
+where $\Sigma^{\eta'}$ reads each signature's types at $\eta'$, and $n$ is
+the approximation level: $`v\in_j F`$ says $`v`$ is in $`F`$ at level $`j`$, in
+the world truncated to $`j`$. $\vec X$ ranges over the assignments
+$`\mathcal D_s`$ the graph's substitution domain admits for the scheme
+(`SchemeDomain.allowed`): admissible mixed families, one per binder, which
+for a resolution-qualified scheme also satisfy its descriptor relations
+([implied bounds](SOURCE-CONTRACTS.md#implied-bounds)).
+$\mathsf{Bounded}_j(\vec X)$ says each bounded binder's family is below its
+bound, in both components, at every level under $j$, the bound read at the
+scheme's own $\eta$. Quantifying over every level $`j\le n`$ makes the
+meaning closed downward by construction, whatever the domain admits; the
+domain need not be closed under restricting an assignment to its bounds. A variadic signature's rest may be a binder: a **pack
 parameter**, instantiated at a pack type and bounded by one. A meet row reads
 its parameter as a parameter row does and its clauses' operands under their
 guards as a clause row does, so it keeps the fixed point contractive; a pack
@@ -477,7 +484,7 @@ $`\eta(p)`$: that is one unfolding, not a recursion, since a part is never a
 meet row, and the scheme case reads its own operands under guards
 (`partSemWithArgs`, `qLayer_part`).
 
-Reading bounds below $n$ keeps the fixed point contractive; the
+Reading bounds below the level keeps the fixed point contractive; the
 approximations are non-expansive in the assignment (`QInv`), which gives
 admissibility. The type meanings are read at the graph's assignment:
 $⟦A⟧_G=⟦A⟧^{G.\mathit{env}}$ for values
@@ -498,7 +505,8 @@ below its clauses; a covered pair reads it through its clauses
 ([covered pairs](#covered-pairs)), and instance tables relate it to other types, at
 an instance of which it is a clause row.
 
-Lean: `qDenoteWithArgs G (mixedParameters G)`, `Bounded`, `instanceTWithArgs`,
+Lean: `qDenoteWithArgs G (mixedParameters G)`, `Bounded`, `boundedSem`,
+`SchemeDomain`, `instanceTWithArgs`,
 `instanceRestsWithArgs`, `NormalGraph.meets`, `NormalGraph.plain_iff`
 (`Types/PositiveGraphs.lean`); `mixedValues`, `mixedArgs`, `meaning`,
 `argMeaning` (`Types/PositiveRules.lean`).

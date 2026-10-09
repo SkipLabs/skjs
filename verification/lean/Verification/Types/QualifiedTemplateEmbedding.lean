@@ -231,9 +231,9 @@ theorem Embedding.scheme_sem {G : NormalGraph ι} {H : NormalGraph κ}
   funext n W v
   apply propext
   simp only [schemeSemWithArgs, boundedSem, mapScheme, List.length_map]
-  refine and_congr Iff.rfl (forall_congr' fun As => imp_congr_right fun _ => ?_)
-  exact imp_congr (E.domains i s hs As) (imp_congr (E.bounded h η s As n)
-    (iff_of_eq (congrFun (congrFun (congrFun (E.instance h η s As) n) W) v)))
+  refine and_congr Iff.rfl (forall_congr' fun q => forall_congr' fun hq => forall_congr' fun As => imp_congr_right fun _ => ?_)
+  exact imp_congr (E.domains i s hs As) (imp_congr (E.bounded h η s As q)
+    (iff_of_eq (congrFun (congrFun (congrFun (E.instance h η s As) q) (trunc q hq W)) v)))
 
 theorem Embedding.row_values {G : NormalGraph ι} {H : NormalGraph κ}
     (E : Embedding G H) {X : MixedAssignment ι × ι → Fam}
@@ -532,11 +532,11 @@ private theorem DomainRegion.scheme {G : NormalGraph ι}
   funext n W v
   apply propext
   unfold schemeSemWithArgs boundedSem
-  refine and_congr Iff.rfl (forall_congr' fun As => imp_congr_right fun _ => ?_)
-  refine imp_congr (R.allowed i hi s hs As) (imp_congr (hbound As n) ?_)
+  refine and_congr Iff.rfl (forall_congr' fun q => forall_congr' fun hq => forall_congr' fun As => imp_congr_right fun _ => ?_)
+  refine imp_congr (R.allowed i hi s hs As) (imp_congr (hbound As q) ?_)
   simp only [instanceTWithArgs, instanceSigs, instanceRestsWithArgs]
-  change interT (CallEffects.callsT _) (CallEffects.restsT _) n W v ↔
-    interT (CallEffects.callsT _) (CallEffects.restsT _) n W v
+  change interT (CallEffects.callsT _) (CallEffects.restsT _) q (trunc q hq W) v ↔
+    interT (CallEffects.callsT _) (CallEffects.restsT _) q (trunc q hq W) v
   dsimp only [mixedParameters]
   have sameArgs : graphArguments { G with domain := domain } = graphArguments G := rfl
   rw [sameArgs, sigs, rests]

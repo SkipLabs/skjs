@@ -1881,7 +1881,7 @@ theorem partSem_support [DecidableEq ι] {G : NormalGraph ι} {D : ι → Prop} 
   · simp only [Bool.false_eq_true, if_false]
     cases hq : G.schemes i with
     | some s =>
-      refine and_congr Iff.rfl (forall_congr' fun As => forall_congr' fun hl =>
+      refine and_congr Iff.rfl (forall_congr' fun q => forall_congr' fun hq' => forall_congr' fun As => forall_congr' fun hl =>
         forall_congr' fun _ => imp_congr ?_ ?_)
       · -- The bounds are read at the scheme's own assignment.
         have hbr : ∀ b ∈ s.bounds, ∀ l ∈ b.2, l ∈ reads G i ∧ l ∈ boundReads G i := by
@@ -1901,6 +1901,8 @@ theorem partSem_support [DecidableEq ι] {G : NormalGraph ι} {D : ι → Prop} 
           (fun l hl' p hp => hag p (hbounds l (hbr b hbm l hl').2 p hp))
         dsimp only
         rw [hb]
+      let W := trunc q hq' W
+      let n := q
       have hin : ∀ l ∈ reads G i, ∀ p ∈ V l,
           I.parameter p ((assign η s.binders As).1 p) = I.parameter p ((assign η' s.binders As).1 p) := by
         intro l hlS p hpv
@@ -2283,16 +2285,16 @@ theorem covers_by_scheme_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Opti
         ⟨[], _, oid, rfl, rfl, by simp only [Scoped, scopedArgs_iff]; exact ⟨hinv.scoped, hval.2, by simp⟩⟩
       -- At each instance of the source's binders within its bounds, the
       -- bound function meets every signature the source's cover.
-      have hat : ∀ oid, ∀ As : List MixedFamily, As.length = s.binders.length →
+      have hat : ∀ qlevel (hlevel : qlevel ≤ j), ∀ oid, ∀ As : List MixedFamily, As.length = s.binders.length →
           G.domain.allowed s As → Bounded (fun θ S => (mixedParameters G).bound θ
-            (setSem (fun l => qDenoteWithArgs G (mixedParameters G) (θ, l))) S) η s As j →
+            (setSem (fun l => qDenoteWithArgs G (mixedParameters G) (θ, l))) S) η s As qlevel →
           ∀ L M, BoundSigsCover G R s L M →
           semWithArgs (mixedValues G (assign η s.binders As)) (mixedArgs G (assign η s.binders As))
-            (.arrs L M) j U (.objAt [] (.bound u v []) oid) := by
-        intro oid As hl hal hb' L M hc
+            (.arrs L M) qlevel (trunc qlevel hlevel U) (.objAt [] (.bound u v []) oid) := by
+        intro qlevel hlevel oid As hl hal hb' L M hc
         exact bound_sigs_sound hc (fun k hk => (hre i s As hs).1 k (by omega))
-          (fun k hk => (hre i s As hs).2 k (by omega)) (hall As hl hal hb') hval
-          (fun r hrm => hhost r hrm As) (hinvB oid)
+          (fun k hk => (hre i s As hs).2 k (by omega)) (hall qlevel hlevel As hl hal hb') hval
+          (fun r hrm => (setSem_adm (fun l => qDenoteWithArgs_adm G (mixedParameters G) _) r).down_le j qlevel hlevel U v (hhost r hrm As)) (hinvB oid)
       refine ⟨⟨hinv, fun p hp => ?_⟩, ⟨hinv, fun p hp => ?_⟩, fun oid B hB => ?_⟩
       · simp [MethodMembers.Member.of, hcalls] at hp
       · simp [MethodMembers.Member.of, hrests] at hp
@@ -2308,18 +2310,18 @@ theorem covers_by_scheme_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Opti
           show qDenoteWithArgs G (mixedParameters G) (η, j') j U _
           rw [qDenoteWithArgs_unfold]
           simp only [qLayerWithArgs, hpj, hs', Bool.false_eq_true, if_false]
-          refine ⟨hinvB oid, fun As hl _hal hbd => ?_⟩
+          refine ⟨hinvB oid, fun qlevel hlevel As hl _hal hbd => ?_⟩
           have hal := (sameResolution_allowed G.domain hord As).mpr _hal
           show semWithArgs (mixedValues G (assign η s'.binders As)) (mixedArgs G (assign η s'.binders As))
-              (.arrs s'.signatures s'.variadic) j U (.objAt [] (.bound u v []) oid)
+              (.arrs s'.signatures s'.variadic) qlevel (trunc qlevel hlevel U) (.objAt [] (.bound u v []) oid)
           rcases hcase with ⟨hbs, hbnd, hcov⟩ | hren
           · have hb' : Bounded (fun θ S => (mixedParameters G).bound θ
-                (setSem (fun l => qDenoteWithArgs G (mixedParameters G) (θ, l))) S) η s As j := by
+                (setSem (fun l => qDenoteWithArgs G (mixedParameters G) (θ, l))) S) η s As qlevel := by
               intro b hbm hbin j'' hj'' U' w hw
               rw [hbs] at hbin hw
               exact hbd b (hbnd b hbm) hbin j'' hj'' U' w hw
             rw [← hbs]
-            exact hat oid As (by rw [hbs]; exact hl) hal hb' _ _ hcov
+            exact hat qlevel hlevel oid As (by rw [hbs]; exact hl) hal hb' _ _ hcov
           · cases sub with
             | none => exact hren.elim
             | some r =>
@@ -2327,7 +2329,7 @@ theorem covers_by_scheme_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Opti
               -- Each source bound holds at the instance: the target's bound on
               -- the renamed binder does, and is within it.
               have hb' : Bounded (fun θ S => (mixedParameters G).bound θ
-                  (setSem (fun l => qDenoteWithArgs G (mixedParameters G) (θ, l))) S) η s As j := by
+                  (setSem (fun l => qDenoteWithArgs G (mixedParameters G) (θ, l))) S) η s As qlevel := by
                 intro b hbm hbin k hk U' w hw
                 obtain ⟨b', hb'm, hlk, hR⟩ := hbnd b hbm
                 obtain ⟨m, hm1, hm2, hpb', hqb'⟩ := lookup_zip_index hlk
@@ -2339,7 +2341,7 @@ theorem covers_by_scheme_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Opti
                 cases w with
                 | inl w => exact hr k (by omega) _ _ hR U' w hw'
                 | inr ws => exact hpa k (by omega) _ _ hR U' ws hw'
-              have hsrc := hat oid As (by rw [hlen]; exact hl) hal hb' _ _ hcov
+              have hsrc := hat qlevel hlevel oid As (by rw [hlen]; exact hl) hal hb' _ _ hcov
               rw [← semWithArgs_map_meaning (η := assign η s.binders As)
                 (f := r.substitute (renamingOf s.binders s'.binders)) fun S hS => ?_]
               · exact hsrc
@@ -4777,7 +4779,7 @@ theorem table_row_mixed [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable �
             change boundedSem _ ηL s _ G.domain n W v ↔ boundedSem _ ηR s2 _ G.domain n W v
             refine and_congr Iff.rfl ?_
             rw [hlen]
-            refine forall_congr' fun As => forall_congr' fun hlA =>
+            refine forall_congr' fun qlevel => forall_congr' fun hlevel => forall_congr' fun As => forall_congr' fun hlA =>
               imp_congr (sameResolution_allowed G.domain hord As) (imp_congr ?_ ?_)
             · -- Each bound maps to the target's: the same family on the binders,
               -- and the bound types related at the outer assignments.
@@ -4810,8 +4812,12 @@ theorem table_row_mixed [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable �
                   · simp only [boundReads, hsch]
                     exact List.mem_flatMap.mpr ⟨b, hb, hl'⟩
                 exact hmix ηL ηR κ b.2 _ hB''
-                  (fun l hl p hp => hrel p (hbounds l (hbr l hl).2 p hp)) j hj U u
+                  (fun l hl p hp => hrel p (hbounds l (hbr l hl).2 p hp)) j (by omega) U u
               · simp at hbi
+            have hty := fun a b c d e f g => Agree.mono (hty a b c d e f g) hlevel
+            have hpack := fun a b c d e f g => Agree.mono (hpack a b c d e f g) hlevel
+            let W := trunc qlevel hlevel W
+            let n := qlevel
             -- Inside, the relation holds on each signature row's free rows.
             have hrel' : ∀ l ∈ reads G i, RelKWith G (mixedParameters G) (enter V i κ s.binders s2.binders) (fv V l)
                 (assign ηL s.binders As) (assign ηR s2.binders As) := by
@@ -5097,7 +5103,7 @@ theorem bounded_substitution_elim [DecidableEq ι] {k : ParameterSpace}
       FamLe (F U).1 (D η b.2)) :
     FamLe (boundedSem D η s body domain) (body (θs.map F)) := by
   intro n W v h
-  exact h.2 _ (by simp [hlen]) hal (bounded_substitution η F D s θs hlen hbnd n)
+  simpa only [trunc_id] using h.2 n (Nat.le_refl n) _ (by simp [hlen]) hal (bounded_substitution η F D s θs hlen hbnd n)
 
 /-- Substituting a complete binder list changes exactly its bound names. -/
 theorem assignment_substitution [DecidableEq ι] {k : ParameterSpace}
@@ -5479,7 +5485,15 @@ theorem renames_sound [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssignmen
     obtain ⟨hpi, hpj, hlen, hnp, hnq, hkinds, hbnd, hfresh, hord, hcov⟩ := hc
     rw [qDenoteWithArgs_unfold] at hv ⊢
     simp only [qLayerWithArgs, hpi, hpj, hs, hs', Bool.false_eq_true, if_false] at hv ⊢
-    refine ⟨hv.1, fun As hl _hal hb => ?_⟩
+    refine ⟨hv.1, fun q hq As hl _hal hb => ?_⟩
+    have hall := hv.2 q hq
+    have hre : ReassignSound G η R q := fun i s As hs =>
+      ⟨fun k hk => (hre i s As hs).1 k (by omega),
+       fun k hk => (hre i s As hs).2 k (by omega)⟩
+    have hr := fun k (hk : k < q) => hr k (by omega)
+    have hpa := fun k (hk : k < q) => hpa k (by omega)
+    let W := trunc q hq W
+    let n := q
     have hal := (sameResolution_allowed G.domain hord As).mpr _hal
     have hb' : Bounded (fun θ S => (mixedParameters G).bound θ
         (setSem (fun l => qDenoteWithArgs G (mixedParameters G) (θ, l))) S) η s As n := by
@@ -5495,7 +5509,7 @@ theorem renames_sound [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssignmen
       | inl w => exact hr k hk _ _ hR U w hu'
       | inr ws => exact hpa k hk _ _ hR U ws hu'
     have hi : semWithArgs (mixedValues G (assign η s.binders As)) (mixedArgs G (assign η s.binders As))
-        (.arrs s.signatures s.variadic) n W v := hv.2 As (by rw [hlen]; exact hl) hal hb'
+        (.arrs s.signatures s.variadic) n W v := hall As (by rw [hlen]; exact hl) hal hb'
     have hcovered := covers_arrs_sound hcov n (hre i s As hs).1 (hre i s As hs).2 W v hi
     show semWithArgs (mixedValues G (assign η s'.binders As)) (mixedArgs G (assign η s'.binders As))
         (.arrs s'.signatures s'.variadic) n W v
@@ -5525,7 +5539,13 @@ theorem scheme_covers_sound [DecidableEq ι] {G : NormalGraph ι} {η : MixedAss
     obtain ⟨hpi, hpj, hbs, hbnd, hord, hcov⟩ := hc
     rw [qDenoteWithArgs_unfold] at hv ⊢
     simp only [qLayerWithArgs, hpi, hpj, hs, hs', Bool.false_eq_true, if_false] at hv ⊢
-    refine ⟨hv.1, fun As hl _hal hb => ?_⟩
+    refine ⟨hv.1, fun q hq As hl _hal hb => ?_⟩
+    have hall := hv.2 q hq
+    have hre : ReassignSound G η R q := fun i s As hs =>
+      ⟨fun k hk => (hre i s As hs).1 k (by omega),
+       fun k hk => (hre i s As hs).2 k (by omega)⟩
+    let W := trunc q hq W
+    let n := q
     have hal := (sameResolution_allowed G.domain hord As).mpr _hal
     have hb' : Bounded (fun θ S => (mixedParameters G).bound θ
         (setSem (fun l => qDenoteWithArgs G (mixedParameters G) (θ, l))) S) η s As n := by
@@ -5533,7 +5553,7 @@ theorem scheme_covers_sound [DecidableEq ι] {G : NormalGraph ι} {η : MixedAss
       rw [hbs] at hbin hu
       exact hb b (hbnd b hbm) hbin j hj U u hu
     have hi : semWithArgs (mixedValues G (assign η s.binders As)) (mixedArgs G (assign η s.binders As))
-        (.arrs s.signatures s.variadic) n W v := hv.2 As (by rw [hbs]; exact hl) hal hb'
+        (.arrs s.signatures s.variadic) n W v := hall As (by rw [hbs]; exact hl) hal hb'
     show semWithArgs (mixedValues G (assign η s'.binders As)) (mixedArgs G (assign η s'.binders As))
         (.arrs s'.signatures s'.variadic) n W v
     rw [← hbs]
