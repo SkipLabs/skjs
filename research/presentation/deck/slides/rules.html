@@ -1,25 +1,31 @@
 <section id="rules" data-transition="fade" style="background:#14213D;color:#F4F1EA;font-family:'STIX Two Text', Georgia, serif;padding:128px 128px 160px;display:flex;flex-direction:column;gap:40px">
-<h2 style="font-size:60px;font-weight:600;line-height:1.1;color:#F4F1EA">The relations Resolves and Observes</h2>
+<h2 style="font-size:60px;font-weight:600;line-height:1.1;color:#F4F1EA">Who fixes <i><span style="color:#A9C7FF">T</span></i>.Observed and <i><span style="color:#A9C7FF">T</span></i>.Result</h2>
 <hr style="width:1664px;border-top:2px solid #F0A35E">
-<div style="display:grid;grid-template-columns:18fr 41fr 41fr">
-<p style="font-size:30px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B;font-weight:600;border-bottom:2px solid #8A97AD">Rule</p>
-<p style="font-size:30px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B;font-weight:600;border-bottom:2px solid #8A97AD">Resolves</p>
-<p style="font-size:30px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B;font-weight:600;border-bottom:2px solid #8A97AD">Observes</p>
-<p style="font-size:30px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">stable</p>
-<p style="font-size:30px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B"><i><span style="color:#A9C7FF">A</span></i> ≤ <i><span style="color:#A9C7FF">N</span></i> gives <i><span style="color:#A9C7FF">A</span></i> ↦ <i><span style="color:#A9C7FF">A</span></i></p>
-<p style="font-size:30px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B"><i><span style="color:#A9C7FF">A</span></i> ≤ <i><span style="color:#A9C7FF">N</span></i> gives <i><span style="color:#A9C7FF">A</span></i> ↦ <i><span style="color:#A9C7FF">A</span></i></p>
-<p style="font-size:30px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">native</p>
-<p style="font-size:30px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B"><i><span style="color:#A9C7FF">A</span></i> ↦ <i><span style="color:#A9C7FF">R</span></i> gives <span style="color:#7FD1C7">Promise</span>&lt;<i><span style="color:#A9C7FF">A</span></i>&gt; ↦ <i><span style="color:#A9C7FF">R</span></i></p>
-<p style="font-size:30px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B"><span style="color:#7FD1C7">Promise</span>&lt;<i><span style="color:#A9C7FF">A</span></i>&gt; ↦ <i><span style="color:#A9C7FF">A</span></i></p>
-<p style="font-size:30px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">union</p>
-<p style="font-size:30px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B"><i><span style="color:#A9C7FF">A</span></i> ↦ <i><span style="color:#A9C7FF">R</span></i>, <i><span style="color:#A9C7FF">B</span></i> ↦ <i><span style="color:#A9C7FF">S</span></i> gives <i><span style="color:#A9C7FF">A</span></i> | <i><span style="color:#A9C7FF">B</span></i> ↦ <i><span style="color:#A9C7FF">R</span></i> | <i><span style="color:#A9C7FF">S</span></i></p>
-<p style="font-size:30px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B"><i><span style="color:#A9C7FF">A</span></i> ↦ <i><span style="color:#A9C7FF">O</span></i>, <i><span style="color:#A9C7FF">B</span></i> ↦ <i><span style="color:#A9C7FF">Q</span></i> gives <i><span style="color:#A9C7FF">A</span></i> | <i><span style="color:#A9C7FF">B</span></i> ↦ <i><span style="color:#A9C7FF">O</span></i> | <i><span style="color:#A9C7FF">Q</span></i></p>
-<p style="font-size:30px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">narrow</p>
-<p style="font-size:30px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B"><i><span style="color:#A9C7FF">A</span></i> ≤ <i><span style="color:#A9C7FF">B</span></i>, <i><span style="color:#A9C7FF">B</span></i> ↦ <i><span style="color:#A9C7FF">R</span></i> gives <i><span style="color:#A9C7FF">A</span></i> ↦ <i><span style="color:#A9C7FF">R</span></i></p>
-<p style="font-size:30px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B"><i><span style="color:#A9C7FF">A</span></i> ≤ <i><span style="color:#A9C7FF">B</span></i>, <i><span style="color:#A9C7FF">B</span></i> ↦ <i><span style="color:#A9C7FF">O</span></i> gives <i><span style="color:#A9C7FF">A</span></i> ↦ <i><span style="color:#A9C7FF">O</span></i></p>
+<div style="display:grid;grid-template-columns:16fr 26fr 29fr 29fr">
+<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B;font-weight:600;border-bottom:2px solid #8A97AD">Rule</p>
+<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B;font-weight:600;border-bottom:2px solid #8A97AD">type argument <i><span style="color:#A9C7FF">T</span></i></p>
+<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B;font-weight:600;border-bottom:2px solid #8A97AD"><i><span style="color:#A9C7FF">T</span></i>.Observed</p>
+<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B;font-weight:600;border-bottom:2px solid #8A97AD"><i><span style="color:#A9C7FF">T</span></i>.Result</p>
+<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">stable</p>
+<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B"><i><span style="color:#A9C7FF">T</span></i> ≤ <i><span style="color:#A9C7FF">N</span></i></p>
+<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B"><i><span style="color:#A9C7FF">T</span></i></p>
+<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B"><i><span style="color:#A9C7FF">T</span></i></p>
+<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">native</p>
+<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B"><span style="color:#7FD1C7">Promise</span>&lt;<i><span style="color:#A9C7FF">A</span></i>&gt;</p>
+<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B"><i><span style="color:#A9C7FF">A</span></i></p>
+<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B"><i><span style="color:#A9C7FF">A</span></i>.Result</p>
+<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">union</p>
+<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B"><i><span style="color:#A9C7FF">A</span></i> | <i><span style="color:#A9C7FF">B</span></i></p>
+<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B"><i><span style="color:#A9C7FF">A</span></i>.Observed | <i><span style="color:#A9C7FF">B</span></i>.Observed</p>
+<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B"><i><span style="color:#A9C7FF">A</span></i>.Result | <i><span style="color:#A9C7FF">B</span></i>.Result</p>
+<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">narrow</p>
+<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B"><i><span style="color:#A9C7FF">A</span></i> ≤ <i><span style="color:#A9C7FF">B</span></i></p>
+<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B"><i><span style="color:#A9C7FF">B</span></i>.Observed</p>
+<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B"><i><span style="color:#A9C7FF">B</span></i>.Result</p>
 </div>
-<p style="font-size:30px;line-height:1.4">Relations between type meanings: resolution follows a native promise's payload until it reaches a stable type; observation reads it once. Narrow also admits wider results (<span style="color:#7FD1C7">number</span> resolves to <span style="color:#7FD1C7">number</span> | <span style="color:#7FD1C7">string</span>); <span style="color:#7FD1C7">Awaited</span> corresponds to the least.</p>
+<p style="font-size:28px;line-height:1.45">The producer proposes a classification for each call; Lean checks it and computes <i><span style="color:#A9C7FF">T</span></i>.Observed and <i><span style="color:#A9C7FF">T</span></i>.Result from it. Inside a body they stay abstract: <i><span style="color:#A9C7FF">T</span></i>.Result ≤ <i><span style="color:#A9C7FF">N</span></i>, and <i><span style="color:#A9C7FF">T</span></i>.Observed resolves to <i><span style="color:#A9C7FF">T</span></i>.Result.</p>
+<p style="font-size:28px;line-height:1.45">Narrow lets <i><span style="color:#A9C7FF">T</span></i>.Result be wider than needed: <span style="color:#7FD1C7">number</span> classifies with result <span style="color:#7FD1C7">number</span> | <span style="color:#7FD1C7">string</span>. So <i><span style="color:#A9C7FF">T</span></i>.Result is not unique; <span style="color:#7FD1C7">Awaited</span> corresponds to the least.</p>
 <p style="position:absolute;left:128px;bottom:64px;width:1300px;font-size:24px;color:#8A97AD">Calcagno · Typing Promise Resolution · as implemented on research/promise-resolution, 8 October 2026</p>
 <p style="position:absolute;right:128px;bottom:64px;width:200px;font-size:24px;color:#8A97AD;text-align:right">10 / 14</p>
-<aside>These are the inductive relations Resolves and Observes in ResolutionCapabilities.lean. A type with no derivation, such as an open record, has no descriptor, so a generic instantiation at it is refused.</aside>
+<aside>These are the inductive relations Resolves and Observes in ResolutionCapabilities.lean, read as computing the associated types. A type with no classification, such as an open record, makes the call refused.</aside>
 </section>
