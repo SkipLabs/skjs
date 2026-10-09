@@ -137,7 +137,7 @@ export type Row<L = number> = Clause<L>[];
 export type ParamRow = { kind: "value" | "arguments"; name: string; param: number };
 export type SchemeRow<L = number> = { scheme: { binders: L[]; signatures: Arrow<L>[];
   bounds?: [binder: L, bound: Labels<L>][]; variadic?: RestArrow<L>[];
-  resolution?: { input: number; observation: number; result: number }[] } };
+  resolution?: { input: number; observation: number; result: number | null }[] } };
 export type MeetRow = { meet: number; clauses: Row };
 export type GraphRow = Row | ParamRow | SchemeRow | MeetRow;
 export type TypeGraph = GraphRow[];
@@ -459,7 +459,8 @@ export function decodeGraph(value: unknown): TypeGraph {
         const binders = array(r.binders);
         for (const group of array(r.resolution)) {
           const slots = obj(group, ["input", "observation", "result"]);
-          for (const slot of [slots.input, slots.observation, slots.result]) {
+          // An awaitable group has no result slot.
+          for (const slot of [slots.input, slots.observation, ...(slots.result === null ? [] : [slots.result])]) {
             if (typeof slot !== "number" || !Number.isSafeInteger(slot) || slot < 0 ||
                 slot >= binders.length || owned.has(slot))
               throw Error("resolution slots must be distinct binder positions");
@@ -575,7 +576,8 @@ export function rowText(row: GraphRow): string {
     return `#${row.meet} & (${row.clauses.length ? row.clauses.map(clauseText).join(" | ") : "never"})`;
   if ("scheme" in row)
     return `∀ ${row.scheme.binders.map((b) => `#${b}`).join(", ")}${
-      (row.scheme.resolution ?? []).map(s => ` resolve(${s.input}, ${s.observation}, ${s.result})`).join("")}. calls[${[
+      (row.scheme.resolution ?? []).map(s => s.result === null ? ` observe(${s.input}, ${s.observation})`
+        : ` resolve(${s.input}, ${s.observation}, ${s.result})`).join("")}. calls[${[
       ...row.scheme.signatures.map(arrowText),
       ...(row.scheme.variadic ?? []).map(restArrowText)].join("; ")}]`;
   return row.length ? row.map(clauseText).join(" | ") : "never";

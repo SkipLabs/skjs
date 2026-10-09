@@ -96,6 +96,7 @@ export interface TypeArgument<L = Label> {
 export type ResolutionCertificate =
   | { k: "stable" }
   | { k: "native"; child: ResolutionCertificate }
+  | { k: "promise" }
   | { k: "union"; arms: ResolutionCertificate[] }
   | { k: "binder"; binder: string };
 

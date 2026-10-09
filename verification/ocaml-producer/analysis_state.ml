@@ -138,7 +138,7 @@ module Access (S : sig val state : t end) = struct
     if q.identity=r then q.resolution else None) state.resolution_parameters
   let observation_owner r = List.find_map (fun (q:Semantic.quantifier) ->
     match q.resolution with
-    | Some (observation,result) when observation=r -> Some (q.identity,result)
+    | Some (observation,Some result) when observation=r -> Some (q.identity,result)
     | _ -> None) state.resolution_parameters
   let field_type declarations seen t key = Type_queries.field_type (rigid_bounds ()) declarations seen t key
   let index_type declarations seen t key = Type_queries.index_type (rigid_bounds ()) declarations seen t key

@@ -17,9 +17,11 @@ export type DeclarationIdentity = {
 /** A property key: a string, or the symbol a `unique symbol` constant
  * denotes, by its index in the document's `symbols`. */
 export type PropertyKey = string | { symbol: number };
-/** A source parameter owns the two hidden projections of its resolution
- * descriptor. Their names are lexical binders, never source type arguments. */
-export type ResolutionSlots = { observation: string; result: string };
+/** A qualified source parameter owns the hidden projections of its
+ * descriptor: its observation, and, where it is resolvable, its result (`null`
+ * for an awaitable parameter). Their names are lexical binders, never source
+ * type arguments. */
+export type ResolutionSlots = { observation: string; result: string | null };
 export type SourceTypeParameter<T> = {
   name: string;
   bound: T | null;

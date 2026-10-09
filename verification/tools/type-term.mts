@@ -8,9 +8,17 @@ import type { Span } from "./span.mts";
 import { childrenOf } from "./syntax.mts";
 import type { PropertyKey, ResolutionSlots, TypeTerm } from "./declaration-types.mts";
 
-export const resolutionSlots = (name: string): ResolutionSlots => ({
-  observation: `#observe:${name}`, result: `#resolve:${name}`,
-});
+/** The projections a qualified parameter owns: an awaitable one its
+ * observation, a resolvable one also its result. */
+export function resolutionSlots(name: string, qualification: "resolvable"): ResolutionSlots & { result: string };
+export function resolutionSlots(name: string, qualification: "awaitable" | "resolvable"): ResolutionSlots;
+export function resolutionSlots(name: string, qualification: "awaitable" | "resolvable"): ResolutionSlots {
+  return { observation: `#observe:${name}`, result: qualification === "resolvable" ? `#resolve:${name}` : null };
+}
+
+/** The names a qualified parameter's projections own. */
+export const ownedSlots = (slots: ResolutionSlots | null): string[] =>
+  slots ? [slots.observation, ...(slots.result === null ? [] : [slots.result])] : [];
 
 // Numeric literals in the fragment are plain decimals; every other spelling
 // (hex, binary, octal, separators) is outside it. A bigint literal is read as
@@ -44,7 +52,7 @@ export function visitType(term: TypeTerm, visit: (term: TypeTerm, bound: Readonl
     case "reference": term.args.forEach(go); return;
     case "scheme": {
       const inner = new Set([...bound, ...term.binders.flatMap(binder => [binder.name,
-        ...(binder.resolution ? [binder.resolution.observation, binder.resolution.result] : [])])]);
+        ...ownedSlots(binder.resolution)])]);
       const scoped = (part: TypeTerm): void => visitType(part, visit, inner);
       term.binders.forEach(binder => {
         if (binder.bound) scoped(binder.bound);
@@ -646,7 +654,8 @@ function quantified(scope: TermScope, typeParameters: readonly ts.TypeParameterD
         scope.fail(node, "Awaited requires the input of a resolution-qualified parameter");
       if (binders.length !== 1) return scope.fail(node,
         "a resolution-qualified scheme has exactly one source parameter");
-      binder.resolution ??= resolutionSlots(binder.name);
+      binder.resolution ??= resolutionSlots(binder.name, "resolvable");
+      if (binder.resolution.result === null) return scope.fail(node, "Awaited requires a resolvable parameter");
       return { k: "binder", name: binder.resolution.result, span };
     },
     named(node, span, read) {

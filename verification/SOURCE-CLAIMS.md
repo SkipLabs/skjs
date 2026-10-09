@@ -206,12 +206,13 @@ A call expression can propose an instance with:
 ```
 
 Its names must match the callable's binders. An entry may carry `resolution`:
-`null`, or for a resolution-qualified binder `{"certificate": c}`, with `c`
-one of `{"k":"stable"}`, `{"k":"native","child":c}`,
+`null`, or for a qualified binder `{"certificate": c}`, with `c`
+one of `{"k":"stable"}`, `{"k":"native","child":c}`, `{"k":"promise"}`,
 `{"k":"union","arms":[c, ...]}` or `{"k":"binder","binder":name}`; the
 consumer checks the certificate against the entry's complete input type: a
-union's arms against its parts in any order, and `binder` against the named
-enclosing parameter or its observation
+union's arms against its parts in any order, `promise` against a native
+promise of any payload, which it observes and gives no result, and `binder`
+against the named enclosing parameter or its observation
 ([implied bounds](SOURCE-CONTRACTS.md#implied-bounds)). Type arguments must be ground:
 unresolved rigid parameters and nested quantified schemes are refused. The
 consumer checks bounds, substitution, the instantiated signature, and the

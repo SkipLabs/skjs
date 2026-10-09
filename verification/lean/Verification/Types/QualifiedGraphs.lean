@@ -17,14 +17,47 @@ variable {ι : Type} {N : Fam} {C : Capabilities N}
    MixedFamily.ofValue ⟨d.result, d.result_valid⟩]
 
 open Classical in
-/-- The body assignment retains the descriptor at its declared binder nodes. -/
+/-- A value binder's assigned family, read through the graph. -/
+theorem assigned_value (G : NormalGraph ι) (η : MixedAssignment ι)
+    (s : SchemeRow ι) (As : List MixedFamily) (p : ι) (A : MixedFamily)
+    (hp : (s.binders.zip As).lookup p = some A)
+    (hk : G.parameterKinds p = some .value) :
+    PositiveRules.mixedValues G (assign η s.binders As) [p] = A.value.1 := by
+  have he := mixedMeaning_parameter G (assign η s.binders As) p .value hk
+  funext n W v
+  have hv := congrFun (congrFun (congrFun he n) W) (Sum.inl v)
+  simpa [mixedMeaning, mixedParameters, PositiveRules.mixedValues,
+    selectParameter, assign, hp, MixedFamily.value] using hv
+
+open Classical in
+/-- The body assignment retains every group's observation at its declared
+binder nodes. -/
+theorem assigned_observation (G : NormalGraph ι) (η : MixedAssignment ι)
+    (s : SchemeRow ι) (As : List MixedFamily)
+    (ha : (descriptorDomain C).allowed s As)
+    (g : ResolutionSlots) (hg : g ∈ s.resolution) (t o : ι)
+    (ht : (s.binders.zip As).lookup t = As[g.input]?)
+    (ho : (s.binders.zip As).lookup o = As[g.observation]?)
+    (kt : G.parameterKinds t = some .value)
+    (ko : G.parameterKinds o = some .value) :
+    ∃ d : Observation C,
+      PositiveRules.mixedValues G (assign η s.binders As) [t] = d.input ∧
+      PositiveRules.mixedValues G (assign η s.binders As) [o] = d.observation := by
+  obtain ⟨d, T, O, hT, hO, eT, eO⟩ := allowed_observation C s As ha g hg
+  exact ⟨d, (assigned_value G η s As t T (ht.trans hT) kt).trans eT,
+    (assigned_value G η s As o O (ho.trans hO) ko).trans eO⟩
+
+open Classical in
+/-- The body assignment retains a resolvable group's descriptor at its
+declared binder nodes. -/
 theorem assigned_descriptor (G : NormalGraph ι) (η : MixedAssignment ι)
     (s : SchemeRow ι) (As : List MixedFamily)
     (ha : (descriptorDomain C).allowed s As)
-    (g : ResolutionSlots) (hg : g ∈ s.resolution) (t o r : ι)
+    (g : ResolutionSlots) (hg : g ∈ s.resolution) (slot : Nat) (hs : g.result = some slot)
+    (t o r : ι)
     (ht : (s.binders.zip As).lookup t = As[g.input]?)
     (ho : (s.binders.zip As).lookup o = As[g.observation]?)
-    (hr : (s.binders.zip As).lookup r = As[g.result]?)
+    (hr : (s.binders.zip As).lookup r = As[slot]?)
     (kt : G.parameterKinds t = some .value)
     (ko : G.parameterKinds o = some .value)
     (kr : G.parameterKinds r = some .value) :
@@ -33,39 +66,50 @@ theorem assigned_descriptor (G : NormalGraph ι) (η : MixedAssignment ι)
       PositiveRules.mixedValues G (assign η s.binders As) [o] = d.observation ∧
       PositiveRules.mixedValues G (assign η s.binders As) [r] = d.result := by
   obtain ⟨d, T, O, R, hT, hO, hR, eT, eO, eR⟩ :=
-    allowed_descriptor C s As ha g hg
-  have projection (p : ι) (A : MixedFamily)
-      (hp : (s.binders.zip As).lookup p = some A)
-      (hk : G.parameterKinds p = some .value) :
-      PositiveRules.mixedValues G (assign η s.binders As) [p] = A.value.1 := by
-    have he := mixedMeaning_parameter G (assign η s.binders As) p .value hk
-    funext n W v
-    have hv := congrFun (congrFun (congrFun he n) W) (Sum.inl v)
-    simpa [mixedMeaning, mixedParameters, PositiveRules.mixedValues,
-      selectParameter, assign, hp, MixedFamily.value] using hv
-  exact ⟨d, (projection t T (ht.trans hT) kt).trans eT,
-    (projection o O (ho.trans hO) ko).trans eO,
-    (projection r R (hr.trans hR) kr).trans eR⟩
+    allowed_descriptor C s As ha g hg slot hs
+  exact ⟨d, (assigned_value G η s As t T (ht.trans hT) kt).trans eT,
+    (assigned_value G η s As o O (ho.trans hO) ko).trans eO,
+    (assigned_value G η s As r R (hr.trans hR) kr).trans eR⟩
 
+#print axioms assigned_observation
 #print axioms assigned_descriptor
+
+/-- A group's value binders, checked against the graph: the input, the
+observation, and the result where the group has one. -/
+structure GroupBinders (ι : Type) where
+  input : ι
+  observation : ι
+  result : Option (Nat × ι)
+
+/-- The result binder of a group, where it has a result slot. -/
+@[nospecialize] def groupResult (s : SchemeRow ι) (g : ResolutionSlots) :
+    Option (Option (Nat × ι)) :=
+  match g.result with
+  | none => some none
+  | some slot => (s.binders[slot]?).map fun r => some (slot, r)
 
 /-- The value binders of a resolution group, checked against the graph. -/
 @[nospecialize] def groupBinders [DecidableEq ι] (G : NormalGraph ι)
-    (s : SchemeRow ι) (g : ResolutionSlots) : Option (ι × ι × ι) := do
+    (s : SchemeRow ι) (g : ResolutionSlots) : Option (GroupBinders ι) := do
   let t ← s.binders[g.input]?
   let o ← s.binders[g.observation]?
-  let r ← s.binders[g.result]?
+  let r ← groupResult s g
   if G.parameterKinds t == some .value && G.parameterKinds o == some .value &&
-      G.parameterKinds r == some .value then some (t, o, r) else none
+      r.all (fun p => G.parameterKinds p.2 == some .value) then some ⟨t, o, r⟩ else none
 
-/-- A lexical instance retains the three arguments of one enclosing group. -/
+/-- A lexical instance retains the input and observation of one enclosing
+group, and its result wherever the target group has one. -/
 @[nospecialize] def groupInstance [DecidableEq ι] (G : NormalGraph ι)
     (source : SchemeRow ι) (g : ResolutionSlots) (args : List (List ι))
     (target : ResolutionSlots) : Bool :=
   match groupBinders G source g with
   | none => false
-  | some (t, o, r) => args[target.input]? == some [t] &&
-      args[target.observation]? == some [o] && args[target.result]? == some [r]
+  | some b => args[target.input]? == some [b.input] &&
+      args[target.observation]? == some [b.observation] &&
+      match target.result, b.result with
+      | none, _ => true
+      | some slot, some (_, r) => args[slot]? == some [r]
+      | some _, none => false
 
 /-- Check a lexical instance against its enclosing scheme. Each target group
 must retain one complete source group. Bounds are checked by the instance rule. -/
@@ -75,18 +119,27 @@ must retain one complete source group. Bounds are checked by the instance rule. 
     target.resolution.all fun h => source.resolution.any fun g => groupInstance G source g args h
 
 theorem groupBinders_some [DecidableEq ι] {G : NormalGraph ι}
-    {s : SchemeRow ι} {g : ResolutionSlots} {t o r : ι}
-    (h : groupBinders G s g = some (t, o, r)) :
-    s.binders[g.input]? = some t ∧ s.binders[g.observation]? = some o ∧
-    s.binders[g.result]? = some r ∧ G.parameterKinds t = some .value ∧
-    G.parameterKinds o = some .value ∧ G.parameterKinds r = some .value := by
+    {s : SchemeRow ι} {g : ResolutionSlots} {b : GroupBinders ι}
+    (h : groupBinders G s g = some b) :
+    s.binders[g.input]? = some b.input ∧ s.binders[g.observation]? = some b.observation ∧
+    G.parameterKinds b.input = some .value ∧ G.parameterKinds b.observation = some .value ∧
+    (∀ slot, g.result = some slot → ∃ r, b.result = some (slot, r) ∧
+      s.binders[slot]? = some r ∧ G.parameterKinds r = some .value) ∧
+    (g.result = none → b.result = none) := by
   simp only [groupBinders, Option.bind_eq_bind, Option.bind_eq_some_iff] at h
-  obtain ⟨t', ht, o', ho, r', hr, h⟩ := h
+  obtain ⟨t, ht, o, ho, r, hr, h⟩ := h
   split at h
   · rename_i hk
     cases h
     simp only [Bool.and_eq_true, beq_iff_eq] at hk
-    exact ⟨ht, ho, hr, hk.1.1, hk.1.2, hk.2⟩
+    refine ⟨ht, ho, hk.1.1, hk.1.2, ?_, ?_⟩
+    · intro slot hs
+      simp only [groupResult, hs, Option.map_eq_some_iff] at hr
+      obtain ⟨x, hx, rfl⟩ := hr
+      exact ⟨x, rfl, hx, by simpa using hk.2⟩
+    · intro hs
+      simp only [groupResult, hs, Option.some.injEq] at hr
+      exact hr.symm
   · cases h
 
 open Classical in
@@ -117,29 +170,49 @@ theorem lexicalAdmission_sound [DecidableEq ι] (G : NormalGraph ι)
   unfold groupInstance at hm
   cases hb : groupBinders G source g with
   | none => simp [hb] at hm
-  | some triple =>
-    rcases triple with ⟨t, o, r⟩
+  | some b =>
     rw [hb] at hm
     simp only [Bool.and_eq_true, beq_iff_eq] at hm
-    obtain ⟨ht, ho, hr, kt, ko, kr⟩ := groupBinders_some hb
-    obtain ⟨d, et, eo, er⟩ := assigned_descriptor G η source As ha g hg t o r
-      (assignment_position checked.1.1 hl ht)
-      (assignment_position checked.1.1 hl ho)
-      (assignment_position checked.1.1 hl hr) kt ko kr
+    obtain ⟨⟨hmt, hmo⟩, hmr⟩ := hm
+    obtain ⟨ht, ho, kt, ko, hres, _⟩ := groupBinders_some hb
     let F (U : List ι) : MixedFamily :=
       ⟨mixedMeaning G (assign η source.binders As) U,
         mixedMeaning_valid G (assign η source.binders As) U⟩
-    have et' : (F [t]).value.1 = d.input := et
-    have eo' : (F [o]).value.1 = d.observation := eo
-    have er' : (F [r]).value.1 = d.result := er
-    refine ⟨F [t], F [o], F [r], ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-    · simp only [List.getElem?_map, hm.1.1, Option.map_some]; rfl
-    · simp only [List.getElem?_map, hm.1.2, Option.map_some]; rfl
-    · simp only [List.getElem?_map, hm.2, Option.map_some]; rfl
-    · rw [er']; exact d.stable
-    · rw [et', er']; exact d.resolved
-    · rw [et', eo']; exact d.observed
-    · rw [eo', er']; exact d.forwarded
+    have at_ (slot : Nat) (U : List ι) (e : args[slot]? = some U) :
+        (args.map F)[slot]? = some (F U) := by
+      simp only [List.getElem?_map, e, Option.map_some]
+    obtain ⟨d, et, eo⟩ := assigned_observation G η source As ha g hg b.input b.observation
+      (assignment_position checked.1.1 hl ht)
+      (assignment_position checked.1.1 hl ho) kt ko
+    have et' : (F [b.input]).value.1 = d.input := et
+    have eo' : (F [b.observation]).value.1 = d.observation := eo
+    refine ⟨F [b.input], F [b.observation], at_ _ _ hmt, at_ _ _ hmo,
+      by rw [et', eo']; exact d.observed, ?_⟩
+    intro slot hslot
+    have hts : h.result = some slot := hslot
+    rw [hts] at hmr
+    obtain ⟨gs, hgs⟩ : ∃ gs, g.result = some gs := by
+      cases hgr : g.result with
+      | some gs => exact ⟨gs, rfl⟩
+      | none =>
+        obtain ⟨_, _, _, _, _, hnone⟩ := groupBinders_some hb
+        rw [hnone hgr] at hmr
+        simp at hmr
+    obtain ⟨r, hbr, hr, kr⟩ := hres gs hgs
+    rw [hbr] at hmr
+    simp only [beq_iff_eq] at hmr
+    obtain ⟨e, et, eo, er⟩ := assigned_descriptor G η source As ha g hg gs hgs
+      b.input b.observation r
+      (assignment_position checked.1.1 hl ht)
+      (assignment_position checked.1.1 hl ho)
+      (assignment_position checked.1.1 hl hr) kt ko kr
+    have et' : (F [b.input]).value.1 = e.input := et
+    have eo' : (F [b.observation]).value.1 = e.observation := eo
+    have er' : (F [r]).value.1 = e.result := er
+    refine ⟨F [r], at_ _ _ hmr, ?_, ?_, ?_⟩
+    · rw [er']; exact e.stable
+    · rw [et', er']; exact e.resolved
+    · rw [eo', er']; exact e.forwarded
 
 #print axioms lexicalAdmission_sound
 

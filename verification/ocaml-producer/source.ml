@@ -9,10 +9,15 @@ let resolution_slots scope index j = match field "resolution" j with
     if List.sort String.compare (List.map fst fields) <> ["observation";"result"] then
       fail "invalid resolution slot fields";
     let slot offset key = {scope;index=3*index+offset;spelling=text key slots} in
-    let observation=slot 1 "observation" and result=slot 2 "result" in
-    if observation.spelling = "" || result.spelling = "" ||
-       observation.spelling = result.spelling ||
-       List.mem (text "name" j) [observation.spelling;result.spelling] then
+    let observation=slot 1 "observation" in
+    let result = match field "result" slots with
+      | Null -> None
+      | String _ -> Some (slot 2 "result")
+      | _ -> fail "expected a nullable resolution result slot" in
+    let owned = observation :: Option.to_list result in
+    let spellings = List.map (fun (r:rigid) -> r.spelling) owned in
+    if List.mem "" spellings || List.length (List.sort_uniq String.compare spellings) <> List.length spellings ||
+       List.mem (text "name" j) spellings then
       fail "resolution slots must be distinct lexical names";
     Some (observation,result)
   | _ -> fail "expected nullable resolution slots"
@@ -146,7 +151,7 @@ let rec source_type ctx j =
           if List.mem r.spelling packs then PackArgument (PackParameter r)
           else ValueArgument (Rigid r)) identities @
         List.concat_map (fun (observation,result) -> List.map (fun (r:rigid) ->
-          r.spelling,ValueArgument (Rigid r)) [observation;result]) qualified @ ctx.bindings} in
+          r.spelling,ValueArgument (Rigid r)) (observation :: Option.to_list result)) qualified @ ctx.bindings} in
       let pack_bound t = match text "k" t with
         | "array" -> Pack {required=[];optional_elements=[];
             rest=Some (source_type ctx (field "element" t));readonly=false;presence=Dense}
@@ -364,7 +369,7 @@ let quantify binders scope parameters =
       let quantified={identity;bound=Option.map (fun t -> ValueArgument t)
         (optional_type binders (field "bound" p));default=None;resolution} in
       let hidden = match resolution with None -> [] | Some (observation,result) ->
-        List.map (fun (r:rigid) -> r.spelling,ValueArgument (Rigid r)) [observation;result] in
+        List.map (fun (r:rigid) -> r.spelling,ValueArgument (Rigid r)) (observation :: Option.to_list result) in
       let binders={binders with bindings=(spelling,ValueArgument (Rigid identity))::hidden @ binders.bindings} in
       loop (index+1) binders (quantified::accumulated) rest in
   loop 0 binders [] parameters

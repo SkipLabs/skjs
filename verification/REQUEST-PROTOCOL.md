@@ -118,8 +118,8 @@ bounded (the bound is read outside the binders; left out when none), and
 `"variadic": [restContract, ...]` in the same contract-record format when it has variadic
 signatures, whose rest may be a binder, a pack parameter (left out when none), and
 `"resolution": [{"input": i, "observation": o, "result": r}, ...]` when binders
-form resolution descriptors, each naming three positions among the binders
-(left out when none);
+form resolution descriptors, each naming three positions among the binders,
+or two with `r` `null` for an observation (left out when none);
 a **parameter row** `{"param": i, "name": n, "kind": "value" | "arguments"}`, which
 names its own label $i$ and, in `n`, the binder it stands for (the name has no meaning). Its kind is mandatory and is preserved by instantiation and binder renaming;
 or a **meet row** `{"meet": p, "clauses": [...], "also": [...]}`, the value

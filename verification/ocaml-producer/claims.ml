@@ -19,6 +19,7 @@ let effect_json = function
 let rec resolution_json = function
   | StableResolution -> Object ["k",String "stable"]
   | NativeResolution child -> Object ["k",String "native";"child",resolution_json child]
+  | PromiseObservation -> Object ["k",String "promise"]
   | UnionResolution arms -> Object ["k",String "union";"arms",Array (List.map resolution_json arms)]
   | BinderResolution binder -> Object ["k",String "binder";"binder",String binder]
 let call_contract call_effect receiver arguments result = Object [
@@ -131,7 +132,9 @@ let encode (proposal : Proposal_types.t) =
         (List.concat_map quantifier_identities s.quantified) in
       let _,resolution = List.fold_left (fun (offset,groups) (q:Semantic.quantifier) ->
         match q.resolution with None -> offset+1,groups
-        | Some _ -> offset+3,groups @ [Object ["input",int offset;
+        | Some (_,None) -> offset+2,groups @ [Object ["input",int offset;
+            "observation",int (offset+1);"result",Null]]
+        | Some (_,Some _) -> offset+3,groups @ [Object ["input",int offset;
             "observation",int (offset+1);"result",int (offset+2)]]) (0,[]) s.quantified in
       let signature,variadic = match s.variadic,s.rest_pack with
         | None,None -> [call_contract s.call_effect (labels s.receiver) (Array (List.map labels s.params)) (labels s.result)],[]
@@ -317,8 +320,8 @@ let encode (proposal : Proposal_types.t) =
   and argument_contains_symbolic = function
     | ValueArgument t -> contains_symbolic t
     | PackArgument p -> pack_contains_symbolic p
-    | ResolutionArgument (input,(_,observation),(_,result),_) ->
-      List.exists contains_symbolic [input;observation;result]
+    | ResolutionArgument (input,(_,observation),result,_) ->
+      List.exists contains_symbolic (input :: observation :: Option.to_list (Option.map snd result))
   in
   let rec claim_type t = match t with
     | Rigid n -> Object ["param",String n.spelling]
@@ -329,7 +332,8 @@ let encode (proposal : Proposal_types.t) =
       let type_params = Array (List.map (fun (q:Semantic.quantifier) -> Object [
         "name",String q.identity.spelling;
         "resolution",(match q.resolution with None -> Null | Some (observation,result) ->
-          Object ["observation",String observation.spelling;"result",String result.spelling]);
+          Object ["observation",String observation.spelling;
+            "result",(match result with None -> Null | Some (r:Semantic.rigid) -> String r.spelling)]);
         "bound",(match q.bound with None -> Null | Some (ValueArgument t) -> claim_type t
           | Some (PackArgument _ | ResolutionArgument _) -> unsupported "a non-value bound in a scheme claim")])
         signature.quantified) in

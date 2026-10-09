@@ -36,7 +36,7 @@ def expandedSourceParameters (tps : Array Json) : Except String (Array Json) := 
     let entry (n : String) (bound : Json) := Json.mkObj [
       ("name", toJson n), ("bound", bound), ("resolution", .null)]
     entry name (p.getObjValD "bound") ::
-      (slots.map fun s => [entry s.observation .null, entry s.result .null]).getD []) |>.toArray
+      (slots.map fun s => s.names.map (entry · .null)).getD []) |>.toArray
 
 def sourceNames (tps : Array Json) : Except String (List String) := do
   return (← sourceParameters tps).flatMap fun (n, s) => ResolutionWire.ownedNames n s

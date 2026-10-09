@@ -10,32 +10,40 @@ type instantiation = {
 }
 
 (* Descriptor images are candidates tied to one input and one checked finite
-   construction. Hidden projections never become independent solver variables. *)
-let resolution_instance ~native ~expand ~owned ~observed input =
+   construction. Hidden projections never become independent solver variables.
+   A resolvable instance classifies a native promise's payload too; an
+   awaitable one observes it, whatever it is. The result is [None] where no
+   result is described. *)
+let resolution_instance ~native ~expand ~owned ~observed ~resolvable input =
   let rec describe seen input = match input with
     | Rigid r -> (match owned r,observed r with
-      | Some (observation,result),_ -> Rigid observation,Rigid result,BinderResolution r.spelling
+      | Some (observation,result),_ ->
+        Rigid observation,Option.map (fun r -> Rigid r) result,BinderResolution r.spelling
       (* A binder's observation resolves to the binder's result; its own
          observation is named by no type (Lean admits the instance only
          where the signature does not read it). *)
-      | None,Some (owner,result) -> top,Rigid result,BinderResolution owner.spelling
-      | None,None -> input,input,StableResolution)
+      | None,Some (owner,result) -> top,Some (Rigid result),BinderResolution owner.spelling
+      | None,None -> input,Some input,StableResolution)
     | Union inputs -> arms seen inputs
     | Atoms (_::_::_ as atoms) -> arms seen (List.map (fun atom -> Atoms [atom]) atoms)
     | Atoms [Named (id,[payload])] when native id ->
-      let _,result,child = describe seen payload in
-      payload,result,NativeResolution child
+      if resolvable then
+        let _,result,child = describe seen payload in
+        payload,result,NativeResolution child
+      else payload,None,PromiseObservation
     | Atoms [Named (id,_)] when not (List.mem id seen) -> (match expand input with
       | Some body when body<>input ->
         let observation,result,certificate = describe (id::seen) body in
-        (match certificate with StableResolution -> input,input,certificate
+        (match certificate with StableResolution -> input,Some input,certificate
           | _ -> observation,result,certificate)
-      | _ -> input,input,StableResolution)
-    | Atoms _ | Meet _ -> input,input,StableResolution
+      | _ -> input,Some input,StableResolution)
+    | Atoms _ | Meet _ -> input,Some input,StableResolution
   and arms seen inputs =
     let descriptors = List.map (describe seen) inputs in
+    let results = List.map (fun (_,r,_) -> r) descriptors in
     List.fold_left union (Atoms []) (List.map (fun (o,_,_) -> o) descriptors),
-    List.fold_left union (Atoms []) (List.map (fun (_,r,_) -> r) descriptors),
+    (if List.mem None results then None
+     else Some (List.fold_left union (Atoms []) (List.filter_map Fun.id results))),
     UnionResolution (List.map (fun (_,_,certificate) -> certificate) descriptors) in
   describe [] input
 
@@ -43,8 +51,12 @@ let qualify_substitution ~native ~expand ~owned ~observed quantified solution =
   List.map (fun (identity,argument) ->
     match List.find_opt (fun (q:quantifier) -> q.identity=identity) quantified,argument with
     | Some {resolution=Some (o,r);_},ValueArgument input ->
-      let observation,result,certificate = resolution_instance ~native ~expand ~owned ~observed input in
-      identity,ResolutionArgument (input,(o,observation),(r,result),certificate)
+      let observation,result,certificate =
+        resolution_instance ~native ~expand ~owned ~observed ~resolvable:(r <> None) input in
+      (* A resolvable instance without a described result is proposed at the
+         empty result; Lean refuses its certificate. *)
+      identity,ResolutionArgument (input,(o,observation),
+        Option.map (fun r -> r,Option.value result ~default:(Atoms [])) r,certificate)
     | _,_ -> identity,argument) solution
 
 let unsupported s = Json.fail ("unsupported: " ^ s)
@@ -56,8 +68,10 @@ let rec substitute ?meet solution = function
   | Rigid identity as original ->
     (match List.assoc_opt identity solution with
     | None -> Option.value (List.find_map (fun (_,argument) -> match argument with
-        | ResolutionArgument (_, (o,observation), (r,result), _) ->
-          if identity=o then Some observation else if identity=r then Some result else None
+        | ResolutionArgument (_, (o,observation), result, _) ->
+          if identity=o then Some observation else (match result with
+            | Some (r,result) when identity=r -> Some result
+            | _ -> None)
         | ValueArgument _ | PackArgument _ -> None) solution) ~default:original
     | Some (ValueArgument t) -> t
     | Some (ResolutionArgument (input,_,_,_)) -> input
@@ -92,9 +106,10 @@ and substitute_sequence ?meet solution sequence = {
 and substitute_argument ?meet solution = function
   | ValueArgument t -> ValueArgument (substitute ?meet solution t)
   | PackArgument p -> PackArgument (substitute_pack ?meet solution p)
-  | ResolutionArgument (input,(o,observation),(r,result),certificate) ->
+  | ResolutionArgument (input,(o,observation),result,certificate) ->
     ResolutionArgument (substitute ?meet solution input,
-      (o,substitute ?meet solution observation),(r,substitute ?meet solution result),certificate)
+      (o,substitute ?meet solution observation),
+      Option.map (fun (r,result) -> r,substitute ?meet solution result) result,certificate)
 and substitute_shape ?meet solution shape = {
   fields=List.map (fun field -> {field with
     read=substitute ?meet solution field.read;
@@ -192,7 +207,7 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) ?(native = fun _ -> fals
   let result_uppers = ref [] in
   let result_owner = function
     | Rigid r -> List.find_map (fun (q:quantifier) -> match q.resolution with
-        | Some (observation,result) when observation = r || result = r -> Some q.identity
+        | Some (observation,result) when observation = r || result = Some r -> Some q.identity
         | _ -> None) signature.quantified
     | Atoms _ | Union _ | Meet _ -> None in
   let rec constrain ?(depth=0) ?(output=false) ?(contextual=false) left right =
@@ -268,7 +283,8 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) ?(native = fun _ -> fals
           && List.length a.params=List.length e.params ->
       let renaming = List.concat (List.map2 (fun (x:quantifier) (y:quantifier) ->
         let hidden = match x.resolution,y.resolution with
-          | Some (xo,xr),Some (yo,yr) -> [xo,ValueArgument (Rigid yo);xr,ValueArgument (Rigid yr)]
+          | Some (xo,Some xr),Some (yo,Some yr) -> [xo,ValueArgument (Rigid yo);xr,ValueArgument (Rigid yr)]
+          | Some (xo,None),Some (yo,None) -> [xo,ValueArgument (Rigid yo)]
           | None,None -> []
           | _ -> unsupported "generic signatures have incompatible resolution qualifications" in
         (x.identity,ValueArgument (Rigid y.identity))::hidden) a.quantified e.quantified) in

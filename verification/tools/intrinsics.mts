@@ -9,11 +9,10 @@
  * imported value's declared type, each is an assumption a result is relative
  * to.
  *
- * - `await e` is `%Await%(e)`: a native promise settles, if ever, to a value
- *   of its type argument, and awaiting it yields that value; awaiting a
- *   resolution-qualified value yields its observation (`X.Observed`): a
- *   stably non-thenable value itself, a native promise's fulfillment value.
- *   Other jobs may run in between, as they may during any call.
+ * - `await e` is `%Await%(e)`: awaiting an awaitable value yields its
+ *   observation (`X.Observed`): a stably non-thenable value itself, a native
+ *   promise's fulfillment value, a value of its type argument, whatever that
+ *   is. Other jobs may run in between, as they may during any call.
  * - `return e` in an async function is `return %AsyncReturn%(e)`: the promise
  *   the call returned settles to the fresh resolution of `e`
  *   (`X.Result`): `e` itself where it stays non-thenable, and what `e`
@@ -61,8 +60,8 @@
  * The reviewed overlay of library globals (`library-globals.mts`) reads some
  * members as these: `Promise.resolve(v)` is `%PromiseResolve%(v)`, which
  * retains a native promise through its constructor identity path or freshly
- * resolves a stably non-thenable value: a promise of what awaiting `v`
- * yields. `Promise.resolve()` is
+ * resolves a stably non-thenable value: a promise of `v`'s observation, what
+ * awaiting `v` yields. `Promise.resolve()` is
  * `%AsyncComplete%()`, and
  * `Promise.all(ps)` is `%PromiseAll%(ps)`: a promise of the array of what
  * the promises settle to, in order, settling once each has. The array is
@@ -203,25 +202,23 @@ export function restFromIntrinsic(k: number):
  * `Promise` applied to an argument. */
 export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: ReadonlySet<string>):
   { name: string; typeParams: SourceTypeParameter<TypeTerm>[]; type: Signature }[] {
-  // `X : Resolvable`: a binder owning its observation and result.
-  const slots = resolutionSlots("X");
-  const resolvable: SourceTypeParameter<TypeTerm> = { name: "X", bound: null, resolution: slots };
+  // `X : Resolvable`: a binder owning its observation and result;
+  // `X : Awaitable`: a binder owning its observation.
+  const resolvableSlots = resolutionSlots("X", "resolvable");
+  const awaitableSlots = resolutionSlots("X", "awaitable");
+  const resolvable: SourceTypeParameter<TypeTerm> = { name: "X", bound: null, resolution: resolvableSlots };
+  const awaitable: SourceTypeParameter<TypeTerm> = { name: "X", bound: null, resolution: awaitableSlots };
   const input: TypeTerm = { k: "binder", name: "X", span };
-  const observed: TypeTerm = { k: "binder", name: slots.observation, span };
-  const result: TypeTerm = { k: "binder", name: slots.result, span };
-  const payload: SourceTypeParameter<TypeTerm> = { name: "T", bound: null, resolution: null };
+  const observed: TypeTerm = { k: "binder", name: awaitableSlots.observation, span };
+  const result: TypeTerm = { k: "binder", name: resolvableSlots.result, span };
   const definitions: Record<string, () => { typeParams: SourceTypeParameter<TypeTerm>[]; type: Signature }> = {
-    // `await` observes a native promise's payload, whatever it is, or a
-    // resolution-qualified value's observation.
-    [awaitName]: () => ({ typeParams: [payload, resolvable],
-      type: fn([either(promise(binder), input)], either(binder, observed)) }),
+    // `await` yields the input's observation.
+    [awaitName]: () => ({ typeParams: [awaitable], type: fn([input], observed) }),
     // Fresh resolution settles to the input's result.
     [asyncReturnName]: () => ({ typeParams: [resolvable], type: fn([input], promise(result)) }),
-    // PromiseResolve returns a native input itself; a qualified input
-    // yields a promise of its observation: itself where stable, its own
-    // promise where native.
-    [promiseResolveName]: () => ({ typeParams: [payload, resolvable],
-      type: fn([either(promise(binder), input)], promise(either(binder, observed))) }),
+    // PromiseResolve returns a native input itself and wraps a stable one in
+    // a fresh promise: a promise of the input's observation.
+    [promiseResolveName]: () => ({ typeParams: [awaitable], type: fn([input], promise(observed)) }),
     [asyncCompleteName]: () => ({ typeParams: [], type: fn([], promise(atom("void"))) }),
     [iterateName]: () => ({ typeParams: [{ name: "T", bound: null, resolution: null }],
       type: fn([{ k: "array", presence: "readable", readonly: true, element: binder, span }], step) }),

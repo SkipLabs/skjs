@@ -159,12 +159,17 @@ theorem selectParameter_valid (kind : Option ParameterKind) {A : WorldFamily Par
   cases x <;> simp [selectParameter]
 
 /-- Positions of a retained resolution input, literal observation and associated
-result among a scheme's binders. Positions survive label renaming. -/
+result among a scheme's binders. An observation-only group (`Awaitable`) has no
+result slot. Positions survive label renaming. -/
 structure ResolutionSlots where
   input : Nat
   observation : Nat
-  result : Nat
+  result : Option Nat
   deriving DecidableEq, BEq, Repr, Inhabited
+
+/-- The associated slots of a group: its observation, and its result if any. -/
+def ResolutionSlots.associated (g : ResolutionSlots) : List Nat :=
+  g.observation :: g.result.toList
 
 /-- A quantified callable: its binders, which are parameter rows, and the
 signatures `(receiver, parameters, result)` each of its instances meets. -/
@@ -185,7 +190,7 @@ structure SchemeRow (ι : Type) where
 /-- Associated observation and result slots have no independent bounds.
 Input bounds retain the associated contracts when narrowing a substitution. -/
 def SchemeRow.protectedSlots (s : SchemeRow ι) : Prop :=
-  ∀ g ∈ s.resolution, ∀ p ∈ [g.observation, g.result],
+  ∀ g ∈ s.resolution, ∀ p ∈ g.associated,
     ∀ b, s.binders[p]? = some b → ∀ B, (b, B) ∉ s.bounds
 
 /-- Structural substitution retains the associated slot positions. -/
@@ -202,10 +207,10 @@ bounds separately from semantic instance membership. -/
 @[nospecialize] def SchemeRow.resolutionValid [DecidableEq ι] (s : SchemeRow ι) : Bool :=
   s.resolution.isEmpty ||
     (decide s.binders.Nodup &&
-      decide (s.resolution.flatMap (fun g => [g.input, g.observation, g.result])).Nodup &&
+      decide (s.resolution.flatMap (fun g => g.input :: g.associated)).Nodup &&
       s.resolution.all (fun g =>
-        g.input < s.binders.length && g.observation < s.binders.length && g.result < s.binders.length &&
-        s.bounds.all (fun b => s.binders[g.observation]? != some b.1 && s.binders[g.result]? != some b.1)))
+        g.input < s.binders.length && g.associated.all (· < s.binders.length) &&
+        s.bounds.all (fun b => g.associated.all fun p => s.binders[p]? != some b.1)))
 
 open Classical in
 /-- The assignment with each binder given the family at its position. -/

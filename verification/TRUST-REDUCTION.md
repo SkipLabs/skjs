@@ -170,7 +170,7 @@ instantiations.
 
 The pipeline states:
 
-- `%Await%` at $`\forall T,\ X:\mathsf{Resolvable}.\ (\mathsf{Promise}\langle T\rangle \mid X) \Rightarrow T \mid X.\mathsf{Observed}`$, whose resolution-qualified $`X`$ ranges over the inputs classified as stable, native or a union of those ([implied bounds](SOURCE-CONTRACTS.md#implied-bounds));
+- `%Await%` at $`\forall X:\mathsf{Awaitable}.\ (X) \Rightarrow X.\mathsf{Observed}`$, whose observation-qualified $`X`$ ranges over the inputs observed as stable, a native promise of any payload or a union of those ([implied bounds](SOURCE-CONTRACTS.md#implied-bounds));
 - the host assumption that a value of type `Promise<T>` is a realm promise,
   with the source refused from building an object that has a `then` member;
 - a trusted generic signature's type parameters that occur under

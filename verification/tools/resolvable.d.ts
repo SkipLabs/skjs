@@ -1,7 +1,10 @@
-// The verifier's own declaration a program writes to qualify a type
-// parameter: `T extends Resolvable` makes `T` resolution-qualified, owning its
-// observation and result (SOURCE-CONTRACTS.md, "Implied bounds"). The parser
-// recognizes the bound by this declaration, which TypeScript binds the name
-// to, never by its spelling. As a type it is `unknown`: the qualification
-// constrains which instances a call may take, not the values of `T`.
+// The verifier's own declarations a program writes to qualify a type
+// parameter (SOURCE-CONTRACTS.md, "Implied bounds"): `T extends Resolvable`
+// makes `T` resolvable, owning its observation and result, and
+// `T extends Awaitable` makes it awaitable, owning its observation only. The
+// parser recognizes each bound by its declaration here, which TypeScript
+// binds the name to, never by its spelling. As a type each is `unknown`: a
+// qualification constrains which instances a call may take, not the values
+// of `T`.
 type Resolvable = unknown;
+type Awaitable = unknown;

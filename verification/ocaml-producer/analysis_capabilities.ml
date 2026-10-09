@@ -34,8 +34,8 @@ module type Queries = sig
   val current_point : unit -> string
   val rigid_bounds : unit -> (Semantic.rigid * ty) list
   val rigid_bound : Semantic.rigid -> ty option
-  val owned_resolution : Semantic.rigid -> (Semantic.rigid * Semantic.rigid) option
-  (* The qualified binder whose observation a rigid is, with its result. *)
+  val owned_resolution : Semantic.rigid -> (Semantic.rigid * Semantic.rigid option) option
+  (* The resolvable binder whose observation a rigid is, with its result. *)
   val observation_owner : Semantic.rigid -> (Semantic.rigid * Semantic.rigid) option
   val field_type : Source.declaration list -> string list -> ty -> Semantic.key -> ty
   val index_type : Source.declaration list -> string list -> ty -> ty -> ty

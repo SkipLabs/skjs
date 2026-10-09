@@ -129,10 +129,11 @@ def explicitInstance (T : EquationStore.State) (pos : Span) (binders : List Stri
 /-- Check a proposed resolution instance in the frozen source equations. The
 associated types are computed by the descriptor checker, never supplied as
 independent type arguments. The observation is `none` where the checked
-descriptor's observation is a family no source type names. -/
+observation is a family no source type names, and the result is `none` where
+the certificate establishes only an observation. -/
 def resolutionInstance (T : EquationStore.State) (source : Option (SchemeRow Tree))
     (sourceNames : List String) (A : List Tree) (certificate : ResolutionWire.Certificate) :
-    Except String (Option (List Tree) × List Tree) := do
+    Except String (Option (List Tree) × Option (List Tree)) := do
   let F ← EquationStore.freeze T
   let some context := F.store.resolution
     | throw "resolution instance requires the native descriptor domain"
@@ -156,7 +157,7 @@ def resolutionInstance (T : EquationStore.State) (source : Option (SchemeRow Tre
   let input ← labels A
   let some checked := SourceResolution.check c scope (StoreView.images F.store) 256 input certificate
     | throw "resolution certificate does not establish its input, observation and stable result"
-  return (checked.observation.map (·.map (·.val)), checked.result.map (·.val))
+  return (checked.observation.map (·.map (·.val)), checked.result.map (·.map (·.val)))
 
 /-- A generic module value reached from a unit (a generic module function,
 or a generic imported one): the unit's calls name its instances. Each call's
@@ -176,7 +177,7 @@ def moduleInstances (T : EquationStore.State) (g : Instantiable)
       (EquationStore.State × Json × List Span × List Span) := do
   let refuse (pos : Span) (reason : String) : DirectObligation.Failure Tree × EquationStore.State :=
     (.refusal pos .schemeElimination reason, T)
-  let hidden := g.resolution.flatMap fun q => [q.observation, q.result]
+  let hidden := g.resolution.flatMap (·.associated)
   let publicNames := g.binders.zipIdx.filterMap fun (n, i) => if hidden.contains i then none else some n
   let calls := (unit.flatMap Fragment.Stmt.callees).filter (·.2.2.1 == g.name)
   let graph (A : List Tree) : Json := Json.mkObj [("top", toJson false),
@@ -198,12 +199,19 @@ def moduleInstances (T : EquationStore.State) (g : Instantiable)
         | some group, some evidence =>
           let (O, R) ← (resolutionInstance T source sourceNames A evidence.certificate).mapError (refuse pos)
           let some observation := g.binders[group.observation]? | throw (refuse pos "missing observation binder")
-          let some result := g.binders[group.result]? | throw (refuse pos "missing result binder")
+          -- An awaitable binder takes no result; a resolvable one needs it.
+          let result ← match group.result with
+            | none => pure []
+            | some slot =>
+              let some result := g.binders[slot]? | throw (refuse pos "missing result binder")
+              let some R := R
+                | throw (refuse pos "resolution certificate does not establish its input, observation and stable result")
+              pure [(result, R)]
           match O with
-          | some O => pure [(i.name, A), (observation, O), (result, R)]
+          | some O => pure ([(i.name, A), (observation, O)] ++ result)
           -- An unnamed observation instantiates only a value whose type
           -- does not mention it (`unnamedObservation`).
-          | none => pure [(i.name, A), (result, R)]
+          | none => pure ((i.name, A) :: result)
         | _, _ => throw (refuse pos "resolution evidence must match the source parameter's qualification")
       pure (pos, θ, written)
   let mut T := T

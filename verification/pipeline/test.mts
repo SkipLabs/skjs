@@ -809,6 +809,36 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     await settle({ then(resolve) { cell.value = "changed"; resolve(42); } });
     return cell.value;
   })()`), "changed", "an ordinary bound named Resolvable does not constrain a hidden then hook");
+  // An awaitable parameter is observed, never resolved again: a record that
+  // acquires a then hook after its promise fulfilled is awaited as itself,
+  // while returning it, or the promise, from an async function adopts it.
+  assert.equal(await runExample("generic-promise-awaitable", `(async () => {
+    const cell = { value: 1 };
+    const box = { n: 1 };
+    const input = Promise.resolve(box);
+    await input;
+    Object.assign(box, { then(resolve) { cell.value = "changed"; resolve(42); } });
+    return JSON.stringify([await record(input), await numeric(2), await native(Promise.resolve(3)),
+      await union(input), await union(4), cell.value]);
+  })()`), "[null,null,null,null,null,1]", "awaiting an awaitable parameter observes it without adopting a later then hook");
+  for (const [file, fn] of [
+    ["invalid-generic-promise-awaitable-result", "settle"],
+    ["invalid-generic-promise-awaitable-observation", "settle"],
+    ["invalid-generic-promise-awaitable-return", "forward"],
+  ] as const)
+    assert.equal(await runExample(file, `(async () => {
+      const cell = { value: 1 };
+      const box = { n: 1 };
+      const input = Promise.resolve(box);
+      await input;
+      Object.assign(box, { then(resolve) { cell.value = "changed"; resolve(42); } });
+      return JSON.stringify([await ${fn}(input), cell.value]);
+    })()`), '[42,"changed"]', `${file}: async return resolves the observation again, adopting its then hook`);
+  assert.equal(await runExample("invalid-generic-promise-awaitable-local", `(async () => {
+    const cell = { value: 1 };
+    await settle({ then(resolve) { cell.value = "changed"; resolve(42); } });
+    return cell.value;
+  })()`), "changed", "an ordinary bound named Awaitable does not constrain a hidden then hook");
   assert.equal(await runExample("invalid-generic-promise-unknown-output", `(async () => {
     const cell = { value: 1 };
     const input = { n: 1, then(resolve) { cell.value = "changed"; resolve(42); } };
@@ -1669,10 +1699,10 @@ process.stdout.write("forged claims at each kind of point: read and checked ther
 }
 
 {
-  // The native identity arm leaves the qualified arm unused, instantiated at
-  // never. A forged open payload there still needs its classification. Async
-  // direct and native-payload instances retain the same obligation when their
-  // source result is independently widened.
+  // A qualified instance's input is classified by its certificate: forging
+  // Promise.resolve's input to the promise's open payload, or an async
+  // return's input to unknown, leaves the proposed certificate unestablished,
+  // also where the source result is independently widened.
   for (const [file, functionName] of [
     ["native-promise-resolve-identity", "nativeIdentity"],
     ["native-promise-qualified-return", "stableUnknown"],

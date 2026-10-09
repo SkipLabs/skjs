@@ -446,14 +446,17 @@ One line each; the reason is the one the design keeps.
   contrast [Frisch, Castagna and Benzaken 2008](REFERENCES.md#frisch-castagna-and-benzaken-2008)).
 - **A type parameter's bounds include those its signature implies; a body
   implies none.** Resolution qualification, implied by `Awaited<T>`, is the
-  one constraint that is not a subtype bound
+  one implied constraint that is not a subtype bound
   ([implied bounds](SOURCE-CONTRACTS.md#implied-bounds)).
-- **`await` and async return are typed through resolution qualification.**
-  Their intrinsics quantify $`X:\mathsf{Resolvable}`$ with associated types
-  $`X.\mathsf{Observed}`$ and $`X.\mathsf{Result}`$; a generic parameter takes
-  the qualification by `T extends Resolvable` or by `Awaited<T>` in its
-  signature. It restricts which instances are admitted, never the values of
-  $`T`$ ([async](SOURCE-CONTRACTS.md#async-functions-and-await)).
+- **`await` and async return are typed through two qualifications.**
+  $`X:\mathsf{Awaitable}`$ owns an observation $`X.\mathsf{Observed}`$, and
+  $`X:\mathsf{Resolvable}`$ also a result $`X.\mathsf{Result}`$; every
+  resolvable input is awaitable. `await` and `Promise.resolve` quantify an
+  awaitable $`X`$, async return a resolvable one. A generic parameter takes
+  `Awaitable` by `T extends Awaitable`, and `Resolvable` by
+  `T extends Resolvable` or by `Awaited<T>` in its signature. A qualification
+  restricts which instances are admitted, never the values of $`T`$
+  ([async](SOURCE-CONTRACTS.md#async-functions-and-await)).
 - **Ordinary graph evidence is certified at every assignment of parameter rows**
   (`Parametricity.accept_reassign`). Qualified body evidence is certified at
   assignments satisfying the signature’s descriptor constraints

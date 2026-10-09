@@ -401,6 +401,8 @@ class Gate {
   standardAwaited = false;
   /** The file names the verifier's `Resolvable` (`resolvable.d.ts`). */
   standardResolvable = false;
+  /** The file names the verifier's `Awaitable` (`resolvable.d.ts`). */
+  standardAwaitable = false;
   private qualificationHeader = false;
   /** Local spelling to the arity and identity of its declaration root. A
    * reference names the declaration TypeScript resolved the spelling to. */
@@ -570,17 +572,22 @@ class Gate {
     return name;
   }
 
-  /** Whether a bound is the verifier's `Resolvable`, by the declaration the
-   * file's name binds to, not shadowed by a type parameter. */
-  private resolvableBound(bound: TypeNode | undefined): boolean {
-    return !!bound && this.standardResolvable && ts.isTypeReferenceNode(bound) &&
-      ts.isIdentifier(bound.typeName) && bound.typeName.text === "Resolvable" &&
-      !bound.typeArguments?.length && !this.hasTypeParam("Resolvable");
+  /** The qualification a bound declares: the verifier's `Resolvable` or
+   * `Awaitable`, by the declaration the file's name binds to, not shadowed by
+   * a type parameter. */
+  private qualificationBound(bound: TypeNode | undefined): "resolvable" | "awaitable" | null {
+    if (!bound || !ts.isTypeReferenceNode(bound) || !ts.isIdentifier(bound.typeName) ||
+        bound.typeArguments?.length) return null;
+    const name = bound.typeName.text;
+    if (this.hasTypeParam(name)) return null;
+    return name === "Resolvable" && this.standardResolvable ? "resolvable"
+      : name === "Awaitable" && this.standardAwaitable ? "awaitable" : null;
   }
 
-  /** A function declaration's type parameters may be resolution-qualified
-   * (`qualifiable`): `T extends Resolvable` declares it, owning its
-   * observation and result, with no subtype bound. */
+  /** A function declaration's type parameters may be qualified
+   * (`qualifiable`): `T extends Resolvable` declares it resolvable, owning
+   * its observation and result, `T extends Awaitable` awaitable, owning its
+   * observation; neither is a subtype bound. */
   private enterTypeParams(
     parameters: readonly TypeParameterDeclaration[] | undefined,
     rename?: (parameter: TypeParameterDeclaration, index: number) => string,
@@ -598,10 +605,11 @@ class Gate {
           this.fail(tp, "expected a type-parameter name");
         if (local.has(tp.name.text)) this.fail(tp, "duplicate type parameter");
         const name = rename ? rename(tp, index) : tp.name.text;
-        if (this.resolvableBound(tp.constraint)) {
-          if (!qualifiable) this.fail(tp, "Resolvable qualifies a type parameter of a function declaration's signature");
+        const qualification = this.qualificationBound(tp.constraint);
+        if (qualification) {
+          if (!qualifiable) this.fail(tp, "Resolvable and Awaitable qualify a type parameter of a function declaration's signature");
           if (parameters?.length !== 1) this.fail(tp, "a resolution-qualified signature has exactly one source parameter");
-          result.push({ name, bound: null, resolution: resolutionSlots(name) });
+          result.push({ name, bound: null, resolution: resolutionSlots(name, qualification) });
           local.set(tp.name.text, name);
           continue;
         }
@@ -1358,8 +1366,10 @@ class Gate {
           const parameters = this.resolutionScopes.find(ps => ps.includes(owner));
           if (parameters?.length !== 1) return this.fail(node,
             "a resolution-qualified signature has exactly one source parameter");
-          owner.resolution = resolutionSlots(owner.name);
+          owner.resolution = resolutionSlots(owner.name, "resolvable");
         }
+        if (owner.resolution.result === null)
+          return this.fail(node, "Awaited requires a resolvable parameter: an awaitable one owns no result");
         return { k: "binder", name: owner.resolution.result, span };
       },
       fail: (node, message) => this.fail(node, message),
@@ -5037,6 +5047,7 @@ export function parseFile(file: string, carriesContext = false,
         },
         awaited: () => { gate.standardAwaited = true; },
         resolvable: () => { gate.standardResolvable = true; },
+        awaitable: () => { gate.standardAwaitable = true; },
         associatedAlias: (name, identity) => {
           const alias = aliasNodes.find(node => node.name.text === name &&
             node.getStart(source) === identity.span[0] && node.end === identity.span[1]);

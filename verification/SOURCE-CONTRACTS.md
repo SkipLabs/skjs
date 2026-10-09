@@ -304,6 +304,7 @@ constrain differently:
 | --- | --- | --- |
 | an occurrence inside a `Promise` or `PromiseLike` argument | imported, ambient and library signatures and their generic methods | the subtype bound $`T\le N`$ |
 | `Awaited<T>`, or declared by `T extends Resolvable` | the program's own generic functions | resolution qualification: $`T`$ owns an observation $`O_T`$ and a result $`R_T`$ |
+| declared by `T extends Awaitable` | the program's own function declarations | observation qualification: $`T`$ owns an observation $`O_T`$ |
 
 **Promise arguments.** With $`N`$ the stable non-thenable types
 ([async](#async-functions-and-await)):
@@ -361,21 +362,43 @@ source lists (`verify-source.mts`), and the parser recognizes the bound by
 that declaration, which TypeScript binds the name to, not shadowed by a type
 parameter (`resolvableBound`). A program's own alias of that name is an
 ordinary bound. `Awaited<T>` in a declared-qualified signature reads
-$`R_T`$. The parser refuses the marker on another type parameter ("qualifies
+$`R_T`$. The parser refuses the marker on another type parameter ("qualify
 a type parameter of a function declaration's signature") and in a signature
 with more than one ("has exactly one source parameter").
 
-We write $`T:\mathsf{Resolvable}`$ for a resolution-qualified $`T`$, and
-$`T.\mathsf{Observed}=O_T`$, $`T.\mathsf{Result}=R_T`$.
-Resolution qualification is not a subtype bound: it leaves the values of
-$`T`$ unconstrained and restricts which assignments of $`(T,O_T,R_T)`$ are
-admitted, to the descriptors
-(`ResolutionDescriptors.descriptorDomain`):
+**`T extends Awaitable`.** A function declaration's type parameter bounded by
+the verifier's `Awaitable` is observation-qualified, with no subtype bound:
 
 ```math
-\mathsf{Desc}(T,O,R)\iff R\le N\ \land\ \mathsf{Resolves}(T,R)\ \land\
-  \mathsf{Observes}(T,O)\ \land\ \mathsf{Resolves}(O,R)
+\frac{\sigma\ \text{a source function declaration's signature binding}\ T\qquad
+      T\ \mathtt{extends}\ \mathsf{Awaitable}\ \text{in}\ \sigma}
+     {T\ \text{observation-qualified, owning}\ O_T\qquad T\ \text{unbounded}}\ \textsf{declared-observation}
 ```
+
+`Awaitable` is `type Awaitable = unknown` in the same file, recognized the
+same way (`qualificationBound`). Only the marker declares it: a
+qualification is implied by the signature alone, and `Awaited<T>` names a
+result, so the qualification it implies is `Resolvable`. `Awaited<T>` of an
+observation-qualified parameter is refused ("requires a resolvable
+parameter"). A body that only awaits $`T`$ needs the observation alone, which
+admits instances no result exists for, a native promise of an open record.
+
+We write $`T:\mathsf{Resolvable}`$ for a resolution-qualified $`T`$,
+$`T:\mathsf{Awaitable}`$ for an observation-qualified one, and
+$`T.\mathsf{Observed}=O_T`$, $`T.\mathsf{Result}=R_T`$.
+Neither qualification is a subtype bound: each leaves the values of $`T`$
+unconstrained and restricts which assignments of its owned binders are
+admitted, $`(T,O_T)`$ to the observations and $`(T,O_T,R_T)`$ to the
+descriptors (`ResolutionDescriptors.descriptorDomain`):
+
+```math
+\mathsf{Obs}(T,O)\iff\mathsf{Observes}(T,O)\qquad
+\mathsf{Desc}(T,O,R)\iff \mathsf{Obs}(T,O)\ \land\ R\le N\ \land\
+  \mathsf{Resolves}(T,R)\ \land\ \mathsf{Resolves}(O,R)
+```
+
+so every resolvable input is awaitable: $`\mathsf{Desc}(T,O,R)\Rightarrow\mathsf{Obs}(T,O)`$
+(`Descriptor` extends `Observation`).
 
 $`\mathsf{Resolves}`$ and $`\mathsf{Observes}`$ are the least relations
 closed under the following rules (`ResolutionCapabilities`), with $`P`$ the
@@ -410,17 +433,19 @@ A\le N\ \land\ \mathsf{Observes}(A,O)\ \Rightarrow\ O=A
 proved by induction on the derivation (`ResolutionCapabilities.Resolves.exact`,
 `ResolutionCapabilities.Observes.exact`): a stable leaf is its own result, a
 native step contradicts separation, and both arms of a stable union are
-stable. A descriptor with a stable input thus has that input as its
-observation and result (`Descriptor.exactStable`): an input of type `number`
-resolves to exactly `number`.
+stable. An observation of a stable input is that input
+(`Observation.exactStable`), and a descriptor with a stable input has it as
+its observation and result (`Descriptor.exactStable`): an input of type
+`number` is observed and resolves at exactly `number`.
 
 A written bound within $`N`$ makes the qualified parameter its own
-observation and result. The body is certified at the admitted assignments
-within the declared bounds, so for a closed bound $`B`$:
+observation and, where it owns one, its own result. The body is certified at
+the admitted assignments within the declared bounds, so for a closed bound
+$`B`$:
 
 ```math
-\frac{T\ \text{resolution-qualified}\qquad T\le B\qquad B\le N}
-     {O_T=T\qquad R_T=T}\ \textsf{stable-bound}
+\frac{T\ \text{qualified}\qquad T\le B\qquad B\le N}
+     {O_T=T\qquad R_T=T\ \text{where}\ T:\mathsf{Resolvable}}\ \textsf{stable-bound}
 ```
 
 since every admitted $`T`$ lies within $`N`$ and exactness applies
@@ -435,20 +460,26 @@ a promise, or no bound, keeps them apart, and a call still checks the bound
 
 The body is certified at every admitted assignment
 ([generic closures](PROGRAM-TYPING.md)), and every call supplies a certificate
-classifying its type argument, from which $`O_T`$ and $`R_T`$ follow
-([claims](SOURCE-CLAIMS.md)). A union certificate's arms classify the
-input's parts in any order (`SourceResolution.check`).
+classifying its type argument, from which $`O_T`$, and $`R_T`$ where $`T`$
+owns it, follow ([claims](SOURCE-CLAIMS.md)). A union certificate's arms
+classify the input's parts in any order (`SourceResolution.check`). A
+`native` certificate classifies a native promise's payload as well, giving its
+result; a `promise` certificate observes a native promise at any payload, by
+the premise-free native rule of $`\mathsf{Observes}`$, and gives no result.
 
 **Resolution operations in the body.** `await` and an async return are the
 qualified intrinsics ([async](#async-functions-and-await)), instantiated at
-a descriptor. In the body of a qualified $`T`$, the certificate `binder`
-names $`T`$'s own descriptor, for an input equivalent to $`T`$ or to its
+an observation or a descriptor. In the body of a qualified $`T`$, the
+certificate `binder` names $`T`$'s own observation or descriptor, for an input
+equivalent to $`T`$, or, for a resolution-qualified $`T`$, to its
 observation:
 
 ```math
-\frac{T\ \text{resolution-qualified}}{\mathsf{Desc}(T,O_T,R_T)}\ \textsf{binder}
+\frac{T:\mathsf{Awaitable}}{\mathsf{Obs}(T,O_T)}\ \textsf{binder}
 \qquad
-\frac{T\ \text{resolution-qualified}}{\exists O.\ \mathsf{Desc}(O_T,O,R_T)}\ \textsf{forwarded}
+\frac{T:\mathsf{Resolvable}}{\mathsf{Desc}(T,O_T,R_T)}\ \textsf{binder}
+\qquad
+\frac{T:\mathsf{Resolvable}}{\exists O.\ \mathsf{Desc}(O_T,O,R_T)}\ \textsf{forwarded}
 ```
 
 The second holds since an observation resolves to the result,
@@ -460,7 +491,9 @@ only for an intrinsic whose type does not read $`X.\mathsf{Observed}`$:
 observation"). Thus `return await v` returns `Promise<Awaited<T>>`, an
 observation is neither $`T`$ nor `Awaited<T>`, and a second `await` of an
 observation is refused (`generic-promise-resolution` and its negatives in
-`pipeline/cases.mts`).
+`pipeline/cases.mts`). An observation-qualified $`T`$ is awaited at $`O_T`$,
+while neither $`T`$ nor $`O_T`$ is returned from an async function, which
+resolves afresh (`generic-promise-awaitable` and its negatives).
 
 ## Explicit type arguments
 
@@ -1026,16 +1059,17 @@ exclude an own `then` and have stable standard prototypes without one,
 including for external arrays. These contracts make every value of $`N`$
 non-thenable throughout its lifetime. $`N`$ is the intrinsic type
 `%Stable%`, listed with the native `Promise` wherever a resolution descriptor
-is checked (`stableDefinition`). With $`X : \mathsf{Resolvable}`$ a
-resolution-qualified binder, owning its observation $`X.\mathsf{Observed}`$
-and result $`X.\mathsf{Result}`$ ([implied bounds](#implied-bounds)), the
+is checked (`stableDefinition`). With $`X : \mathsf{Awaitable}`$ an
+observation-qualified binder, owning its observation $`X.\mathsf{Observed}`$,
+and $`X : \mathsf{Resolvable}`$ a resolution-qualified one, owning also its
+result $`X.\mathsf{Result}`$ ([implied bounds](#implied-bounds)), the
 intrinsic signatures are:
 
 ```math
 \begin{aligned}
-\mathtt{\%Await\%}&:\forall T,\,X:\mathsf{Resolvable}.\ (\mathit{value}:\mathsf{Promise}\langle T\rangle\mid X)\Rightarrow T\mid X.\mathsf{Observed}\\
+\mathtt{\%Await\%}&:\forall X:\mathsf{Awaitable}.\ (\mathit{value}:X)\Rightarrow X.\mathsf{Observed}\\
 \mathtt{\%AsyncReturn\%}&:\forall X:\mathsf{Resolvable}.\ (\mathit{value}:X)\Rightarrow\mathsf{Promise}\langle X.\mathsf{Result}\rangle\\
-\mathtt{\%PromiseResolve\%}&:\forall T,\,X:\mathsf{Resolvable}.\ (\mathit{value}:\mathsf{Promise}\langle T\rangle\mid X)\Rightarrow\mathsf{Promise}\langle T\mid X.\mathsf{Observed}\rangle\\
+\mathtt{\%PromiseResolve\%}&:\forall X:\mathsf{Awaitable}.\ (\mathit{value}:X)\Rightarrow\mathsf{Promise}\langle X.\mathsf{Observed}\rangle\\
 \mathtt{\%AsyncComplete\%}&:()\Rightarrow\mathsf{Promise}\langle\mathsf{void}\rangle\\
 \mathtt{\%PromiseAll\%}&:\forall T.\ (\mathit{values}:\mathsf{readonly}\ \mathsf{Promise}\langle T\rangle[\,])\Rightarrow\mathsf{Promise}\langle T[\,]\rangle\\
 \mathtt{\%PromiseReject\%}&:\forall T.\ (\mathit{reason}:\mathsf{unknown})\Rightarrow\mathsf{Promise}\langle T\rangle\\
@@ -1043,28 +1077,33 @@ intrinsic signatures are:
 \end{aligned}
 ```
 
-A call instantiates $`X`$ at a descriptor $`(B,O,S)`$, written
-$`\mathsf{Desc}(B,O,S)`$ ([implied bounds](#implied-bounds)), which its
-resolution certificate establishes. Instantiated so, with $`R`$ the async
-function's result annotation, they derive:
+A call instantiates an awaitable $`X`$ at an observation $`(B,O)`$, written
+$`\mathsf{Obs}(B,O)`$, and a resolvable one at a descriptor $`(B,O,S)`$,
+written $`\mathsf{Desc}(B,O,S)`$ ([implied bounds](#implied-bounds)), which
+its certificate establishes. Instantiated so, with $`R`$ the async function's
+result annotation, they derive:
 
 ```math
-\frac{\Gamma\vdash e:\mathsf{Promise}\langle A\rangle\mid B\quad \mathsf{Desc}(B,O,S)}{\Gamma\vdash\mathsf{await}\ e:A\mid O}\ \textsf{await}
+\frac{\Gamma\vdash e:B\quad \mathsf{Obs}(B,O)}{\Gamma\vdash\mathsf{await}\ e:O}\ \textsf{await}
 \qquad
 \frac{\Gamma\vdash e:B\quad \mathsf{Desc}(B,O,S)\quad \mathsf{Promise}\langle S\rangle\le R}{\Gamma\vdash_R\mathsf{return}\ e}\ \textsf{async-return}
 \qquad
 \frac{\mathsf{Promise}\langle\mathsf{void}\rangle\le R}{\Gamma\vdash_R\text{completion}}\ \textsf{async-complete}
 ```
 
-The native arm of `%Await%` and `%PromiseResolve%` takes any payload:
-observation reads a native promise's fulfillment value once, so
-`Promise<{ n: number }>` is awaited at `{ n: number }` although no descriptor
-resolves it. A stable $`B`$ is its own descriptor, $`\mathsf{Desc}(B,B,B)`$,
-so a stable operand is awaited and returned at its own type. Each rule is
-the host contract its descriptor component selects: observation for
-`%Await%` and `%PromiseResolve%`, fresh resolution for `%AsyncReturn%`
-(`ResolutionCapabilities.Observes.safe`, `ResolutionCapabilities.Resolves.safe`,
-relative to the reviewed `NativeOperationContracts`).
+Observation takes a native promise of any payload,
+$`\mathsf{Obs}(\mathsf{Promise}\langle A\rangle,A)`$: it reads the
+fulfillment value once, so `Promise<{ n: number }>` is awaited at
+`{ n: number }` although no descriptor resolves it. A stable $`B`$ is its own
+observation and descriptor, $`\mathsf{Desc}(B,B,B)`$, so a stable operand is
+awaited and returned at its own type. Each rule is the host contract its
+qualification selects: `%Await%` yields the observation
+(`ResolutionCapabilities.Observes.await_safe`), `%PromiseResolve%` returns a
+native input itself and wraps a stable one in a fresh promise, a promise of
+the observation (`ResolutionCapabilities.Observes.resolve_safe`), and
+`%AsyncReturn%` resolves afresh (`ResolutionCapabilities.Resolves.safe`), relative
+to the reviewed `NativeOperationContracts`; both observing operations are
+instances of one `ObservationContract`.
 
 `Promise<void>` is `Promise<unknown>` (`void` is top); async completion
 fulfills it with `undefined`. A throw in an async body leaves it as a throw.
@@ -1106,9 +1145,9 @@ checked. A bounded numeric parameter and a generic array retain their
 precise types. An open record without the lifetime `then` contract has no
 classification.
 
-`Promise.resolve(value)` requires that classification for an ordinary
-value. Its native identity arm admits an arbitrary payload type.
-Consequently a native promise containing an open record can be returned by
+`Promise.resolve(value)` and `await` require an observation only: a stable
+value, a native promise of any payload, or a union of those. Consequently a
+native promise containing an open record can be awaited and returned by
 `Promise.resolve` while forwarding it through async return requires
 additional evidence.
 

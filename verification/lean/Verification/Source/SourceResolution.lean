@@ -1,9 +1,10 @@
 import Verification.Source.EquationStore
 import Verification.Source.ResolutionWire
 
-/-! Source resolution certificates retain the input, literal observation and
-stable result. Every accepted certificate supplies all three semantic equalities
-under the descriptors of its enclosing generic scope. -/
+/-! Source resolution certificates retain the input and literal observation,
+and, where they classify one, the stable result. Every accepted certificate
+supplies its semantic equalities under the observations and descriptors of its
+enclosing generic scope. -/
 namespace Verification.SourceResolution
 open EquationStore EquationGraphs PositiveGraphs PositiveRules PositiveCertificates
 
@@ -16,17 +17,25 @@ def valueMeaning (E : Equations) (η : MixedAssignment (Label E.signature)) (A :
 abbrev Descriptor (c : ResolutionContext E) :=
   ResolutionDescriptors.Descriptor c.capabilities
 
-/-- All three source types denote the corresponding components of one descriptor. -/
-def Describes (c : ResolutionContext E) (η : MixedAssignment (Label E.signature))
-    (A O R : Ty E) : Prop :=
-  ∃ d : Descriptor c, d.input = valueMeaning E η A ∧
-    d.observation = valueMeaning E η O ∧ d.result = valueMeaning E η R
+abbrev Observation (c : ResolutionContext E) :=
+  ResolutionDescriptors.Observation c.capabilities
 
+/-- The input and observation types denote one observation's components, and,
+where a result type is given, all three denote one descriptor's components. -/
+def Describes (c : ResolutionContext E) (η : MixedAssignment (Label E.signature))
+    (A O : Ty E) : Option (Ty E) → Prop
+  | none => ∃ o : Observation c, o.input = valueMeaning E η A ∧
+      o.observation = valueMeaning E η O
+  | some R => ∃ d : Descriptor c, d.input = valueMeaning E η A ∧
+      d.observation = valueMeaning E η O ∧ d.result = valueMeaning E η R
+
+/-- A qualified binder: an awaitable one owns an observation, a resolvable one
+also a result. -/
 structure Binding (E : Equations) where
   name : String
   input : Ty E
   observation : Ty E
-  result : Ty E
+  result : Option (Ty E)
   deriving DecidableEq
 
 /-- The scope's semantic premise is discharged by the enclosing scheme's
@@ -49,41 +58,66 @@ def lexicalBinding (c : ResolutionContext E) (source : SchemeRow (Label E.signat
     if member : group ∈ source.resolution then
       match checked : QualifiedGraphs.groupBinders E.graph source group with
       | none => none
-      | some (t, o, r) => some {
-          binding := ⟨name, [t], [o], [r]⟩
+      | some b => some {
+          binding := ⟨name, [b.input], [b.observation], b.result.map fun r => [r.2]⟩
           sound := fun η As length allowed => by
-            obtain ⟨ht, ho, hr, kt, ko, kr⟩ := QualifiedGraphs.groupBinders_some checked
-            obtain ⟨d, et, eo, er⟩ := QualifiedGraphs.assigned_descriptor E.graph η source As
-              allowed group member t o r
-              (QualifiedGraphs.assignment_position unique length ht)
-              (QualifiedGraphs.assignment_position unique length ho)
-              (QualifiedGraphs.assignment_position unique length hr) kt ko kr
-            exact ⟨d, et.symm, eo.symm, er.symm⟩ }
+            obtain ⟨ht, ho, kt, ko, hres, hnone⟩ := QualifiedGraphs.groupBinders_some checked
+            cases hg : group.result with
+            | none =>
+              obtain ⟨o, et, eo⟩ := QualifiedGraphs.assigned_observation E.graph η source As
+                allowed group member b.input b.observation
+                (QualifiedGraphs.assignment_position unique length ht)
+                (QualifiedGraphs.assignment_position unique length ho) kt ko
+              simp only [hnone hg, Option.map_none]
+              exact ⟨o, et.symm, eo.symm⟩
+            | some slot =>
+              obtain ⟨r, hbr, hr, kr⟩ := hres slot hg
+              obtain ⟨d, et, eo, er⟩ := QualifiedGraphs.assigned_descriptor E.graph η source As
+                allowed group member slot hg b.input b.observation r
+                (QualifiedGraphs.assignment_position unique length ht)
+                (QualifiedGraphs.assignment_position unique length ho)
+                (QualifiedGraphs.assignment_position unique length hr) kt ko kr
+              simp only [hbr, Option.map_some]
+              exact ⟨d, et.symm, eo.symm, er.symm⟩ }
     else none
   else none
 
-/-- An input type and its result denote one descriptor's components, and so
-does the observation where a source type names it. Where none does, the
-descriptor still exists: its observation is a family no source type spells. -/
+/-- An input type is observable, at the observation where a source type names
+it; and where a result type is given, the input, the named observation and the
+result denote one descriptor's components. Where no type names the
+observation, it still exists: a family no source type spells. -/
 def Classifies (c : ResolutionContext E) (η : MixedAssignment (Label E.signature))
-    (A : Ty E) (O : Option (Ty E)) (R : Ty E) : Prop :=
-  ∃ d : Descriptor c, d.input = valueMeaning E η A ∧
-    (∀ o, O = some o → d.observation = valueMeaning E η o) ∧ d.result = valueMeaning E η R
+    (A : Ty E) (O R : Option (Ty E)) : Prop :=
+  (∃ o : Observation c, o.input = valueMeaning E η A ∧
+    ∀ x, O = some x → o.observation = valueMeaning E η x) ∧
+  ∀ r, R = some r → ∃ d : Descriptor c, d.input = valueMeaning E η A ∧
+    (∀ x, O = some x → d.observation = valueMeaning E η x) ∧ d.result = valueMeaning E η r
 
 theorem Describes.classifies {c : ResolutionContext E} {η : MixedAssignment (Label E.signature)}
-    {A O R : Ty E} (h : Describes c η A O R) : Classifies c η A (some O) R := by
-  obtain ⟨d, hd, ho, hr⟩ := h
-  exact ⟨d, hd, fun o e => by cases e; exact ho, hr⟩
+    {A O : Ty E} {R : Option (Ty E)} (h : Describes c η A O R) : Classifies c η A (some O) R := by
+  cases R with
+  | none =>
+    obtain ⟨o, hi, ho⟩ := h
+    exact ⟨⟨o, hi, fun _ e => by cases e; exact ho⟩, fun _ e => by cases e⟩
+  | some R =>
+    obtain ⟨d, hi, ho, hr⟩ := h
+    exact ⟨⟨d.toObservation, hi, fun _ e => by cases e; exact ho⟩,
+      fun _ e => by cases e; exact ⟨d, hi, fun _ e => by cases e; exact ho, hr⟩⟩
 
 structure Checked (c : ResolutionContext E) (scope : List (Binding E)) (A : Ty E) where
   observation : Option (Ty E)
-  result : Ty E
+  result : Option (Ty E)
   sound : ∀ η, ScopeHolds c scope η → Classifies c η A observation result
 
-/-- Both arms' observations, where both are named. -/
-def joinObservations : Option (Ty E) → Option (Ty E) → Option (Ty E)
+/-- Both arms' types, where both are named. -/
+def join : Option (Ty E) → Option (Ty E) → Option (Ty E)
   | some O, some Q => some (O ++ Q)
   | _, _ => none
+
+private theorem join_some {O Q : Option (Ty E)} {x : Ty E} (h : join O Q = some x) :
+    ∃ o q, O = some o ∧ Q = some q ∧ x = o ++ q := by
+  match O, Q, h with
+  | some o, some q, h => cases h; exact ⟨o, q, rfl, rfl, rfl⟩
 
 private theorem valueMeaning_append (E : Equations) (η : MixedAssignment (Label E.signature))
     (A B : Ty E) : valueMeaning E η (A ++ B) = unionT (valueMeaning E η A) (valueMeaning E η B) := by
@@ -93,35 +127,48 @@ private theorem valueMeaning_append (E : Equations) (η : MixedAssignment (Label
   simp only [List.mem_append, or_and_right, exists_or]
 
 private theorem classifies_append (c : ResolutionContext E)
-    (η : MixedAssignment (Label E.signature)) {A B R S : Ty E} {O Q : Option (Ty E)}
+    (η : MixedAssignment (Label E.signature)) {A B : Ty E} {O Q R S : Option (Ty E)}
     (left : Classifies c η A O R) (right : Classifies c η B Q S) :
-    Classifies c η (A ++ B) (joinObservations O Q) (R ++ S) := by
-  obtain ⟨d, hd, ho, hr⟩ := left
-  obtain ⟨e, he, hq, hs⟩ := right
-  refine ⟨ResolutionCapabilities.union c.native d e, ?_, ?_, ?_⟩
-  · change unionT d.input e.input = _
-    rw [hd, he, valueMeaning_append]
-  · intro o hj
-    match O, Q, hj with
-    | some O, some Q, hj =>
-      cases hj
+    Classifies c η (A ++ B) (join O Q) (join R S) := by
+  obtain ⟨⟨o, ho, hoo⟩, hd⟩ := left
+  obtain ⟨⟨q, hq, hqo⟩, he⟩ := right
+  refine ⟨⟨ResolutionCapabilities.unionObservation c.native o q, ?_, ?_⟩, ?_⟩
+  · change unionT o.input q.input = _
+    rw [ho, hq, valueMeaning_append]
+  · intro x hj
+    obtain ⟨x₁, x₂, h₁, h₂, rfl⟩ := join_some hj
+    change unionT o.observation q.observation = _
+    rw [hoo x₁ h₁, hqo x₂ h₂, valueMeaning_append]
+  · intro r hj
+    obtain ⟨r₁, r₂, h₁, h₂, rfl⟩ := join_some hj
+    obtain ⟨d, di, dobs, dr⟩ := hd r₁ h₁
+    obtain ⟨e, ei, eobs, er⟩ := he r₂ h₂
+    refine ⟨ResolutionCapabilities.union c.native d e, ?_, ?_, ?_⟩
+    · change unionT d.input e.input = _
+      rw [di, ei, valueMeaning_append]
+    · intro x hx
+      obtain ⟨x₁, x₂, k₁, k₂, rfl⟩ := join_some hx
       change unionT d.observation e.observation = _
-      rw [ho O rfl, hq Q rfl, valueMeaning_append]
-  · change unionT d.result e.result = _
-    rw [hr, hs, valueMeaning_append]
+      rw [dobs x₁ k₁, eobs x₂ k₂, valueMeaning_append]
+    · change unionT d.result e.result = _
+      rw [dr, er, valueMeaning_append]
+
+/-- A stable input is its own observation and result. -/
+private theorem stable_classifies (c : ResolutionContext E)
+    (η : MixedAssignment (Label E.signature)) (A : Ty E)
+    (hn : FamLe (valueMeaning E η A) c.stableFamily) : Classifies c η A (some A) (some A) :=
+  have hv : ValueFam (valueMeaning E η A) :=
+    (MixedFamily.value ⟨_, mixedMeaning_valid _ _ _⟩).2
+  (show Describes c η A A (some A) from ⟨ResolutionCapabilities.stable c.native _ hv hn,
+    rfl, rfl, rfl⟩).classifies
 
 private def empty (c : ResolutionContext E) (scope : List (Binding E)) : Checked c scope [] where
   observation := some []
-  result := []
-  sound η _ := by
-    have hv : ValueFam (valueMeaning E η []) :=
-      (MixedFamily.value ⟨_, mixedMeaning_valid _ _ _⟩).2
-    have hn : FamLe (valueMeaning E η []) c.stableFamily := by
-      intro n W v h
-      change ∃ l ∈ ([] : Ty E), _ at h
-      simp at h
-    exact (show Describes c η [] [] [] from ⟨ResolutionCapabilities.stable c.native _ hv hn,
-      rfl, rfl, rfl⟩).classifies
+  result := some []
+  sound η _ := stable_classifies c η [] (by
+    intro n W v h
+    change ∃ l ∈ ([] : Ty E), _ at h
+    simp at h)
 
 /-- Stable leaves are checked against the retained intrinsic bound by the
 ordinary semantic subtype checker. -/
@@ -131,15 +178,10 @@ def stable (c : ResolutionContext E) (scope : List (Binding E)) (A : Ty E)
     if accepted : (CertificateProducer.comparisonUsing E.graph images A c.stable).accepted = true then
       some {
         observation := some A
-        result := A
-        sound := fun η _ => by
-          have hv : ValueFam (valueMeaning E η A) :=
-            (MixedFamily.value ⟨_, mixedMeaning_valid _ _ _⟩).2
-          have hn : FamLe (valueMeaning E η A) c.stableFamily := by
-            rw [← c.stable_meaning η]
-            exact fun n W v h => CertificateProducer.comparisonUsing_sound accepted η n W (.inl v) h
-          exact (show Describes c η A A A from ⟨ResolutionCapabilities.stable c.native _ hv hn,
-            rfl, rfl, rfl⟩).classifies }
+        result := some A
+        sound := fun η _ => stable_classifies c η A (by
+          rw [← c.stable_meaning η]
+          exact fun n W v h => CertificateProducer.comparisonUsing_sound accepted η n W (.inl v) h) }
     else none
   else none
 
@@ -150,23 +192,35 @@ def stableInScope (c : ResolutionContext E) (scope : List (Binding E)) (A : Ty E
   if !E.graph.hasKind .value A then none else
     scope.findSome? fun b =>
       if member : b ∈ scope then
-        if accepted : (CertificateProducer.comparisonUsing E.graph images A b.result).accepted = true then
-          some {
-            observation := some A
-            result := A
-            sound := fun η hs => by
-              obtain ⟨d, _, _, hr⟩ := hs b member
-              have hv : ValueFam (valueMeaning E η A) :=
-                (MixedFamily.value ⟨_, mixedMeaning_valid _ _ _⟩).2
-              have hn : FamLe (valueMeaning E η A) c.stableFamily := by
+        match result : b.result with
+        | none => none
+        | some R =>
+          if accepted : (CertificateProducer.comparisonUsing E.graph images A R).accepted = true then
+            some {
+              observation := some A
+              result := some A
+              sound := fun η hs => by
+                have described := hs b member
+                rw [result] at described
+                obtain ⟨d, _, _, hr⟩ := described
+                apply stable_classifies c η A
                 intro n W v h
                 apply d.stable n W v
                 rw [hr]
-                exact CertificateProducer.comparisonUsing_sound accepted η n W (.inl v) h
-              exact (show Describes c η A A A from ⟨ResolutionCapabilities.stable c.native _ hv hn,
-                rfl, rfl, rfl⟩).classifies }
-        else none
+                exact CertificateProducer.comparisonUsing_sound accepted η n W (.inl v) h }
+          else none
       else none
+
+/-- A native promise is observed at its literal payload. -/
+private theorem promise_observed (c : ResolutionContext E) (η : MixedAssignment (Label E.signature))
+    (l : Label E.signature)
+    (payload : { A : Ty E // l = (c.promise.application A).label ∧ E.graph.hasKind .value A = true }) :
+    ∃ o : Observation c, o.input = valueMeaning E η [l] ∧
+      ∀ x, some payload.1 = some x → o.observation = valueMeaning E η x := by
+  obtain ⟨A, rfl, kind⟩ := payload
+  refine ⟨ResolutionCapabilities.nativeObservation c.native (valueMeaning E η A)
+    (MixedFamily.value ⟨_, mixedMeaning_valid _ _ _⟩).2, ?_, fun x e => by cases e; rfl⟩
+  exact (c.promise.application_meaning η A kind).symm
 
 /-- Native lifting observes the literal payload and retains its stable result. -/
 def native (c : ResolutionContext E) (scope : List (Binding E)) (l : Label E.signature)
@@ -175,26 +229,37 @@ def native (c : ResolutionContext E) (scope : List (Binding E)) (l : Label E.sig
   observation := some payload.1
   result := child.result
   sound η hs := by
-    obtain ⟨d, hd, _, hr⟩ := child.sound η hs
-    refine ⟨c.promise.descriptor c.native d, ?_, fun o e => by cases e; exact hd, hr⟩
+    refine ⟨promise_observed c η l payload, fun r hr => ?_⟩
+    obtain ⟨d, hd, _, hres⟩ := (child.sound η hs).2 r hr
+    refine ⟨c.promise.descriptor c.native d, ?_, fun o e => by cases e; exact hd, hres⟩
     exact c.promise.descriptor_input c.native η l payload d hd
 
-/-- Equivalent input types retain the same descriptor. -/
+/-- A native promise of any payload is observed at that payload. -/
+def promise (c : ResolutionContext E) (scope : List (Binding E)) (l : Label E.signature)
+    (payload : { A : Ty E // l = (c.promise.application A).label ∧ E.graph.hasKind .value A = true }) :
+    Checked c scope [l] where
+  observation := some payload.1
+  result := none
+  sound η _ := ⟨promise_observed c η l payload, fun _ e => by cases e⟩
+
+/-- Equivalent input types retain the same classification. -/
 def equivalent (c : ResolutionContext E) (scope : List (Binding E)) {A B : Ty E}
     (child : Checked c scope B)
     (equality : ∀ η, valueMeaning E η A = valueMeaning E η B) : Checked c scope A where
   observation := child.observation
   result := child.result
   sound η hs := by
-    obtain ⟨d, hd, ho, hr⟩ := child.sound η hs
-    exact ⟨d, hd.trans (equality η).symm, ho, hr⟩
+    obtain ⟨⟨o, ho, hoo⟩, hd⟩ := child.sound η hs
+    refine ⟨⟨o, ho.trans (equality η).symm, hoo⟩, fun r hr => ?_⟩
+    obtain ⟨d, hi, hobs, hres⟩ := hd r hr
+    exact ⟨d, hi.trans (equality η).symm, hobs, hres⟩
 
 /-- Combining union arms retains every arm's observation and result. -/
 def append (c : ResolutionContext E) (scope : List (Binding E))
     {A B : Ty E} (left : Checked c scope A) (right : Checked c scope B) :
     Checked c scope (A ++ B) where
-  observation := joinObservations left.observation right.observation
-  result := left.result ++ right.result
+  observation := join left.observation right.observation
+  result := join left.result right.result
   sound η hs := classifies_append c η (left.sound η hs) (right.sound η hs)
 
 /-- An input equivalent to a checked type takes its classification. -/
@@ -211,6 +276,21 @@ def equivalentTo (c : ResolutionContext E) (scope : List (Binding E))
     else none
   else none
 
+/-- A resolvable binder's observation resolves to the binder's result
+(`forwarded`), so it is described too, its own observation unnamed. -/
+def forwarded (c : ResolutionContext E) (scope : List (Binding E)) (b : Binding E)
+    (member : b ∈ scope) (R : Ty E) (result : b.result = some R) :
+    Checked c scope b.observation where
+  observation := none
+  result := some R
+  sound η hs := by
+    have described := hs b member
+    rw [result] at described
+    obtain ⟨d, _, ho, hr⟩ := described
+    obtain ⟨e, he, er⟩ := ResolutionCapabilities.Resolves.describe c.native d.forwarded
+    exact ⟨⟨e.toObservation, he.trans ho, fun _ h => (by cases h)⟩,
+      fun r h => by cases h; exact ⟨e, he.trans ho, fun _ h => (by cases h), er.trans hr⟩⟩
+
 /-- The fuel bounds certificate traversal only; every successful branch carries
 its semantic proof. Binder lookup checks the complete input type. -/
 def check (c : ResolutionContext E) (scope : List (Binding E))
@@ -225,6 +305,11 @@ def check (c : ResolutionContext E) (scope : List (Binding E))
         let child ← check c scope images fuel payload.1 cert
         return native c scope l payload child
       | _ => none
+    | .promise => match A with
+      | [l] => do
+        let payload ← c.promise.payload l
+        return promise c scope l payload
+      | _ => none
     | .binder name => do
       let b ← scope.find? (fun b => b.name == name)
       if member : b ∈ scope then
@@ -233,17 +318,11 @@ def check (c : ResolutionContext E) (scope : List (Binding E))
             observation := some b.observation
             result := b.result
             sound := fun η hs => (hs b member).classifies }
-          -- The binder's observation resolves to its result (`forwarded`),
-          -- so it is described too, its own observation unnamed.
-          let observed : Checked c scope b.observation := {
-            observation := none
-            result := b.result
-            sound := fun η hs => by
-              obtain ⟨d, _, ho, hr⟩ := hs b member
-              obtain ⟨e, he, er⟩ := ResolutionCapabilities.Resolves.describe c.native d.forwarded
-              exact ⟨e, he.trans ho, (fun _ h => by cases h), er.trans hr⟩ }
+          let observed : Option (Checked c scope A) := match result : b.result with
+            | none => none
+            | some R => equivalentTo c scope images A (forwarded c scope b member R result)
           (equivalentTo c scope images A input).orElse fun _ =>
-            (equivalentTo c scope images A observed).orElse fun _ => stable c scope A images
+            observed.orElse fun _ => stable c scope A images
         else none
       else none
     | .union arms =>
@@ -283,24 +362,25 @@ private theorem empty_allowed (c : ResolutionContext E) (source : SchemeRow (Lab
     c.domain.allowed source (source.binders.map fun _ => emptyFamily) := by
   refine ⟨resolutionValid_protected valid, ?_⟩
   intro g hg
-  have positions : g.input < source.binders.length ∧ g.observation < source.binders.length ∧
-      g.result < source.binders.length := by
+  have positions : g.input < source.binders.length ∧
+      ∀ p ∈ g.associated, p < source.binders.length := by
     simp only [SchemeRow.resolutionValid, Bool.or_eq_true] at valid
     rcases valid with ordinary | qualified
     · have he : source.resolution = [] := List.isEmpty_iff.mp ordinary
       simp [he] at hg
     · have h := List.all_eq_true.mp (Bool.and_eq_true_iff.mp qualified).2 g hg
-      simp only [Bool.and_eq_true, decide_eq_true_eq] at h
-      exact ⟨h.1.1.1, h.1.1.2, h.1.2⟩
+      simp only [Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at h
+      exact ⟨h.1.1, h.1.2⟩
   have atPosition (i : Nat) (hi : i < source.binders.length) :
       (source.binders.map fun _ => emptyFamily)[i]? = some emptyFamily := by
     simp [hi]
   have bounded : FamLe emptyFamily.value.1 c.stableFamily := fun _ _ _ h => h.elim
   have stable := ResolutionCapabilities.Resolves.stable (P := c.promise.constructor) emptyFamily.value.2 bounded
   have observe := ResolutionCapabilities.Observes.stable (P := c.promise.constructor) emptyFamily.value.2 bounded
-  exact ⟨emptyFamily, emptyFamily, emptyFamily,
-    atPosition _ positions.1, atPosition _ positions.2.1, atPosition _ positions.2.2,
-    bounded, stable, observe, stable⟩
+  refine ⟨emptyFamily, emptyFamily, atPosition _ positions.1,
+    atPosition _ (positions.2 _ List.mem_cons_self), observe, fun r hr => ?_⟩
+  have hr : r ∈ g.associated := List.mem_cons_of_mem _ (Option.mem_toList.mpr hr)
+  exact ⟨emptyFamily, atPosition _ (positions.2 r hr), bounded, stable, stable⟩
 
 /-- The row a stable-bounded input is read as: a candidate meet row whose only
 part is the input and whose clauses include every clause of the bound, else
@@ -346,22 +426,22 @@ theorem boundedRow_value [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssign
         exact ⟨c, hcs c hc, hcv⟩
 
 /-- The aliases one resolution group contributes: where its input has a closed
-declared bound within the stable family, the observation and result are read
-as the input's bounded row, the canonical meet of the input and its bound,
-which is how a body reads a bounded binder. -/
+declared bound within the stable family, the observation, and the result
+where the group has one, are read as the input's bounded row, the canonical
+meet of the input and its bound, which is how a body reads a bounded binder. -/
 def stableAlias (c : ResolutionContext E) (source : SchemeRow (Label E.signature))
     (images : InstanceImageCheck E.graph)
     (g : PositiveGraphs.ResolutionSlots) : List (Label E.signature × Label E.signature) :=
   match QualifiedGraphs.groupBinders E.graph source g with
   | none => []
-  | some (t, o, r) => match source.bounds.find? (·.1 == t) with
+  | some b => match source.bounds.find? (·.1 == b.input) with
     | none => []
     | some (_, B) =>
       if decide source.binders.Nodup && B.all (·.free.isEmpty) &&
           (CertificateProducer.comparisonUsing E.graph images B c.stable).accepted then
-        let candidates := (Label.ofTree? (canonMeet (t.1 :: B.map (·.1)))).toList
-        let m := boundedRow E.graph t B candidates
-        [(r, m), (o, m)]
+        let candidates := (Label.ofTree? (canonMeet (b.input.1 :: B.map (·.1)))).toList
+        let m := boundedRow E.graph b.input B candidates
+        (b.observation, m) :: (b.result.map fun r => (r.2, m)).toList
       else []
 
 def stableAliases (c : ResolutionContext E) (source : SchemeRow (Label E.signature))
@@ -369,9 +449,10 @@ def stableAliases (c : ResolutionContext E) (source : SchemeRow (Label E.signatu
     List (Label E.signature × Label E.signature) :=
   source.resolution.flatMap (stableAlias c source images)
 
-/-- **Stable bound.** A resolution-qualified input bounded within the stable
-family is its own observation and result (`Descriptor.exactStable`), so each
-alias denotes the input at every admitted, bounded assignment. -/
+/-- **Stable bound.** A qualified input bounded within the stable family is its
+own observation (`Observation.exactStable`) and, where it is resolvable, its
+own result (`Descriptor.exactStable`), so each alias denotes the input at
+every admitted, bounded assignment. -/
 theorem stableAliases_sound (c : ResolutionContext E) (domain : E.domain = c.domain)
     (source : SchemeRow (Label E.signature)) (images : InstanceImageCheck E.graph) :
     ProgramCertificates.AliasesSound E.graph source (stableAliases c source images) := by
@@ -380,10 +461,10 @@ theorem stableAliases_sound (c : ResolutionContext E) (domain : E.domain = c.dom
   unfold stableAlias at hp
   split at hp
   · cases hp
-  rename_i t o r hgb
+  rename_i b hgb
   split at hp
   · cases hp
-  rename_i t' B hf
+  rename_i t B hf
   split at hp
   rotate_left
   · cases hp
@@ -393,49 +474,58 @@ theorem stableAliases_sound (c : ResolutionContext E) (domain : E.domain = c.dom
   have allowed' : c.domain.allowed source As := by
     have h : E.domain.allowed source As := allowed
     rwa [domain] at h
-  obtain ⟨ht, ho, hr, kt, ko, kr⟩ := QualifiedGraphs.groupBinders_some hgb
-  obtain ⟨d, et, eo, er⟩ := QualifiedGraphs.assigned_descriptor (C := c.capabilities) E.graph η
-    source As allowed' g hg t o r
-    (QualifiedGraphs.assignment_position unique length ht)
-    (QualifiedGraphs.assignment_position unique length ho)
-    (QualifiedGraphs.assignment_position unique length hr) kt ko kr
-  have hmem : (t', B) ∈ source.bounds := List.mem_of_find?_eq_some hf
-  have hname : t' = t := Subtype.ext (by simpa using List.find?_some hf)
-  subst hname
-  have hbinder : t' ∈ source.binders := List.mem_of_getElem? ht
+  obtain ⟨ht, ho, kt, ko, hres, _⟩ := QualifiedGraphs.groupBinders_some hgb
+  have hname : t = b.input := Subtype.ext (by simpa using List.find?_some hf)
+  have hmem : (b.input, B) ∈ source.bounds := hname ▸ List.mem_of_find?_eq_some hf
+  have hbinder : b.input ∈ source.binders := List.mem_of_getElem? ht
   let η' := assign η source.binders As
   -- The input lies within its bound, read at the enclosing assignment.
-  have within : ∀ j U u, mixedValues E.graph η' [t'] j U u →
+  have within : ∀ j U u, mixedValues E.graph η' [b.input] j U u →
       mixedMeaning E.graph η B j U (.inl u) := by
     intro j U u hu
-    have h1 : mixedMeaning E.graph η' [t'] j U (.inl u) := hu
-    rw [mixedMeaning_parameter E.graph η' t' .value kt] at h1
-    exact bounded (j + 1) (t', B) hmem hbinder j (by omega) U (.inl u) h1.2
-  have stable : FamLe d.input c.stableFamily := by
+    have h1 : mixedMeaning E.graph η' [b.input] j U (.inl u) := hu
+    rw [mixedMeaning_parameter E.graph η' b.input .value kt] at h1
+    exact bounded (j + 1) (b.input, B) hmem hbinder j (by omega) U (.inl u) h1.2
+  have stable : FamLe (mixedValues E.graph η' [b.input]) c.stableFamily := by
     intro j U u hu
     rw [← c.stable_meaning η]
-    exact CertificateProducer.comparisonUsing_sound accepted η j U (.inl u)
-      (within j U u (by rw [et]; exact hu))
-  have hresult : d.result = d.input := d.result_eq_input stable
-  have hobservation : d.observation = d.input := (d.exactStable stable).1
+    exact CertificateProducer.comparisonUsing_sound accepted η j U (.inl u) (within j U u hu)
   have same : mixedMeaning E.graph η B = mixedMeaning E.graph η' B :=
     E.agree_free η η' B (fun l hl q hq => by simp [closed l hl] at hq)
   have row := boundedRow_value (G := E.graph) (η := η')
-    (Label.ofTree? (canonMeet (t'.1 :: B.map (·.1)))).toList kt
+    (Label.ofTree? (canonMeet (b.input.1 :: B.map (·.1)))).toList kt
     (fun j U u hu => by
       have h := within j U u hu
       rw [same] at h
       exact h) n W v
   have input : mixedMeaning E.graph η'
-      [boundedRow E.graph t' B (Label.ofTree? (canonMeet (t'.1 :: B.map (·.1)))).toList] n W (.inl v) ↔
-      d.input n W v := by
-    rw [← et]; exact row
-  simp only [List.mem_cons, List.not_mem_nil, or_false] at hp
-  rcases hp with rfl | rfl
-  · change mixedValues E.graph η' [r] n W v ↔ _
-    rw [input, er, hresult]
-  · change mixedValues E.graph η' [o] n W v ↔ _
-    rw [input, eo, hobservation]
+      [boundedRow E.graph b.input B (Label.ofTree? (canonMeet (b.input.1 :: B.map (·.1)))).toList] n W (.inl v) ↔
+      mixedValues E.graph η' [b.input] n W v := row
+  obtain ⟨o, et, eo⟩ := QualifiedGraphs.assigned_observation (C := c.capabilities) E.graph η
+    source As allowed' g hg b.input b.observation
+    (QualifiedGraphs.assignment_position unique length ht)
+    (QualifiedGraphs.assignment_position unique length ho) kt ko
+  simp only [List.mem_cons] at hp
+  rcases hp with rfl | hp
+  · change mixedValues E.graph η' [b.observation] n W v ↔ _
+    rw [input, eo, o.exactStable (by rw [← et]; exact stable), ← et]
+  · cases hgr : g.result with
+    | none =>
+      obtain ⟨_, _, _, _, _, hnone⟩ := QualifiedGraphs.groupBinders_some hgb
+      rw [hnone hgr] at hp
+      simp at hp
+    | some slot =>
+      obtain ⟨r, hbr, hr, kr⟩ := hres slot hgr
+      rw [hbr] at hp
+      simp only [Option.map_some, Option.toList_some, List.mem_singleton] at hp
+      subst hp
+      obtain ⟨d, dt, _, dr⟩ := QualifiedGraphs.assigned_descriptor (C := c.capabilities) E.graph η
+        source As allowed' g hg slot hgr b.input b.observation r
+        (QualifiedGraphs.assignment_position unique length ht)
+        (QualifiedGraphs.assignment_position unique length ho)
+        (QualifiedGraphs.assignment_position unique length hr) kt ko kr
+      change mixedValues E.graph η' [r] n W v ↔ _
+      rw [input, dr, d.result_eq_input (by rw [← dt]; exact stable), ← dt]
 
 /-- Construct the qualified body checker only for a valid source signature,
 using the descriptor domain installed in the frozen equations. -/

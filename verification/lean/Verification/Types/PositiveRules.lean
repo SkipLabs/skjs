@@ -31,12 +31,9 @@ theorem resolutionValid_protected [DecidableEq ι] {s : SchemeRow ι}
   · simp only [Bool.and_eq_true, List.all_eq_true] at h
     intro g hg p hp b hb B hB
     have hs := h.2 g hg
-    have hn := hs.2 (b, B) hB
+    have hn := hs.2 (b, B) hB p hp
     simp only [bne_iff_ne] at hn
-    simp at hp
-    rcases hp with rfl | rfl
-    · exact hn.1 hb
-    · exact hn.2 hb
+    exact hn hb
 
 theorem sameResolution_allowed [DecidableEq ι] {s t : SchemeRow ι}
     (domain : SchemeDomain ι k) (h : sameResolution s t = true)

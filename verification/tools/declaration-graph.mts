@@ -280,6 +280,9 @@ export function collectDeclarations(file: string, options: {
   /** The verifier's resolution-qualification bound (`resolvable.d.ts`),
    * resolved at a source name. */
   resolvable?: (span: Span) => void;
+  /** The verifier's observation-qualification bound (`resolvable.d.ts`),
+   * resolved at a source name. */
+  awaitable?: (span: Span) => void;
   /** A local alias whose complete body is expanded in the qualified scope. */
   associatedAlias?: (name: string, declaration: DeclarationIdentity) => void;
   /** The client uses arrays: `Array.prototype`'s contract joins the graph
@@ -938,10 +941,11 @@ export function collectDeclarations(file: string, options: {
           options.awaited?.(span);
           continue;
         }
-        if (ts.isTypeAliasDeclaration(declaration) && declaration.name.text === "Resolvable" &&
-            declaration.getSourceFile().fileName === resolvableDeclaration) {
+        if (ts.isTypeAliasDeclaration(declaration) && declaration.getSourceFile().fileName === resolvableDeclaration &&
+            (declaration.name.text === "Resolvable" || declaration.name.text === "Awaitable")) {
           resolutionContextAt ??= span;
-          options.resolvable?.(span);
+          if (declaration.name.text === "Resolvable") options.resolvable?.(span);
+          else options.awaitable?.(span);
           continue;
         }
         const known = library(identifier, identifier.text);
