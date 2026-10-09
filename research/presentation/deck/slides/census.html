@@ -1,33 +1,31 @@
-<section id="census" data-transition="fade" style="background:#14213D;color:#F4F1EA;font-family:'STIX Two Text', Georgia, serif;padding:128px 128px 160px;display:flex;flex-direction:column;gap:40px">
+<section id="census" data-transition="fade" style="background:#14213D;color:#F4F1EA;font-family:'STIX Two Text', Georgia, serif;padding:128px 128px 160px;display:flex;flex-direction:column;gap:36px">
 <h2 style="font-size:60px;font-weight:600;line-height:1.1;color:#F4F1EA">Census of the SKJS corpus</h2>
 <hr style="width:1664px;border-top:2px solid #F0A35E">
-<div style="display:grid;grid-template-columns:70fr 30fr">
-<p style="font-size:30px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B;font-weight:600;border-bottom:2px solid #8A97AD">SKJS corpus, before this work</p>
-<p style="font-size:30px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B;font-weight:600;border-bottom:2px solid #8A97AD">Units</p>
-
+<div style="display:grid;grid-template-columns:50fr 25fr 25fr">
+<p style="font-size:30px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B;font-weight:600;border-bottom:2px solid #8A97AD">SKJS corpus, units</p>
+<p style="font-size:30px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B;font-weight:600;border-bottom:2px solid #8A97AD">30 September</p>
+<p style="font-size:30px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B;font-weight:600;border-bottom:2px solid #8A97AD">9 October</p>
 <p style="font-size:30px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">accepted by SKJS</p>
-<p style="font-size:30px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">2674</p>
-
+<p style="font-size:30px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">2,674</p>
+<p style="font-size:30px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">2,674</p>
 <p style="font-size:30px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">verified by the verifier</p>
-<p style="font-size:30px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">2466</p>
-
-<p style="font-size:30px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">unverified for promise reasons</p>
-<p style="font-size:30px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">6</p>
-
+<p style="font-size:30px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">2,466</p>
+<p style="font-size:30px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">2,467</p>
 </div>
+<p style="font-size:28px;line-height:1.4">No unit moved because of this branch: per-file reruns at its base give the same outcome for every unit that moved.</p>
 <div style="display:grid;grid-template-columns:58fr 42fr">
 <p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B;font-weight:600;border-bottom:2px solid #8A97AD">The six promise units</p>
-<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B;font-weight:600;border-bottom:2px solid #8A97AD">With this work</p>
+<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B;font-weight:600;border-bottom:2px solid #8A97AD">9 October</p>
 <p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">queryMixedAwaitedLiteralBroadLength: await of an array</p>
 <p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">verifies (await of a stable value)</p>
 <p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">testAwaitThenable, testAwaitThenableNested: await of a PromiseLike</p>
-<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">unchanged: needs a typed-thenable rule</p>
+<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">refused on principle: thenable adoption</p>
 <p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">createCounterService, freshReturnSnapshot: async return of a fresh object</p>
-<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">not yet measured</p>
+<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">refused on principle: thenable adoption</p>
 <p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">testKeyof: keyof Promise&lt;number&gt;</p>
-<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">unchanged: an unrelated restriction</p>
+<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">gap: a unique symbol key</p>
 </div>
-<p style="position:absolute;left:128px;bottom:64px;width:1300px;font-size:24px;color:#8A97AD">Calcagno · Typing Promise Resolution · before: census of verification/graph-core; after: the implementation's cases</p>
+<p style="position:absolute;left:128px;bottom:64px;width:1300px;font-size:24px;color:#8A97AD">Calcagno · Typing Promise Resolution · SKJS census, full runs of 30 September and 9 October 2026</p>
 <p style="position:absolute;right:128px;bottom:64px;width:200px;font-size:24px;color:#8A97AD;text-align:right">13 / 14</p>
-<aside>Before: skjs-coverage.json on verification/graph-core. The array unit verifies in the implementation's stable-await case. The census has not been rerun.</aside>
+<aside>Both censuses are full runs with SKJS confirmation. Thenable adoption: awaiting a PromiseLike, or returning a fresh object from an async function, makes JavaScript call a then the type does not describe. keyof Promise&lt;number&gt; contains a unique symbol.</aside>
 </section>

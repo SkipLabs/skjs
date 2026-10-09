@@ -1,15 +1,19 @@
-<section id="targets" data-transition="fade" style="background:#14213D;color:#F4F1EA;font-family:'STIX Two Text', Georgia, serif;padding:128px 128px 160px;display:flex;flex-direction:column;gap:40px">
+<section id="targets" data-transition="fade" style="background:#14213D;color:#F4F1EA;font-family:'STIX Two Text', Georgia, serif;padding:128px 128px 160px;display:flex;flex-direction:column;gap:32px">
 <h2 style="font-size:60px;font-weight:600;line-height:1.1;color:#F4F1EA">5. Target programs</h2>
 <hr style="width:1664px;border-top:2px solid #F0A35E">
-<div style="display:grid;grid-template-columns:60fr 40fr">
+<div style="display:grid;grid-template-columns:62fr 38fr">
 <p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B;font-weight:600;border-bottom:2px solid #8A97AD">Program</p>
 <p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B;font-weight:600;border-bottom:2px solid #8A97AD">Status</p>
-<p style="font-family:Inconsolata, 'Courier New', monospace;font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">accept&lt;T&gt;(v: <span style="color:#7FD1C7">Awaited</span>&lt;T&gt;), a cell of <span style="color:#7FD1C7">Awaited</span>&lt;T&gt;, wrap&lt;<span style="color:#7FD1C7">number</span>&gt;</p>
+<p style="font-family:Inconsolata, 'Courier New', monospace;font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">accept&lt;T&gt;(v: <span style="color:#7FD1C7">Awaited</span>&lt;T&gt;), a cell of <span style="color:#7FD1C7">Awaited</span>&lt;T&gt;</p>
 <p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">verifies</p>
 <p style="font-family:Inconsolata, 'Courier New', monospace;font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B"><span style="color:#D7A6F0">async function</span> wrap&lt;T&gt;(v: T): <span style="color:#7FD1C7">Promise</span>&lt;<span style="color:#7FD1C7">Awaited</span>&lt;T&gt;&gt; { <span style="color:#D7A6F0">return await</span> v; }</p>
-<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">gap: resolution inside a qualified body is refused</p>
+<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">verifies, at number, arrays, native promises, unions</p>
+<p style="font-family:Inconsolata, 'Courier New', monospace;font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">settle&lt;T <span style="color:#D7A6F0">extends</span> <span style="color:#7FD1C7">Resolvable</span>&gt;(v: T): <span style="color:#7FD1C7">Promise</span>&lt;<span style="color:#7FD1C7">Awaited</span>&lt;T&gt;&gt;</p>
+<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">verifies</p>
+<p style="font-family:Inconsolata, 'Courier New', monospace;font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">log&lt;T <span style="color:#D7A6F0">extends</span> <span style="color:#7FD1C7">Awaitable</span>&gt;(v: T), at <span style="color:#7FD1C7">Promise</span>&lt;{ n: <span style="color:#7FD1C7">number</span> }&gt;</p>
+<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">verifies</p>
 <p style="font-family:Inconsolata, 'Courier New', monospace;font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B"><span style="color:#D7A6F0">function</span> back&lt;T <span style="color:#D7A6F0">extends</span> <span style="color:#7FD1C7">number</span>&gt;(v: <span style="color:#7FD1C7">Awaited</span>&lt;T&gt;): T</p>
-<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">gap: a result may be wider than T (slide 10)</p>
+<p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">verifies (exactness)</p>
 <p style="font-family:Inconsolata, 'Courier New', monospace;font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">wrap&lt;{ n: <span style="color:#7FD1C7">number</span> }&gt;(v) <i><span style="color:#8A97AD">// open record</span></i></p>
 <p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">refused</p>
 <p style="font-family:Inconsolata, 'Courier New', monospace;font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">erase <i>(v: T) =&gt; <span style="color:#7FD1C7">Promise</span>&lt;<span style="color:#7FD1C7">Awaited</span>&lt;T&gt;&gt;</i> to <span style="color:#7FD1C7">Promise</span>&lt;<span style="color:#7FD1C7">unknown</span>&gt;</p>
@@ -17,8 +21,8 @@
 <p style="font-family:Inconsolata, 'Courier New', monospace;font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B"><span style="color:#D7A6F0">async</span> (v: <span style="color:#7FD1C7">Promise</span>&lt;{ n: <span style="color:#7FD1C7">number</span> }&gt;) =&gt; v <i><span style="color:#8A97AD">// the 42 case</span></i></p>
 <p style="font-size:28px;line-height:1.35;padding:10px 16px;border-bottom:1px solid #3A4A6B">refused</p>
 </div>
-<p style="font-size:30px;line-height:1.4">All 888 pipeline cases meet their expected outcome; 11 generic <span style="color:#7FD1C7">Promise</span> cases are recorded gaps.</p>
-<p style="position:absolute;left:128px;bottom:64px;width:1300px;font-size:24px;color:#8A97AD">Calcagno · Typing Promise Resolution · as implemented on research/promise-resolution, 8 October 2026</p>
+<p style="font-size:30px;line-height:1.4">All 903 pipeline cases meet their expected outcome; 5 generic <span style="color:#7FD1C7">Promise</span> cases are recorded gaps.</p>
+<p style="position:absolute;left:128px;bottom:64px;width:1300px;font-size:24px;color:#8A97AD">Calcagno · Typing Promise Resolution · as implemented on research/promise-resolution, 9 October 2026</p>
 <p style="position:absolute;right:128px;bottom:64px;width:200px;font-size:24px;color:#8A97AD;text-align:right">12 / 14</p>
-<aside>The associated-result case and the number-bounded wrap verify end to end. The generic wrap with return await and back are recorded gaps. Every unsafe program is refused; eight negative cases are refused before their intended check, and are recorded as gaps too.</aside>
+<aside>Each program is a pipeline case. The open record, the erasure and the 42 case are negative cases refused at their own obligations. The five gaps are refused before their intended check: generic function types, an ambient Awaited&lt;T&gt;, mutable associated-result storage and an unknown generic result.</aside>
 </section>
