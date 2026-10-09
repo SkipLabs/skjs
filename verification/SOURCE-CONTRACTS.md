@@ -303,7 +303,7 @@ constrain differently:
 | Implied by | Signatures | Constraint |
 | --- | --- | --- |
 | an occurrence inside a `Promise` or `PromiseLike` argument | imported, ambient and library signatures and their generic methods | the subtype bound $`T\le N`$ |
-| `Awaited<T>` | the program's own generic functions | resolution qualification: $`T`$ owns an observation $`O_T`$ and a result $`R_T`$ |
+| `Awaited<T>`, or declared by `T extends Resolvable` | the program's own generic functions | resolution qualification: $`T`$ owns an observation $`O_T`$ and a result $`R_T`$ |
 
 **Promise arguments.** With $`N`$ the stable non-thenable types
 ([async](#async-functions-and-await)):
@@ -342,6 +342,26 @@ owned names in the parameter's `resolution` field
 ([fragment](FRAGMENT.md)), and the request states the triple
 $`(T,O_T,R_T)`$ as a resolution descriptor of the scheme
 ([request protocol](REQUEST-PROTOCOL.md)).
+
+**`T extends Resolvable`.** The qualification `Awaited<T>` implies may be
+declared: a function declaration's type parameter bounded by the verifier's
+`Resolvable` is resolution-qualified, with no subtype bound:
+
+```math
+\frac{\sigma\ \text{a source function declaration's signature binding}\ T\qquad
+      T\ \mathtt{extends}\ \mathsf{Resolvable}\ \text{in}\ \sigma}
+     {T\ \text{resolution-qualified, owning}\ O_T,\ R_T\qquad T\ \text{unbounded}}\ \textsf{declared-resolution}
+```
+
+`Resolvable` is `type Resolvable = unknown` in
+[`tools/resolvable.d.ts`](tools/resolvable.d.ts), which the project of a lone
+source lists (`verify-source.mts`), and the parser recognizes the bound by
+that declaration, which TypeScript binds the name to, not shadowed by a type
+parameter (`resolvableBound`). A program's own alias of that name is an
+ordinary bound. `Awaited<T>` in a declared-qualified signature reads
+$`R_T`$. The parser refuses the marker on another type parameter ("qualifies
+a type parameter of a function declaration's signature") and in a signature
+with more than one ("has exactly one source parameter").
 
 We write $`T:\mathsf{Resolvable}`$ for a resolution-qualified $`T`$, and
 $`T.\mathsf{Observed}=O_T`$, $`T.\mathsf{Result}=R_T`$.

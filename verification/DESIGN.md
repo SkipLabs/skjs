@@ -448,6 +448,12 @@ One line each; the reason is the one the design keeps.
   implies none.** Resolution qualification, implied by `Awaited<T>`, is the
   one constraint that is not a subtype bound
   ([implied bounds](SOURCE-CONTRACTS.md#implied-bounds)).
+- **`await` and async return are typed through resolution qualification.**
+  Their intrinsics quantify $`X:\mathsf{Resolvable}`$ with associated types
+  $`X.\mathsf{Observed}`$ and $`X.\mathsf{Result}`$; a generic parameter takes
+  the qualification by `T extends Resolvable` or by `Awaited<T>` in its
+  signature. It restricts which instances are admitted, never the values of
+  $`T`$ ([async](SOURCE-CONTRACTS.md#async-functions-and-await)).
 - **Ordinary graph evidence is certified at every assignment of parameter rows**
   (`Parametricity.accept_reassign`). Qualified body evidence is certified at
   assignments satisfying the signature’s descriptor constraints

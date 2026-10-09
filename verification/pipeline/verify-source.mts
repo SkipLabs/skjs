@@ -12,6 +12,7 @@ import { fieldOf, messageOf } from "../tools/thrown.mts";
 import type { Ast } from "../tools/fragment.mts";
 // ../tools/source-flow.mts checks the shared execution graph wire before proposal.
 import { decodeFlowDocument } from "../tools/source-flow.mts";
+import { resolvableDeclaration } from "../tools/intrinsics.mts";
 
 const here = import.meta.dirname;
 // The producer runs from `_build/default/producer.exe` below `../ocaml-producer`.
@@ -193,7 +194,7 @@ export function check(source: string, tsconfigPath?: string, typescriptErrors = 
       join(artifacts, "tsconfig.json"),
       JSON.stringify({
         compilerOptions: { strict: true, noEmit: true, target: "es2022" },
-        files: ["source.ts"],
+        files: ["source.ts", resolvableDeclaration],
       }),
     );
     // A caller may name the TypeScript project the source belongs to. The

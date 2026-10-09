@@ -209,7 +209,10 @@ Its names must match the callable's binders. An entry may carry `resolution`:
 `null`, or for a resolution-qualified binder `{"certificate": c}`, with `c`
 one of `{"k":"stable"}`, `{"k":"native","child":c}`,
 `{"k":"union","arms":[c, ...]}` or `{"k":"binder","binder":name}`; the
-consumer checks the certificate against the entry's complete input type. Type arguments must be ground:
+consumer checks the certificate against the entry's complete input type: a
+union's arms against its parts in any order, and `binder` against the named
+enclosing parameter or its observation
+([implied bounds](SOURCE-CONTRACTS.md#implied-bounds)). Type arguments must be ground:
 unresolved rigid parameters and nested quantified schemes are refused. The
 consumer checks bounds, substitution, the instantiated signature, and the
 source call. A body is certified at its quantified signature, not solely at

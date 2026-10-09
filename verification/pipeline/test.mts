@@ -788,6 +788,18 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   assert.equal(await runExample("invalid-generic-promise-observed-input", `(async () => {
     return typeof (await unwrap(Promise.resolve(1)));
   })()`), "number", "the observation of a promise is its payload, not the promise");
+  assert.equal(await runExample("generic-promise-resolvable", `(async () => JSON.stringify([
+    await numeric(1), await native(Promise.resolve(2)), await union(Promise.resolve("3")),
+    await settleUnknown(Promise.resolve(4)),
+  ]))()`), '[1,2,"3",4]', "an explicitly qualified parameter settles as an implied one");
+  assert.equal(await runExample("invalid-generic-promise-resolvable-result", `(async () => {
+    return typeof (await settle(Promise.resolve(1)));
+  })()`), "number", "a qualified parameter's result is not the parameter: a promise argument resolves");
+  assert.equal(await runExample("invalid-generic-promise-resolvable-local", `(async () => {
+    const cell = { value: 1 };
+    await settle({ then(resolve) { cell.value = "changed"; resolve(42); } });
+    return cell.value;
+  })()`), "changed", "an ordinary bound named Resolvable does not constrain a hidden then hook");
   assert.equal(await runExample("invalid-generic-promise-unknown-output", `(async () => {
     const cell = { value: 1 };
     const input = { n: 1, then(resolve) { cell.value = "changed"; resolve(42); } };
@@ -1648,31 +1660,31 @@ process.stdout.write("forged claims at each kind of point: read and checked ther
 }
 
 {
-  // The native identity arm leaves the fresh arm unused, instantiated at
-  // never. A forged open payload there still has to satisfy its native
-  // intrinsic's bound. Async direct and native-payload instances retain the
-  // same obligation when their source result is independently widened.
-  for (const [file, functionName, binder] of [
-    ["native-promise-resolve-identity", "nativeIdentity", "U"],
-    ["native-promise-qualified-return", "stableUnknown", "T"],
-    ["native-promise-qualified-return", "adoptUnknown", "U"],
+  // The native identity arm leaves the qualified arm unused, instantiated at
+  // never. A forged open payload there still needs its classification. Async
+  // direct and native-payload instances retain the same obligation when their
+  // source result is independently widened.
+  for (const [file, functionName] of [
+    ["native-promise-resolve-identity", "nativeIdentity"],
+    ["native-promise-qualified-return", "stableUnknown"],
+    ["native-promise-qualified-return", "adoptUnknown"],
   ] as const) {
     const artifacts = run(file);
     const claims = readClaims(artifacts);
     const fn = must(claims.functions.find(f => f.name === functionName), `${functionName}'s claims`);
-    const site = must(fn.expressions.find(e => e.instantiate?.some(i => i.name === binder)),
+    const site = must(fn.expressions.find(e => e.instantiate?.some(i => i.name === "X" && i.resolution)),
       "the consumed intrinsic instance");
-    const image = must(site.instantiate?.find(i => i.name === binder), "the payload instance");
+    const image = must(site.instantiate?.find(i => i.name === "X"), "the payload instance");
     image.type = functionName === "nativeIdentity" ? { param: "A" } : [rowOf(claims, "top")];
     const name = `forged-native-payload-${functionName}`;
     const forged = writeClaims(artifacts, name, claims);
     const searched = produceWith(artifacts, forged, name);
     const detail = searched.stdout + searched.stderr;
     assert.equal(searched.status, 1, detail);
-    assert.ok(detail.includes(`source direct obligation at [${site.pos[0]},${site.pos[1]})`), detail);
-    assert.match(detail, /quantified call does not satisfy the closure's bound/);
+    assert.ok(detail.includes(`source refusal at [${site.pos[0]},${site.pos[1]})`), detail);
+    assert.match(detail, /resolution certificate does not establish/);
     assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts),
-      /quantified call does not satisfy the closure's bound/);
+      /resolution certificate does not establish/);
   }
 }
 

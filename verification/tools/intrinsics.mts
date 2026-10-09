@@ -71,6 +71,7 @@
  * `new Promise(executor)` is `%NewPromise%(executor)`: the executor is
  * called at once with the promise's resolving functions, and resolving
  * settles the promise to a primitive. */
+import { join } from "node:path";
 import type { SourceTypeParameter, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import { resolutionSlots } from "./type-term.mts";
 
@@ -78,6 +79,10 @@ export const intrinsicModule = "skjs/intrinsics";
 export const awaitName = "%Await%";
 export const asyncReturnName = "%AsyncReturn%";
 export const promiseResolveName = "%PromiseResolve%";
+/** The file declaring `Resolvable`, the bound that makes a type parameter
+ * resolution-qualified, recognized by this declaration's identity. Every
+ * project a program writing it is checked in lists the file. */
+export const resolvableDeclaration = join(import.meta.dirname, "resolvable.d.ts");
 /** The intrinsics typed through a resolution descriptor, which need the
  * stable family `%Stable%` and the native `Promise`. */
 export const resolutionIntrinsics: readonly string[] = ["%Await%", "%AsyncReturn%", "%PromiseResolve%"];

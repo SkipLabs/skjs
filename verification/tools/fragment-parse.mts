@@ -399,6 +399,8 @@ class Gate {
   private readonly resolutionScopes: TypeParamAst[][] = [];
   readonly resolutionAliases = new Map<string, TypeAliasDeclaration>();
   standardAwaited = false;
+  /** The file names the verifier's `Resolvable` (`resolvable.d.ts`). */
+  standardResolvable = false;
   private qualificationHeader = false;
   /** Local spelling to the arity and identity of its declaration root. A
    * reference names the declaration TypeScript resolved the spelling to. */
@@ -568,9 +570,21 @@ class Gate {
     return name;
   }
 
+  /** Whether a bound is the verifier's `Resolvable`, by the declaration the
+   * file's name binds to, not shadowed by a type parameter. */
+  private resolvableBound(bound: TypeNode | undefined): boolean {
+    return !!bound && this.standardResolvable && ts.isTypeReferenceNode(bound) &&
+      ts.isIdentifier(bound.typeName) && bound.typeName.text === "Resolvable" &&
+      !bound.typeArguments?.length && !this.hasTypeParam("Resolvable");
+  }
+
+  /** A function declaration's type parameters may be resolution-qualified
+   * (`qualifiable`): `T extends Resolvable` declares it, owning its
+   * observation and result, with no subtype bound. */
   private enterTypeParams(
     parameters: readonly TypeParameterDeclaration[] | undefined,
     rename?: (parameter: TypeParameterDeclaration, index: number) => string,
+    qualifiable = false,
   ): TypeParamAst[] {
     const local = new Map<string, string>();
     const result: TypeParamAst[] = [];
@@ -583,10 +597,17 @@ class Gate {
         if (tp.name.kind !== ts.SyntaxKind.Identifier)
           this.fail(tp, "expected a type-parameter name");
         if (local.has(tp.name.text)) this.fail(tp, "duplicate type parameter");
+        const name = rename ? rename(tp, index) : tp.name.text;
+        if (this.resolvableBound(tp.constraint)) {
+          if (!qualifiable) this.fail(tp, "Resolvable qualifies a type parameter of a function declaration's signature");
+          if (parameters?.length !== 1) this.fail(tp, "a resolution-qualified signature has exactly one source parameter");
+          result.push({ name, bound: null, resolution: resolutionSlots(name) });
+          local.set(tp.name.text, name);
+          continue;
+        }
         // A bound is any type the fragment reads; which bounds a checker can
         // use is Lean's to say.
         const bound: TypeTerm | null = tp.constraint ? this.typeOf(tp.constraint) : null;
-        const name = rename ? rename(tp, index) : tp.name.text;
         result.push({ name, bound, resolution: null });
         local.set(tp.name.text, name);
       }
@@ -4118,7 +4139,7 @@ class Gate {
         ? "strict"
         : "sloppy"
       : null;
-    const typeParams = this.enterTypeParams(node.typeParameters);
+    const typeParams = this.enterTypeParams(node.typeParameters, undefined, true);
     try {
       this.asyncBody = isAsync;
       const { retType, parameterTypes } = this.headerTypes(() => ({
@@ -5015,6 +5036,7 @@ export function parseFile(file: string, carriesContext = false,
           if (node) gate.libraryTypes.set(node.text, library);
         },
         awaited: () => { gate.standardAwaited = true; },
+        resolvable: () => { gate.standardResolvable = true; },
         associatedAlias: (name, identity) => {
           const alias = aliasNodes.find(node => node.name.text === name &&
             node.getStart(source) === identity.span[0] && node.end === identity.span[1]);

@@ -21,7 +21,7 @@ import { classInstance, computedAlias, computedForm, expandMapped, mapped, membe
   typeTerm, validateAnnotation, type Mapped, type TermScope } from "./type-term.mts";
 import { arrayPrototype, interfaceOverlay, overlay, primitiveKinds, primitivePrototype, primitivePrototypeName, type OverlayEntry,
   type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
-import { intrinsics, intrinsicModule, resolutionIntrinsics, stableDefinition, iterateIteratorName, iterateMapName, iterateSetName, iterateStringName,
+import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateMapName, iterateSetName, iterateStringName,
   iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName } from "./intrinsics.mts";
 import { globalEntry, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { computedType, enclosingBinders, inferredTerm, literalUnion, type ComputedContext } from "./computed-types.mts";
@@ -277,6 +277,9 @@ export function collectDeclarations(file: string, options: {
   library?: (span: Span, library: LibraryType) => void;
   /** The standard associated-result alias, resolved at a source name. */
   awaited?: (span: Span) => void;
+  /** The verifier's resolution-qualification bound (`resolvable.d.ts`),
+   * resolved at a source name. */
+  resolvable?: (span: Span) => void;
   /** A local alias whose complete body is expanded in the qualified scope. */
   associatedAlias?: (name: string, declaration: DeclarationIdentity) => void;
   /** The client uses arrays: `Array.prototype`'s contract joins the graph
@@ -933,6 +936,12 @@ export function collectDeclarations(file: string, options: {
             isLibraryModule(idOf(declaration.getSourceFile()))) {
           resolutionContextAt ??= span;
           options.awaited?.(span);
+          continue;
+        }
+        if (ts.isTypeAliasDeclaration(declaration) && declaration.name.text === "Resolvable" &&
+            declaration.getSourceFile().fileName === resolvableDeclaration) {
+          resolutionContextAt ??= span;
+          options.resolvable?.(span);
           continue;
         }
         const known = library(identifier, identifier.text);
