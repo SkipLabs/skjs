@@ -780,6 +780,15 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
       Object.assign(record, { then(resolve) { resolve(42); } });
       return await ${fn}(input);
     })()`), 42, `${file}: the open record's then hook is adopted, not settled to`);
+  // The ambient wrapper implemented as `Promise.resolve`, which TypeScript
+  // accepts at the declaration, adopts the open record's then hook too.
+  assert.equal(await runExample("invalid-generic-promise-ambient-open-record", `
+    function wrap(value) { return Promise.resolve(value); }
+    (async () => {
+    const record = { n: 1 };
+    Object.assign(record, { then(resolve) { resolve(42); } });
+    return await openRecord(record);
+  })()`), 42, "an ambient Awaited<T> wrapper adopts the open record's then hook");
   assert.equal(await runExample("invalid-generic-promise-erased-call", `(async () => {
     const cell = { value: 1 };
     await erasedCall({ n: 1, then(resolve) { cell.value = "changed"; resolve(42); } });

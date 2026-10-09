@@ -745,6 +745,8 @@ export const cases: Case[] = [
     /resolution certificate does not establish/),
   negative("invalid-generic-promise-open-union", "A union with an unclassified arm: the call's certificate does not hold",
     /resolution certificate does not establish/),
+  gap("invalid-generic-promise-ambient-open-record", "An ambient declaration's Awaited<T> is refused at the source boundary, before the call's missing resolution certificate: implied resolution qualifies only a function whose body is checked",
+    "unsupported", "source", /Awaited requires a resolution-qualified scope/),
   negative("invalid-generic-promise-erased-call", "Widening the call's result to Promise<unknown> leaves its input classification to establish",
     /resolution certificate does not establish/),
   positive("generic-promise-resolvable", "`T extends Resolvable` declares the qualification `Awaited<T>` implies: the body's await and async return take T's descriptor, and calls take classified instances"),

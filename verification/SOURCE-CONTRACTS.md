@@ -336,8 +336,10 @@ The occurrence may be written through a local type alias the signature names
 (`resolutionAliases`). The parser refuses the other uses, each with its own
 diagnostic: `Awaited` in a body ("cannot add a qualification to an ordinary
 function body"), of anything but a type parameter ("requires the input of a
-resolution-qualified parameter"), and in a signature with more than one type
-parameter ("has exactly one source parameter"). The fragment lists the two
+resolution-qualified parameter"), in a signature with more than one type
+parameter ("has exactly one source parameter"), and in an ambient
+declaration, which has no body to check ("requires a resolution-qualified
+scope"). The fragment lists the two
 owned names in the parameter's `resolution` field
 ([fragment](FRAGMENT.md)), and the request states the triple
 $`(T,O_T,R_T)`$ as a resolution descriptor of the scheme
