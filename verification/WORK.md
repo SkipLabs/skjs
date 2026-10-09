@@ -67,7 +67,7 @@ types, which do not state why it is safe.
 soundness boundary repairs refused ([steps](#restoring-completeness)). Closed
 when every step is done and a full coverage run is back to at least the former
 mechanism's 2,444 verified units and 121 gaps (current counts:
-[SKJS-COVERAGE](pipeline/SKJS-COVERAGE.md): 2,466 verified, 110 gaps).
+[SKJS-COVERAGE](pipeline/SKJS-COVERAGE.md): 2,467 verified, 108 gaps).
 `sum-process-alias` stays a gap for a cause outside Promise (a global read
 only through its members).
 
