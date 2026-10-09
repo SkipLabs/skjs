@@ -432,9 +432,9 @@ variable {ι : Type} [DecidableEq ι]
 The ordinary graph assignment also has a proof for this same check. -/
 structure QualifiedBody (G : NormalGraph ι) (images : PositiveCertificates.InstanceImageCheck G) where
   source : SchemeRow ι
-  capabilities : ResolutionDescriptors.Capabilities
   stable : Fam
-  domain : G.domain = ResolutionDescriptors.descriptorDomain capabilities stable
+  capabilities : ResolutionDescriptors.Capabilities stable
+  domain : G.domain = ResolutionDescriptors.descriptorDomain capabilities
   body : BodySubtyping G
   check_eq : body.check = ProgramCertificates.lexicalBodyCheck G images source
 
@@ -820,8 +820,8 @@ theorem verify_safe_at {r : Request σ ι} {c : Response ι} (hc : verify r c = 
 safe at every admitted tuple of type arguments. The checked program, claims,
 input frame and code table are the same ones used by request acceptance. -/
 theorem verify_qualified_safe_at {r : Request σ ι} {c : Response ι}
-    (source : SchemeRow ι) {C : ResolutionDescriptors.Capabilities} {N : Fam}
-    (domain : (graph r).domain = ResolutionDescriptors.descriptorDomain C N)
+    (source : SchemeRow ι) {N : Fam} {C : ResolutionDescriptors.Capabilities N}
+    (domain : (graph r).domain = ResolutionDescriptors.descriptorDomain C)
     (body : BodySubtyping (graph r))
     (bodyCheck : body.check = ProgramCertificates.lexicalBodyCheck (graph r)
       (StoreView.images r.types) source)

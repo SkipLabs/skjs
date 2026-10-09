@@ -14,8 +14,7 @@ def valueMeaning (E : Equations) (η : MixedAssignment (Label E.signature)) (A :
   fun n W v => mixedMeaning E.graph η A n W (.inl v)
 
 abbrev Descriptor (c : ResolutionContext E) :=
-  ResolutionDescriptors.Descriptor
-    (ResolutionCapabilities.capabilities c.promise.constructor c.stableFamily) c.stableFamily
+  ResolutionDescriptors.Descriptor c.capabilities
 
 /-- All three source types denote the corresponding components of one descriptor. -/
 def Describes (c : ResolutionContext E) (η : MixedAssignment (Label E.signature))
@@ -81,7 +80,7 @@ private theorem describes_append (c : ResolutionContext E)
     Describes c η (A ++ B) (O ++ Q) (R ++ S) := by
   obtain ⟨d, hd, ho, hr⟩ := left
   obtain ⟨e, he, hq, hs⟩ := right
-  refine ⟨ResolutionCapabilities.union c.promise.constructor c.stableFamily d e, ?_, ?_, ?_⟩
+  refine ⟨ResolutionCapabilities.union c.native d e, ?_, ?_, ?_⟩
   · change unionT d.input e.input = _
     rw [hd, he, valueMeaning_append]
   · change unionT d.observation e.observation = _
@@ -99,7 +98,7 @@ private def empty (c : ResolutionContext E) (scope : List (Binding E)) : Checked
       intro n W v h
       change ∃ l ∈ ([] : Ty E), _ at h
       simp at h
-    exact ⟨ResolutionCapabilities.stable c.promise.constructor c.stableFamily _ hv hn,
+    exact ⟨ResolutionCapabilities.stable c.native _ hv hn,
       rfl, rfl, rfl⟩
 
 /-- Stable leaves are checked against the retained intrinsic bound by the
@@ -117,7 +116,7 @@ def stable (c : ResolutionContext E) (scope : List (Binding E)) (A : Ty E)
           have hn : FamLe (valueMeaning E η A) c.stableFamily := by
             rw [← c.stable_meaning η]
             exact fun n W v h => CertificateProducer.comparisonUsing_sound accepted η n W (.inl v) h
-          exact ⟨ResolutionCapabilities.stable c.promise.constructor c.stableFamily _ hv hn,
+          exact ⟨ResolutionCapabilities.stable c.native _ hv hn,
             rfl, rfl, rfl⟩ }
     else none
   else none
@@ -142,7 +141,7 @@ def stableInScope (c : ResolutionContext E) (scope : List (Binding E)) (A : Ty E
                 apply d.stable n W v
                 rw [hr]
                 exact CertificateProducer.comparisonUsing_sound accepted η n W (.inl v) h
-              exact ⟨ResolutionCapabilities.stable c.promise.constructor c.stableFamily _ hv hn,
+              exact ⟨ResolutionCapabilities.stable c.native _ hv hn,
                 rfl, rfl, rfl⟩ }
         else none
       else none
@@ -155,8 +154,8 @@ def native (c : ResolutionContext E) (scope : List (Binding E)) (l : Label E.sig
   result := child.result
   sound η hs := by
     obtain ⟨d, hd, _, hr⟩ := child.sound η hs
-    refine ⟨c.promise.descriptor c.stableFamily c.nativeSeparate d, ?_, hd, hr⟩
-    exact c.promise.descriptor_input c.stableFamily c.nativeSeparate η l payload d hd
+    refine ⟨c.promise.descriptor c.native d, ?_, hd, hr⟩
+    exact c.promise.descriptor_input c.native η l payload d hd
 
 /-- Equivalent input types retain the same descriptor. -/
 def equivalent (c : ResolutionContext E) (scope : List (Binding E)) {A B : Ty E}
@@ -255,7 +254,7 @@ private theorem empty_allowed (c : ResolutionContext E) (source : SchemeRow (Lab
   have observe := ResolutionCapabilities.Observes.stable (P := c.promise.constructor) emptyFamily.value.2 bounded
   exact ⟨emptyFamily, emptyFamily, emptyFamily,
     atPosition _ positions.1, atPosition _ positions.2.1, atPosition _ positions.2.2,
-    bounded, stable, observe, stable, fun _ => ⟨rfl, rfl⟩⟩
+    bounded, stable, observe, stable⟩
 
 /-- Construct the qualified body checker only for a valid source signature,
 using the descriptor domain installed in the frozen equations. -/
@@ -265,7 +264,7 @@ def bodyChecking (c : ResolutionContext E) (domain : E.domain = c.domain)
   if valid : source.resolutionValid = true then
     some {
       source := source
-      capabilities := ResolutionCapabilities.capabilities c.promise.constructor c.stableFamily
+      capabilities := c.capabilities
       stable := c.stableFamily
       domain := domain
       body := {

@@ -350,17 +350,45 @@ admitted, to the descriptors
 
 ```math
 \mathsf{Desc}(T,O,R)\iff R\le N\ \land\ \mathsf{Resolves}(T,R)\ \land\
-  \mathsf{Observes}(T,O)\ \land\ \mathsf{Resolves}(O,R)\ \land\
-  \bigl(T\le N\Rightarrow O=T\land R=T\bigr)
+  \mathsf{Observes}(T,O)\ \land\ \mathsf{Resolves}(O,R)
 ```
 
-$`\mathsf{Resolves}`$ and $`\mathsf{Observes}`$ classify an input as stable,
-a native promise or a union of classified inputs (`ResolutionCapabilities`).
-The last conjunct, stable exactness (`StableExact`), makes a stable input its
-own observation and result: an input of type `number` resolves to exactly
-`number`. A native promise's input is never stable, which the verifier proves
-from the declaration graph: one value of $`\mathsf{Promise}\langle A\rangle`$
-lies outside every clause of $`N`$ (`NativePromiseSeparation.Shape.separate`).
+$`\mathsf{Resolves}`$ and $`\mathsf{Observes}`$ are the least relations
+closed under the following rules (`ResolutionCapabilities`), with $`P`$ the
+native Promise constructor and $`A`$, $`B`$ value families. They classify an
+input as stable, a native promise or a union of classified inputs:
+
+```math
+\frac{A\le N}{\mathsf{Resolves}(A,A)}\ \textsf{stable}\qquad
+\frac{\mathsf{Resolves}(A,R)}{\mathsf{Resolves}(P\,A,R)}\ \textsf{native}\qquad
+\frac{\mathsf{Resolves}(A,R)\quad\mathsf{Resolves}(B,S)}
+     {\mathsf{Resolves}(A\cup B,R\cup S)}\ \textsf{union}
+```
+
+```math
+\frac{A\le N}{\mathsf{Observes}(A,A)}\ \textsf{stable}\qquad
+\frac{}{\mathsf{Observes}(P\,A,A)}\ \textsf{native}\qquad
+\frac{\mathsf{Observes}(A,O)\quad\mathsf{Observes}(B,Q)}
+     {\mathsf{Observes}(A\cup B,O\cup Q)}\ \textsf{union}
+```
+
+A native promise's input is never stable: $`P\,A\not\le N`$ for every value
+family $`A`$, which the verifier proves from the declaration graph: one value
+of $`\mathsf{Promise}\langle A\rangle`$ lies outside every clause of $`N`$
+(`NativePromiseSeparation.Shape.separate`). Both relations are therefore
+exact on stable inputs:
+
+```math
+A\le N\ \land\ \mathsf{Resolves}(A,R)\ \Rightarrow\ R=A\qquad
+A\le N\ \land\ \mathsf{Observes}(A,O)\ \Rightarrow\ O=A
+```
+
+proved by induction on the derivation (`ResolutionCapabilities.Resolves.exact`,
+`ResolutionCapabilities.Observes.exact`): a stable leaf is its own result, a
+native step contradicts separation, and both arms of a stable union are
+stable. A descriptor with a stable input thus has that input as its
+observation and result (`Descriptor.exactStable`): an input of type `number`
+resolves to exactly `number`.
 The body is certified at every admitted assignment
 ([generic closures](PROGRAM-TYPING.md)), and every call supplies a certificate
 classifying its type argument, from which $`O_T`$ and $`R_T`$ follow

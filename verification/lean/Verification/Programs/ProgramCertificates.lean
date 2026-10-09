@@ -638,8 +638,8 @@ instance-image, kind, signature and bound checks use the shared checker. -/
 program typing, at an assignment permitted by the enclosing scheme. -/
 @[nospecialize] def lexicalBodySubtyping [DecidableEq ι] (G : NormalGraph ι)
     (images : PositiveCertificates.InstanceImageCheck G) (source : SchemeRow ι)
-    {C : ResolutionDescriptors.Capabilities} {N : Fam}
-    (domain : G.domain = ResolutionDescriptors.descriptorDomain C N)
+    {N : Fam} {C : ResolutionDescriptors.Capabilities N}
+    (domain : G.domain = ResolutionDescriptors.descriptorDomain C)
     (η : MixedAssignment ι) (As : List MixedFamily)
     (length : As.length = source.binders.length) (allowed : G.domain.allowed source As) :
     BodySubtyping (reassign G (assign η source.binders As)) where

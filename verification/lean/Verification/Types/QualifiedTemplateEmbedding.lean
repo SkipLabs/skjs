@@ -369,7 +369,7 @@ def extend (G : NormalGraph ι) (U : NormalGraph (ι ⊕ υ)) : NormalGraph (ι 
 
 section QualifiedTarget
 open QualifiedGraphs
-variable {C : ResolutionDescriptors.Capabilities} {N : Fam}
+variable {N : Fam} {C : ResolutionDescriptors.Capabilities N}
 
 end QualifiedTarget
 

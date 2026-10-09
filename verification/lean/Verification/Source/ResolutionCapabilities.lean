@@ -14,27 +14,71 @@ inductive Resolves (P : Fam → Fam) (N : Fam) : Fam → Fam → Prop where
   | native {A R} : Resolves P N A R → Resolves P N (P A) R
   | union {A B R S} : Resolves P N A R → Resolves P N B S →
       Resolves P N (unionT A B) (unionT R S)
-  | narrow {A B R} : FamLe A B → Resolves P N B R → Resolves P N A R
 
 /-- Observation reads a native promise's literal fulfillment family once. -/
 inductive Observes (P : Fam → Fam) (N : Fam) : Fam → Fam → Prop where
   | stable {A} : ValueFam A → FamLe A N → Observes P N A A
-  | native {A} : Observes P N (P A) A
+  | native {A} : ValueFam A → Observes P N (P A) A
   | union {A B O Q} : Observes P N A O → Observes P N B Q →
       Observes P N (unionT A B) (unionT O Q)
-  | narrow {A B O} : FamLe A B → Observes P N B O → Observes P N A O
 
-def capabilities (P : Fam → Fam) (N : Fam) : Capabilities where
-  resolve := ⟨Resolves P N, Resolves.narrow⟩
-  observe := ⟨Observes P N, Observes.narrow⟩
+/-- The native constructor preserves value families and keeps every
+application outside the stable family. -/
+structure NativeSeparation (P : Fam → Fam) (N : Fam) : Prop where
+  valid : ∀ A, ValueFam A → ValueFam (P A)
+  separate : ∀ A, ValueFam A → ¬ FamLe (P A) N
 
 private theorem union_valid {A B : Fam} (ha : ValueFam A) (hb : ValueFam B) :
     ValueFam (unionT A B) :=
   ⟨unionT_adm A B ha.1 hb.1, fun n W v h => h.elim (ha.2 n W v) (hb.2 n W v)⟩
 
+section
+variable {P : Fam → Fam} {N : Fam}
+
+theorem Resolves.input_valid (h : NativeSeparation P N) {A R} (r : Resolves P N A R) :
+    ValueFam A := by
+  induction r with
+  | stable hv _ => exact hv
+  | native _ ih => exact h.valid _ ih
+  | union _ _ ih₁ ih₂ => exact union_valid ih₁ ih₂
+
+/-- Resolution is exact on stable inputs: a union of stable arms resolves
+arm by arm to itself, and a native application is never stable. -/
+theorem Resolves.exact (h : NativeSeparation P N) {A R} (r : Resolves P N A R) :
+    FamLe A N → R = A := by
+  induction r with
+  | stable => intro _; rfl
+  | native r _ => intro hn; exact (h.separate _ (r.input_valid h) hn).elim
+  | union _ _ ih₁ ih₂ =>
+      intro hn
+      rw [ih₁ (fun n W v hv => hn n W v (Or.inl hv)),
+        ih₂ (fun n W v hv => hn n W v (Or.inr hv))]
+
+/-- Observation is exact on stable inputs, by the same case analysis. -/
+theorem Observes.exact (h : NativeSeparation P N) {A O} (o : Observes P N A O) :
+    FamLe A N → O = A := by
+  induction o with
+  | stable => intro _; rfl
+  | native hv => intro hn; exact (h.separate _ hv hn).elim
+  | union _ _ ih₁ ih₂ =>
+      intro hn
+      rw [ih₁ (fun n W v hv => hn n W v (Or.inl hv)),
+        ih₂ (fun n W v hv => hn n W v (Or.inr hv))]
+
+end
+
+def capabilities {P : Fam → Fam} {N : Fam} (h : NativeSeparation P N) : Capabilities N where
+  resolve := Resolves P N
+  observe := Observes P N
+  resolve_exact hn r := r.exact h hn
+  observe_exact hn o := o.exact h hn
+
+section
+variable {P : Fam → Fam} {N : Fam} (h : NativeSeparation P N)
+
 /-- A stable leaf uses one family for all three slots. -/
-def stable (P : Fam → Fam) (N A : Fam) (ha : ValueFam A) (hn : FamLe A N) :
-    Descriptor (capabilities P N) N where
+def stable (A : Fam) (ha : ValueFam A) (hn : FamLe A N) :
+    Descriptor (capabilities h) where
   input := A
   observation := A
   result := A
@@ -45,29 +89,23 @@ def stable (P : Fam → Fam) (N A : Fam) (ha : ValueFam A) (hn : FamLe A N) :
   resolved := .stable ha hn
   observed := .stable ha hn
   forwarded := .stable ha hn
-  exactStable := fun _ => ⟨rfl, rfl⟩
 
 /-- Native lifting preserves the child's associated result and observes its
 input literally, including when that input is itself a native promise. -/
-def native (P : Fam → Fam) (N : Fam)
-    (hp : ∀ A, ValueFam A → ValueFam (P A))
-    (separate : ∀ A, ValueFam A → ¬ FamLe (P A) N)
-    (d : Descriptor (capabilities P N) N) : Descriptor (capabilities P N) N where
+def native (d : Descriptor (capabilities h)) : Descriptor (capabilities h) where
   input := P d.input
   observation := d.input
   result := d.result
-  input_valid := hp d.input d.input_valid
+  input_valid := h.valid d.input d.input_valid
   observation_valid := d.input_valid
   result_valid := d.result_valid
   stable := d.stable
   resolved := .native d.resolved
-  observed := .native
+  observed := .native d.input_valid
   forwarded := d.resolved
-  exactStable := fun h => (separate d.input d.input_valid h).elim
 
 /-- Every union arm contributes its input, observation and result. -/
-def union (P : Fam → Fam) (N : Fam)
-    (d e : Descriptor (capabilities P N) N) : Descriptor (capabilities P N) N where
+def union (d e : Descriptor (capabilities h)) : Descriptor (capabilities h) where
   input := unionT d.input e.input
   observation := unionT d.observation e.observation
   result := unionT d.result e.result
@@ -78,31 +116,32 @@ def union (P : Fam → Fam) (N : Fam)
   resolved := .union d.resolved e.resolved
   observed := .union d.observed e.observed
   forwarded := .union d.forwarded e.forwarded
-  exactStable := by
-    intro h
-    have hd := d.exactStable (fun n W v hv => h n W v (Or.inl hv))
-    have he := e.exactStable (fun n W v hv => h n W v (Or.inr hv))
-    constructor
-    · rw [hd.1, he.1]
-    · rw [hd.2, he.2]
 
 /-- Finite instance evidence constructs all slots together. A lexical binder
 retains its whole descriptor, including its operation witnesses. -/
-inductive Certificate (P : Fam → Fam) (N : Fam) where
+inductive Certificate where
   | stable (A : Fam) (valid : ValueFam A) (bounded : FamLe A N)
-  | native (child : Certificate P N)
-  | union (left right : Certificate P N)
-  | binder (descriptor : Descriptor (capabilities P N) N)
+  | native (child : Certificate)
+  | union (left right : Certificate)
+  | binder (descriptor : Descriptor (capabilities h))
 
-def Certificate.denote {P : Fam → Fam} {N : Fam}
-    (hp : ∀ A, ValueFam A → ValueFam (P A))
-    (separate : ∀ A, ValueFam A → ¬ FamLe (P A) N) :
-    Certificate P N → Descriptor (capabilities P N) N
-  | .stable A hv hn => ResolutionCapabilities.stable P N A hv hn
-  | .native child => ResolutionCapabilities.native P N hp separate (child.denote hp separate)
-  | .union left right => ResolutionCapabilities.union P N (left.denote hp separate) (right.denote hp separate)
+def Certificate.denote : Certificate h → Descriptor (capabilities h)
+  | .stable A hv hn => ResolutionCapabilities.stable h A hv hn
+  | .native child => ResolutionCapabilities.native h child.denote
+  | .union left right => ResolutionCapabilities.union h left.denote right.denote
   | .binder d => d
 
+end
+
+/-- The descriptor domain depends only on the constructor and stable family. -/
+theorem domain_congr {ι : Type} {P P' : Fam → Fam} {N N' : Fam}
+    (h : NativeSeparation P N) (h' : NativeSeparation P' N') (hp : P' = P) (hn : N' = N) :
+    descriptorDomain (ι := ι) (capabilities h') = descriptorDomain (capabilities h) := by
+  subst hp hn
+  rfl
+
+#print axioms Resolves.exact
+#print axioms Observes.exact
 #print axioms stable
 #print axioms native
 #print axioms union
@@ -164,9 +203,8 @@ theorem Observes.safe {P N observe fresh}
     {A O} (h : Observes P N A O) : OperationContract observe A O := by
   induction h with
   | stable hv hn => exact host.observe_stable hv hn
-  | native => exact host.observe_native _
+  | native _ => exact host.observe_native _
   | union _ _ ih₁ ih₂ => exact ih₁.union ih₂
-  | narrow hb _ ih => exact ih.narrow hb
 
 /-- Resolution derivations produce the declared native result; safety includes
 world evolution and every intermediate computation admitted by Safe. -/
@@ -180,7 +218,6 @@ theorem Resolves.safe {P N observe fresh}
       apply (OperationContract.union_input).mpr
       exact ⟨ih₁.widen (host.promise_mono (fun _ _ _ h => Or.inl h)),
         ih₂.widen (host.promise_mono (fun _ _ _ h => Or.inr h))⟩
-  | narrow hb _ ih => exact ih.narrow hb
 
 #print axioms OperationContract.union_input
 #print axioms Observes.safe

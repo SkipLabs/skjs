@@ -546,20 +546,20 @@ def payload (p : NativePromise E) (l : Label E.signature) :
 
 /-- Native descriptor construction uses the actual source application's
 meaning, and retains the child's literal observation and stable result. -/
-def descriptor (p : NativePromise E) (N : Fam)
-    (separate : ∀ A, ValueFam A → ¬ FamLe (p.constructor A) N)
-    (d : ResolutionDescriptors.Descriptor (ResolutionCapabilities.capabilities p.constructor N) N) :
-    ResolutionDescriptors.Descriptor (ResolutionCapabilities.capabilities p.constructor N) N :=
-  ResolutionCapabilities.native p.constructor N p.constructor_valid separate d
+def descriptor (p : NativePromise E) {N : Fam}
+    (h : ResolutionCapabilities.NativeSeparation p.constructor N)
+    (d : ResolutionDescriptors.Descriptor (ResolutionCapabilities.capabilities h)) :
+    ResolutionDescriptors.Descriptor (ResolutionCapabilities.capabilities h) :=
+  ResolutionCapabilities.native h d
 
-theorem descriptor_input (p : NativePromise E) (N : Fam)
-    (separate : ∀ A, ValueFam A → ¬ FamLe (p.constructor A) N)
+theorem descriptor_input (p : NativePromise E) {N : Fam}
+    (h : ResolutionCapabilities.NativeSeparation p.constructor N)
     (η : MixedAssignment (Label E.signature)) (l : Label E.signature)
     (A : { A : List (Label E.signature) //
       l = (p.application A).label ∧ E.graph.hasKind .value A = true })
-    (d : ResolutionDescriptors.Descriptor (ResolutionCapabilities.capabilities p.constructor N) N)
+    (d : ResolutionDescriptors.Descriptor (ResolutionCapabilities.capabilities h))
     (child : d.input = fun n W v => mixedMeaning E.graph η A.1 n W (.inl v)) :
-    (p.descriptor N separate d).input =
+    (p.descriptor h d).input =
       (fun n W v => mixedMeaning E.graph η [l] n W (.inl v)) := by
   obtain ⟨A, rfl, kind⟩ := A
   change p.constructor d.input = _
@@ -595,9 +595,15 @@ theorem nativeSeparate (c : ResolutionContext E) (A : Fam) (valid : ValueFam A) 
 
 #print axioms nativeSeparate
 
+theorem native (c : ResolutionContext E) :
+    ResolutionCapabilities.NativeSeparation c.promise.constructor c.stableFamily :=
+  ⟨c.promise.constructor_valid, c.nativeSeparate⟩
+
+def capabilities (c : ResolutionContext E) : ResolutionDescriptors.Capabilities c.stableFamily :=
+  ResolutionCapabilities.capabilities c.native
+
 def domain (c : ResolutionContext E) : SchemeDomain (Label E.signature) .mixed :=
-  ResolutionDescriptors.descriptorDomain
-    (ResolutionCapabilities.capabilities c.promise.constructor c.stableFamily) c.stableFamily
+  ResolutionDescriptors.descriptorDomain c.capabilities
 
 def withDomain (c : ResolutionContext E) (D : SchemeDomain (Label E.signature) .mixed) :
     ResolutionContext { E with domain := D } where
@@ -626,12 +632,8 @@ theorem stableFamily_domain (c : ResolutionContext E)
 theorem domain_fixed (c : ResolutionContext E)
     (D : SchemeDomain (Label E.signature) .mixed) :
     (c.withDomain D).domain = c.domain := by
-  unfold domain
-  rw [stableFamily_domain]
-  change ResolutionDescriptors.descriptorDomain
-    (ResolutionCapabilities.capabilities (c.promise.withDomain D).constructor c.stableFamily)
-      c.stableFamily = _
-  rw [NativePromise.constructor_domain]
+  exact ResolutionCapabilities.domain_congr _ _
+    (NativePromise.constructor_domain c.promise D) (stableFamily_domain c D)
 
 theorem stable_meaning (c : ResolutionContext E)
     (η : MixedAssignment (Label E.signature)) :

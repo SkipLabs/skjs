@@ -731,7 +731,7 @@ export const cases: Case[] = [
   gap("generic-promise-resolution", "A resolution operation on a qualified generic input (return-await, stored observations, repeated forwarding) is refused before body checking: descriptor checking does not cover resolution operations",
     "unverified", "search", /qualified resolution operation requires descriptor checking/),
   positive("generic-promise-associated-result", "Associated results remain usable in parameters, mutable storage and canonical numeric specialization"),
-  gap("generic-promise-bounded-result", "Awaited of a number-bounded parameter is not shown to stay within that parameter: a descriptor's result may be wider than its stable input",
+  gap("generic-promise-bounded-result", "Awaited of a number-bounded parameter is its own input by stable exactness, and proof search does not read the declared bound to apply it",
     "unverified", "search", /evidence search failed/),
   gap("generic-promise-result-widening", "Higher-order output widening needs generic function types, which are outside the fragment",
     "unsupported", "source", /generic function types are outside the fragment/),

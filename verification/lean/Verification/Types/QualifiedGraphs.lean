@@ -8,10 +8,10 @@ namespace Verification.QualifiedGraphs
 open PositiveGraphs PositiveNormalization ResolutionDescriptors Tower
 open PositiveCertificates (ComparisonResult)
 
-variable {ι : Type} {C : Capabilities} {N : Fam}
+variable {ι : Type} {N : Fam} {C : Capabilities N}
 
 /-- Three ordinary value slots retain the descriptor's associated result. -/
-@[nospecialize] def descriptorArgs (d : Descriptor C N) : List MixedFamily :=
+@[nospecialize] def descriptorArgs (d : Descriptor C) : List MixedFamily :=
   [MixedFamily.ofValue ⟨d.input, d.input_valid⟩,
    MixedFamily.ofValue ⟨d.observation, d.observation_valid⟩,
    MixedFamily.ofValue ⟨d.result, d.result_valid⟩]
@@ -20,7 +20,7 @@ open Classical in
 /-- The body assignment retains the descriptor at its declared binder nodes. -/
 theorem assigned_descriptor (G : NormalGraph ι) (η : MixedAssignment ι)
     (s : SchemeRow ι) (As : List MixedFamily)
-    (ha : (descriptorDomain C N).allowed s As)
+    (ha : (descriptorDomain C).allowed s As)
     (g : ResolutionSlots) (hg : g ∈ s.resolution) (t o r : ι)
     (ht : (s.binders.zip As).lookup t = As[g.input]?)
     (ho : (s.binders.zip As).lookup o = As[g.observation]?)
@@ -28,12 +28,12 @@ theorem assigned_descriptor (G : NormalGraph ι) (η : MixedAssignment ι)
     (kt : G.parameterKinds t = some .value)
     (ko : G.parameterKinds o = some .value)
     (kr : G.parameterKinds r = some .value) :
-    ∃ d : Descriptor C N,
+    ∃ d : Descriptor C,
       PositiveRules.mixedValues G (assign η s.binders As) [t] = d.input ∧
       PositiveRules.mixedValues G (assign η s.binders As) [o] = d.observation ∧
       PositiveRules.mixedValues G (assign η s.binders As) [r] = d.result := by
   obtain ⟨d, T, O, R, hT, hO, hR, eT, eO, eR⟩ :=
-    allowed_descriptor C N s As ha g hg
+    allowed_descriptor C s As ha g hg
   have projection (p : ι) (A : MixedFamily)
       (hp : (s.binders.zip As).lookup p = some A)
       (hk : G.parameterKinds p = some .value) :
@@ -105,8 +105,8 @@ theorem lexicalAdmission_sound [DecidableEq ι] (G : NormalGraph ι)
     (checked : lexicalAdmission G source target args = true)
     (η : MixedAssignment ι) (As : List MixedFamily)
     (hl : As.length = source.binders.length)
-    (ha : (descriptorDomain C N).allowed source As) :
-    (descriptorDomain C N).allowed target
+    (ha : (descriptorDomain C).allowed source As) :
+    (descriptorDomain C).allowed target
       (args.map fun U => ⟨mixedMeaning G (assign η source.binders As) U,
         mixedMeaning_valid G (assign η source.binders As) U⟩) := by
   simp only [lexicalAdmission, Bool.and_eq_true, decide_eq_true_eq,
@@ -132,7 +132,7 @@ theorem lexicalAdmission_sound [DecidableEq ι] (G : NormalGraph ι)
     have et' : (F [t]).value.1 = d.input := et
     have eo' : (F [o]).value.1 = d.observation := eo
     have er' : (F [r]).value.1 = d.result := er
-    refine ⟨F [t], F [o], F [r], ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨F [t], F [o], F [r], ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · simp only [List.getElem?_map, hm.1.1, Option.map_some]; rfl
     · simp only [List.getElem?_map, hm.1.2, Option.map_some]; rfl
     · simp only [List.getElem?_map, hm.2, Option.map_some]; rfl
@@ -140,7 +140,6 @@ theorem lexicalAdmission_sound [DecidableEq ι] (G : NormalGraph ι)
     · rw [et', er']; exact d.resolved
     · rw [et', eo']; exact d.observed
     · rw [eo', er']; exact d.forwarded
-    · rw [et', eo', er']; exact d.exactStable
 
 #print axioms lexicalAdmission_sound
 
@@ -160,7 +159,7 @@ lexical descriptor. Signature images, kinds and bounds use the ordinary checks. 
 using the same computational instance rule as unconditional instantiation. -/
 theorem compareLexicalInstance_sound [DecidableEq ι] (G : NormalGraph ι)
     (images : PositiveCertificates.InstanceImageCheck G) (source : SchemeRow ι)
-    (hd : G.domain = descriptorDomain C N)
+    (hd : G.domain = descriptorDomain C)
     {compare : List ι → List ι → σ → ComparisonResult α × σ}
     {empty S L M c state} (η : MixedAssignment ι) (As : List MixedFamily)
     (hl : As.length = source.binders.length) (ha : G.domain.allowed source As)
@@ -197,7 +196,7 @@ structure ResolvingRow (ι : Type) where
 
 @[nospecialize] noncomputable def graphBody (I : ParameterInterpretation ι .mixed)
     (X : MixedAssignment ι × ι → Fam) (η : MixedAssignment ι)
-    (r : ResolvingRow ι) (d : Descriptor C N) : Fam :=
+    (r : ResolvingRow ι) (d : Descriptor C) : Fam :=
   instanceTWithArgs (fun θ S => setSem (fun i => X (θ,i)) S)
     η r.scheme (descriptorArgs d) I.arguments
 
