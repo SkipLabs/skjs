@@ -117,6 +117,22 @@ def union (d e : Descriptor (capabilities h)) : Descriptor (capabilities h) wher
   observed := .union d.observed e.observed
   forwarded := .union d.forwarded e.forwarded
 
+/-- **Resolvable inputs are described.** Every input with a fresh resolution
+has a descriptor with that result: the classification rules construct its
+observation alongside, so the observation exists also where no source type
+names it, as for the observation of a qualified binder's observation. -/
+theorem Resolves.describe {A R} (r : Resolves P N A R) :
+    ∃ d : Descriptor (capabilities h), d.input = A ∧ d.result = R := by
+  induction r with
+  | stable hv hn => exact ⟨ResolutionCapabilities.stable h _ hv hn, rfl, rfl⟩
+  | native _ ih =>
+      obtain ⟨d, hd, hr⟩ := ih
+      exact ⟨ResolutionCapabilities.native h d, by rw [← hd]; rfl, hr⟩
+  | union _ _ ih₁ ih₂ =>
+      obtain ⟨d, hd, hr⟩ := ih₁
+      obtain ⟨e, he, hs⟩ := ih₂
+      exact ⟨ResolutionCapabilities.union h d e, by rw [← hd, ← he]; rfl, by rw [← hr, ← hs]; rfl⟩
+
 /-- Finite instance evidence constructs all slots together. A lexical binder
 retains its whole descriptor, including its operation witnesses. -/
 inductive Certificate where
@@ -145,6 +161,7 @@ theorem domain_congr {ι : Type} {P P' : Fam → Fam} {N N' : Fam}
 #print axioms stable
 #print axioms native
 #print axioms union
+#print axioms Resolves.describe
 
 /-- The modeled operation is safe at every admissible world and satisfying
 heap. Unlike an outcome-only relation, this also constrains executions that

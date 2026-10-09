@@ -62,10 +62,28 @@ def lexicalBinding (c : ResolutionContext E) (source : SchemeRow (Label E.signat
     else none
   else none
 
+/-- An input type and its result denote one descriptor's components, and so
+does the observation where a source type names it. Where none does, the
+descriptor still exists: its observation is a family no source type spells. -/
+def Classifies (c : ResolutionContext E) (η : MixedAssignment (Label E.signature))
+    (A : Ty E) (O : Option (Ty E)) (R : Ty E) : Prop :=
+  ∃ d : Descriptor c, d.input = valueMeaning E η A ∧
+    (∀ o, O = some o → d.observation = valueMeaning E η o) ∧ d.result = valueMeaning E η R
+
+theorem Describes.classifies {c : ResolutionContext E} {η : MixedAssignment (Label E.signature)}
+    {A O R : Ty E} (h : Describes c η A O R) : Classifies c η A (some O) R := by
+  obtain ⟨d, hd, ho, hr⟩ := h
+  exact ⟨d, hd, fun o e => by cases e; exact ho, hr⟩
+
 structure Checked (c : ResolutionContext E) (scope : List (Binding E)) (A : Ty E) where
-  observation : Ty E
+  observation : Option (Ty E)
   result : Ty E
-  sound : ∀ η, ScopeHolds c scope η → Describes c η A observation result
+  sound : ∀ η, ScopeHolds c scope η → Classifies c η A observation result
+
+/-- Both arms' observations, where both are named. -/
+def joinObservations : Option (Ty E) → Option (Ty E) → Option (Ty E)
+  | some O, some Q => some (O ++ Q)
+  | _, _ => none
 
 private theorem valueMeaning_append (E : Equations) (η : MixedAssignment (Label E.signature))
     (A B : Ty E) : valueMeaning E η (A ++ B) = unionT (valueMeaning E η A) (valueMeaning E η B) := by
@@ -74,22 +92,26 @@ private theorem valueMeaning_append (E : Equations) (η : MixedAssignment (Label
   change (∃ l ∈ A ++ B, _) ↔ ((∃ l ∈ A, _) ∨ (∃ l ∈ B, _))
   simp only [List.mem_append, or_and_right, exists_or]
 
-private theorem describes_append (c : ResolutionContext E)
-    (η : MixedAssignment (Label E.signature)) {A O R B Q S : Ty E}
-    (left : Describes c η A O R) (right : Describes c η B Q S) :
-    Describes c η (A ++ B) (O ++ Q) (R ++ S) := by
+private theorem classifies_append (c : ResolutionContext E)
+    (η : MixedAssignment (Label E.signature)) {A B R S : Ty E} {O Q : Option (Ty E)}
+    (left : Classifies c η A O R) (right : Classifies c η B Q S) :
+    Classifies c η (A ++ B) (joinObservations O Q) (R ++ S) := by
   obtain ⟨d, hd, ho, hr⟩ := left
   obtain ⟨e, he, hq, hs⟩ := right
   refine ⟨ResolutionCapabilities.union c.native d e, ?_, ?_, ?_⟩
   · change unionT d.input e.input = _
     rw [hd, he, valueMeaning_append]
-  · change unionT d.observation e.observation = _
-    rw [ho, hq, valueMeaning_append]
+  · intro o hj
+    match O, Q, hj with
+    | some O, some Q, hj =>
+      cases hj
+      change unionT d.observation e.observation = _
+      rw [ho O rfl, hq Q rfl, valueMeaning_append]
   · change unionT d.result e.result = _
     rw [hr, hs, valueMeaning_append]
 
 private def empty (c : ResolutionContext E) (scope : List (Binding E)) : Checked c scope [] where
-  observation := []
+  observation := some []
   result := []
   sound η _ := by
     have hv : ValueFam (valueMeaning E η []) :=
@@ -98,8 +120,8 @@ private def empty (c : ResolutionContext E) (scope : List (Binding E)) : Checked
       intro n W v h
       change ∃ l ∈ ([] : Ty E), _ at h
       simp at h
-    exact ⟨ResolutionCapabilities.stable c.native _ hv hn,
-      rfl, rfl, rfl⟩
+    exact (show Describes c η [] [] [] from ⟨ResolutionCapabilities.stable c.native _ hv hn,
+      rfl, rfl, rfl⟩).classifies
 
 /-- Stable leaves are checked against the retained intrinsic bound by the
 ordinary semantic subtype checker. -/
@@ -108,7 +130,7 @@ def stable (c : ResolutionContext E) (scope : List (Binding E)) (A : Ty E)
   if E.graph.hasKind .value A then
     if accepted : (CertificateProducer.comparisonUsing E.graph images A c.stable).accepted = true then
       some {
-        observation := A
+        observation := some A
         result := A
         sound := fun η _ => by
           have hv : ValueFam (valueMeaning E η A) :=
@@ -116,8 +138,8 @@ def stable (c : ResolutionContext E) (scope : List (Binding E)) (A : Ty E)
           have hn : FamLe (valueMeaning E η A) c.stableFamily := by
             rw [← c.stable_meaning η]
             exact fun n W v h => CertificateProducer.comparisonUsing_sound accepted η n W (.inl v) h
-          exact ⟨ResolutionCapabilities.stable c.native _ hv hn,
-            rfl, rfl, rfl⟩ }
+          exact (show Describes c η A A A from ⟨ResolutionCapabilities.stable c.native _ hv hn,
+            rfl, rfl, rfl⟩).classifies }
     else none
   else none
 
@@ -130,7 +152,7 @@ def stableInScope (c : ResolutionContext E) (scope : List (Binding E)) (A : Ty E
       if member : b ∈ scope then
         if accepted : (CertificateProducer.comparisonUsing E.graph images A b.result).accepted = true then
           some {
-            observation := A
+            observation := some A
             result := A
             sound := fun η hs => by
               obtain ⟨d, _, _, hr⟩ := hs b member
@@ -141,8 +163,8 @@ def stableInScope (c : ResolutionContext E) (scope : List (Binding E)) (A : Ty E
                 apply d.stable n W v
                 rw [hr]
                 exact CertificateProducer.comparisonUsing_sound accepted η n W (.inl v) h
-              exact ⟨ResolutionCapabilities.stable c.native _ hv hn,
-                rfl, rfl, rfl⟩ }
+              exact (show Describes c η A A A from ⟨ResolutionCapabilities.stable c.native _ hv hn,
+                rfl, rfl, rfl⟩).classifies }
         else none
       else none
 
@@ -150,11 +172,11 @@ def stableInScope (c : ResolutionContext E) (scope : List (Binding E)) (A : Ty E
 def native (c : ResolutionContext E) (scope : List (Binding E)) (l : Label E.signature)
     (payload : { A : Ty E // l = (c.promise.application A).label ∧ E.graph.hasKind .value A = true })
     (child : Checked c scope payload.1) : Checked c scope [l] where
-  observation := payload.1
+  observation := some payload.1
   result := child.result
   sound η hs := by
     obtain ⟨d, hd, _, hr⟩ := child.sound η hs
-    refine ⟨c.promise.descriptor c.native d, ?_, hd, hr⟩
+    refine ⟨c.promise.descriptor c.native d, ?_, fun o e => by cases e; exact hd, hr⟩
     exact c.promise.descriptor_input c.native η l payload d hd
 
 /-- Equivalent input types retain the same descriptor. -/
@@ -171,9 +193,23 @@ def equivalent (c : ResolutionContext E) (scope : List (Binding E)) {A B : Ty E}
 def append (c : ResolutionContext E) (scope : List (Binding E))
     {A B : Ty E} (left : Checked c scope A) (right : Checked c scope B) :
     Checked c scope (A ++ B) where
-  observation := left.observation ++ right.observation
+  observation := joinObservations left.observation right.observation
   result := left.result ++ right.result
-  sound η hs := describes_append c η (left.sound η hs) (right.sound η hs)
+  sound η hs := classifies_append c η (left.sound η hs) (right.sound η hs)
+
+/-- An input equivalent to a checked type takes its classification. -/
+def equivalentTo (c : ResolutionContext E) (scope : List (Binding E))
+    (images : InstanceImageCheck E.graph) (A : Ty E) {B : Ty E} (child : Checked c scope B) :
+    Option (Checked c scope A) :=
+  if accepted : (CertificateProducer.comparisonUsing E.graph images A B).accepted = true then
+    if reverse : (CertificateProducer.comparisonUsing E.graph images B A).accepted = true then
+      some (equivalent c scope child fun η => by
+        funext n W v
+        apply propext
+        exact ⟨fun h => CertificateProducer.comparisonUsing_sound accepted η n W (.inl v) h,
+          fun h => CertificateProducer.comparisonUsing_sound reverse η n W (.inl v) h⟩)
+    else none
+  else none
 
 /-- The fuel bounds certificate traversal only; every successful branch carries
 its semantic proof. Binder lookup checks the complete input type. -/
@@ -193,27 +229,37 @@ def check (c : ResolutionContext E) (scope : List (Binding E))
       let b ← scope.find? (fun b => b.name == name)
       if member : b ∈ scope then
         if E.graph.hasKind .value A then
-          if accepted : (CertificateProducer.comparisonUsing E.graph images A b.input).accepted = true then
-            let bound : Checked c scope b.input := {
-              observation := b.observation
-              result := b.result
-              sound := fun _ hs => hs b member }
-            if reverse : (CertificateProducer.comparisonUsing E.graph images b.input A).accepted = true then
-              return equivalent c scope bound fun η => by
-                funext n W v
-                apply propext
-                exact ⟨fun h => CertificateProducer.comparisonUsing_sound accepted η n W (.inl v) h,
-                  fun h => CertificateProducer.comparisonUsing_sound reverse η n W (.inl v) h⟩
-            else stable c scope A images
-          else none
+          let input : Checked c scope b.input := {
+            observation := some b.observation
+            result := b.result
+            sound := fun η hs => (hs b member).classifies }
+          -- The binder's observation resolves to its result (`forwarded`),
+          -- so it is described too, its own observation unnamed.
+          let observed : Checked c scope b.observation := {
+            observation := none
+            result := b.result
+            sound := fun η hs => by
+              obtain ⟨d, _, ho, hr⟩ := hs b member
+              obtain ⟨e, he, er⟩ := ResolutionCapabilities.Resolves.describe c.native d.forwarded
+              exact ⟨e, he.trans ho, (fun _ h => by cases h), er.trans hr⟩ }
+          (equivalentTo c scope images A input).orElse fun _ =>
+            (equivalentTo c scope images A observed).orElse fun _ => stable c scope A images
         else none
       else none
     | .union arms =>
+      -- Each input label takes the first remaining arm that classifies it:
+      -- the arms are a set, in whatever order the proposal lists them.
+      let rec pick (a : Label E.signature) (skipped : List ResolutionWire.Certificate) :
+          List ResolutionWire.Certificate → Option (Checked c scope [a] × List ResolutionWire.Certificate)
+        | [] => none
+        | cert :: certs => match check c scope images fuel [a] cert with
+          | some first => some (first, skipped ++ certs)
+          | none => pick a (skipped ++ [cert]) certs
       let rec collect : (A : Ty E) → List ResolutionWire.Certificate → Option (Checked c scope A)
         | [], [] => some (empty c scope)
-        | a :: rest, cert :: certs => do
-          let first ← check c scope images fuel [a] cert
-          let remaining ← collect rest certs
+        | a :: rest, certs => do
+          let (first, others) ← pick a [] certs
+          let remaining ← collect rest others
           return append c scope first remaining
         | _, _ => none
       collect A arms

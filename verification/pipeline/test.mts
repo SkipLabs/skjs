@@ -759,14 +759,35 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
       await numeric(1), await stored(2), await aliasWrap(3),
       await native(Promise.resolve(4)), await repeated(Promise.resolve(5)),
       await array(values) === values, await union(Promise.resolve(values)) === values,
-      await waiting, rejected, elementAdoptions,
+      await waiting, rejected, elementAdoptions, await forward(Promise.resolve(Promise.resolve(10))),
     ]);
-  })()`), "[1,2,3,4,5,true,true,9,true,0]",
+  })()`), "[1,2,3,4,5,true,true,9,true,0,10]",
     "qualified wrapper forwarding preserves stable arrays, native fulfillment, rejection and pending resolution");
   assert.equal(runExample("generic-promise-associated-result", `
     const cell = { value: 6 };
     JSON.stringify([accept(7), exchange(cell, 8), cell.value]);`), "[7,6,8]",
     "associated-result storage keeps the numeric input and write contract");
+  // An open record, a native promise of one, or a union with one, is
+  // adopted where it holds a then hook: the wrapper does not settle to it.
+  for (const [file, fn, input] of [
+    ["invalid-generic-promise-open-record", "openRecord", "record"],
+    ["invalid-generic-promise-open-native", "openNative", "Promise.resolve(record)"],
+    ["invalid-generic-promise-open-union", "openUnion", "record"],
+  ] as const)
+    assert.equal(await runExample(file, `(async () => {
+      const record = { n: 1 };
+      const input = ${input};
+      Object.assign(record, { then(resolve) { resolve(42); } });
+      return await ${fn}(input);
+    })()`), 42, `${file}: the open record's then hook is adopted, not settled to`);
+  assert.equal(await runExample("invalid-generic-promise-erased-call", `(async () => {
+    const cell = { value: 1 };
+    await erasedCall({ n: 1, then(resolve) { cell.value = "changed"; resolve(42); } });
+    return cell.value;
+  })()`), "changed", "a widened result does not constrain the adopted then hook's heap effect");
+  assert.equal(await runExample("invalid-generic-promise-observed-input", `(async () => {
+    return typeof (await unwrap(Promise.resolve(1)));
+  })()`), "number", "the observation of a promise is its payload, not the promise");
   assert.equal(await runExample("invalid-generic-promise-unknown-output", `(async () => {
     const cell = { value: 1 };
     const input = { n: 1, then(resolve) { cell.value = "changed"; resolve(42); } };

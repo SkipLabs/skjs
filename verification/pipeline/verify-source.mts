@@ -109,7 +109,7 @@ function readExplanations(text: string): Explanation[] {
   }
 }
 /** A search that found no derivation, or a quantified call it could not show
- * within its bound, is refused by name where its cause is
+ * within its bound or resolution qualification, is refused by name where its cause is
  * known, on a first line of its own before the verifier's, which follow
  * unchanged: the producer's explanation of a form at the failed obligation
  * (the innermost whose span meets the obligation's), else, for code
@@ -123,7 +123,8 @@ function readExplanations(text: string): Explanation[] {
 function refusedByName(detail: string, explain: () => Explanation[],
     read: () => SeenDiagnostic[]): string {
   if (!detail.includes("evidence search failed") &&
-      !detail.includes("does not satisfy the closure's bound")) return detail;
+      !detail.includes("does not satisfy the closure's bound") &&
+      !detail.includes("resolution certificate does not establish")) return detail;
   const at = /at \[(\d+),(\d+)\)/.exec(detail);
   if (at) {
     const [start, end] = [Number(at[1]), Number(at[2])];

@@ -170,14 +170,14 @@ instantiations.
 
 The pipeline states:
 
-- `%Await%` at $`\forall T,\ U \le P.\ (\mathsf{Promise}\langle T\rangle \mid U) \Rightarrow T \mid U`$;
+- `%Await%` at $`\forall T,\ X:\mathsf{Resolvable}.\ (\mathsf{Promise}\langle T\rangle \mid X) \Rightarrow T \mid X.\mathsf{Observed}`$, whose resolution-qualified $`X`$ ranges over the inputs classified as stable, native or a union of those ([implied bounds](SOURCE-CONTRACTS.md#implied-bounds));
 - the host assumption that a value of type `Promise<T>` is a realm promise,
   with the source refused from building an object that has a `then` member;
 - a trusted generic signature's type parameters that occur under
   `Promise<…>` bounded by the non-thenable types
   $`N = P \mid \{\mathtt{readonly\ then?}: P\} \mid \mathsf{readonly\ unknown[]}`$.
 
-Under M, the bounded `%Await%` lemma is provable from the specification;
+Under M, the qualified `%Await%` lemma is provable from the specification;
 "`Promise<T>` values are realm promises" becomes a lemma for every promise
 the program or the built-ins create; and the non-thenable bound is exactly
 the condition under which a trusted generic promise signature is

@@ -40,34 +40,36 @@ open S
     | _ when nested -> quietly (fun () -> expr env e)
     | _ -> None
   (* Explain an unsupported resolution contract. Bounded parameters are
-     classified through their declared bounds; this query supplies only a
-     diagnostic, while Lean checks the actual instance and its bounds. *)
-  let explain_thenable (e:expr) (target:expr) (signature:Semantic.signature) actuals =
-    match target.node,signature.params,actuals with
-    | Id ("%Await%" | "%AsyncReturn%" | "%PromiseResolve%" as n),[param],[actual] ->
-      let rec shallow = function
-        | Atoms xs -> xs | Union ts -> List.concat_map shallow ts | Rigid _ | Meet _ -> [] in
-      let promises = List.filter_map (function Named (id,_) -> Some id | _ -> None) (shallow param) in
-      let rec settled allow_objects allow_promises seen seen_rigids = function
-        | Union ts -> List.for_all (settled allow_objects allow_promises seen seen_rigids) ts
-        | Meet (t,ts) -> List.exists (settled allow_objects allow_promises seen seen_rigids) (t::ts)
-        | Rigid r -> not (List.mem r seen_rigids) && (match S.rigid_bound r with
-            | Some bound -> settled allow_objects allow_promises seen (r::seen_rigids) bound
-            | None -> false)
+     classified through their declared bounds, qualified ones through their
+     descriptors; this query supplies only a diagnostic, while Lean checks
+     the actual instance and its bounds. A native promise's payload is
+     observed whatever it is, and resolved again by async return. *)
+  let explain_thenable (e:expr) (target:expr) actuals =
+    match target.node,actuals with
+    | Id ("%Await%" | "%AsyncReturn%" | "%PromiseResolve%" as n),[actual] ->
+      let promises = List.filter_map (fun (d:Source.declaration) ->
+        if d.native_promise then Some d.id else None) declarations in
+      let rec settled allow_objects seen seen_rigids = function
+        | Union ts -> List.for_all (settled allow_objects seen seen_rigids) ts
+        | Meet (t,ts) -> List.exists (settled allow_objects seen seen_rigids) (t::ts)
+        | Rigid r -> S.owned_resolution r <> None || S.observation_owner r <> None ||
+          (not (List.mem r seen_rigids) && (match S.rigid_bound r with
+            | Some bound -> settled allow_objects seen (r::seen_rigids) bound
+            | None -> false))
         | Atoms xs -> List.for_all (function
             | Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Bigint | BigintLit _ | Symbol -> true
             | Named (id,args) when List.mem id promises ->
-              allow_promises && (n <> "%AsyncReturn%" || List.for_all (settled true false seen seen_rigids) args)
+              n <> "%AsyncReturn%" || List.for_all (settled true seen seen_rigids) args
             | Named (id,args) when not (List.mem id seen) ->
-              (try settled allow_objects allow_promises (id::seen) seen_rigids (definition declarations id args)
+              (try settled allow_objects (id::seen) seen_rigids (definition declarations id args)
                with Json.Error _ -> false)
             | Shape {elements=Some _;_} -> allow_objects
             | Shape shape when allow_objects ->
-              (try settled false false seen seen_rigids
+              (try settled false seen seen_rigids
                 (Type_queries.field_type (S.rigid_bounds ()) declarations [] (Atoms [Shape shape]) (Name "then"))
                with Json.Error _ -> false)
             | _ -> false) xs in
-      if not (settled true true [] [] actual) then
+      if not (settled true [] [] actual) then
         S.explain e.pos (if n = "%Await%"
           then "the modeled await requires a native promise or a stably non-thenable value: " ^ thenable_reason
           else if n = "%PromiseResolve%" then

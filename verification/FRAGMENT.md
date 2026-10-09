@@ -123,7 +123,6 @@ or a `blockBody`.
 | `callWithReceiver` | `callee`, `receiver`, ordered `args`. |
 | `bindWithReceiver` | `callee`, `receiver`, ordered saved-prefix `args`. |
 | `applyWithReceiver` | `callee`, `receiver`, and `list`, or `null` for an omitted argument list. |
-| `resolution` | `e`, `operation` (`observe` for `await`, `fresh` for an async return) and `binder`, the resolution-qualified parameter whose descriptor the operation uses, or `null`. |
 
 These operands remain distinct in the tree. Lean's execution plans save their
 values in source evaluation order before performing the invocation. Closure

@@ -128,10 +128,11 @@ def explicitInstance (T : EquationStore.State) (pos : Span) (binders : List Stri
 
 /-- Check a proposed resolution instance in the frozen source equations. The
 associated types are computed by the descriptor checker, never supplied as
-independent type arguments. -/
+independent type arguments. The observation is `none` where the checked
+descriptor's observation is a family no source type names. -/
 def resolutionInstance (T : EquationStore.State) (source : Option (SchemeRow Tree))
     (sourceNames : List String) (A : List Tree) (certificate : ResolutionWire.Certificate) :
-    Except String (List Tree × List Tree) := do
+    Except String (Option (List Tree) × List Tree) := do
   let F ← EquationStore.freeze T
   let some context := F.store.resolution
     | throw "resolution instance requires the native descriptor domain"
@@ -155,7 +156,7 @@ def resolutionInstance (T : EquationStore.State) (source : Option (SchemeRow Tre
   let input ← labels A
   let some checked := SourceResolution.check c scope (StoreView.images F.store) 256 input certificate
     | throw "resolution certificate does not establish its input, observation and stable result"
-  return (checked.observation.map (·.val), checked.result.map (·.val))
+  return (checked.observation.map (·.map (·.val)), checked.result.map (·.val))
 
 /-- A generic module value reached from a unit (a generic module function,
 or a generic imported one): the unit's calls name its instances. Each call's
@@ -198,7 +199,11 @@ def moduleInstances (T : EquationStore.State) (g : Instantiable)
           let (O, R) ← (resolutionInstance T source sourceNames A evidence.certificate).mapError (refuse pos)
           let some observation := g.binders[group.observation]? | throw (refuse pos "missing observation binder")
           let some result := g.binders[group.result]? | throw (refuse pos "missing result binder")
-          pure [(i.name, A), (observation, O), (result, R)]
+          match O with
+          | some O => pure [(i.name, A), (observation, O), (result, R)]
+          -- An unnamed observation instantiates only a value whose type
+          -- does not mention it (`unnamedObservation`).
+          | none => pure [(i.name, A), (result, R)]
         | _, _ => throw (refuse pos "resolution evidence must match the source parameter's qualification")
       pure (pos, θ, written)
   let mut T := T
@@ -210,6 +215,16 @@ def moduleInstances (T : EquationStore.State) (g : Instantiable)
     seen := seen ++ [θ]
     let ((callable, bounds), grown) ← ((g.instantiate (θ.map fun (n, A) => (n, graph A))).run T).mapError (refuse pos)
     T := grown
+    -- **Unnamed observation.** A descriptor whose observation no source type
+    -- names instantiates the value only where its type is the same at every
+    -- observation: placing one changes nothing.
+    for group in g.resolution do
+      let some observation := g.binders[group.observation]? | throw (refuse pos "missing observation binder")
+      if (θ.lookup observation).isNone then
+        let ((placed, _), grown) ← ((g.instantiate ((θ ++ [(observation, [])]).map fun (n, A) => (n, graph A))).run T).mapError (refuse pos)
+        T := grown
+        if placed != callable then
+          throw (refuse pos s!"the observation of this resolution instance is named by no source type, and the type of '{g.name}' reads it")
     for (n, bound) in bounds do
       if let some upper := bound then
         let some actual := θ.lookup n | throw (refuse pos s!"no type argument for '{n}'")

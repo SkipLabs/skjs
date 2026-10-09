@@ -23,9 +23,6 @@ export type UnaryOp = "neg" | "plus" | "bitNot" | "typeof";
 export type TypeofShape = "number" | "string" | "boolean" | "undefined" | "function" | "bigint" | "symbol" | "object";
 export type Expr =
   | { k: "id"; pos: Span; name: string }
-  /** Descriptor observation and fresh settlement, with ownership checked
-   * against the enclosing qualified parameter. */
-  | { k: "resolution"; pos: Span; operation: "observe" | "fresh"; binder: string | null; e: Expr }
   /* `this`: the receiver of the nearest enclosing ordinary function. An arrow
      has no receiver of its own, so inside one this is a capture. */
   | { k: "this"; pos: Span }

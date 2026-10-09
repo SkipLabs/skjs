@@ -21,7 +21,7 @@ import { classInstance, computedAlias, computedForm, expandMapped, mapped, membe
   typeTerm, validateAnnotation, type Mapped, type TermScope } from "./type-term.mts";
 import { arrayPrototype, interfaceOverlay, overlay, primitiveKinds, primitivePrototype, primitivePrototypeName, type OverlayEntry,
   type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
-import { intrinsics, intrinsicModule, asyncReturnName, iterateIteratorName, iterateMapName, iterateSetName, iterateStringName,
+import { intrinsics, intrinsicModule, resolutionIntrinsics, stableDefinition, iterateIteratorName, iterateMapName, iterateSetName, iterateStringName,
   iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName } from "./intrinsics.mts";
 import { globalEntry, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { computedType, enclosingBinders, inferredTerm, literalUnion, type ComputedContext } from "./computed-types.mts";
@@ -1142,23 +1142,34 @@ export function collectDeclarations(file: string, options: {
     // Listed once, located at the first construct or overlay entry that uses
     // them.
     const intrinsicsListed = new Set<string>();
+    // Resolve Promise only if a requested intrinsic, or a resolution
+    // descriptor, actually names it.
+    const promiseType = (argument: TypeTerm): TypeTerm => {
+      const symbol = checker.resolveName("Promise", SymbolFlags.Interface, client, false);
+      const parts = (symbol?.declarations ?? []).map(d => d.resolve())
+        .filter((n): n is InterfaceDeclaration => !!n && ts.isInterfaceDeclaration(n));
+      const [promise] = parts;
+      if (!promise) throw Error("the standard library declares no Promise");
+      for (const part of parts) clean(part, `${idOf(part.getSourceFile())}#Promise`);
+      partners.set(promise, parts);
+      if (!valueStarts.includes(promise)) valueStarts.push(promise);
+      return { k: "reference", reference: { name: "Promise", span: [0, 0],
+        arguments: [[0, 0]], target: identityOf(promise) }, args: [argument], span: [0, 0] };
+    };
+    // A resolution descriptor is relative to the stable family `%Stable%`
+    // and the native `Promise`: listed once, where the first descriptor is.
+    let stableListed = false;
+    const listStable = (at: Span): void => {
+      if (stableListed) return;
+      try { promiseType({ k: "atom", name: "unknown", span: [0, 0] }); }
+      catch (error) { throw new DeclarationError(at, error instanceof Error ? error.message : String(error)); }
+      stableListed = true;
+    };
     const listIntrinsics = (at: Span, names: string[]): void => {
       const needed = new Set(names.filter(name => !intrinsicsListed.has(name)));
       if (!needed.size) return;
+      if ([...needed].some(name => resolutionIntrinsics.includes(name))) listStable(at);
       try {
-        // Resolve Promise only if a requested intrinsic actually names it.
-        const promiseType = (argument: TypeTerm): TypeTerm => {
-          const symbol = checker.resolveName("Promise", SymbolFlags.Interface, client, false);
-          const parts = (symbol?.declarations ?? []).map(d => d.resolve())
-            .filter((n): n is InterfaceDeclaration => !!n && ts.isInterfaceDeclaration(n));
-          const [promise] = parts;
-          if (!promise) throw Error("the standard library declares no Promise");
-          for (const part of parts) clean(part, `${idOf(part.getSourceFile())}#Promise`);
-          partners.set(promise, parts);
-          if (!valueStarts.includes(promise)) valueStarts.push(promise);
-          return { k: "reference", reference: { name: "Promise", span: [0, 0],
-            arguments: [[0, 0]], target: identityOf(promise) }, args: [argument], span: [0, 0] };
-        };
         for (const intrinsic of intrinsics(promiseType, needed))
           values.push({ binding: { local: intrinsic.name, imported: intrinsic.name,
             specifier: intrinsicModule, span: at },
@@ -1170,7 +1181,7 @@ export function collectDeclarations(file: string, options: {
       }
     };
     if (options.intrinsics) listIntrinsics(options.intrinsics.span, options.intrinsics.names);
-    if (resolutionContextAt) listIntrinsics(resolutionContextAt, [asyncReturnName]);
+    if (resolutionContextAt) listStable(resolutionContextAt);
     // `k in o` with a key TypeScript types as string literals only is the
     // model's key test, which narrows `o`; any other key, a number, a symbol
     // or a string known only at run time, is the host's `%HasProperty%`.
@@ -1505,7 +1516,7 @@ export function collectDeclarations(file: string, options: {
         throw new DeclarationError(span, error instanceof Error ? error.message : String(error));
       }
     }
-    definitions.push(...selections, ...primitiveProtos);
+    definitions.push(...selections, ...primitiveProtos, ...(stableListed ? [stableDefinition] : []));
     // First, so its row follows the four fixed ones in every table.
     definitions.unshift(...arrayProto);
     // Trusted generic promise results have a stable non-thenable payload

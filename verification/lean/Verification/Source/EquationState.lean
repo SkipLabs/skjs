@@ -94,7 +94,7 @@ structure State where
   fresh : Array String := #[]
   /-- The realm's array prototype head, once lowered. -/
   proto : Option Nat := none
-  /-- The stable-value bound of the source's reviewed async-return intrinsic. -/
+  /-- The stable non-thenable family, the reviewed intrinsic `%Stable%`. -/
   nativeStable : Option Union := none
   /-- Each array or tuple annotation's parts, by its path. -/
   arrayAnnotations : List (String × ArrayParts) := []

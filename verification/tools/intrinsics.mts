@@ -9,15 +9,17 @@
  * imported value's declared type, each is an assumption a result is relative
  * to.
  *
- * - `await e` is `%Await%(e)`: a promise settles, if ever, to a value of its
- *   type argument, and awaiting it yields that value; awaiting a stably
- *   non-thenable value yields the value itself. Other jobs may
- *   run in between, as they may during any call.
+ * - `await e` is `%Await%(e)`: a native promise settles, if ever, to a value
+ *   of its type argument, and awaiting it yields that value; awaiting a
+ *   resolution-qualified value yields its observation (`X.Observed`): a
+ *   stably non-thenable value itself, a native promise's fulfillment value.
+ *   Other jobs may run in between, as they may during any call.
  * - `return e` in an async function is `return %AsyncReturn%(e)`: the promise
- *   the call returned settles to `e` where `e` stays non-thenable, and adopts
- *   `e` where it is a promise of a value that stays non-thenable, settling to
- *   what `e` settles to. The lifetime `then` contract and the ordinary array
- *   invariant establish this bound alongside primitives.
+ *   the call returned settles to the fresh resolution of `e`
+ *   (`X.Result`): `e` itself where it stays non-thenable, and what `e`
+ *   settles to, resolved again, where it is a native promise. The lifetime
+ *   `then` contract and the ordinary array invariant establish stability
+ *   alongside primitives.
  * - Completing an async function is `return %AsyncComplete%()`: its promise
  *   settles to `undefined`, which `Promise<void>` admits.
  * - `for (const x of xs)` steps the iteration intrinsic the iterable's type
@@ -59,7 +61,8 @@
  * The reviewed overlay of library globals (`library-globals.mts`) reads some
  * members as these: `Promise.resolve(v)` is `%PromiseResolve%(v)`, which
  * retains a native promise through its constructor identity path or freshly
- * resolves a stably non-thenable value. `Promise.resolve()` is
+ * resolves a stably non-thenable value: a promise of what awaiting `v`
+ * yields. `Promise.resolve()` is
  * `%AsyncComplete%()`, and
  * `Promise.all(ps)` is `%PromiseAll%(ps)`: a promise of the array of what
  * the promises settle to, in order, settling once each has. The array is
@@ -68,12 +71,16 @@
  * `new Promise(executor)` is `%NewPromise%(executor)`: the executor is
  * called at once with the promise's resolving functions, and resolving
  * settles the promise to a primitive. */
-import type { SourceTypeParameter, TypeTerm } from "./declaration-types.mts";
+import type { SourceTypeParameter, TypeDefinition, TypeTerm } from "./declaration-types.mts";
+import { resolutionSlots } from "./type-term.mts";
 
 export const intrinsicModule = "skjs/intrinsics";
 export const awaitName = "%Await%";
 export const asyncReturnName = "%AsyncReturn%";
 export const promiseResolveName = "%PromiseResolve%";
+/** The intrinsics typed through a resolution descriptor, which need the
+ * stable family `%Stable%` and the native `Promise`. */
+export const resolutionIntrinsics: readonly string[] = ["%Await%", "%AsyncReturn%", "%PromiseResolve%"];
 export const asyncCompleteName = "%AsyncComplete%";
 export const iterateName = "%Iterate%";
 const iteratePrefix = "%Iterate:";
@@ -95,8 +102,6 @@ type AtomName = Extract<TypeTerm, { k: "atom" }>["name"];
 const span: [number, number] = [0, 0];
 const atom = (name: AtomName): TypeTerm => ({ k: "atom", name, span });
 const binder: TypeTerm = { k: "binder", name: "T", span };
-/** A second binder for the other input payload. */
-const other: TypeTerm = { k: "binder", name: "U", span };
 const either = (...parts: TypeTerm[]): TypeTerm => ({ k: "union", span, parts });
 const fn = (params: TypeTerm[], result: TypeTerm): Signature =>
   ({ k: "function", effect: "unrestricted", receiver: null, params, rest: null, result, span });
@@ -111,6 +116,14 @@ export const nonThenable: TypeTerm = { k: "union", span, parts: [...primitives.m
   { k: "object", span, stringIndex: null, calls: [],
     fields: [{ name: "then", optional: true, readonly: true, type: primitive, span }] },
   { k: "array", presence: "readable", readonly: true, element: atom("unknown"), span }] };
+
+/** `%Stable%`, the stable non-thenable family `N` resolution descriptors are
+ * relative to: a stable input is its own observation and result
+ * (SOURCE-CONTRACTS.md, "Implied bounds"). Listed as a type of the intrinsic
+ * module wherever a descriptor is checked; Lean reads it by this identity. */
+export const stableDefinition: TypeDefinition = {
+  declaration: { module: "skjs/intrinsics", name: "%Stable%", span },
+  parameters: [], bases: [], expression: nonThenable };
 
 /** `() => { readonly value: E } | null`: an iterator step, `null` at the end. */
 const stepOf = (element: TypeTerm): Signature => fn([], { k: "union", span, parts: [
@@ -185,18 +198,25 @@ export function restFromIntrinsic(k: number):
  * `Promise` applied to an argument. */
 export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: ReadonlySet<string>):
   { name: string; typeParams: SourceTypeParameter<TypeTerm>[]; type: Signature }[] {
+  // `X : Resolvable`: a binder owning its observation and result.
+  const slots = resolutionSlots("X");
+  const resolvable: SourceTypeParameter<TypeTerm> = { name: "X", bound: null, resolution: slots };
+  const input: TypeTerm = { k: "binder", name: "X", span };
+  const observed: TypeTerm = { k: "binder", name: slots.observation, span };
+  const result: TypeTerm = { k: "binder", name: slots.result, span };
+  const payload: SourceTypeParameter<TypeTerm> = { name: "T", bound: null, resolution: null };
   const definitions: Record<string, () => { typeParams: SourceTypeParameter<TypeTerm>[]; type: Signature }> = {
-    // `await` observes a native promise payload or preserves a stably
-    // non-thenable value at its own type.
-    [awaitName]: () => ({ typeParams: [{ name: "T", bound: null, resolution: null }, { name: "U", bound: nonThenable, resolution: null }],
-      type: fn([either(promise(binder), other)], either(binder, other)) }),
-    // Fresh resolution requires either payload to stay non-thenable.
-    [asyncReturnName]: () => ({ typeParams: [{ name: "T", bound: nonThenable, resolution: null }, { name: "U", bound: nonThenable, resolution: null }],
-      type: fn([either(binder, promise(other))], promise(either(binder, other))) }),
-    // PromiseResolve returns an ordinary native input itself. The other
-    // arm resolves a fresh promise, requiring its payload to stay non-thenable.
-    [promiseResolveName]: () => ({ typeParams: [{ name: "T", bound: null, resolution: null }, { name: "U", bound: nonThenable, resolution: null }],
-      type: fn([either(promise(binder), other)], promise(either(binder, other))) }),
+    // `await` observes a native promise's payload, whatever it is, or a
+    // resolution-qualified value's observation.
+    [awaitName]: () => ({ typeParams: [payload, resolvable],
+      type: fn([either(promise(binder), input)], either(binder, observed)) }),
+    // Fresh resolution settles to the input's result.
+    [asyncReturnName]: () => ({ typeParams: [resolvable], type: fn([input], promise(result)) }),
+    // PromiseResolve returns a native input itself; a qualified input
+    // yields a promise of its observation: itself where stable, its own
+    // promise where native.
+    [promiseResolveName]: () => ({ typeParams: [payload, resolvable],
+      type: fn([either(promise(binder), input)], promise(either(binder, observed))) }),
     [asyncCompleteName]: () => ({ typeParams: [], type: fn([], promise(atom("void"))) }),
     [iterateName]: () => ({ typeParams: [{ name: "T", bound: null, resolution: null }],
       type: fn([{ k: "array", presence: "readable", readonly: true, element: binder, span }], step) }),

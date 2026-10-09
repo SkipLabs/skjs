@@ -1249,14 +1249,6 @@ class Gate {
   private intrinsic(name: string, pos: Span, at: Span, args: Expr[]): Expr {
     return { k: "apply", pos, callee: { k: "id", pos: at, name }, args };
   }
-  private resolutionOwner(): TypeParamAst | undefined {
-    return this.resolutionScopes.flat().find(p => p.resolution !== null);
-  }
-  private freshReturn(pos: Span, keyword: Span, e: Expr): Expr {
-    const owner = this.resolutionOwner();
-    return owner ? { k: "resolution", pos, operation: "fresh", binder: owner.name, e }
-      : this.intrinsic(asyncReturnName, pos, keyword, [e]);
-  }
 
   /** A spread argument's operand. Over a string, a `Set`, a `Map` or a host
    * collection iterator, which TypeScript's type of it decides, `...x` is
@@ -1296,9 +1288,6 @@ class Gate {
    * an intrinsic call or read is given is a node or a token of the source. */
   private awaitExpr(node: ts.AwaitExpression): Expr {
     const start = node.getStart(this.file);
-    const owner = this.resolutionOwner();
-    if (owner) return { k: "resolution", pos: this.span(node), operation: "observe",
-      binder: owner.name, e: this.expr(node.expression) };
     return this.intrinsic(awaitName, this.span(node), [start, start + "await".length],
       [this.expr(node.expression)]);
   }
@@ -3887,7 +3876,7 @@ class Gate {
         k: "return",
         pos: this.span(node),
         e: this.asyncBody
-          ? this.freshReturn(this.span(node), keyword, e)
+          ? this.intrinsic(asyncReturnName, this.span(node), keyword, [e])
           : e,
       };
     }

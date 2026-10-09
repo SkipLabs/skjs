@@ -21,7 +21,6 @@ let resolution_slots scope index j = match field "resolution" j with
    by position and its method receiver as the declaration. A reference names
    its declaration by identity. *)
 type type_context = { bindings: (string * type_argument) list;
-                      resolutions: (string * (rigid * (rigid * rigid))) list;
                       owner: string option; positional: rigid list;
                       arity: (string * (int * int)) list;
                       symbolic: (string * (rigid * ty)) list;
@@ -362,16 +361,11 @@ let quantify binders scope parameters =
       then Json.fail "duplicate type parameter";
       let identity={scope;index=3*index;spelling} in
       let resolution=resolution_slots scope index p in
-      if resolution <> None && List.length parameters <> 1 then
-        unsupported "a resolution-qualified signature has exactly one source parameter";
       let quantified={identity;bound=Option.map (fun t -> ValueArgument t)
         (optional_type binders (field "bound" p));default=None;resolution} in
       let hidden = match resolution with None -> [] | Some (observation,result) ->
         List.map (fun (r:rigid) -> r.spelling,ValueArgument (Rigid r)) [observation;result] in
-      let resolutions = match resolution with None -> binders.resolutions
-        | Some slots -> (spelling,(identity,slots))::binders.resolutions in
-      let binders={binders with bindings=(spelling,ValueArgument (Rigid identity))::hidden @ binders.bindings;
-        resolutions} in
+      let binders={binders with bindings=(spelling,ValueArgument (Rigid identity))::hidden @ binders.bindings} in
       loop (index+1) binders (quantified::accumulated) rest in
   loop 0 binders [] parameters
 (* A binary operator on primitive operands: arithmetic, or a comparison. *)
@@ -388,7 +382,6 @@ type logical = Nullish | OrElse | AndAlso
 type expr = { pos: Json.t; node: expr_node }
 and expr_node =
   | Id of string | Literal of literal | Not of expr | Arith of arithmetic * expr * expr
-  | Resolution of bool * (rigid * (rigid * rigid)) option * expr
   (* `a && b` (true) or `a || b` (false): the left operand's value, or the
      right's where the left is truthy (`&&`) or falsy (`||`). *)
   | Logical of bool * expr * expr
@@ -540,8 +533,7 @@ let chain_name = "?."
 let rec children e = match e.node with
   | Id _ | Literal _ -> []
   | BlockBody ss -> List.concat_map statement_children ss
-  | Not e | TypeofTest (_,_,e) | Read (e,_) | Ctor e | Cast (_,_,e) | Unary (_,e)
-  | Resolution (_,_,e) -> [e]
+  | Not e | TypeofTest (_,_,e) | Read (e,_) | Ctor e | Cast (_,_,e) | Unary (_,e) -> [e]
   | Assign (_,e) | NullishAssign (_,_,e) -> [e]
   | Update (_,t,r,_) -> t :: Option.to_list r
   | LogicalAssign (_,a,b) | Comma (a,b) | HasKey (a,b) | InstanceTest (_,a,b) -> [a;b]
@@ -622,7 +614,7 @@ let rec heap_preserving_expr ?(inline=false) ~readable ~callable values (e:expr)
   | Write _ | Assign _ | Update _ | LogicalAssign _ | NullishAssign _
   | ArrayAssign _ | Invoke _ | Apply _ | Ctor _ | New _
   | Optional _ | Index _ | IndexWrite _ | Bind _ | ObjectAssign _
-  | WithFields _ | Resolution _ -> false
+  | WithFields _ -> false
 and heap_preserving_stmts ~readable ~callable values = function
   | [] -> true
   | s::rest ->
@@ -648,16 +640,6 @@ let arithmetic = function
 let rec expr binders j =
   let sub k = expr binders (field k j) in
   let node = match text "k" j with
-  | "resolution" ->
-    let observe = match text "operation" j with
-      | "observe" -> true | "fresh" -> false | _ -> fail "unknown resolution operation" in
-    let owner = match field "binder" j with
-      | Null -> None
-      | String name -> (match List.assoc_opt name binders.resolutions with
-        | Some descriptor -> Some descriptor
-        | None -> fail "resolution operation has no owned descriptor")
-      | _ -> fail "expected nullable resolution owner" in
-    Resolution (observe,owner,sub "e")
   | "id" -> Id (text "name" j) | "lit" -> Literal (literal (field "lit" j))
   | "this" -> Id "this"
   | "not" -> Not (sub "e")
@@ -823,7 +805,7 @@ let decode ast =
     let id = identity (field "declaration" definition) in
     let parameters = List.mapi (fun i p -> {scope= -1-index;index=i;spelling=text "name" p})
       (items "parameters" definition) in
-    let body = source_type {bindings=[];resolutions=[];owner=Some id;positional=parameters;arity;symbolic=[];
+    let body = source_type {bindings=[];owner=Some id;positional=parameters;arity;symbolic=[];
       own=true;self_owner=true} in
     {id;native_promise=(text "name" (field "declaration" definition)="Promise" &&
        String.starts_with ~prefix:"typescript/lib/" (text "module" (field "declaration" definition)));parameters;
@@ -851,7 +833,7 @@ let decode ast =
         Some (d.id,(parameter,body))
       | _ -> None)
     | _ -> None) definitions in
-  let top={bindings=[];resolutions=[];owner=None;positional=[];arity;symbolic;own=false;self_owner=false} in
+  let top={bindings=[];owner=None;positional=[];arity;symbolic;own=false;self_owner=false} in
   (* A generic class's binders are in scope in its members: one binder per
      spelling for the whole top-level code, as Lean reads them. *)
   let rec class_params = function
@@ -883,7 +865,7 @@ let decode ast =
       (items "values" document);
     functions=List.mapi (fun scope f ->
       let parameters = items "typeParams" f in
-      let initial={bindings=[];resolutions=[];owner=None;positional=[];arity;symbolic;own=false;self_owner=false} in
+      let initial={bindings=[];owner=None;positional=[];arity;symbolic;own=false;self_owner=false} in
       let binders,quantified = quantify initial scope parameters in
       {quantified;name=text "name" f; name_pos=field "namePos" f;
       params=List.map (fun p -> text "name" p,source_type binders (field "type" p)) (items "params" f);

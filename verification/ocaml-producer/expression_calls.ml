@@ -43,13 +43,13 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
         let fixed = List.mapi (fun i t ->
           (List.nth signature.quantified i).identity,ValueArgument t) type_args in
         let fixed = Inference.qualify_substitution ~native ~expand ~owned:owned_resolution
-          signature.quantified fixed in
+          ~observed:observation_owner signature.quantified fixed in
         let partial = Inference.substitute_signature fixed
           {signature with quantified=List.filteri (fun i _ -> i >= List.length type_args)
              signature.quantified} in
         if partial.quantified = [] then fixed,partial.result
         else
-          let inferred = Inference.infer ~expand ~native ~owned:owned_resolution ~receiver ?expected partial actuals in
+          let inferred = Inference.infer ~expand ~native ~owned:owned_resolution ~observed:observation_owner ~receiver ?expected partial actuals in
           fixed @ inferred.substitution,inferred.result in
       let no_type_arguments () = if type_args <> [] then
         Proposal_diagnostics.unsupported "explicit type arguments on a callee without binders" in
@@ -386,7 +386,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
             (match arg.node with Id n -> explain_open_array arg.pos env n p | _ -> ());
             expr env arg]) args) @
           List.init (max 0 (List.length signature.params - written_positions)) (fun _ -> Atoms [Undef]) in
-        explain_thenable e target signature actuals;
+        explain_thenable e target actuals;
         let substitution,result = infer_explicit ~receiver:receiver_type ?expected signature actuals in
         instance_of ~declared:callee target substitution;
         offer ~substitute:(Inference.substitute substitution) signature;

@@ -201,13 +201,15 @@ def lowerSource (ast claims : Json) : M (List (String × Union) × List (String 
       let generic ← genericOf name span path v tps fun scope => do
         genericType { binders := scope, site := path, checkBounds := false } (← field v "type")
       generics := generics ++ [generic]
-      let identity ← field v "declaration"
-      if name == "%AsyncReturn%" &&
-          (identity.getObjValAs? String "module").toOption == some "skjs/intrinsics" &&
-          (identity.getObjValAs? String "name").toOption == some "%AsyncReturn%" then
-        let some (some stable) := generic.bounds.lookup "T"
-          | throw "the async-return intrinsic requires its stable-value bound"
-        modify fun s => { s with nativeStable := some stable }
+  -- The stable non-thenable family resolution descriptors are relative to:
+  -- the intrinsic module's `%Stable%`, by its declaration identity.
+  for d in ds do
+    if (d.identity.getObjValAs? String "module").toOption == some "skjs/intrinsics" &&
+        (d.identity.getObjValAs? String "name").toOption == some "%Stable%" then
+      if !d.parameters.isEmpty || !d.bases.isEmpty then
+        throw "the stable-value intrinsic takes no parameters"
+      let stable ← lowerType { site := "/declarations/definitions/%Stable%" } d.expression
+      modify fun s => { s with nativeStable := some stable }
   -- The producer's rows and the claims.
   let types ← arr claims "types"
   let P ← (producerRows types : Except String ProducerRows)

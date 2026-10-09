@@ -394,7 +394,6 @@ negation. -/
     Compiler Fragment.Expr := do
   match e with
   | .var .. | .lit .. => pure e
-  | .resolution p operation binder e => return .resolution p operation binder (← comparisonsExpr fc e)
   | .equality p eq l r =>
     let l ← comparisonsExpr fc l
     let r ← comparisonsExpr fc r

@@ -2,6 +2,10 @@ export async function wrap<T>(value: T): Promise<Awaited<T>> {
   return await value;
 }
 
+export async function forward<T>(value: T): Promise<Awaited<T>> {
+  return value;
+}
+
 export async function stored<T>(value: T): Promise<Awaited<T>> {
   const observed = await value;
   return observed;

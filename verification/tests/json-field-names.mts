@@ -77,6 +77,7 @@ const equationReaders = [
   const leanNames = new Set([...lean(["lean/Verification/Source/Fragment.lean",
     ...equationReaders]), ...lean(["lean/Verification/Source/ResolutionWire.lean"], false, "inductive Certificate")]);
   expectSubset("Lean reads of the Fragment", leanNames, ts, {
+    binder: "a source-claims label, read by equation lowering",
     decl: "a source-claims label, read by equation lowering",
     meet: "a source-claims label, read by equation lowering",
     types: "the source-claims document's rows, read by equation lowering",

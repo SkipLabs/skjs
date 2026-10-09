@@ -318,7 +318,7 @@ The occurrence may be nested, `Promise<{ value: T }>` included. A written
 bound $`B`$ becomes $`B\mathbin{\&}N`$ (`promisedBinders`, `promisedMethods`).
 A trusted signature stating a promise of $`T`$ is truthful only where $`T`$
 stays non-thenable, since a fresh resolution of a thenable payload adopts it.
-The intrinsics keep the operation-specific bounds they state, and the
+The intrinsics keep the operation-specific contracts they state, and the
 program's own signatures imply none of this form: their bodies are checked at
 every admitted instantiation.
 
@@ -343,6 +343,8 @@ owned names in the parameter's `resolution` field
 $`(T,O_T,R_T)`$ as a resolution descriptor of the scheme
 ([request protocol](REQUEST-PROTOCOL.md)).
 
+We write $`T:\mathsf{Resolvable}`$ for a resolution-qualified $`T`$, and
+$`T.\mathsf{Observed}=O_T`$, $`T.\mathsf{Result}=R_T`$.
 Resolution qualification is not a subtype bound: it leaves the values of
 $`T`$ unconstrained and restricts which assignments of $`(T,O_T,R_T)`$ are
 admitted, to the descriptors
@@ -412,7 +414,31 @@ a promise, or no bound, keeps them apart, and a call still checks the bound
 The body is certified at every admitted assignment
 ([generic closures](PROGRAM-TYPING.md)), and every call supplies a certificate
 classifying its type argument, from which $`O_T`$ and $`R_T`$ follow
-([claims](SOURCE-CLAIMS.md)).
+([claims](SOURCE-CLAIMS.md)). A union certificate's arms classify the
+input's parts in any order (`SourceResolution.check`).
+
+**Resolution operations in the body.** `await` and an async return are the
+qualified intrinsics ([async](#async-functions-and-await)), instantiated at
+a descriptor. In the body of a qualified $`T`$, the certificate `binder`
+names $`T`$'s own descriptor, for an input equivalent to $`T`$ or to its
+observation:
+
+```math
+\frac{T\ \text{resolution-qualified}}{\mathsf{Desc}(T,O_T,R_T)}\ \textsf{binder}
+\qquad
+\frac{T\ \text{resolution-qualified}}{\exists O.\ \mathsf{Desc}(O_T,O,R_T)}\ \textsf{forwarded}
+```
+
+The second holds since an observation resolves to the result,
+$`\mathsf{Resolves}(O_T,R_T)`$, and every resolvable input has a descriptor
+with its result (`ResolutionCapabilities.Resolves.describe`). Its
+observation is a family no source type names, so the instance is admitted
+only for an intrinsic whose type does not read $`X.\mathsf{Observed}`$:
+`%AsyncReturn%`, not `%Await%` (`Scheme.moduleInstances`, "unnamed
+observation"). Thus `return await v` returns `Promise<Awaited<T>>`, an
+observation is neither $`T`$ nor `Awaited<T>`, and a second `await` of an
+observation is refused (`generic-promise-resolution` and its negatives in
+`pipeline/cases.mts`).
 
 ## Explicit type arguments
 
@@ -976,13 +1002,18 @@ The record arm requires a lifetime read contract for `then`, or its absence;
 an observation of its current contents is insufficient. Ordinary arrays
 exclude an own `then` and have stable standard prototypes without one,
 including for external arrays. These contracts make every value of $`N`$
-non-thenable throughout its lifetime. The intrinsic signatures are:
+non-thenable throughout its lifetime. $`N`$ is the intrinsic type
+`%Stable%`, listed with the native `Promise` wherever a resolution descriptor
+is checked (`stableDefinition`). With $`X : \mathsf{Resolvable}`$ a
+resolution-qualified binder, owning its observation $`X.\mathsf{Observed}`$
+and result $`X.\mathsf{Result}`$ ([implied bounds](#implied-bounds)), the
+intrinsic signatures are:
 
 ```math
 \begin{aligned}
-\mathtt{\%Await\%}&:\forall T,\,U\le N.\ (\mathit{value}:\mathsf{Promise}\langle T\rangle\mid U)\Rightarrow T\mid U\\
-\mathtt{\%AsyncReturn\%}&:\forall T\le N,\,U\le N.\ (\mathit{value}:T\mid\mathsf{Promise}\langle U\rangle)\Rightarrow\mathsf{Promise}\langle T\mid U\rangle\\
-\mathtt{\%PromiseResolve\%}&:\forall T,\,U\le N.\ (\mathit{value}:\mathsf{Promise}\langle T\rangle\mid U)\Rightarrow\mathsf{Promise}\langle T\mid U\rangle\\
+\mathtt{\%Await\%}&:\forall T,\,X:\mathsf{Resolvable}.\ (\mathit{value}:\mathsf{Promise}\langle T\rangle\mid X)\Rightarrow T\mid X.\mathsf{Observed}\\
+\mathtt{\%AsyncReturn\%}&:\forall X:\mathsf{Resolvable}.\ (\mathit{value}:X)\Rightarrow\mathsf{Promise}\langle X.\mathsf{Result}\rangle\\
+\mathtt{\%PromiseResolve\%}&:\forall T,\,X:\mathsf{Resolvable}.\ (\mathit{value}:\mathsf{Promise}\langle T\rangle\mid X)\Rightarrow\mathsf{Promise}\langle T\mid X.\mathsf{Observed}\rangle\\
 \mathtt{\%AsyncComplete\%}&:()\Rightarrow\mathsf{Promise}\langle\mathsf{void}\rangle\\
 \mathtt{\%PromiseAll\%}&:\forall T.\ (\mathit{values}:\mathsf{readonly}\ \mathsf{Promise}\langle T\rangle[\,])\Rightarrow\mathsf{Promise}\langle T[\,]\rangle\\
 \mathtt{\%PromiseReject\%}&:\forall T.\ (\mathit{reason}:\mathsf{unknown})\Rightarrow\mathsf{Promise}\langle T\rangle\\
@@ -990,16 +1021,28 @@ non-thenable throughout its lifetime. The intrinsic signatures are:
 \end{aligned}
 ```
 
-Instantiated by $`\textsf{instances}`$, with $`R`$ the async function's result
-annotation, they derive:
+A call instantiates $`X`$ at a descriptor $`(B,O,S)`$, written
+$`\mathsf{Desc}(B,O,S)`$ ([implied bounds](#implied-bounds)), which its
+resolution certificate establishes. Instantiated so, with $`R`$ the async
+function's result annotation, they derive:
 
 ```math
-\frac{\Gamma\vdash e:\mathsf{Promise}\langle A\rangle\mid B\quad B\le N}{\Gamma\vdash\mathsf{await}\ e:A\mid B}\ \textsf{await}
+\frac{\Gamma\vdash e:\mathsf{Promise}\langle A\rangle\mid B\quad \mathsf{Desc}(B,O,S)}{\Gamma\vdash\mathsf{await}\ e:A\mid O}\ \textsf{await}
 \qquad
-\frac{\Gamma\vdash e:A\mid\mathsf{Promise}\langle B\rangle\quad A\le N\quad B\le N\quad \mathsf{Promise}\langle A\mid B\rangle\le R}{\Gamma\vdash_R\mathsf{return}\ e}\ \textsf{async-return}
+\frac{\Gamma\vdash e:B\quad \mathsf{Desc}(B,O,S)\quad \mathsf{Promise}\langle S\rangle\le R}{\Gamma\vdash_R\mathsf{return}\ e}\ \textsf{async-return}
 \qquad
 \frac{\mathsf{Promise}\langle\mathsf{void}\rangle\le R}{\Gamma\vdash_R\text{completion}}\ \textsf{async-complete}
 ```
+
+The native arm of `%Await%` and `%PromiseResolve%` takes any payload:
+observation reads a native promise's fulfillment value once, so
+`Promise<{ n: number }>` is awaited at `{ n: number }` although no descriptor
+resolves it. A stable $`B`$ is its own descriptor, $`\mathsf{Desc}(B,B,B)`$,
+so a stable operand is awaited and returned at its own type. Each rule is
+the host contract its descriptor component selects: observation for
+`%Await%` and `%PromiseResolve%`, fresh resolution for `%AsyncReturn%`
+(`ResolutionCapabilities.Observes.safe`, `ResolutionCapabilities.Resolves.safe`,
+relative to the reviewed `NativeOperationContracts`).
 
 `Promise<void>` is `Promise<unknown>` (`void` is top); async completion
 fulfills it with `undefined`. A throw in an async body leaves it as a throw.
@@ -1033,17 +1076,19 @@ resolution of that record can adopt its `then` instead. In particular,
 `catch` and `finally` forward a fulfilled receiver's value by resolving a
 fresh promise, so their receiver payload must remain non-thenable.
 
-**Stable non-thenable inputs.** Async return checks that its ordinary input
-and adopted native payload satisfy $`N`$. Its resulting promise may then
-be used at a wider result annotation, including `Promise<unknown>`, while
-the intrinsic's payload arguments retain their checked bounds. A bounded
-numeric parameter and a generic array can retain their precise types. An
-open record without the lifetime `then` contract fails the input obligation.
+**Resolvable inputs.** Async return checks that its input is classified:
+stable, a native promise of a classified payload, or a union of classified
+inputs. Its resulting promise may then be used at a wider result annotation,
+including `Promise<unknown>`, while the instance's certificate is still
+checked. A bounded numeric parameter and a generic array retain their
+precise types. An open record without the lifetime `then` contract has no
+classification.
 
-`Promise.resolve(value)` requires that same stability for an ordinary value.
-Its native identity arm admits an arbitrary payload type. Consequently a
-native promise containing an open record can be returned by `Promise.resolve`
-while forwarding it through async return requires additional evidence.
+`Promise.resolve(value)` requires that classification for an ordinary
+value. Its native identity arm admits an arbitrary payload type.
+Consequently a native promise containing an open record can be returned by
+`Promise.resolve` while forwarding it through async return requires
+additional evidence.
 
 The reaction methods quantify a receiver payload $`U\le N`$ at each call.
 `catch` returns `Promise<U | R>`, where $`R\le N`$ is the rejection

@@ -48,9 +48,6 @@ Mappings discard only the temporaries introduced by this expression. -/
   let prepared ← isPreparedAtom e
   let next ← if prepared then pure next else observeExprCurrent fc scope Γ e.span A next
   match _he : e with
-  | .resolution .. =>
-    throw (locatedRefusal (← table) e.span .expressionClaim
-      "qualified resolution operation requires descriptor checking")
   | .nullishAssign .. | .arrayAssign .. | .build .. | .objectAssign .. | .ifBody ..
     | .logical .. | .coalesce .. | .optional .. | .comma .. | .logicalAssign .. | .update .. =>
     throw "internal execution plan: compound source syntax reached atomic elaboration"

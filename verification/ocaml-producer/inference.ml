@@ -11,11 +11,15 @@ type instantiation = {
 
 (* Descriptor images are candidates tied to one input and one checked finite
    construction. Hidden projections never become independent solver variables. *)
-let resolution_instance ~native ~expand ~owned input =
+let resolution_instance ~native ~expand ~owned ~observed input =
   let rec describe seen input = match input with
-    | Rigid r -> (match owned r with
-      | Some (observation,result) -> Rigid observation,Rigid result,BinderResolution r.spelling
-      | None -> input,input,StableResolution)
+    | Rigid r -> (match owned r,observed r with
+      | Some (observation,result),_ -> Rigid observation,Rigid result,BinderResolution r.spelling
+      (* A binder's observation resolves to the binder's result; its own
+         observation is named by no type (Lean admits the instance only
+         where the signature does not read it). *)
+      | None,Some (owner,result) -> top,Rigid result,BinderResolution owner.spelling
+      | None,None -> input,input,StableResolution)
     | Union inputs -> arms seen inputs
     | Atoms (_::_::_ as atoms) -> arms seen (List.map (fun atom -> Atoms [atom]) atoms)
     | Atoms [Named (id,[payload])] when native id ->
@@ -35,11 +39,11 @@ let resolution_instance ~native ~expand ~owned input =
     UnionResolution (List.map (fun (_,_,certificate) -> certificate) descriptors) in
   describe [] input
 
-let qualify_substitution ~native ~expand ~owned quantified solution =
+let qualify_substitution ~native ~expand ~owned ~observed quantified solution =
   List.map (fun (identity,argument) ->
     match List.find_opt (fun (q:quantifier) -> q.identity=identity) quantified,argument with
     | Some {resolution=Some (o,r);_},ValueArgument input ->
-      let observation,result,certificate = resolution_instance ~native ~expand ~owned input in
+      let observation,result,certificate = resolution_instance ~native ~expand ~owned ~observed input in
       identity,ResolutionArgument (input,(o,observation),(r,result),certificate)
     | _,_ -> identity,argument) solution
 
@@ -158,7 +162,7 @@ let upper_candidate = function
 (* [expand] gives a declaration's equation, to compare a class instance with
    the interface application a signature names (`new () => Mapper<K, V, K2, V2>`). *)
 let infer ?receiver ?expected ?(expand = fun _ -> None) ?(native = fun _ -> false)
-    ?(owned = fun _ -> None) (signature:signature) actuals =
+    ?(owned = fun _ -> None) ?(observed = fun _ -> None) (signature:signature) actuals =
   if signature.quantified=[] then unsupported "generic inference requires a quantified signature";
   if signature.rest_pack<>None then unsupported "pack inference requires an argument-list candidate";
   let domains = match signature.variadic with
@@ -543,6 +547,6 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) ?(native = fun _ -> fals
         if identity = q.identity then identity,ValueArgument (substitute substitution default)
         else identity,argument) substitution
     | _ -> substitution) substitution signature.quantified in
-  let substitution = qualify_substitution ~native ~expand ~owned signature.quantified substitution in
+  let substitution = qualify_substitution ~native ~expand ~owned ~observed signature.quantified substitution in
   let result = substitute substitution signature.result in
   {substitution;result}

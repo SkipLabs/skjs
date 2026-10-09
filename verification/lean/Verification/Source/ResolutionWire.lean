@@ -92,21 +92,4 @@ instance : FromJson Instance where
     fieldsExactly j ["certificate"]
     return ⟨← fromJson? (← jField j "certificate")⟩
 
-inductive Operation where
-  | observe
-  | fresh
-  deriving Repr, BEq, Inhabited
-
-instance : ToJson Operation where
-  toJson
-    | .observe => toJson "observe"
-    | .fresh => toJson "fresh"
-
-instance : FromJson Operation where
-  fromJson? j := do
-    match ← jStr j with
-    | "observe" => return .observe
-    | "fresh" => return .fresh
-    | _ => throw "unknown qualified resolution operation"
-
 end Verification.ResolutionWire

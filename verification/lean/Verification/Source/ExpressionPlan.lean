@@ -66,7 +66,7 @@ private def readSaved (binding : Saved) : Expr := .var binding.source binding.na
 
 private def effect : Expr → Effect
   | .assign _ name _ rhs => .cellWrite name rhs.span
-  | .resolution .. | .construct .. | .call .. | .invoke .. | .callWithReceiver .. | .applyWithReceiver ..
+  | .construct .. | .call .. | .invoke .. | .callWithReceiver .. | .applyWithReceiver ..
   | .write .. | .indexWrite .. | .elemWrite .. | .objectAssign ..
   => .havoc
   | _ => .none
@@ -102,8 +102,6 @@ private partial def expression (root : Span) (e : Expr) : Builder Plan := do
   let atom := fun prepared => Plan.atom e.span (.evaluate e prepared (effect e))
   let core : Plan ← match e with
     | .var .. | .lit .. | .lambda .. | .ctor .. | .block .. => pure (atom e)
-    | .resolution pos operation binder a => operand root a "value" fun a => do
-        pure (atom (.resolution pos operation binder (readSaved a)))
     | .not pos a => operand root a "value" fun a => do pure (atom (.not pos (readSaved a)))
     | .unary pos op a => operand root a "value" fun a => do pure (atom (.unary pos op (readSaved a)))
     | .cast pos annot a => operand root a "value" fun a => do pure (atom (.cast pos annot (readSaved a)))
