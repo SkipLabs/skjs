@@ -436,7 +436,11 @@ structure QualifiedBody (G : NormalGraph ι) (images : PositiveCertificates.Inst
   capabilities : ResolutionDescriptors.Capabilities stable
   domain : G.domain = ResolutionDescriptors.descriptorDomain capabilities
   body : BodySubtyping G
-  check_eq : body.check = ProgramCertificates.lexicalBodyCheck G images source
+  /-- Labels the body reads as one another, each pair denoting the same
+  values within the declared bounds (`ProgramCertificates.AliasesSound`). -/
+  aliases : List (ι × ι)
+  aliases_sound : ProgramCertificates.AliasesSound G source aliases
+  check_eq : body.check = ProgramCertificates.lexicalBodyCheck G images source aliases
 
 /-- Source instances satisfy both the descriptor contract and the declared
 bounds. Each bound is interpreted in the enclosing assignment. -/
@@ -660,10 +664,11 @@ table checked before it, not part of this request. -/
     (sourceMap : SourceMap) (requirements : List (Nat × HeapKnowledge.Knowledge)) (cuts : List Nat)
     (table : List (CodeEntry ι))
     (checker : HeapExpressionRules.Checker (graph r) (StoreView.images r.types) :=
-      HeapExpressionRules.Checker.ordinary (graph r) (StoreView.images r.types)) :
+      HeapExpressionRules.Checker.ordinary (graph r) (StoreView.images r.types))
+    (aliases : List (ι × ι) := []) :
     Except String (ControlFlow.Certificate ι) :=
   match CertificateProducer.produceUsing (graph r) (StoreView.images r.types) labels fuel r.result r.program r.claims r.start [] r.inputs suggestions known
-      requirements cuts (GraphCode.admits table) checker with
+      requirements cuts (GraphCode.admits table) checker aliases with
   | .ok c => pure c
   | .error e =>
     let location := match e with
@@ -742,7 +747,8 @@ part of the certified request. -/
     (requirements : List (Nat × HeapKnowledge.Knowledge) := []) (cuts : List Nat := [])
     (codeHints : List CodeHints := [])
     (checker : HeapExpressionRules.Checker (graph r) (StoreView.images r.types) :=
-      HeapExpressionRules.Checker.ordinary (graph r) (StoreView.images r.types)) :
+      HeapExpressionRules.Checker.ordinary (graph r) (StoreView.images r.types))
+    (aliases : List (ι × ι) := []) :
     Except String (Response ι) := do
   let labels := searchLabels.getD (StoreView.labels r.types)
   -- Each code against the table of those before it, as `codeTable` checks.
@@ -764,7 +770,7 @@ part of the certified request. -/
       let label := stop.nodeLabel.getD q.entry.start
       throw (withDiagnostic "subtype search exhausted during code admission; result is inconclusive"
         (failureDiagnostic (q.asRequest r) fuel hints.sourceMap (.exhaustedExpression label stop)))
-  let C ← produceGraph r fuel labels suggestions known sourceMap requirements cuts table checker
+  let C ← produceGraph r fuel labels suggestions known sourceMap requirements cuts table checker aliases
   let response := Response.mk C certificates
   let checked := verifyResult r response checker
   if checked.accepted then return response
@@ -823,13 +829,14 @@ theorem verify_qualified_safe_at {r : Request σ ι} {c : Response ι}
     (source : SchemeRow ι) {N : Fam} {C : ResolutionDescriptors.Capabilities N}
     (domain : (graph r).domain = ResolutionDescriptors.descriptorDomain C)
     (body : BodySubtyping (graph r))
+    (aliases : List (ι × ι)) (aliasesSound : ProgramCertificates.AliasesSound (graph r) source aliases)
     (bodyCheck : body.check = ProgramCertificates.lexicalBodyCheck (graph r)
-      (StoreView.images r.types) source)
+      (StoreView.images r.types) source aliases)
     (checked : verify r c (HeapExpressionRules.Checker.withSubtyping
       (graph r) (StoreView.images r.types) body) = true)
     (η : MixedAssignment ι) (As : List MixedFamily)
     (length : As.length = source.binders.length) (allowed : (graph r).domain.allowed source As)
-    (_bounded : ∀ m, Bounded (mixedMeaning (graph r)) η source As m)
+    (bounded : ∀ m, Bounded (mixedMeaning (graph r)) η source As m)
     (n W h ρ)
     (he : EnvOk (reassign (graph r) (assign η source.binders As)) r.inputs ρ n W)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
@@ -842,7 +849,7 @@ theorem verify_qualified_safe_at {r : Request σ ι} {c : Response ι}
     simp only [CertificateProducer.acceptUsing_eq (checker := HeapExpressionRules.Checker.withSubtyping
       (graph r) (StoreView.images r.types) body), Bool.and_eq_true] at accepted
     let body' := ProgramCertificates.lexicalBodySubtyping (graph r)
-      (StoreView.images r.types) source domain η As length allowed
+      (StoreView.images r.types) source domain aliases aliasesSound η As length allowed bounded
     have same : body'.check = body.check := bodyCheck.symm
     have hc := (Parametricity.checkBodyEntry_reassign (graph r)
       (assign η source.binders As) (StoreView.images r.types) body body' same

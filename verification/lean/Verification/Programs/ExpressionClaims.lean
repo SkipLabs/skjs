@@ -93,7 +93,7 @@ diagnostic mentioning some of them shows of it (`StoreView.project`). -/
         let (e, next) := DirectProof.renderWith G images pool j.context plan cache
         cache := next
         pure e
-      | none => pure (CertificateProducer.expressionWithUsing G images pool (rs.map Required.sequent) fuel j.context j.term j.type)
+      | none => pure (CertificateProducer.expressionWithUsing G images pool (rs.map Required.sequent) [] fuel j.context j.term j.type)
     -- Attribute an invalid suggested proof to its own obligation, rather than
     -- losing the source location in the final aggregate check.
     -- The graph code a unit creates is checked after its obligations are

@@ -389,6 +389,26 @@ native step contradicts separation, and both arms of a stable union are
 stable. A descriptor with a stable input thus has that input as its
 observation and result (`Descriptor.exactStable`): an input of type `number`
 resolves to exactly `number`.
+
+A written bound within $`N`$ makes the qualified parameter its own
+observation and result. The body is certified at the admitted assignments
+within the declared bounds, so for a closed bound $`B`$:
+
+```math
+\frac{T\ \text{resolution-qualified}\qquad T\le B\qquad B\le N}
+     {O_T=T\qquad R_T=T}\ \textsf{stable-bound}
+```
+
+since every admitted $`T`$ lies within $`N`$ and exactness applies
+(`SourceResolution.stableAliases_sound`). The body check reads $`O_T`$ and
+$`R_T`$ as the row a body reads $`T`$ at, the meet of $`T`$ and $`B`$, when it
+compares two types (`ProgramCertificates.lexicalBodyCheck`), and proof search
+proposes such comparisons. `Awaited<T>` and $`T`$ are then interchangeable in
+the body of `back<T extends number>(v: Awaited<T>): T`, while a bound admitting
+a promise, or no bound, keeps them apart, and a call still checks the bound
+(`generic-promise-bounded-result` and its negatives in
+`pipeline/cases.mts`).
+
 The body is certified at every admitted assignment
 ([generic closures](PROGRAM-TYPING.md)), and every call supplies a certificate
 classifying its type argument, from which $`O_T`$ and $`R_T`$ follow

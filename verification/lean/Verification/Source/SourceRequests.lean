@@ -81,6 +81,13 @@ variable {σ ι : Type} [Labels ι] [StoreView σ ι]
   | none => HeapExpressionRules.Checker.ordinary _ _
   | some q => q.checker
 
+/-- The labels a qualified body's check reads as one another; search proposes
+comparisons through them. -/
+@[nospecialize] def SourceRequest.aliases (r : SourceRequest σ ι) : List (ι × ι) :=
+  match r.qualification with
+  | none => []
+  | some q => q.aliases
+
 /-- Unqualified bodies permit every assignment; qualified bodies permit the
 instances of their retained source signature. -/
 def SourceRequest.Admits (r : SourceRequest σ ι) (η : PositiveGraphs.MixedAssignment ι) : Prop :=
@@ -273,7 +280,7 @@ theorem checkRequests_safe_at {rs : List (SourceRequest σ ι)} {b : (Bundle ι)
     simp only [SourceRequest.checker, hq, QualifiedBody.checker] at checked
     simp only [SourceRequest.Admits, hq, QualifiedBody.Admits] at admitted
     obtain ⟨θ, As, length, allowed, bounded, rfl⟩ := admitted
-    exact verify_qualified_safe_at q.source q.domain q.body q.check_eq checked
+    exact verify_qualified_safe_at q.source q.domain q.body q.aliases q.aliases_sound q.check_eq checked
       θ As length allowed bounded n W heap ρ he hw hh
 
 /-- Every supplemental claim is a derivable sequent in the same calculus. -/

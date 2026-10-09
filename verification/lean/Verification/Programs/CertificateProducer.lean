@@ -440,10 +440,17 @@ claimed rest within the member's too. -/
   let receivers ← m.receivers.mapM fun T => subtypeUsing G images O T
   pure (calls, rests, receivers)
 
+/-- A subsumption step to `A`. Where the types are not comparable as they are,
+search proposes a comparison with each aliased label read as its alias, which
+only a body check that admits those aliases accepts. -/
 @[nospecialize] def coerce [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (e : ProgramCertificates.Evidence ι) (A : Ty ι) : CheckResult ι (ProgramCertificates.Evidence ι) := do
+    (aliases : List (ι × ι)) (e : ProgramCertificates.Evidence ι) (A : Ty ι) :
+    CheckResult ι (ProgramCertificates.Evidence ι) := do
   if (claim e).type = A then return e
-  let p ← subtypeUsing G images (claim e).type A
+  let p ← (subtypeUsing G images (claim e).type A).orElse fun _ =>
+    if aliases.isEmpty then none else
+      subtypeUsing G images (ProgramCertificates.renameTy aliases (claim e).type)
+        (ProgramCertificates.renameTy aliases A)
   return .node ⟨(claim e).context, (claim e).term, A⟩ (.sub p) [e]
 
 instance [DecidableEq ι] (G : NormalGraph ι) (B : Ty ι) (tag : Tag) (q : Bool) :
@@ -454,7 +461,7 @@ search fuel, including implicit let typing. Suggestions only prioritize candidat
 types; every premise is proved in the actual context, even when the suggestion
 came from a different context. No execution budget is inspected. -/
 @[nospecialize] def expressionWithUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
-    (suggestions : List (Sequent ι)) :
+    (suggestions : List (Sequent ι)) (aliases : List (ι × ι)) :
     Nat → List (Ty ι) → Tm → Ty ι → CheckResult ι (ProgramCertificates.Evidence ι)
   | 0, _, _, _ => none
   | fuel+1, Γ, t, A => Id.run do
@@ -465,7 +472,7 @@ came from a different context. No execution budget is inspected. -/
       return some (ProgramCertificates.Evidence.node ⟨Γ,t,A⟩ (.unionVar i) [])
     let leaf := fun B r => ProgramCertificates.Evidence.node ⟨Γ,t,B⟩ r []
     let leaf' := fun (i : Nat) (C : Ty ι) => ProgramCertificates.Evidence.node ⟨Γ,.var i,C⟩ .var []
-    let recur := expressionWithUsing G images pool suggestions fuel
+    let recur := expressionWithUsing G images pool suggestions aliases fuel
     -- A slot of the empty type holds no value: the point is unreachable, and
     -- eliminating that union leaves no premise.
     if let some i := Γ.findIdx? (·.isEmpty) then
@@ -484,13 +491,13 @@ came from a different context. No execution budget is inspected. -/
       ((match a with | .var i => (Γ[i]?).toList | _ => []) ++ pool).filter fun S =>
         decide (Answers G S .isStr true)
     match t with
-    | .var i => return (CheckResult.fromOption Γ[i]?).bind fun B => coerce G images (leaf B .var) A
+    | .var i => return (CheckResult.fromOption Γ[i]?).bind fun B => coerce G images aliases (leaf B .var) A
     | .nul | .undef | .tru | .fls =>
       let r := match t with | .nul => Rule.nul | .undef => .undef | .tru => .tru | _ => .fls
       return (A :: pool).findCheck? fun B =>
         let r := if expand G B = [.boolLit true] && t == .tru then Rule.truLit
           else if expand G B = [.boolLit false] && t == .fls then Rule.flsLit else r
-        (checkTreeResult G images (leaf B r)).bind fun _ => coerce G images (leaf B r) A
+        (checkTreeResult G images (leaf B r)).bind fun _ => coerce G images aliases (leaf B r) A
     -- A number has one rule: its own singleton. Reaching `number`, or any
     -- union above it, is the coercion's job, exactly as for a boolean literal.
     | .num _ =>
@@ -498,18 +505,18 @@ came from a different context. No execution budget is inspected. -/
       -- not: a literal claimed at `number` has no singleton label to coerce
       -- from, exactly as a Boolean claimed at `boolean` has none.
       return (A :: pool).findCheck? fun B =>
-        if checkTreeUsing G images (leaf B .numLit) then coerce G images (leaf B .numLit) A
-        else if checkTreeUsing G images (leaf B .num) then coerce G images (leaf B .num) A
+        if checkTreeUsing G images (leaf B .numLit) then coerce G images aliases (leaf B .numLit) A
+        else if checkTreeUsing G images (leaf B .num) then coerce G images aliases (leaf B .num) A
         else none
     | .str _ =>
       return (A :: pool).findCheck? fun B =>
-        if checkTreeUsing G images (leaf B .strLit) then coerce G images (leaf B .strLit) A
-        else if checkTreeUsing G images (leaf B .str) then coerce G images (leaf B .str) A
+        if checkTreeUsing G images (leaf B .strLit) then coerce G images aliases (leaf B .strLit) A
+        else if checkTreeUsing G images (leaf B .str) then coerce G images aliases (leaf B .str) A
         else none
     | .bigint _ =>
       return (A :: pool).findCheck? fun B =>
-        if checkTreeUsing G images (leaf B .bigintLit) then coerce G images (leaf B .bigintLit) A
-        else if checkTreeUsing G images (leaf B .bigint) then coerce G images (leaf B .bigint) A
+        if checkTreeUsing G images (leaf B .bigintLit) then coerce G images aliases (leaf B .bigintLit) A
+        else if checkTreeUsing G images (leaf B .bigint) then coerce G images aliases (leaf B .bigint) A
         else none
     -- Graph code: its captures at their slots' types, the code the unit's
     -- table checked; the claim or a pool type. A function's (`Rule.funGraph`)
@@ -528,15 +535,15 @@ came from a different context. No execution budget is inspected. -/
         match kind, expand G F with
         | .call, [.arrs _ S] =>
           if !fresh then none else do
-          coerce G images (.node ⟨Γ,t,F⟩ (.funGraph (← arraysOf S)) ps) A
+          coerce G images aliases (.node ⟨Γ,t,F⟩ (.funGraph (← arraysOf S)) ps) A
         | .construct, [.ctors _] =>
           if !fresh then none else do
           let U ← pool.find? fun U => decide (expand G U = [.undef])
-          coerce G images (.node ⟨Γ,t,F⟩ (.ctorGraph U) ps) A
+          coerce G images aliases (.node ⟨Γ,t,F⟩ (.ctorGraph U) ps) A
         | .call, [.callable P [] _ S] =>
           if P.map Prod.fst != ns || inits.length != ns.length then none else do
           let eas ← (inits.zip (P.map Prod.snd)).mapM fun (a,D) => recur Γ a D
-          coerce G images (.node ⟨Γ,t,F⟩ (.callableGraph (← arraysOf S)) (eas ++ ps)) A
+          coerce G images aliases (.node ⟨Γ,t,F⟩ (.callableGraph (← arraysOf S)) (eas ++ ps)) A
         | _, _ => none
     -- `new f(args)`: a construct signature of the constructor's type taking at
     -- least as many parameters as there are actuals; each omitted position
@@ -550,13 +557,13 @@ came from a different context. No execution budget is inspected. -/
           let ef ← recur Γ f F
           let eas ← (args.zip p.1).mapM fun (a,D) => recur Γ a D
           let eus ← (p.1.drop args.length).mapM fun D => recur Γ .undef D
-          coerce G images (.node ⟨Γ,t,p.2⟩ .construct (ef :: eas ++ eus)) A
+          coerce G images aliases (.node ⟨Γ,t,p.2⟩ .construct (ef :: eas ++ eus)) A
     -- `.bind`'s forwarding descriptor: a leaf whose checker reads the saved
     -- slots from the context; the claimed type, or a pool type, is its result.
     | .makeAt (.bound (.var _) (.var _) _) [] [] =>
       return (A :: pool).findCheck? fun F =>
-        if checkTreeUsing G images (leaf F .bindE) then coerce G images (leaf F .bindE) A
-        else if checkTreeUsing G images (leaf F .bindRestE) then coerce G images (leaf F .bindRestE) A
+        if checkTreeUsing G images (leaf F .bindE) then coerce G images aliases (leaf F .bindE) A
+        else if checkTreeUsing G images (leaf F .bindRestE) then coerce G images aliases (leaf F .bindRestE) A
         else none
     -- A member bound to its host: a leaf whose checker reads the object's type
     -- from the context; the claimed type, or a pool type, is its result.
@@ -567,7 +574,7 @@ came from a different context. No execution budget is inspected. -/
       return (A :: schemes ++ pool).findCheck? fun F => do
         let (ps, rs, vs) ← memberProofsUsing G images (← Γ[i]?) k F
         (checkTreeResult G images (leaf F (.bindMember ps rs vs))).bind fun _ =>
-          coerce G images (leaf F (.bindMember ps rs vs)) A
+          coerce G images aliases (leaf F (.bindMember ps rs vs)) A
     | .letE a b =>
       let exactTypes := suggestions.reverse.filterMap fun j =>
         if j.context == Γ && j.term == a then some j.type else none
@@ -615,7 +622,7 @@ came from a different context. No execution budget is inspected. -/
               parts.zipIdx.mapM fun (a, i) => do recur Γ a (← positionTy T i)
           let e := ProgramCertificates.Evidence.node ⟨Γ,t,B⟩
             (.callRest effect k omitted.length flags P) (ef :: er :: eas ++ eus ++ eps)
-          (checkTreeResult G images e).bind fun _ => coerce G images e A
+          (checkTreeResult G images e).bind fun _ => coerce G images aliases e A
       let direct := fun (candidates : List (Ty ι)) => candidates.findCheck? fun F => do
         let (L,r) ← match expand G F with
           | [.arrs L _] => some (L,Rule.app)
@@ -632,7 +639,7 @@ came from a different context. No execution budget is inspected. -/
             let er ← recur Γ recv p.receiver
             let eas ← (args.zip p.arguments).mapM fun (a,D) => recur Γ a D
             let eus ← omitted.mapM fun D => recur Γ .undef D
-            coerce G images (.node ⟨Γ,t,p.result⟩ (r p.effect) (ef :: er :: eas ++ eus)) A
+            coerce G images aliases (.node ⟨Γ,t,p.result⟩ (r p.effect) (ef :: er :: eas ++ eus)) A
       if let some e := variadic own <|> direct own <|> variadic pool <|> direct pool then return some e
       -- A callee or, for a method dispatched on its object, the receiver.
       return splitReceiver f <|> splitReceiver recv
@@ -644,7 +651,7 @@ came from a different context. No execution budget is inspected. -/
         | [.refs B [] [] [] [] ks] =>
           if B.map Prod.fst != ns || !ks.all (fun K => ns.all K.admits) then none else do
           let ps ← (inits.zip (B.map Prod.snd)).mapM fun (a,D) => recur Γ a D
-          coerce G images (.node ⟨Γ,t,R⟩ .alloc ps) A
+          coerce G images aliases (.node ⟨Γ,t,R⟩ .alloc ps) A
         -- A literal allocated directly at a dictionary, each field an index
         -- may admit at that index's type.
         | [.dict B [] [] ix os [] [] cs] =>
@@ -653,7 +660,7 @@ came from a different context. No execution budget is inspected. -/
             !os.all (fun o => !ns.contains o.key && cs.all fun y => !y.1.may o.key ||
               o.type == y.2 || (G.plainTy y.2 && (expand G y.2).isEmpty)) then none else do
           let ps ← (inits.zip (B.map Prod.snd)).mapM fun (a,D) => recur Γ a D
-          coerce G images (.node ⟨Γ,t,R⟩ .alloc ps) A
+          coerce G images aliases (.node ⟨Γ,t,R⟩ .alloc ps) A
         | _ => none
     | .indexAt a key =>
       -- A key of a class within an index's reads through it: a string
@@ -672,7 +679,7 @@ came from a different context. No execution budget is inspected. -/
               let _ ← subtypeUsing G images B A
               let ea ← recur Γ a R
               let ek ← recur Γ key K
-              coerce G images (.node ⟨Γ,t,B⟩ (.indexDict Kx KK E U) [ea, ek]) A
+              coerce G images aliases (.node ⟨Γ,t,B⟩ (.indexDict Kx KK E U) [ea, ek]) A
     | .readAt f a =>
       let direct := pool.findCheck? fun R => do
         -- An invariant field reads at its contract; a view field at its bound;
@@ -700,7 +707,7 @@ came from a different context. No execution budget is inspected. -/
           | _ => none )
         let _ ← subtypeUsing G images B A
         let ea ← recur Γ a R
-        coerce G images (.node ⟨Γ,t,B⟩ r [ea]) A
+        coerce G images aliases (.node ⟨Γ,t,B⟩ r [ea]) A
       return direct.orElse fun _ => splitReceiver a
     | .writeAt f a b =>
       let direct := pool.findCheck? fun R => do
@@ -713,7 +720,7 @@ came from a different context. No execution budget is inspected. -/
         let eb ← recur Γ b B
         (A :: pool).findCheck? fun N =>
           let e := ProgramCertificates.Evidence.node ⟨Γ,t,N⟩ r [ea,eb]
-          (checkTreeResult G images e).bind fun _ => coerce G images e A
+          (checkTreeResult G images e).bind fun _ => coerce G images aliases e A
       return direct.orElse fun _ => splitReceiver a
     | .arith op a b =>
       -- Each operand at a pool type of the operand clauses the operator
@@ -733,7 +740,7 @@ came from a different context. No execution budget is inspected. -/
           let eb ← recur Γ b S
           (A :: pool).findCheck? fun N =>
             let e := ProgramCertificates.Evidence.node ⟨Γ,t,N⟩ .arith [ea,eb]
-            (checkTreeResult G images e).bind fun _ => coerce G images e A
+            (checkTreeResult G images e).bind fun _ => coerce G images aliases e A
     -- A copy of a spread: a store type of any length at some element type,
     -- and a pool store type whose elements it admits.
     | .arrLit [.spread src] =>
@@ -742,7 +749,7 @@ came from a different context. No execution budget is inspected. -/
         pool.findCheck? fun S => do
           if !decide (SpreadsInto G S E) then none else do
           let es ← recur Γ src S
-          coerce G images (.node ⟨Γ,t,L⟩ (.arrCopy E) [es]) A
+          coerce G images aliases (.node ⟨Γ,t,L⟩ (.arrCopy E) [es]) A
     | .arrLit inits =>
       -- The claimed type, or a pool type, names the tuple; each initializer
       -- is typed at its position's contract.
@@ -754,7 +761,7 @@ came from a different context. No execution budget is inspected. -/
           let B ← positionTy T k
           recur Γ a B
         let e := ProgramCertificates.Evidence.node ⟨Γ,t,L⟩ .arrLit ps
-        (checkTreeResult G images e).bind fun _ => coerce G images e A
+        (checkTreeResult G images e).bind fun _ => coerce G images aliases e A
     | .elemAt a i =>
       -- A store read through a union of array objects splits the receiver.
       let direct := pool.findCheck? fun L => do
@@ -766,18 +773,18 @@ came from a different context. No execution budget is inspected. -/
           | [.numLit b] => do
             let k ← indexOfBits b
             match T.required[k]? with
-            | some B => coerce G images (.node ⟨Γ,t,B⟩ .elem [ea,ei]) A
+            | some B => coerce G images aliases (.node ⟨Γ,t,B⟩ .elem [ea,ei]) A
             | none => do
               let B ← positionTy T k
               (A :: pool).findCheck? fun U =>
                 let e := ProgramCertificates.Evidence.node ⟨Γ,t,B ++ U⟩ (.elemOpt U) [ea,ei]
-                (checkTreeResult G images e).bind fun _ => coerce G images e A
+                (checkTreeResult G images e).bind fun _ => coerce G images aliases e A
           | _ =>
             match T with
             | ⟨[], [], some E, _, _⟩ =>
               (A :: pool).findCheck? fun U =>
                 let e := ProgramCertificates.Evidence.node ⟨Γ,t,E ++ U⟩ (.elemAny U) [ea,ei]
-                (checkTreeResult G images e).bind fun _ => coerce G images e A
+                (checkTreeResult G images e).bind fun _ => coerce G images aliases e A
             | _ => none
       -- A string's code unit at a numeric key: a string or `undefined`.
       let string := (stringOperands a).findCheck? fun S => do
@@ -789,7 +796,7 @@ came from a different context. No execution budget is inspected. -/
             if expand G T != [.str] then none else do
             (A :: pool).findCheck? fun U =>
               if expand G U != [.undef] then none else
-              coerce G images (.node ⟨Γ,t,T ++ U⟩ (.elemStr T U) [ea,ei]) A
+              coerce G images aliases (.node ⟨Γ,t,T ++ U⟩ (.elemStr T U) [ea,ei]) A
       return direct.orElse fun _ => string.orElse fun _ => do
         let .readAt _ receiver := a | none
         splitReceiver receiver
@@ -804,20 +811,20 @@ came from a different context. No execution budget is inspected. -/
           let B ← positionTy T k
           let ev ← recur Γ v B
           let e := ProgramCertificates.Evidence.node ⟨Γ,t,L⟩ .setElem [ea,ei,ev]
-          (checkTreeResult G images e).bind fun _ => coerce G images e A
+          (checkTreeResult G images e).bind fun _ => coerce G images aliases e A
     | .lenOf a =>
       let store := pool.findCheck? fun L => do
         let [.list _ []] := expand G L | none
         let ea ← recur Γ a L
         (A :: pool).findCheck? fun N =>
           let e := ProgramCertificates.Evidence.node ⟨Γ,t,N⟩ .len [ea]
-          (checkTreeResult G images e).bind fun _ => coerce G images e A
+          (checkTreeResult G images e).bind fun _ => coerce G images aliases e A
       -- A string's own `length`.
       return store <|> (stringOperands a).findCheck? fun S => do
         let ea ← recur Γ a S
         (A :: pool).findCheck? fun N =>
           let e := ProgramCertificates.Evidence.node ⟨Γ,t,N⟩ .lenStr [ea]
-          (checkTreeResult G images e).bind fun _ => coerce G images e A
+          (checkTreeResult G images e).bind fun _ => coerce G images aliases e A
     | .merge d a b =>
       -- The accumulator and the source at their slots' types, or a pool
       -- type; the result the requested type, when every pair of their
@@ -829,7 +836,7 @@ came from a different context. No execution budget is inspected. -/
           let eb ← recur Γ b S
           (A :: pool).findCheck? fun N =>
             if ObjectMerge.MergeOk G d R S N then
-              coerce G images (.node ⟨Γ,t,N⟩ .merge [ea,eb]) A
+              coerce G images aliases (.node ⟨Γ,t,N⟩ .merge [ea,eb]) A
             else none
     | .throw a =>
       -- A throw has every type; its operand, at a type of its own.
@@ -882,7 +889,7 @@ came from a different context. No execution budget is inspected. -/
 
 /-- Raw calculus callers need not supply source-derived search suggestions. -/
 @[nospecialize] def expressionUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) :=
-  expressionWithUsing G images pool []
+  expressionWithUsing G images pool [] []
 
 /-- Gather graph labels, every operand of their clauses and supplied union
 types. Hints may add intermediate types; they cannot change claims or bypass
@@ -955,15 +962,16 @@ read/value rule may succeed when ordinary derivation search cannot. -/
 @[nospecialize] def expressionEffectUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
     (fuel : Nat) (j : Sequent ι) (k : HeapKnowledge.Knowledge)
     (suggestions : List (Sequent ι)) (known : List (Evidence ι))
-    (codes : CodeEntry ι → Bool := fun _ => false) :
+    (codes : CodeEntry ι → Bool := fun _ => false) (aliases : List (ι × ι) := [])
+    (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images) :
     CheckResult ι (Evidence ι × HeapExpressionRules.StepEvidence ι × HeapKnowledge.Knowledge) := Id.run do
   -- A node's derivation is first sought among its own types: its claim and
   -- its context's, which are its operands' claims. The pool is consulted
   -- only where those leave a choice open.
   let own := (j.type :: j.context).eraseDups
   let ordinary := (CheckResult.fromOption (known.find? fun e => claim e == j)).orElse fun _ =>
-    (expressionWithUsing G images own suggestions fuel j.context j.term j.type).orElse fun _ =>
-      expressionWithUsing G images pool suggestions fuel j.context j.term j.type
+    (expressionWithUsing G images own suggestions aliases fuel j.context j.term j.type).orElse fun _ =>
+      expressionWithUsing G images pool suggestions aliases fuel j.context j.term j.type
   let mut incomplete := ordinary.exhaustion
   let mut choices : List (HeapExpressionRules.StepEvidence ι) := []
   match j.term with
@@ -980,7 +988,7 @@ read/value rule may succeed when ordinary derivation search cannot. -/
           k.cells.any (fun f => f.slot == i && f.field == fld && f.contents.all (· != .undef)) then
         if let [.refs fs _ _ _ _ _] := expand G Ref then
           if let some C := fs.lookup fld then
-            let searched := expressionWithUsing G images (C :: own) suggestions fuel j.context j.term C
+            let searched := expressionWithUsing G images (C :: own) suggestions aliases fuel j.context j.term C
             incomplete := incomplete <|> searched.exhaustion
             if let some e := searched.value then
               let compared := subtypeUsing G images (BranchRefinement.tagSlice G C .isUndef false) j.type
@@ -1001,7 +1009,7 @@ read/value rule may succeed when ordinary derivation search cannot. -/
     | _ => pure ()
     choices := choices ++ [.created e,.pure e,.ordinary e]
   for effect in choices do
-    let checked := HeapExpressionRules.checkStepResult G images j k effect codes
+    let checked := checker.run j k effect codes
     incomplete := incomplete <|> checked.exhaustion
     if let some out := checked.value then
       -- Effect evidence validates this header itself; an ordinary derivation
@@ -1026,10 +1034,12 @@ def edgeKnowledge (k : HeapKnowledge.Knowledge) (cont : Continuation) (index : N
 @[nospecialize] private def produceNode [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
     (fuel l : Nat) (node : Node) (claims : List (PointClaim ι))
     (k : HeapKnowledge.Knowledge) (suggestions : List (Sequent ι)) (known : List (Evidence ι))
-    (codes : CodeEntry ι → Bool := fun _ => false) :
+    (codes : CodeEntry ι → Bool := fun _ => false) (aliases : List (ι × ι) := [])
+    (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images) :
     Except (Failure ι) (NodeEvidence ι) := do
   let some c := claims[l]? | throw .claimCount
   let searched := expressionEffectUsing G images pool fuel ⟨c.context,node.expression,c.type⟩ k suggestions known codes
+    aliases checker
   let some (e,effect,out) := searched.value | throw (match searched.exhaustion with
     | some stop => .exhaustedExpression l stop
     | none => .expression l)
@@ -1084,7 +1094,8 @@ Every edge is still checked by the independent consumer. -/
     (fuel : Nat) (P : Program) (claims : List (PointClaim ι))
     (suggestions : List (Sequent ι) := []) (known : List (Evidence ι) := []) (start : Nat := 0)
     (requirements : List (Nat × HeapKnowledge.Knowledge) := []) (cuts : List Nat := [])
-    (codes : CodeEntry ι → Bool := fun _ => false) :
+    (codes : CodeEntry ι → Bool := fun _ => false) (aliases : List (ι × ι) := [])
+    (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images) :
     Except (Failure ι) (ControlFlow.Certificate ι) := do
   if P.length != claims.length then throw .claimCount
   let incoming := (List.range P.length).map fun target =>
@@ -1128,7 +1139,7 @@ Every edge is still checked by the independent consumer. -/
         | none => pure ()
       k := ⟨(k.cells ++ required.cells).eraseDups,(k.values ++ required.values).eraseDups,
         (k.links ++ required.links).eraseDups⟩
-      let evidence ← produceNode G images pool fuel l node claims k suggestions known codes
+      let evidence ← produceNode G images pool fuel l node claims k suggestions known codes aliases checker
       table := table.set l (some evidence)
       progress := true
     if !progress then
@@ -1157,9 +1168,11 @@ private def failedEdge (P : Program)
     (suggestions : List (Sequent ι) := []) (known : List (ProgramCertificates.Evidence ι) := [])
     (requirements : List (Nat × HeapKnowledge.Knowledge) := []) (cuts : List Nat := [])
     (codes : CodeEntry ι → Bool := fun _ => false)
-    (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images) :
+    (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images)
+    (aliases : List (ι × ι) := []) :
     Except (Failure ι) (ControlFlow.Certificate ι) :=
-  match produceRawUsing G images (vocabulary G labels claims (inputs ++ hints)) fuel P claims suggestions known start requirements cuts codes with
+  match produceRawUsing G images (vocabulary G labels claims (inputs ++ hints)) fuel P claims suggestions known start requirements cuts codes
+      aliases checker with
   | .error e => .error e
   | .ok C =>
     let checked := acceptResult G images R P claims C start inputs codes checker
@@ -1169,8 +1182,8 @@ private def failedEdge (P : Program)
       | none => .error ((failedEdge P C).getD .rejected)
 
 theorem produce_checked [DecidableEq ι] [Hashable ι] [Instantiates ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {labels fuel R P claims start hints inputs suggestions known requirements cuts codes C}
-    {checker : HeapExpressionRules.Checker G images}
-    (h : produceUsing G images labels fuel R P claims start hints inputs suggestions known requirements cuts codes checker = .ok C) :
+    {checker : HeapExpressionRules.Checker G images} {aliases : List (ι × ι)}
+    (h : produceUsing G images labels fuel R P claims start hints inputs suggestions known requirements cuts codes checker aliases = .ok C) :
     acceptUsing G images R P claims C start inputs codes checker = true := by
   unfold produceUsing at h
   split at h

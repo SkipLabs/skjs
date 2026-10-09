@@ -44,7 +44,7 @@ def produceJson (ast claims : Json) (fileKey : String) (fuel : Nat)
     let known := proofs ++ ExpressionClaims.renderKnownUsing (RequestJson.graph r.toRequest)
       (StoreView.images r.types) r.searchLabels (StoreView.valid r.types) r.nodePlans
     RequestJson.produceResponse r.toRequest fuel [] known r.sourceMap (some r.searchLabels) r.assertions
-      r.cuts r.codeHints r.checker
+      r.cuts r.codeHints r.checker r.aliases
   let evidence := toJson (Bundle.mk cs es)
   let b : Bundle (EquationStore.CheckedLabel F.equations F.primitive) ← decodeStrict evidence
   let checked := checkRequestsResult rs b

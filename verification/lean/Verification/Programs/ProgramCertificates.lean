@@ -619,10 +619,55 @@ theorem checkMemberProofs_accepted [DecidableEq ι] (G : NormalGraph ι)
   · change (false = true) ↔ False
     simp
 
-/-- Body subsumption can instantiate a qualified callable with the complete
-resolution group from its enclosing scheme. Ordinary comparisons and all
-instance-image, kind, signature and bound checks use the shared checker. -/
-@[nospecialize] def lexicalBodyCheck [DecidableEq ι] (G : NormalGraph ι)
+/-- Each top-level label of a type replaced by the label it is aliased to. -/
+@[nospecialize] def renameTy [DecidableEq ι] (aliases : List (ι × ι)) (A : Ty ι) : Ty ι :=
+  A.map fun l => match aliases.find? (·.1 == l) with
+    | some p => p.2
+    | none => l
+
+/-- Aliased labels denote the same values at every assignment the enclosing
+scheme admits within its declared bounds. -/
+def AliasesSound (G : NormalGraph ι) (source : SchemeRow ι) (aliases : List (ι × ι)) : Prop :=
+  ∀ η As, As.length = source.binders.length → G.domain.allowed source As →
+    (∀ m, Bounded (mixedMeaning G) η source As m) →
+    ∀ p ∈ aliases, ∀ n W v,
+      mixedMeaning G (assign η source.binders As) [p.1] n W (.inl v) ↔
+        mixedMeaning G (assign η source.binders As) [p.2] n W (.inl v)
+
+theorem renameTy_meaning [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssignment ι}
+    {aliases : List (ι × ι)}
+    (same : ∀ p ∈ aliases, ∀ n W v,
+      mixedMeaning G η [p.1] n W (.inl v) ↔ mixedMeaning G η [p.2] n W (.inl v))
+    (A : Ty ι) (n W v) :
+    mixedMeaning G η (renameTy aliases A) n W (.inl v) ↔ mixedMeaning G η A n W (.inl v) := by
+  let X := fun i => qDenoteWithArgs G (mixedParameters G) (η, i)
+  have single : ∀ l, mixedMeaning G η [l] n W (.inl v) ↔ X l n W v := by
+    intro l
+    change (∃ i ∈ [l], X i n W v) ↔ _
+    simp
+  have label : ∀ l, X (match aliases.find? (·.1 == l) with
+      | some p => p.2
+      | none => l) n W v ↔ X l n W v := by
+    intro l
+    split
+    · rename_i p hp
+      have hm := List.mem_of_find?_eq_some hp
+      have he : p.1 = l := by simpa using List.find?_some hp
+      rw [← single, ← single, ← (same p hm n W v), he]
+    · exact Iff.rfl
+  change (∃ i ∈ renameTy aliases A, X i n W v) ↔ (∃ i ∈ A, X i n W v)
+  simp only [renameTy, List.mem_map]
+  constructor
+  · rintro ⟨_, ⟨l, hl, rfl⟩, hv⟩
+    exact ⟨l, hl, (label l).mp hv⟩
+  · rintro ⟨l, hl, hv⟩
+    exact ⟨_, ⟨l, hl, rfl⟩, (label l).mpr hv⟩
+
+/-- Body subsumption without aliases: an ordinary comparison, or a qualified
+callable instantiated with the complete resolution group from its enclosing
+scheme. Ordinary comparisons and all instance-image, kind, signature and bound
+checks use the shared checker. -/
+@[nospecialize] def lexicalComparison [DecidableEq ι] (G : NormalGraph ι)
     (images : PositiveCertificates.InstanceImageCheck G) (source : SchemeRow ι)
     (A B : Ty ι) (proof : PositiveCertificates.SubtypeChoices ι) : Bool :=
   PositiveCertificates.checkUsing G images A B proof ||
@@ -634,38 +679,69 @@ instance-image, kind, signature and bound checks use the shared checker. -/
         () A L M inst ()).1.accepted
     | _, _ => false
 
+/-- Body subsumption compares the two types as they are or, failing that,
+with each aliased label read as its alias. -/
+@[nospecialize] def lexicalBodyCheck [DecidableEq ι] (G : NormalGraph ι)
+    (images : PositiveCertificates.InstanceImageCheck G) (source : SchemeRow ι)
+    (aliases : List (ι × ι)) (A B : Ty ι) (proof : PositiveCertificates.SubtypeChoices ι) : Bool :=
+  lexicalComparison G images source A B proof ||
+    (!aliases.isEmpty &&
+      lexicalComparison G images source (renameTy aliases A) (renameTy aliases B) proof)
+
+theorem lexicalComparison_sound [DecidableEq ι] {G : NormalGraph ι}
+    {images : PositiveCertificates.InstanceImageCheck G} {source : SchemeRow ι}
+    {N : Fam} {C : ResolutionDescriptors.Capabilities N}
+    (domain : G.domain = ResolutionDescriptors.descriptorDomain C)
+    (η : MixedAssignment ι) (As : List MixedFamily)
+    (length : As.length = source.binders.length) (allowed : G.domain.allowed source As)
+    {A B : Ty ι} {proof : PositiveCertificates.SubtypeChoices ι}
+    (checked : lexicalComparison G images source A B proof = true) (n W v)
+    (hv : mixedMeaning G (assign η source.binders As) A n W (.inl v)) :
+    mixedMeaning G (assign η source.binders As) B n W (.inl v) := by
+  simp only [lexicalComparison, Bool.or_eq_true] at checked
+  rcases checked with ordinary | lexical
+  · exact PositiveCertificates.checkUsing_sound ordinary
+      (assign η source.binders As) n W (.inl v) hv
+  · split at lexical
+    · rename_i L M inst target instanced
+      have bounds : ∀ U V (prior : Unit),
+          (PositiveCertificates.ComparisonResult.fromBool
+            (PositiveCertificates.checkUsing G images U V proof)).accepted = true →
+          FamLe (mixedMeaning G (assign η source.binders As) U)
+            (mixedMeaning G (assign η source.binders As) V) := by
+        intro U V _ h
+        exact PositiveCertificates.checkUsing_sound
+          (by simpa only [PositiveCertificates.ComparisonResult.accepted_fromBool] using h) _
+      have step := QualifiedGraphs.compareLexicalInstance_sound G images source domain
+        η As length allowed bounds lexical
+      exact mixed_of_expand target (step n W v hv)
+    · cases lexical
+
 /-- The lexical check supplies precisely the subsumption premise consumed by
-program typing, at an assignment permitted by the enclosing scheme. -/
+program typing, at an assignment permitted by the enclosing scheme within its
+declared bounds. -/
 @[nospecialize] def lexicalBodySubtyping [DecidableEq ι] (G : NormalGraph ι)
     (images : PositiveCertificates.InstanceImageCheck G) (source : SchemeRow ι)
     {N : Fam} {C : ResolutionDescriptors.Capabilities N}
     (domain : G.domain = ResolutionDescriptors.descriptorDomain C)
+    (aliases : List (ι × ι)) (aliasesSound : AliasesSound G source aliases)
     (η : MixedAssignment ι) (As : List MixedFamily)
-    (length : As.length = source.binders.length) (allowed : G.domain.allowed source As) :
+    (length : As.length = source.binders.length) (allowed : G.domain.allowed source As)
+    (bounded : ∀ m, Bounded (mixedMeaning G) η source As m) :
     BodySubtyping (reassign G (assign η source.binders As)) where
-  check := lexicalBodyCheck G images source
+  check := lexicalBodyCheck G images source aliases
   sound := by
     intro A B proof checked
-    simp only [lexicalBodyCheck, Bool.or_eq_true] at checked
-    rcases checked with ordinary | lexical
-    · exact fun n W v hv => PositiveCertificates.checkUsing_sound ordinary
-        (assign η source.binders As) n W (.inl v) hv
-    · split at lexical
-      · rename_i L M inst target instanced
-        have bounds : ∀ U V (prior : Unit),
-            (PositiveCertificates.ComparisonResult.fromBool
-              (PositiveCertificates.checkUsing G images U V proof)).accepted = true →
-            FamLe (mixedMeaning G (assign η source.binders As) U)
-              (mixedMeaning G (assign η source.binders As) V) := by
-          intro U V _ h
-          exact PositiveCertificates.checkUsing_sound
-            (by simpa only [PositiveCertificates.ComparisonResult.accepted_fromBool] using h) _
-        have step := QualifiedGraphs.compareLexicalInstance_sound G images source domain
-          η As length allowed bounds lexical
-        intro n W v hv
-        exact mixed_of_expand target (step n W v hv)
-      · cases lexical
+    simp only [lexicalBodyCheck, Bool.or_eq_true, Bool.and_eq_true] at checked
+    rcases checked with direct | ⟨_, renamed⟩
+    · exact fun n W v hv => lexicalComparison_sound domain η As length allowed direct n W v hv
+    · have same := aliasesSound η As length allowed bounded
+      intro n W v hv
+      exact (renameTy_meaning same B n W v).mp
+        (lexicalComparison_sound domain η As length allowed renamed n W v
+          ((renameTy_meaning same A n W v).mpr hv))
 
+#print axioms renameTy_meaning
 #print axioms lexicalBodySubtyping
 
 /-- Only finite, syntactic premises of one rule. -/
