@@ -293,6 +293,64 @@ $`\top`$ (`SourceTypes.dependentMeet`), which is below $`T`$ by its parameters
 bodies](CALLABLES.md#overloads-polymorphism-and-binding)). Any other bound naming a binder
 leaves the parameter row alone.
 
+## Implied bounds
+
+A type parameter is constrained by the bound its declaration writes and by the
+bounds its signature implies: constraints read off where the parameter occurs
+in the signature that binds it. A body implies none. Two forms exist, and they
+constrain differently:
+
+| Implied by | Signatures | Constraint |
+| --- | --- | --- |
+| an occurrence inside a `Promise` or `PromiseLike` argument | imported, ambient and library signatures and their generic methods | the subtype bound $`T\le N`$ |
+| `Awaited<T>` | the program's own generic functions | resolution qualification: $`T`$ owns an observation $`O_T`$ and a result $`R_T`$ |
+
+**Promise arguments.** With $`N`$ the stable non-thenable types
+([async](#async-functions-and-await)):
+
+```math
+\frac{\sigma\ \text{a trusted signature binding}\ T\qquad
+      T\ \text{occurs in an argument of the standard}\ \mathsf{Promise}\ \text{or}\ \mathsf{PromiseLike}\ \text{in}\ \sigma}
+     {T\le N\ \text{in}\ \sigma}\ \textsf{implied-promised}
+```
+
+The occurrence may be nested, `Promise<{ value: T }>` included. A written
+bound $`B`$ becomes $`B\mathbin{\&}N`$ (`promisedBinders`, `promisedMethods`).
+A trusted signature stating a promise of $`T`$ is truthful only where $`T`$
+stays non-thenable, since a fresh resolution of a thenable payload adopts it.
+The intrinsics keep the operation-specific bounds they state, and the
+program's own signatures imply none of this form: their bodies are checked at
+every admitted instantiation.
+
+**`Awaited<T>`.** For the standard library's `Awaited`, recognized by its
+declaration and not shadowed by a type parameter of that name:
+
+```math
+\frac{\sigma\ \text{a source function's signature binding}\ T\qquad
+      \mathsf{Awaited}\langle T\rangle\ \text{occurs in}\ \sigma}
+     {T\ \text{resolution-qualified, owning}\ O_T,\ R_T\qquad
+      ⟦\mathsf{Awaited}\langle T\rangle⟧=R_T}\ \textsf{implied-resolution}
+```
+
+The occurrence may be written through a local type alias the signature names
+(`resolutionAliases`). The parser refuses the other uses, each with its own
+diagnostic: `Awaited` in a body ("cannot add a qualification to an ordinary
+function body"), of anything but a type parameter ("requires the input of a
+resolution-qualified parameter"), and in a signature with more than one type
+parameter ("has exactly one source parameter"). The fragment lists the two
+owned names in the parameter's `resolution` field
+([fragment](FRAGMENT.md)), and the request states the triple
+$`(T,O_T,R_T)`$ as a resolution descriptor of the scheme
+([request protocol](REQUEST-PROTOCOL.md)).
+
+Resolution qualification is not a subtype bound: it leaves the values of
+$`T`$ unconstrained and restricts which assignments of $`(T,O_T,R_T)`$ are
+admitted, to those satisfying the descriptor relations
+(`ResolutionDescriptors.descriptorDomain`). The body is certified at every
+admitted assignment ([generic closures](PROGRAM-TYPING.md)), and every call
+supplies a certificate classifying its type argument, from which $`O_T`$ and
+$`R_T`$ follow ([claims](SOURCE-CLAIMS.md)).
+
 ## Explicit type arguments
 
 A method call may state its instance, `o.m<A₁,…,Aₖ>(…)`. The arguments
@@ -938,12 +996,10 @@ effects. A native cleanup promise uses the constructor identity path, and
 its fulfillment value is discarded. Its payload therefore needs no
 non-thenable bound.
 
-The declaration reader bounds by $`N`$ each binder named by a `Promise` or
-`PromiseLike` argument of a collected imported, ambient or library signature
-or method (`promisedBinders`). This restriction supports signatures whose
-result construction resolves their payloads. Reviewed intrinsics retain the
-explicit operation-specific bounds stated above. The client's generic bodies are
-checked at every admitted instantiation. The producer proposes intrinsic
+A `Promise` or `PromiseLike` argument of an imported, ambient or library
+signature implies the bound $`N`$ on the type parameters it names, and
+`Awaited<T>` in a source signature qualifies $`T`$
+([implied bounds](#implied-bounds)). The producer proposes intrinsic
 arguments from the operand, receiver and expected result. Its union inference
 assigns operand parts to matching structured arms or the bare binder; an
 unused arm contributes `never`. When comparing named result types, context

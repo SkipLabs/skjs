@@ -29,7 +29,7 @@ Each function contains `name`, `namePos`, `typeParams`, `params`, `retType`
 and `body`. A type parameter has `name`, `bound` and `resolution`, with `null`
 for an absent bound. `resolution` is `null`, or
 `{"observation": o, "result": r}` for a parameter whose `Awaited<T>` the
-signature mentions: two distinct names the parameter owns, naming its
+signature mentions ([implied bounds](SOURCE-CONTRACTS.md#implied-bounds)): two distinct names the parameter owns, naming its
 observed payload and its resolved result. No two owned names in one signature
 coincide. Each parameter has `name`, `pos` and `type`, with `rest: true` for a
 rest parameter. Annotations are source type terms; their declaration references

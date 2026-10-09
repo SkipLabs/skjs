@@ -228,7 +228,8 @@ with binders $`\vec p`$ (parameter rows) and signatures $`L`$ and $`S`$ over the
 (`HasTyUsing.funScheme`). Its code is checked once, at the scheme's own signatures:
 a table entry holds at every assignment of $`\vec p`$ the graph's domain admits
 (`G.domain.allowed`), so at every instantiation of $`\vec p`$; for an
-unqualified row every assignment is admitted. The arity and rest-store
+unqualified row every assignment is admitted, and a row is qualified by the
+bounds its source signature implies ([implied bounds](SOURCE-CONTRACTS.md#implied-bounds)). The arity and rest-store
 requirements are checked once, independently of the assignment (`CodeOffersShape`).
 Its captures' types read none of $`\vec p`$ (`capturesFree`: their free parameter
 rows, computed and checked by `FreeOk`,

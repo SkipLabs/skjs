@@ -444,6 +444,10 @@ One line each; the reason is the one the design keeps.
   intersection, and collapsing eventually incompatible reference contracts to
   bottom ([retained constraints](SEMANTICS.md#two-retained-design-constraints);
   contrast [Frisch, Castagna and Benzaken 2008](REFERENCES.md#frisch-castagna-and-benzaken-2008)).
+- **A type parameter's bounds include those its signature implies; a body
+  implies none.** Resolution qualification, implied by `Awaited<T>`, is the
+  one constraint that is not a subtype bound
+  ([implied bounds](SOURCE-CONTRACTS.md#implied-bounds)).
 - **Ordinary graph evidence is certified at every assignment of parameter rows**
   (`Parametricity.accept_reassign`). Qualified body evidence is certified at
   assignments satisfying the signature’s descriptor constraints
