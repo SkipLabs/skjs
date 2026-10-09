@@ -208,7 +208,10 @@ of upper bounds. It considers declared bounds and defaults. An unconstrained
 parameter without a usable candidate is proposed as `unknown`. Literal
 candidates for an unbounded parameter can widen when the result does not return
 that parameter directly: `box(42)` can infer `Box<number>`, while `id(42)` retains
-`42`. A tuple arm of a bound can supply a contextual type for an array literal.
+`42`. A widened candidate stays below every upper bound, including those the
+expected result places on a resolution-qualified parameter's observation or
+result: an async `return "hello"` at `Promise<"hello">` retains `"hello"`.
+A tuple arm of a bound can supply a contextual type for an array literal.
 These are inference choices; Lean checks the full instantiated contract.
 
 Value types and argument packs have separate OCaml representations. A pack

@@ -185,9 +185,21 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) ?(native = fun _ -> fals
   let alien t = !foreign <> []
     && substitute (List.map (fun id -> id,ValueArgument (Atoms [])) !foreign) t <> t in
   let actual_candidates = ref [] in
+  (* Upper bounds the expected type places on a binder's observation or
+     resolution result (`Promise<X.Result>` at `Promise<"hello">`). A stable
+     input is its own observation and result, so they limit how far the
+     binder's literal candidate widens. *)
+  let result_uppers = ref [] in
+  let result_owner = function
+    | Rigid r -> List.find_map (fun (q:quantifier) -> match q.resolution with
+        | Some (observation,result) when observation = r || result = r -> Some q.identity
+        | _ -> None) signature.quantified
+    | Atoms _ | Union _ | Meet _ -> None in
   let rec constrain ?(depth=0) ?(output=false) ?(contextual=false) left right =
     let contextual_reverse = constrain ~depth:(depth+1) ~output ~contextual:output in
     let constrain = constrain ~depth:(depth+1) ~output ~contextual in
+    Option.iter (fun owner -> if output && local right = None then
+      result_uppers := (owner,right) :: !result_uppers) (result_owner left);
     match local left,local right with
     | Some x,Some y -> edges := (x,y)::!edges
     | None,Some y ->
@@ -529,7 +541,8 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) ?(native = fun _ -> fals
     (* The widened type must still be below every upper bound met. *)
     let admitted w = List.for_all (fun u -> match u,w with
       | Atoms us,Atoms ws -> List.mem Top us || List.for_all (fun x -> List.mem x us) ws
-      | _ -> false) v.upper in
+      | _ -> false) (v.upper @ List.filter_map (fun (owner,u) ->
+          if owner = v.identity then Some u else None) !result_uppers) in
     let candidate = match candidate with
       | Some t when unbounded && candidate = join v.lower && not (bare signature.result)
                     && admitted (widen t) -> Some (widen t)

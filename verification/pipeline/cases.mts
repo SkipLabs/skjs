@@ -766,6 +766,7 @@ export const cases: Case[] = [
     /The available claim for observed is #observe:T. This obligation requires #resolve:T/),
   gap("invalid-generic-promise-invariant-result", "Mutable associated-result storage is refused at the source boundary, before its invariant write contract",
     "unsupported", "source", /Awaited requires the input of a resolution-qualified parameter/),
+  positive("native-promise-literal-result", "A literal returned from an async body, an async arrow at a contextual field, or passed to Promise.resolve keeps its literal type where the expected result names it"),
   positive("native-promise-qualified-return", "Bounded generic payload identity, numeric-or-native inputs, array resolution, lifetime then contracts and independent unknown-result widening retain their explicit input obligations"),
   negative("invalid-native-promise-qualified-erasure", "A bounded generic wrapper cannot become callable at arbitrary inputs by widening its result", /no derivation of its return-contract claim/),
   negative("invalid-native-promise-qualified-view", "An open record view cannot introduce the lifetime then contract required by an explicit generic bound", /quantified call does not satisfy the closure's bound/),
