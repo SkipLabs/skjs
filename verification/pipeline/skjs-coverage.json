@@ -14,17 +14,17 @@
   "rejected": 2
  },
  "accepted": 2674,
- "verified": 2467,
+ "verified": 2468,
  "byStatus": {
-  "verified (check)": 2467,
-  "unverified (search)": 106,
+  "verified (check)": 2468,
+  "unverified (search)": 105,
   "unsupported (source)": 76,
   "unsupported (proposal)": 25
  },
  "bySuite": {
   "expect-error": {
    "accepted": 2458,
-   "verified": 2253
+   "verified": 2254
   },
   "constprop": {
    "accepted": 66,
@@ -51,11 +51,11 @@
    "verified": 8
   }
  },
- "filesAllVerified": 294,
+ "filesAllVerified": 295,
  "filesWithAccepted": 377,
  "functions": {
   "accepted": 2026,
-  "verified": 1837
+  "verified": 1838
  },
  "byGroup": {
   "TypeScript refuses the code too (the pipeline follows TypeScript's types)": {
@@ -172,17 +172,17 @@
    "dependency": 0,
    "files": 3
   },
-  "search: no derivation found (evidence search failed)": {
-   "units": 3,
-   "self": 3,
-   "dependency": 0,
-   "files": 3
-  },
   "relational operators (< <= > >=) and **": {
    "units": 2,
    "self": 1,
    "dependency": 1,
    "files": 1
+  },
+  "search: no derivation found (evidence search failed)": {
+   "units": 2,
+   "self": 2,
+   "dependency": 0,
+   "files": 2
   },
   "reads on unions/primitives (field/index read on non-object, string keys)": {
    "units": 2,
@@ -246,15 +246,15 @@
   }
  },
  "exhausted": 0,
- "reachedButRefused": 106,
+ "reachedButRefused": 105,
  "byClass": {
-  "verified": 2467,
+  "verified": 2468,
   "principled": 88,
   "gap": 108,
-  "unexplained": 1,
+  "unexplained": 0,
   "skjsUnsound": 10
  },
- "unexplainedWithObligation": 1,
+ "unexplainedWithObligation": 0,
  "byReason": {
   "TypeScript refuses the code": {
    "class": "principled",
@@ -416,11 +416,6 @@
    "units": 2,
    "files": 1
   },
-  "search: no derivation found": {
-   "class": "unexplained",
-   "units": 1,
-   "files": 1
-  },
   "`.call`, `.apply`, `.bind` of a function value read from an object": {
    "class": "gap",
    "units": 2,
@@ -496,6 +491,11 @@
    "units": 1,
    "files": 1
   },
+  "a nested async return annotation requires a promise fulfillment value": {
+   "class": "principled",
+   "units": 1,
+   "files": 1
+  },
   "library globals not reviewed": {
    "class": "gap",
    "units": 1,
@@ -518,11 +518,6 @@
   },
   "object identity without fields": {
    "class": "gap",
-   "units": 1,
-   "files": 1
-  },
-  "a nested async return annotation requires a promise fulfillment value": {
-   "class": "principled",
    "units": 1,
    "files": 1
   }
@@ -598,7 +593,6 @@
   "source: keyof is keyof Promise<number>, whose part unique symbol is a unique symbol, which no type of the fragment names": 1,
   "source: an index signature in a class is outside the fragment: a class's instances are the objects its construction allocates, with the keys it names in a declaration o": 1,
   "search: reject: a spread of an object with a symbol-keyed property: the copy is stated at its string keys only, and JavaScript also copies an own enumerable symbol-keye": 1,
-  "search: reject: source expression obligation at _: evidence search failed: no derivation of its node-typing claim": 1,
   "source: unresolved type reference _": 1,
   "search: reject: source refusal at _: the declarations required by this unit cannot be interpreted: Symbol: a callable object with methods needs a combined clause": 1,
   "search: reject: source refusal at _: a key-adding write of a symbol key: the copy that adds the key copies string keys only": 1,
@@ -3268,7 +3262,7 @@
 {"source":"tests/expect-error/stypes-diff.ts","name":"takeStringOrNumberOrT","kind":"function","line":104,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/stypes-diff.ts","name":"testLeftOnly","kind":"function","line":106,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/stypes-diff.ts","name":"takePromiseOrT","kind":"function","line":114,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/stypes-diff.ts","name":"testPromiseInUnion","kind":"function","line":116,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source expression obligation at _: evidence search failed: no derivation of its node-typing claim","group":"search: no derivation found (evidence search failed)","where":"self","at":"takePromiseOrT(p)","detail":"reject: source expression obligation at [188,205): evidence search failed: no derivation of its node-typing claim — No rule derives this invoke at unknown from p: Promise<string>, takePromiseOrT: (Promise<number>) => unknown.","class":"unexplained"},
+{"source":"tests/expect-error/stypes-diff.ts","name":"testPromiseInUnion","kind":"function","line":116,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/stypes-diff.ts","name":"takeResultOrT","kind":"function","line":125,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/stypes-diff.ts","name":"testAlgebraicInUnion","kind":"function","line":127,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/stypes-diff.ts","name":"unwrapOr","kind":"function","line":135,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},

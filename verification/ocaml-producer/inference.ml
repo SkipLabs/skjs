@@ -234,7 +234,12 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) ?(native = fun _ -> fals
            obligation; this assumes no variance. Input comparisons constrain
            the arguments both ways. *)
         contextual_reverse y x) xs ys
-      | Atoms [Named _],_ | _,Atoms [Named _] ->
+      | Atoms [Named _],_ | _,Atoms [Named _]
+        when not (match right with
+          | Union arms -> List.length (List.filter (fun a -> local a <> None) arms) = 1
+          | _ -> false) ->
+      (* A union with one bare binder chooses its arm before opening a
+         named actual, preserving that name as a representable candidate. *)
       let open_ t = match t with Atoms [Named _] -> expand t | _ -> Some t in
       (match open_ left,open_ right with
        | Some l,Some r when l<>left || r<>right -> constrain l r
@@ -386,7 +391,7 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) ?(native = fun _ -> fals
               | _ -> false)
           | _ -> false in
         let heads piece arm = match piece,arm with
-          | _,Atoms [Named (id,_)] when native id -> native_piece 4 id arm piece
+          | _,Atoms [Named (id,_)] when native id && open_arm arm -> native_piece 4 id arm piece
           | Atoms [Shape {elements=Some _;_}],_ when open_arm arm -> array_arm 4 arm
           | Atoms [x],Atoms ys when objective x && open_arm arm -> List.exists objective ys
           | Atoms [x],Atoms ys -> List.mem x ys

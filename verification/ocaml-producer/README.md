@@ -203,6 +203,26 @@ Dependent bounds propagate constraints between parameters. When generic
 methods are compared, their local binders are renamed rather than treated as
 parameters to solve for the enclosing call.
 
+A union with exactly one bare inference variable selects an arm before
+ordinary expansion of a named actual. This preserves the named type as a
+candidate for the bare variable. For a native-promise arm containing type
+variables, matching the native name or required field shape supplies candidate
+constraints on those variables. A ground arm uses syntactic atom equality:
+sharing a native constructor alone does not establish compatibility with its
+fixed arguments. Thus `Promise<string>` against `Promise<number> | T` supplies
+`T := Promise<string>`; against `Promise<U> | T`, native matching can instead
+supply constraints on `U`.
+
+Ground-arm selection performs no subtype comparison. It can miss a compatible
+ground arm and propose a broader fallback variable. This is an incomplete
+inference heuristic; Lean checks the resulting instance's bounds and full call
+contract under the existing rules. The
+[positive union cases](../pipeline/examples/generic-fixed-promise-union.ts)
+exercise fixed, fallback and mixed arguments; the
+[bounded negative](../pipeline/examples/invalid-generic-fixed-promise-union.ts)
+requires rejection when neither the fixed arm nor the fallback's bound admits
+the argument.
+
 Candidate selection joins lower bounds and uses representable intersections
 of upper bounds. It considers declared bounds and defaults. An unconstrained
 parameter without a usable candidate is proposed as `unknown`. Literal

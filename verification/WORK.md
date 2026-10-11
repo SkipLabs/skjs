@@ -73,6 +73,7 @@ only through its members).
 
 | Step | State | Closed when |
 | --- | --- | --- |
+| Generic union inference preserves named actuals until the arm is selected and uses native-head matching only for an arm containing binders | done: unchanged `stypes-diff#testPromiseInUnion` and all 25 units in its file verify; `generic-fixed-promise-union` verifies and its bounded negative is refused; the full pipeline suite passes | inference proposes an instance covering the actual argument, the original source verifies, and an incompatible fixed-arm call remains refused |
 | Loose equality coverage | done | `loose-equality`, `object-identity-equality` and `equality-deciding-operand` verify: primitive pairs, nullish operands and object pairs compared by allocation identity, and an operand known to be a primitive, an object or nullish against a type parameter's value; `invalid-loose-equality-narrowing` is rejected; `==` converting an array or an open record to a primitive stays refused ([row](SOURCE-FRAGMENT.md#refused-on-principle), `loose-equality-array-conversion-refused`, `loose-equality-conversion-refused`); the upstream sum example reaches the shared refusal of the empty intersection `number & Managed` |
 | 1. Explicit-comparator sorting | done | `native-sort-contracts` and the tuple-valued sorts verify; the optional-comparator negative is rejected |
 | 2. Sparse results | done | `native-map-sparse`, `testTupleArrayMethod` and `isarray-record-array` verify; `invalid-map-hole-coalescing` is rejected |
