@@ -338,6 +338,8 @@ export const cases: Case[] = [
   negative("invalid-generic-rest-argument", "A variadic callback cannot receive Boolean at arbitrary T",
     /source expression obligation at \[139,149\): evidence search failed: no derivation of its node-typing claim/),
   positive("generic-bounds", "bounds of any ground type, unions mentioning a binder, an unannotated closure result, a body that falls off its end"),
+  gap("destructuring-known-default", "A defined pattern value has an unreachable default without producer claims", "unverified", "search", /no claimed type for the expression/),
+  negative("invalid-destructuring-known-default", "An optional field can select its Boolean default, so the result cannot be claimed as number"),
   positive("generic-fixed-promise-union", "A native promise with a different payload reaches the bare binder beside a fixed Promise arm; matching and mixed actuals retain their candidates"),
   negative("invalid-generic-fixed-promise-union", "A Promise<string> fits neither the fixed Promise<number> arm nor a binder bounded by string",
     /quantified call does not satisfy the closure's bound: cannot establish object ≤ string/),
