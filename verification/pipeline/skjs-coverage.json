@@ -14,17 +14,17 @@
   "rejected": 2
  },
  "accepted": 2674,
- "verified": 2475,
+ "verified": 2476,
  "byStatus": {
-  "verified (check)": 2475,
+  "verified (check)": 2476,
   "unverified (search)": 98,
-  "unsupported (source)": 76,
-  "unsupported (proposal)": 25
+  "unsupported (source)": 73,
+  "unsupported (proposal)": 27
  },
  "bySuite": {
   "expect-error": {
    "accepted": 2458,
-   "verified": 2261
+   "verified": 2262
   },
   "constprop": {
    "accepted": 66,
@@ -55,7 +55,7 @@
  "filesWithAccepted": 377,
  "functions": {
   "accepted": 2026,
-  "verified": 1845
+  "verified": 1846
  },
  "byGroup": {
   "TypeScript refuses the code too (the pipeline follows TypeScript's types)": {
@@ -100,16 +100,16 @@
    "dependency": 1,
    "files": 7
   },
-  "calls: overloads, .call, spread arguments, Object.assign, arrow callee": {
-   "units": 10,
-   "self": 7,
-   "dependency": 3,
-   "files": 6
-  },
   "a named function at a signature binding more parameters, or indifferent to the receiver it requires (its type is its annotated signature)": {
    "units": 9,
    "self": 8,
    "dependency": 1,
+   "files": 5
+  },
+  "calls: overloads, .call, spread arguments, Object.assign, arrow callee": {
+   "units": 9,
+   "self": 5,
+   "dependency": 2,
    "files": 5
   },
   "arrays and open records: `Array.isArray` on `unknown`, `length` of an array read as a record's": {
@@ -236,9 +236,9 @@
  "exhausted": 0,
  "reachedButRefused": 98,
  "byClass": {
-  "verified": 2475,
+  "verified": 2476,
   "principled": 88,
-  "gap": 101,
+  "gap": 100,
   "unexplained": 0,
   "skjsUnsound": 10
  },
@@ -329,11 +329,6 @@
    "units": 4,
    "files": 3
   },
-  "a spread argument to `new`": {
-   "class": "gap",
-   "units": 3,
-   "files": 2
-  },
   "class forms: constructor rests and defaults reading `this`, computed members, index signatures, statics, private names": {
    "class": "gap",
    "units": 3,
@@ -395,6 +390,11 @@
    "files": 1
   },
   "well-known symbol keys": {
+   "class": "gap",
+   "units": 2,
+   "files": 1
+  },
+  "a constructor spread without a fixed tuple contract": {
    "class": "gap",
    "units": 2,
    "files": 1
@@ -520,7 +520,6 @@
   "search: reject: `??` on a value of a type parameter: its values other than null and undefined are the meet `T & {}`, but no rule narrows a parameter row to its meet wit": 3,
   "proposal: a type parameter types both a value and a rest parameter's argument list: an argument list is not a runtime value": 3,
   "search: reject: the modeled await requires a native promise or a stably non-thenable value: JavaScript adopts a thenable, calling its `then`, instead of settling to it;": 3,
-  "source: a spread argument to `new` is outside the fragment": 3,
   "source: an iterable whose iterator's type states no `return` is outside the fragment here: a loop left early, or a throw out of its body, calls the iterator's `return` ": 3,
   "search: reject: source refusal at _: the declarations required by this unit cannot be interpreted: /functions/0/params/0/type: the intersection is empty: its operands h": 2,
   "search: reject: a relational comparison of operands that may not both be numbers or both strings: `<` converts such an operand to a number or a string first (`undefined": 2,
@@ -532,6 +531,7 @@
   "source: keyof is number | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | ... 34 more ... | unique symbol, whose part unique s": 2,
   "search: reject: fresh async resolution requires a stably non-thenable payload, also when adopting a native promise: JavaScript adopts a thenable, calling its `then`, in": 2,
   "source: generic function types are outside the fragment": 2,
+  "proposal: a constructor spread needs a tuple of required positions": 2,
   "source: a rest parameter needs a tuple of required positions or an array: one typed by a declaration's type parameter is a pack only once the declaration is applied, an": 2,
   "proposal: a spread copies the own enumerable properties of a plain object; a class value's are its static fields, which its construct signatures do not state": 2,
   "source: .call requires a known local function, an explicit receiver and ordinary arguments": 2,
@@ -3036,8 +3036,8 @@
 {"source":"tests/expect-error/recursive-type-mutual.ts","name":"mutualNested","kind":"function","line":34,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/repro-generic-constraint-tvar-instantiation.ts","name":"reproGenericConstraintTVarInstantiation","kind":"function","line":14,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/repro311.ts","name":"MyClass","kind":"class","line":1,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/repro311.ts","name":"perform","kind":"function","line":5,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: a spread argument to `new` is outside the fragment","group":"calls: overloads, .call, spread arguments, Object.assign, arrow callee","where":"self","at":"console.log(new ctor(...params).x);","detail":"gate: a spread argument to `new` is outside the fragment (line 9, col 24)","class":"gap"},
-{"source":"tests/expect-error/repro311.ts","name":"statement@12","kind":"statement","line":12,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: a spread argument to `new` is outside the fragment","group":"calls: overloads, .call, spread arguments, Object.assign, arrow callee","where":"dependency","at":"console.log(new ctor(...params).x);","detail":"gate: a spread argument to `new` is outside the fragment (line 9, col 24)","class":"gap"},
+{"source":"tests/expect-error/repro311.ts","name":"perform","kind":"function","line":5,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: a constructor spread needs a tuple of required positions","group":"calls: overloads, .call, spread arguments, Object.assign, arrow callee","where":"unknown","detail":"unsupported: a constructor spread needs a tuple of required positions","class":"gap"},
+{"source":"tests/expect-error/repro311.ts","name":"statement@12","kind":"statement","line":12,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: a constructor spread needs a tuple of required positions","group":"calls: overloads, .call, spread arguments, Object.assign, arrow callee","where":"unknown","detail":"unsupported: a constructor spread needs a tuple of required positions","class":"gap"},
 {"source":"tests/expect-error/reserved-word-names-prettier-ignore.ts","name":"reservedProperties","kind":"function","line":4,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/reserved-word-names-prettier-ignore.ts","name":"reservedMemberAndKey","kind":"function","line":9,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/reserved-word-names-prettier-ignore.ts","name":"ReservedMembers","kind":"class","line":14,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
@@ -3146,7 +3146,7 @@
 {"source":"tests/expect-error/spread-in-function-calls.ts","name":"testGenericSpread","kind":"function","line":140,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/spread-in-function-calls.ts","name":"testSpreadUndefined","kind":"function","line":147,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: reject: TypeScript refuses this code too","group":"TypeScript refuses the code too (the pipeline follows TypeScript's types)","where":"self","at":"takesThreeNumbers(...args);","detail":"reject: TypeScript refuses this code too (line 6, col 21: A spread argument must either have a tuple type or be passed to a rest parameter.); the pipeline follows TypeScript's types","class":"principled"},
 {"source":"tests/expect-error/spread-in-function-calls.ts","name":"MyClass","kind":"class","line":154,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/spread-in-function-calls.ts","name":"testSpreadInConstructor","kind":"function","line":158,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: a spread argument to `new` is outside the fragment","group":"calls: overloads, .call, spread arguments, Object.assign, arrow callee","where":"self","at":"const instance = new MyClass(...args);","detail":"gate: a spread argument to `new` is outside the fragment (line 7, col 32)","class":"gap"},
+{"source":"tests/expect-error/spread-in-function-calls.ts","name":"testSpreadInConstructor","kind":"function","line":158,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/spread-in-function-calls.ts","name":"returnsArray","kind":"function","line":164,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/spread-in-function-calls.ts","name":"testChainedSpreadCalls","kind":"function","line":168,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/spread-in-function-calls.ts","name":"testSpreadWithArrayMethods","kind":"function","line":173,"skjsMarker":"rejected-self"},

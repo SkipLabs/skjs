@@ -24,7 +24,7 @@ partial def expressionOccurrences (e : Expr) : List Expr :=
     | .objectAssign _ target sources => target :: sources
     | .arrayAssign _ targets rest rhs => rhs :: targets.flatMap (fun (t : ArrayElem Expr) => t.default_.toList) ++
         ((rest.map fun (r : Span × Bool × ArrayElem Expr) => r.2.2.default_.toList).getD [])
-    | .construct _ callee args _ | .call _ callee args _ _ | .invoke _ callee args _ _ => callee :: args
+    | .construct _ callee args _ _ | .call _ callee args _ _ | .invoke _ callee args _ _ => callee :: args
     | .bindWithReceiver _ callee receiver args | .callWithReceiver _ callee receiver args => callee :: receiver :: args
     | .applyWithReceiver _ callee receiver list => callee :: receiver :: list.toList
   match e with

@@ -427,7 +427,7 @@ negation. -/
   | .unary p op e => return .unary p op (← comparisonsExpr fc e)
   | .cast p annot e => return .cast p annot (← comparisonsExpr fc e)
   | .ctor p lam => return .ctor p (← comparisonsExpr fc lam)
-  | .construct p f args ts => return .construct p (← comparisonsExpr fc f) (← args.mapM (comparisonsExpr fc)) ts
+  | .construct p f args spreads ts => return .construct p (← comparisonsExpr fc f) (← args.mapM (comparisonsExpr fc)) spreads ts
   | .alloc p ns es => return .alloc p ns (← es.mapM (comparisonsExpr fc))
   | .build p ns es => return .build p ns (← es.mapM (comparisonsExpr fc))
   | .read p f e => return .read p f (← comparisonsExpr fc e)

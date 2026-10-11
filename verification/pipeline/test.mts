@@ -25,6 +25,7 @@ import { checkGenericRest } from "./generic-rest.mts";
 import { checkOverloads } from "./overload-claims.mts";
 import { checkDefaults, checkSchemeDefaults, checkEarlyDefault, checkPatternDefaults } from "./default-parameters.mts";
 import vm from "node:vm";
+import { decodeFlowDocument, type ExecutionPlan, type ExecutionOperation } from "../tools/source-flow.mts";
 // ../tools/strip-types.mts erases the annotations of an example the suite runs as JavaScript.
 import { stripTypes } from "../tools/strip-types.mts";
 // The report viewer's collector, imported rather than served: `serve.mts` takes the
@@ -1001,6 +1002,48 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   });
   assert.equal(unguarded.status, 1);
   assert.match(unguarded.detail, /unguarded alias cycle through Box: a recursive alias must reach itself through an object, array, tuple or function type/);
+}
+{
+  const good = run("constructor-tuple-spread");
+  assert.equal(runExample("constructor-tuple-spread", "snapshot()"), 12);
+  const source = readFileSync(join(good, "source.ts"), "utf8");
+  const claims = readClaims(good);
+  const fn = must(claims.functions.find(f => f.name === "snapshot"), "snapshot function");
+  const flow = decodeFlowDocument(JSON.parse(readFileSync(join(good, "flow.json"), "utf8")));
+  const owner = must(flow.find(f => JSON.stringify(f.owner) === JSON.stringify(fn.namePos)), "snapshot flow");
+  const statement = must(owner.nodes.find(n => n.action.kind === "declaration" && n.action.name === "result"), "constructor binding");
+  const operations = (p: ExecutionPlan): ExecutionOperation[] => {
+    switch (p.kind) {
+      case "atom": return [p.operation];
+      case "observe": return operations(p.evaluate);
+      case "sequence": return [...operations(p.evaluate), ...operations(p.next)];
+      case "choose": throw Error("the constructor-order fixture has no conditional evaluation");
+    }
+  };
+  assert(statement.action.kind === "declaration");
+  const initializer = statement.action.initializer;
+  const execution = must(statement.executions.find(e => JSON.stringify(e.source) === JSON.stringify(initializer)), "constructor execution");
+  const ops = operations(execution.plan);
+  const events = ops.filter(o => o.kind === "snapshotSpread" ||
+    (o.kind === "evaluate" && o.effect.kind === "havoc"));
+  assert.deepEqual(events.map(o => o.kind === "snapshotSpread" ? "snapshot" : source.slice(...o.source)),
+    ["(choose(xs))", "snapshot", "replace(xs)", "new (choose(xs))(...xs, replace(xs))"]);
+  const snapshot = must(ops.find(o => o.kind === "snapshotSpread"), "spread snapshot");
+  const number = claims.types.findIndex(r => Array.isArray(r) && r.length === 1 && r[0] === "num");
+  assert(number >= 0);
+  const read = must(fn.expressions.find(e => JSON.stringify(e.pos) === JSON.stringify(snapshot.source)), "spread operand claim");
+  read.type = [number];
+  const forged = writeClaims(good, "constructor-spread-number", claims);
+  for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
+    const result = spawnSync(verifier, [mode, join(good, "fragment.json"), forged,
+      join(good, "source.ts"), join(good, mode === "--produce-source-claims"
+        ? "constructor-forged-evidence.json" : "evidence.json"),
+      ...(mode === "--produce-source-claims" ? ["12"] : [])],
+      { encoding: "utf8", timeout: 30_000 });
+    assert.ifError(result.error);
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.match(result.stdout + result.stderr, /constructor spread needs a tuple contract/);
+  }
 }
 {
   const good = run("generic-prototype-instanceof");

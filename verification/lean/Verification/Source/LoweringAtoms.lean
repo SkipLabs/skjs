@@ -139,21 +139,57 @@ Mappings discard only the temporaries introduced by this expression. -/
   | .bindWithReceiver .. | .withValue .. | .lambda .. | .ctor .. =>
     let t ← LoweringExpression.closureExpr recursive fc scope Γ e
     emitAt e.span t.term (.bind next) Γ A (scope := scope)
-  | .construct _ callee args _ =>
-    -- `new`: the callee, then each actual, saved in order; then the construct
-    -- step on the saved slots, as an allocation does with its initializers.
+  | .construct _ callee args spreads _ => do
+    -- Execution planning saves the callee and actuals left to right. A spread
+    -- before executable actuals is copied there; read its saved tuple here.
+    if !spreads.isEmpty && (args.drop (spreads.headD args.length + 1)).any
+        (fun a => match a with | .var .. | .lit .. => false | _ => true) then
+      throw "a constructor spread before executable actuals requires an execution snapshot"
     let operands := callee :: args
     let As ← operands.mapM (exprType fc)
+    let G := SourceTypes.graph (← table)
+    let spreadElements ← spreads.mapM fun i => do
+      let some A := As[i+1]? | throw "a constructor spread names no operand"
+      let S := match PositiveRules.expand G A with
+        | [.list ..] => some A
+        | _ => storeOf G A
+      let some S := S | throw "a constructor spread needs a tuple contract"
+      let [.list T []] := PositiveRules.expand G S
+        | throw "a constructor spread needs a tuple contract of required positions"
+      if !T.optional.isEmpty || T.rest.isSome then
+        throw "a constructor spread needs a tuple contract of required positions"
+      pure (i, T.required)
+    let elements := spreadElements.flatMap (·.2)
+    let sources : List (Nat × Nat) :=
+      spreadElements.flatMap fun (i, Es) => (List.range Es.length).map (i, ·)
     let n := As.length
+    let k := elements.length
     let temporaries := (operands.map fun a => held ⟨"",some a.span⟩).reverse
+    let anonymous := held ⟨"",some e.span⟩
+    let actuals := ((List.range args.length).foldl (fun (g, out) i =>
+      match spreadElements.lookup i with
+      | some Es => (g + Es.length, out ++ (List.range Es.length).map fun j => Tm.var (k-1-(g+j)))
+      | none => (g, out ++ [Tm.var (k+n-2-i)])) (0, ([] : List Tm))).2
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
-      (fun i => if i == 0 then 0 else i+n))⟩
-    let construct ← emitAt e.span (.construct (.var (n-1)) ((List.range (n-1)).map fun i => .var (n-2-i)))
-      (.bind drop) (As.reverse ++ Γ) A (scope := temporaries ++ scope)
+      (fun i => if i == 0 then 0 else i+n+k))⟩
+    let construct ← emitAt e.span (.construct (.var (k+n-1)) actuals)
+      (.bind drop) (elements.reverse ++ As.reverse ++ Γ) A
+      (scope := List.replicate k anonymous ++ temporaries ++ scope)
+    let reads ← (List.range k).reverse.foldlM (fun next g => do
+      let some E := elements[g]? | throw "a constructor spread element has no contract"
+      let some (i,j) := sources[g]? | throw "a constructor spread element has no operand"
+      let raw := match PositiveRules.expand G (As[i+1]?.getD []) with
+        | [.list ..] => true
+        | _ => false
+      let source := Tm.var (g+n-2-i)
+      let source := if raw then source else .readAt SourceTypes.storeField source
+      emitAt e.span (.elemAt source (← indexTerm j)) (.bind next)
+        ((elements.take g).reverse ++ As.reverse ++ Γ) E "constructor-spread-element"
+        (scope := List.replicate g anonymous ++ temporaries ++ scope)) construct
     operands.attach.zipIdx.reverse.foldlM (fun next (⟨arg,_⟩,i) =>
       compileAtom recursive fc
         ((operands.take i |>.map fun a => held ⟨"",some a.span⟩).reverse ++ scope)
-        ((As.take i).reverse ++ Γ) arg next) construct
+        ((As.take i).reverse ++ Γ) arg next) reads
   | .shapeTest p tag equal operand =>
     let B ← exprType fc operand
     inOperand p tag B

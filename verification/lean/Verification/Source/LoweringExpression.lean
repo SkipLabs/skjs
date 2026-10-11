@@ -737,7 +737,8 @@ slots are introduced only after the operand supplying their type is checked. -/
     let code ← LoweringClosures.lambdaCode recursive fc scope Γ lam A (.ctor [Labels.undef])
     pure (DirectProof.node Γ (Tm.makeFn (code.code .construct) .nul) A (.ctorGraph [Labels.undef])
       (code.capturePlans Γ))
-  | .construct _ f args _ => do
+  | .construct _ f args spreads _ => do
+    if !spreads.isEmpty then throw "a constructor spread inside a closed expression is outside the fragment"
     let callee ← closureExpr recursive fc scope Γ f
     let [.ctors L] := PositiveRules.expand G callee.type
       | throw "`new` needs a value with construct signatures"

@@ -20,12 +20,17 @@ for the synthetic copy. -/
 @[nospecialize] private def executionSnapshotType (fc : SourceClaims.Function Tree)
     (value : SourceExecution.Saved) (call : Fragment.Expr) : Compiler (Ty Tree) := do
   let callee ← match call with
-    | .call _ callee _ _ _ | .invoke _ callee _ _ _ => pure callee
+    | .call _ callee _ _ _ | .invoke _ callee _ _ _ | .construct _ callee _ _ _ => pure callee
     | _ => throw "internal execution plan: a spread snapshot requires a call"
   let B ← exprType fc callee
   let original ← exprType fc (.var value.source value.name)
   let G := SourceTypes.graph (← table)
   let signatures := ProgramTyping.restSigs G B
+  if let .construct .. := call then
+    if let some S := storeOf G original then
+      if let [.list T []] := PositiveRules.expand G S then
+        if T.optional.isEmpty && T.rest.isNone then return S
+    throw "a constructor spread needs a tuple contract of required positions"
   if signatures.isEmpty then
     throw (locatedRefusal (← table) call.span .bindingAnnotation
       "a spread into fixed parameters followed by an actual that runs code is outside the fragment")

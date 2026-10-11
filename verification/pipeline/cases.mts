@@ -47,6 +47,8 @@ const gap = (
   diagnostic: RegExp,
 ): Case => ({ file, area, kind: "gap", status, phase, diagnostic });
 export const cases: Case[] = [
+  positive("constructor-tuple-spread", "Constructor tuple spreads preserve callee-first evaluation and snapshot elements before later effects; readonly, empty and generic actuals"),
+  negative("invalid-constructor-tuple-spread", "A spread element must meet its constructor parameter", /source expression obligation at \[218,234\): evidence search failed/),
   positive("generic-prototype-instanceof", "Shared prototype methods quantify bounded class parameters across construction, ordinary, generic and deferred consumers"),
   positive("generic-prototype-record-bound", "Shared prototype methods preserve record bounds and named bounds across consumers"),
   positive("class-record-bound", "A class's record bound is preserved through construction and its method result"),

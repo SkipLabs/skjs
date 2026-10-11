@@ -186,8 +186,9 @@ private partial def expression (root : Span) (e : Expr) : Builder Plan := do
         operands root fields fun fields => pure
           (atom (.withValue pos fn (.alloc initialPos names (fields.map readSaved)) functionType bagType))
       | _, _ => pure (atom e)
-    | .construct pos callee args typeArgs => operand root callee "callee" fun callee => do
-        operands root args fun args => do pure (atom (.construct pos (readSaved callee) (args.map readSaved) typeArgs))
+    | .construct pos callee args spreads typeArgs => operand root callee "callee" fun callee => do
+        callArguments root e args spreads 0 fun args => do
+          pure (atom (.construct pos (readSaved callee) (args.map readSaved) spreads typeArgs))
     | .bindWithReceiver pos callee receiver args =>
         match callee, receiver, args with
         | .read _ _ object@(.var _ x), .var _ y, [] =>

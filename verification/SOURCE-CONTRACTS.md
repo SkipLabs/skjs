@@ -552,6 +552,13 @@ with $`\textit{b}`$ a binding no source spells. An `async` method is a method
 whose body reads as an async function's, its returns and `await`s the
 [async intrinsics](#async-functions-and-await).
 
+A constructor call may spread tuples of required positions, including readonly
+and empty tuples. The callee is evaluated once before the actuals. Each spread
+contributes its elements in order; before a later actual executes code, the
+spread's elements are saved in a fresh internal store. Constructor parameter
+contracts check the expanded argument list. Optional and unbounded tuple
+positions require a separate argument-count rule.
+
 **Private names.** A private name `#x` is a key no code outside its class
 spells: the declaration reader lists it as a symbol of its own, identified by
 the member declaring it ($`\sigma_{C.\#x}`$), as it lists a `unique symbol`

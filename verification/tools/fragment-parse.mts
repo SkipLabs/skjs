@@ -1594,14 +1594,18 @@ class Gate {
       // Explicit type arguments name the instantiation the producer proposes;
       // Lean validates that instantiation like any other. The callee is any
       // value; its type decides whether it has construct-only code.
+      const spreads: number[] = [];
+      const args = (node.arguments ?? []).map((arg, i) => {
+        if (!ts.isSpreadElement(arg)) return this.expr(arg);
+        spreads.push(i);
+        return this.spreadOperand(arg);
+      });
       return {
         k: "new",
         pos: this.span(node),
         callee: this.expr(node.expression),
-        args: (node.arguments ?? []).map((arg) => {
-          if (ts.isSpreadElement(arg)) this.fail(arg, "a spread argument to `new` is outside the fragment");
-          return this.expr(arg);
-        }),
+        args,
+        ...(spreads.length ? { spreads } : {}),
         ...(node.typeArguments?.length
           ? { typeArgs: node.typeArguments.map((t) => this.typeOf(t, t)) }
           : {}),

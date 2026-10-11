@@ -569,9 +569,10 @@ inductive Expr where
   /-- A class value: its constructor `lambda` as construct-only code. -/
   | ctor (pos : Span) (lam : Expr)
   /-- `new callee(args)`: the callee, then the actuals, then its construct code.
+  `spreads` marks tuple operands expanded at their required positions.
   `typeArgs` are the explicit type arguments written on it, empty where none
   are: the call's claimed instance must agree with them. -/
-  | construct (pos : Span) (callee : Expr) (args : List Expr) (typeArgs : List Json)
+  | construct (pos : Span) (callee : Expr) (args : List Expr) (spreads : List Nat) (typeArgs : List Json)
   | bindWithReceiver (pos : Span) (callee receiver : Expr) (args : List Expr)
   | callWithReceiver (pos : Span) (callee receiver : Expr) (args : List Expr)
   /-- `f.apply(r, list)`: the target, the receiver and the list are saved,
@@ -690,7 +691,7 @@ partial def Expr.freeNames : Expr → List String
     ((ds.flatMap fun d => d.2.freeNames) ++ b.freeNames).filter
       (fun n => !(ps.map Prod.fst).contains n && (receiver.isNone || n != "this"))
   | .shapeTest _ _ _ e | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .ctor _ e => e.freeNames
-  | .construct _ f args _ => f.freeNames ++ args.flatMap Expr.freeNames
+  | .construct _ f args _ _ => f.freeNames ++ args.flatMap Expr.freeNames
   | .alloc _ _ es | .build _ _ es | .arrayLit _ es => es.flatMap Expr.freeNames
   | .logical _ _ a b | .coalesce _ a b | .equality _ _ a b
   | .singletonTest _ _ _ _ a b | .write _ _ a b | .index _ _ a b
@@ -721,7 +722,7 @@ partial def Expr.callees : Expr → List (Span × Span × String × List Json)
     ((ds.flatMap fun d => d.2.callees) ++ b.callees).filter
       (fun c => !(ps.map Prod.fst).contains c.2.2.1)
   | .shapeTest _ _ _ e | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .ctor _ e => e.callees
-  | .construct p f args ts =>
+  | .construct p f args _ ts =>
     (match f with | .var q n => [(p, q, n, ts)] | _ => []) ++ f.callees ++ args.flatMap Expr.callees
   | .alloc _ _ es | .build _ _ es | .arrayLit _ es => es.flatMap Expr.callees
   | .logical _ _ a b | .coalesce _ a b | .equality _ _ a b
@@ -845,7 +846,7 @@ def Expr.span : Expr → Span
   | .index p _ _ _ | .indexWrite p _ _ _ _ | .arith p _ _ _ | .update p _ _ _ _ | .logicalAssign p _ _ _ => p
   | .comma p _ _ | .inKeys p _ _ | .optional p _ _ _ | .block p _ => p
   | .arrayLit p _ | .elemAt p _ _ | .elemWrite p _ _ _ | .arrayAssign p _ _ _ => p
-  | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .unary p _ _ | .cast p _ _ | .alloc p _ _ | .build p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .objectAssign p _ _ | .lambda p _ _ _ _ _ _ _ | .call p _ _ _ _ | .invoke p _ _ _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ | .applyWithReceiver p _ _ _ | .ctor p _ | .construct p _ _ _ => p
+  | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .unary p _ _ | .cast p _ _ | .alloc p _ _ | .build p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .objectAssign p _ _ | .lambda p _ _ _ _ _ _ _ | .call p _ _ _ _ | .invoke p _ _ _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ | .applyWithReceiver p _ _ _ | .ctor p _ | .construct p _ _ _ _ => p
 
 
 /-- The intrinsic a `for...in` iterates (`intrinsics.mts`):
@@ -1192,8 +1193,9 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     return .ctor p lam
   | "new" => do
     let typeArgs ← decodeTypeArgs j
-    fieldsExactly j (["k","pos","callee","args"] ++ typeArgsField typeArgs)
-    return .construct p (← decodeExpr (← jField j "callee")) (← (← jArr j "args").mapM decodeExpr) typeArgs
+    let args ← (← jArr j "args").mapM decodeExpr
+    let spreads ← decodeSpreads j args.length (typeArgsField typeArgs)
+    return .construct p (← decodeExpr (← jField j "callee")) args spreads typeArgs
   | "lambda" => do
     -- Two proof fixtures embed parser snapshots from before quantified lambdas.
     -- Live producers always write `typeParams`; absence in those snapshots is

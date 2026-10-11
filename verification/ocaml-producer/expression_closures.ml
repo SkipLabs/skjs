@@ -36,16 +36,33 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
       let fresh_sig = if fresh then [{own with result=allocated_type}] else [] in
       Atoms [Ctors (fresh_sig @ own :: List.filter (fun s -> s <> own) (List.sort_uniq compare extra))]
     | Ctor _ -> Proposal_diagnostics.unsupported "a class value is a constructor lambda with plain parameters"
-    | New (callee,types,args) ->
+    | New (callee,types,args,spreads) ->
+      let constructor = declared_head declarations [] (expr env callee) in
+      (* A spread's tuple annotation supplies its element contracts. Ordinary
+         calls retain contextual inference for their written arguments. Lean
+         checks every expanded actual against the chosen signature. *)
+      let expanded = if spreads = [] then None else
+        Some (List.concat (List.mapi (fun i arg ->
+          let t = expr env arg in
+          if List.mem i spreads then
+            match Semantic.tuple_positions ~readonly:true (declared_head declarations [] t) with
+            | Some ps -> ps
+            | None -> Proposal_diagnostics.unsupported "a constructor spread needs a tuple of required positions"
+          else [t]) args)) in
+      let count = match expanded with Some ts -> List.length ts | None -> List.length args in
+      let actual_types () = match expanded with Some ts -> ts | None -> List.map (expr env) args in
+      let contextual_actuals ps = match expanded with
+        | Some _ -> ()
+        | None -> List.iter2 (fun p a -> ignore (expr ~expected:p env a)) ps args in
       (* `new` may omit trailing actuals, as a call may: the machine binds
          `undefined` there, and Lean checks each omitted position admits it. *)
-      let written (s:Semantic.signature) = List.filteri (fun i _ -> i < List.length args) s.params in
-      (match declared_head declarations [] (expr env callee) with
+      let written (s:Semantic.signature) = List.filteri (fun i _ -> i < count) s.params in
+      (match constructor with
        | Atoms [Ctors [signature]] when signature.quantified <> [] ->
          (* A generic class: its instance is the one the explicit type
             arguments name, or is inferred from the actuals, as a generic
             call's is. *)
-         if List.length args > List.length signature.params then
+         if count > List.length signature.params then
            Proposal_diagnostics.unsupported "no construct signature takes this many arguments";
          let substitution,result =
            if types <> [] then begin
@@ -54,12 +71,12 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
              let substitution = List.map2 (fun (q:Semantic.quantifier) t -> q.identity,ValueArgument t)
                signature.quantified types in
              let instance = Inference.substitute_signature substitution {signature with quantified=[]} in
-             List.iter2 (fun p a -> ignore (expr ~expected:p env a)) (written instance) args;
+             contextual_actuals (written instance);
              substitution,instance.result
            end else
-             let missing = List.length signature.params - List.length args in
+             let missing = List.length signature.params - count in
              let inferred = Inference.infer ~expand:(expand_named declarations) ~receiver:Semantic.top ?expected signature
-               (List.map (expr env) args @ List.init missing (fun _ -> Atoms [Undef])) in
+               (actual_types () @ List.init missing (fun _ -> Atoms [Undef])) in
              inferred.substitution,inferred.result in
          instance_of callee substitution;
          publish_substitution e.pos (List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t) substitution);
@@ -67,11 +84,11 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
        | Atoms [Ctors signatures] ->
          if types <> [] then Proposal_diagnostics.unsupported "explicit type arguments to a class that takes none";
          let exact,short = List.partition (fun (s:Semantic.signature) ->
-           List.length s.params = List.length args) (List.filter (fun (s:Semantic.signature) ->
-             s.quantified = [] && List.length s.params >= List.length args) signatures) in
+           List.length s.params = count) (List.filter (fun (s:Semantic.signature) ->
+             s.quantified = [] && List.length s.params >= count) signatures) in
          (match exact @ short with
           | s :: _ ->
-            List.iter2 (fun p a -> ignore (expr ~expected:p env a)) (written s) args;
+            contextual_actuals (written s);
             s.result
           | [] -> Proposal_diagnostics.unsupported "no construct signature takes this many arguments")
        | _ -> Proposal_diagnostics.unsupported "`new` needs a value with construct signatures")

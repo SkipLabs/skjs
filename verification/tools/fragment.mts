@@ -150,9 +150,10 @@ export type Expr =
   | { k: "apply"; pos: Span; callee: Expr; args: Expr[]; spreads?: number[]; typeArgs?: TypeTerm[] }
   /* `new callee(args)`: the callee, then the arguments left to right, then
      the callee's construct-only code runs. A plain function cannot be one.
+     `spreads` marks tuple operands whose required elements supply actuals.
      `typeArgs`, when written, are the explicit type arguments: the
      instantiation the producer proposes, which Lean checks as any other. */
-  | { k: "new"; pos: Span; callee: Expr; args: Expr[]; typeArgs?: TypeTerm[] }
+  | { k: "new"; pos: Span; callee: Expr; args: Expr[]; spreads?: number[]; typeArgs?: TypeTerm[] }
   /* A class value: its constructor lambda as construct-only code, which only
      `new` runs. */
   /* A generic class's binders, when it has any: they are in scope in its

@@ -36,7 +36,7 @@ private partial def assignsExpr (name : String) : Fragment.Expr → Bool
     assignsExpr name f || assignsExpr name r || args.any (assignsExpr name)
   | .ctor _ lam => assignsExpr name lam
   | .objectAssign _ t ss => assignsExpr name t || ss.any (assignsExpr name)
-  | .construct _ f args _ => assignsExpr name f || args.any (assignsExpr name)
+  | .construct _ f args _ _ => assignsExpr name f || args.any (assignsExpr name)
   | .applyWithReceiver _ f r list =>
     assignsExpr name f || assignsExpr name r || (list.map (assignsExpr name)).getD false
   | .ifBody _ c t e => assignsExpr name c || assignsExpr name t || assignsExpr name e
@@ -119,7 +119,7 @@ partial def escapesExpr (n : String) : Fragment.Expr → Bool
   | .indexWrite _ _ a b c | .elemWrite _ a b c => escapesExpr n a || escapesExpr n b || escapesExpr n c
   | .update _ _ a b _ => escapesExpr n a || (b.map (escapesExpr n)).getD false
   | .alloc _ _ es | .build _ _ es | .arrayLit _ es => es.any (escapesExpr n)
-  | .call _ f args _ _ | .invoke _ f args _ _ | .construct _ f args _ =>
+  | .call _ f args _ _ | .invoke _ f args _ _ | .construct _ f args _ _ =>
     escapesExpr n f || args.any (escapesExpr n)
   | .callWithReceiver _ f r args | .bindWithReceiver _ f r args =>
     escapesExpr n f || escapesExpr n r || args.any (escapesExpr n)
@@ -146,7 +146,7 @@ partial def closureBodies : Fragment.Expr → List (List Fragment.Stmt)
   | .arrayAssign _ targets _ rhs => closureBodies rhs ++
     targets.flatMap fun q => (q.default_.map closureBodies).getD []
   | .assign _ _ _ e | .nullishAssign _ _ _ e => closureBodies e
-  | .call _ f args _ _ | .invoke _ f args _ _ | .construct _ f args _ =>
+  | .call _ f args _ _ | .invoke _ f args _ _ | .construct _ f args _ _ =>
     closureBodies f ++ args.flatMap closureBodies
   | .callWithReceiver _ f r args | .bindWithReceiver _ f r args =>
     closureBodies f ++ closureBodies r ++ args.flatMap closureBodies

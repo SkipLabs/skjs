@@ -451,7 +451,7 @@ and expr_node =
   | Ctor of expr
   (* `new callee<types>(args)`: the explicit type arguments, if written,
      name the instantiation proposed for a generic class. *)
-  | New of expr * ty list * expr list
+  | New of expr * ty list * expr list * int list
   | Conditional of expr * expr * expr | Coalesce of expr * expr
   (* An optional chain: the receiver once, `undefined` where it is nullish,
      else the body, which reads the receiver as `chain_name`. *)
@@ -551,7 +551,7 @@ let rec children e = match e.node with
   | ArrayLiteral es -> es
   | Lambda (_,_,_,defaults,_,_,body) -> List.map snd defaults @ [body]
   | Call (f,r,args,_,_) -> f :: Option.to_list r @ args
-  | Invoke (f,args,_,_) | New (f,_,args) -> f :: args
+  | Invoke (f,args,_,_) | New (f,_,args,_) -> f :: args
   | Apply (f,r,l) -> f :: r :: Option.to_list l
   | Bind (f,r,args) -> f :: r :: args
   | ObjectAssign (t,sources) -> t :: sources
@@ -722,7 +722,10 @@ let rec expr binders j =
   | "new" ->
     let types = match List.assoc_opt "typeArgs" (obj j) with
       | None -> [] | Some ts -> List.map (source_type binders) (list ts) in
-    New (sub "callee",types,List.map (expr binders) (items "args" j))
+    let spreads = match List.assoc_opt "spreads" (obj j) with
+      | None -> [] | Some s -> List.map (fun n -> int_of_string (match n with
+          | Json.Number n -> n | _ -> Json.fail "a spread position is a number")) (list s) in
+    New (sub "callee",types,List.map (expr binders) (items "args" j),spreads)
   | "apply" ->
     let spreads = match List.assoc_opt "spreads" (obj j) with
       | None -> [] | Some s -> List.map (fun n -> int_of_string (match n with
