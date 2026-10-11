@@ -11,11 +11,10 @@ open Module_contract
    offer it more parameters are reached: a first pass finds those offers, and
    the second states them at the creation. *)
 let infer_function state flows declarations module_functions (f:Source.fn) =
-  (* A binder bounded by another reads through it: `U extends T` reads a
-     member at `T`'s bound. *)
+  (* A value bound retains its parameters: `T extends Ref<U>` reads a
+     member through Ref<U>; `U extends T` reads through T's bound. *)
   let bounds = List.filter_map (fun (q:Semantic.quantifier) -> match q.bound with
-    | Some (ValueArgument b) when not (Semantic.mentions_rigid b) -> Some (q.identity,b)
-    | Some (ValueArgument (Rigid t)) when t <> q.identity -> Some (q.identity,Rigid t)
+    | Some (ValueArgument b) when b <> Rigid q.identity -> Some (q.identity,b)
     | _ -> None) f.quantified in
   (* An evolving binding's contract is what the body writes into it, which
      a pass finds under the contract the previous pass assumed: passes run

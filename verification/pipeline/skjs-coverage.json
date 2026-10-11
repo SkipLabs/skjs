@@ -14,17 +14,17 @@
   "rejected": 2
  },
  "accepted": 2674,
- "verified": 2476,
+ "verified": 2478,
  "byStatus": {
-  "verified (check)": 2476,
+  "verified (check)": 2478,
   "unverified (search)": 98,
   "unsupported (source)": 73,
-  "unsupported (proposal)": 27
+  "unsupported (proposal)": 25
  },
  "bySuite": {
   "expect-error": {
    "accepted": 2458,
-   "verified": 2262
+   "verified": 2264
   },
   "constprop": {
    "accepted": 66,
@@ -51,11 +51,11 @@
    "verified": 8
   }
  },
- "filesAllVerified": 297,
+ "filesAllVerified": 298,
  "filesWithAccepted": 377,
  "functions": {
   "accepted": 2026,
-  "verified": 1846
+  "verified": 1848
  },
  "byGroup": {
   "TypeScript refuses the code too (the pipeline follows TypeScript's types)": {
@@ -94,12 +94,6 @@
    "dependency": 1,
    "files": 6
   },
-  "generics: constraints, explicit type arguments, rigid types, generic function types": {
-   "units": 10,
-   "self": 8,
-   "dependency": 1,
-   "files": 7
-  },
   "a named function at a signature binding more parameters, or indifferent to the receiver it requires (its type is its annotated signature)": {
    "units": 9,
    "self": 8,
@@ -117,6 +111,12 @@
    "self": 8,
    "dependency": 0,
    "files": 5
+  },
+  "generics: constraints, explicit type arguments, rigid types, generic function types": {
+   "units": 8,
+   "self": 7,
+   "dependency": 1,
+   "files": 6
   },
   "cells read at their contract (contents known only as primitives or as no `undefined`, and forgotten across a step that may write them)": {
    "units": 6,
@@ -236,9 +236,9 @@
  "exhausted": 0,
  "reachedButRefused": 98,
  "byClass": {
-  "verified": 2476,
+  "verified": 2478,
   "principled": 88,
-  "gap": 100,
+  "gap": 98,
   "unexplained": 0,
   "skjsUnsound": 10
  },
@@ -251,8 +251,8 @@
   },
   "generics: generic closures, methods, function types, dependent bounds": {
    "class": "gap",
-   "units": 15,
-   "files": 9
+   "units": 13,
+   "files": 8
   },
   "a named function at a longer signature": {
    "class": "gap",
@@ -525,7 +525,6 @@
   "search: reject: a relational comparison of operands that may not both be numbers or both strings: `<` converts such an operand to a number or a string first (`undefined": 2,
   "proposal: field read on non-object": 2,
   "search: reject: a `typeof x === \"_\"` test on a value of a type parameter or `unknown`: the values of that shape are the meet of the type parameter with it (`T & number`": 2,
-  "proposal: field read on rigid parameter": 2,
   "source: array literal spreads and holes are outside the fragment": 2,
   "source: a well-known symbol key other than `Symbol.iterator` is outside the fragment: it changes how the host treats the object, which the model does not state, and `Sy": 2,
   "source: keyof is number | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | ... 34 more ... | unique symbol, whose part unique s": 2,
@@ -1839,8 +1838,8 @@
 {"source":"tests/expect-error/generic-class-union-constraint.ts","name":"callTestObject","kind":"function","line":30,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/generic-class-union-constraint.ts","name":"callTestArray","kind":"function","line":35,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/generic-class-union-constraint.ts","name":"callTestReadonlyArray","kind":"function","line":40,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/generic-dependent-constraints.ts","name":"get","kind":"function","line":7,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: field read on rigid parameter","group":"generics: constraints, explicit type arguments, rigid types, generic function types","where":"self","detail":"unsupported: field read on rigid parameter","class":"gap"},
-{"source":"tests/expect-error/generic-dependent-constraints.ts","name":"main","kind":"function","line":11,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: field read on rigid parameter","group":"generics: constraints, explicit type arguments, rigid types, generic function types","where":"unknown","detail":"unsupported: field read on rigid parameter","class":"gap"},
+{"source":"tests/expect-error/generic-dependent-constraints.ts","name":"get","kind":"function","line":7,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
+{"source":"tests/expect-error/generic-dependent-constraints.ts","name":"main","kind":"function","line":11,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/generic-inference-too-narrow.ts","name":"fromGenericInst","kind":"function","line":18,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/generic-inference-too-narrow.ts","name":"fromGenericCall","kind":"function","line":31,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/generic-inference-too-narrow.ts","name":"fromEmptyArray","kind":"function","line":42,"skjsMarker":"rejected-self"},

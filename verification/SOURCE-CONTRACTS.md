@@ -285,13 +285,11 @@ the intersection at $`\vec U`$ gives. A producer names a meet it does not comput
 an intersection label in its claims ([`{"meet": ...}`](SOURCE-CLAIMS.md#encoding)),
 whose row Lean fills with `meetRow`.
 
-A generic body's bounded binder is read the same way, as the meet of its
-parameter row and its bound, and a binder bounded by another, `U extends T`,
-as the meet of the two, $`p_U\sqcap p_T\sqcap\vec c`$ with $`T`$'s clauses or
-$`\top`$ (`SourceTypes.dependentMeet`), which is below $`T`$ by its parameters
-([`meetBelow`](POSITIVE-TYPES.md#covered-pairs); [generic
-bodies](CALLABLES.md#overloads-polymorphism-and-binding)). Any other bound naming a binder
-leaves the parameter row alone.
+A generic body's bounded binder is interpreted as the intersection of its
+parameter row and its declared bound. The bound may contain other parameters
+in scope, as in `T extends Ref<U>`, or name one directly, as in `U extends T`.
+This retains the parameter's identity and the bound's member contracts
+([generic bodies](CALLABLES.md#overloads-polymorphism-and-binding)).
 
 ## Implied bounds
 

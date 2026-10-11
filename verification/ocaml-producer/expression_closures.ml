@@ -123,12 +123,11 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
                   && List.length s.params >= List.length ps -> Some s.result
            | _ -> None)
         | _ -> None in
-      (* A generic closure's own ground bounds hold in its body, as a generic
+      (* A generic closure's own value bounds hold in its body, as a generic
          function's do: a member read through a bounded binder reads the
          bound's member. *)
       let closure_bounds = List.filter_map (fun (q:Semantic.quantifier) -> match q.bound with
-        | Some (ValueArgument b) when not (Semantic.mentions_rigid b) -> Some (q.identity,b)
-        | Some (ValueArgument (Rigid t)) when t <> q.identity -> Some (q.identity,Rigid t)
+        | Some (ValueArgument b) when b <> Rigid q.identity -> Some (q.identity,b)
         | _ -> None) quantified @ rigid_bounds () in
       let infer_closure_body ?expected env = match body.node with
         | BlockBody _ -> expr ?expected env body
