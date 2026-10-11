@@ -14,17 +14,17 @@
   "rejected": 2
  },
  "accepted": 2674,
- "verified": 2468,
+ "verified": 2473,
  "byStatus": {
-  "verified (check)": 2468,
-  "unverified (search)": 105,
+  "verified (check)": 2473,
+  "unverified (search)": 100,
   "unsupported (source)": 76,
   "unsupported (proposal)": 25
  },
  "bySuite": {
   "expect-error": {
    "accepted": 2458,
-   "verified": 2254
+   "verified": 2259
   },
   "constprop": {
    "accepted": 66,
@@ -51,11 +51,11 @@
    "verified": 8
   }
  },
- "filesAllVerified": 295,
+ "filesAllVerified": 296,
  "filesWithAccepted": 377,
  "functions": {
   "accepted": 2026,
-  "verified": 1838
+  "verified": 1843
  },
  "byGroup": {
   "TypeScript refuses the code too (the pipeline follows TypeScript's types)": {
@@ -147,12 +147,6 @@
    "self": 4,
    "dependency": 2,
    "files": 3
-  },
-  "unclassified: search: reject: no claimed type for the expression at _": {
-   "units": 5,
-   "self": 5,
-   "dependency": 0,
-   "files": 2
   },
   "object literal members (methods, accessors, spreads)": {
    "units": 5,
@@ -246,11 +240,11 @@
   }
  },
  "exhausted": 0,
- "reachedButRefused": 105,
+ "reachedButRefused": 100,
  "byClass": {
-  "verified": 2468,
+  "verified": 2473,
   "principled": 88,
-  "gap": 108,
+  "gap": 103,
   "unexplained": 0,
   "skjsUnsound": 10
  },
@@ -315,11 +309,6 @@
    "class": "skjs-unsound",
    "units": 6,
    "files": 1
-  },
-  "unmatched: search: reject: no claimed type for the expression at _": {
-   "class": "gap",
-   "units": 5,
-   "files": 2
   },
   "enum forms: computed members, an empty enum": {
    "class": "gap",
@@ -524,7 +513,6 @@
  },
  "unmatchedReasons": [
   "search: reject: Verification.ProgramCertificates.Sequent.context: a label names a binder no unit or closure reads",
-  "search: reject: no claimed type for the expression at _",
   "search: reject: source refusal at _: the declarations required by this unit cannot be interpreted: ViaInter: a base that is a type parameter or an intersection is outsi",
   "search: reject: unsupported source expression at _: strict equality of two operands that may both be values of no known kind, neither a primitive nor an object"
  ],
@@ -539,7 +527,6 @@
   "source: a rest parameter needs a tuple of required positions or an array: one typed by an intersection would view the fresh array a call collects at the meet of its ope": 6,
   "source: a function that reads `this` must be strict code: sloppy code replaces an undefined or primitive receiver by the global object or a wrapper object, which the mo": 6,
   "source: a rest parameter needs a tuple of required positions or an array: one typed by a type parameter would bind the array a call collects at that parameter, which on": 6,
-  "search: reject: no claimed type for the expression at _": 5,
   "source: a computed enum member is outside the fragment: its reverse mapping is keyed by its value at run time": 5,
   "search: reject: source refusal at _: a write of '_', a key the object's type does not state, may add it to an object another reference holds, which would see the object": 5,
   "search: reject: a cell read at its contract: a cell is known by its contract after a step that may write it (a call, whose callee may write any location its operands re": 4,
@@ -802,11 +789,11 @@
 {"source":"tests/expect-error/array-destructuring-patterns.ts","name":"testSkippedElementsTypeError","kind":"function","line":21,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/array-destructuring-patterns.ts","name":"testTupleDefaultUseful","kind":"function","line":31,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/array-destructuring-patterns.ts","name":"testTupleDefaultDifferentType","kind":"function","line":38,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/array-destructuring-patterns.ts","name":"testTupleDefaultUseless","kind":"function","line":44,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: no claimed type for the expression at _","group":"unclassified: search: reject: no claimed type for the expression at _","where":"self","at":"0","detail":"reject: no claimed type for the expression at [198,199)","class":"gap"},
+{"source":"tests/expect-error/array-destructuring-patterns.ts","name":"testTupleDefaultUseless","kind":"function","line":44,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/array-destructuring-patterns.ts","name":"testTupleDefaultAlwaysUndefined","kind":"function","line":50,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/array-destructuring-patterns.ts","name":"testArrayDefaultUseful","kind":"function","line":58,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/array-destructuring-patterns.ts","name":"testSkippedWithDefaults","kind":"function","line":66,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/array-destructuring-patterns.ts","name":"testSkippedWithDefaultsUseless","kind":"function","line":77,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: no claimed type for the expression at _","group":"unclassified: search: reject: no claimed type for the expression at _","where":"self","at":"0","detail":"reject: no claimed type for the expression at [236,237)","class":"gap"},
+{"source":"tests/expect-error/array-destructuring-patterns.ts","name":"testSkippedWithDefaultsUseless","kind":"function","line":77,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/array-destructuring-rest.ts","name":"restFromTuple","kind":"function","line":5,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/array-destructuring-rest.ts","name":"restFromTupleSkipped","kind":"function","line":12,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/array-destructuring-rest.ts","name":"restAllElements","kind":"function","line":19,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
@@ -1348,9 +1335,9 @@
 {"source":"tests/expect-error/destructuring-tuple-union.ts","name":"declaredPrefix","kind":"function","line":6,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/destructuring-tuple-union.ts","name":"missingPosition","kind":"function","line":10,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/destructuring.ts","name":"missingKeyDefault","kind":"function","line":4,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/destructuring.ts","name":"uselessDefault","kind":"function","line":9,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: no claimed type for the expression at _","group":"unclassified: search: reject: no claimed type for the expression at _","where":"self","at":"1","detail":"reject: no claimed type for the expression at [160,161)","class":"gap"},
-{"source":"tests/expect-error/destructuring.ts","name":"uselessDefaultNull","kind":"function","line":15,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: no claimed type for the expression at _","group":"unclassified: search: reject: no claimed type for the expression at _","where":"self","at":"1","detail":"reject: no claimed type for the expression at [160,161)","class":"gap"},
-{"source":"tests/expect-error/destructuring.ts","name":"uselessDefaultUnion","kind":"function","line":20,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: no claimed type for the expression at _","group":"unclassified: search: reject: no claimed type for the expression at _","where":"self","at":"true","detail":"reject: no claimed type for the expression at [179,183)","class":"gap"},
+{"source":"tests/expect-error/destructuring.ts","name":"uselessDefault","kind":"function","line":9,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
+{"source":"tests/expect-error/destructuring.ts","name":"uselessDefaultNull","kind":"function","line":15,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
+{"source":"tests/expect-error/destructuring.ts","name":"uselessDefaultUnion","kind":"function","line":20,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/destructuring.ts","name":"usefulDefault","kind":"function","line":25,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/destructuring.ts","name":"defaultSameType","kind":"function","line":32,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/destructuring.ts","name":"defaultSameType2","kind":"function","line":37,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},

@@ -23,7 +23,7 @@ import { presentObligation } from "../tools/diagnostic-view.mts";
 // default-parameters.mts, forged claims about parameter defaults: their scope, a generic closure's default, a capture read before its initialization.
 import { checkGenericRest } from "./generic-rest.mts";
 import { checkOverloads } from "./overload-claims.mts";
-import { checkDefaults, checkSchemeDefaults, checkEarlyDefault } from "./default-parameters.mts";
+import { checkDefaults, checkSchemeDefaults, checkEarlyDefault, checkPatternDefaults } from "./default-parameters.mts";
 import vm from "node:vm";
 // ../tools/strip-types.mts erases the annotations of an example the suite runs as JavaScript.
 import { stripTypes } from "../tools/strip-types.mts";
@@ -1573,6 +1573,7 @@ for (const [artifacts, arity, refusal] of [
 checkGenericRest(verifier, run("generic-rest"));
 checkOverloads(verifier, run("overloads"));
 checkDefaults(verifier, run("default-parameter-scope"));
+checkPatternDefaults(verifier, run("destructuring-known-default"));
 checkEarlyDefault(verifier, run("invalid-default-invocation"));
 checkSchemeDefaults(verifier, run("generic-default"));
 process.stdout.write("forged claims at each kind of point: read and checked there\n");

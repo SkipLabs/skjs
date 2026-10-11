@@ -9,6 +9,41 @@ import { stripTypes } from "../tools/strip-types.mts";
 import { readDiagnostic } from "../tools/diagnostic.mts";
 import { producerExecutable } from "./verify-source.mts";
 
+/** Reachable pattern defaults require claims even when a producer omits them. */
+export function checkPatternDefaults(verifier: string, artifacts: string): void {
+  const ast: Ast = JSON.parse(readFileSync(join(artifacts, "fragment.json"), "utf8"));
+  const claims: SourceClaims = JSON.parse(readFileSync(join(artifacts, "claims.json"), "utf8"));
+  const statement = ast.functions.find((f) => f.name === "optionalDefault")?.body[0];
+  assert(statement?.k === "destructure" && statement.target.k === "object");
+  const fallback = statement.target.props[0]?.default_;
+  assert(fallback);
+  const fn = claims.functions.find((f) => f.name === "optionalDefault");
+  assert(fn);
+  const before = fn.expressions.length;
+  fn.expressions = fn.expressions.filter((e) =>
+    e.pos[0] !== fallback.pos[0] || e.pos[1] !== fallback.pos[1]);
+  assert.equal(fn.expressions.length, before - 1);
+  const forged = join(artifacts, "missing-pattern-default-claims.json");
+  writeFileSync(forged, JSON.stringify(claims));
+  for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
+    const result = spawnSync(verifier, [mode, join(artifacts, "fragment.json"), forged,
+      join(artifacts, "source.ts"), join(artifacts, "evidence.json"),
+      ...(mode === "--produce-source-claims" ? ["12"] : [])],
+      { encoding: "utf8", timeout: 30_000 });
+    assert.ifError(result.error);
+    assert.equal(result.signal, null);
+    assert.equal(result.status, 1);
+    assert.match(result.stdout + result.stderr, /no claimed type for the expression/);
+  }
+  const source = stripTypes(readFileSync(join(artifacts, "source.ts"), "utf8"))
+    .replace(/^export /gm, "");
+  assert.equal(vm.runInNewContext(source + "\noptionalDefault({})"), false);
+  assert.equal(vm.runInNewContext(source + "\noptionalDefault({ f: 3 })"), 3);
+  assert.equal(vm.runInNewContext(source +
+    "\nconst state = { value: null }; skippedEffect({ f: 3 }, state); state.value"), 1);
+  console.log("pattern defaults: skipped effects, reachable fallback and omitted-claim refusal checked");
+}
+
 /** The producer's refusal is not the verifier's protection. Forge a claim for
  * the later read and require both Lean entry points to reject its scope. */
 export function checkDefaults(verifier: string, artifacts: string): void {

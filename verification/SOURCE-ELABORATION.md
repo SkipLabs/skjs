@@ -659,6 +659,24 @@ that names a later binding of its own declaration is refused by the parser,
 since JavaScript throws there (the temporal dead zone) where the lowering
 would read an outer binding of that name.
 
+For graph binding plans, a read whose type proves that `isUndef` is false
+binds its saved value directly:
+
+```math
+\frac{\Gamma\vdash t:R'\quad \mathrm{Answers}(R',\mathsf{isUndef},\mathsf{false})\quad
+      \Gamma\vdash p\Leftarrow(t{:}R')\dashv\Delta}
+     {\Gamma\vdash(p=d)\Leftarrow(t{:}R)\dashv\Delta}
+```
+
+The predicate's semantic guarantee is proved by `ProgramTyping.answers_sound`
+in [ProgramTyping.lean](lean/Verification/Programs/ProgramTyping.lean).
+This specializes the existing conditional semantics. The read occurs once,
+and its preceding effects are retained; the default contributes neither
+execution nor a type claim. The condition uses the read type derived by the
+verifier from its current context. Missing producer claims alone never justify
+skipping a default. If the condition is unproved, the default's claims and
+execution remain required.
+
 An array rest $`\ldots p`$ at index $`s`$ over $`A`$ whose store is one tuple of
 $`n`$ required positions, whose length is exact (`listT`), is the fresh array of
 the positions from $`s`$ on, claimed at the rest's span $`C`$ like an array

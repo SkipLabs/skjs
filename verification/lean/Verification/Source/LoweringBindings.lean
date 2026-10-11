@@ -133,6 +133,10 @@ set_option maxHeartbeats 1000000
     let (i,R) ← LoweringExecution.executionSaved scope Γ value
     let R ← byClause R
     let G := SourceTypes.graph (← table)
+    -- A proved defined value is retained without evaluating the default or
+    -- asking for claims about its unreachable expressions.
+    if decide (Answers G R .isUndef false) then
+      return ← save value.source result R (.var i) next
     let present := BranchRefinement.tagSlice G R .isUndef false
     let absent := BranchRefinement.tagSlice G R .isUndef true
     let D ← LoweringExecution.executionPlanType fc scope Γ fallback

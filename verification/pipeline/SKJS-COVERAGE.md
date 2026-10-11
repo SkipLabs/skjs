@@ -9,10 +9,10 @@ SKJS acceptance results recorded on October 9; SKJS was not rerun).
 The reviewed nested-promise search failure is classified by its unit and
 exact obligation.
 
-**2,468 of 2,674 SKJS-accepted units verify (92.3%); 1,838 of 2,026
-accepted functions (90.7%).** 295 of the 377 files with an accepted unit
+**2,473 of 2,674 SKJS-accepted units verify (92.5%); 1,843 of 2,026
+accepted functions (91.0%).** 296 of the 377 files with an accepted unit
 verify entirely. There are 88 principled refusals, 10 registered SKJS-unsound
-units, 108 gaps (8 of them under reasons no class entry matches,
+units, 103 gaps (3 of them under reasons no class entry matches,
 `summary.unmatchedReasons`) and no unexplained refusals.
 
 `mapArr` and `testMapCallback` fail at the native call: an arbitrary
@@ -56,14 +56,14 @@ is not part of `verification/test-all.sh`.
 
 | Suite | Harness verdict | Files | Units | Accepted | Verified | Accepted functions | Verified functions |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `tests/expect-error` | `@ts-expect-error` / `@skjs-expect-error` name the next non-annotation line (`tests/Helpers.sk` `findExpectErrors`); `@skjs-expect-warning` is not an error | 399 (374 with units) | 3,883 | 2,458 | 2,254 | 1,863 | 1,677 |
+| `tests/expect-error` | `@ts-expect-error` / `@skjs-expect-error` name the next non-annotation line (`tests/Helpers.sk` `findExpectErrors`); `@skjs-expect-warning` is not an error | 399 (374 with units) | 3,883 | 2,458 | 2,259 | 1,863 | 1,682 |
 | `tests/callgraph` | no error allowed | 25 | 59 | 59 | 57 | 51 | 49 |
 | `tests/constprop` | no error allowed | 14 | 66 | 66 | 66 | 49 | 49 |
 | `tests/deadcode` | no error allowed | 7 | 27 | 27 | 27 | 16 | 16 |
 | `tests/cfg` | no error allowed | 7 | 22 | 22 | 22 | 21 | 21 |
 | `tests/projects` | expect-error markers, under the project's tsconfig | 24 of 68 | 44 | 34 | 34 | 23 | 23 |
 | `tests/ts-conformance/cases` | lines listed in `reference/*.errors.txt` | 4 | 9 | 8 | 8 | 3 | 3 |
-| **total** | | **480** | **4,110** | **2,674** | **2,468** | **2,026** | **1,838** |
+| **total** | | **480** | **4,110** | **2,674** | **2,473** | **2,026** | **1,843** |
 
 Excluded (79 files, listed in the JSON with reasons): `ts-conformance/not-supported`
 (31) and `callgraph-unsupported` (4) assert only that SKJS reports errors;
@@ -120,10 +120,10 @@ is.
 
 | Phase of first blocker | Units |
 | --- | ---: |
-| verified | 2,468 |
+| verified | 2,473 |
 | source (gate) | 76 |
 | proposal (producer) | 25 |
-| search (Lean) | 105 |
+| search (Lean) | 100 |
 
 **Refusal classes.** The project's goal is that every accepted unit either
 verifies or is refused for a specific, principled reason. Each accepted unit
@@ -206,10 +206,10 @@ blocker's key is given (`summary.byReason` and `summary.byClass` of
 
 | Class | Units |
 | --- | ---: |
-| verified | 2,468 |
+| verified | 2,473 |
 | principled (P) | 88 |
 | SKJS unsound (S) | 10 |
-| gap (G) | 108 |
+| gap (G) | 103 |
 | unexplained (U) | 0 |
 | **accepted** | **2,674** |
 
@@ -239,7 +239,6 @@ First blocker, not every missing feature of a unit:
 | enums | 6 | 0 | 6 | 1 |
 | tests on a value of a type parameter or `unknown` (no rule narrows a parameter row to its meet `T & number`; no object identity) | 6 | 6 | 0 | 3 |
 | sloppy (non-strict) code | 6 | 4 | 2 | 3 |
-| unclassified: search: reject: no claimed type for the expression at _ | 5 | 5 | 0 | 2 |
 | object literal members (methods, accessors, spreads) | 5 | 4 | 0 | 4 |
 | iterables the program defines: an iterator whose type states no `return`, a spread or a pattern the protocol's lowering does not place, a well-known symbol key other than `Symbol.iterator` | 5 | 4 | 1 | 4 |
 | await of non-promises and unions (the await bound) | 5 | 5 | 0 | 3 |
@@ -255,7 +254,7 @@ First blocker, not every missing feature of a unit:
 | type aliases and names the declaration reader cannot resolve | 1 | 0 | 1 | 1 |
 | library globals as values (Array, Symbol, Error, Promise, Set, Map, Date, JSON, …) | 1 | 1 | 0 | 1 |
 | unclassified: search: reject: unsupported source expression at _: strict equality of two operands that may both be values of no known kind, neither a primitive nor an object | 1 | 1 | 0 | 1 |
-| **total** | **206** | | | |
+| **total** | **201** | | | |
 
 ## Performance on the pipeline cases
 
@@ -304,7 +303,7 @@ are not measured.
 ## Suspected SKJS unsoundnesses
 
 Divergences: SKJS-accepted units the pipeline parses and proposes, and Lean
-then refuses (105 units in `search`, `summary.reachedButRefused`). The
+then refuses (100 units in `search`, `summary.reachedButRefused`). The
 source-form refusals Lean states explicitly are fragment boundaries. The rest
 were read obligation by obligation: all read are pipeline incompleteness
 except four families below; the fifth is refused by the producer.
