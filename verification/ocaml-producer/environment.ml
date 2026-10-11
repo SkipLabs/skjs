@@ -2,7 +2,7 @@ open Semantic
 (* Value snapshots and storage contracts have different constructors. The
    environment is persistent; reads never expose a way to alter storage types.
    A cell carries its fixed contract and what it is proposed to hold here:
-   the contract, or a narrower primitive type after an assignment or a guard,
+   the contract, or a primitive refinement or nullish exclusion after an assignment or a guard,
    which Lean checks as a fact about the cell's current contents on every
    edge into the point claiming it. *)
 type binding = Value of ty | Storage of ty * ty
@@ -16,34 +16,28 @@ let extend env name binding =
   if List.mem_assoc name env then Json.fail ("unsupported: shadowing " ^ name);
   env @ [name,binding]
 
-(* The contents Lean can know of a cell: a union of primitive atoms, its
-   supported current-content predicates; or, of contents of any shape none
-   of which is `undefined`, that the cell holds some other value, which a
-   read gives at the contract less `undefined`. Anything else is read at the
-   contract. *)
+(* Primitive observations have a type independent of the storage contract. *)
 let knowable = function
   | Atoms xs -> List.for_all (function
       | Nul | Undef | True | False | Num | NumLit _ | Str | StrLit _ -> true
       | _ -> false) xs
   | Rigid _ | Union _ | Meet _ -> false
-(* Contents proposed other than `undefined`: no atom is it or may be
-   anything. A declaration is taken at its word here; Lean refuses the fact
-   where its expansion admits `undefined`. *)
-let defined_contents = function
-  | Atoms (_::_ as xs) -> List.for_all (function
-      | Undef | Top -> false
-      | _ -> true) xs
-  | _ -> false
-let holding contract t =
-  if knowable t then Storage (contract,t)
-  else match contract with
-    | Atoms xs when defined_contents t && List.mem Undef xs && not (List.mem Top xs) ->
-      Storage (contract,Atoms (List.filter (fun a -> a <> Undef) xs))
-    | _ -> cell contract
+(* Retain primitive observations or remove the nullish alternatives known
+   absent from the current value. Every other part of the contract stays fixed;
+   Lean checks the exclusion where the observation is consumed. *)
+let observed_contents contract t =
+  if knowable t then t
+  else match contract,t with
+    | Atoms xs,Atoms (_::_ as ys) when not (List.mem Top ys) ->
+      Atoms (List.filter (function
+        | Nul -> List.mem Nul ys
+        | Undef -> List.mem Undef ys
+        | _ -> true) xs)
+    | _ -> contract
+let holding contract t = Storage (contract,observed_contents contract t)
 
 (* A branch refines an immutable value, and a cell's known contents where
-   the refinement is a primitive predicate. Heap contents of objects require
-   a separate alias/effect analysis. *)
+   the refinement is a supported current-content predicate. *)
 let refine_value env name refine = List.map (fun (n,b) ->
   if n=name then n,(match b with
     | Value t -> Value (refine t)
@@ -55,14 +49,16 @@ let assign env name t = List.map (fun (n,b) ->
   else n,b) env
 (* What a field of an immutable binding's object currently holds, where a
    guard found it: an entry named by the object's name and the field joined
-   by a NUL, which no name contains, holding a union of primitive atoms. Lean
+   by a NUL, which no name contains, holding a primitive refinement or nullish slice of the contract. Lean
    checks it on every edge into a point claiming it, as a current-content
    fact about the field. *)
 let field_key name field = name ^ "\000" ^ field
 let field_of n = let i = String.index n '\000' in String.sub n (i+1) (String.length n - i - 1)
-let fact env key t =
+let fact env key contract t =
+  let current = observed_contents contract t in
   let rest = List.remove_assoc key env in
-  if knowable t && t <> Atoms [] then rest @ [key,Value t] else rest
+  if current <> Atoms [] && (knowable current || current <> contract)
+  then rest @ [key,Value current] else rest
 (* Where a step may write cells unseen (a call, a closure run later, a loop's
    other iterations), a cell is known only by its contract, and no field's
    contents are known. A step that assigns only locals keeps the fields. *)

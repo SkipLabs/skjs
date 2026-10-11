@@ -1377,7 +1377,7 @@ slots, $A$ be a type, and $R$ a finite disjunction of primitive predicates:
 
 ```math
 \begin{aligned}
-a &::= \mathsf{null}\mid\mathsf{undefined}\mid\mathsf{true}\mid\mathsf{false}\mid\mathsf{Number}\mid\mathsf{numLit}(b)\mid\mathsf{String}\mid\mathsf{strLit}(s)\mid\mathsf{defined},\\
+a &::= \mathsf{null}\mid\mathsf{undefined}\mid\mathsf{true}\mid\mathsf{false}\mid\mathsf{Number}\mid\mathsf{numLit}(b)\mid\mathsf{String}\mid\mathsf{strLit}(s)\mid\mathsf{defined}\mid\mathsf{nonNull}\mid\mathsf{nonNullish},\\
 R &::= \{a_1,\ldots,a_k\}\quad(k\geq 0),\\
 J &::= \top\mid x:A\mid x=R\mid x=y\mid x\mapsto R\mid x\mapsto y\mid J\land J.
 \end{aligned}
@@ -1403,10 +1403,11 @@ An empty predicate list is an impossible predicate, not an absent assertion.
 There is no assertion disjunction, negation or quantifier: the union within
 $R$ gives alternatives for one value, not correlated alternatives between
 slots. `Number` means any number and `numLit(b)` exactly that bit pattern;
-singletons imply `Number`, not conversely. `defined` is any value but
-`undefined`, of any shape; every other predicate but `undefined` implies it.
-It is the one predicate no clause states: a read of a cell it holds of is
-typed at the cell's contract less `undefined`, never at the predicate.
+singletons imply `Number`, not conversely. `defined` excludes `undefined`,
+`nonNull` excludes `null`, and `nonNullish` excludes both, for values of any
+shape. `nonNullish` implies each individual exclusion. These predicates
+support a read at the storage contract with the excluded alternatives removed;
+[the sliced-read rule](PROGRAM-TYPING.md) checks it.
 Predicates on nested references are outside this vocabulary.
 
 The notation used in source claims is an abbreviation:

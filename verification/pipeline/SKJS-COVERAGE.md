@@ -9,10 +9,10 @@ SKJS acceptance results recorded on October 9; SKJS was not rerun).
 The reviewed nested-promise search failure is classified by its unit and
 exact obligation.
 
-**2,479 of 2,674 SKJS-accepted units verify (92.7%); 1,849 of 2,026
-accepted functions (91.3%).** 299 of the 377 files with an accepted unit
-verify entirely. There are 88 principled refusals, 10 registered SKJS-unsound
-units, 97 gaps (1 under a reason no class entry matches,
+**2,481 of 2,674 SKJS-accepted units verify (92.8%); 1,851 of 2,026
+accepted functions (91.4%).** 299 of the 377 files with an accepted unit
+verify entirely. There are 87 principled refusals, 10 registered SKJS-unsound
+units, 96 gaps (1 under a reason no class entry matches,
 `summary.unmatchedReasons`) and no unexplained refusals.
 
 `mapArr` and `testMapCallback` fail at the native call: an arbitrary
@@ -56,14 +56,14 @@ is not part of `verification/test-all.sh`.
 
 | Suite | Harness verdict | Files | Units | Accepted | Verified | Accepted functions | Verified functions |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `tests/expect-error` | `@ts-expect-error` / `@skjs-expect-error` name the next non-annotation line (`tests/Helpers.sk` `findExpectErrors`); `@skjs-expect-warning` is not an error | 399 (374 with units) | 3,883 | 2,458 | 2,265 | 1,863 | 1,688 |
+| `tests/expect-error` | `@ts-expect-error` / `@skjs-expect-error` name the next non-annotation line (`tests/Helpers.sk` `findExpectErrors`); `@skjs-expect-warning` is not an error | 399 (374 with units) | 3,883 | 2,458 | 2,267 | 1,863 | 1,690 |
 | `tests/callgraph` | no error allowed | 25 | 59 | 59 | 57 | 51 | 49 |
 | `tests/constprop` | no error allowed | 14 | 66 | 66 | 66 | 49 | 49 |
 | `tests/deadcode` | no error allowed | 7 | 27 | 27 | 27 | 16 | 16 |
 | `tests/cfg` | no error allowed | 7 | 22 | 22 | 22 | 21 | 21 |
 | `tests/projects` | expect-error markers, under the project's tsconfig | 24 of 68 | 44 | 34 | 34 | 23 | 23 |
 | `tests/ts-conformance/cases` | lines listed in `reference/*.errors.txt` | 4 | 9 | 8 | 8 | 3 | 3 |
-| **total** | | **480** | **4,110** | **2,674** | **2,479** | **2,026** | **1,849** |
+| **total** | | **480** | **4,110** | **2,674** | **2,481** | **2,026** | **1,851** |
 
 Excluded (79 files, listed in the JSON with reasons): `ts-conformance/not-supported`
 (31) and `callgraph-unsupported` (4) assert only that SKJS reports errors;
@@ -120,10 +120,10 @@ is.
 
 | Phase of first blocker | Units |
 | --- | ---: |
-| verified | 2,479 |
+| verified | 2,481 |
 | source (gate) | 73 |
-| proposal (producer) | 24 |
-| search (Lean) | 98 |
+| proposal (producer) | 23 |
+| search (Lean) | 97 |
 
 **Refusal classes.** The project's goal is that every accepted unit either
 verifies or is refused for a specific, principled reason. Each accepted unit
@@ -205,10 +205,10 @@ blocker's key is given (`summary.byReason` and `summary.byClass` of
 
 | Class | Units |
 | --- | ---: |
-| verified | 2,479 |
-| principled (P) | 88 |
+| verified | 2,481 |
+| principled (P) | 87 |
 | SKJS unsound (S) | 10 |
-| gap (G) | 97 |
+| gap (G) | 96 |
 | unexplained (U) | 0 |
 | **accepted** | **2,674** |
 
@@ -223,7 +223,7 @@ First blocker, not every missing feature of a unit:
 
 | Group | Units | Self | Dependency | Files |
 | --- | ---: | ---: | ---: | ---: |
-| TypeScript refuses the code too (the pipeline follows TypeScript's types) | 38 | 30 | 8 | 24 |
+| TypeScript refuses the code too (the pipeline follows TypeScript's types) | 37 | 29 | 8 | 24 |
 | destructuring and rest/default parameters | 14 | 9 | 5 | 5 |
 | in / instanceof / typeof tests | 14 | 7 | 0 | 6 |
 | implicit index signatures: a record at an index signature (`Closed<T>` read as `T` among them) | 14 | 14 | 0 | 3 |
@@ -243,7 +243,6 @@ First blocker, not every missing feature of a unit:
 | await of non-promises and unions (the await bound) | 5 | 5 | 0 | 3 |
 | relational operators (< <= > >=) and ** | 2 | 1 | 1 | 1 |
 | search: no derivation found (evidence search failed) | 2 | 2 | 0 | 2 |
-| reads on unions/primitives (field/index read on non-object, string keys) | 1 | 1 | 0 | 1 |
 | dictionaries: a spread of one, a key `in` found in one | 2 | 2 | 0 | 2 |
 | invariance: a writable element or field at a wider one (TypeScript relates them covariantly) | 2 | 2 | 0 | 1 |
 | compound and update assignments (x++, \|\|=, ??=, a[i] op=) | 1 | 1 | 0 | 1 |
@@ -252,7 +251,7 @@ First blocker, not every missing feature of a unit:
 | type aliases and names the declaration reader cannot resolve | 1 | 0 | 1 | 1 |
 | library globals as values (Array, Symbol, Error, Promise, Set, Map, Date, JSON, …) | 1 | 1 | 0 | 1 |
 | unclassified: search: reject: unsupported source expression at _: strict equality of two operands that may both be values of no known kind, neither a primitive nor an object | 1 | 1 | 0 | 1 |
-| **total** | **195** | | | |
+| **total** | **193** | | | |
 
 ## Performance on the pipeline cases
 
@@ -301,7 +300,7 @@ are not measured.
 ## Suspected SKJS unsoundnesses
 
 Divergences: SKJS-accepted units the pipeline parses and proposes, and Lean
-then refuses (98 units in `search`, `summary.reachedButRefused`). The
+then refuses (97 units in `search`, `summary.reachedButRefused`). The
 source-form refusals Lean states explicitly are fragment boundaries. The rest
 were read obligation by obligation: all read are pipeline incompleteness
 except four families below; the fifth is refused by the producer.

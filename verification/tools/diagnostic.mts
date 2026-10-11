@@ -42,10 +42,10 @@ export interface Sequent {
 /** An assertion about a runtime slot: for a cell, about the named field of the
  * object it holds; for a value, about the slot itself, where the field is not
  * consulted. */
-export type HeapAtom = "nul" | "undef" | "tru" | "fls" | "num" | "str" | "defined" |
+export type HeapAtom = "nul" | "undef" | "tru" | "fls" | "num" | "str" | "defined" | "nonNull" | "nonNullish" |
   Extract<Clause, {numLit: unknown} | {strLit: unknown}>;
 const HEAP_ATOMS: Record<Extract<HeapAtom, string>, true> = {
-  nul: true, undef: true, tru: true, fls: true, num: true, str: true, defined: true,
+  nul: true, undef: true, tru: true, fls: true, num: true, str: true, defined: true, nonNull: true, nonNullish: true,
 };
 const heapAtoms: readonly unknown[] = Object.keys(HEAP_ATOMS);
 function heapAtom(v: unknown): void {

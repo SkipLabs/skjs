@@ -50,15 +50,64 @@ theorem copy_holds {k i ρ h} (hk : HeapKnowledge.Holds k ρ h) :
         · have hv := List.mem_singleton.mp hv; subst v; rfl)
       exact hp g hg
 
-/-- Primitive slot facts take precedence over the ordinary (possibly wider)
-value type. Both sources have independently proved membership. -/
+/-- The strongest supported nullish exclusion implied by a value type. -/
+def nullishAtoms (G : NormalGraph ι) (A : Ty ι) : Option (List Atom) :=
+  if G.plainTy A then
+    let nn := (expand G A).all (fun c => tagClause .isNul c == some false)
+    let nu := (expand G A).all (fun c => tagClause .isUndef c == some false)
+    if nn && nu then some [.nonNullish]
+    else if nu then some [.defined]
+    else if nn then some [.nonNull]
+    else none
+  else none
+
+theorem nullishAtoms_sound {G : NormalGraph ι} {A R n W v}
+    (hr : nullishAtoms G A = some R) (hv : meaning G A n W v) :
+    ∃ a ∈ R, a.holds v := by
+  unfold nullishAtoms at hr
+  split at hr
+  · rename_i hp
+    have hn : (expand G A).all (fun c => tagClause .isNul c == some false) = true → v ≠ .nul := by
+      intro h he
+      have hq : Answers G A .isNul false := ⟨hp, by simpa only [List.all_eq_true, beq_iff_eq] using h⟩
+      have := answers_sound hq hv
+      rw [he] at this; simp [tagHolds] at this
+    have hu : (expand G A).all (fun c => tagClause .isUndef c == some false) = true → v ≠ .undef := by
+      intro h he
+      have hq : Answers G A .isUndef false := ⟨hp, by simpa only [List.all_eq_true, beq_iff_eq] using h⟩
+      have := answers_sound hq hv
+      rw [he] at this; simp [tagHolds] at this
+    dsimp only at hr
+    split at hr
+    · rename_i hb; cases hr
+      simp only [Bool.and_eq_true] at hb
+      exact ⟨.nonNullish, by simp, (meaning_value hv).1, hn hb.1, hu hb.2⟩
+    · split at hr
+      · rename_i h; cases hr
+        exact ⟨.defined, by simp, (meaning_value hv).1, hu h⟩
+      · split at hr
+        · rename_i h; cases hr
+          exact ⟨.nonNull, by simp, (meaning_value hv).1, hn h⟩
+        · cases hr
+  · cases hr
+
+/-- Every value is null, undefined, or neither. This observation alone
+restricts no read; a guard can refine it through a live read link. -/
+theorem nullish_partition {v : Tm} (hv : isVal v = true) :
+    ∃ a ∈ [Atom.nul, .undef, .nonNullish], a.holds v := by
+  by_cases hn : v = .nul
+  · exact ⟨.nul, by simp, hn⟩
+  by_cases hu : v = .undef
+  · exact ⟨.undef, by simp, hu⟩
+  exact ⟨.nonNullish, by simp, hv, hn, hu⟩
+
+/-- Slot facts take precedence over the ordinary value type. A type with
+no primitive description still gives its nullish exclusions. -/
 def valuesAt (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) (i : Nat) : Option (List Atom) :=
   match k.values.find? (fun f => f.slot == i) with
   | some f => some f.contents
-  | none => (Γ[i]?).bind fun B => (HeapKnowledge.atoms G B).orElse fun _ =>
-      -- A type no member of which is `undefined`: some value other than it.
-      if G.plainTy B && (expand G B).all (fun c => tagClause .isUndef c == some false)
-      then some [.defined] else none
+  | none => (Γ[i]?).map fun B =>
+      ((HeapKnowledge.atoms G B).orElse fun _ => nullishAtoms G B).getD [.nul,.undef,.nonNullish]
 
 theorem valuesAt_sound {G : NormalGraph ι} {Γ k i R ρ n W h}
     (hr : valuesAt G Γ k i = some R) (he : EnvOk G Γ ρ n W)
@@ -73,27 +122,21 @@ theorem valuesAt_sound {G : NormalGraph ι} {Γ k i R ρ n W h}
   · cases hb : Γ[i]? with
     | none => simp [hb] at hr
     | some B =>
-      simp only [hb,Option.bind_some] at hr
+      simp only [hb,Option.map_some, Option.some.injEq] at hr
       cases ha : HeapKnowledge.atoms G B with
       | some S =>
-        rw [ha] at hr
-        cases hr
+        simp only [ha, Option.orElse_some, Option.getD_some] at hr
+        subst R
         exact (atoms_sem ha n W (ρ i)).mp (he.2 i B hb)
       | none =>
-        rw [ha] at hr
-        simp only [Option.orElse_none] at hr
-        split at hr
-        · rename_i hq
-          cases hr
-          have hq : Answers G B .isUndef false := by
-            simp only [Bool.and_eq_true, List.all_eq_true, beq_iff_eq] at hq
-            exact ⟨hq.1, hq.2⟩
-          have hv := he.2 i B hb
-          refine ⟨.defined, by simp, (meaning_value hv).1, fun hu => ?_⟩
-          have := answers_sound hq hv
-          rw [hu] at this
-          simp [tagHolds] at this
-        · cases hr
+        simp only [ha, Option.orElse_none] at hr
+        cases hn : nullishAtoms G B with
+        | some S =>
+          simp only [hn, Option.getD_some] at hr; subst R
+          exact nullishAtoms_sound hn (he.2 i B hb)
+        | none =>
+          simp only [hn, Option.getD_none] at hr; subst R
+          exact nullish_partition (meaning_value (he.2 i B hb)).1
 
 /-- A primitive type's predicate is a structural view, not semantic search. -/
 def includes (G : NormalGraph ι) (A : Ty ι) (R : List Atom) : Bool :=
@@ -262,45 +305,35 @@ theorem typedRead_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
       exact ⟨flds,code,oidb,l,(HeapLinks.aliases_eq hk.2.2 hj).trans hl,hfd,hv⟩
     · exact hout.2.2 link hm
 
-/-- A value that is no `undefined` answers the test for it `false`. -/
-theorem tagHolds_isUndef_false {v : Tm} (hne : v ≠ .undef) : tagHolds .isUndef v = false := by
-  cases v <;> simp_all [tagHolds]
-
-/-- A value of a type that is no `undefined` is of the type's slice without
-it, at every step count: what a finished read returns. -/
-theorem slice_value {G : NormalGraph ι} {C : Ty ι} {Q : Post} {n W h v}
-    (hs : SafePost (meaning G C) Q n W h v) (hv : isVal v = true) (hne : v ≠ .undef) :
-    SafePost (meaning G (BranchRefinement.tagSlice G C .isUndef false)) Q n W h v := by
+/-- A completed read whose value answers a tag false belongs to the
+negative slice of its type, at every step count. -/
+theorem slice_value {G : NormalGraph ι} {C : Ty ι} {Q : Post} {n W h v tag}
+    (hs : SafePost (meaning G C) Q n W h v) (hv : isVal v = true) (hq : tagHolds tag v = false) :
+    SafePost (meaning G (BranchRefinement.tagSlice G C tag false)) Q n W h v := by
   cases n with
   | zero => trivial
   | succ n =>
-    rcases hs with (⟨hv',ht,hq⟩ | hth) | ⟨_,_,_,_,_,step,_,_⟩
-    · exact Or.inl (Or.inl ⟨hv',BranchRefinement.tagSlice_sound ht (Or.inl (tagHolds_isUndef_false hne)),hq⟩)
+    rcases hs with (⟨hv',ht,hpost⟩ | hth) | ⟨_,_,_,_,_,step,_,_⟩
+    · exact Or.inl (Or.inl ⟨hv',BranchRefinement.tagSlice_sound ht (Or.inl hq),hpost⟩)
     · exact absurd hth (val_not_thrown hv)
     · exact False.elim (value_no_step hv step)
 
-/-- A read of a location a fact says holds no `undefined`, typed at its
-contract `C` by the ordinary rule: its result is of `C` less `undefined`.
+/-- A read of a location whose contents exclude a tag, typed at its
+contract `C` by the ordinary rule: its result is of the negative slice of `C`.
 The fact is about the location the read finds, so the value it returns is
 one the fact describes. -/
-theorem slicedRead_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {Γ k i fld Ref C R ρ n W h}
+theorem slicedRead_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {Γ k i fld Ref C R ρ n W h tag}
     (ht : HasTyUsing G images Γ (.readAt fld (.var i)) C) (hi : Γ[i]? = some Ref)
     (hr : fieldOperand (expand G Ref) fld = true)
-    (hm : Fact.mk i R fld ∈ k.cells) (hR : R.all (· != .undef) = true)
+    (hm : Fact.mk i R fld ∈ k.cells) (hR : R.all (·.excludes tag) = true)
     (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
-    SafePost (meaning G (BranchRefinement.tagSlice G C .isUndef false))
+    SafePost (meaning G (BranchRefinement.tagSlice G C tag false))
       (fun h' v => HeapKnowledge.Holds (readFrame k i fld) (push v ρ) h') n W h
       (.readAt fld (ρ i)) := by
   have base := typedRead_sound ht hi hr he hk hw hh
   obtain ⟨flds,c,oid,l,v,hl,hfd,hv,a,ha,hav⟩ := hk.1 _ hm
-  have hne : v ≠ .undef := by
-    intro hu
-    subst hu
-    have hau := HeapKnowledge.holds_undef hav
-    subst hau
-    have := List.all_eq_true.mp hR _ ha
-    simp at this
+  have hq := Atom.excludes_sound (List.all_eq_true.mp hR a ha) hav
   have hvv : isVal v = true := Atom.isValue hav
   have step : Step h (.readAt fld (ρ i)) h v := by rw [hl]; exact .readField hfd hv
   cases n with
@@ -310,7 +343,7 @@ theorem slicedRead_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instanc
     · rw [hl] at hval; simp [isVal] at hval
     · exact absurd step hth.no_step
     · obtain ⟨rfl,rfl⟩ := Step_det step' step
-      exact Or.inr ⟨U,h',t',hx,hu,step',hh',slice_value hs' hvv hne⟩
+      exact Or.inr ⟨U,h',t',hx,hu,step',hh',slice_value hs' hvv hq⟩
 
 /-- Whether every alternative is a plain record naming the field `fld`,
 required or optional: a read of it is then of a location of the object, or,
@@ -761,8 +794,24 @@ theorem pure_frame {T Q} : ∀ {n W h t}, Safe T n W h t → pureTerm t = true �
     · obtain ⟨hpre,hp'⟩ := pure_step step hp
       exact Or.inr ⟨U,_,t',hx,hu,step,hh,ih hs hp' fun h'' hh'' v => hq h'' (hpre.trans hh'') v⟩
 
-def pureOutput (k : Knowledge) : Tm → Knowledge
-  | .var i => copy k i
+/-- A variable copy records the observation justified by its current facts
+or its value type, retaining the copy's equality and read links. -/
+def copyValue (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) (i : Nat) : Knowledge :=
+  match valuesAt G Γ k i with
+  | some R => withResult (copy k i) R
+  | none => copy k i
+
+theorem copyValue_holds {G : NormalGraph ι} {Γ k i ρ n W h}
+    (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h) :
+    HeapKnowledge.Holds (copyValue G Γ k i) (push (ρ i) ρ) h := by
+  unfold copyValue
+  split
+  · rename_i R hr
+    exact result_holds (copy_holds hk) (valuesAt_sound hr he hk)
+  · exact copy_holds hk
+
+def pureOutput (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Tm → Knowledge
+  | .var i => copyValue G Γ k i
   | .nul => withResult (HeapKnowledge.shift k) [.nul]
   | .undef => withResult (HeapKnowledge.shift k) [.undef]
   | .tru => withResult (HeapKnowledge.shift k) [.tru]
@@ -775,7 +824,7 @@ theorem pure_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImage
     (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafePost (meaning G A)
-      (fun h' v => HeapKnowledge.Holds (pureOutput k t) (push v ρ) h')
+      (fun h' v => HeapKnowledge.Holds (pureOutput G Γ k t) (push v ρ) h')
       n W h (instantiate 0 ρ t) := by
   have hs := ht.sound n W h ρ he hw hh
   have hpClosed := pure_instantiate (d := 0) hp hc he
@@ -785,7 +834,7 @@ theorem pure_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImage
     have hi : i < Γ.length := by simpa [checkScope] using hc
     have hv := meaning_value (he.2 i Γ[i] (List.getElem?_eq_some_iff.mpr ⟨hi,rfl⟩))
     simpa [instantiate,pureOutput] using
-      refine_value hv.1 (copy_holds hk) (show Safe (meaning G A) n W h (ρ i) by simpa [instantiate] using hs)
+      refine_value hv.1 (copyValue_holds he hk) (show Safe (meaning G A) n W h (ρ i) by simpa [instantiate] using hs)
   all_goals first
     | exact pure_frame hs hpClosed (fun _ hpre _ => by
         obtain ⟨vs, rfl⟩ := hpre
@@ -828,10 +877,10 @@ inductive StepEvidence (ι : Type) where
   | created (proof : ProgramCertificates.Evidence ι)
   | typedRead (slot : Nat) (proof : ProgramCertificates.Evidence ι)
   | observedRead (slot : Nat) (contents : List Atom)
-  /-- A read of a location a fact says holds no `undefined`: the ordinary read
-  at the location's contract (`proof`), whose slice without `undefined` is
+  /-- A read of a location whose contents exclude `tag`: the ordinary read
+  at the location's contract (`proof`), whose negative slice is
   below the claim (`sub`). -/
-  | slicedRead (slot : Nat) (proof : ProgramCertificates.Evidence ι) (sub : PositiveCertificates.SubtypeChoices ι)
+  | slicedRead (tag : Tag) (slot : Nat) (proof : ProgramCertificates.Evidence ι) (sub : PositiveCertificates.SubtypeChoices ι)
   | knownValue (slot : Nat) (contents : List Atom)
   /-- The fields, their slots and their contents are read off the term and the
   state, so this carries only the ordinary derivation it stands beside. -/
@@ -930,7 +979,7 @@ frame. Subtype comparisons retain unfinished work through the step validation. -
       (ordinaryOutput k) codes
   | .pure e =>
     checkedOutput G images e (decide (claim e = j ∧ checkScope j.context.length j.term = true ∧
-      pureTerm j.term = true)) (pureOutput k j.term) codes
+      pureTerm j.term = true)) (pureOutput G j.context k j.term) codes
   | .created e =>
     (CheckResult.ofBool (decide (claim e = j ∧ checkScope j.context.length j.term = true))).bind fun _ =>
     (checkTreeResult G images e codes).bind fun _ =>
@@ -951,15 +1000,15 @@ frame. Subtype comparisons retain unfinished work through the step validation. -
         if i' = i ∧ i < j.context.length ∧ Fact.mk i R fld ∈ k.cells ∧ includes G j.type R = true
         then some (readOutput k i fld R) else none
       | none => none)
-  | .slicedRead i e p =>
+  | .slicedRead tag i e p =>
     match readSlot j.term with
     | some (fld, i') =>
       (CheckResult.ofBool (decide ((claim e).context = j.context ∧ (claim e).term = j.term ∧ i' = i ∧
         (j.context[i]?).any (fun Ref => fieldOperand (expand G Ref) fld) ∧
-        (k.cells.any fun f => f.slot == i && f.field == fld && f.contents.all (· != .undef))))).bind fun _ =>
+        (k.cells.any fun f => f.slot == i && f.field == fld && f.contents.all (·.excludes tag))))).bind fun _ =>
       (checkTreeResult G images e codes).bind fun _ =>
       (ProgramCertificates.checkSubtypeUsing G images
-        (BranchRefinement.tagSlice G (claim e).type .isUndef false) j.type p).map fun _ => readFrame k i fld
+        (BranchRefinement.tagSlice G (claim e).type tag false) j.type p).map fun _ => readFrame k i fld
     | none => failure
   | .knownValue i R =>
     CheckResult.fromOption (if j.term = .var i ∧ i < j.context.length ∧
@@ -1012,7 +1061,7 @@ theorem checkStepUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Instan
   | .pure e =>
     if claim e = j ∧ checkScope j.context.length j.term = true ∧
         checkTreeUsing G images e codes = true ∧ pureTerm j.term = true
-    then some (pureOutput k j.term) else none
+    then some (pureOutput G j.context k j.term) else none
   | .created e =>
     if claim e = j ∧ checkScope j.context.length j.term = true ∧ checkTreeUsing G images e codes = true then
       match j.term with
@@ -1036,13 +1085,13 @@ theorem checkStepUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Instan
           Fact.mk i R fld ∈ k.cells ∧ includes G j.type R = true
       then some (readOutput k i fld R) else none
     | none => none
-  | .slicedRead i e p =>
+  | .slicedRead tag i e p =>
     match readSlot j.term with
     | some (fld, i') =>
       if (claim e).context = j.context ∧ (claim e).term = j.term ∧ checkTreeUsing G images e codes = true ∧ i' = i ∧
           (j.context[i]?).any (fun Ref => fieldOperand (expand G Ref) fld) ∧
-          (k.cells.any fun f => f.slot == i && f.field == fld && f.contents.all (· != .undef)) ∧
-          PositiveCertificates.checkUsing G images (BranchRefinement.tagSlice G (claim e).type .isUndef false)
+          (k.cells.any fun f => f.slot == i && f.field == fld && f.contents.all (·.excludes tag)) ∧
+          PositiveCertificates.checkUsing G images (BranchRefinement.tagSlice G (claim e).type tag false)
             j.type p = true
       then some (readFrame k i fld) else none
     | none => none
@@ -1182,7 +1231,7 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
         simpa [instantiate] using read_sound hm hi he hk hw hh
       · contradiction
     · contradiction
-  | slicedRead i e p =>
+  | slicedRead tag i e p =>
     simp only [checkStepUsing_eq] at hc
     split at hc
     · rename_i fld i' hslot
@@ -1298,6 +1347,8 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
 #print axioms graphCreation_sound
 #print axioms checkStep_sound
 #print axioms fieldOperand_sound
+#print axioms nullishAtoms_sound
+#print axioms nullish_partition
 #print axioms typedRead_sound
 #print axioms optionalRead_sound
 #print axioms write_sound

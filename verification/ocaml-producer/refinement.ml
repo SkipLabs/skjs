@@ -143,7 +143,9 @@ let refine_field bounds declarations env name field refine =
     let current = match List.assoc_opt key env with
       | Some (Value c) -> Some c
       | _ -> (try Some (field_type bounds declarations [] t (Name field)) with Json.Error _ -> None) in
-    (match current with Some c -> fact env key (refine c) | None -> env)
+    (match current with
+     | Some c -> fact env key (field_type bounds declarations [] t (Name field)) (refine c)
+     | None -> env)
   | _ -> env
 let rec branch_with state ?(modules = fun _ -> None) ?(claimed = fun _ -> None) bounds declarations env cond truth =
   let branch = branch_with state ~modules ~claimed bounds declarations in
@@ -211,6 +213,12 @@ let rec branch_with state ?(modules = fun _ -> None) ?(claimed = fun _ -> None) 
   | Equality ((LooseEqual | LooseUnequal as op),{node=Literal (LNull | LUndefined);_},{node=Id name;_}) ->
     let equal = truth=(op=LooseEqual) in
     refine_value env name (fun t ->
+      if equal then union (restrict ~declarations Nul true t) (restrict ~declarations Undef true t)
+      else restrict ~declarations Undef false (restrict ~declarations Nul false t))
+  | Equality ((LooseEqual | LooseUnequal as op),{node=Read ({node=Id name;_},Name field);_},{node=Literal (LNull | LUndefined);_})
+  | Equality ((LooseEqual | LooseUnequal as op),{node=Literal (LNull | LUndefined);_},{node=Read ({node=Id name;_},Name field);_}) ->
+    let equal = truth=(op=LooseEqual) in
+    refine_field env name field (fun t ->
       if equal then union (restrict ~declarations Nul true t) (restrict ~declarations Undef true t)
       else restrict ~declarations Undef false (restrict ~declarations Nul false t))
   (* A comparison with a singleton, a literal or a name or field holding one,

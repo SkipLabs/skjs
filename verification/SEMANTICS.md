@@ -903,8 +903,8 @@ does not require a syntactic subtype relation between `R` and `B`.
 The right side of `=` is a predicate, not an initializer or a future-read promise.
 Null/undefined/Boolean, numeric and string predicates are supported,
 including the whole number family and exact numeric singletons, and
-$\mathsf{defined}(v)\equiv v\neq\mathsf{undefined}$, a value of any other
-shape. These assertions are duplicable facts, not exclusive write
+the nullish exclusions in the [assertion grammar](POSITIVE-TYPES.md#state-assertion-grammar),
+which apply to values of any shape. These assertions are duplicable facts, not exclusive write
 permissions. This is a chosen plain-cell interpretation, not a theorem equating
 a producer's internal types with heap assertions.
 

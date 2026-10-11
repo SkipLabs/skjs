@@ -88,10 +88,10 @@ with its exact keys
 ([rules](SOURCE-ELABORATION.md#mutable-bindings-and-module-constants)). A `let`
 statement whose initialized bindings nothing in their scope writes, closures
 included, is a `const`: each holds its initial value throughout, so a test
-narrows it and a `let` pattern binds (`LET-CONST`). A `let` that is written
-and holds a union of objects is not narrowed by a test of its object: a
-cell's known contents are primitive or merely no `undefined`, and a write in
-between may replace it.
+narrows it and a `let` pattern binds (`LET-CONST`). A written `let` uses a
+cell whose current contents support primitive refinements and nullish exclusions.
+A guard can remove null or undefined from its read type until an effect
+invalidates that observation.
 A written `let` pattern binds hidden names, then each source name is a
 cell of its own at its value.
 

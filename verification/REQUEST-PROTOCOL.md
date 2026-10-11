@@ -331,7 +331,7 @@ lists, including empty lists for zero-argument thunks. There is one accepted cer
 All node objects explicitly contain `expression`, `edges`, `knowledge`, `effect`
 and `output`. `knowledge` and `output` each contain `cells`, `values`, and `links`. The first two are lists of
 `{slot, contents, field}` facts. `contents` is a disjunction of primitive
-predicates: `nul`, `undef`, `tru`, `fls`, `num`, `str`,
+predicates: `nul`, `undef`, `tru`, `fls`, `num`, `str`, `defined`, `nonNull`, `nonNullish`,
 `{"numLit":{"bits":"…"}}`, with the same unsigned 64-bit decimal encoding as
 numeric graph clauses, or `{"strLit":{"value":"…"}}`. The empty list is
 impossible. A singleton fact can weaken to its family, never the reverse. `links` is a list of
@@ -345,7 +345,10 @@ every record-typed slot in scope, and the reason a write to one cell keeps
 facts about another. These are finite state assertions, not extra type labels.
 `effect: null` selects ordinary expression evidence; a non-null effect selects
 one of the checked `StepEvidence` constructors (`ordinary`, `pure`,
-`typedRead`, `observedRead`, `slicedRead`, `knownValue`, `created`, `allocated`, `written`). Constructor payloads use
+`typedRead`, `observedRead`, `slicedRead`, `knownValue`, `created`, `allocated`, `written`).
+`slicedRead` carries `tag`, `slot`, `proof` and `sub`: its cell observation
+must exclude the tag, and `sub` proves that the negative slice of the ordinary
+read contract fits the requested type. Constructor payloads use
 Lean's derived JSON encoding, with strict decode/re-encode checking.
 
 The effect checker binds to the root expression sequent and must establish exactly

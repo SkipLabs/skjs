@@ -229,6 +229,7 @@ const bindingsOf = (map: { context?: unknown } | null, source: string): string[]
 const ATOM_TEXT: Record<Extract<HeapAtom, string>, string> = {
   nul: "null", undef: "undefined", tru: "true", fls: "false", num: "number", str: "string",
   defined: "a value other than undefined",
+  nonNull: "a value other than null", nonNullish: "a value other than null or undefined",
 };
 const contentsText = (contents: readonly HeapAtom[]): string =>
   !contents.length ? "never" : contents.map((a) => {

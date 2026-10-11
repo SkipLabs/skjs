@@ -21,8 +21,8 @@ open S
     let inputs=input_names plan in
     let env=List.filter (fun (name,_) -> not (List.mem name inputs)) initial in
     let get values saved = match List.assoc_opt saved.Execution.id values with
-      | Some t -> t | None -> Json.fail "binding plan reads an unavailable saved value" in
-    let put values saved t = (saved.Execution.id,t) :: List.remove_assoc saved.Execution.id values in
+      | Some (t,_) -> t | None -> Json.fail "binding plan reads an unavailable saved value" in
+    let put ?origin values saved t = (saved.Execution.id,(t,origin)) :: List.remove_assoc saved.Execution.id values in
     let publish source t instantiation =
       publish_expression source t instantiation in
     let rec defined_slice truth t = match t with
@@ -50,7 +50,10 @@ open S
            | Json.Error message when inputs <> [] && String.starts_with ~prefix:"unbound name " message ->
              Proposal_diagnostics.unsupported ("parameter default may only read initialized earlier parameters and captures: " ^ message))
           in
-        run (run_execution env plan) (put values value t) next
+        let origin = match expression.node with
+          | Id name when (match List.assoc_opt name env with Some (Value _) -> true | _ -> false) -> Some name
+          | _ -> None in
+        run (run_execution env plan) (put ?origin values value t) next
       | Execution.DefaultValue (value,result,fallback,next) ->
         let t=get values value in
         let present=defined_slice false t and absent=defined_slice true t in
@@ -78,8 +81,14 @@ open S
           | Some (Storage (contract,_)) when List.mem name inputs -> holding contract t
           | _ -> Value t in
         run (extend env name binding) values next
-      | Execution.ReadField (_,receiver,field,value,next) ->
-        let t=S.field_type declarations [] (get values receiver) (Name field) in
+      | Execution.ReadField (source,receiver,field,value,next) ->
+        let observed = match List.assoc_opt receiver.Execution.id values with
+          | Some (_,Some name) -> List.assoc_opt (field_key name field) env
+          | _ -> None in
+        let t=match observed with
+          | Some binding -> binding_type binding
+          | None -> S.field_type declarations [] (get values receiver) (Name field) in
+        publish source t None;
         run env (put values value t) next
       | Execution.ReadPosition (_,array,index,value,next) ->
         let t=S.index_type declarations [] (get values array) (number_literal (string_of_int index)) in

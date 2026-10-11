@@ -337,7 +337,9 @@ schedule. `defaultValue` saves the defined input or the fallback result in
 `index` and `start` are natural numbers, and `slice` is a Boolean. An
 `input` index selects a source parameter after the receiver slot. `bind`
 publishes its saved value as a lexical binding; reads and defaults follow
-the progressive scope supplied by the schedule.
+the progressive scope supplied by the schedule. Each `readField` requires an
+expression claim at `source`; the graph checks that type for the field read
+with the observations live at that step, then saves its result for `next`.
 
 Effects describe what the producer must update in its knowledge of mutable
 contents. `none` preserves that knowledge; `havoc` forgets it; `cellWrite`
@@ -440,11 +442,12 @@ simultaneous invariant contracts in a clause are outside this profile.
 Extraction checks an assertion in one of two ways. If every plain record
 alternative's field contract implies the asserted type, a persistent inclusion
 obligation checks it; the asserted type can be nonprimitive. Otherwise, a
-point observation requires a supported finite predicate for null, true, false
-and undefined, justified by the graph checkpoint. Thus a union of cell
-contracts can carry an assertion common to all its alternatives. Numeric or
-nested types can be checked as persistent consequences of the contracts;
-they are outside the transient predicate vocabulary.
+point observation requires a supported finite predicate from the
+[assertion grammar](POSITIVE-TYPES.md#state-assertion-grammar), justified by
+the graph checkpoint. A nonprimitive candidate supplies its supported nullish
+exclusions; each read must independently prove the requested result from the
+storage contract and those observations. Other nonprimitive assertions require
+a persistent consequence of the contracts.
 
 Entry assertions form the graph node's interface. Each incoming normal or
 exceptional edge must justify it, including loop backedges. Each entry resets

@@ -8,17 +8,17 @@ open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs 
 open EquationGraphs (Tree)
 private abbrev Sites := List Nat × List Span × List Span
 private def joinSites (a b : Sites) : Sites := (a.1 ++ b.1,a.2.1 ++ b.2.1,a.2.2 ++ b.2.2)
-/-- The spans of a pattern's array rests: each is a fresh array, claimed like
-an array literal. -/
-private partial def restSpans : Fragment.Pattern Fragment.Expr → List Span
+/-- Field reads and fresh rest objects/arrays have independently checked
+result claims at their pattern spans. -/
+private partial def patternClaimSpans : Fragment.Pattern Fragment.Expr → List Span
   | .name .. => []
-  | .object _ props rest => props.flatMap (fun (_, t, _) => restSpans t) ++
+  | .object _ props rest => props.flatMap (fun (_, t, _) => t.span :: patternClaimSpans t) ++
       match rest with
-      | some (q, t) => q :: restSpans t
+      | some (q, t) => q :: patternClaimSpans t
       | none => []
-  | .array _ elems rest => elems.flatMap (fun (_, t, _) => restSpans t) ++
+  | .array _ elems rest => elems.flatMap (fun (_, t, _) => patternClaimSpans t) ++
       match rest with
-      | some (_, q, _, t) => q :: restSpans t
+      | some (_, q, _, t) => q :: patternClaimSpans t
       | none => []
 mutual
 private partial def exprSitesCore (includeBodies : Bool) : Fragment.Expr → Sites
@@ -71,11 +71,10 @@ private partial def stmtSitesCore (includeBodies : Bool) : Fragment.Stmt → Sit
       (fun s st => joinSites s (stmtSitesCore includeBodies st)) ([p.1],[],[])
   -- One entry for the statement; every declarator's initializer is a site.
   | .constants p bs | .mutables p bs => bs.foldl (fun acc b => joinSites acc (exprSitesCore includeBodies b.init)) ([p.1],[],[])
-  -- The initializer, each default and each array rest, a fresh array like a
-  -- literal, are sites; the pattern's reads are not.
+  -- Initializers, defaults, field reads and fresh rests each own a claim.
   | .destructure p target d init =>
     (d.toList ++ target.defaults).foldl (fun acc e => joinSites acc (exprSitesCore includeBodies e))
-      (joinSites ([p.1],restSpans target,[]) (exprSitesCore includeBodies init))
+      (joinSites ([p.1],patternClaimSpans target,[]) (exprSitesCore includeBodies init))
   | .loop p c body update => joinSites ([p.1],[],[]) (joinSites (exprSitesCore includeBodies c)
       ((body ++ update).foldl (fun s st => joinSites s (stmtSitesCore includeBodies st)) ([],[],[])))
   -- A block has no entry of its own.

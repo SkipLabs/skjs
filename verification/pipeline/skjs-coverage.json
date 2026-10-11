@@ -14,17 +14,17 @@
   "rejected": 2
  },
  "accepted": 2674,
- "verified": 2479,
+ "verified": 2481,
  "byStatus": {
-  "verified (check)": 2479,
-  "unverified (search)": 98,
+  "verified (check)": 2481,
+  "unverified (search)": 97,
   "unsupported (source)": 73,
-  "unsupported (proposal)": 24
+  "unsupported (proposal)": 23
  },
  "bySuite": {
   "expect-error": {
    "accepted": 2458,
-   "verified": 2265
+   "verified": 2267
   },
   "constprop": {
    "accepted": 66,
@@ -55,12 +55,12 @@
  "filesWithAccepted": 377,
  "functions": {
   "accepted": 2026,
-  "verified": 1849
+  "verified": 1851
  },
  "byGroup": {
   "TypeScript refuses the code too (the pipeline follows TypeScript's types)": {
-   "units": 38,
-   "self": 30,
+   "units": 37,
+   "self": 29,
    "dependency": 8,
    "files": 24
   },
@@ -196,12 +196,6 @@
    "dependency": 0,
    "files": 1
   },
-  "reads on unions/primitives (field/index read on non-object, string keys)": {
-   "units": 1,
-   "self": 1,
-   "dependency": 0,
-   "files": 1
-  },
   "an optional key found `undefined` (the key may be absent)": {
    "units": 1,
    "self": 1,
@@ -234,11 +228,11 @@
   }
  },
  "exhausted": 0,
- "reachedButRefused": 98,
+ "reachedButRefused": 97,
  "byClass": {
-  "verified": 2479,
-  "principled": 88,
-  "gap": 97,
+  "verified": 2481,
+  "principled": 87,
+  "gap": 96,
   "unexplained": 0,
   "skjsUnsound": 10
  },
@@ -246,7 +240,7 @@
  "byReason": {
   "TypeScript refuses the code": {
    "class": "principled",
-   "units": 37,
+   "units": 36,
    "files": 23
   },
   "generics: generic closures, methods, function types, dependent bounds": {
@@ -424,11 +418,6 @@
    "units": 1,
    "files": 1
   },
-  "reads the producer holds on no object": {
-   "class": "gap",
-   "units": 1,
-   "files": 1
-  },
   "an ambient enum": {
    "class": "gap",
    "units": 1,
@@ -500,7 +489,7 @@
  ],
  "skjsUnsoundVerified": [],
  "byKey": {
-  "search: reject: TypeScript refuses this code too": 24,
+  "search: reject: TypeScript refuses this code too": 23,
   "search: reject: a record at an index signature: TypeScript admits a type literal whose named fields fit the index (an implicit index signature), but a value of it may c": 14,
   "source: reject: TypeScript refuses this code too": 10,
   "search: reject: a named function where a signature binding more parameters is expected: its slot is its annotated signature, checked by its own unit, and the arity of a": 8,
@@ -541,7 +530,6 @@
   "source: generic constructor types are outside the fragment": 1,
   "source: an array assignment pattern writing other than a local is outside the fragment: a field target's reference is evaluated before its position is read and defaulte": 1,
   "search: reject: source refusal at _: position 1 is past the positions of a mutable tuple, which `push` may have extended with a value its type does not state there (Typ": 1,
-  "proposal: field read on non-object": 1,
   "source: an ambient enum is outside the fragment: its object is the environment's, whose members a declaration need not all value, and the declaration reader has no ambi": 1,
   "search: reject: an optional key found `undefined`, read at `undefined`: the key may be absent, and a read of an absent key is stated by no clause the model reads": 1,
   "search: reject: source refusal at _: a scheme claim has no quantified closure in its source": 1,
@@ -1337,8 +1325,8 @@
 {"source":"tests/expect-error/destructuring.ts","name":"inferredDefaultKeepsNull","kind":"function","line":128,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/destructuring.ts","name":"inferredDefaultCanReturnUndefined","kind":"function","line":134,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/destructuring.ts","name":"laterPatternRead","kind":"function","line":141,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/destructuring.ts","name":"earlierPatternRead","kind":"function","line":151,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: TypeScript refuses this code too","group":"TypeScript refuses the code too (the pipeline follows TypeScript's types)","where":"self","at":"b","detail":"reject: TypeScript refuses this code too (line 4, col 5: Type 'number | null' is not assignable to type 'number'.); the pipeline follows TypeScript's types — The available claim for b is null | number. This return requires number.","class":"principled"},
-{"source":"tests/expect-error/destructuring.ts","name":"checkedNestedPattern","kind":"function","line":159,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: field read on non-object","group":"reads on unions/primitives (field/index read on non-object, string keys)","where":"self","detail":"unsupported: field read on non-object","class":"gap"},
+{"source":"tests/expect-error/destructuring.ts","name":"earlierPatternRead","kind":"function","line":151,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
+{"source":"tests/expect-error/destructuring.ts","name":"checkedNestedPattern","kind":"function","line":159,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/destructuring.ts","name":"nestedPatternWithNull","kind":"function","line":170,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/destructuring.ts","name":"later","kind":"variable","line":180,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/destructuring.ts","name":"patternLaterBinding","kind":"function","line":181,"skjsMarker":"rejected-self"},

@@ -166,11 +166,14 @@ Mutable parameters use their annotated contracts. A contract is published
 separately from point states, keyed by the binding's initializer span and name;
 copies of a declaration in different control-flow paths must agree on it.
 
-Current-content facts cover primitive refinements and supported facts that a
-cell is defined. Field facts describe an immutable binding's object at a point;
+Current-content facts cover primitive refinements and exclusions of null,
+undefined, or both. Field facts describe an immutable binding's object at a point;
 unknown writes or calls invalidate them. Closure analysis forgets facts that
 need not hold when the closure runs. The producer's conservative state can
-therefore lose information that a stronger analysis might prove.
+therefore lose information that a stronger analysis might prove. A binding plan
+retains the immutable origin of its saved receiver and consults the live field
+facts at each read. Each read publishes a type claim that Lean checks before
+using the saved result in the rest of the pattern.
 
 Object types distinguish readable fields, writable fields, presence and bounds
 on the keys an object owns. Array types distinguish element contracts, tuple

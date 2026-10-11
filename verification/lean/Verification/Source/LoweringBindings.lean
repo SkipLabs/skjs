@@ -103,8 +103,10 @@ set_option maxHeartbeats 1000000
     let G := SourceTypes.graph (← table)
     if let .error reason := noMethodRead G T field then
       throw (locatedRefusal (← table) source .bindingAnnotation reason)
-    let read ← readCell G Γ field (DirectProof.var Γ i T)
-    save source value read.type (.readAt field (.var i)) next
+    -- The proposed read type is checked at this read, with the live heap
+    -- observations. Subsequent pattern operations receive its saved value.
+    let R ← claimAt fc source
+    save source value R (.readAt field (.var i)) next
   | .readPosition source array index value next =>
     let (i,T) ← LoweringExecution.executionSaved scope Γ array
     let R ← tryCatch (positionRead (SourceTypes.graph (← table)) T index) fun reason => do

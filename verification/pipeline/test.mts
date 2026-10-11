@@ -1642,6 +1642,42 @@ for (const [artifacts, arity, refusal] of [
   assert.match(invoke(writeClaims(returned, "forged-escape", escaped), join(returned, "evidence.json"), returned),
     /is not in scope/);
 }
+{
+  for (const [file, witness] of [
+    ["invalid-nullish-field-write", "(() => { const x = { child: { b: 1 } }; return invalid(x, x); })()"],
+    ["invalid-nullish-field-call", "(() => { const x = { child: { b: 1 } }; return invalid(x, () => { x.child = null; }); })()"],
+    ["invalid-nullish-field-pattern", "invalid({ child: { b: 1 } })"],
+    ["invalid-nullish-field-undefined", "invalid({})"],
+  ]) {
+    assert.ok(file && witness);
+    assert.throws(() => runExample(file, witness), /Cannot read properties/);
+  }
+  const artifacts = run("nullish-field-observations");
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  // The null branch cannot establish the opposite field observation.
+  const claims = readClaims(artifacts);
+  const fn = must(claims.functions.find((f) => f.name === "direct"), "direct function");
+  const start = source.indexOf("return 0;", source.indexOf("function direct("));
+  const guarded = must(fn.entries.find((e) => source.startsWith("return x.child.b;", e.start)), "guarded read entry");
+  const known = must(guarded.bindings.find((b) => b.name === "x"), "guarded object");
+  const unguarded = must(fn.entries.find((e) => e.start === start), "null branch entry");
+  must(unguarded.bindings.find((b) => b.name === "x"), "null branch object").current = structuredClone(known.current);
+  const forged = writeClaims(artifacts, "forged-non-null-field", claims);
+  refusedAt(artifacts, forged, "forged-non-null-field",
+    `source incoming edge obligation at [${start},${start + "return 0;".length})`);
+  invoke(forged, join(artifacts, "evidence.json"), artifacts);
+
+  // A pattern read's proposed result is independently checked at that read.
+  const patternClaims = readClaims(artifacts);
+  const nested = must(patternClaims.functions.find((f) => f.name === "nested"), "nested function");
+  const read = must(nested.expressions.find((e) => source.slice(e.pos[0], e.pos[1]) === "b" &&
+    source.slice(0, e.pos[0]).lastIndexOf("const {") > source.slice(0, e.pos[0]).lastIndexOf("return")), "pattern b read");
+  read.type = [rowOf(patternClaims, "nul")];
+  const badRead = writeClaims(artifacts, "forged-pattern-field-read", patternClaims);
+  refusedAt(artifacts, badRead, "forged-pattern-field-read",
+    `source expression obligation at [${read.pos[0]},${read.pos[1]})`);
+  invoke(badRead, join(artifacts, "evidence.json"), artifacts);
+}
 checkGenericRest(verifier, run("generic-rest"));
 checkOverloads(verifier, run("overloads"));
 checkDefaults(verifier, run("default-parameter-scope"));

@@ -170,13 +170,9 @@ must follow from the stable storage contract; no claim is silently dropped. -/
         match HeapKnowledge.atoms G A with
         | some atoms => facts := facts ++ [⟨i,atoms,valueField⟩]
         | none =>
-          -- Contents no `undefined` is among, of any shape: the cell holds
-          -- some other value, and a read of it is its contract less
-          -- `undefined` (`slicedRead`).
-          if G.plainTy A && (PositiveRules.expand G A).all
-              (fun c => ProgramTyping.tagClause .isUndef c == some false) then
-            facts := facts ++ [⟨i,[.defined],valueField⟩]
-          else persistentObservation b.source (pos,pos+1) reference valueField A
+          match HeapExpressionRules.nullishAtoms G A with
+          | some atoms => facts := facts ++ [⟨i,atoms,valueField⟩]
+          | none => persistentObservation b.source (pos,pos+1) reference valueField A
     match cs.lookup b.source.name with
     | none => return facts
     | some asserted =>
@@ -212,7 +208,10 @@ must follow from the stable storage contract; no claim is silently dropped. -/
             persistentObservation b.source (pos,pos+1) reference fld A
           else match HeapKnowledge.atoms (SourceTypes.graph T) A with
           | some atoms => facts := facts ++ [⟨i,atoms,fld⟩]
-          | none => persistentObservation b.source (pos,pos+1) reference fld A
+          | none =>
+            match HeapExpressionRules.nullishAtoms (SourceTypes.graph T) A with
+            | some atoms => facts := facts ++ [⟨i,atoms,fld⟩]
+            | none => persistentObservation b.source (pos,pos+1) reference fld A
       return facts) []
 
 /-- A dot cannot occur in a source binding identifier, so these names designate

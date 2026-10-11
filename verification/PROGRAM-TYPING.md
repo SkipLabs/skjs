@@ -2099,7 +2099,9 @@ where a certificate carries a permutation, in
 Two auxiliary forms. $`(\Gamma;\Pi)(x)`$ looks $`x`$ up in both contexts, $`\Pi`$
 first: it is the primitive predicate recorded for $`x`$ there, or
 failing that the one $`\Gamma(x)`$ denotes when it is a supported primitive
-union, or `defined` when no member of $`\Gamma(x)`$ is `undefined`. It extends the $`\Gamma(x)`$ of the ordinary rules to the pair, is partial
+union, or the strongest supported nullish exclusion implied by $`\Gamma(x)`$.
+Otherwise the predicate is the exhaustive union of null, undefined and
+`nonNullish`. It extends the $`\Gamma(x)`$ of the ordinary rules to the pair, is partial
 in the same way, and is a lookup rather than a search — `valuesAt` computes it in
 that order and `valuesAt_sound` proves the membership it yields.
 
@@ -2326,10 +2328,10 @@ It computes a guaranteed output, not an assumed postcondition:
 | Pure test or conditional             | Preserve existing facts and links, shifted past the result slot. Every evaluated subexpression must be syntactically pure (a length `lenOf` of a slot among them: an array's store is read by a field read of its own, then counted); no new result-to-cell link is invented.                                                                       |
 | Ordinary typed read                  | Preserve facts and record read links to the receiver and witnessed aliases, retaining its plain or callable descriptor; through a key a record may lack, optional links. No prior current-content fact is needed. Its result has the supplied type. |
 | Observed read                        | Preserve facts and links; record the result's primitive predicate and its current read relationship. That set must fit the requested ordinary result type.                                                                               |
-| Sliced read (`slicedRead`)           | A read a cell fact says finds no `undefined` (every predicate other than it): ordinary read evidence at the location's contract $`C`$, whose slice $`T_{\mathsf{false}}(C)`$ by the `undefined` tag is below the requested type by a checked subtype proof. As an ordinary typed read otherwise. |
+| Sliced read (`slicedRead`)           | A read whose cell fact excludes a nullish tag: ordinary read evidence at the location's contract $`C`$, whose negative slice by that tag is below the requested type by a checked subtype proof. As an ordinary typed read otherwise. |
 | Known immutable value                | Check the requested primitive type against a proved slot fact or the slot's ordinary primitive type.                                                                                                                                     |
 | Allocation                           | Check ordinary creation evidence and scope for either descriptor, preserve old facts, add the fresh bag's initial contents where a checked value slot's are known, and its fields' distinctness from every record slot's. Closure code is not executed. A merge of two slots is an allocation too: old facts preserved, the fields its result type names distinct. So is an array literal's store of value slots, whose element locations lie past the heap's end: old facts preserved (`store_alloc_sound`); an element read (`elemAt`) is still an ordinary expression. |
-| Write                                | Check ordinary write evidence (no old-content premise), discard old cell facts but those a distinct link separates from the written location, record new contents for the receiver and its witnessed aliases where the value is a known primitive, or `defined` where its type rules `undefined` out, and preserve immutable facts and slot equalities. Read links are discarded. |
+| Write                                | Check ordinary write evidence (no old-content premise), discard old cell facts but those a distinct link separates from the written location, record new contents for the receiver and its witnessed aliases where the value is a known primitive, or its supported nullish exclusion, and preserve immutable facts and slot equalities. Read links are discarded. |
 | Ordinary expression, including calls | Check ordinary evidence, discard cell facts and read links, preserving immutable facts and slot equalities.                                                                                                                              |
 
 `typedRead_sound`, `slicedRead_sound`, `read_sound`, `alloc_sound` (with
@@ -2339,12 +2341,12 @@ read is
 
 ```math
 \frac{\Gamma\vdash_G \mathsf{readAt}\,f\,x : C\quad x.f\mapsto R\in\Sigma\quad
-      \mathsf{undefined}\notin R\quad T_{\mathsf{false}}^{\mathsf{isUndef}}(C)\le A}
+      \forall v\in R.\;\tau(v)=\mathsf{false}\quad T_{\mathsf{false}}^{\tau}(C)\le A}
      {\Gamma;\Pi;\Sigma\vdash_G r\leftarrow \mathsf{readAt}\,f\,x : A\dashv\Pi;\Sigma}\ \textsf{read-sliced}
 ```
 
-which is how `let x: T;` assigned an object on every path is read at $`T`$. None of them takes a premise about a cell's old contents, and the
-checker's write evidence carries none either. These are operation rules within a
+where the supported tags are tests for null, undefined and either nullish value.
+The write rule takes no premise about the cell's old contents. These are operation rules within a
 local segment: at the next statement entry, only the supplied interface
 survives.
 
@@ -2396,8 +2398,7 @@ predicates without treating an effectful operand as pure. A negated graph guard
 checks its full expression claim separately and swaps the operand's successors;
 it does not invent an equality between a Boolean and its negation.
 
-Primitive result predicates are finite lists of null/undefined/Boolean
-singletons, numeric singletons and the number family. `HeapKnowledge.check_sound` and `project_checked`
+Result predicates follow the [assertion grammar](POSITIVE-TYPES.md#state-assertion-grammar). `HeapKnowledge.check_sound` and `project_checked`
 justify transfer and alias-preserving projection along executable slot maps.
 
 The maintained graph checker carries the same postconditions in its state

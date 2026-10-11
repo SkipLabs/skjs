@@ -8,15 +8,12 @@ primitive predicates. The representation has no execution indices in its syntax.
 namespace Verification.HeapFacts
 open ProgramTyping PositiveRules PositiveGraphs HeapObservations
 
-/-- A finite vocabulary of primitive predicates. `num` covers every numeric
-value; `numLit` preserves an exact bit pattern. Neither is a storage contract.
-`defined` is any value but `undefined`, of any shape: what a write of a value
-whose type rules `undefined` out leaves in a cell. No clause states it, so a
-read of the cell is typed at its contract less `undefined`
-(`HeapExpressionRules.slicedRead`), never at the atom. -/
+/-- Finite predicates on current values. Primitive predicates describe a
+value family. Nullish exclusions apply to values of any shape and support a
+read at the storage contract's corresponding negative slice. -/
 inductive Atom where
   | nul | undef | tru | fls | num | numLit (bits : UInt64) | str | strLit (value : String)
-  | defined
+  | defined | nonNull | nonNullish
   deriving DecidableEq, Repr
 
 def Atom.holds : Atom → Tm → Prop
@@ -29,6 +26,8 @@ def Atom.holds : Atom → Tm → Prop
   | .str, v => ∃ s, v = .str s
   | .strLit s, v => v = .str s
   | .defined, v => isVal v = true ∧ v ≠ .undef
+  | .nonNull, v => isVal v = true ∧ v ≠ .nul
+  | .nonNullish, v => isVal v = true ∧ v ≠ .nul ∧ v ≠ .undef
 
 theorem Atom.isValue {a : Atom} {v} (h : a.holds v) : isVal v = true := by
   cases a <;> simp only [Atom.holds] at h
@@ -39,31 +38,56 @@ def Atom.clause (a : Atom) : PositiveNormalization.Clause α :=
   | .nul => .nul | .undef => .undef | .tru => .boolLit true
   | .fls => .boolLit false | .num => .num | .numLit b => .numLit b
   | .str => .str | .strLit s => .strLit s
-  | .defined => .top
+  | .defined | .nonNull | .nonNullish => .top
 
 /-- A primitive atom is exactly its clause. -/
-theorem Atom.sem {a : Atom} {S : α → Fam} {P : α → ArgFam} {n W v} (hd : a ≠ .defined) :
+theorem Atom.sem {a : Atom} {S : α → Fam} {P : α → ArgFam} {n W v} (hd : a ≠ .defined) (hn : a ≠ .nonNull) (hb : a ≠ .nonNullish) :
     PositiveNormalization.semWithArgs S P a.clause n W v ↔ a.holds v := by
-  cases a <;> first | rfl | exact absurd rfl hd
+  cases a <;> first | rfl | exact absurd rfl hd | exact absurd rfl hn | exact absurd rfl hb
+
+/-- The nullish tests a predicate guarantees false. -/
+def Atom.excludes (a : Atom) (tag : Tag) : Bool :=
+  match tag, a with
+  | .isUndef, .undef | .isUndef, .nonNull => false
+  | .isNul, .nul | .isNul, .defined => false
+  | .isNullish, .nul | .isNullish, .undef | .isNullish, .defined | .isNullish, .nonNull => false
+  | .isUndef, _ | .isNul, _ | .isNullish, _ => true
+  | _, _ => false
+
+theorem Atom.excludes_sound {a : Atom} {tag : Tag} {v : Tm}
+    (he : a.excludes tag = true) (hv : a.holds v) : tagHolds tag v = false := by
+  cases tag <;> cases a <;> simp_all [Atom.excludes, Atom.holds]
+  all_goals first
+    | (subst v; rfl)
+    | (obtain ⟨_, rfl⟩ := hv; rfl)
+    | (cases v <;> simp_all [tagHolds])
 
 def Atom.le (a b : Atom) : Bool :=
-  a == b || match a, b with
-    | .numLit _, .num => true | .strLit _, .str => true
-    | .defined, _ | .undef, _ => false
-    | _, .defined => true
-    | _, _ => false
+  a == b || match b with
+    | .defined => a.excludes .isUndef
+    | .nonNull => a.excludes .isNul
+    | .nonNullish => a.excludes .isNullish
+    | _ => match a, b with
+      | .numLit _, .num | .strLit _, .str => true
+      | _, _ => false
 
 theorem Atom.le_sound {a b : Atom} {v} (h : a.le b = true) (hv : a.holds v) : b.holds v := by
   simp only [Atom.le, Bool.or_eq_true, beq_iff_eq] at h
   rcases h with rfl | h
   · exact hv
-  · cases a <;> cases b <;> simp only [Atom.holds] at hv h ⊢ <;> try contradiction
-    all_goals first
-      | exact hv
-      | (obtain ⟨_, rfl⟩ := hv; exact ⟨rfl, by simp⟩)
-      | (subst v; exact ⟨rfl, by simp⟩)
-      | (subst v; rfl)
-      | (obtain ⟨_, rfl⟩ := hv; exact ⟨_, rfl⟩)
+  · cases b with
+    | defined =>
+      have ht := Atom.excludes_sound h hv
+      exact ⟨Atom.isValue hv, by intro he; subst v; simp [tagHolds] at ht⟩
+    | nonNull =>
+      have ht := Atom.excludes_sound h hv
+      exact ⟨Atom.isValue hv, by intro he; subst v; simp [tagHolds] at ht⟩
+    | nonNullish =>
+      have ht := Atom.excludes_sound h hv
+      exact ⟨Atom.isValue hv, by intro he; subst v; simp [tagHolds] at ht,
+        by intro he; subst v; simp [tagHolds] at ht⟩
+    | _ => cases a <;> simp_all [Atom.holds]
+
 
 def covers (source target : List Atom) : Bool :=
   source.all fun a => target.any a.le
@@ -174,6 +198,7 @@ theorem alloc {A : Fam} (ha : Adm A) {facts ρ h a v n W}
     obtain ⟨flds,c,oid,l,u,hl,hfd,hu,b,hb,he⟩ := hf g hg
     exact ⟨flds,c,oid,l,u,hl,hfd,alloc_frame (alloc_frame hu),b,hb,he⟩
 
+#print axioms Atom.excludes_sound
 #print axioms Atom.sem
 #print axioms Atom.isValue
 #print axioms Atom.le_sound
