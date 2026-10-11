@@ -183,18 +183,26 @@ partial def tryEnsure (h : Nat) : M Bool := do
     return true
   | none => return false
 
-/-- A base's clauses in the deriving declaration's placeholders: each label
-an application of a head with a clause row. -/
+/-- A base's clauses in the deriving declaration's placeholders. Intersection
+parts contribute all their clauses through the same source meet as bases. -/
 partial def heritage (ctx : Ctx) (base : Json) : M (List (Clause (List Tree))) := do
   let labels ← lowerType ctx base
-  labels.flatMapM fun t => do
-    match t with
-    | .app g args =>
-      if !(← tryEnsure g) then throw s!"{ctx.site}: cyclic heritage through {(← draft g).name}"
-      match (← draft g).body with
-      | some (.clauses cs) => return instantiateClauses cs (args.toList.map Types.toList)
-      | _ => throw s!"{ctx.site}: a base whose row is not a clause row"
-    | _ => throw s!"{ctx.site}: a base that is a type parameter or an intersection is outside heritage"
+  labels.flatMapM (heritageTree ctx)
+
+/-- Unfold a base application or meet its intersection parts. Parameter and
+scheme rows cannot provide the statically declared members of a base. -/
+partial def heritageTree (ctx : Ctx) (t : Tree) : M (List (Clause (List Tree))) := do
+  match t with
+  | .app g args =>
+    if !(← tryEnsure g) then throw s!"{ctx.site}: cyclic heritage through {(← draft g).name}"
+    match (← draft g).body with
+    | some (.clauses cs) => return instantiateClauses cs (args.toList.map Types.toList)
+    | _ => throw s!"{ctx.site}: a base whose row is not a clause row"
+  | .meet parts =>
+    let rows ← parts.toList.mapM (heritageTree ctx)
+    rows.foldlM (fun acc row => (sourceMeetLists acc row : Except String _)) [.top]
+  | .bound .. | .argument .. | .local .. | .var .. =>
+    throw s!"{ctx.site}: a base that is a type parameter is outside heritage"
 
 /-- An object type's clause. A
 generic method is a head of its own, owned by the head whose row this is. -/

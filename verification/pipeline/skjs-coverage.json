@@ -14,17 +14,17 @@
   "rejected": 2
  },
  "accepted": 2674,
- "verified": 2474,
+ "verified": 2475,
  "byStatus": {
-  "verified (check)": 2474,
-  "unverified (search)": 99,
+  "verified (check)": 2475,
+  "unverified (search)": 98,
   "unsupported (source)": 76,
   "unsupported (proposal)": 25
  },
  "bySuite": {
   "expect-error": {
    "accepted": 2458,
-   "verified": 2260
+   "verified": 2261
   },
   "constprop": {
    "accepted": 66,
@@ -51,11 +51,11 @@
    "verified": 8
   }
  },
- "filesAllVerified": 296,
+ "filesAllVerified": 297,
  "filesWithAccepted": 377,
  "functions": {
   "accepted": 2026,
-  "verified": 1844
+  "verified": 1845
  },
  "byGroup": {
   "TypeScript refuses the code too (the pipeline follows TypeScript's types)": {
@@ -82,17 +82,17 @@
    "dependency": 0,
    "files": 3
   },
-  "type forms: literal types, keyof, indexed access, mapped, object, index signatures, intersections, method signatures": {
-   "units": 11,
-   "self": 10,
-   "dependency": 1,
-   "files": 7
-  },
   "object growth: a key-adding write on an object another reference may hold, a dynamic index write": {
    "units": 11,
    "self": 11,
    "dependency": 0,
    "files": 5
+  },
+  "type forms: literal types, keyof, indexed access, mapped, object, index signatures, intersections, method signatures": {
+   "units": 10,
+   "self": 9,
+   "dependency": 1,
+   "files": 6
   },
   "generics: constraints, explicit type arguments, rigid types, generic function types": {
    "units": 10,
@@ -234,11 +234,11 @@
   }
  },
  "exhausted": 0,
- "reachedButRefused": 99,
+ "reachedButRefused": 98,
  "byClass": {
-  "verified": 2474,
+  "verified": 2475,
   "principled": 88,
-  "gap": 102,
+  "gap": 101,
   "unexplained": 0,
   "skjsUnsound": 10
  },
@@ -444,11 +444,6 @@
    "units": 1,
    "files": 1
   },
-  "unmatched: search: reject: source refusal at _: the declarations required by this unit cannot be interpreted: ViaInter: a base that is a type parameter or an intersection is outsi": {
-   "class": "gap",
-   "units": 1,
-   "files": 1
-  },
   "a key-adding write at a runtime string key": {
    "class": "gap",
    "units": 1,
@@ -501,7 +496,6 @@
   }
  },
  "unmatchedReasons": [
-  "search: reject: source refusal at _: the declarations required by this unit cannot be interpreted: ViaInter: a base that is a type parameter or an intersection is outsi",
   "search: reject: unsupported source expression at _: strict equality of two operands that may both be values of no known kind, neither a primitive nor an object"
  ],
  "skjsUnsoundVerified": [],
@@ -556,7 +550,6 @@
   "search: reject: a spread of a dictionary: the copy owns the keys the dictionary holds when it runs, which no type states: the result is a dictionary only where every pa": 1,
   "source: TypeScript types this unannotated closure parameter from its context as `any`, which states no contract": 1,
   "proposal: `unknown` used as an array after `Array.isArray`, read at an element: `Array.isArray(x)`, or `x instanceof Array`, on `unknown` finds that the value owns the st": 1,
-  "search: reject: source refusal at _: the declarations required by this unit cannot be interpreted: ViaInter: a base that is a type parameter or an intersection is outsi": 1,
   "search: reject: source direct obligation at _: GraphCollections: the type argument for EagerCollection's \"_\" at [1173,1187] does not establish its declared bound: objec": 1,
   "search: reject: an array used as a record naming `length`: an array keeps its length in its store, not at a location a field of a record names, and an open record may b": 1,
   "search: reject: source refusal at _: a key-adding write at a string known only at run time: the key may spell one the model keeps for itself (`[]`, `[[proto]]`), which ": 1,
@@ -2186,7 +2179,7 @@
 {"source":"tests/expect-error/interface-as-value.ts","name":"Sub","kind":"class","line":82,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/interface-as-value.ts","name":"newSub","kind":"function","line":86,"skjsMarker":"rejected-dependency"},
 {"source":"tests/expect-error/interface-extends-alias.ts","name":"viaAliasMembers","kind":"function","line":14,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/interface-extends-alias.ts","name":"viaInterMembers","kind":"function","line":27,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source refusal at _: the declarations required by this unit cannot be interpreted: ViaInter: a base that is a type parameter or an intersection is outsi","group":"type forms: literal types, keyof, indexed access, mapped, object, index signatures, intersections, method signatures","where":"self","at":"viaInterMembers","detail":"reject: source refusal at [153,168): the declarations required by this unit cannot be interpreted: ViaInter: a base that is a type parameter or an intersection is outside heritage — the declarations required by this unit cannot be interpreted: ViaInter: a base that is a type parameter or an intersection is outside heritage","class":"gap"},
+{"source":"tests/expect-error/interface-extends-alias.ts","name":"viaInterMembers","kind":"function","line":27,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/interface-extends-alias.ts","name":"ExtendsAlias","kind":"class","line":60,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/interface-extends-alias.ts","name":"genericPropagation","kind":"function","line":72,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/interface-extends-alias.ts","name":"viaNominalMembers","kind":"function","line":87,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},

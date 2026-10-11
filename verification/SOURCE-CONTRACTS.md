@@ -742,7 +742,10 @@ bound:
      {⟦F\mathbin{\&}R⟧\ni\mathsf{callable}(\varphi\psi;L;S)}
 ```
 
-An interface's `extends` clauses meet so too. A record with a readonly or
+An interface's `extends` clauses meet so too. An alias that expands to an
+intersection contributes every part of that intersection, with its type
+arguments substituted, through the same meet as separate bases.
+A record with a readonly or
 optional field, a method or an index met with a function type has no clause:
 that pair is dropped, as the model's meet drops it (so `{}`'s function arm
 meets such a record as nothing, and its record arm as the record), and an

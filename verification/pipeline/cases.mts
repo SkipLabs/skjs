@@ -242,6 +242,8 @@ export const cases: Case[] = [
   positive("array-library", "Array readers and mutators, including find at T under a certified preserving callback"),
   { ...positive("sum-collections", "an interface extending the runtime's index signature type, its named members read, and merge's variadic signature claimed at the producer's copy of its declared rest type"),
     project: "verification/pipeline/skip-runtime-snapshot" },
+  positive("interface-intersection-base", "An interface inherits every part of an intersection alias, including substituted generic members"),
+  negative("invalid-interface-intersection-base", "A cast cannot omit a member from an intersection base", /closure expression claim at \[220,254\): evidence search failed/),
   positive("interface-inheritance-forms", "an interface extending an alias of a generic interface's instance, and two bases stating one index signature"),
   negative("invalid-interface-inheritance-forms", "the member inherited through the alias is a number", /source expression obligation at \[298,301\)/),
   { ...positive("sum-resource", "EagerCollection.map, a recursive generic method whose result is its own interface at its binders, called with a mapper class whose mapEntry takes fewer parameters than Mapper's"),
