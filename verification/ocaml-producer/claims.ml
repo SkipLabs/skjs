@@ -127,7 +127,7 @@ let encode (proposal : Proposal_types.t) =
        states it. *)
     | Shape {fields=[];indexes=[];elements=None;calls=[s]}
         when s.quantified <> [] && List.for_all (fun (q:Semantic.quantifier) ->
-          String.contains q.identity.spelling '#' && q.bound = None) s.quantified ->
+          String.contains q.identity.spelling '#') s.quantified ->
       let binders = List.map (fun (q:Semantic.rigid) -> label_json (Binder q.spelling))
         (List.concat_map quantifier_identities s.quantified) in
       let _,resolution = List.fold_left (fun (offset,groups) (q:Semantic.quantifier) ->
@@ -136,15 +136,27 @@ let encode (proposal : Proposal_types.t) =
             "observation",int (offset+1);"result",Null]]
         | Some (_,Some _) -> offset+3,groups @ [Object ["input",int offset;
             "observation",int (offset+1);"result",int (offset+2)]]) (0,[]) s.quantified in
-      let signature,variadic = match s.variadic,s.rest_pack with
-        | None,None -> [call_contract s.call_effect (labels s.receiver) (Array (List.map labels s.params)) (labels s.result)],[]
+      (* A bounded value binder is read within its bound, as in the
+         closure claim. Keep the bound itself on the scheme as well. *)
+      let within_bounds = List.filter_map (fun (q:Semantic.quantifier) ->
+        match q.bound with
+        | Some (ValueArgument bound) -> Some (q.identity, ValueArgument (Meet (Rigid q.identity,[bound])))
+        | _ -> None) s.quantified in
+      let body = Inference.substitute_signature within_bounds {s with quantified=[]} in
+      let signature,variadic = match body.variadic,body.rest_pack with
+        | None,None -> [call_contract body.call_effect (labels body.receiver) (Array (List.map labels body.params)) (labels body.result)],[]
         | Some element,None ->
-          [],[call_contract s.call_effect (labels s.receiver)
-            (Array [Array (List.map labels s.params);
+          [],[call_contract body.call_effect (labels body.receiver)
+            (Array [Array (List.map labels body.params);
               pack_labels (Pack {required=[];optional_elements=[];rest=Some element;readonly=false;presence=Dense})])
-            (labels s.result)]
+            (labels body.result)]
         | _,Some _ -> unsupported "a pack parameter in a generic method's scheme" in
+      let bounds = List.filter_map (fun (q:Semantic.quantifier) ->
+        Option.map (fun bound -> Array [label_json (Binder q.identity.spelling);
+          (match bound with ValueArgument t -> labels t | PackArgument p -> pack_labels p
+           | ResolutionArgument _ -> unsupported "a resolution descriptor is not a method binder bound")]) q.bound) s.quantified in
       [Row (intern (Object ["scheme",Object (["binders",Array binders;"signatures",Array signature]
+        @ (if bounds = [] then [] else ["bounds",Array bounds])
         @ (if resolution = [] then [] else ["resolution",Array resolution])
         @ (if variadic = [] then [] else ["variadic",Array variadic]))]))]
     | Shape shape ->

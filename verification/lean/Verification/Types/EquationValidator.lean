@@ -14,12 +14,13 @@ open PositiveGraphs PositiveNormalization CallEffects
 def canonicalOrder (ts : List Tree) : Bool :=
   (ts.zip ts.tail).all fun (a, b) => compare a b != .gt
 
-/- Meet normal form at every meet: at least two parts, in canonical order.
+/- Meet normal form at every meet: at least one part, in canonical order.
+A singleton meet preserves the value-only interpretation of intersections.
 Flatness is part of scoping. -/
 mutual
 def Tree.meetNormal : Tree → Bool
   | .app _ args | .bound _ args _ => args.meetNormal
-  | .meet ps => decide (2 ≤ ps.toList.length) && canonicalOrder ps.toList && ps.meetNormal
+  | .meet ps => decide (1 ≤ ps.toList.length) && canonicalOrder ps.toList && ps.meetNormal
   | .argument _ | .local _ | .var .. => true
 def Types.meetNormal : Types → Bool
   | .nil => true
@@ -69,7 +70,7 @@ def Tree.problem (sig : Signature) (parameters locals : Nat) (place : Place) : T
     else none
   | .var .. => if place != .label then some "family variable in a template" else none
   | .meet ps =>
-    if ps.toList.length < 2 then some s!"meet of {ps.toList.length} parts: at least two"
+    if ps.toList.isEmpty then some "meet of no parts: at least one"
     else if ps.toList.any Tree.isMeet then some "meet with a meet as a part: parts are flat"
     else if !canonicalOrder ps.toList then some "meet parts not in canonical order"
     else (ps.problem sig parameters locals place 0).map ("meet " ++ ·)

@@ -1003,6 +1003,35 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   assert.match(unguarded.detail, /unguarded alias cycle through Box: a recursive alias must reach itself through an object, array, tuple or function type/);
 }
 {
+  const good = run("generic-prototype-instanceof");
+  const ast: Ast = JSON.parse(readFileSync(join(good, "fragment.json"), "utf8"));
+  const statement = ast.functions.find((f) => f.name === "typedIdentity")?.body[0];
+  assert(statement?.k === "if" && statement.cond.k === "instanceTest");
+  const pos = statement.cond.proto.pos;
+  for (const variant of ["number", "unbound"]) {
+    const claims = readClaims(good);
+    const fn = must(claims.functions.find((f) => f.name === "typedIdentity"), "consumer");
+    const read = must(fn.expressions.find((e) => e.pos[0] === pos[0] && e.pos[1] === pos[1]), "prototype read");
+    const number = claims.types.findIndex((r) => Array.isArray(r) && r.length === 1 && r[0] === "num");
+    assert(number >= 0);
+    read.type = variant === "number" ? [number] : [{ binder: "UnboundPrototypeParameter" }];
+    const forged = writeClaims(good, `prototype-${variant}`, claims);
+    for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
+      const result = spawnSync(verifier, [mode, join(good, "fragment.json"), forged,
+        join(good, "source.ts"), join(good, mode === "--produce-source-claims"
+          ? `prototype-${variant}-evidence.json` : "evidence.json"),
+        ...(mode === "--produce-source-claims" ? ["12"] : [])],
+        { encoding: "utf8", timeout: 30_000 });
+      assert.ifError(result.error);
+      assert.equal(result.status, 1, result.stdout + result.stderr);
+      assert.match(result.stdout + result.stderr, variant === "unbound"
+        ? /a label names a binder no unit or closure reads/
+        : /evidence search failed|source evidence does not justify/);
+    }
+  }
+  process.stdout.write("prototype contracts: invented read types and unbound parameters refused in both modes\n");
+}
+{
   // A class's generic method, a closure the prototype holds, covers the
   // instance type's member up to renaming the member's binders to the
   // closure's: the renamed signatures must still follow from the closure's.

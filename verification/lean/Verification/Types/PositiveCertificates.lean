@@ -1212,7 +1212,7 @@ and the target's receivers, its signatures against the target's schemes'). -/
   | 0, P => [P]
   | d + 1, P => P :: ((PositiveRules.viewOf G P CallArguments.protoField).toList.flatMap (protoChain G d))
 
-@[nospecialize] def recordPairs [DecidableEq ι] (G : NormalGraph ι) (self : List ι)
+@[nospecialize] def recordPairs [DecidableEq ι] (G : NormalGraph ι) (known : Known ι) (self : List ι)
     (fs vs : List (PropKey × List ι)) (os : List (OptionalField (List ι)))
     (ms : List (MethodMembers.Sig (List ι)))
     (fs' vs' : List (PropKey × List ι)) (os' : List (OptionalField (List ι)))
@@ -1233,36 +1233,36 @@ and the target's receivers, its signatures against the target's schemes'). -/
       (p.receivers.flatMap fun T => q.receivers.map fun T' => (T', T))) ++
     ((keyed q.key ++ (proto.flatMap (protoChain G PositiveRules.protoChainDepth)).flatMap fun P =>
         (PositiveRules.viewOf G P q.key).toList).flatMap fun F =>
-      (match expand G F with
-        | [.arrs L S] =>
+      (((match expand G F with
+        | [.arrs L S] => [(L, S)]
+        | _ => []) ++ (known.filter (·.1 == F)).map (·.2)).flatMap fun (L, S) =>
           (L.map fun s => (self, s.receiver)) ++ (S.map fun s => (self, s.receiver)) ++
           (q.receivers.flatMap fun T => L.map (fun s => (T, s.receiver)) ++ S.map (fun s => (T, s.receiver))) ++
           signaturePairs (L.map (·.withReceiver [])) (q.calls.map (·.withReceiver [])) ++
-          restPairs (S.map (·.withReceiver [])) (q.rests.map (·.withReceiver []))
-        | _ => []) ++
-      (schemeSigs F).flatMap fun s =>
+          restPairs (S.map (·.withReceiver [])) (q.rests.map (·.withReceiver []))) ++
+      (if targetSchemes.isEmpty then [] else schemeSigs F).flatMap fun s =>
         (s.signatures.map fun p => (self, p.receiver)) ++
         targetSchemes.flatMap fun s' => signaturePairs s.signatures s'.signatures ++
           restPairs s.variadic s'.variadic)
 
 /-- The pairs one clause's coverage of another compares. -/
-@[nospecialize] def clausePairs [DecidableEq ι] (G : NormalGraph ι) (self : List ι) :
+@[nospecialize] def clausePairs [DecidableEq ι] (G : NormalGraph ι) (known : Known ι) (self : List ι) :
     Clause (List ι) → Clause (List ι) → List (List ι × List ι)
   | .refs a bs vs os ms _, .refs c ds ws ps ns _
   | .dict a bs vs _ os ms _ _, .refs c ds ws ps ns _ =>
-    recordPairs G self (a :: bs).flatten vs os ms (c :: ds).flatten ws ps ns
+    recordPairs G known self (a :: bs).flatten vs os ms (c :: ds).flatten ws ps ns
   | .refs a bs vs os ms _, .dict c ds ws iy ps ns _ cy =>
-    recordPairs G self (a :: bs).flatten vs os ms (c :: ds).flatten ws ps ns ++
+    recordPairs G known self (a :: bs).flatten vs os ms (c :: ds).flatten ws ps ns ++
       (iy.flatMap fun y => ((a :: bs).flatten ++ vs).map fun p => (p.2, y.2)) ++
       (cy.flatMap fun y => (a :: bs).flatten.flatMap fun p => [(p.2, y.2), (y.2, p.2)])
   | .dict a bs vs ix os ms _ cx, .dict c ds ws iy ps ns _ cy =>
-    recordPairs G self (a :: bs).flatten vs os ms (c :: ds).flatten ws ps ns ++
+    recordPairs G known self (a :: bs).flatten vs os ms (c :: ds).flatten ws ps ns ++
       ((iy ++ cy).flatMap fun y => (ix ++ cx).flatMap fun x => [(x.2, y.2), (y.2, x.2)]) ++
       (cy.flatMap fun y => os.map fun o => (y.2, o.type))
   | .arrs L S, .arrs M T | .callable _ _ L S, .arrs M T =>
     signaturePairs L M ++ restPairs S T ++ elemPairs G S T ++ packPairs G L T
   | .callable a bs L S, .callable c ds M T =>
-    recordPairs G self (a :: bs).flatten [] [] [] (c :: ds).flatten [] [] [] ++
+    recordPairs G known self (a :: bs).flatten [] [] [] (c :: ds).flatten [] [] [] ++
     signaturePairs L M ++ restPairs S T ++ elemPairs G S T ++ packPairs G L T
   | .ctors L S, .ctors M T =>
     let fixed (p : List (List ι) × List ι) : Arrow (List ι) := ⟨[], p.1, p.2, .unrestricted⟩
@@ -1282,8 +1282,8 @@ Dependency and arrow discovery read the same components as `MeetOpaque`. -/
 
 /-- The pairs a row's coverage compares: its clauses' against the target's,
 and a scheme's signatures against a target scheme's binding the same rows. -/
-@[nospecialize] def demandPairs [DecidableEq ι] (G : NormalGraph ι) (X Y : List ι) : List (List ι × List ι) :=
-  (clausesOf G X).flatMap (fun a => (clausesOf G Y).flatMap (clausePairs G X a)) ++
+@[nospecialize] def demandPairs [DecidableEq ι] (G : NormalGraph ι) (known : Known ι) (X Y : List ι) : List (List ι × List ι) :=
+  (clausesOf G X).flatMap (fun a => (clausesOf G Y).flatMap (clausePairs G known X a)) ++
   (schemeComponents G X).flatMap fun i => (schemeComponents G Y).flatMap fun j => match G.schemes i, G.schemes j with
     | some s, some s' => if s.binders = s'.binders then
         signaturePairs s.signatures s'.signatures ++ restPairs s.variadic s'.variadic else []
@@ -1412,11 +1412,11 @@ through `Var` where it applies, that no inclusion, row or renamed row already
 answers. A pair that reaches no further pair and is not covered by itself
 alone is left out: the deletion would remove it. Refuse at growth or past
 the execution budget. -/
-@[nospecialize] def growTable [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+@[nospecialize] def growTable [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (known : Known ι)
     : Nat → Fallback ι → Table ι → Fallback ι
   | 0, fb, _ => { fb with refused := some .exhausted }
   | fuel + 1, fb, frontier =>
-    let reached (p : List ι × List ι) := demandPairs G p.1 p.2 ++ (match images.sub with
+    let reached (p : List ι × List ι) := demandPairs G known p.1 p.2 ++ (match images.sub with
         | some r => renamedPairs G r p.1 p.2
         | none => [])
     let cand := (frontier.flatMap fun p =>
@@ -1439,7 +1439,7 @@ the execution budget. -/
     | .error why => { fb with refused := some why }
     | .ok (tbl, fresh) =>
       if fresh.isEmpty then { fb with table := tbl }
-      else growTable G images fuel { fb with table := tbl } fresh
+      else growTable G images known fuel { fb with table := tbl } fresh
 
 /-- Delete the rows a table does not cover, premises read in the table
 itself, until every row is covered: the greatest fixed point below the
@@ -1542,6 +1542,10 @@ validator checks recurrence through the guarded rule, at a fixed assignment. -/
   let e := ParameterAssignment.empty .mixed
   let G' := PositiveRules.reassign G e
   let images' := images.reassign e
+  -- Instantiated prototype signatures bring their own receiver and argument
+  -- premises. Discover these before deleting unsupported table rows.
+  let fb := if known.isEmpty then fb else
+    growTable G' images' known images.budget.rounds fb fb.table
   let result :=
     match fb.refused with
     | some .exhausted => .exhausted fb.rounds fb.visited
@@ -1571,9 +1575,10 @@ theorem comparePrepared_sound [DecidableEq ι] {G : NormalGraph ι}
   split at h
   · simp [ComparisonResult.accepted] at h
   · simp [ComparisonResult.accepted] at h
-  · split at h
-    · exact checkStructural_sound (by assumption) hk
-    · simp [ComparisonResult.accepted] at h
+  · split at h <;> split at h
+    all_goals first
+      | exact checkStructural_sound (by assumption) hk
+      | simp [ComparisonResult.accepted] at h
 
 /-- Structural comparison over equations. Identity and validated variance
 share the guarded dependency kernel used by quantified instantiation. -/
@@ -1584,7 +1589,7 @@ share the guarded dependency kernel used by quantified instantiation. -/
   let images' := images.reassign e
   if subsetUsing G' images' S T then .established () else
   comparePrepared G images S T known
-    (growTable G' images' images.budget.rounds { table := [(S, T)] } [(S, T)])
+    (growTable G' images' [] images.budget.rounds { table := [(S, T)] } [(S, T)])
 
 theorem compareStructural_sound [DecidableEq ι] {G : NormalGraph ι}
     {images : InstanceImageCheck G} {S T known}
@@ -1858,7 +1863,7 @@ structural dependencies. Its bound premises use the supplied comparison operatio
     { instantiation := some c, members := dependencies.flatten }
   ComparisonResult.orElseState (root, next) fun prior =>
     let e := ParameterAssignment.empty .mixed
-    let fb := growTable (PositiveRules.reassign G e) (images.reassign e) images.budget.rounds
+    let fb := growTable (PositiveRules.reassign G e) (images.reassign e) [] images.budget.rounds
       { table := [(S, T)] } [(S, T)]
     let (tested, last) := mapResultsState (fun k current =>
       let (checked, next) := compareInstArrsState G images compare [] k.1 k.2.1 k.2.2.1 k.2.2.2 current
@@ -1889,7 +1894,7 @@ theorem compareStepState_sound [DecidableEq ι] {G : NormalGraph ι} {images : I
       rw [selection]
       exact root
     · let e : MixedAssignment ι := ParameterAssignment.empty .mixed
-      let fb := growTable (PositiveRules.reassign G e) (images.reassign e) images.budget.rounds
+      let fb := growTable (PositiveRules.reassign G e) (images.reassign e) [] images.budget.rounds
         { table := [(S, T)] } [(S, T)]
       let checkMember (k : KnownInstance ι) (current : σ) :=
         let (checked, next) := compareInstArrsState G images compare [] k.1 k.2.1 k.2.2.1 k.2.2.2 current

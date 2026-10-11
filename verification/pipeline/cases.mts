@@ -47,6 +47,11 @@ const gap = (
   diagnostic: RegExp,
 ): Case => ({ file, area, kind: "gap", status, phase, diagnostic });
 export const cases: Case[] = [
+  positive("generic-prototype-instanceof", "Shared prototype methods quantify bounded class parameters across construction, ordinary, generic and deferred consumers"),
+  positive("generic-prototype-record-bound", "Shared prototype methods preserve record bounds and named bounds across consumers"),
+  positive("class-record-bound", "A class's record bound is preserved through construction and its method result"),
+  negative("invalid-generic-prototype-record-bound", "A record bound does not erase the instance's additional required fields", /no derivation of its node-typing claim/),
+  negative("invalid-generic-prototype-instanceof", "A prototype test preserves the instance's method argument contract", /no derivation of its node-typing claim/),
   positive("generic-callable-bound", "Generic identities satisfy a monomorphic callable bound, with preserving and captured-write effects"),
   negative("invalid-generic-callable-bound", "A generic callback retains the callable bound's result contract", /no derivation of its node-typing claim/),
   positive("generic-bound-covariance", "Generic method bounds use the same checked Promise covariance as ordinary widening"),

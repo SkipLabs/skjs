@@ -1331,11 +1331,20 @@ prototype-member instantiation choices. Each choice includes its substitution
 images, type arguments, domain and free-variable information. The checker
 validates an instance before using it.
 
+The producer infers prototype-member instances with either the source or
+target host as receiver. It also infers from arguments and results alone,
+then substitutes the resulting arguments into the complete signature; this
+supplies an inherited method's base receiver. A binder occurring through a
+meet can take the entire matched meet as its candidate argument. Each path
+proposes an instance to the same image and bound checks; method coverage
+checks the actual host against the instantiated receiver. Dependency discovery
+includes the receiver, argument and result premises of those checked instances
+before pruning its candidate relation.
+
 The common operation selects among the rules of
 [RECURSIVE-EQUATIONS §4](RECURSIVE-EQUATIONS.md#4-subtyping): identity,
 validated variance, quantified instantiation and guarded structural coverage.
-It discovers comparison dependencies once per invocation and validates the
-resulting family justification. Evidence production supplies candidate instances
+It validates the resulting family justification. Evidence production supplies candidate instances
 to that operation; evidence checking supplies the recorded choices.
 
 A checked certificate is a semantic inclusion:

@@ -434,7 +434,14 @@ partial def rowBody (n : Nat) : M (GraphRow Tree (List Tree)) := do
     (P.own[n]!.zipIdx.map fun (name, j) => (name, (⟨false, [.local j]⟩ : Binding))) ++
     (P.free[n]!.zipIdx.map fun (name, i) => (name, (⟨false, [.argument i]⟩ : Binding)))
   let row := P.rows[n]!
-  let lowered ← row.operands.mapM fun A => do return (A, ← claimUnion scope (.arr A.toArray))
+  -- Only type operands are unions. Scheme binder lists and bound pairs
+  -- carry binding structure, so their enumeration is not a union spelling.
+  let operands : List (List Json) := match row with
+    | .clauses cs => cs.flatMap Clause.operands
+    | .scheme _ sigs bounds rests _ =>
+      sigs.flatMap Arrow.operands ++ bounds.map (·.2) ++ rests.flatMap RestArrow.operands
+    | .param .. | .meet .. => [] -- producerRows refuses these row kinds.
+  let lowered ← operands.mapM fun A => do return (A, ← claimUnion scope (.arr A.toArray))
   let own := P.own[n]!
   let binder (b : Json) : Tree := match (b.getObjValAs? String "binder").toOption.bind own.idxOf? with
     | some j => .local j

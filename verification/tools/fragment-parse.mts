@@ -813,6 +813,26 @@ class Gate {
     this.selfClass = instanceMembers;
     try {
       const methods: BindingAst[] = [];
+      // A prototype is shared by every class instantiation. Its method
+      // closures quantify the class parameters within their own contracts.
+      const method = (member: MethodDeclaration, key: PropertyKey): Expr => {
+        // Methods with their own binders require partial instantiation and
+        // retain unit-scoped class binders.
+        if (!typeParams.length || member.typeParameters?.length)
+          return this.lambda(member, instance, key);
+        const parameters = this.enterTypeParams(node.typeParameters,
+          (_tp, index) => `${name.text}.${JSON.stringify(key)}#class${index}`);
+        try {
+          const receiver: TypeTerm = { ...instance,
+            args: parameters.map((p, i) => ({ k: "binder", name: p.name,
+              span: this.span(binders[i].name) })) };
+          const closure = this.lambda(member, receiver, key);
+          if (closure.k !== "lambda") throw new Error("a method lowers to a closure");
+          return { ...closure, typeParams: [...parameters, ...closure.typeParams] };
+        } finally {
+          this.leaveTypeParams();
+        }
+      };
       if ((base || extended) && node.members.some((m) => {
         const memberName = nameOf(m);
         return !!memberName && ts.isPrivateIdentifier(memberName);
@@ -991,7 +1011,7 @@ class Gate {
               this.fail(member, GENERATOR);
             const binding = `${name.text}.[symbol ${symbol}]`;
             methods.push({ name: binding, namePos: this.span(member.name), annot: null,
-              init: this.lambda(member, instance, { symbol }) });
+              init: method(member, { symbol }) });
             prototype.push({ name: { symbol }, e: { k: "id", pos: this.span(member.name), name: binding } });
             continue;
           }
@@ -1001,7 +1021,7 @@ class Gate {
           if (!ts.isIdentifier(member.name) && !ts.isPrivateIdentifier(member.name))
             this.fail(member, unnamedMember(member, false));
           methods.push({ name: `${name.text}.${member.name.text}`, namePos: this.span(member.name),
-            annot: null, init: this.lambda(member, instance, this.memberKey(member.name)) });
+            annot: null, init: method(member, this.memberKey(member.name)) });
           if (ts.isIdentifier(member.name))
             methodBindings.set(member.name.text, `${name.text}.${member.name.text}`);
           prototype.push({ name: this.memberKey(member.name),

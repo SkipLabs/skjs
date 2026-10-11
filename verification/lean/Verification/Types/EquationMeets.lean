@@ -147,26 +147,27 @@ theorem Equations.meet_denote (equations : Equations)
   cases hr : meetRigid rows with
   | nil =>
     have hrow' : equations.row ⟨.meet ps, valid⟩ =
-        .clauses ((meetAll (meetClauseLists rows)).filter Clause.isValue) := by
+        .clauses ((meetAll ((meetClauseLists rows).eraseDups)).filter Clause.isValue) := by
       rw [hrow]; simp only [meetRowOf]; rw [hr]
     obtain ⟨hplain, hG⟩ := equations.graph_clauses hrow'
     rw [mixed_unfold_plain η hplain, hG, setSem_filter_value, setSem_meetAll]
     simp
   | cons p rs =>
-    have hrow' : equations.row ⟨.meet ps, valid⟩ = .meet p (meetAll (meetClauseLists rows)) rs := by
+    have hrow' : equations.row ⟨.meet ps, valid⟩ = .meet p (meetAll ((meetClauseLists rows).eraseDups)) rs := by
       rw [hrow]; simp only [meetRowOf]; rw [hr]
     have hm : equations.graph.meetRow ⟨.meet ps, valid⟩ = true := by
       simp [NormalGraph.meetRow, NormalGraph.params, Equations.graph, NormalGraph.ofRowMap, hrow']
     rw [meet_row_iff hm]
     have hparts' : meetParts equations.graph ⟨.meet ps, valid⟩ = p :: rs := by
       simp [meetParts, Equations.graph, NormalGraph.ofRowMap, hrow']
-    have hcl : meetClauses equations.graph ⟨.meet ps, valid⟩ = meetAll (meetClauseLists rows) := by
+    have hcl : meetClauses equations.graph ⟨.meet ps, valid⟩ = meetAll ((meetClauseLists rows).eraseDups) := by
       simp [meetClauses, Equations.graph, NormalGraph.ofRowMap, hrow']
     rw [hparts', hcl]
     have hs := setSem_meetAll equations.graph (realmValues equations.graph)
-      (mixedValues equations.graph η) (mixedArgs equations.graph η) (meetClauseLists rows) n W v
+      (mixedValues equations.graph η) (mixedArgs equations.graph η) ((meetClauseLists rows).eraseDups) n W v
     change _ ∧ setSem (mixedSem equations.graph η) _ n W v ↔ _
     rw [hs]
+    simp only [List.mem_eraseDups]
     constructor
     · rintro ⟨h1, h2, h3⟩; exact ⟨h2, h1, h3⟩
     · rintro ⟨h2, h1, h3⟩; exact ⟨h1, h2, h3⟩
@@ -198,7 +199,7 @@ theorem Equations.meet_noArguments (equations : Equations)
   cases hr : meetRigid rows with
   | nil =>
     have hrow' : equations.row ⟨.meet ps, valid⟩ =
-        .clauses ((meetAll (meetClauseLists rows)).filter Clause.isValue) := by
+        .clauses ((meetAll ((meetClauseLists rows).eraseDups)).filter Clause.isValue) := by
       rw [hrow]; simp only [meetRowOf]; rw [hr]
     simp only [Equations.graph, NormalGraph.ofRowMap, hrow', reduceCtorEq, ite_false,
       NormalGraph.clauses, NormalGraph.plain, NormalGraph.params, GraphRow.union] at h
@@ -207,7 +208,7 @@ theorem Equations.meet_noArguments (equations : Equations)
       List.mem_filter] at hc
     cases c <;> simp_all [Clause.isValue, clauseArguments]
   | cons p rs =>
-    have hrow' : equations.row ⟨.meet ps, valid⟩ = .meet p (meetAll (meetClauseLists rows)) rs := by
+    have hrow' : equations.row ⟨.meet ps, valid⟩ = .meet p (meetAll ((meetClauseLists rows).eraseDups)) rs := by
       rw [hrow]; simp only [meetRowOf]; rw [hr]
     simp [Equations.graph, NormalGraph.ofRowMap, hrow', NormalGraph.clauses, NormalGraph.plain,
       NormalGraph.params] at h
@@ -217,7 +218,7 @@ theorem mixedMeaning_single_value (G : NormalGraph ι) (η : MixedAssignment ι)
   simp [mixedMeaning, mixedParameters, setSem]
 
 /-- **A canonical meet means the intersection of its operands' values**:
-flattening a part that is itself a meet and sorting keep the intersection. -/
+flattening nested meets, sorting and deduplicating keep the intersection. -/
 theorem Equations.meetOf_denote (equations : Equations)
     (η : MixedAssignment (Label equations.signature)) (c : List (Label equations.signature)) {n W v} :
     qDenoteWithArgs equations.graph (mixedParameters equations.graph) (η, Label.meetOf c) n W v ↔
@@ -231,14 +232,14 @@ theorem Equations.meetOf_denote (equations : Equations)
     cases t with
     | meet ps' =>
       refine (equations.meet_denote η ps' vt).mpr ⟨hv, fun q hq => h q ?_⟩
-      rw [Types.mem_labels, Types.toList_ofList, List.mem_mergeSort]
+      rw [Types.mem_labels, Types.toList_ofList, List.mem_eraseDups, List.mem_mergeSort]
       exact List.mem_flatMap.mpr ⟨_, List.mem_map.mpr ⟨_, hL, rfl⟩, Types.mem_labels.mp hq⟩
     | _ =>
       refine h _ ?_
-      rw [Types.mem_labels, Types.toList_ofList, List.mem_mergeSort]
+      rw [Types.mem_labels, Types.toList_ofList, List.mem_eraseDups, List.mem_mergeSort]
       exact List.mem_flatMap.mpr ⟨_, List.mem_map.mpr ⟨_, hL, rfl⟩, by simp [Tree.meetParts]⟩
   · intro h q hq
-    rw [Types.mem_labels, Types.toList_ofList, List.mem_mergeSort] at hq
+    rw [Types.mem_labels, Types.toList_ofList, List.mem_eraseDups, List.mem_mergeSort] at hq
     obtain ⟨_, hL, hu⟩ := List.mem_flatMap.mp hq
     obtain ⟨L, hLc, rfl⟩ := List.mem_map.mp hL
     rcases L with ⟨t, vt⟩

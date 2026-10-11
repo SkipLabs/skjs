@@ -549,6 +549,15 @@ lemma carries over.
 
 ## 8. Mechanization
 
+Intersection trees flatten nested intersections, sort their operands and remove
+repeated operands; row construction also removes repeated clause lists from
+differently named operands. The intersection wrapper remains for a single operand,
+since an intersection contains values only and its operand may also denote
+argument lists. `Equations.meetOf_denote` in
+[EquationMeets.lean](lean/Verification/Types/EquationMeets.lean) proves that this
+normalization preserves the intersection's value meaning; `meet_noArguments`
+proves its exclusion of argument lists.
+
 The Lean development represents a bound variable by the application that
 introduces it. The `β` of the `then` of `Promise⟨number⟩` is a distinct term
 from the `β` of the `then` of `Promise⟨string⟩`, so capture-avoidance holds

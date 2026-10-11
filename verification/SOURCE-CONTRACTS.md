@@ -604,15 +604,31 @@ derived class's constructor is the [derived form](SOURCE-ELABORATION.md#derived-
 this one; an override must be sound, since the derived class's declared type
 is its own members and its base's.
 
-A generic class's binders are its declaring unit's parameter rows, one per
+A generic class's constructor uses its declaring unit's parameter rows, one per
 spelling, so a generic class may extend a generic base exactly at the base's
 own binders, which it declares too: `class D<T> extends B<T>`. The base's
-construction, fields and methods are then at the rows the derived class's
-are, and the derived form is the non-generic one. Its instance type
+construction uses the derived constructor's parameter rows, and the derived
+form is the non-generic one. Its instance type
 $`D\langle T\rangle`$ is its application row, as a class with methods is,
 holding its own members met with those of $`B\langle T\rangle`$'s row. A base at
 other arguments (`extends B<number>`) is refused: its construction would have
 to be instantiated there.
+
+An instance method without its own type parameters quantifies the class binders
+in its closure, retaining each class parameter's bound.
+For example, `Cell<T>.put(value: T)` has the prototype contract
+`put: <A>(this: Cell<A>, value: A) => void`. When all methods use these
+contracts, the shared prototype's storage contract is closed; each receiver
+uses a checked instance of its method's contract. Bounds remain on the
+quantified signature, and a bounded binder's occurrences denote its
+intersection with its bound. The method body is checked
+under its own binders, including its receiver, parameters and result.
+
+Methods with their own type parameters use unit-scoped class binders.
+Exporting such a prototype to an unrelated unit can leave an unbound class
+parameter and is refused; that export requires partial method instantiation.
+A method scheme whose class bounds depend on its own quantified parameters
+is refused by the generic-contract boundary.
 
 ## Library types
 

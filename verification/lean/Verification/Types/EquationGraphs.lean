@@ -275,11 +275,11 @@ theorem Types.scoped_append (xs ys : Types)
     exact Bool.and_eq_true_iff.mpr ⟨h1, scoped_append xs ys h2 hy⟩
 
 /-- The canonical meet of trees (RECURSIVE-EQUATIONS §3.3): a part that is
-itself a meet is flattened, and the parts are sorted. Equal parts are kept:
-the kernel does not know a part's kind, and dropping a repeated part would
-turn `meet(L, L)` into `L`, which also admits `L`'s argument lists. -/
+itself a meet is flattened, and the parts are sorted and deduplicated.
+The meet wrapper remains even for one part: `meet(L)` contains only values,
+whereas `L` may also admit argument lists. -/
 def canonMeet (ts : List Tree) : Tree :=
-  .meet (Types.ofList ((ts.flatMap Tree.meetParts).mergeSort fun a b => compare a b != .gt))
+  .meet (Types.ofList ((ts.flatMap Tree.meetParts).mergeSort fun a b => compare a b != .gt).eraseDups)
 
 /-- Every choice of one member from each list, in order: distribution of a
 meet over unions. -/
@@ -355,10 +355,10 @@ theorem Tree.scoped_canonMeet (ts : List Tree) (h : ∀ t ∈ ts, t.scoped sig p
       subst hu
       exact ⟨h _ ht, rfl⟩
   simp only [canonMeet, Tree.scoped, Bool.and_eq_true, Types.toList_ofList, List.all_eq_true,
-    List.mem_mergeSort, Bool.not_eq_true']
+    List.mem_eraseDups, List.mem_mergeSort, Bool.not_eq_true']
   refine ⟨Types.scoped_ofList'.mpr fun u hu => ?_, fun u hu => ?_⟩
   all_goals
-    obtain ⟨t, ht, hu⟩ := List.mem_flatMap.mp (by simpa only [List.mem_mergeSort] using hu)
+    obtain ⟨t, ht, hu⟩ := List.mem_flatMap.mp (by simpa only [List.mem_eraseDups, List.mem_mergeSort] using hu)
     first | exact (parts t ht u hu).1 | exact (parts t ht u hu).2
 
 abbrev ClosedTypes (sig : Signature) := { ts : Types // ts.scoped sig 0 0 = true }
@@ -721,10 +721,10 @@ theorem meet_partition (parts : List (ι × GraphRow ι)) (P : ι → Prop)
 normalized conjunction of its clause parts' clauses, within its parameter and
 scheme parts when it has any. A meet means values only: without such parts,
 argument-list clauses are left out. -/
-def meetRowOf (parts : List (ι × GraphRow ι)) : GraphRow ι :=
+def meetRowOf [DecidableEq ι] (parts : List (ι × GraphRow ι)) : GraphRow ι :=
   match meetRigid parts with
-  | [] => .clauses ((meetAll (meetClauseLists parts)).filter Clause.isValue)
-  | p :: ps => .meet p (meetAll (meetClauseLists parts)) ps
+  | [] => .clauses ((meetAll ((meetClauseLists parts).eraseDups)).filter Clause.isValue)
+  | p :: ps => .meet p (meetAll ((meetClauseLists parts).eraseDups)) ps
 
 /-- A label's row: a meet's is computed from its parts' rows, read at the
 same level; no part is a meet, so this is one step, not a recursion. -/

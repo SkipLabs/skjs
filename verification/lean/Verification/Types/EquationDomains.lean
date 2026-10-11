@@ -47,7 +47,7 @@ theorem Types.dependencyHeads_of_mem : ∀ {ts : Types} {t : Tree},
 theorem Tree.dependencyHeads_canonMeet {ts : List Tree} {h : Nat}
     (hh : h ∈ (canonMeet ts).dependencyHeads) : ∃ t ∈ ts, h ∈ t.dependencyHeads := by
   simp only [canonMeet, Tree.dependencyHeads, Types.dependencyHeads_ofList,
-    List.mem_flatMap, List.mem_mergeSort] at hh
+    List.mem_flatMap, List.mem_eraseDups, List.mem_mergeSort] at hh
   obtain ⟨u, ⟨t, ht, hu⟩, hh⟩ := hh
   refine ⟨t, ht, ?_⟩
   cases t with
@@ -257,17 +257,17 @@ private theorem Equations.baseRow_within (E : Equations) (H : Nat → Prop)
   · intro ps valid _
     simp [Equations.baseRow, Label.view, GraphRow.operands]
 
-private theorem meetRowOf_within (P : ι → Prop) (rows : List (ι × GraphRow ι))
+private theorem meetRowOf_within [DecidableEq ι] (P : ι → Prop) (rows : List (ι × GraphRow ι))
     (hr : ∀ x ∈ rows, P x.1 ∧ ∀ S ∈ x.2.operands, ∀ q ∈ S, P q) :
     ∀ S ∈ (meetRowOf rows).operands, ∀ q ∈ S, P q := by
   have rigid : ∀ q ∈ meetRigid rows, P q := by
     intro q hq
     obtain ⟨x,hx,rfl⟩ := mem_meetRigid hq
     exact (hr x hx).1
-  have clauses : ∀ c ∈ meetAll (meetClauseLists rows), ∀ S ∈ c.operands, ∀ q ∈ S, P q := by
+  have clauses : ∀ c ∈ meetAll ((meetClauseLists rows).eraseDups), ∀ S ∈ c.operands, ∀ q ∈ S, P q := by
     intro c hc S hS q hq
     obtain ⟨C,hC,d,hd,hSd⟩ := meetAll_operands hc hS
-    obtain ⟨⟨l,r⟩,hrow,he⟩ := mem_meetClauseLists hC
+    obtain ⟨⟨l,r⟩,hrow,he⟩ := mem_meetClauseLists (List.mem_eraseDups.mp hC)
     have hclosed := (hr (l,r) hrow).2
     rw [he] at hclosed
     exact hclosed S (by simpa [GraphRow.operands] using List.mem_flatMap.mpr ⟨d,hd,hSd⟩) q hq

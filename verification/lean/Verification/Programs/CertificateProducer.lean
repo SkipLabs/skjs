@@ -190,15 +190,14 @@ scheme row, its binders standing for the other's. Untrusted:
                 ops.foldlM (fun st S => matchRow G bs V fuel st κ S S) st
               let image (q : ι) := (κ.lookup q).orElse fun _ => if bs.contains q then none else some [q]
               match qs.mapM image, G.meets j with
-              | none, none => some { st with meets := (qs, cs, j) :: st.meets }
-              | none, _ => some st
+              | none, _ => some { st with meets := (qs, cs, j) :: st.meets }
               | some Us, some (r, ds) =>
                 let rs := r :: G.meetParams j
                 if Us.all (fun U => rs.any (U == [·])) ∧ rs.all (fun r => Us.contains [r]) ∧
                     ds.length = cs.length then
                   (cs.zip ds).foldlM (fun st cd => clauses st κ cd.1 cd.2)
                     (add st p [j])
-                else none
+                else if Us.contains [j] then fixed (add st p [j]) else none
               | some _, none => fixed (add st p [j])
             | none =>
               if (G p).length = (G j).length then
@@ -371,7 +370,7 @@ def instanceFuel : Nat := 64
 
 /-- Instances of prototype members a table's rows ask for: for a row whose
 source's prototype chain holds, under a target method's key, a scheme row,
-the instance whose signatures are the method's with the source as receiver. -/
+instances whose signatures are the method's with either host as receiver. -/
 @[nospecialize] def rowInstances [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (fuel : Nat) (table : Table ι) : KnownInstances ι :=
   (table.flatMap fun (A, B) =>
@@ -385,9 +384,29 @@ the instance whose signatures are the method's with the source as receiver. -/
             match PositiveRules.viewOf G P q.key with
             | some [i] => match G.schemes i with
               | some s =>
-                let L := q.calls.map (·.withReceiver A)
-                let M := q.rests.map (·.withReceiver A)
-                (instanceCandidates G images.sub fuel s L M).map fun c => ([i], L, M, c)
+                -- The target host can expose the declaration application
+                -- needed to infer a receiver-dependent scheme instance.
+                -- Coverage still checks the source against that receiver.
+                let hosts := [A, B].eraseDups.flatMap fun receiver =>
+                  let L := q.calls.map (·.withReceiver receiver)
+                  let M := q.rests.map (·.withReceiver receiver)
+                  (instanceCandidates G images.sub fuel s L M).map fun c => ([i], L, M, c)
+                -- Arguments and results can determine an inherited method's
+                -- instance even when its receiver is a proper base type.
+                -- Infer without the receiver, then check the full signatures.
+                let inferred := match images.sub with
+                  | none => []
+                  | some r =>
+                    let shape := { s with
+                      signatures := s.signatures.map (·.withReceiver [])
+                      variadic := s.variadic.map (·.withReceiver []) }
+                    (instanceCandidates G images.sub fuel shape
+                      (q.calls.map (·.withReceiver [])) (q.rests.map (·.withReceiver []))).flatMap fun c =>
+                      let subst := r.substitute (s.binders.zip c.instances)
+                      let L := s.signatures.map (Arrow.map subst)
+                      let M := s.variadic.map (RestArrow.map subst)
+                      (instanceCandidates G images.sub fuel s L M).map fun c => ([i], L, M, c)
+                hosts ++ inferred
               | none => []
             | _ => []
         | none => []

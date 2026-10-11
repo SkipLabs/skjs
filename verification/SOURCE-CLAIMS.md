@@ -49,6 +49,9 @@ one another without expanding them into trees. The first four rows are
 The table also accepts scheme rows for classes' quantified methods, whose
 binders use binder labels; their native graph fields are specified with the
 clause fields below.
+Scheme binders are an ordered binding list. Each bound is a pair of its binder
+and a label list; canonical union order applies to that label list, as it does
+to signature operands. Decoding retains the bound separately from its binder.
 
 Each function object has these fields:
 

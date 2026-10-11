@@ -14,17 +14,17 @@
   "rejected": 2
  },
  "accepted": 2674,
- "verified": 2473,
+ "verified": 2474,
  "byStatus": {
-  "verified (check)": 2473,
-  "unverified (search)": 100,
+  "verified (check)": 2474,
+  "unverified (search)": 99,
   "unsupported (source)": 76,
   "unsupported (proposal)": 25
  },
  "bySuite": {
   "expect-error": {
    "accepted": 2458,
-   "verified": 2259
+   "verified": 2260
   },
   "constprop": {
    "accepted": 66,
@@ -55,7 +55,7 @@
  "filesWithAccepted": 377,
  "functions": {
   "accepted": 2026,
-  "verified": 1843
+  "verified": 1844
  },
  "byGroup": {
   "TypeScript refuses the code too (the pipeline follows TypeScript's types)": {
@@ -208,12 +208,6 @@
    "dependency": 0,
    "files": 1
   },
-  "unclassified: search: reject: Verification.ProgramCertificates.Sequent.context: a label names a binder no unit or closure reads": {
-   "units": 1,
-   "self": 0,
-   "dependency": 0,
-   "files": 1
-  },
   "other source forms": {
    "units": 1,
    "self": 1,
@@ -240,11 +234,11 @@
   }
  },
  "exhausted": 0,
- "reachedButRefused": 100,
+ "reachedButRefused": 99,
  "byClass": {
-  "verified": 2473,
+  "verified": 2474,
   "principled": 88,
-  "gap": 103,
+  "gap": 102,
   "unexplained": 0,
   "skjsUnsound": 10
  },
@@ -445,11 +439,6 @@
    "units": 1,
    "files": 1
   },
-  "unmatched: search: reject: Verification.ProgramCertificates.Sequent.context: a label names a binder no unit or closure reads": {
-   "class": "gap",
-   "units": 1,
-   "files": 1
-  },
   "a contextual `any` parameter": {
    "class": "principled",
    "units": 1,
@@ -512,7 +501,6 @@
   }
  },
  "unmatchedReasons": [
-  "search: reject: Verification.ProgramCertificates.Sequent.context: a label names a binder no unit or closure reads",
   "search: reject: source refusal at _: the declarations required by this unit cannot be interpreted: ViaInter: a base that is a type parameter or an intersection is outsi",
   "search: reject: unsupported source expression at _: strict equality of two operands that may both be values of no known kind, neither a primitive nor an object"
  ],
@@ -566,7 +554,6 @@
   "search: reject: source refusal at _: a scheme claim has no quantified closure in its source": 1,
   "search: reject: a read of a key `in` found in a dictionary: presence promotes an optional field of a record, not the index of a dictionary, so the read is still at the ": 1,
   "search: reject: a spread of a dictionary: the copy owns the keys the dictionary holds when it runs, which no type states: the result is a dictionary only where every pa": 1,
-  "search: reject: Verification.ProgramCertificates.Sequent.context: a label names a binder no unit or closure reads": 1,
   "source: TypeScript types this unannotated closure parameter from its context as `any`, which states no contract": 1,
   "proposal: `unknown` used as an array after `Array.isArray`, read at an element: `Array.isArray(x)`, or `x instanceof Array`, on `unknown` finds that the value owns the st": 1,
   "search: reject: source refusal at _: the declarations required by this unit cannot be interpreted: ViaInter: a base that is a type parameter or an intersection is outsi": 1,
@@ -2122,7 +2109,7 @@
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"observe","kind":"function","line":167,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: `x instanceof C` does not narrow `unknown` to C: an object gets C's prototype without C's constructor running (`Object.create(C.prototype)`, `Object.setPrototyp","group":"in / instanceof / typeof tests","where":"unknown","detail":"unsupported: `x instanceof C` does not narrow `unknown` to C: an object gets C's prototype without C's constructor running (`Object.create(C.prototype)`, `Object.setPrototypeOf`, `Reflect.construct` with C as the new target), so C's prototype on its chain is no evidence of C's fields, and the model ","class":"principled"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"boundedRead","kind":"function","line":174,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: `x instanceof C` does not narrow `unknown` to C: an object gets C's prototype without C's constructor running (`Object.create(C.prototype)`, `Object.setPrototyp","group":"in / instanceof / typeof tests","where":"unknown","detail":"unsupported: `x instanceof C` does not narrow `unknown` to C: an object gets C's prototype without C's constructor running (`Object.create(C.prototype)`, `Object.setPrototypeOf`, `Reflect.construct` with C as the new target), so C's prototype on its chain is no evidence of C's fields, and the model ","class":"principled"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"roundTrip","kind":"function","line":182,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: `x instanceof C` does not narrow `unknown` to C: an object gets C's prototype without C's constructor running (`Object.create(C.prototype)`, `Object.setPrototyp","group":"in / instanceof / typeof tests","where":"unknown","detail":"unsupported: `x instanceof C` does not narrow `unknown` to C: an object gets C's prototype without C's constructor running (`Object.create(C.prototype)`, `Object.setPrototypeOf`, `Reflect.construct` with C as the new target), so C's prototype on its chain is no evidence of C's fields, and the model ","class":"principled"},
-{"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"typedIdentity","kind":"function","line":191,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: Verification.ProgramCertificates.Sequent.context: a label names a binder no unit or closure reads","group":"unclassified: search: reject: Verification.ProgramCertificates.Sequent.context: a label names a binder no unit or closure reads","where":"unknown","detail":"reject: Verification.ProgramCertificates.Sequent.context: a label names a binder no unit or closure reads","class":"gap"},
+{"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"typedIdentity","kind":"function","line":191,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"unionScrutinee","kind":"function","line":200,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"unionObjectArm","kind":"function","line":215,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"crossClassRead","kind":"function","line":227,"skjsMarker":"rejected-self"},

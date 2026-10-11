@@ -84,7 +84,7 @@ theorem Types.free_of_mem : ∀ {ts : Types} {t : Tree}, t ∈ ts.toList → ∀
 /-- A canonical meet's free parameters are its operands'. -/
 theorem Tree.free_canonMeet {ts : List Tree} {p : Tree} (hp : p ∈ (canonMeet ts).free) :
     ∃ t ∈ ts, p ∈ t.free := by
-  simp only [canonMeet, Tree.free, Types.free_ofList, List.mem_flatMap, List.mem_mergeSort] at hp
+  simp only [canonMeet, Tree.free, Types.free_ofList, List.mem_flatMap, List.mem_eraseDups, List.mem_mergeSort] at hp
   obtain ⟨u, ⟨t, ht, hu⟩, hp⟩ := hp
   refine ⟨t, ht, ?_⟩
   cases t with
@@ -409,11 +409,11 @@ theorem Equations.free_support (equations : Equations) :
     have hshape : equations.graph.params ⟨.meet ps, valid⟩ = false ∧
         equations.graph.schemes ⟨.meet ps, valid⟩ = none ∧
         ∀ c ∈ equations.graph ⟨.meet ps, valid⟩ ++ meetClauses equations.graph ⟨.meet ps, valid⟩,
-          c ∈ meetAll (meetClauseLists rows) := by
+          c ∈ meetAll ((meetClauseLists rows).eraseDups) := by
       cases hr : meetRigid rows with
       | nil =>
         have hrow' : equations.row ⟨.meet ps, valid⟩ =
-            .clauses ((meetAll (meetClauseLists rows)).filter Clause.isValue) := by
+            .clauses ((meetAll ((meetClauseLists rows).eraseDups)).filter Clause.isValue) := by
           rw [hrow]; simp only [meetRowOf]; rw [hr]
         obtain ⟨_, hG⟩ := equations.graph_clauses hrow'
         refine ⟨by simp [NormalGraph.params, Equations.graph, NormalGraph.ofRowMap, hrow'],
@@ -423,7 +423,7 @@ theorem Equations.free_support (equations : Equations) :
           Option.getD_none, List.append_nil] at hc
         exact (List.mem_filter.mp hc).1
       | cons p rs =>
-        have hrow' : equations.row ⟨.meet ps, valid⟩ = .meet p (meetAll (meetClauseLists rows)) rs := by
+        have hrow' : equations.row ⟨.meet ps, valid⟩ = .meet p (meetAll ((meetClauseLists rows).eraseDups)) rs := by
           rw [hrow]; simp only [meetRowOf]; rw [hr]
         refine ⟨by simp [NormalGraph.params, Equations.graph, NormalGraph.ofRowMap, hrow'],
           by simp [Equations.graph, NormalGraph.ofRowMap, hrow'], fun c hc => ?_⟩
@@ -436,7 +436,7 @@ theorem Equations.free_support (equations : Equations) :
     obtain ⟨c, hc, hl⟩ := List.mem_flatMap.mp hl
     obtain ⟨S, hS, hlS⟩ := List.mem_flatten.mp hl
     obtain ⟨C, hC, d, hd, hSd⟩ := meetAll_operands (hcl c hc) hS
-    obtain ⟨⟨q, r⟩, hx, hr⟩ := mem_meetClauseLists hC
+    obtain ⟨⟨q, r⟩, hx, hr⟩ := mem_meetClauseLists (List.mem_eraseDups.mp hC)
     simp only at hr
     subst hr
     obtain ⟨q', hq', he⟩ := List.mem_map.mp hx
@@ -472,11 +472,11 @@ theorem Equations.free_support (equations : Equations) :
       cases hr : meetRigid rows with
       | nil =>
         have hrow' : equations.row ⟨.meet ps, valid⟩ =
-            .clauses ((meetAll (meetClauseLists rows)).filter Clause.isValue) := by
+            .clauses ((meetAll ((meetClauseLists rows).eraseDups)).filter Clause.isValue) := by
           rw [hrow]; simp only [meetRowOf]; rw [hr]
         simp [meetParts, Equations.graph, NormalGraph.ofRowMap, hrow'] at hq
       | cons p rs =>
-        have hrow' : equations.row ⟨.meet ps, valid⟩ = .meet p (meetAll (meetClauseLists rows)) rs := by
+        have hrow' : equations.row ⟨.meet ps, valid⟩ = .meet p (meetAll ((meetClauseLists rows).eraseDups)) rs := by
           rw [hrow]; simp only [meetRowOf]; rw [hr]
         have hmem : q ∈ meetRigid rows := by
           rw [hr]
