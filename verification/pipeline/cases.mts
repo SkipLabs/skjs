@@ -853,6 +853,8 @@ export const cases: Case[] = [
   positive("objects", "a write through an alias of a fresh two-field literal is read back through the original binding; a write to one field of a parameter object leaves another field read at its contract"),
   negative("invalid-write", "a write through a `const` alias of an object, outside the field's contract"),
   negative("invalid-array-write", "an element write of a string into a `number[]`"),
+  positive("readonly-index-inference", "Generic inference preserves named fields through a readonly recursive index bound, including nested objects"),
+  negative("invalid-readonly-index-inference", "A precise object candidate must satisfy its recursive index bound", /quantified call does not satisfy the closure's bound/),
   positive("generic-structural-bounds", "Structural bounds retain parameters through member reads, writes, chained bounds and generic closures"),
   negative("invalid-generic-structural-bound-write", "A structural bound preserves the field's parameter contract", /source expression obligation at \[149,163\): evidence search failed/),
   positive("generic-dependent-bounds", "a binder bounded by another is the meet of the two parameter rows, within the other's bound: below the other binder and below its bound; a generic class with a dependent bound constructed at an instance"),

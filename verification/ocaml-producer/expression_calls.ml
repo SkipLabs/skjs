@@ -6,6 +6,7 @@ open Proposal_diagnostics
 module type Inputs = sig
   include Expression_support.Inputs
   include Analysis_capabilities.Path_queries
+  include Analysis_capabilities.Exact_allocations
   include Analysis_capabilities.Offer_operations
   include Analysis_capabilities.Evolution
   include Analysis_capabilities.Instance_publication
@@ -375,13 +376,26 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
           | Some p,None when (match arg.node with ArrayLiteral _ -> true | _ -> false)
                               && literal_bounds p <> None ->
             expr ?expected:(literal_bounds p) env arg
-          (* An object literal at a binder bounded by a union with one
-             dictionary arm, `T extends Json`, is built at that arm, with
-             its exact keys, as a record held in a variable could not be:
-             TypeScript checks the fresh literal against the constraint. *)
+          (* A dictionary bound guides a fresh literal's construction.
+             Readonly bounds admit precise field contracts; writable bounds
+             supply the index's storage contract. *)
           | Some p,None when (match arg.node with Alloc _ -> true | _ -> false)
                               && dictionary_bound p <> None ->
-            expr ?expected:(dictionary_bound p) env arg
+            (match dictionary_bound p with
+             | Some bound ->
+               (match object_hint declarations [] bound with
+                | Some shape when shape.fields = [] && List.for_all (fun (i:Semantic.index_signature) -> i.writable = None) shape.indexes ->
+                  (* A read-only bound constrains the argument's view. Infer
+                     fresh literal storage from its values, retaining exact
+                     keys so Lean can check the bound independently. *)
+                  let rec exact_literals (e:expr) = match e.node with
+                    | Alloc fs -> mark_exact e; List.iter (fun (_,v) -> exact_literals v) fs
+                    | ArrayLiteral es -> List.iter exact_literals es
+                    | _ -> () in
+                  exact_literals arg;
+                  expr env arg
+                | _ -> expr ~expected:bound env arg)
+             | None -> expr env arg)
           | p,_ ->
             (match arg.node with Id n -> explain_open_array arg.pos env n p | _ -> ());
             expr env arg]) args) @

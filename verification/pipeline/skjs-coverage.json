@@ -14,17 +14,17 @@
   "rejected": 2
  },
  "accepted": 2674,
- "verified": 2478,
+ "verified": 2479,
  "byStatus": {
-  "verified (check)": 2478,
+  "verified (check)": 2479,
   "unverified (search)": 98,
   "unsupported (source)": 73,
-  "unsupported (proposal)": 25
+  "unsupported (proposal)": 24
  },
  "bySuite": {
   "expect-error": {
    "accepted": 2458,
-   "verified": 2264
+   "verified": 2265
   },
   "constprop": {
    "accepted": 66,
@@ -51,11 +51,11 @@
    "verified": 8
   }
  },
- "filesAllVerified": 298,
+ "filesAllVerified": 299,
  "filesWithAccepted": 377,
  "functions": {
   "accepted": 2026,
-  "verified": 1848
+  "verified": 1849
  },
  "byGroup": {
   "TypeScript refuses the code too (the pipeline follows TypeScript's types)": {
@@ -178,12 +178,6 @@
    "dependency": 0,
    "files": 2
   },
-  "reads on unions/primitives (field/index read on non-object, string keys)": {
-   "units": 2,
-   "self": 1,
-   "dependency": 0,
-   "files": 2
-  },
   "dictionaries: a spread of one, a key `in` found in one": {
    "units": 2,
    "self": 2,
@@ -197,6 +191,12 @@
    "files": 1
   },
   "compound and update assignments (x++, ||=, ??=, a[i] op=)": {
+   "units": 1,
+   "self": 1,
+   "dependency": 0,
+   "files": 1
+  },
+  "reads on unions/primitives (field/index read on non-object, string keys)": {
    "units": 1,
    "self": 1,
    "dependency": 0,
@@ -236,9 +236,9 @@
  "exhausted": 0,
  "reachedButRefused": 98,
  "byClass": {
-  "verified": 2478,
+  "verified": 2479,
   "principled": 88,
-  "gap": 98,
+  "gap": 97,
   "unexplained": 0,
   "skjsUnsound": 10
  },
@@ -374,11 +374,6 @@
    "units": 2,
    "files": 2
   },
-  "reads the producer holds on no object": {
-   "class": "gap",
-   "units": 2,
-   "files": 2
-  },
   "absent-key and dictionary presence facts": {
    "class": "gap",
    "units": 2,
@@ -426,6 +421,11 @@
   },
   "a base class from outside the file": {
    "class": "principled",
+   "units": 1,
+   "files": 1
+  },
+  "reads the producer holds on no object": {
+   "class": "gap",
    "units": 1,
    "files": 1
   },
@@ -523,7 +523,6 @@
   "source: an iterable whose iterator's type states no `return` is outside the fragment here: a loop left early, or a throw out of its body, calls the iterator's `return` ": 3,
   "search: reject: source refusal at _: the declarations required by this unit cannot be interpreted: /functions/0/params/0/type: the intersection is empty: its operands h": 2,
   "search: reject: a relational comparison of operands that may not both be numbers or both strings: `<` converts such an operand to a number or a string first (`undefined": 2,
-  "proposal: field read on non-object": 2,
   "search: reject: a `typeof x === \"_\"` test on a value of a type parameter or `unknown`: the values of that shape are the meet of the type parameter with it (`T & number`": 2,
   "source: array literal spreads and holes are outside the fragment": 2,
   "source: a well-known symbol key other than `Symbol.iterator` is outside the fragment: it changes how the host treats the object, which the model does not state, and `Sy": 2,
@@ -542,6 +541,7 @@
   "source: generic constructor types are outside the fragment": 1,
   "source: an array assignment pattern writing other than a local is outside the fragment: a field target's reference is evaluated before its position is read and defaulte": 1,
   "search: reject: source refusal at _: position 1 is past the positions of a mutable tuple, which `push` may have extended with a value its type does not state there (Typ": 1,
+  "proposal: field read on non-object": 1,
   "source: an ambient enum is outside the fragment: its object is the environment's, whose members a declaration need not all value, and the declaration reader has no ambi": 1,
   "search: reject: an optional key found `undefined`, read at `undefined`: the key may be absent, and a read of an absent key is stated by no clause the model reads": 1,
   "search: reject: source refusal at _: a scheme claim has no quantified closure in its source": 1,
@@ -3930,7 +3930,7 @@
 {"source":"tests/expect-error/tvar-widening-in-constraint-check.ts","name":"check_tw","kind":"function","line":19,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/tvar-widening-in-constraint-check.ts","name":"checkJson_tw","kind":"function","line":22,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/tvar-widening-in-constraint-check.ts","name":"testTvarWidening","kind":"function","line":26,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/tvar-widening-in-constraint-check.ts","name":"testObjectFieldTvarWidening","kind":"function","line":32,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: field read on non-object","group":"reads on unions/primitives (field/index read on non-object, string keys)","where":"unknown","detail":"unsupported: field read on non-object","class":"gap"},
+{"source":"tests/expect-error/tvar-widening-in-constraint-check.ts","name":"testObjectFieldTvarWidening","kind":"function","line":32,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/tvar-widening-ordinary-check.ts","name":"id_oc","kind":"function","line":13,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/tvar-widening-ordinary-check.ts","name":"g_oc","kind":"function","line":16,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/tvar-widening-ordinary-check.ts","name":"gObj_oc","kind":"function","line":17,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},

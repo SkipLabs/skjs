@@ -494,32 +494,11 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) ?(native = fun _ -> fals
   let primitive = function
     | Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Bigint | BigintLit _ -> true
     | _ -> false in
-  (* An array of any length whose elements are primitives. *)
-  let plain_array = function
-    | Shape {elements=Some {required=[];optional_elements=[];rest=Some (Atoms xs);_};
-             fields=[];calls=[];indexes=[]} -> List.for_all primitive xs
-    | _ -> false in
-  (* Whether a declared bound has an arm that is an array of any length,
-     through its declarations. *)
-  let rec has_arm ?(depth=0) arm t = depth < 4 && match t with
-    | Atoms atoms -> List.exists (function
-        | Named _ as a -> (match expand (Atoms [a]) with
-          | Some e -> has_arm ~depth:(depth+1) arm e
-          | None -> false)
-        | a -> arm a) atoms
-    | Union ts -> List.exists (has_arm ~depth:(depth+1) arm) ts
-    | _ -> false in
-  let has_plain_array = has_arm (function Shape {elements=Some {rest=Some _;_};_} -> true | _ -> false) in
-  (* A tuple: an array of fixed positions. *)
-  let tuple = function
-    | Shape {elements=Some {rest=None;_};fields=[];calls=[];indexes=[]} -> true
-    | _ -> false in
   let substitution = List.map (fun v ->
-    (* A variable below and above one type, as an invariant position makes
-       it, is that type. Otherwise a graph bound is a legal (possibly less
-       precise) instantiation for every value below it. Choosing it is only a
-       proposal: Lean checks both the concrete argument against the
-       instantiated parameter and the substitution against every bound. *)
+    (* Prefer the join of argument lower bounds, retaining the actuals' named
+       fields and element contracts. Every declared upper remains a separate
+       obligation checked by Lean. An upper-only variable uses its graph bound
+       when one is available. *)
     let declared_upper = List.find_opt (function
       | Atoms [Named (_,[])] -> true | _ -> false) v.upper in
     let candidate = match join v.lower,declared_upper with
@@ -533,18 +512,8 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) ?(native = fun _ -> fals
                      | Num,NumLit _ | Str,StrLit _ | Bigint,BigintLit _ -> true
                      | _ -> false) ys) xs
                | _ -> false) v.upper -> upper_candidate v.upper
-      | Some t,_ when List.mem t v.upper -> Some t
-      (* Primitives below a declared bound: the binder is what they are, as
-         TypeScript infers it, not the bound (`Y extends boolean | string`
-         at "hello" is "hello"), and so are arrays of primitives
-         (`S extends number[] | string` at `[1, 2, 3]` is `number[]`), and
-         tuples below a bound with a tuple arm (`S extends [number, number]
-         | string` at `[1, 2]` is `[number, number]`). *)
-      | Some (Atoms atoms as t),Some bound when atoms <> [] && List.for_all (fun a ->
-          primitive a || (plain_array a && has_plain_array bound)
-          || (tuple a && has_arm tuple bound)) atoms -> Some t
-      | _,(Some _ as chosen) -> chosen
-      | (Some _ as chosen),None -> chosen
+      | (Some _ as chosen),_ -> chosen
+      | None,(Some _ as chosen) -> chosen
       | None,None -> upper_candidate v.upper in
     (* Literals inferred for an unbounded binder that the result does not
        return bare widen, as TypeScript widens such a binder's literal

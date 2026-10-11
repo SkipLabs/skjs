@@ -223,8 +223,11 @@ exercise fixed, fallback and mixed arguments; the
 requires rejection when neither the fixed arm nor the fallback's bound admits
 the argument.
 
-Candidate selection joins lower bounds and uses representable intersections
-of upper bounds. It considers declared bounds and defaults. An unconstrained
+Candidate selection prefers the join of argument lower bounds. A named upper
+bound supplies a candidate when no lower bound exists; other upper-only
+candidates use representable intersections. Explicit literal bounds can retain
+their literal alternatives during contextual widening. Declared bounds and
+defaults remain part of candidate selection. An unconstrained
 parameter without a usable candidate is proposed as `unknown`. Literal
 candidates for an unbounded parameter can widen when the result does not return
 that parameter directly: `box(42)` can infer `Box<number>`, while `id(42)` retains
@@ -232,6 +235,11 @@ that parameter directly: `box(42)` can infer `Box<number>`, while `id(42)` retai
 expected result places on a resolution-qualified parameter's observation or
 result: an async `return "hello"` at `Promise<"hello">` retains `"hello"`.
 A tuple arm of a bound can supply a contextual type for an array literal.
+An object literal passed to a parameter bounded by a readonly dictionary
+with no named members is inferred from its values with exact keys, including nested object literals.
+Its declared bound is a separate read-view obligation; it supplies no storage
+contract. Explicit annotations, named members and writable dictionary bounds retain
+their contextual storage contracts.
 These are inference choices; Lean checks the full instantiated contract.
 
 Value types and argument packs have separate OCaml representations. A pack
