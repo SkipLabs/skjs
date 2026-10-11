@@ -5,14 +5,15 @@ How much of what SKJS accepts in its own test suite the pipeline
 stops the rest, and where the two disagree because SKJS is wrong.
 
 Measurement checkpoint: October 9, 2026 (full coverage run with SKJS
-confirmation).
+confirmation). Classification review: October 11, 2026.
+The reviewed nested-promise search failure is classified by its unit and
+exact obligation.
 
 **2,467 of 2,674 SKJS-accepted units verify (92.3%); 1,837 of 2,026
 accepted functions (90.7%).** 294 of the 377 files with an accepted unit
-verify entirely. There are 87 principled refusals, 10 registered SKJS-unsound
+verify entirely. There are 88 principled refusals, 10 registered SKJS-unsound
 units, 108 gaps (8 of them under reasons no class entry matches,
-`summary.unmatchedReasons`) and 2 refusals the automatic classifier leaves
-unexplained.
+`summary.unmatchedReasons`) and one unexplained refusal.
 
 `mapArr` and `testMapCallback` fail at the native call: an arbitrary
 one-argument callback supplies no contract for the three actuals `map` passes.
@@ -80,7 +81,7 @@ interfaces, ambient declarations, other functions, overload signatures). A
 unit is marker-accepted when no statement of that closure has an error line
 (1,364 units are rejected themselves, 70 through a dependency).
 
-**SKJS confirmation.** SKJS (`check --import-stubs import-stubs`, default
+**SKJS confirmation (October 9).** SKJS (`check --import-stubs import-stubs`, default
 truthiness, as the harness runs it) is run once over all 2,676 derived files of
 marker-accepted units. It rejects 2: two `*-prettier-ignore.ts` files whose
 expected *parse* errors the markers attribute to the wrong statement. They are
@@ -98,7 +99,7 @@ assumptions of the result, as an import's are
 ([trust surface](../DESIGN.md#trust-surface)).
 
 **Pipeline.** Each derived file goes through `checkApart` (exactly
-`node verify-source.mts <file> --project <its project>`), 10 at a time, with
+`node verify-source.mts <file> --project <its project>`), 3 at a time, with
 `verify-source.mts`'s 30 s step timeout.
 A unit whose run ends in an infrastructure error (a step timeout, the
 TypeScript service's "context canceled" under load — seen once) is run again
@@ -129,7 +130,9 @@ verifies or is refused for a specific, principled reason. Each accepted unit
 that does not verify is put in one class, by its first blocker's key
 (`class` on its row, `summary.byClass`), through the table `CLASSES` in
 [skjs-coverage.mts](skjs-coverage.mts), one entry per reason with its
-justification; the first entry matching the key decides:
+justification; the first entry matching the key and any unit and diagnostic
+guards decides. A reviewed search failure has both guards, so a changed
+obligation is classified independently of the previous explanation:
 
 - **principled** (P): the pipeline refuses because the construct is unsound,
   not faithful to JavaScript, or rejected by TypeScript itself, or because
@@ -160,8 +163,9 @@ justification; the first entry matching the key decides:
   earlier gap may mask its unsoundness. A unit of that list that verifies is
   reported as a warning.
 
-For an accepted unit $u$ with first blocker key $k(u)$, and `CLASSES` the
-list $(c_1, r_1), \dots, (c_n, r_n)$ of a class and a pattern:
+For an accepted unit $`u`$, let $`r_i(u)`$ mean that entry $`i`$ matches
+its first blocker key and any unit and diagnostic guards, and $`c_i`$ be
+that entry's class:
 
 ```math
 \mathrm{class}(u)=
@@ -169,7 +173,7 @@ list $(c_1, r_1), \dots, (c_n, r_n)$ of a class and a pattern:
 \mathsf{verified} & \text{if } u \text{ verifies}\\
 \mathsf{S} & \text{else if } u \in \texttt{SKJS\_UNSOUND}\\
 \mathsf{U} & \text{else if } u \text{ ended in an error}\\
-c_i & \text{else if } i=\min\{\, j \mid r_j \text{ matches } k(u) \,\}\\
+c_i & \text{else if } i=\min\{\, j \mid r_j(u) \,\}\\
 \mathsf{G} & \text{otherwise}
 \end{cases}
 ```
@@ -203,10 +207,10 @@ blocker's key is given (`summary.byReason` and `summary.byClass` of
 | Class | Units |
 | --- | ---: |
 | verified | 2,467 |
-| principled (P) | 87 |
+| principled (P) | 88 |
 | SKJS unsound (S) | 10 |
 | gap (G) | 108 |
-| unexplained (U) | 2 |
+| unexplained (U) | 1 |
 | **accepted** | **2,674** |
 
 Reason definitions and justifications live in `CLASSES` in

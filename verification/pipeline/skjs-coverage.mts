@@ -550,13 +550,22 @@ function groupOf(key: string): string {
  *   - `skjs-unsound`: a unit of a confirmed SKJS unsoundness family, with a
  *     runtime witness SKJS accepts and node crashes on (SKJS-COVERAGE.md,
  *     "Suspected SKJS unsoundnesses"); its refusal is correct.
- * A reason is classified by its key (the phase-prefixed normalized reason),
- * first match wins. Where the judgement is not clear-cut the entry is a gap
+ * A reason is classified by its key (the phase-prefixed normalized reason)
+ * and any unit and diagnostic guards; first match wins.
+ * Where the judgement is not clear-cut the entry is a gap
  * and `review` says why it could be principled. A key no entry matches is a
  * gap too, listed in `summary.unmatchedReasons`, so a new refusal is seen. */
 type RefusalClass = "principled" | "gap" | "unexplained";
-type ClassEntry = { cls: RefusalClass; label: string; re: RegExp; why: string; review?: string };
+type ClassEntry = { cls: RefusalClass; label: string; re: RegExp; why: string; review?: string;
+  unit?: string; detail?: RegExp };
 const CLASSES: ClassEntry[] = [
+  // Reviewed search failures: require both the unit and its observed obligation.
+  // A different failure in the same unit falls through to the general classifier.
+  { cls: "principled", label: "a nested async return annotation requires a promise fulfillment value",
+    unit: "tests/expect-error/promise-object.ts#testAwaitNested",
+    re: /^search: reject: source expression obligation at _: evidence search failed: no derivation of its return-contract claim$/,
+    detail: /The available claim for return await p; is Promise<number>\. This return requires Promise<Promise<number>>\.$/,
+    why: "fresh async resolution adopts the returned promise and fulfills with number; Promise<Promise<number>> requires a promise payload under SOURCE-CONTRACTS, Async functions and await" },
   { cls: "gap", label: "a generic contract cannot be represented in full", re: /generic contract (?:at|:)/,
     why: "dependent bounds, mixed binder roles or a recursive quantified family exceed the exact lowering; the contract is refused, not replaced by unknown" },
   { cls: "gap", label: "a callable value has no admitted call signature", re: /no admitted call signature/,
@@ -715,8 +724,10 @@ const SKJS_UNSOUND: Record<string, string> = Object.fromEntries([
   ["tests/expect-error/promise-object.ts#testAwaitPlainObject", "`await` passes a record through"],
 ]);
 
-function classOf(key: string): ClassEntry | undefined {
-  return CLASSES.find((c) => c.re.test(key));
+function classOf(key: string, row: Row): ClassEntry | undefined {
+  return CLASSES.find((c) => c.re.test(key)
+    && (c.unit === undefined || c.unit === row.id)
+    && (c.detail === undefined || c.detail.test(row.detail ?? "")));
 }
 
 /* ------------------------------------------------------------------ run -- */
@@ -860,7 +871,7 @@ async function main() {
     const key = row.key;
     if (key === undefined) throw new Error(`${row.id}: not verified, with no reason recorded`);
     const entry = row.status === "error" ? CLASSES.find((c) => c.label === "run error or unattributed verification")
-      : classOf(key);
+      : classOf(key, row);
     if (!entry) unmatched.add(key);
     row.class = entry?.cls ?? "gap";
     reasonOf.set(row.id, entry?.label ?? `unmatched: ${row.key}`);
