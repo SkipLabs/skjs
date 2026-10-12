@@ -91,6 +91,9 @@ slots are introduced only after the operand supplying their type is checked. -/
     pure (DirectProof.letE Γ left (DirectProof.letE (left.type::Γ) right result))
   | .logical _ andOp left right => do
     let l ← closureExpr recursive fc scope Γ left
+    let R ← byClause l.type
+    let l := DirectProof.cast Γ R l
+    let G := SourceTypes.graph (← table)
     if BranchRefinement.onlyBoolean G l.type then
       -- A Boolean's falsy value is `false` and its truthy one `true`, so the
       -- short-circuit arm is that constant, and the operator is a condition.
@@ -112,6 +115,9 @@ slots are introduced only after the operand supplying their type is checked. -/
         (← selectPlan G K 0 A .truthy (if andOp then r else own) (if andOp then own else r)))
   | .coalesce _ left right => do
     let l ← closureExpr recursive fc scope Γ left
+    let R ← byClause l.type
+    let l := DirectProof.cast Γ R l
+    let G := SourceTypes.graph (← table)
     let K := l.type :: Γ
     let H := (BranchRefinement.tagSlice G l.type .isNullish true) :: Γ
     let r ← closureExpr recursive fc (savedOperandScope scope left) H right
@@ -121,6 +127,9 @@ slots are introduced only after the operand supplying their type is checked. -/
     -- the saved receiver `x` by `chainName`, where it is not nullish: the
     -- shape `??` has with its arms exchanged.
     let r ← closureExpr recursive fc scope Γ receiver
+    let R ← byClause r.type
+    let r := DirectProof.cast Γ R r
+    let G := SourceTypes.graph (← table)
     let K := r.type :: Γ
     let H := (BranchRefinement.tagSlice G r.type .isNullish false) :: Γ
     let b ← closureExpr recursive fc (held ⟨Fragment.chainName,some mark⟩ :: scope) H body

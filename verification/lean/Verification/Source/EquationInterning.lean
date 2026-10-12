@@ -358,6 +358,12 @@ def literalLabels (term : Json) : M Union := do
     return [← prim s!"{text}n" (.bigintLit (← (Verification.decodeBigint text : Except String Int)))]
   | _ => throw "unsupported source literal"
 
+/-- The source-value universe: primitives and objects of each code kind.
+An array's element store is an internal value outside this union. -/
+def sourceValueClauses : List (Clause (List Tree)) :=
+  [.nul, .undef, .boolLit true, .boolLit false, .num, .str, .bigint, .symbol,
+    .refs [] [] [], .arrs [] [], .ctors []]
+
 def atomLabels (term : Json) : M Union := do
   match ← str term "name" with
   | "null" => return [← prim "null" .nul]
@@ -367,7 +373,8 @@ def atomLabels (term : Json) : M Union := do
   | "string" => return [← prim "string" .str]
   | "bigint" => return [← prim "bigint" .bigint]
   | "symbol" => return [← prim "symbol" .symbol]
-  | "unknown" | "void" => return [← top]
+  | "unknown" => return [← top]
+  | "void" => return [← ground "void" sourceValueClauses]
   | "never" => return []
   | "object" =>
     return normUnion [← prim "object" (.refs [] [] []), ← prim "function" (.arrs [] []),

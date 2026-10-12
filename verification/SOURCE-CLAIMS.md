@@ -46,6 +46,8 @@ as a union. Row operands contain label lists, so recursive rows can refer to
 one another without expanding them into trees. The first four rows are
 `["nul"]`, `[{"boolLit":{"value":true}}]`,
 `[{"boolLit":{"value":false}}]`, and `["undef"]`, in that order.
+The complete [source-value universe](SOURCE-MODEL.md#void) occupies one closed
+union row, shared by value claims and declaration arguments.
 The table also accepts scheme rows for classes' quantified methods, whose
 binders use binder labels; their native graph fields are specified with the
 clause fields below.

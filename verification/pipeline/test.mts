@@ -1678,6 +1678,21 @@ for (const [artifacts, arity, refusal] of [
     `source expression obligation at [${read.pos[0]},${read.pos[1]})`);
   invoke(badRead, join(artifacts, "evidence.json"), artifacts);
 }
+{
+  // A void parameter admits numbers and objects as well as undefined.
+  // A forged singleton claim must fail at the parameter read.
+  const artifacts = run("void-source-values");
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const claims = readClaims(artifacts);
+  const fn = must(claims.functions.find(f => f.name === "compareArguments"), "compareArguments's claims");
+  const at = source.indexOf("left !== right");
+  must(fn.expressions.find(e => e.pos[0] === at && e.pos[1] === at + 4),
+    "the void argument read").type = [rowOf(claims, "undef")];
+  const forged = writeClaims(artifacts, "forged-void-undefined", claims);
+  refusedAt(artifacts, forged, "forged-void-undefined",
+    `source expression obligation at [${at},${at + 4})`);
+  invoke(forged, join(artifacts, "evidence.json"), artifacts);
+}
 checkGenericRest(verifier, run("generic-rest"));
 checkOverloads(verifier, run("overloads"));
 checkDefaults(verifier, run("default-parameter-scope"));

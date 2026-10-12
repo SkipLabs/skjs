@@ -34,6 +34,19 @@ comparisons are specified under [guards](#guards) and in the
 [operational language](SEMANTICS.md#operational-language). Operations requiring
 unsupported coercions are refused at the source boundary.
 
+### Void
+
+The source type `void` denotes every JavaScript value: null, undefined,
+Booleans, numbers, strings, bigints, symbols, ordinary objects, callable
+objects and constructors. An array belongs through its object identity;
+its internal element store is a separate calculus value. Both value claims
+and declaration contracts translate `void` to this union of existing clauses.
+
+A `void` result supplies no guarantee about which member is returned. A
+`void` parameter must support every member. Strict equality of two `void`
+values produces a Boolean by the existing primitive and object equality
+rules. Membership supplies no number, undefined, field or call guarantee.
+
 ### Heap and contracts
 
 The **heap** maps locations to their current values. A **world** assigns each
@@ -466,6 +479,10 @@ value at `unknown`, under only the facts that hold without the heap
 lands ([try](SOURCE-CONTRACTS.md#statement-forms)).
 
 ### Guards
+
+Expression tag dispatches expand named union rows into their constituent
+clauses before splitting branches. The dispatch expression must prove the
+expanded type, so this preserves the original union’s meaning.
 
 A guard is a test JavaScript defines exactly. It is followed where the model
 answers it as JavaScript does, as one more tag test (`Tag`, `tagHolds`), so

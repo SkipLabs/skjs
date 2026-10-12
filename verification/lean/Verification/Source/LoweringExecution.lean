@@ -405,7 +405,10 @@ prepared predicate without replaying an effectful source operand. -/
         (executePlanTail recursive fc (bound :: scope'.tail) Δ next k)
   | .choose source _ test binding evaluate yes no =>
     executePlanTail recursive fc scope Γ evaluate fun scope' Δ origin => do
-      let some A := Δ.head? | throw "internal execution plan: no condition result"
+      let some result := Δ.head? | throw "internal execution plan: no condition result"
+      -- A tag dispatch splits clauses, including those inside a named union.
+      -- Its value expression must prove this equivalent expanded type.
+      let A ← byClause result
       let previous ← executionBindings
       let origin := executionPredicate scope' previous.origins origin
       let G := SourceTypes.graph (← table)

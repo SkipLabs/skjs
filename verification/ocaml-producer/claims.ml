@@ -90,6 +90,16 @@ let encode (proposal : Proposal_types.t) =
         | [] -> []) (distributed (t::ts)))
     (* An intersection, whose row Lean builds from its operands'. *)
     | Meet (t,ts) -> [Meet (List.map label_list (t::ts))]
+    | Atoms atoms when List.sort_uniq compare atoms = List.sort_uniq compare source_value_atoms ->
+      (* Keep the complete source-value universe in one closed union row,
+         matching declaration lowering, including under recursive applications. *)
+      let clauses = List.concat_map (fun a -> List.concat_map (function
+        | Row i -> (match List.nth !rows i with
+            | Array clauses -> clauses
+            | _ -> fail "source-value atom has no clause row")
+        | Decl _ | Meet _ | Arr _ | Binder _ -> fail "source-value atom is not closed")
+        (atom_labels a)) source_value_atoms in
+      [Row (intern (Array clauses))]
     | Atoms atoms -> List.sort_uniq compare (List.concat_map atom_labels atoms)
   and atom_labels = function
     | Nul -> [Row 0] | True -> [Row 1] | False -> [Row 2] | Undef -> [Row 3]

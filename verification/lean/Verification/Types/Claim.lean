@@ -36,8 +36,7 @@ inductive Atom where
   | strLit (s : String)
   | boolLit (b : Bool)
   /-- A `void` result: no usable guarantee about the value, which may be
-  anything. Distinct from `top` (`unknown`) as a source type; both denote
-  every value. -/
+  any JavaScript value. Source lowering excludes internal array stores. -/
   | void
   /-- Every bigint, and every symbol. -/
   | bigint

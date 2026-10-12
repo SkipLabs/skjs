@@ -74,7 +74,7 @@ inductive Clause (α : Type) where
       (arrows : List (Arrow α)) (variadic : List (RestArrow α))
   /-- Semantic top: every value. Membership grants no operation, so nothing
   reads, calls or tests through it without a narrowing fact. `unknown`
-  denotes it; a `void` result forgets its guarantee into it. -/
+  denotes it. Source `void` denotes the union of primitives and objects. -/
   | top
   /-- Strings, and one string; appended last so every earlier case order holds. -/
   | str

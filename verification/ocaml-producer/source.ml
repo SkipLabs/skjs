@@ -94,7 +94,8 @@ let rec source_type ctx j =
     | "null" -> Atoms [Nul] | "undefined" -> Atoms [Undef]
     | "boolean" -> bool | "number" -> Atoms [Num]
     | "string" -> Atoms [Str] | "bigint" -> Atoms [Bigint] | "symbol" -> Atoms [Symbol]
-    | "unknown" | "void" -> top
+    | "unknown" -> top
+    | "void" -> source_values
     (* `object`, every object: an ordinary one, constraining no key, or one
        with call or construct code. *)
     | "object" -> Atoms [Shape {fields=[];indexes=[];calls=[];elements=None};Callable;Ctors []]

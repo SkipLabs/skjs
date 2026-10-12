@@ -218,8 +218,9 @@ def numberLabels (t : Claim.Ty) : Lowering (Ty Tree) := do
     | .bigint => out := out ++ [← use .bigint]
     | .bigintLit i => out := out ++ [← use (.bigintLit i)]
     | .symbol => out := out ++ [← use .symbol]
-    -- A void result forgets its guarantee: every value, like `unknown`.
-    | .void => out := out ++ [← use .top]
+    -- A void value is any source value: primitives and objects, including
+    -- callable and constructible objects. Internal array stores are separate.
+    | .void => out := out ++ [← useRow EquationLowering.sourceValueClauses]
     | _ => pure ()
   return out
 
