@@ -414,6 +414,9 @@ One line each; the reason is the one the design keeps.
   overlays**, each entry pinned to the declaration text; nothing is vendored.
 - **`Function` is "has call or construct code"**; `object` is every object;
   `{}` is every value but `null` and `undefined`.
+- **A declared type parameter typing a value and a rest is instantiated at
+  an array or tuple type**, the rest's argument lists being its tuple
+  contract's ([rest packs](PROGRAM-TYPING.md#judgments-and-constructor-views)).
 - **Closure parameters without a type take TypeScript's contextual type as
   an annotation**, checked like any other; `any` is refused.
 - **A module is the unit of verification; obligations stay per code unit.**

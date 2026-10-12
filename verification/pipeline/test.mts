@@ -19,9 +19,11 @@ import { readDiagnostic } from "../tools/diagnostic.mts";
 import { presentObligation } from "../tools/diagnostic-view.mts";
 // Forged-claim controls on single cases, each in a file of its own:
 // generic-rest.mts, a universal rest claim past collection, substitution and binding;
+// rest-pack-instance.mts, a forged non-array instance of a type parameter typing a value and a rest;
 // overload-claims.mts, per-signature claims across the same independent boundary;
 // default-parameters.mts, forged claims about parameter defaults: their scope, a generic closure's default, a capture read before its initialization.
 import { checkGenericRest } from "./generic-rest.mts";
+import { checkRestPackInstance } from "./rest-pack-instance.mts";
 import { checkOverloads } from "./overload-claims.mts";
 import { checkDefaults, checkSchemeDefaults, checkEarlyDefault, checkPatternDefaults } from "./default-parameters.mts";
 import vm from "node:vm";
@@ -1734,6 +1736,7 @@ for (const [artifacts, arity, refusal] of [
   invoke(forged, join(artifacts, "evidence.json"), artifacts);
 }
 checkGenericRest(verifier, run("generic-rest"));
+checkRestPackInstance(verifier, run("rest-pack-declared"));
 checkOverloads(verifier, run("overloads"));
 checkDefaults(verifier, run("default-parameter-scope"));
 checkPatternDefaults(verifier, run("destructuring-known-default"));

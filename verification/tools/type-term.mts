@@ -172,8 +172,9 @@ export function restTerm(scope: TermScope, type: TypeTerm): TypeTerm {
 export function restRefusal(type: TypeTerm): string {
   switch (type.k) {
     case "parameter":
-      return `${REST_CONTRACT}: one typed by a declaration's type parameter is a pack only once the declaration ` +
-        "is applied, and a pack is over a function's own type parameter";
+      return `${REST_CONTRACT}: one typed by a declaration's type parameter inside the declaration types its ` +
+        "argument lists by a value type parameter's elements, which the heap holds, where an argument pack's " +
+        "contract is heap-free";
     case "binder":
       return `${REST_CONTRACT}: one typed by a type parameter is an argument pack only in a function type or a ` +
         "module function, typed by its own parameter; a closure's scheme reads a bound as the meet of its binder " +

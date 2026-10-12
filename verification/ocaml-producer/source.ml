@@ -36,7 +36,11 @@ type type_context = { bindings: (string * type_argument) list;
                       (* `self` names the declaration: a method of its own
                          body. A nested type literal's method is received by
                          that literal, which the producer does not name. *)
-                      self_owner: bool }
+                      self_owner: bool;
+                      (* A declared value's binder typing both a value and a
+                         rest's argument list: its rest is the argument lists
+                         of the array type it is instantiated at. *)
+                      value_packs: bool }
 let identity declaration =
   let span = list (field "span" declaration) in
   match span with
@@ -341,6 +345,7 @@ and source_pack ctx j =
   if text "k" j <> "binder" then unsupported "a pack rest must name a type parameter";
   match List.assoc_opt (text "name" j) ctx.bindings with
   | Some (PackArgument p) -> p
+  | Some (ValueArgument (Rigid r)) when ctx.value_packs -> PackParameter r
   | Some (ValueArgument _ | ResolutionArgument _) -> unsupported "a type parameter types both a value and a rest parameter's argument list: an argument list is not a runtime value"
   | None -> fail "unbound pack parameter"
 
@@ -823,7 +828,7 @@ let decode ast =
     let parameters = List.mapi (fun i p -> {scope= -1-index;index=i;spelling=text "name" p})
       (items "parameters" definition) in
     let body = source_type {bindings=[];owner=Some id;positional=parameters;arity;symbolic=[];
-      own=true;self_owner=true} in
+      own=true;self_owner=true;value_packs=false} in
     {id;native_promise=(text "name" (field "declaration" definition)="Promise" &&
        String.starts_with ~prefix:"typescript/lib/" (text "module" (field "declaration" definition)));parameters;
      defaults=List.map (fun p -> match field "default" p with
@@ -850,7 +855,7 @@ let decode ast =
         Some (d.id,(parameter,body))
       | _ -> None)
     | _ -> None) definitions in
-  let top={bindings=[];owner=None;positional=[];arity;symbolic;own=false;self_owner=false} in
+  let top={bindings=[];owner=None;positional=[];arity;symbolic;own=false;self_owner=false;value_packs=false} in
   (* A generic class's binders are in scope in its members: one binder per
      spelling for the whole top-level code, as Lean reads them. *)
   let rec class_params = function
@@ -872,6 +877,24 @@ let decode ast =
     values=List.mapi (fun index v ->
       (* A generic value's binders quantify its one signature. *)
       let binders,quantified = quantify top (-1000-index) (items "typeParams" v) in
+      (* A binder only a rest's argument list uses is a pack parameter,
+         bounded by its bound's pack; one typing a value as well stays a value
+         binder whose rest is the argument lists of its instance's array. *)
+      let pure_packs = List.filter_map (fun (q:quantifier) ->
+        let value,pack = binder_use q.identity.spelling (field "type" v) in
+        if pack && not value then Some q.identity else None) quantified in
+      let bound_of (r:rigid) = List.find_map (fun tp ->
+        if text "name" tp = r.spelling then Some (field "bound" tp) else None) (items "typeParams" v) in
+      let binders = {binders with value_packs=true;
+        bindings=List.map (fun (name,arg) -> match arg with
+          | ValueArgument (Rigid r) when List.mem r pure_packs -> name,PackArgument (PackParameter r)
+          | _ -> name,arg) binders.bindings} in
+      let quantified = List.map (fun (q:quantifier) ->
+        if List.mem q.identity pure_packs then
+          {q with bound=(match bound_of q.identity with
+            | Some Null | None -> unsupported "an argument pack needs its bound"
+            | Some t -> Some (PackArgument (pack_bound binders t)))}
+        else q) quantified in
       text "local" (field "binding" v),
       (match source_type binders (field "type" v),quantified with
        | t,[] -> t
@@ -882,7 +905,7 @@ let decode ast =
       (items "values" document);
     functions=List.mapi (fun scope f ->
       let parameters = items "typeParams" f in
-      let initial={bindings=[];owner=None;positional=[];arity;symbolic;own=false;self_owner=false} in
+      let initial={bindings=[];owner=None;positional=[];arity;symbolic;own=false;self_owner=false;value_packs=false} in
       let binders,quantified = quantify initial scope parameters in
       (* A rest typed by one of the function's own type parameters: the body
          sees the array at that parameter's bound; callers instantiate the

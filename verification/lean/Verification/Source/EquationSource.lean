@@ -31,6 +31,10 @@ structure GenericValue where
   resolution : List ResolutionSlots
   type : Except String GenericType
   bounds : List (String × Option Union)
+  /-- The binders typing both a value and a rest's argument lists: each one's
+  rest is its packed name's placeholder, which an instance gives the argument
+  lists of the binder's array (`packedName`). -/
+  packed : List String := []
 
 /-- A source lowered for the source path. -/
 structure SourceLowering where
@@ -75,6 +79,32 @@ def genericType (ctx : Ctx) (term : Json) : M GenericType := do
     return .construct params (← lowerType ctx (← field term "result"))
   | _ => return .other (← lowerType ctx term)
 
+/-- The name of the argument lists a binder typing a value and a rest stands
+for: a placeholder of its own, instantiated from the binder's instance. -/
+def packedName (n : String) : String := n ++ "#pack"
+
+/-- A type term with each rest typed by one of `names` typed by its packed
+name instead. A nested scheme binding the name hides it. -/
+partial def renamePacks (names : List String) (j : Json) : Json :=
+  if names.isEmpty then j else
+  match j with
+  | .obj kvs =>
+    if kindOf j == some "pack" then
+      let operand := j.getObjValD "of"
+      match kindOf operand, operand.getObjValAs? String "name" with
+      | some "binder", .ok n =>
+        if names.contains n then j.setObjVal! "of" (operand.setObjVal! "name" (.str (packedName n))) else j
+      | _, _ => j.setObjVal! "of" (renamePacks names operand)
+    else
+      let hidden := if kindOf j == some "scheme" then
+        ((j.getObjValAs? (Array Json) "binders").toOption.getD #[]).toList.filterMap
+          fun b => (b.getObjValAs? String "name").toOption
+        else []
+      let inner := names.filter (!hidden.contains ·)
+      Json.mkObj (kvs.toList.map fun (k, v) => (k, renamePacks inner v))
+  | .arr xs => .arr (xs.map (renamePacks names))
+  | j => j
+
 /-- A module function's rest typed by one of its own type parameters,
 `...args: T` (`{"k":"pack","of":{"k":"binder","name":"T"}}`): that parameter's
 name and declared bound. -/
@@ -106,8 +136,10 @@ def restView (f : Json) : Json :=
 Its declared bounds are checked at each instance a call names
 (`Scheme.moduleInstances`), not here. -/
 private def genericOf (name : String) (pos : Nat × Nat) (path : String) (node : Json) (tps : Array Json)
-    (type : List (String × Binding) → M GenericType) : M GenericValue := do
+    (type : List (String × Binding) → M GenericType) (packed : List String := []) : M GenericValue := do
   let (scope, _) ← bindNames [] [] node tps
+  let scope := (← packed.mapM fun n => do
+    return (packedName n, (⟨true, [← placeholder (packedName n) .arguments]⟩ : Binding))) ++ scope
   let parameters ← sourceParameters tps
   let binders := parameters.flatMap fun (n, r) => ResolutionWire.ownedNames n r
   let t ← tryCatch (do return Except.ok (← type scope)) fun e => pure (.error e)
@@ -120,7 +152,7 @@ private def genericOf (name : String) (pos : Nat × Nat) (path : String) (node :
       return (n, some (← packBound ctx b))
     if b == .null then return (n, some [← ground "source" sourceValueClauses])
     return (n, some (← lowerType ctx b))
-  return { name, pos, binders, resolution := ResolutionWire.groups parameters, type := t, bounds }
+  return { name, pos, binders, resolution := ResolutionWire.groups parameters, type := t, bounds, packed }
 
 /-- Everything the source path lowers, in one run: the declarations, every
 annotation, the imported values, the generic units' binders, the producer's
@@ -237,9 +269,17 @@ def lowerSource (ast claims : Json) : M (List (String × Union) × List (String 
     if tps.isEmpty then
       values := values ++ [(name, span, ← lowerType { site := path } (← field v "type"))]
     else
+      -- A binder typing both a value and a rest's argument lists: its rest
+      -- reads its packed name (PROGRAM-TYPING.md, "Judgments and constructor
+      -- views").
+      let packed := tps.toList.filterMap fun p => do
+        let n ← (p.getObjValAs? String "name").toOption
+        let u := binderUse n (v.getObjValD "type")
+        if u.pack && u.value then some n else none
+      let v := renamePacks packed v
       let _ ← enterUnit path [] v tps
       units := units ++ [(path, (((← get).unitBinders.lookup path).getD []))]
-      let generic ← genericOf name span path v tps fun scope => do
+      let generic ← genericOf name span path v tps (packed := packed) fun scope => do
         genericType { binders := scope, site := path, checkBounds := false } (← field v "type")
       generics := generics ++ [generic]
   -- The stable non-thenable family resolution descriptors are relative to:

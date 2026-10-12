@@ -170,18 +170,33 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
             widened as TypeScript infers them, are its instance, a tuple; the
             other binders are inferred from the fixed actuals. Lean checks the
             instance against the bound, position by position. *)
-         if spreads <> [] then Proposal_diagnostics.unsupported "a spread into a pack parameter";
          if type_args <> [] then Proposal_diagnostics.unsupported "explicit type arguments beside a pack parameter";
          let fixed = List.length signature.params in
          if List.length args < fixed then
            Proposal_diagnostics.unsupported "a call omits a fixed parameter before a pack parameter";
          let actuals = List.map (expr env) args in
-         let extras = List.filteri (fun i _ -> i >= fixed) actuals in
+         (* A spread past the fixed actuals is a tuple's required positions,
+            which the call reads as actuals (Lean's lowering). *)
+         let extras = List.concat (List.filteri (fun i _ -> i >= fixed) (List.mapi (fun i t ->
+           if not (List.mem i spreads) then [t]
+           else match Option.value (expand_named declarations t) ~default:t with
+             | Atoms [Shape {elements=Some {required;optional_elements=[];rest=None;_};_}] -> required
+             | _ -> Proposal_diagnostics.unsupported "a spread into a pack parameter of what is no tuple of required positions")
+           actuals)) in
+         if List.exists (fun i -> i < fixed) spreads then
+           Proposal_diagnostics.unsupported "a spread into a pack parameter's fixed parameters";
          let pack = Pack {required=List.map Semantic.widen extras;
            optional_elements=[];rest=None;readonly=false;presence=Dense} in
          let solution = match signature.rest_pack with
+           | Some (PackParameter p) when List.exists (fun (q:Semantic.quantifier) -> q.identity=p &&
+               (match q.bound with Some (PackArgument _) -> true | _ -> false)) signature.quantified ->
+             [p,PackArgument pack]
+           (* A binder typing a value too: its instance is the tuple of the
+              collected actuals, whose argument lists the rest's are. *)
            | Some (PackParameter p) when List.exists (fun (q:Semantic.quantifier) -> q.identity=p)
-               signature.quantified -> [p,PackArgument pack]
+               signature.quantified ->
+             [p,ValueArgument (Semantic.array {required=List.map Semantic.widen extras;
+               optional_elements=[];rest=None;readonly=false;presence=Dense})]
            | _ -> Proposal_diagnostics.unsupported "a pack rest that is not the method's own parameter" in
          let rest_quantified = List.filter (fun (q:Semantic.quantifier) ->
            not (List.mem_assoc q.identity solution)) signature.quantified in

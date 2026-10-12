@@ -373,13 +373,19 @@ Mappings discard only the temporaries introduced by this expression. -/
     -- else can reach. Into fixed parameters each spread stands for a tuple's
     -- required positions, read once every actual is evaluated: no actual
     -- after the first spread may run code.
-    let variadic := !(ProgramTyping.restSigs (SourceTypes.graph (← table)) B).isEmpty
+    let calleeGraph := SourceTypes.graph (← table)
+    let restSignatures := ProgramTyping.restSigs calleeGraph B
+    let variadic := !restSignatures.isEmpty
+    -- A rest that is one tuple contract, an argument pack's instance, takes
+    -- a spread as fixed parameters do: its tuple's positions.
+    let tupleRest := variadic && restSignatures.all fun ⟨_, (_, P), _, _⟩ =>
+      (PositiveRules.restElem calleeGraph P).isNone
     let runsCode : Fragment.Expr → Bool := fun a => match a with
       | .var .. | .lit .. => false
       | _ => true
-    let copied := if variadic then spreads.filter fun i => (args.drop (i + 1)).any runsCode
+    let copied := if variadic && !tupleRest then spreads.filter fun i => (args.drop (i + 1)).any runsCode
       else []
-    let spread := !variadic && !spreads.isEmpty
+    let spread := (!variadic || tupleRest) && !spreads.isEmpty
     let spreadOrder := spreads.eraseDups.mergeSort (· ≤ ·)
     if spread then
       let first := spreadOrder.headD args.length

@@ -465,6 +465,30 @@ const s: string = await witness();
 
 and `node` throws at the marked line: `r` is `"s"`, and `r.a` is `undefined`.
 
+### Suspected: a rest parameter's array read as a value of its type parameter (`tests/expect-error/readonly-rest-params.ts#fullReadonlyConstraint`, `#fullReadonlyWithSink`)
+
+SKJS accepts `function f<T extends readonly string[]>(...args: T)` whose body
+uses `args` as a `T` (`const mutRef: T = args`, `mutator(args)` with
+`mutator: (arr: T) => void`); the test's own comments mark both `FIXME`. The
+array a call collects is fresh: it holds the actuals and none of `T`'s other
+members. The pipeline refuses both at the source
+([refused on principle](../SOURCE-FRAGMENT.md#refused-on-principle)). Witness,
+which `tsc --strict` accepts and under which `node` throws at the marked line
+(SKJS rejects this witness's generic forwarding `f(...v)` at the spread, so it
+is no SKJS-accepted witness):
+
+```ts
+function rest<T extends readonly string[]>(...args: T): T {
+  const mutRef: T = args;
+  return mutRef;
+}
+function respread<T extends readonly string[]>(v: T, f: (...a: T) => T): T {
+  return f(...v);
+}
+const tagged = Object.assign(["a"], { tag: "t" });
+respread(tagged, rest).tag.toUpperCase();   // TypeError: reading 'toUpperCase' of undefined
+```
+
 ### Undetermined
 
 None of the other search refusals looked like SKJS errors on reading their

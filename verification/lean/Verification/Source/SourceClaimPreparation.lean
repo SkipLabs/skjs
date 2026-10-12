@@ -107,6 +107,23 @@ def genericClaim (T : EquationStore.State) (θ : List (String × List Tree)) : G
       ("params", Json.arr (ps.map c).toArray), ("result", c res)]])]
   | .other U => graphClaim (normUnion (U.flatMap (rebind T θ)))
 
+/-- The argument lists of a binder typing both a value and a rest, at its
+instance `X`: those of `X`'s tuple contract, where `X` is an array or tuple
+type, whose fresh arrays are its values (PROGRAM-TYPING.md, "Judgments and
+constructor views"). An instance with other members, a tagged array, is
+refused. -/
+def instancePack (T : EquationStore.State) (X : List Tree) (n : String) :
+    Except String (EquationStore.State × List Tree) := do
+  let G := SourceTypes.graph T
+  let refuse := s!"the instance of '{n}', a type parameter typing a value and a rest's argument list, " ++
+    "is no array or tuple type: the argument lists are an array or tuple type's, whose fresh arrays are its values"
+  let [c@(.refs fs [] vs _ _ _)] := PositiveRules.expand G X | throw refuse
+  let some [s] := fs.lookup SourceTypes.storeField <|> vs.lookup SourceTypes.storeField | throw refuse
+  if c != SourceTypes.arrayOf T s false && c != SourceTypes.arrayOf T s true then throw refuse
+  let [.list τ []] := PositiveRules.expand G [s] | throw refuse
+  let (T, l) := EquationStore.intern T [.pack { τ with readonly := false, presence := .dense } []]
+  return (T, [l])
+
 private def emptyDeclarations : Json := Json.mkObj [("roots", Json.arr #[]),
   ("definitions", Json.arr #[]), ("values", Json.arr #[]), ("symbols", Json.arr #[])]
 
@@ -158,6 +175,10 @@ def equationFront (ast claims : Json) (fileKey : String) (only : Option (String 
   let instantiate (g : GenericValue) (θ : List (String × Json)) (T : EquationStore.State) :
       Except String ((Json × List (String × Option Json)) × EquationStore.State) := do
     let θ ← θ.mapM fun (n, j) => do return (n, ← claimLabels j)
+    let (T, θ) ← g.packed.foldlM (fun (T, θ) n => do
+      let some X := θ.lookup n | throw s!"no type argument for '{n}'"
+      let (T, P) ← instancePack T X n
+      return (T, θ ++ [(EquationLowering.packedName n, P)])) (T, θ)
     let t ← g.type
     let bounds := g.bounds.map fun (n, B) =>
       (n, B.map fun B => graphClaim (normUnion (B.flatMap (rebind T θ))))

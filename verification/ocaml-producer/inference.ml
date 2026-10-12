@@ -96,7 +96,12 @@ and substitute_pack ?meet solution = function
     (match List.assoc_opt identity solution with
     | None -> original
     | Some (PackArgument p) -> p
-    | Some (ValueArgument _ | ResolutionArgument _) -> unsupported ("value substitution used as an argument pack: " ^ identity.spelling))
+    (* A binder typing a value and a rest's argument list, at an array or
+       tuple type: the argument lists of its tuple contract. *)
+    | Some (ValueArgument (Atoms [Shape {elements=Some s;fields=[];indexes=[];calls=[]}])) ->
+      Pack {s with readonly=false;presence=Dense}
+    | Some (ValueArgument _ | ResolutionArgument _) -> unsupported ("the instance of " ^ identity.spelling ^
+        ", a type parameter typing a value and a rest's argument list, is no array or tuple type"))
   | Pack sequence -> Pack (substitute_sequence ?meet solution sequence)
 and substitute_sequence ?meet solution sequence = {
   sequence with
@@ -135,6 +140,10 @@ and substitute_signature ?meet solution signature =
     variadic=Option.map (substitute ?meet solution) signature.variadic;
     rest_pack=Option.map (substitute_pack ?meet solution) signature.rest_pack;
     result=substitute ?meet solution signature.result }
+  |> fun s -> match s.variadic,s.rest_pack with
+    (* A pack of any number of an element is that element's variadic rest. *)
+    | None,Some (Pack {required=[];optional_elements=[];rest=Some e;_}) -> {s with variadic=Some e;rest_pack=None}
+    | _ -> s
 
 (* These are proposal constraints, not semantic type nodes or acceptance facts.
    Edges retain dependencies until all concrete bounds have propagated. *)

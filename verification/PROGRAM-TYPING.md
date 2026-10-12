@@ -280,7 +280,8 @@ parameter list is a zero-argument call, not an absent one. A tuple rest
 parameter and a tuple spread are a fixed number of positions each, so they need
 no rule of their own here: the signature carries the positions, and the array a
 rest parameter binds is allocated by the ordinary store and allocation rules.
-Into fixed parameters, each spread's positions are ordinary element reads of
+Into fixed parameters, or into a rest that is one tuple contract (an argument
+pack's instance), each spread's positions are ordinary element reads of
 its operand's store, made once every actual is evaluated, in position order,
 and the call takes them as actuals where the spread is written; the lowering
 admits no actual that runs code after the first spread, so the reads see what
@@ -316,8 +317,28 @@ Here $`\tau_B`$ is $`B`$'s tuple contract. A list within an instance $`X\le\math
 is within $`\mathsf{Pack}(\tau_B)`$, so the store a call collects meets the store type $`B`$
 describes (`packRest_store_safe`); that each call meets the body's input at
 $`B`$ is the module function's interface ([module rules](SOURCE-CONTRACTS.md#modules-and-code-units)).
-A type parameter typing a rest and anything else is
+In a module function a type parameter typing a rest and anything else is
 [refused on principle](SOURCE-FRAGMENT.md#refused-on-principle).
+
+A declared function's type parameter $`T`$ typing a value and a rest,
+`declare function f<T extends B>(…, ...x: T): R`, is instantiated at each call
+at a type $`X`$, as any value binder is. The rest's argument lists are those
+of $`X`$'s tuple contract $`\tau_X`$, which requires $`X`$ to be an array or
+tuple type, and the declaration's contract at the call reads
+
+```math
+\frac{X\le B\quad X=\mathsf{Array}_{\rho}(\tau_X)}
+     {f:(\vec A,\ldots\mathsf{Pack}(\tau_X))\to R\ \text{at}\ T:=X}
+```
+
+with $`\mathsf{Array}_\rho(\tau)`$ the realm's array over a store of contract
+$`\tau`$, readonly or not. That is the contract's meaning at $`X`$: every
+argument list in $`\mathsf{Pack}(\tau_X)`$ collects into a fresh array of
+$`X`$, and these are the lists a call collects into one. An instance with
+further members (`string[] & { tag: string }`) or no array is refused
+(`instancePack`). The contract is an input's, assumed as declared
+([trust surface](DESIGN.md#trust-surface)); a call instantiates $`T`$ at the
+tuple of its actuals.
 
 A rest typed by anything else is refused by its form: by a type parameter
 of a closure or of an enclosing declaration (a closure's scheme reads a bound
