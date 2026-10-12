@@ -138,17 +138,16 @@ uniformly; this is a located proof obligation, never a discarded assertion. -/
   -- only to be one this table names. It does not need a supported primitive predicate:
   -- that is what a primitive assertion on an edge needs, and this is not one.
   if !RequestJson.validTy (StoreView.valid (← table)) R then throw "invalid current-content type label"
-  let clauses := PositiveRules.expand (SourceTypes.graph (← table)) A
-  if clauses.isEmpty then throw "current-content assertion requires nonempty cell contracts"
-  let invariants ← clauses.mapM fun clause => do
-    let .refs W [] [] := clause
-      | throw "current-content assertion requires only cell contracts"
-    let some Wc := W.lookup fld
-      | throw s!"current-content assertion names a field '{fld}' the contract does not have"
-    pure Wc
-  let W := invariants.flatten.eraseDups
-  let plan := DirectProof.var [W] 0 R
-  obligation pos plan.goal (some plan) "heap-observation" [held d]
+  obligation pos ⟨[A], .readAt fld (.var 0), R⟩ none "heap-observation" [held d]
+
+/-- The declared result of a named record property, including absence for an
+optional key. This only selects a persistent proof obligation. -/
+private def declaredRead (c : PositiveNormalization.Clause (Ty Tree)) (fld : PropKey) : Option (Ty Tree) :=
+  match c with
+  | .refs W [] vs os _ _ =>
+    (W.lookup fld).orElse fun _ => (vs.lookup fld).orElse fun _ =>
+      (os.find? (fun o => o.key == fld)).map (fun o => o.type ++ [Labels.undef])
+  | _ => none
 
 /-- Mutable entry types are assertions about contents, not reference types.
 Supported primitive assertions are checked on every incoming edge. Other claims
@@ -192,9 +191,7 @@ must follow from the stable storage contract; no claim is silently dropped. -/
       let clauses := PositiveRules.expand (SourceTypes.graph T) reference
       let invariant := fun (fld : PropKey) => do
         if clauses.isEmpty then none
-        let ws ← clauses.mapM fun (c : PositiveNormalization.Clause (Ty Tree)) => match c with
-          | PositiveNormalization.Clause.refs W [] [] [] [] [] => W.lookup fld
-          | _ => none
+        let ws ← clauses.mapM (fun c => declaredRead c fld)
         some ws.flatten.eraseDups
       for (fld, A) in asserted do
         if !RequestJson.validTy (StoreView.valid T) A then throw "invalid current-content type label"

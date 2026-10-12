@@ -286,6 +286,7 @@ theorem checkBranchTarget_reassign (P : Program) (C : ControlFlow.Certificate ι
     checkBranchTargetUsing (reassign G η) (images.reassign η) P C Γ o t p facts =
       checkBranchTargetUsing G images P C Γ o t p facts := by
   simp only [checkBranchTargetUsing_eq, checkObserved_reassign]
+  rfl
 
 theorem checkHandler_reassign (P : Program) (C : ControlFlow.Certificate ι) (node : Node) (c : NodeEvidence ι) :
     checkHandlerUsing (reassign G η) (images.reassign η) P C node c =

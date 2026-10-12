@@ -17,7 +17,6 @@ type state = {
   (* Primitive shapes established for unknown or parameter-typed names. *)
   shape_tests : (string * string) list ref;
   (* Fields tested equal to undefined. *)
-  undefined_fields : (string * string) list ref;
   (* Dictionary keys found present by an in test. *)
   dictionary_keys : (string * string) list ref;
   (* Unknown names whose values pass Array.isArray. *)
@@ -32,7 +31,6 @@ let create ?(explaining=false) () = {
   for_in_keys = ref [];
   method_callees = ref [];
   shape_tests = ref [];
-  undefined_fields = ref [];
   dictionary_keys = ref [];
   open_array_tests = ref [];
   unknown_instance_tests = ref [];
@@ -132,8 +130,6 @@ let dictionary_spread_reason =
 let dictionary_presence_reason =
   "presence promotes an optional field of a record, not the index of a dictionary, so the read is \
    still at the index, which may miss"
-let absent_key_reason =
-  "the key may be absent, and a read of an absent key is stated by no clause the model reads"
 let relational_reason =
   "`<` converts such an operand to a number or a string first (`undefined` to NaN, an object through its \
    `valueOf` or `toString`), and the comparison the model states is of two numbers or two strings, the primitive \

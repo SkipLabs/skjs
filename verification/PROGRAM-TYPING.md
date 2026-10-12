@@ -2003,19 +2003,41 @@ preservation of existing facts.
 
 The finite assertion layer represents a fact as a slot $`i`$, a field name and
 an $`R`$ from the [primitive predicate grammar](POSITIVE-TYPES.md#state-assertion-grammar).
-Write $`v\in R`$ for satisfying one of those predicates. In the one-field
-abbreviation its meaning is:
+Write $`v\in R`$ for satisfying one of those predicates and
+$`\mathrm{Read}_h(o,f,v)`$ for the [property-read relation](SEMANTICS.md#what-is-asserted-and-what-a-heap-change-can-touch).
+A fact observes the read result, including the absent-key result:
 
 ```math
 \mathrm{Holds}(\Delta,\rho,h)
-\equiv \forall(i,R)\in\Delta.\;
-\exists\ell,v.\ \rho(i)=\ell\land h(\ell)=v\land v\in R.
+\equiv \forall(i,f,R)\in\Delta.\;
+\exists v.\ \mathrm{Read}_h(\rho(i),f,v)\land v\in R.
 ```
+
+The observation and read rules are:
+
+```math
+\frac{\mathrm{Read}_h(o,f,v)\quad v\in R}
+ {\mathrm{ReadFact}_h(o,f,R)}
+\qquad
+\frac{\mathrm{ReadFact}_h(o,f,R)\quad R\subseteq A}
+ {\Gamma;K\vdash o.f:A}.
+```
+
+`linkFacts_holds` proves observation transfer through a live read link;
+`read_sound` proves the read rule and preservation of the heap.
+`observeTyped_holds` also derives a supported predicate from the tested value's
+ordinary type restricted by the observed tag. For example, the falsy branch of
+an object-or-undefined type supplies the predicate `{undefined}`. Presence is
+separate: a read result excluding `undefined` proves presence for an optional
+key. A predicate admitting `undefined` covers both absence and a present value.
+Writes require the ordinary lifetime contract; the observation grants no write
+permission. Allocation preserves observations. Ordinary calls discard them; a write
+preserves another observation only through checked location distinctness.
 
 For a slot map $`m`$, the executable entailment check uses this sufficient rule:
 
 ```math
-\frac{\forall(i,R)\in\Sigma'.\;\exists(j,S)\in\Sigma.\ j=m(i)\land S\subseteq R}
+\frac{\forall(i,f,R)\in\Sigma'.\;\exists(j,f,S)\in\Sigma.\ j=m(i)\land S\subseteq R}
  {\mathrm{Holds}(\Sigma,\rho,h)\Longrightarrow
   \mathrm{Holds}(\Sigma',\mathrm{mapEnv}(m,\rho),h)}.
 ```
@@ -2039,11 +2061,9 @@ values already read into immutable slots or equalities between copied values.
 The [assertion layer](SEMANTICS.md#what-is-asserted-and-what-a-heap-change-can-touch)
 splits in two. $`\Pi`$ is a conjunction of **value predicates** $`x\in R`$ and
 **equalities** $`x=y`$ between two variables. It mentions
-only the environment. $`\Sigma`$ is a list of points-to atoms $`x.f\mapsto R`$ and
-$`x.f\mapsto y`$: the field $`f`$ of the object $`x`$ names currently satisfies
-$`R`$, or holds the value of $`y`$. These facts mention the heap. Neither
-relation carries ownership: $`\mapsto`$ here is duplicable and says nothing about
-what else the heap holds.
+only the environment. $`\Sigma`$ contains property-read predicates and read links,
+with the meanings in the [semantic reference](SEMANTICS.md#what-is-asserted-and-what-a-heap-change-can-touch).
+These heap assertions are duplicable and carry no ownership.
 
 Every atom names a field: `HeapFacts.Fact` and `HeapLinks.Link` each carry one,
 and `HeapExpressionRules` reads it off the term rather than taking it from
@@ -2185,7 +2205,7 @@ reference or an arrow result:
 \frac{(x\mapsto R)\in\Sigma\qquad R\subseteq\mathrm{pred}(A)}
 {\Gamma;\Pi;\Sigma\vdash_G r\leftarrow\mathrm{read}(x):A
   \dashv \Pi,\;r=R\;;\;
-   \Sigma,\{y\mapsto r\mid y\approx_\Pi x\}}
+   \Sigma,\{y\mapsto^{?} r\mid y\approx_\Pi x\}}
 ```
 
 A read of a key some record of $`x`$'s type names only as optional has no

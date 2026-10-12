@@ -176,7 +176,7 @@ def readFrame (k : Knowledge) (i : Nat) (fld : PropKey) (optional : Bool := fals
 This latter fact is what permits a subsequent result-contract check to retain
 precision even when the producer supplied a wider expression type. -/
 def readOutput (k : Knowledge) (i : Nat) (fld : PropKey) (R : List Atom) : Knowledge :=
-  withResult (readFrame k i fld) R
+  withResult (readFrame k i fld true) R
 
 theorem read_sound {G : NormalGraph ι} {Γ k i fld R A ρ n W h}
     (hm : Fact.mk i R fld ∈ k.cells) (hc : includes G A R = true)
@@ -185,9 +185,9 @@ theorem read_sound {G : NormalGraph ι} {Γ k i fld R A ρ n W h}
     SafePost (meaning G A)
       (fun h' v => HeapKnowledge.Holds (readOutput k i fld R) (push v ρ) h') n W h
       (.readAt fld (ρ i)) := by
-  obtain ⟨flds,c,oid,l,v,hl,hfd,hv,a,ha,hav⟩ := hk.1 _ hm
+  obtain ⟨flds,c,oid,v,hl,hrd,a,ha,hav⟩ := hk.1 _ hm
   rw [hl]
-  apply consequence _ _ (read_observed hw hh hfd (Atom.isValue hav) hv)
+  apply consequence _ _ (hrd.observed (Atom.isValue hav) hw hh)
   · intro j U u hu; subst u; exact includes_sound hc ⟨a,ha,hav⟩ j U
   · intro h' u hp
     rw [hp.1]
@@ -197,7 +197,7 @@ theorem read_sound {G : NormalGraph ι} {Γ k i fld R A ρ n W h}
     rcases List.mem_append.mp hm with hm | hm
     · obtain ⟨j,hj,rfl⟩ := List.mem_map.mp hm
       have he := HeapLinks.aliases_eq hk.2.2 hj
-      exact ⟨flds,c,oid,l,he.trans hl,hfd,by simpa [push,hp.2] using hv⟩
+      exact ⟨flds,c,oid,he.trans hl,by simpa [push,hp.2] using hrd⟩
     · exact hout.2.2 link hm
 
 /-- A clause's first invariant bag operand, independent of callability. -/
@@ -332,10 +332,10 @@ theorem slicedRead_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instanc
       (fun h' v => HeapKnowledge.Holds (readFrame k i fld) (push v ρ) h') n W h
       (.readAt fld (ρ i)) := by
   have base := typedRead_sound ht hi hr he hk hw hh
-  obtain ⟨flds,c,oid,l,v,hl,hfd,hv,a,ha,hav⟩ := hk.1 _ hm
+  obtain ⟨flds,c,oid,v,hl,hrd,a,ha,hav⟩ := hk.1 _ hm
   have hq := Atom.excludes_sound (List.all_eq_true.mp hR a ha) hav
   have hvv : isVal v = true := Atom.isValue hav
-  have step : Step h (.readAt fld (ρ i)) h v := by rw [hl]; exact .readField hfd hv
+  have step : Step h (.readAt fld (ρ i)) h v := by rw [hl]; exact hrd.step
   cases n with
   | zero => trivial
   | succ n =>
@@ -430,7 +430,7 @@ theorem optionalRead_sound [DecidableEq ι] {G : NormalGraph ι} {images : Insta
       exact out u (by simp [HeapLinks.ReadGave, hlk, hu])
     | none =>
       apply one_step rfl rfl (.readMissing hlk (habs hlk)) _ hs
-      exact out .undef (by simp [HeapLinks.ReadGave, hlk])
+      exact out .undef (by simp [HeapLinks.ReadGave, hlk, habs hlk])
 
 theorem value_sound {G : NormalGraph ι} {Γ k i R A ρ n W h}
     (hr : valuesAt G Γ k i = some R) (hc : includes G A R = true)
@@ -574,7 +574,7 @@ theorem alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W h} {cod
       obtain ⟨i,hi,hpi⟩ := List.mem_iff_getElem.mp hp
       obtain ⟨a,ha,hq⟩ := valuesAt_sound hR he hk
       refine ⟨slots h.length (parts.map Prod.fst), code, h.length + (parts.map fun p => ρ p.2).length,
-        h.length + i, ρ p.2, rfl, ?_, ?_, a, ha, hq⟩
+        ρ p.2, rfl, ReadGave.present (l := h.length + i) ?_ ?_, a, ha, hq⟩
       · have hname : (parts.map Prod.fst)[i]'(by simpa using hi) = p.1 := by simp [hpi]
         rw [← hname]
         exact lookup_slots hnd (by simpa using hi)
@@ -583,8 +583,8 @@ theorem alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W h} {cod
         rw [List.getElem?_eq_getElem (by simpa using hi)]
         simp [hpi]
     · obtain ⟨g,hg,rfl⟩ := List.mem_map.mp hf
-      obtain ⟨flds,c,oid,l,v,hl,hfd,hh',b,hb,hv'⟩ := hk.1 g hg
-      exact ⟨flds,c,oid,l,v,hl,hfd,alloc_frames _ (alloc_frames _ hh'),b,hb,hv'⟩
+      obtain ⟨flds,c,oid,v,hl,hrd,b,hb,hv'⟩ := hk.1 g hg
+      exact ⟨flds,c,oid,v,hl,(hrd.alloc_frames _).alloc_frames _,b,hb,hv'⟩
   · intro g hg
     simp only [allocOutput] at hg
     rcases List.mem_append.mp hg with hg | hg
@@ -637,8 +637,8 @@ theorem fresh_holds [DecidableEq ι] {G : NormalGraph ι} {Γ k ρ n W h}
   · intro f hf
     simp only [allocOutput, List.map_nil, List.nil_append] at hf
     obtain ⟨g,hg,rfl⟩ := List.mem_map.mp hf
-    obtain ⟨flds,c,oid,l,v,hl,hfd,hh',b,hb,hv'⟩ := hk.1 g hg
-    exact ⟨flds,c,oid,l,v,hl,hfd,alloc_frames _ (alloc_frames _ hh'),b,hb,hv'⟩
+    obtain ⟨flds,c,oid,v,hl,hrd,b,hb,hv'⟩ := hk.1 g hg
+    exact ⟨flds,c,oid,v,hl,(hrd.alloc_frames _).alloc_frames _,b,hb,hv'⟩
   · intro g hg
     simp only [allocOutput] at hg
     rcases List.mem_append.mp hg with hg | hg
@@ -753,14 +753,19 @@ theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImag
             obtain ⟨a,ha,hv⟩ := valuesAt_sound (hR ▸ hr) he hk
             obtain ⟨slot,hs,rfl⟩ := List.mem_map.mp (by simpa using hf)
             have heq := HeapLinks.aliases_eq hk.2.2 hs
-            exact ⟨flds,c,oid,l,ρ j,heq.trans hl,hfd,write_new hlt,a,ha,hv⟩
+            exact ⟨flds,c,oid,ρ j,heq.trans hl,ReadGave.present hfd (write_new hlt),a,ha,hv⟩
         · obtain ⟨g,hg,rfl⟩ := List.mem_map.mp hf
           have hg := List.mem_filter.mp hg
-          obtain ⟨flds0,c0,oid0,l0,u,hs0,hfd0,hu,b,hb,hb'⟩ := hk.1 g hg.1
-          have hne : l ≠ l0 := HeapLinks.distinct_sound hk.2.2 (of_decide_eq_true hg.2) hl hfd hs0 hfd0
-          refine ⟨flds0,c0,oid0,l0,u,?_,hfd0,?_,b,hb,hb'⟩
+          obtain ⟨flds0,c0,oid0,u,hs0,hrd,b,hb,hb'⟩ := hk.1 g hg.1
+          refine ⟨flds0,c0,oid0,u,?_,?_,b,hb,hb'⟩
           · simpa [push] using hs0
-          · rw [List.getElem?_set_ne hne]; exact hu
+          · unfold ReadGave at hrd ⊢
+            cases hfd0 : flds0.lookup g.field with
+            | none => rw [hfd0] at hrd; exact hrd
+            | some l0 =>
+              rw [hfd0] at hrd
+              have hne : l ≠ l0 := HeapLinks.distinct_sound hk.2.2 (of_decide_eq_true hg.2) hl hfd hs0 hfd0
+              simpa only [List.getElem?_set_ne hne] using hrd
       · intro f hf
         rcases List.mem_cons.mp hf with rfl | hf
         · exact ⟨.nul,by simp,rfl⟩

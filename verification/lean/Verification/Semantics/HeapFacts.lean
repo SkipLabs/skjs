@@ -103,9 +103,32 @@ theorem covers_refl (as : List Atom) : covers as as = true := by
   intro a ha
   exact List.any_eq_true.mpr ⟨a,ha,by simp [Atom.le]⟩
 
-/-- A current-content assertion: at the object a runtime slot holds, the named
-field currently satisfies one of these primitive predicates. A value fact reuses the same
-shape and ignores the field, which is why it defaults to the cell's. -/
+/-- The result of an own-property read. An absent key yields undefined when
+there is no prototype to consult. -/
+def ReadGave (flds : List (PropKey × Nat)) (field : PropKey) (h : Heap) (v : Tm) : Prop :=
+  match flds.lookup field with
+  | some l => h[l]? = some v
+  | none => flds.lookup CallArguments.protoField = none ∧ v = .undef
+
+theorem ReadGave.present {flds field h l v} (hf : flds.lookup field = some l)
+    (hv : h[l]? = some v) : ReadGave flds field h v := by simp [ReadGave, hf, hv]
+
+theorem ReadGave.alloc_frames {flds field h v} (vs : List Val) (hr : ReadGave flds field h v) :
+    ReadGave flds field (h ++ vs) v := by
+  unfold ReadGave at hr ⊢
+  cases hl : flds.lookup field with
+  | some l => rw [hl] at hr; exact HeapObservations.alloc_frames vs hr
+  | none => rw [hl] at hr; exact hr
+
+theorem ReadGave.step {flds field h v c oid} (hr : ReadGave flds field h v) :
+    Step h (.readAt field (.objAt flds c oid)) h v := by
+  unfold ReadGave at hr
+  cases hf : flds.lookup field with
+  | some l => rw [hf] at hr; exact .readField hf hr
+  | none => rw [hf] at hr; rw [hr.2]; exact .readMissing hf hr.1
+
+/-- A property-read observation at the current heap. The field may be absent.
+Value facts reuse the shape and ignore the field. -/
 structure Fact where
   slot : Nat
   contents : List Atom
@@ -115,8 +138,7 @@ structure Fact where
 abbrev Facts := List Fact
 
 def Holds (facts : Facts) (ρ : Env) (h : Heap) : Prop :=
-  ∀ f ∈ facts, ∃ flds c oid l v, ρ f.slot = .objAt flds c oid ∧ flds.lookup f.field = some l ∧
-    h[l]? = some v ∧ ∃ a ∈ f.contents, a.holds v
+  ∀ f ∈ facts, ∃ flds c oid v, ρ f.slot = .objAt flds c oid ∧ ReadGave flds f.field h v ∧ ∃ a ∈ f.contents, a.holds v
 
 theorem holds_nil (ρ h) : Holds [] ρ h := by simp [Holds]
 
@@ -133,10 +155,10 @@ theorem check_sound {source target mapping ρ h}
   intro f hmem
   obtain ⟨g,hg,hc⟩ := List.any_eq_true.mp (List.all_eq_true.mp hc f hmem)
   simp only [Bool.and_eq_true, beq_iff_eq] at hc
-  obtain ⟨flds,c,oid,l,v,hl,hfd,hv,hm⟩ := hs g hg
-  refine ⟨flds,c,oid,l,v,?_,?_,hv,covers_sound hc.2 hm⟩
+  obtain ⟨flds,c,oid,v,hl,hr,hm⟩ := hs g hg
+  refine ⟨flds,c,oid,v,?_,?_,covers_sound hc.2 hm⟩
   · simpa [PointClaims.mapEnv,hc.1.1] using hl
-  · rw [← hc.1.2]; exact hfd
+  · rw [← hc.1.2]; exact hr
 
 /-- The value added by a bind shifts every old environment slot. -/
 def shift (facts : Facts) : Facts := facts.map fun f => { f with slot := f.slot+1 }
@@ -147,15 +169,28 @@ theorem shift_holds {facts ρ h v} (hf : Holds facts ρ h) :
   obtain ⟨g,hg,rfl⟩ := List.mem_map.mp hm
   exact hf g hg
 
-/-- A read preserves all assertions because it leaves the heap unchanged. -/
+/-- A read observation gives both its value and its unchanged heap. -/
+theorem ReadGave.observed {flds field h v c oid n W}
+    (hr : ReadGave flds field h v) (hv : isVal v = true)
+    (hw : WorldAdm W) (hh : HeapOk n W h) :
+    SafePost (exact v) (fun h' u => h' = h ∧ u = v) n W h
+      (.readAt field (.objAt flds c oid)) := by
+  cases n with
+  | zero => trivial
+  | succ n =>
+    exact .inr ⟨trunc n (Nat.le_succ n) W, h, v, WExt_refl _,
+      WorldAdm_trunc _ hw, hr.step, HeapOk_trunc n W h hh,
+      HeapObservations.value hv rfl ⟨rfl, rfl⟩⟩
+
+/-- A read preserves observations because it leaves the heap unchanged. -/
 theorem read {facts ρ h i fld R n W}
     (hf : Holds facts ρ h) (hm : Fact.mk i R fld ∈ facts)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafePost (fun _ _ v => ∃ a ∈ R, a.holds v)
       (fun h' _ => Holds facts ρ h') n W h (.readAt fld (ρ i)) := by
-  obtain ⟨flds,c,oid,l,v,hl,hfd,hv,a,ha,hav⟩ := hf _ hm
+  obtain ⟨flds,c,oid,v,hl,hr,a,ha,hav⟩ := hf _ hm
   rw [hl]
-  apply consequence _ _ (read_observed hw hh hfd (Atom.isValue hav) hv)
+  apply consequence _ _ (hr.observed (Atom.isValue hav) hw hh)
   · intro _ _ u hu; subst u; exact ⟨a,ha,hav⟩
   · intro h' _ hp; rw [hp.1]; exact hf
 
@@ -174,7 +209,7 @@ theorem write {A : Fam} (ha : Adm A) {ρ h i a v n W}
   intro h' _ hp f hmem
   simp only [List.mem_singleton] at hmem
   subst f
-  refine ⟨flds,.absent,oid,l,v,he,hfd,?_,a,by simp,hv⟩
+  refine ⟨flds,.absent,oid,v,he,ReadGave.present hfd ?_,a,by simp,hv⟩
   rw [hp.1]
   apply write_new
   rw [hh.1]
@@ -192,12 +227,14 @@ theorem alloc {A : Fam} (ha : Adm A) {facts ρ h a v n W}
   intro h' result hp f hm
   rw [hp.1,hp.2]
   rcases List.mem_cons.mp hm with rfl | hm
-  · exact ⟨[(valueField,h.length)],.absent,h.length + 1,h.length,v,rfl,lookup_value _,
-      alloc_frame (alloc_new h v),a,by simp,hv⟩
+  · exact ⟨[(valueField,h.length)],.absent,h.length + 1,v,rfl,ReadGave.present (lookup_value _)
+      (alloc_frame (alloc_new h v)),a,by simp,hv⟩
   · obtain ⟨g,hg,rfl⟩ := List.mem_map.mp hm
-    obtain ⟨flds,c,oid,l,u,hl,hfd,hu,b,hb,he⟩ := hf g hg
-    exact ⟨flds,c,oid,l,u,hl,hfd,alloc_frame (alloc_frame hu),b,hb,he⟩
+    obtain ⟨flds,c,oid,u,hl,hr,b,hb,he⟩ := hf g hg
+    exact ⟨flds,c,oid,u,hl,(hr.alloc_frames [v]).alloc_frames [.nul],b,hb,he⟩
 
+#print axioms ReadGave.step
+#print axioms ReadGave.observed
 #print axioms Atom.excludes_sound
 #print axioms Atom.sem
 #print axioms Atom.isValue

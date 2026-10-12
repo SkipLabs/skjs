@@ -419,10 +419,11 @@ rest operation, using `instantiate` as other quantified calls do.
 ## Current-content assertions
 
 A location has a fixed write contract and contents that can vary within it.
-`current` proposes additional facts about those contents at one execution
-point. It is `null`, or a nonempty list of distinct `[field,labels]` pairs.
-Each field must belong to every record alternative, and its labels name
-a valid type in the table. An empty inner label list denotes impossibility;
+`current` proposes property-read result facts at one execution point, with
+the meaning in [Semantics](SEMANTICS.md#what-is-asserted-and-what-a-heap-change-can-touch).
+It is `null`, or a nonempty list of distinct `[field,labels]` pairs.
+Each field must be named, required or optional, by every record alternative,
+and its labels name a valid type in the table. An empty inner label list denotes impossibility;
 it does not mean that the assertion is absent.
 
 For a table whose row 4 is a single invariant Boolean cell:
@@ -437,14 +438,14 @@ write or call. Function parameters require `current:null`; ordinary closures
 receive no creation-time heap assumption.
 
 The decoder accepts a nonempty union of record clauses, each with one
-invariant field contract and optional readonly views. Every alternative must
-name each asserted field in its invariant contract or its views. Additional
+invariant field bag, readonly views and optional fields. Every alternative must
+name each asserted field in one of those components. Additional
 simultaneous invariant contracts in a clause are outside this profile.
 
 Extraction checks an assertion in one of two ways. If every plain record
-alternative's field contract implies the asserted type, a persistent inclusion
-obligation checks it; the asserted type can be nonprimitive. Otherwise, a
-point observation requires a supported finite predicate from the
+alternative's declared read result implies the asserted type, an ordinary
+property-read typing obligation checks it; the asserted type can be nonprimitive.
+Otherwise, a point observation requires a supported finite predicate from the
 [assertion grammar](POSITIVE-TYPES.md#state-assertion-grammar), justified by
 the graph checkpoint. A nonprimitive candidate supplies its supported nullish
 exclusions; each read must independently prove the requested result from the

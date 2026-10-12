@@ -76,22 +76,28 @@ private def pureOperand : Fragment.Expr → Bool
   | .lit .. | .var .. | .read _ _ (.var ..) => true
   | _ => false
 
-/-- Save the plain read in a singleton comparison. The other operand is
-effect-free; moving it across the read has no effect. -/
+/-- A source read saved once for a guard on its result. -/
+@[nospecialize] private def guardSnapshot (scope : List (ScopeBinding ι)) : Fragment.Expr → Option String
+  | .read _ fld (.var _ name) => do
+    let _ ← resolve scope name
+    readSnapshot name fld
+  | .var _ name => match resolve scope name with
+    | some (_, .cell ..) => some (localSnapshotName name)
+    | _ => none
+  | _ => none
+
+/-- Save the plain read in a shape or singleton comparison. The singleton's
+other operand is effect-free; moving it across the read has no effect. -/
 @[nospecialize] def readGuard (scope : List (ScopeBinding ι)) :
     Fragment.Expr → Option (String × Fragment.Expr × Fragment.Expr)
   | .not pos e => (readGuard scope e).map fun (snapshot,r,c) => (snapshot,r,.not pos c)
+  | .shapeTest pos tag equal r => do
+    let snapshot ← guardSnapshot scope r
+    some (snapshot,r,.shapeTest pos tag equal (.var r.span snapshot))
   | .singletonTest pos tag equal testLeft left right => do
     let (r,lit) := if testLeft then (left,right) else (right,left)
     guard (pureOperand lit)
-    let snapshot ← match r with
-      | .read _ fld (.var _ name) => do
-        let _ ← resolve scope name
-        readSnapshot name fld
-      | .var _ name => match resolve scope name with
-        | some (_, .cell ..) => some (localSnapshotName name)
-        | _ => none
-      | _ => none
+    let snapshot ← guardSnapshot scope r
     let saved := Fragment.Expr.var r.span snapshot
     some (snapshot,r,.singletonTest pos tag equal testLeft
       (if testLeft then saved else lit) (if testLeft then lit else saved))

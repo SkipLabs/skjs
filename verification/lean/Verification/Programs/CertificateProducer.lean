@@ -1064,12 +1064,12 @@ def successors : Continuation → List Target
   | .bind t | .effect t => [t]
   | .branch y n | .branchBind y n | .tagBind _ y n => [y,n]
 
-def edgeKnowledge (k : HeapKnowledge.Knowledge) (cont : Continuation) (index : Nat) :
+@[nospecialize] def edgeKnowledge (G : NormalGraph ι) (Γ : List (Ty ι)) (k : HeapKnowledge.Knowledge) (cont : Continuation) (index : Nat) :
     HeapKnowledge.Knowledge :=
   match cont with
   | .effect _ | .branch _ _ => HeapKnowledge.dropResult k
-  | .branchBind _ _ => HeapKnowledge.observe k 0 (.boolean (index == 0))
-  | .tagBind t _ _ => HeapKnowledge.observe k 0 (.tag t (index == 0))
+  | .branchBind _ _ => HeapKnowledge.observeTyped G Γ k 0 (.boolean (index == 0))
+  | .tagBind t _ _ => HeapKnowledge.observeTyped G Γ k 0 (.tag t (index == 0))
   | _ => k
 
 @[nospecialize] private def produceNode [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
@@ -1161,7 +1161,7 @@ Every edge is still checked by the independent consumer. -/
         | some [(pred,index,target)] =>
           let some previous := (table[pred]?).getD none | continue
           let some source := P[pred]? | throw .claimCount
-          k := HeapKnowledge.project (edgeKnowledge previous.output source.continuation index)
+          k := HeapKnowledge.project (edgeKnowledge G ((claim previous.expression).type :: (claim previous.expression).context) previous.output source.continuation index)
             target.mapping c.context.length
         | some preds =>
           -- A merge that is not a cut states no requirement of its own; it
@@ -1173,7 +1173,7 @@ Every edge is still checked by the independent consumer. -/
             match (table[pred]?).getD none, P[pred]? with
             | some previous, some source =>
               projections := projections ++ [HeapKnowledge.project
-                (edgeKnowledge previous.output source.continuation index) target.mapping c.context.length]
+                (edgeKnowledge G ((claim previous.expression).type :: (claim previous.expression).context) previous.output source.continuation index) target.mapping c.context.length]
             | _, _ => ready := false
           if !ready && !force then continue
           if ready then k := HeapKnowledge.meet projections
@@ -1192,12 +1192,12 @@ Every edge is still checked by the independent consumer. -/
 
 /-- Recover a located failed edge from the completed candidate. This includes
 heap entailment; it is not limited to ordinary subtype proof construction. -/
-private def failedEdge (P : Program)
+@[nospecialize] private def failedEdge (G : NormalGraph ι) (P : Program)
     (C : ControlFlow.Certificate ι) : Option (Failure ι) := Id.run do
   for (node,l) in P.zipIdx do
     let some c := C[l]? | return some .claimCount
     for (target,index) in (successors node.continuation).zipIdx do
-      let facts := edgeKnowledge c.output node.continuation index
+      let facts := edgeKnowledge G ((claim c.expression).type :: (claim c.expression).context) c.output node.continuation index
       let some destination := C[target.label]? | return some .claimCount
       if !HeapKnowledge.check facts destination.knowledge target.mapping then
         return some (.edge l target.label index)
@@ -1220,7 +1220,7 @@ private def failedEdge (P : Program)
     if checked.accepted then .ok C
     else match checked.exhaustion with
       | some stop => .error (.exhaustedExpression (stop.nodeLabel.getD start) stop)
-      | none => .error ((failedEdge P C).getD .rejected)
+      | none => .error ((failedEdge G P C).getD .rejected)
 
 theorem produce_checked [DecidableEq ι] [Hashable ι] [Instantiates ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {labels fuel R P claims start hints inputs suggestions known requirements cuts codes C}
     {checker : HeapExpressionRules.Checker G images} {aliases : List (ι × ι)}

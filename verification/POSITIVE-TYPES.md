@@ -1383,7 +1383,7 @@ slots, $A$ be a type, and $R$ a finite disjunction of primitive predicates:
 \begin{aligned}
 a &::= \mathsf{null}\mid\mathsf{undefined}\mid\mathsf{true}\mid\mathsf{false}\mid\mathsf{Number}\mid\mathsf{numLit}(b)\mid\mathsf{String}\mid\mathsf{strLit}(s)\mid\mathsf{defined}\mid\mathsf{nonNull}\mid\mathsf{nonNullish},\\
 R &::= \{a_1,\ldots,a_k\}\quad(k\geq 0),\\
-J &::= \top\mid x:A\mid x=R\mid x=y\mid x\mapsto R\mid x\mapsto y\mid J\land J.
+J &::= \top\mid x:A\mid x=R\mid x=y\mid x.f\mapsto R\mid x.f\mapsto y\mid x.f\mapsto^{?}y\mid J\land J.
 \end{aligned}
 ```
 
@@ -1392,8 +1392,9 @@ J &::= \top\mid x:A\mid x=R\mid x=y\mid x\mapsto R\mid x\mapsto y\mid J\land J.
 | $x:A$ | The value of $x$ belongs to $A$ at the current world and level. |
 | $x=R$ | $x$ satisfies one of the predicates in $R$. A statement about the environment, so no heap change can falsify it. |
 | $x=y$ | $x$ and $y$ hold the same value, the same location when they hold references. Again untouched by heap changes. |
-| $x\mapsto R$ | The cell $x$ names currently holds a value satisfying $R$. It does not change that location's contract. |
-| $x\mapsto y$ | The cell $x$ names currently holds the value of $y$. A write or a call can falsify this. |
+| $`x.f\mapsto R`$ | Reading field $`f`$ of $`x`$ currently yields a value satisfying $`R`$, including `undefined` for an absent optional key. The one-field spelling omits $`f`$. |
+| $`x.f\mapsto y`$ | The present field $`f`$ of $`x`$ holds the value of $`y`$. |
+| $`x.f\mapsto^{?}y`$ | Reading $`f`$ of $`x`$ gives $`y`$, including an absent-key result. |
 | $\top$, $J_1\land J_2$ | No requirement, or both. Conjunction asserts no ownership or disjointness. |
 
 $=$ speaks only about the environment, $\mapsto$ about the heap as well; that

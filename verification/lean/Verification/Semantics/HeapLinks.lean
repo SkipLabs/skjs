@@ -24,12 +24,7 @@ structure Link where
   optional : Bool := false
   deriving DecidableEq, Repr
 
-/-- What a read of `field` from an object with own-field map `flds` gave:
-the contents of its location, or, where the object lacks the key, `undefined`. -/
-def ReadGave (flds : List (PropKey × Nat)) (field : PropKey) (h : Heap) (v : Tm) : Prop :=
-  match flds.lookup field with
-  | some l => h[l]? = some v
-  | none => v = .undef
+export HeapFacts (ReadGave)
 
 abbrev Links := List Link
 
@@ -78,15 +73,6 @@ theorem check_sound {a b m ρ h} (hc : check a b m = true) (hh : Holds a ρ h) :
     simp only [hgd,ite_true,PointClaims.mapEnv,← h1,← h2,← h3,← h4]
     intro flds c oid l flds' c' oid' l' e1 e2 e3 e4 heq
     exact hf flds' c' oid' l' flds c oid l e3 e4 e1 e2 heq.symm
-
-/-- What a read gave stays what it would give after an allocation: the
-location it read is not a fresh one. -/
-theorem ReadGave.alloc_frames {flds f h v} (vs : List Val) (hr : ReadGave flds f h v) :
-    ReadGave flds f (h ++ vs) v := by
-  unfold ReadGave at hr ⊢
-  cases hl : flds.lookup f with
-  | some l => rw [hl] at hr; exact HeapObservations.alloc_frames vs hr
-  | none => rw [hl] at hr; exact hr
 
 theorem alloc_frames {ls ρ h} (vs : List Val) (hh : Holds ls ρ h) : Holds ls ρ (h ++ vs) := by
   intro g hg

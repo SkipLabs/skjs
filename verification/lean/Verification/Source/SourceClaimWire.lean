@@ -96,9 +96,8 @@ partial def ClaimType.ground [Labels ι] : ClaimType ι → Except String (Ty ι
   | .scheme .. => .error "quantified callable requires scheme checking"
   | .unavailable reason => .error reason
 
-/-- What a point currently holds, field by field: an object has one location
-per named field, so an assertion about its contents names the field it is
-about. A point that names no record carries none. -/
+/-- Proposed current property-read results, field by field. Optional fields
+include the absent-key result. A point that names no record carries none. -/
 abbrev CurrentFields (ι : Type) := List (PropKey × List ι)
 
 structure Binding (ι : Type) where
@@ -274,12 +273,12 @@ private def validCurrent (T : EquationStore.State) (A : ClaimType Tree) (current
   | none => true
   | some fs =>
     !fs.isEmpty && (fs.map Prod.fst).eraseDups.length == fs.length &&
-    -- Every record the binding may hold names the field: a fact is about
-    -- the location the field is at, whichever record the object is.
+    -- Every record arm names the field, required or optional.
     (match PositiveRules.expand (SourceTypes.graph T) (A.ground.toOption.getD []) with
       | [] => false
       | cs => cs.all fun
-        | .refs contract [] vs .. => fs.all (fun p => (contract.lookup p.1).isSome || (vs.lookup p.1).isSome)
+        | .refs contract [] vs os _ _ => fs.all (fun p => (contract.lookup p.1).isSome ||
+            (vs.lookup p.1).isSome || os.any (fun o => o.key == p.1))
         | _ => false) &&
     fs.all (fun p => validType T (.labels p.2))
 private def validBindings (T : EquationStore.State) (bs : List (Binding Tree)) : Bool :=

@@ -17,8 +17,6 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
   match e.node with
     | Read (({node=Id name;_} as o),Name field) when List.mem_assoc (field_key name field) env ->
       let known = binding_type (List.assoc (field_key name field) env) in
-      if List.mem (name,field) (observations ()).Analysis_capabilities.undefined_fields then
-        S.explain site ("an optional key found `undefined`, read at `undefined`: " ^ absent_key_reason);
       ignore (expr env o); known
     | Read ({node=Id name;_} as e,n) when List.mem name (observations ()).Analysis_capabilities.unknown_instance_tests ->
       (match expr env e with
@@ -47,8 +45,6 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
       (match e.node,n with
        | Id o,Name k when List.mem (o,k) (observations ()).Analysis_capabilities.dictionary_keys && expected <> None ->
          S.explain site ("a read of a key `in` found in a dictionary: " ^ dictionary_presence_reason)
-       | Id o,Name k when List.mem (o,k) (observations ()).Analysis_capabilities.undefined_fields && expected <> None ->
-         S.explain site ("an optional key found `undefined`, read at `undefined`: " ^ absent_key_reason)
        | _ -> ());
       S.refuse_length_union declarations site receiver n;
       (match expected with

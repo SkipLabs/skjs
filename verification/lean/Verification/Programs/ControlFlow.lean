@@ -146,7 +146,7 @@ theorem optionalFields_holds {facts : HeapKnowledge.Knowledge} {slot ρ h}
     refine ⟨flds, c, oid, hl, fun hn => ?_, fun l hn => ?_⟩
     · unfold HeapLinks.ReadGave at hr
       rw [hn] at hr
-      simpa [hc.2] using hr
+      simpa [hc.2] using hr.2
     · unfold HeapLinks.ReadGave at hr
       rw [hn] at hr
       simpa [hc.2] using hr
@@ -158,7 +158,7 @@ theorem optionalFields_holds {facts : HeapKnowledge.Knowledge} {slot ρ h}
   | some _, some c =>
       (checkObservedResult G images Γ (entry c) 0 o target.mapping p
         (readFields facts 0) (optionalFields facts 0)).bind fun _ =>
-      CheckResult.ofBool (HeapKnowledge.check (HeapKnowledge.observe facts 0 o) c.knowledge target.mapping)
+      CheckResult.ofBool (HeapKnowledge.check (HeapKnowledge.observeTyped G Γ facts 0 o) c.knowledge target.mapping)
   | _, _ => failure
 
 @[nospecialize] def checkBranchTargetUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (P : Program) (C : Certificate ι)
@@ -170,7 +170,7 @@ theorem checkBranchTargetUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images 
     checkBranchTargetUsing G images P C Γ o target p facts = (
   match P[target.label]?, C[target.label]? with
   | some _, some c => checkObservedUsing G images Γ (entry c) 0 o target.mapping p (readFields facts 0)
-      (optionalFields facts 0) && HeapKnowledge.check (HeapKnowledge.observe facts 0 o) c.knowledge target.mapping
+      (optionalFields facts 0) && HeapKnowledge.check (HeapKnowledge.observeTyped G Γ facts 0 o) c.knowledge target.mapping
   | _, _ => false
   ) := by
   cases hp : P[target.label]? <;> cases hc : C[target.label]? <;>
@@ -333,7 +333,7 @@ def TargetOk [DecidableEq ι] (G : NormalGraph ι) (C : Certificate ι) (Γ : Li
 def BranchTargetOk [DecidableEq ι] (G : NormalGraph ι) (C : Certificate ι)
     (Γ : List (Ty ι)) (o : Observation) (l : Target) (facts : HeapKnowledge.Knowledge) : Prop :=
   ∃ c, C[l.label]? = some c ∧ ObservedCovers G Γ (entry c) 0 o l.mapping (readFields facts 0)
-    (optionalFields facts 0) ∧ HeapKnowledge.check (HeapKnowledge.observe facts 0 o) c.knowledge l.mapping = true
+    (optionalFields facts 0) ∧ HeapKnowledge.check (HeapKnowledge.observeTyped G Γ facts 0 o) c.knowledge l.mapping = true
 
 
 /-- Where a throw out of a node in environment `ρ` may go: nowhere (it leaves
@@ -454,7 +454,7 @@ theorem branch_target_state [DecidableEq ι] {G : NormalGraph ι} {Rty C Γ q l 
   obtain ⟨c,hc,hcov,hfact⟩ := ht
   exact ⟨c,hc,(hcov.env he hq hh (readFields_holds hf) (optionalFields_holds hf)).transfer n
     (Nat.le_succ n) _ (WExt_refl _),
-    HeapKnowledge.check_sound hfact (HeapKnowledge.observe_holds hf hq)⟩
+    HeapKnowledge.check_sound hfact (HeapKnowledge.observeTyped_holds he hf hq)⟩
 
 /-- One checked graph transition preserves the point assertions. Keeping this
 step lemma separate lets additional postconditions reuse exactly the same

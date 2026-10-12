@@ -1679,6 +1679,24 @@ for (const [artifacts, arity, refusal] of [
   invoke(badRead, join(artifacts, "evidence.json"), artifacts);
 }
 {
+  const artifacts = run("optional-read-observations");
+  const claims = readClaims(artifacts);
+  const fn = must(claims.functions.find((f) => f.name === "observeOnly"), "optional observation function");
+  const undef = rowOf(claims, "undef");
+  const entry = must(fn.entries.find((e) => e.bindings.some((b) =>
+    b.name === "obj" && b.current?.some(([key, type]) => key === "val" &&
+      type.length === 1 && type[0] === undef))), "undefined branch entry");
+  const object = must(entry.bindings.find((b) => b.name === "obj"), "observed object");
+  // The undefined branch cannot establish a number-valued read observation.
+  object.current = [["val", [rowOf(claims, "num")]]];
+  const forged = writeClaims(artifacts, "forged-optional-read-result", claims);
+  refusedAt(artifacts, forged, "forged-optional-read-result", "source incoming edge obligation");
+  invoke(forged, join(artifacts, "evidence.json"), artifacts);
+  assert.equal(runExample("invalid-optional-read-alias", "stale({ val: undefined })"), 1);
+  assert.equal(runExample("invalid-optional-read-call",
+    "(() => { const obj = { val: undefined }; return stale(obj, () => { obj.val = 1; }); })()"), 1);
+}
+{
   // A void parameter admits numbers and objects as well as undefined.
   // A forged singleton claim must fail at the parameter read.
   const artifacts = run("void-source-values");

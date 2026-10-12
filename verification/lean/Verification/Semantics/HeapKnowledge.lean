@@ -24,15 +24,15 @@ theorem empty (ρ h) : Holds ⟨[],[],[]⟩ ρ h := ⟨holds_nil ρ h,by simp [V
 theorem alloc_frame {k ρ h v} (hk : Holds k ρ h) : Holds k ρ (h ++ [v]) := by
   refine ⟨?_, hk.2.1, HeapLinks.alloc_frame hk.2.2⟩
   intro f hf
-  obtain ⟨flds,c,oid,l,u,he,hfd,hu,a,ha,hv⟩ := hk.1 f hf
-  exact ⟨flds,c,oid,l,u,he,hfd,HeapObservations.alloc_frame hu,a,ha,hv⟩
+  obtain ⟨flds,c,oid,u,he,hr,a,ha,hv⟩ := hk.1 f hf
+  exact ⟨flds,c,oid,u,he,hr.alloc_frames [v],a,ha,hv⟩
 
 /-- The same across a whole object's worth of fresh locations. -/
 theorem alloc_frames {k ρ h} (vs : List Val) (hk : Holds k ρ h) : Holds k ρ (h ++ vs) := by
   refine ⟨?_, hk.2.1, HeapLinks.alloc_frames vs hk.2.2⟩
   intro f hf
-  obtain ⟨flds,c,oid,l,u,he,hfd,hu,a,ha,hv⟩ := hk.1 f hf
-  exact ⟨flds,c,oid,l,u,he,hfd,HeapObservations.alloc_frames vs hu,a,ha,hv⟩
+  obtain ⟨flds,c,oid,u,he,hr,a,ha,hv⟩ := hk.1 f hf
+  exact ⟨flds,c,oid,u,he,hr.alloc_frames vs,a,ha,hv⟩
 
 /-- What every one of several states establishes: a fact about a slot and
 field each of them states, holding what any of them says it holds; the first's
@@ -148,14 +148,11 @@ theorem project_checked (k : Knowledge) (m count) : check k (project k m count) 
   simp only [beq_iff_eq] at hc hv
   simp [hc.2,hv.2]
 
-/-- The facts an observed value `R` gives about the fields it was read from:
-one per current read link ending at `slot`. A read through an optional key
-also covers the object lacking the key, where it gave `undefined`; it tells
-what the field holds only where `R` rules `undefined` out, and then that the
-key is present. -/
+/-- Every live property-read link transfers the observed result predicate,
+including observations admitting undefined. -/
 def linkFacts (k : Knowledge) (slot : Nat) (R : List Atom) : Facts :=
-  (k.links.filter (fun g => (!g.alias && !g.distinct) && g.value == slot &&
-    (!g.optional || R.all (·.excludes .isUndef)))).map (fun g => ⟨g.cell,R,g.field⟩)
+  (k.links.filter (fun g => (!g.alias && !g.distinct) && g.value == slot)).map
+    (fun g => ⟨g.cell,R,g.field⟩)
 
 theorem linkFacts_holds {k slot R ρ h} (hk : Holds k ρ h) (hv : ∃ a ∈ R, a.holds (ρ slot)) :
     HeapFacts.Holds (linkFacts k slot R) ρ h := by
@@ -163,30 +160,16 @@ theorem linkFacts_holds {k slot R ρ h} (hk : Holds k ρ h) (hv : ∃ a ∈ R, a
   obtain ⟨g,hg,rfl⟩ := List.mem_map.mp hf
   have hg := List.mem_filter.mp hg
   have hg2 := hg.2
-  simp only [Bool.and_eq_true,Bool.not_eq_true',beq_iff_eq,Bool.or_eq_true] at hg2
-  obtain ⟨a,ha,hav⟩ := hv
+  simp only [Bool.and_eq_true,Bool.not_eq_true',beq_iff_eq] at hg2
   have hl := hk.2.2 g hg.1
-  simp only [hg2.1.1.1,hg2.1.1.2,Bool.false_eq_true,ite_false] at hl
+  simp only [hg2.1.1,hg2.1.2,Bool.false_eq_true,ite_false] at hl
   cases ho : g.optional
   · simp only [ho,Bool.false_eq_true,ite_false] at hl
     obtain ⟨flds,c,oid,l,hl,hfd,hh⟩ := hl
-    exact ⟨flds,c,oid,l,ρ g.value,hl,hfd,hh,a,ha,by simpa [hg2.1.2] using hav⟩
+    exact ⟨flds,c,oid,ρ g.value,hl,ReadGave.present hfd hh,by simpa [hg2.2] using hv⟩
   · simp only [ho,ite_true] at hl
     obtain ⟨flds,c,oid,hl,hr⟩ := hl
-    have hnu : R.all (·.excludes .isUndef) = true := by
-      rcases hg2.2 with h | h
-      · simp [ho] at h
-      · simpa using h
-    unfold HeapLinks.ReadGave at hr
-    cases hfd : flds.lookup g.field with
-    | none =>
-      rw [hfd] at hr
-      have ht := Atom.excludes_sound (List.all_eq_true.mp hnu a ha) hav
-      rw [← hg2.1.2, hr] at ht
-      simp [tagHolds] at ht
-    | some l =>
-      rw [hfd] at hr
-      exact ⟨flds,c,oid,l,ρ g.value,hl,hfd,hr,a,ha,by simpa [hg2.1.2] using hav⟩
+    exact ⟨flds,c,oid,ρ g.value,hl,hr,by simpa [hg2.2] using hv⟩
 
 /-- An observed Boolean outcome refines cells only through current read links.
 The ordinary value fact is useful even when no cell link exists. -/
@@ -402,6 +385,43 @@ theorem atoms_sem {G : NormalGraph ι} {A R} (h : atoms G A = some R) (n W v) :
     exact primitive_sem h n W v
   · cases h
 
+/-- A tag observation combines the saved predicate with the tested value's
+ordinary type. This retains facts such as a falsy object-or-undefined being
+undefined, whose broad saved nullish predicate alone is insufficient. -/
+@[nospecialize] def observeTyped (G : NormalGraph ι) (Γ : List (Ty ι))
+    (k : Knowledge) (slot : Nat) (o : BranchRefinement.Observation) : Knowledge :=
+  let out := observe k slot o
+  match o, Γ[slot]? with
+  | .tag tag q, some A =>
+    match atoms G (BranchRefinement.tagSlice G A tag q) with
+    | some R => ⟨linkFacts k slot R ++ out.cells, ⟨slot,R,valueField⟩ :: out.values, out.links⟩
+    | none => out
+  | _, _ => out
+
+theorem observeTyped_holds {G : NormalGraph ι} {Γ k slot o ρ n W h}
+    (he : EnvOk G Γ ρ n W) (hk : Holds k ρ h) (ho : o.holds (ρ slot)) :
+    Holds (observeTyped G Γ k slot o) ρ h := by
+  have hout := observe_holds hk ho
+  unfold observeTyped
+  split
+  · rename_i tag q A hi
+    split
+    · rename_i R hr
+      have hv := (atoms_sem hr n W (ρ slot)).mp
+        (BranchRefinement.tagSlice_sound (he.2 slot A hi) ho)
+      refine ⟨?_, ?_, hout.2.2⟩
+      · intro f hf
+        rcases List.mem_append.mp hf with hf | hf
+        · exact linkFacts_holds hk hv f hf
+        · exact hout.1 f hf
+      · intro f hf
+        rcases List.mem_cons.mp hf with rfl | hf
+        · exact hv
+        · exact hout.2.1 f hf
+    · exact hout
+  · exact hout
+
+#print axioms observeTyped_holds
 #print axioms atoms_sem
 #print axioms observeTag_holds
 

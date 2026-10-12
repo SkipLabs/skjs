@@ -99,14 +99,13 @@ let key_slice key holds = function
       | Some result -> if result = holds then Some a else None
       | None -> Some (if holds then present key a else a)) xs)
   | t -> t
-(* Whether a field's contents can be asserted of an object of this type: a
-   plain record that has the field, not optionally, or a union of such: a
-   fact names the location the field is at, whichever record the object is. *)
-let record_field declarations t field =
+(* Whether every record arm names the field. Read-result observations admit
+   optional fields; presence-dependent refinement requires a required field. *)
+let record_field ?(allow_optional=false) declarations t field =
   let rec has seen t = match (try Some (declared_head declarations seen t) with Json.Error _ -> None) with
     | Some (Atoms (_::_ as atoms)) -> List.for_all (function
         | Shape {fields;calls=[];elements=None;indexes=[]} | Exact fields ->
-          List.exists (fun (f:Semantic.field) -> f.name = Name field && not f.optional) fields
+          List.exists (fun (f:Semantic.field) -> f.name = Name field && (allow_optional || not f.optional)) fields
         | Named (id,_) as atom when not (List.mem id seen) -> has (id::seen) (Atoms [atom])
         | _ -> false) atoms
     | _ -> false in
@@ -138,7 +137,7 @@ let refine_field bounds declarations env name field refine =
       else env
     | _ -> env in
   match List.assoc_opt name env with
-  | Some (Value t) when record_field declarations t field ->
+  | Some (Value t) when record_field ~allow_optional:true declarations t field ->
     let key = field_key name field in
     let current = match List.assoc_opt key env with
       | Some (Value c) -> Some c
@@ -206,7 +205,6 @@ let rec branch_with state ?(modules = fun _ -> None) ?(claimed = fun _ -> None) 
      | _ -> ());
     refine_value env name (key_slice key truth)
   | TypeofTest (shape,equal,{node=Read ({node=Id name;_},Name field);_}) ->
-    if shape = "undefined" && truth = equal then state.undefined_fields := (name,field) :: !(state.undefined_fields);
     refine_field env name field (typeof_slice shape (truth = equal))
   (* `x == null` holds of null and undefined alike. *)
   | Equality ((LooseEqual | LooseUnequal as op),{node=Id name;_},{node=Literal (LNull | LUndefined);_})
@@ -228,10 +226,6 @@ let rec branch_with state ?(modules = fun _ -> None) ?(claimed = fun _ -> None) 
      other to the values that may equal one of them. *)
   | Equality ((StrictEqual | StrictUnequal as op),l,r) ->
     let equal = truth=(op=StrictEqual) in
-    (match l.node,r.node with
-     | Read ({node=Id o;_},Name k),Literal LUndefined | Literal LUndefined,Read ({node=Id o;_},Name k) when equal ->
-       state.undefined_fields := (o,k) :: !(state.undefined_fields)
-     | _ -> ());
     (* An immutable name, or a field of one: read again where Lean tests it
        against each singleton, which nothing between has changed. *)
     let immutable n = match List.assoc_opt n env with

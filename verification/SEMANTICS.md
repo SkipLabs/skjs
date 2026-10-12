@@ -915,41 +915,43 @@ a producer's internal types with heap assertions.
 
 ### What is asserted, and what a heap change can touch
 
-The finite assertion layer records three forms, and they divide on one question:
-does the form mention the heap?
+The property-read relation is defined for an object $`o`$ with own-field map
+$`F_o`$. It covers a present location and an absent key with no prototype:
+
+```math
+\mathrm{Read}_h(o,f,v)\equiv
+(\exists\ell.\ F_o(f)=\ell\land h(\ell)=v)\lor
+(f\notin\mathrm{dom}(F_o)\land\mathsf{proto}\notin\mathrm{dom}(F_o)
+ \land v=\mathsf{undefined}).
+```
+
+`HeapFacts.ReadGave` defines this relation. `ReadGave.step` proves its
+correspondence with a single heap-preserving calculus read step.
+The finite assertions distinguish environment facts from heap observations:
 
 ```math
 \begin{aligned}
-x=R&\equiv\rho(x)\in R,
-  &&\text{a variable satisfies a primitive predicate}\\
-x=y&\equiv\rho(x)=\rho(y),
-  &&\text{two variables hold the same value}\\
-x\mapsto R&\equiv
-  \exists\ell\,v.\;\rho(x)=\ell\land h(\ell)=v\land v\in R,
-  &&\text{the cell }x\text{ names satisfies }R\\
-x\mapsto y&\equiv
-  \exists\ell.\;\rho(x)=\ell\land h(\ell)=\rho(y),
-  &&\text{that cell holds the value of }y\\
-x.f\mapsto^{?}y&\equiv
-  \bigl(\exists\ell.\;\rho(x).f=\ell\land h(\ell)=\rho(y)\bigr)\lor
-  \bigl(f\notin\mathrm{keys}\rho(x)\land\rho(y)=\mathsf{undefined}\bigr),
-  &&\text{a read of }f\text{ that may have found no key gave }y
+x=R&\equiv\rho(x)\in R,\\
+x=y&\equiv\rho(x)=\rho(y),\\
+x.f\mapsto R&\equiv\exists v.\ \mathrm{Read}_h(\rho(x),f,v)\land v\in R,\\
+x.f\mapsto y&\equiv
+  \exists\ell.\ F_{\rho(x)}(f)=\ell\land h(\ell)=\rho(y),\\
+x.f\mapsto^{?}y&\equiv\mathrm{Read}_h(\rho(x),f,\rho(y)).
 \end{aligned}
 ```
 
-Two relations, each taking a finite primitive-predicate disjunction or a variable on the right.
-The last form is the read link of a read through an optional key
-(`HeapLinks.ReadGave`, the link's `optional` flag): an object of a record
-lacking one of its optional keys has no prototype, so its read gave
-`undefined` there. An observation of $y$ ruling `undefined` out
-therefore says the key is present, and what it holds.
+The predicate fact covers either presence or absence. A required read link
+also establishes presence; an optional read link states only the read result.
+The one-field notation omits $`f`$ for the private cell field.
+An observation of the result excluding `undefined` proves presence for an
+optional key. An observation admitting it retains both possibilities.
 The [predicate vocabulary](POSITIVE-TYPES.md#state-assertion-grammar) includes
 numeric singletons and the whole number family.
 The $=$ atoms mention only $\rho$; the $\mapsto$ atoms mention $h$ as well, and
 that is the only difference that matters. $x=R$ abbreviates membership in the
 disjunction of predicates in $R$. For constant predicates this is a disjunction
 of equalities; the numeric-family predicate also admits any numeric value.
-Write $\Pi$ for a list of them. The last two mention $h$ as
+Write $\Pi$ for a list of them. The remaining forms mention $h$ as
 well. Write $\Sigma$ for a list of those. Both are read as the conjunction of
 their atoms and extended with a comma, exactly as $\Gamma$ is; neither carries
 ownership or disjointness, and the atoms are duplicable, so there is no

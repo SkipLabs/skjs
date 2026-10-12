@@ -44,10 +44,10 @@ open S
 
   let entry env span = match Json.list span with
     | start::_ ->
-      (* A field's contents are claimed where its object is still one record. *)
+      (* A read-result observation is claimed where every record arm names the key. *)
       let bindings = List.filter (fun (n,_) -> not (is_field n) ||
         (match List.assoc_opt (owner n) env with
-         | Some (Value t) -> record_field declarations t (field_of n)
+         | Some (Value t) -> record_field ~allow_optional:true declarations t (field_of n)
          | _ -> false)) env in
       publish_entry start bindings
     | [] -> Json.fail "empty source span"

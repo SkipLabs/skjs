@@ -14,17 +14,17 @@
   "rejected": 2
  },
  "accepted": 2674,
- "verified": 2483,
+ "verified": 2484,
  "byStatus": {
-  "verified (check)": 2483,
-  "unverified (search)": 95,
+  "verified (check)": 2484,
+  "unverified (search)": 94,
   "unsupported (source)": 73,
   "unsupported (proposal)": 23
  },
  "bySuite": {
   "expect-error": {
    "accepted": 2458,
-   "verified": 2269
+   "verified": 2270
   },
   "constprop": {
    "accepted": 66,
@@ -51,11 +51,11 @@
    "verified": 8
   }
  },
- "filesAllVerified": 299,
+ "filesAllVerified": 300,
  "filesWithAccepted": 377,
  "functions": {
   "accepted": 2026,
-  "verified": 1852
+  "verified": 1853
  },
  "byGroup": {
   "TypeScript refuses the code too (the pipeline follows TypeScript's types)": {
@@ -196,12 +196,6 @@
    "dependency": 0,
    "files": 1
   },
-  "an optional key found `undefined` (the key may be absent)": {
-   "units": 1,
-   "self": 1,
-   "dependency": 0,
-   "files": 1
-  },
   "other source forms": {
    "units": 1,
    "self": 1,
@@ -222,11 +216,11 @@
   }
  },
  "exhausted": 0,
- "reachedButRefused": 95,
+ "reachedButRefused": 94,
  "byClass": {
-  "verified": 2483,
+  "verified": 2484,
   "principled": 87,
-  "gap": 94,
+  "gap": 93,
   "unexplained": 0,
   "skjsUnsound": 10
  },
@@ -362,11 +356,6 @@
    "units": 2,
    "files": 2
   },
-  "absent-key and dictionary presence facts": {
-   "class": "gap",
-   "units": 2,
-   "files": 2
-  },
   "calls: spreads, `Object.assign`, array literal spreads": {
    "class": "gap",
    "units": 2,
@@ -413,6 +402,11 @@
    "files": 1
   },
   "an ambient enum": {
+   "class": "gap",
+   "units": 1,
+   "files": 1
+  },
+  "dictionary presence facts": {
    "class": "gap",
    "units": 1,
    "files": 1
@@ -513,7 +507,6 @@
   "source: an array assignment pattern writing other than a local is outside the fragment: a field target's reference is evaluated before its position is read and defaulte": 1,
   "search: reject: source refusal at _: position 1 is past the positions of a mutable tuple, which `push` may have extended with a value its type does not state there (Typ": 1,
   "source: an ambient enum is outside the fragment: its object is the environment's, whose members a declaration need not all value, and the declaration reader has no ambi": 1,
-  "search: reject: an optional key found `undefined`, read at `undefined`: the key may be absent, and a read of an absent key is stated by no clause the model reads": 1,
   "search: reject: source refusal at _: a scheme claim has no quantified closure in its source": 1,
   "search: reject: a read of a key `in` found in a dictionary: presence promotes an optional field of a record, not the index of a dictionary, so the read is still at the ": 1,
   "search: reject: a spread of a dictionary: the copy owns the keys the dictionary holds when it runs, which no type states: the result is a dictionary only where every pa": 1,
@@ -1536,7 +1529,7 @@
 {"source":"tests/expect-error/field-refinement.ts","name":"testAndChain","kind":"function","line":316,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/field-refinement.ts","name":"testOptionalFieldNotUndefined","kind":"function","line":327,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/field-refinement.ts","name":"testOptionalFieldTernary","kind":"function","line":336,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/field-refinement.ts","name":"testOptionalFieldEqualsUndefined","kind":"function","line":342,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: an optional key found `undefined`, read at `undefined`: the key may be absent, and a read of an absent key is stated by no clause the model reads","group":"an optional key found `undefined` (the key may be absent)","where":"self","at":"obj.val","detail":"reject: an optional key found `undefined`, read at `undefined`: the key may be absent, and a read of an absent key is stated by no clause the model reads — The available claim for u is undefined | number. This obligation requires undefined.","class":"gap"},
+{"source":"tests/expect-error/field-refinement.ts","name":"testOptionalFieldEqualsUndefined","kind":"function","line":342,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/field-refinement.ts","name":"testFieldNotNull","kind":"function","line":349,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/field-refinement.ts","name":"testFieldNullUndefNotUndefined","kind":"function","line":357,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/field-refinement.ts","name":"incrementCounter566","kind":"function","line":370,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
