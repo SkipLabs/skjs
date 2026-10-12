@@ -250,7 +250,21 @@ def moduleInstances (T : EquationStore.State) (g : Instantiable)
       | throw (refuse pos s!"'{g.name}' is not one callable")
     instances := instances ++ [atom]
   let some first := instances.head? | throw (refuse g.pos s!"'{g.name}' has no call to instantiate")
-  let callable := if instances.length == 1 then first else first.setObjVal! "and" (toJson instances.tail)
+  -- Instances that are graph labels, a signature with a pack rest, conjoin
+  -- as one callable whose signatures are all of theirs.
+  let graphLabel (atom : Json) : Option Tree := do
+    if atom.getObjValD "a" != .str "graph" then none
+    (fromJson? (atom.getObjValD "label")).toOption
+  let callable ← match instances.mapM graphLabel with
+    | some labels@(_ :: _ :: _) => do
+      let G := SourceTypes.graph T
+      let parts ← labels.mapM fun l => match PositiveRules.expand G [l] with
+        | [.arrs L S] => pure (L, S)
+        | _ => throw (refuse g.pos s!"'{g.name}' is not one callable")
+      let (T', label) := EquationStore.intern T [.arrs (parts.flatMap (·.1)) (parts.flatMap (·.2))]
+      T := T'
+      pure (Json.mkObj [("a", toJson "graph"), ("label", toJson label)])
+    | _ => pure (if instances.length == 1 then first else first.setObjVal! "and" (toJson instances.tail))
   return (T, Json.mkObj [("top", toJson false), ("atoms", toJson [callable])],
     calls.map (·.2.1), calls.map (·.1))
 

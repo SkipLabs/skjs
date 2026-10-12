@@ -297,9 +297,32 @@ function type and a declared function alike, as TypeScript reads it:
      {\ldots x : \mathit{Alias}\langle\vec A\rangle\ \text{collects into}\ E[\vec A/\vec X]}
 ```
 
+A module function's rest typed by one of its own type parameters,
+`function f<P extends B>(…, ...x: P): R`, makes $`P`$ an
+[argument pack](POSITIVE-TYPES.md#argument-packs) bounded by the pack of its
+bound $`B`$, an array or a tuple of required positions written as one: every
+call instantiates $`P`$ at the list it collects, checked within that pack
+(scheme elimination). The array a call collects is fresh, with the actuals and
+none of an instance's other members, so the body takes $`x`$ at $`B`$, the
+elements every instance's list has, and $`P`$ types nothing else:
+
+```math
+\frac{P\notin\mathrm{fv}(\vec A,R,\mathit{body})\quad B\ \text{an array or a tuple of required positions}
+      \quad \vec y:\vec A,\ x:B\vdash\mathit{body}:R}
+     {\mathsf{function}\ f\langle P\le B\rangle(\vec y:\vec A,\ldots x:P):R\ :\ \forall P\le\mathsf{Pack}(\tau_B).\,(\vec A,\ldots P)\to R}
+```
+
+Here $`\tau_B`$ is $`B`$'s tuple contract. A list within an instance $`X\le\mathsf{Pack}(\tau_B)`$
+is within $`\mathsf{Pack}(\tau_B)`$, so the store a call collects meets the store type $`B`$
+describes (`packRest_store_safe`); that each call meets the body's input at
+$`B`$ is the module function's interface ([module rules](SOURCE-CONTRACTS.md#modules-and-code-units)).
+A type parameter typing a rest and anything else is
+[refused on principle](SOURCE-FRAGMENT.md#refused-on-principle).
+
 A rest typed by anything else is refused by its form: by a type parameter
-(a function definition has no allocation rule for an array only an instance
-fixes; a function type's is a pack), by an intersection (its contract can be empty
+of a closure or of an enclosing declaration (a closure's scheme reads a bound
+as the meet of its binder with it, and argument lists have no meet row), by
+an intersection (its contract can be empty
 at an instance TypeScript admits, [refused on principle](SOURCE-FRAGMENT.md#refused-on-principle)), by a tuple with
 optional or rest elements (several lengths), or by what is no array.
 

@@ -595,6 +595,10 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   // where the declared contract holds no array, and the result is no boolean.
   assert.equal(runExample("invalid-rest-intersection", "typeof wrong()"), "number",
     "invalid-rest-intersection: the actual source returns a number despite its boolean contract");
+  // A rest typed by a type parameter typing a value too: TypeScript infers a
+  // tagged instance, and the collected array returned at it has no tag.
+  assert.equal(runExample("invalid-rest-pack-value", "typeof wrong()"), "undefined",
+    "invalid-rest-pack-value: the actual source returns undefined despite its string contract");
   // Forwarding through an ordinarily annotated binding does not prevent the
   // callback from shortening the source; the final map position remains a hole.
   assert.equal(runExample("invalid-callback-effect-forwarding",

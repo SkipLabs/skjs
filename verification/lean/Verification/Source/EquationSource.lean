@@ -75,6 +75,33 @@ def genericType (ctx : Ctx) (term : Json) : M GenericType := do
     return .construct params (← lowerType ctx (← field term "result"))
   | _ => return .other (← lowerType ctx term)
 
+/-- A module function's rest typed by one of its own type parameters,
+`...args: T` (`{"k":"pack","of":{"k":"binder","name":"T"}}`): that parameter's
+name and declared bound. -/
+def packRest (f : Json) : Option (String × Json) := do
+  let .ok params := f.getObjValAs? (Array Json) "params" | none
+  let p ← params.back?
+  if !(p.getObjVal? "rest").isOk then none
+  let ty := p.getObjValD "type"
+  if kindOf ty != some "pack" then none
+  let of := ty.getObjValD "of"
+  if kindOf of != some "binder" then none
+  let .ok n := of.getObjValAs? String "name" | none
+  let .ok tps := f.getObjValAs? (Array Json) "typeParams" | none
+  let tp ← tps.find? fun tp => tp.getObjValD "name" == .str n
+  return (n, tp.getObjValD "bound")
+
+/-- A module function as its body sees it: a rest typed by its own type
+parameter is the array the call collects at that parameter's bound, the
+elements every instance's argument list has (PROGRAM-TYPING.md, "Judgments
+and constructor views"). Its signature keeps the pack. -/
+def restView (f : Json) : Json :=
+  match packRest f, f.getObjValAs? (Array Json) "params" with
+  | some (_, bound), .ok params =>
+    let last := params.back!
+    f.setObjVal! "params" (.arr (params.pop.push (last.setObjVal! "type" bound)))
+  | _, _ => f
+
 /-- Lower a generic module value's pieces with its binders as placeholders.
 Its declared bounds are checked at each instance a call names
 (`Scheme.moduleInstances`), not here. -/
@@ -87,8 +114,12 @@ private def genericOf (name : String) (pos : Nat × Nat) (path : String) (node :
   let bounds ← tps.toList.mapM fun p => do
     let n ← (str p "name" : Except String String)
     let b := p.getObjValD "bound"
+    let ctx : Ctx := { binders := scope, site := s!"{path}: the bound of {n}", checkBounds := false }
+    if (scope.lookup n).any (·.pack) then
+      if b == .null then throw s!"{path}: an argument pack needs its bound"
+      return (n, some (← packBound ctx b))
     if b == .null then return (n, some [← ground "source" sourceValueClauses])
-    return (n, some (← lowerType { binders := scope, site := s!"{path}: the bound of {n}", checkBounds := false } b))
+    return (n, some (← lowerType ctx b))
   return { name, pos, binders, resolution := ResolutionWire.groups parameters, type := t, bounds }
 
 /-- Everything the source path lowers, in one run: the declarations, every
@@ -115,7 +146,7 @@ def lowerSource (ast claims : Json) : M (List (String × Union) × List (String 
   modify fun s => { s with proto := match proto with | .app h _ => some h | _ => none }
   drain
   let functionTrees := (ast.getObjValAs? (Array Json) "functions").toOption.getD #[]
-  let annotations ← walk "/functions" [] [] (ast.getObjValD "functions")
+  let annotations ← walk "/functions" [] [] (.arr (functionTrees.map restView))
   -- Generic module functions: their binders, and their types at them.
   let mut generics : List GenericValue := []
   let mut units : List (String × List (String × Tree × Option Union)) := []
@@ -123,7 +154,7 @@ def lowerSource (ast claims : Json) : M (List (String × Union) × List (String 
     let tps := (f.getObjValAs? (Array Json) "typeParams").toOption.getD #[]
     if tps.isEmpty then continue
     let path := s!"/functions/{i}"
-    let _ ← enterUnit path [] f tps
+    let _ ← enterUnit path [] (restView f) tps
     units := units ++ [(path, (((← get).unitBinders.lookup path).getD []))]
     let name ← str f "name"
     let pos ← (fromJson? (← field f "namePos") : Except String (Nat × Nat))
@@ -131,6 +162,16 @@ def lowerSource (ast claims : Json) : M (List (String × Union) × List (String 
       -- Its signature by its parameters' annotations: a rest's element, the
       -- claim of a rest being its element's (`Fragment.callableType`).
       let ctx : Ctx := { binders := scope, site := path, checkBounds := false }
+      -- A rest typed by its own type parameter is that parameter as an
+      -- argument pack, which each call instantiates.
+      if (packRest f).isSome then
+        let params ← arr f "params"
+        if params.any (·.getObjValD "type" == .null) || f.getObjValD "retType" == .null then
+          throw s!"{path}: a generic module function's type needs every parameter's and its result's annotation"
+        return .other (← lowerType ctx (Json.mkObj [("k", .str "function"), ("receiver", .null),
+          ("params", .arr (params.pop.map (·.getObjValD "type"))), ("rest", params.back!.getObjValD "type"),
+          ("result", f.getObjValD "retType"), ("effect", .str "unrestricted"),
+          ("span", toJson (← (fromJson? (← field f "namePos") : Except String (Nat × Nat))))]))
       let mut params := []
       let mut rest := none
       for p in ← arr f "params" do

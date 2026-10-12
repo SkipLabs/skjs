@@ -1623,6 +1623,20 @@ theorem restStore_safe {G : NormalGraph ι} {S P : Ty ι} (hS : RestStore G S P)
     exact hv
   · exact hS.elim
 
+/-- **A rest typed by an argument pack, collected at its bound.** A call at
+an instance `X` of a module function's pack parameter whose argument lists
+are within the parameter's bound `B` collects a store meeting the store type
+`B` describes, the array the function's body takes at the bound
+(PROGRAM-TYPING.md, "Judgments and constructor views"). -/
+theorem packRest_store_safe {G : NormalGraph ι} {S B X : Ty ι} (hS : RestStore G S B)
+    (hX : FamLe (mixedMeaning G G.env X) (mixedMeaning G G.env B))
+    {n : Nat} {W : WorldT n} {h : Heap} {extra : List Tm} (hw : WorldAdm W) (hh : HeapOk n W h)
+    (he : argMeaning G X n W extra) (hvals : CallArguments.Values extra) :
+    Safe (meaning G S) n W h (.arrLit extra) :=
+  restStore_safe hS hw hh (hX n W (.inr extra) he) hvals
+
+#print axioms packRest_store_safe
+
 /-- **Invoking graph code with a rest.** A call at a variadic signature
 whose fixed parameters are the code's first collects the actuals past them
 into a fresh store, which meets the rest's store type, and runs the code from

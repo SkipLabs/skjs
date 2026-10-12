@@ -39,7 +39,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { Atom } from "./claim.mts";
 import type { DeclarationIdentity, PropertyKey, TypeTerm } from "./declaration-types.mts";
-import { bigintText, CLASS_ACCESS, numericLexeme, GENERIC_METHOD_RECEIVER, classMemberRefusal, computedAlias, computedForm, numericKey, optionalTerm, resolutionSlots, restPositions, restRefusal, restTerm, signature, substitute, typeTerm, visitType,
+import { bigintText, CLASS_ACCESS, numericLexeme, GENERIC_METHOD_RECEIVER, classMemberRefusal, computedAlias, computedForm, numericKey, optionalTerm, resolutionSlots, restPositions, restRefusal, restTerm, REST_PACK_BOUND, REST_PACK_VALUE, signature, substitute, typeTerm, visitType,
   type TermScope } from "./type-term.mts";
 import type {
   Ast,
@@ -1514,6 +1514,26 @@ class Gate {
     const type = restTerm(this.scope, this.typeOf(p.type, p));
     if (!restPositions(type)) this.fail(p, restRefusal(type));
     return type;
+  }
+
+  /** A module function's rest parameter: as any rest's (`restType`), or
+   * typed by one of the function's own type parameters, `...args: T`. That
+   * parameter is then an argument pack: each call instantiates it at the
+   * list of actuals it collects, within its bound, an array or a tuple of
+   * required positions written as one. The body sees the fresh array at
+   * that bound, the elements every instance's list has; the parameter types
+   * nothing else, since the collected array is no value of it. */
+  private moduleRestType(p: ParameterDeclaration, node: FunctionDeclaration): TypeTerm {
+    const name = p.type && ts.isTypeReferenceNode(p.type) && ts.isIdentifier(p.type.typeName) &&
+      !p.type.typeArguments ? p.type.typeName.text : null;
+    const own = node.typeParameters?.find(tp => tp.name.text === name);
+    if (!p.type || !own) return this.restType(p);
+    const written = this.typeOf(p.type, p);
+    if (written.k !== "binder") return this.restType(p);
+    if (typeParameterMentioned(node, own, p.type)) this.fail(p, REST_PACK_VALUE);
+    const bound = own.constraint ? this.typeOf(own.constraint) : null;
+    if (!bound || !restPositions(bound)) this.fail(p, REST_PACK_BOUND);
+    return { k: "pack", of: written, span: this.span(p) };
   }
 
   /* ------------------------------------------------------- expressions -- */
@@ -4178,7 +4198,7 @@ class Gate {
       this.asyncBody = isAsync;
       const { retType, parameterTypes } = this.headerTypes(() => ({
         retType: this.typeOf(node.type),
-        parameterTypes: node.parameters.map(p => p.dotDotDotToken ? this.restType(p)
+        parameterTypes: node.parameters.map(p => p.dotDotDotToken ? this.moduleRestType(p, node)
           : p.questionToken || p.initializer ? this.optionalTypeOf(p.type, p)
           : this.typeOf(p.type, p)),
       }));
@@ -4276,6 +4296,23 @@ function writtenElement(node: ts.ElementAccessExpression): boolean {
       (parent.operator === ts.SyntaxKind.PlusPlusToken || parent.operator === ts.SyntaxKind.MinusMinusToken))
     return true;
   return ts.isDeleteExpression(parent);
+}
+
+/** Whether a function's type parameter is named anywhere in it but at
+ * `except`: its signature, its body, a nested function's (one declaring a
+ * type parameter of the same name hides it there). */
+function typeParameterMentioned(node: FunctionDeclaration, parameter: TypeParameterDeclaration,
+    except: Node): boolean {
+  const name = parameter.name.text;
+  const visit = (n: Node): boolean => {
+    if (n === except || n === parameter) return false;
+    if (n !== node && ts.isFunctionLikeDeclaration(n) &&
+        n.typeParameters?.some((tp: TypeParameterDeclaration) => tp.name.text === name)) return false;
+    if (ts.isTypeReferenceNode(n) && ts.isIdentifier(n.typeName) && n.typeName.text === name) return true;
+    if (ts.isTypeQueryNode(n)) return false;
+    return n.forEachChild(visit) ?? false;
+  };
+  return visit(node);
 }
 
 /** `Object.assign(arrow, literal)`: the callable form, a function with

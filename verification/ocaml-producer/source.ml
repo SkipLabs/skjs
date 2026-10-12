@@ -153,13 +153,7 @@ let rec source_type ctx j =
           else ValueArgument (Rigid r)) identities @
         List.concat_map (fun (observation,result) -> List.map (fun (r:rigid) ->
           r.spelling,ValueArgument (Rigid r)) (observation :: Option.to_list result)) qualified @ ctx.bindings} in
-      let pack_bound t = match text "k" t with
-        | "array" -> Pack {required=[];optional_elements=[];
-            rest=Some (source_type ctx (field "element" t));readonly=false;presence=Dense}
-        | "tuple" when items "optional" t = [] && field "rest" t = Null ->
-          Pack {required=List.map (source_type ctx) (items "required" t);
-            optional_elements=[];rest=None;readonly=false;presence=Dense}
-        | _ -> unsupported "a pack parameter's bound is an array or a tuple" in
+      let pack_bound = pack_bound ctx in
       let quantified = List.map2 (fun (identity,resolution) b ->
         let pack = List.mem identity.spelling packs in
         {identity;resolution;bound=(match field "bound" b with
@@ -334,6 +328,15 @@ let rec source_type ctx j =
         | None -> Meet (first,rest))
      | None,[] -> fail "empty intersection")
   | k -> unsupported ("type term " ^ k)
+(* A pack parameter's bound: the argument lists of any number of an array's
+   element, or of a tuple's required positions. *)
+and pack_bound ctx t = match text "k" t with
+  | "array" -> Pack {required=[];optional_elements=[];
+      rest=Some (source_type ctx (field "element" t));readonly=false;presence=Dense}
+  | "tuple" when items "optional" t = [] && field "rest" t = Null ->
+    Pack {required=List.map (source_type ctx) (items "required" t);
+      optional_elements=[];rest=None;readonly=false;presence=Dense}
+  | _ -> unsupported "a pack parameter's bound is an array or a tuple"
 and source_pack ctx j =
   if text "k" j <> "binder" then unsupported "a pack rest must name a type parameter";
   match List.assoc_opt (text "name" j) ctx.bindings with
@@ -509,7 +512,12 @@ and stmt_node =
      where the body is left by a `break` of the loop, a `return` or a throw. *)
   | Closing of stmt list * stmt list
 and fn = { quantified: quantifier list; name: string; name_pos: Json.t; params: (string * ty) list;
-           rest: bool; result: ty; body: stmt list }
+           rest: bool;
+           (* A rest typed by one of the function's own type parameters: that
+              parameter, an argument pack each call instantiates. The rest's
+              type in [params] is the parameter's bound, the array the body
+              sees. *)
+           rest_pack: rigid option; result: ty; body: stmt list }
 type declaration = { id: string; native_promise: bool; parameters: rigid list;
   defaults: ty option list; bases: ty list; expression: ty }
 (* `init` is the module's top-level code, run once after its function
@@ -876,7 +884,27 @@ let decode ast =
       let parameters = items "typeParams" f in
       let initial={bindings=[];owner=None;positional=[];arity;symbolic;own=false;self_owner=false} in
       let binders,quantified = quantify initial scope parameters in
+      (* A rest typed by one of the function's own type parameters: the body
+         sees the array at that parameter's bound; callers instantiate the
+         parameter as an argument pack within it. *)
+      let pack_rest = match List.rev (items "params" f) with
+        | p :: _ when List.mem_assoc "rest" (obj p) && text "k" (field "type" p) = "pack" ->
+          let name = text "name" (field "of" (field "type" p)) in
+          (match List.find_opt (fun tp -> text "name" tp = name) parameters,
+                 List.find_opt (fun (q:quantifier) -> q.identity.spelling = name) quantified with
+           | Some tp,Some q when field "bound" tp <> Null -> Some (q.identity,field "bound" tp)
+           | _ -> unsupported "a rest typed by a type parameter needs its bound")
+        | _ -> None in
+      let quantified = match pack_rest with
+        | None -> quantified
+        | Some (identity,bound) -> List.map (fun (q:quantifier) ->
+            if q.identity = identity then {q with bound=Some (PackArgument (pack_bound binders bound))} else q)
+            quantified in
+      let param_type p = match pack_rest with
+        | Some (_,bound) when List.mem_assoc "rest" (obj p) -> source_type binders bound
+        | _ -> source_type binders (field "type" p) in
       {quantified;name=text "name" f; name_pos=field "namePos" f;
-      params=List.map (fun p -> text "name" p,source_type binders (field "type" p)) (items "params" f);
+      params=List.map (fun p -> text "name" p,param_type p) (items "params" f);
       rest=List.exists (fun p -> List.mem_assoc "rest" (obj p)) (items "params" f);
+      rest_pack=Option.map fst pack_rest;
       result=source_type binders (field "retType" f);body=List.map (stmt binders) (items "body" f)}) (items "functions" ast) }

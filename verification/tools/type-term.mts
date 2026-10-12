@@ -140,6 +140,21 @@ export function classMemberRefusal(member: ts.ClassElement): string {
 export const REST_CONTRACT =
   "a rest parameter needs a tuple of required positions or an array";
 
+/** A module function's rest typed by its own type parameter `T` that also
+ * types something else. The array a call collects is fresh: it holds the
+ * actuals and has none of `T`'s other members, so it is no value of `T` (at
+ * `T = string[] & { tag: string }` it has no `tag`). */
+export const REST_PACK_VALUE =
+  `${REST_CONTRACT}: a type parameter typing a rest parameter and anything else would make the array a call ` +
+  "collects a value of it, which it is not: the array is fresh, with the actuals and none of the " +
+  "parameter's other members (at `string[] & { tag: string }` it has no `tag`)";
+
+/** A module function's rest typed by its own type parameter whose bound is
+ * no array or tuple of required positions written as one. */
+export const REST_PACK_BOUND =
+  `${REST_CONTRACT}: one typed by a type parameter collects the array its bound states, which must be ` +
+  "written as an array or a tuple of required positions";
+
 /** A rest parameter's type, a declared alias read through its equation at
  * the reference's arguments, as TypeScript reads one: the array a call
  * collects is viewed at that equation. */
@@ -160,9 +175,9 @@ export function restRefusal(type: TypeTerm): string {
       return `${REST_CONTRACT}: one typed by a declaration's type parameter is a pack only once the declaration ` +
         "is applied, and a pack is over a function's own type parameter";
     case "binder":
-      return `${REST_CONTRACT}: one typed by a type parameter would bind the array a call collects at that ` +
-        "parameter, which only an instance fixes; a function definition has no allocation rule for it (a function " +
-        "type's is a pack)";
+      return `${REST_CONTRACT}: one typed by a type parameter is an argument pack only in a function type or a ` +
+        "module function, typed by its own parameter; a closure's scheme reads a bound as the meet of its binder " +
+        "with it, and argument lists have no meet row";
     case "intersection":
       return `${REST_CONTRACT}: one typed by an intersection would view the fresh array a call collects at the ` +
         "meet of its operands, which has no representation";

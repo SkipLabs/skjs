@@ -330,6 +330,19 @@ partial def termRow (ctx : Ctx) (term : Json) : M (GraphRow Tree (List Tree)) :=
     return .clauses [.ctors [] [(ps.toList, ← lowerRest ctx restTerm, result)]]
   | k => throw s!"{ctx.site}: no row for a '{k}' term"
 
+/-- A pack parameter's bound, an array or a tuple of required positions: the
+argument lists of any number of its element, or of its positions. -/
+partial def packBound (ctx : Ctx) (bound : Json) : M Union := do
+  match kindOf bound with
+  | some "array" => return [← occurrence ctx "pack" (← field bound "element")
+      (job := fun h c => .pack h c [] (some (bound.getObjValD "element")))]
+  | some "tuple" =>
+    if !(← arr bound "optional").isEmpty || (← field bound "rest") != .null then
+      throw s!"{ctx.site}: the argument-pack bound is not represented; the contract cannot be erased"
+    let required := (← arr bound "required").toList
+    return [← occurrence ctx "packbound" bound (job := fun h c => .pack h c required none)]
+  | _ => throw s!"{ctx.site}: the argument-pack bound is not represented; the contract cannot be erased"
+
 /-- A scheme's row: its binders the head's locals, its bounds read outside
 them (§3.1). -/
 partial def schemeRow (ctx : Ctx) (term : Json) : M (GraphRow Tree (List Tree)) := do
@@ -346,16 +359,7 @@ partial def schemeRow (ctx : Ctx) (term : Json) : M (GraphRow Tree (List Tree)) 
       if !packs.contains n then bounds := bounds ++ [(.local k, [← ground "source" sourceValueClauses])]
       continue
     if packs.contains n then
-      let pack ← match kindOf bound with
-        | some "array" => pure [← occurrence ctx "pack" (← field bound "element")
-            (job := fun h c => .pack h c [] (some (bound.getObjValD "element")))]
-        | some "tuple" =>
-          if !(← arr bound "optional").isEmpty || (← field bound "rest") != .null then
-            throw s!"{ctx.site}: the argument-pack bound is not represented; the contract cannot be erased"
-          let required := (← arr bound "required").toList
-          pure [← occurrence ctx "packbound" bound (job := fun h c => .pack h c required none)]
-        | _ => throw s!"{ctx.site}: the argument-pack bound is not represented; the contract cannot be erased"
-      bounds := bounds ++ [(.local k, pack)]
+      bounds := bounds ++ [(.local k, ← packBound ctx bound)]
     else bounds := bounds ++ [(.local k, ← lowerType ctx bound)]
   let source := [← top]
   let binders := inner.binders.map fun (n, b) =>

@@ -12,7 +12,7 @@ let fresh ?(flows=[]) () =
   let diagnostics = Proposal_diagnostics.create ~explaining:true () in
   let fn : Source.fn = {
     quantified=[]; name="scope-test"; name_pos=Json.Null; params=[];
-    rest=false; result=Atoms []; body=[] } in
+    rest=false; rest_pack=None; result=Atoms []; body=[] } in
   Analysis_state.create diagnostics flows [] [] [] [] [] fn
 
 let disturb state name =
