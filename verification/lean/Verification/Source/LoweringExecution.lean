@@ -474,6 +474,9 @@ private partial def executionEntryRead (name : String) : SourceExecution.Plan �
   let G := SourceTypes.graph (← table)
   scope.zipIdx.foldlM (fun Δ (b,i) => do
     if b.source.name == "" || isSnapshot b.source.name then return Δ
+    -- A slot of fixed type keeps it, as at a statement entry (`envCore`): a
+    -- read's claim is derived from it, so it says no more.
+    if b.fixed.isSome then return Δ
     let .value := b.storage | return Δ
     if (Γ[i]?.bind (ProgramCertificates.schemeOf G ·)).isSome then return Δ
     let some p := (executionEntryRead b.source.name plan).1 | return Δ

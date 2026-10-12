@@ -23,3 +23,25 @@ let module_type (g:Source.fn) =
      | _ -> Proposal_diagnostics.unsupported "rest parameter contract of a module function")
   | _ -> quantified_arrow ~receiver g.quantified tys g.result
 
+(* What a module function's code does with the actuals past its parameters.
+   Code without a rest parameter discards them, so its slot also holds its
+   signature extended by a rest of `unknown` elements (Lean's `moduleArrow`)
+   and it meets a signature binding more parameters whose leading ones its own
+   accept. A rest parameter collects them. A generic function is read at the
+   instance its use names, a signature of its own parameters. *)
+type arity = Discards | Collects | Instances
+let arity (g:Source.fn) =
+  if g.quantified <> [] then Instances else if g.rest then Collects else Discards
+
+(* Why a function is refused where a signature binding more parameters is
+   expected: a module function of the given arity, or a value known only by
+   its type (`None`). *)
+let longer_refusal = function
+  | Some Discards -> None
+  | Some Collects -> Some ("a function with a rest parameter where a signature binding more parameters is \
+      expected: " ^ Proposal_diagnostics.rest_arity_reason)
+  | Some Instances -> Some ("a generic module function where a signature binding more parameters is \
+      expected: " ^ Proposal_diagnostics.module_arity_reason)
+  | None -> Some ("a function value where a signature binding more parameters is expected: "
+      ^ Proposal_diagnostics.value_arity_reason)
+

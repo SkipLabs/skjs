@@ -60,7 +60,7 @@ types, which do not state why it is safe.
 | Item | State | Closed when |
 | --- | --- | --- |
 | 1. An intersection with no member inside a union is that union's bottom arm: `number & DepSafe`, distributed to `number \| (number & Managed)`, is `number` | done | `union-empty-intersection-arm` verifies, an annotation and a contextual callback parameter; `array-shadow-refused` stays refused; `reactive-sum-prettier-ignore` reaches item 2 |
-| 2. A named function passed where a callback type binds more parameters: JavaScript calls it with the extra arguments, which it ignores | open | `process.on(sig, shutdown)` verifies, `shutdown` checked at its own annotated signature |
+| 2. A named function passed where a callback type binds more parameters: JavaScript calls it with the extra arguments, which it ignores | done: a module function without a rest parameter is also at its signature extended by a rest of `unknown` ([module rules](SOURCE-CONTRACTS.md#modules-and-code-units), `CodeOffers.discarding`); `named-function-arity` verifies; a rest parameter, a parameter it does not accept and a value known only by its type stay refused; `reactive-sum-prettier-ignore` reaches item 3 | `process.on(sig, shutdown)` verifies, `shutdown` checked at its own annotated signature |
 | 3. `runService(service, …)`: the upstream service types admit the service only by method bivariance, and do not relate what `createGraph` returns to what each resource reads | open | a design for runtime types stating that relation, against which the published service source is checked |
 
 **Boundary-repair cleanup: done.** Restore the original positive sources that the
@@ -299,10 +299,7 @@ a vacuity escape for contradictory reference conjunctions
 producer's arrow search builds no nested `combine`. An element read keeps no
 heap fact: it reads the heap only, but the value it finds is a value only
 where the store's contract says so, which the frame rule would have to take
-from the read's typing (a length is a number, and keeps them). A module function of fixed
-arity meets a longer signature (it discards the actuals past its parameters,
-`restsT_of_graph`), but its slot is its annotated signature: the slot would
-carry the padded promise, a claim its own unit checks.
+from the read's typing (a length is a number, and keeps them).
 
 **A semantics of the Fragment.** The parser's rewrites and extraction rest
 on review. The Fragment moves close to source JavaScript, the rewrites move

@@ -41,6 +41,9 @@ type t = {
   offered: (Json.t * Semantic.signature list) list;
   declarations: Source.declaration list;
   module_functions: (string * ty Lazy.t) list;
+  (* What each module function declared in the source does with the actuals
+     past its parameters. *)
+  arities: (string * Module_contract.arity) list;
   assumed: (Json.t * ty) list;
   env0: env;
   rigid_bounds: (Semantic.rigid * ty) list ref;
@@ -54,7 +57,7 @@ type t = {
   following: (Json.t, Source.stmt list) Hashtbl.t;
 }
 
-let create diagnostics flows offered declarations module_functions bounds assumed (f:Source.fn) =
+let create diagnostics flows offered declarations module_functions arities bounds assumed (f:Source.fn) =
   let flows=List.map (fun (g:Flow.graph) -> {g with Flow.nodes=Array.copy g.Flow.nodes}) flows in
   let executions = Hashtbl.create 128 and expression_hints = Hashtbl.create 128 in
   let resolution_parameters = ref f.quantified in
@@ -72,7 +75,7 @@ let create diagnostics flows offered declarations module_functions bounds assume
   List.iter (fun s -> List.iter register_expression (Source.statement_children s)) f.body;
   let env0 = List.map (fun (n,t) ->
     n,if List.exists (assigns n) f.body then cell t else Value (arms declarations t)) f.params in
-  { diagnostics; flows; offered; declarations; module_functions; assumed; env0;
+  { diagnostics; flows; offered; declarations; module_functions; arities; assumed; env0;
     executions; expression_hints; rigid_bounds=ref bounds;
     resolution_parameters = !resolution_parameters; writes=ref [];
     typing_roots=ref []; block_result=ref (Some f.result);
@@ -143,6 +146,7 @@ module Access (S : sig val state : t end) = struct
   let field_type declarations seen t key = Type_queries.field_type (rigid_bounds ()) declarations seen t key
   let index_type declarations seen t key = Type_queries.index_type (rigid_bounds ()) declarations seen t key
   let module_names = List.map fst state.module_functions
+  let module_arity name = List.assoc_opt name state.arities
   let is_local name = List.mem_assoc name state.env0
   let module_type name = Option.map Lazy.force (List.assoc_opt name state.module_functions)
   let execution_at source = Hashtbl.find_opt state.executions (current_point (),source)

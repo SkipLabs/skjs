@@ -114,16 +114,17 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
            is expected. *)
         | Id n when List.mem_assoc n (path_facts ()).Proposal_flow.classes ->
           Some (fun () -> offer_class (List.assoc n (path_facts ()).Proposal_flow.classes) param)
-        (* Any other named function is its annotated signature: one binding
-           more parameters is not offered it. *)
+        (* Any other named function is not offered a signature binding more
+           parameters: a module function that discards the actuals past its
+           parameters meets it from its slot, and any other is refused. *)
         | Id n ->
           explain_builtin_array arg.pos env n (Some param);
           explain_record_at_index arg.pos env n (Some param);
           (match param, (try Some (resolve env n) with Json.Error _ -> None) with
            | Atoms [Shape {calls=[o];_}], Some (Atoms [Shape {calls=[own];fields=[];indexes=[];elements=None}])
                when List.length o.params > List.length own.params || (o.variadic <> None && own.variadic = None) ->
-             S.explain arg.pos ("a named function where a signature binding more parameters is expected: "
-               ^ module_arity_reason)
+             Option.iter (S.explain arg.pos) (Module_contract.longer_refusal
+               (if List.mem_assoc n env then None else module_arity n))
            | _ -> ());
           None
         | _ -> None in

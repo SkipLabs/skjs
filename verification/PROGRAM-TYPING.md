@@ -135,7 +135,9 @@ and discards the rest, as JavaScript does. Code with a rest keeps exact fixed
 parameters: its extra actuals go to the rest, not away.
 This holds of the code, not of any value at a shorter signature: code with a
 rest collects extra actuals and a bound function forwards them, so no
-subtyping rule widens an arrow's parameters. For the same reason code without
+subtyping rule widens an arrow's parameters; a module function's slot states
+the fact of its code as a variadic signature
+([module rules](SOURCE-CONTRACTS.md#modules-and-code-units)). For the same reason code without
 a rest also meets a variadic signature $`(R;\vec A,\ldots E\to B)`$ whose fixed
 parameters cover its arity: a call through it writes any number of actuals,
 the code binds its first $`\mathit{arity}`$, all at fixed positions, and

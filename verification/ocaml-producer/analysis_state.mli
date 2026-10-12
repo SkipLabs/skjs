@@ -7,7 +7,7 @@ type body_infer = Json.t -> Semantic.ty option -> env -> Source.stmt list -> env
 type t
 val create : Proposal_diagnostics.state -> Flow.graph list ->
   (Json.t * Semantic.signature list) list -> Source.declaration list ->
-  (string * Semantic.ty Lazy.t) list -> (Semantic.rigid * Semantic.ty) list ->
+  (string * Semantic.ty Lazy.t) list -> (string * Module_contract.arity) list -> (Semantic.rigid * Semantic.ty) list ->
   (Json.t * Semantic.ty) list -> Source.fn -> t
 
 val speculate : t -> (unit -> 'a) -> 'a option

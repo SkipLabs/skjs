@@ -1789,6 +1789,28 @@ theorem offers_sem {G : NormalGraph ι} {arity E K start Cs rest vs n W}
     exact ⟨⟨⟨fs, _, _, rfl, rfl, by simpa [Scoped] using hsc⟩, by simp⟩,
       restsT_of_graphRest fs hs hlen hvs hsc hvalues⟩
 
+/-- A fixed signature extended by a rest at `P`: the same receiver, parameters,
+result and effect, with the actuals past the parameters at `P`. -/
+def Arrow.discarding (P : Ty ι) (p : Arrow (Ty ι)) : RestArrow (Ty ι) :=
+  ⟨p.receiver, (p.arguments, P), p.result, p.effect⟩
+
+/-- **Code without a rest discards further actuals.** Code offering fixed
+signatures `L` also offers each of them extended by a rest of any type `P`:
+the extension's fixed row is the signature itself. So a module function
+without a rest parameter, checked at its signature by its own unit, meets
+that signature extended by a rest of `unknown` elements. -/
+theorem CodeOffers.discarding {G : NormalGraph ι} {arity E K start Cs}
+    {L : List (Arrow (Ty ι))} {S : List (RestArrow (Ty ι))} {As As' : List (Ty ι)} (P : Ty ι)
+    (ho : CodeOffers G arity E K start Cs false L S As) :
+    CodeOffers G arity E K start Cs false L (S ++ L.map (Arrow.discarding P)) As' := by
+  intro p hp
+  simp only [offerRows, List.map_append, List.map_map, List.mem_append] at hp
+  rcases hp with hp | hp | hp
+  · exact ho p (List.mem_append_left _ hp)
+  · exact ho p (List.mem_append_right _ hp)
+  · obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
+    exact ho _ (List.mem_append_left _ hq)
+
 /-- **A class value's graph code** meets each construct signature it was
 checked at with `undefined` for its receiver: `new` enters it so. -/
 theorem ctorsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {U : Ty ι}
@@ -3774,6 +3796,7 @@ theorem HasTy.closed_safe {G : NormalGraph ι} {t A} (ht : HasTy G [] t A)
 
 #print axioms bind_list
 #print axioms call_safe
+#print axioms CodeOffers.discarding
 #print axioms HasTyUsing.sound
 #print axioms HasTy.sound
 #print axioms ownKeysT_keeps

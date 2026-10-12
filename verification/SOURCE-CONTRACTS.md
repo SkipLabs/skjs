@@ -39,8 +39,35 @@ a body with no parameters that completes with `undefined`. A module with
 neither runs nothing and states no claim; it is refused, so an acceptance
 always checked some code. A class's methods are closures its initialization
 allocates, so they are checked in that unit. A module function's slot is its
-annotated signature, a generic one's read as a value its
-[scheme](#generic-function-and-constructor-types); a module constant is read at its annotation or at the
+annotated signature $`(R;\vec A\to B)`$, a generic one's read as a value its
+[scheme](#generic-function-and-constructor-types), and, for a function that is not
+generic and has no rest parameter, also that signature extended by a rest of
+`unknown` elements (`moduleArrow`):
+
+```math
+\frac{f\ \text{a module function at}\ (R;\vec A\to B),\ \text{no rest parameter, no binders}}
+     {\Gamma_M(f)=⟦(R;\vec A\to B)\land(R;\vec A,\ldots\top\to B)⟧}\ \textsf{module-function}
+```
+
+Its code collects no rest and is checked by its own unit at
+$`(R;\vec A\to B)`$, which is the extension's fixed row, so it offers the
+extension too (`CodeOffers.discarding`, then `offers_sem`): a call writing
+further actuals runs it from the same frame, the actuals past its parameters
+discarded. By [function coverage](POSITIVE-TYPES.md#function-and-class-coverage)
+(`rest`, and the variadic rule) the slot then meets every signature
+$`(R';\vec A'\vec C\to B')`$ and $`(R';\vec A'\vec C,\ldots E\to B')`$ with
+$`R'\sqsubseteq R`$, $`\vec A'\sqsubseteq\vec A`$ and $`B\sqsubseteq B'`$,
+whatever $`\vec C`$ and $`E`$: a module function is a value of a signature
+binding more parameters, as JavaScript calls it. A function with a rest
+parameter collects further actuals, so its slot is its signature alone. A
+value known only by its type, a parameter or an import, has no such
+extension: a function type's meaning is a promise about calls writing at most
+its positions (`callsT`), which a function reading further positions keeps,
+one with further optional parameters or one with a rest parameter (`rest`).
+TypeScript admits `(x: T, y?: S) => U` as a `(x: T) => U`, so a call through
+that type writing a second actual of another type is not safe.
+
+A module constant is read at its annotation or at the
 initialization unit's claim for its initializer
 ([module constants](SOURCE-ELABORATION.md#mutable-bindings-and-module-constants)). The
 initialization unit refuses a call, direct or through module functions, that

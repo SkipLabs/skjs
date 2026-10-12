@@ -4,8 +4,8 @@
 (* analysis_state.ml allocates the pass state shared by its mutually recursive expression, binding and body analyses. *)
 open Source
 open Proposal_types
-let infer diagnostics flows offered declarations module_functions bounds assumed f =
-  let state = Analysis_state.create diagnostics flows offered declarations module_functions bounds assumed f in
+let infer diagnostics flows offered declarations module_functions arities bounds assumed f =
+  let state = Analysis_state.create diagnostics flows offered declarations module_functions arities bounds assumed f in
   let module Owner = Analysis_state.Access(struct let state = state end) in
   let module Context = Analysis_context.Make(Owner) in
   let module S = struct include Owner include Context end in

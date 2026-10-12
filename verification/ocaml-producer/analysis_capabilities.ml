@@ -38,6 +38,9 @@ module type Queries = sig
   val index_type : Source.declaration list -> string list -> ty -> ty -> ty
   val is_local : string -> bool
   val module_names : string list
+  (* What a module function declared in the source does with the actuals
+     past its parameters; none for an imported value. *)
+  val module_arity : string -> Module_contract.arity option
   val module_type : string -> ty option
   val execution_at : Json.t -> Execution.plan option
   val expression_hint : Json.t -> Source.expr option

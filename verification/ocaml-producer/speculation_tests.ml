@@ -13,7 +13,7 @@ let fresh ?(flows=[]) () =
   let fn : Source.fn = {
     quantified=[]; name="scope-test"; name_pos=Json.Null; params=[];
     rest=false; rest_pack=None; result=Atoms []; body=[] } in
-  Analysis_state.create diagnostics flows [] [] [] [] [] fn
+  Analysis_state.create diagnostics flows [] [] [] [] [] [] fn
 
 let disturb state name =
   let module Owner = Analysis_state.Access(struct let state = state end) in

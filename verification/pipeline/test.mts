@@ -935,6 +935,10 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     await erasedOutputCall(input);
     return cell.value;
   })()`), "changed", "an unknown generic output does not constrain a hidden then hook's heap effect");
+  // A function value known only by its type may read a position its type
+  // does not mention: `map` passes `g` the index, which `g` returns.
+  assert.equal(runExample("invalid-named-function-arity-value", "JSON.stringify([main(), typeof main()[0]])"), '[[0],"number"]',
+    "a callback typed (x: number) => string reads the index map passes");
   process.stdout.write("native-contract counterexamples run under Node: as the contracts say\n");
 }
 
@@ -1672,6 +1676,19 @@ for (const [artifacts, arity, refusal] of [
   const site = must(fn.expressions.find((e) => e.pos[0] === callee && e.pos[1] === callee + 2), "the outer callee's claim");
   site.type = must(fn.expressions.find((e) => e.pos[0] === source.indexOf("x))", callee)), "the argument's claim").type;
   invoke(writeClaims(moduleFunctions, "forged-callee", claims), join(moduleFunctions, "evidence.json"), moduleFunctions);
+}
+{
+  // Only a module function without a rest parameter has its signature
+  // extended by a rest of `unknown` in its slot: claiming one with a rest at
+  // the longer signature its use expects is refused where it is read.
+  const collects = run("invalid-named-function-arity");
+  const claims = readClaims(collects);
+  const source = readFileSync(join(collects, "source.ts"), "utf8");
+  const fn = must(claims.functions.find((f) => f.name === "widen"), "widen");
+  const at = source.indexOf("collects;");
+  must(fn.expressions.find((e) => e.pos[0] === at && e.pos[1] === at + "collects".length), "the read's claim").type = fn.result;
+  refusedAt(collects, writeClaims(collects, "forged-collects-longer", claims), "forged-collects-longer",
+    `source expression obligation at [${at},${at + "collects".length})`);
 }
 {
   // The initialization unit's claims are checked like a function's: claiming

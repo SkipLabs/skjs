@@ -20,7 +20,34 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
   let target_contract = Support.target_contract expr in
   let const_type = Support.const_type expr in
   let site = e.pos in
+  (* A function's own signature, and what it does with the actuals past its
+     parameters: a module function declared in the source by its arity, any
+     other value (a parameter, a local, an import) known only by its type. *)
+  let own_signature n =
+    let own = if not (List.mem_assoc n env) && List.mem n module_names
+      then (try module_type n with Json.Error _ -> None)
+      else (try Some (resolve env n) with Json.Error _ -> None) in
+    match own with
+    | Some (Atoms [Shape {calls=[own];fields=[];indexes=[];elements=None}]) -> Some own
+    | _ -> None in
+  let arity n = if List.mem_assoc n env then None else module_arity n in
+  let rec calls t = match t with
+    | Meet (t,ts) -> List.concat_map calls (t::ts)
+    | t -> List.concat_map (function Shape s -> s.calls | _ -> [])
+             (flat_atoms declarations t) in
+  (* Whether `x` states a signature binding more parameters than `own`. *)
+  let longer (own:Semantic.signature) x = List.exists (fun (c:Semantic.signature) ->
+    List.length c.params > List.length own.params
+    || (c.variadic <> None && own.variadic = None)) (calls x) in
+  (* A module function that discards the actuals past its parameters, read
+     where a signature binding more parameters is expected: its slot holds its
+     signature extended by a rest of `unknown`, so it is claimed at what is
+     expected, and Lean derives that from the slot. *)
+  let discarded n = match expected, own_signature n with
+    | Some x, Some own when arity n = Some Module_contract.Discards && longer own x -> Some x
+    | _ -> None in
   match e.node with
+    | Id n when discarded n <> None -> Option.get (discarded n)
     | Id n ->
       Option.iter (fun expected -> Option.iter (fun c -> offer_class c expected)
         (List.assoc_opt n (path_facts ()).Proposal_flow.classes)) expected;
@@ -37,20 +64,10 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
          such a signature instead). *)
       (match expected with
        | Some x when not (List.mem_assoc n (path_facts ()).Proposal_flow.closures) ->
-         let rec calls t = match t with
-           | Meet (t,ts) -> List.concat_map calls (t::ts)
-           | t -> List.concat_map (function Shape s -> s.calls | _ -> [])
-                    (flat_atoms declarations t) in
-         let own = if not (List.mem_assoc n env) && List.mem n module_names
-           then (try module_type n with Json.Error _ -> None)
-           else (try Some (resolve env n) with Json.Error _ -> None) in
-         (match own with
-          | Some (Atoms [Shape {calls=[own];fields=[];indexes=[];elements=None}]) ->
-            if List.exists (fun (c:Semantic.signature) ->
-                List.length c.params > List.length own.params
-                || (c.variadic <> None && own.variadic = None)) (calls x)
-            then S.explain site ("a named function where a signature binding more parameters is expected: "
-              ^ module_arity_reason)
+         (match own_signature n with
+          | Some own ->
+            if longer own x
+            then Option.iter (S.explain site) (Module_contract.longer_refusal (arity n))
             else if own.receiver <> top && List.exists (fun (c:Semantic.signature) -> c.receiver = top) (calls x)
             then S.explain site ("a function whose `this` is typed where a callback indifferent to its receiver is \
               expected: " ^ receiver_reason)

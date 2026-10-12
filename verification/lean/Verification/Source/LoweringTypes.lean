@@ -517,10 +517,14 @@ negation. -/
 end
 
 /-- A module function's value as its callers see it: an ordinary function at
-exactly its annotated parameters and result. A leading `this: T` parameter
+its annotated parameters and result. A leading `this: T` parameter
 is its receiver, which every call passes (a plain call `undefined`), and no
 position; without one the receiver is irrelevant. A rest parameter
-contributes its tuple's positions or its array's element. -/
+contributes its tuple's positions or its array's element. A function without
+a rest parameter is code that discards the actuals past its parameters, so it
+also meets its signature extended by a rest of `unknown` elements
+(`ProgramTyping.CodeOffers.discarding`): the further actuals a caller writes
+may be any values. -/
 def moduleArrow (g : Fragment.Fn) : Except String Json := do
   let top := Json.mkObj [("top", toJson true), ("atoms", toJson ([] : List Json))]
   let (receiver, params) := match g.params with
@@ -534,9 +538,12 @@ def moduleArrow (g : Fragment.Fn) : Except String Json := do
         | some e => pure (fixed.map (·.ty), [("rest", e)])
         | none => pure (fixed.map (·.ty) ++ (← Fragment.tupleRequired p.ty), [])
     | none => pure ([], [])
-  return Json.mkObj [("top", toJson false), ("atoms", toJson [Json.mkObj
-    ([("a", toJson "function"), ("this", receiver), ("params", toJson positions)] ++ rest ++
-      [("result", g.ret), ("construct", toJson "unknown"), ("array", toJson "unknown")])])]
+  let signature (rest : List (String × Json)) :=
+    [("a", toJson "function"), ("this", receiver), ("params", toJson positions)] ++ rest ++
+      [("result", g.ret), ("construct", toJson "unknown"), ("array", toJson "unknown")]
+  let discarding := if params.any (·.rest) then []
+    else [("and", toJson [Json.mkObj (signature [("rest", top)])])]
+  return Json.mkObj [("top", toJson false), ("atoms", toJson [Json.mkObj (signature rest ++ discarding)])]
 
 /-- The same values with each label that is a union row, a declaration such as
 `type Maybe = number | undefined`, replaced by one label per clause: a tag

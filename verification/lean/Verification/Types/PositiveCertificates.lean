@@ -1195,6 +1195,16 @@ element. -/
     | some E => (t.arguments.1.drop s.arguments.1.length).map (·, E)
     | none => []
 
+/-- The pairs a variadic signature's coverage of a fixed one binding more
+parameters compares past `signaturePairs` (`RestFixed`): the target's further
+parameters against the source rest's element. -/
+@[nospecialize] def restFixedPairs (G : NormalGraph ι) (source : List (RestArrow (List ι))) (target : List (Arrow (List ι))) :
+    List (List ι × List ι) :=
+  target.flatMap fun t => source.flatMap fun s =>
+    match PositiveRules.restElem G s.arguments.2 with
+    | some E => (t.arguments.drop s.arguments.1.length).map (·, E)
+    | none => []
+
 /-- The pairs a fixed signature's coverage of a variadic one whose rest is one
 exact tuple compares: receivers, the fixed parameters and then the tuple's
 positions against the source's parameters, and results. -/
@@ -1262,10 +1272,12 @@ and the target's receivers, its signatures against the target's schemes'). -/
       ((iy ++ cy).flatMap fun y => (ix ++ cx).flatMap fun x => [(x.2, y.2), (y.2, x.2)]) ++
       (cy.flatMap fun y => os.map fun o => (y.2, o.type))
   | .arrs L S, .arrs M T | .callable _ _ L S, .arrs M T =>
-    signaturePairs L M ++ restPairs S T ++ elemPairs G S T ++ packPairs G L T
+    signaturePairs L M ++ restPairs S T ++ elemPairs G S T ++ packPairs G L T ++
+      restFixedPairs G S M
   | .callable a bs L S, .callable c ds M T =>
     recordPairs G known self (a :: bs).flatten [] [] [] (c :: ds).flatten [] [] [] ++
-    signaturePairs L M ++ restPairs S T ++ elemPairs G S T ++ packPairs G L T
+    signaturePairs L M ++ restPairs S T ++ elemPairs G S T ++ packPairs G L T ++
+      restFixedPairs G S M
   | .ctors L S, .ctors M T =>
     let fixed (p : List (List ι) × List ι) : Arrow (List ι) := ⟨[], p.1, p.2, .unrestricted⟩
     let rest (p : List (List ι) × List ι × List ι) : RestArrow (List ι) := ⟨[], (p.1, p.2.1), p.2.2, .unrestricted⟩

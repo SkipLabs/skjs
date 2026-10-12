@@ -43,8 +43,16 @@ let iteration_reason =
    kind: a union of host kinds has no one intrinsic (an iterable the program defines, or a union with \
    one, runs the iterator protocol)"
 let module_arity_reason =
-  "its slot is its annotated signature, checked by its own unit, and the arity of an arrow is exact; \
-   offering it more parameters would make that slot a claim (DESIGN.md, \"Method members are host-relative\")"
+  "its use is read at the instance it names, a signature of its own parameters, which carries no \
+   extension by a rest"
+let rest_arity_reason =
+  "its rest collects the further actuals rather than discarding them, so each must be within the rest's \
+   element, which the signature binding more parameters does not state"
+let value_arity_reason =
+  "a value known only by its type may read the further actuals: a function with further optional or rest \
+   parameters meets a shorter function type, so `(x: T) => U` may be `(x: T, y?: S) => U`, and a call \
+   passing more actuals may pass `y` a value outside `S`; only a module function's own code is known to \
+   discard them"
 let for_in_key_reason =
   "the read is the entry the loop's step visited only where nothing since the step can remove the key or \
    change the object read (a call, a construction, a write of a property or of the object's name), and \

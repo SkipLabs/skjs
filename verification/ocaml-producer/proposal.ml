@@ -10,7 +10,7 @@ open Module_contract
 (* A named closure's claim is fixed where it is created, before the calls that
    offer it more parameters are reached: a first pass finds those offers, and
    the second states them at the creation. *)
-let infer_function state flows declarations module_functions (f:Source.fn) =
+let infer_function state flows declarations arities module_functions (f:Source.fn) =
   (* A value bound retains its parameters: `T extends Ref<U>` reads a
      member through Ref<U>; `U extends T` reads through T's bound. *)
   let bounds = List.filter_map (fun (q:Semantic.quantifier) -> match q.bound with
@@ -21,7 +21,7 @@ let infer_function state flows declarations module_functions (f:Source.fn) =
      until the contracts settle. A write whose value grows with the binding
      itself (a list consed onto it) never settles. *)
   let rec settled offered rounds assumed =
-    let result,seen = Analysis_pass.infer state flows offered declarations module_functions bounds assumed f in
+    let result,seen = Analysis_pass.infer state flows offered declarations module_functions arities bounds assumed f in
     let evolved key = Option.value (List.assoc_opt key assumed) ~default:(Atoms []) in
     let grown = List.filter (fun (key,t) -> union (evolved key) t <> evolved key) seen in
     match result,grown with
@@ -45,7 +45,8 @@ let infer ?(state = Proposal_diagnostics.create ()) flows program =
   let module_functions = List.map (fun (g:Source.fn) -> g.name,lazy (module_type g))
     program.Source.functions
     @ List.map (fun (name,t) -> name,lazy t) program.Source.values in
-  let infer_with = infer_function state flows program.Source.declarations in
+  let arities = List.map (fun (g:Source.fn) -> g.name,arity g) program.Source.functions in
+  let infer_with = infer_function state flows program.Source.declarations arities in
   (* A class's instance members read the class as its own binding, `C.[[self]]`,
      at its construct signature: a module value of the initialization unit. *)
   let class_selves = List.concat_map (fun (s:Source.stmt) -> match s.statement with

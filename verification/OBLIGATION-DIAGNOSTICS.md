@@ -43,10 +43,11 @@ it, in this order:
   `Array.isArray` or `instanceof Array` found an array, used as one (the
   object owns an array's store, not a proven array of `Array.prototype`);
   an array used as a record naming `length`, a mutable tuple's `length` at
-  its arity; a named function
-  (a module function or a parameter) where a signature binding more
-  parameters, or indifferent to the receiver it requires, is expected (its
-  type is its annotated signature); an instance of a declaration with
+  its arity; where a signature binding more parameters is expected, a
+  function value known only by its type, a module function with a rest
+  parameter, or a generic one; a named function where a signature
+  indifferent to the receiver it requires is expected (its type is its
+  annotated signature); an instance of a declaration with
   generic methods at an instance of another declaring them otherwise
   (quantified signatures are related binding the same rows); a record at
   an index signature (TypeScript's implicit index signature; `Closed<T>` is
