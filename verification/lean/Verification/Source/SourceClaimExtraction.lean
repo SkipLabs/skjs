@@ -169,7 +169,8 @@ def extractPlans (ast claims : Json) (fileKey : String)
         sourceScheme := some {
           binders := binders.map (·.2.1)
           signatures := []
-          bounds := binders.filterMap fun (_, p, B) => B.map (p, ·)
+          bounds := binders.filterMap fun (n, p, B) =>
+            if tps.any (·.name == n) then B.map (p, ·) else none
           resolution }
       let (T, rows) ← match binderRows d.types binders with
         | .ok r => pure r

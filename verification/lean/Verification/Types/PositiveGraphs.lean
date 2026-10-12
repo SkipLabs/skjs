@@ -483,17 +483,17 @@ it reads the world's contracts only, never the heap. -/
 
 /-- The store every array holds, read at the weakest element type: a possibly sparse
 store of values. -/
-def anyStoreT : Fam := listT ⟨[], [], some topT, true, .sparse⟩
+def anyStoreT : Fam := listT ⟨[], [], some sourceT, true, .sparse⟩
 
 /-- A store under any tuple contract of values is a store of values. -/
 theorem listT_anyStore {T : TupleF}
     (hT : ∀ A, (A ∈ T.required ∨ A ∈ T.optional ∨ T.rest = some A) →
-      ∀ j (W : WorldT j) u, A j W u → topT j W u)
+      ∀ j (W : WorldT j) u, A j W u → sourceT j W u)
     {k : Nat} {W : WorldT k} {v : Val} (h : listT T k W v) : anyStoreT k W v := by
   obtain ⟨ls, rfl, hd, hlen, hbound, hreq, hopt, hrest⟩ := h
   refine ⟨ls, rfl, (by simp [StorePresence]), by simp, by simp, by simp, by simp, ?_⟩
   intro i l _ hl
-  refine ⟨topT, ?_⟩
+  refine ⟨sourceT, ?_⟩
   simp only [true_and]
   by_cases hi : i < T.required.length
   · obtain ⟨l', c, hl', hw, hag⟩ := hreq i (T.required[i]) (List.getElem?_eq_getElem hi)

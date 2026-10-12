@@ -679,7 +679,7 @@ theorem opaqueFamily_complete [DecidableEq ι] {G : NormalGraph ι} {sub : Optio
     (h : OpaqueFamily G sub R known (fun L S M => ∀ p ∈ M,
       CallArrow (compatible G) (restElem G) R L S p) hyps S T) :
     ∃ es, OpaqueFamily G sub R known (ArrowsCheckedWith G R es) hyps S T := by
-  have each : ∀ i ∈ S, ∃ es : Evidence ι, G.plain i = true ∨ i ∈ T ∨ .top ∈ clausesOf G T ∨
+  have each : ∀ i ∈ S, ∃ es : Evidence ι, G.plain i = true ∨ i ∈ T ∨ OpaqueUniverse G T i ∨
       MeetOpaque G (PartCovers G sub R known (ArrowsCheckedWith G R es) hyps)
         (fun a => ∃ b ∈ clausesOf G T, CoversWith G sub R known (ArrowsCheckedWith G R es) S a b) T i ∨
       (∃ y ∈ T, (i, y) ∈ hyps) ∨
@@ -1242,8 +1242,8 @@ and the target's receivers, its signatures against the target's schemes'). -/
           restPairs (S.map (·.withReceiver [])) (q.rests.map (·.withReceiver []))) ++
       (if targetSchemes.isEmpty then [] else schemeSigs F).flatMap fun s =>
         (s.signatures.map fun p => (self, p.receiver)) ++
-        targetSchemes.flatMap fun s' => signaturePairs s.signatures s'.signatures ++
-          restPairs s.variadic s'.variadic)
+        targetSchemes.flatMap fun s' => if s.binders = s'.binders then
+          signaturePairs s.signatures s'.signatures ++ restPairs s.variadic s'.variadic else [])
 
 /-- The pairs one clause's coverage of another compares. -/
 @[nospecialize] def clausePairs [DecidableEq ι] (G : NormalGraph ι) (known : Known ι) (self : List ι) :
@@ -1325,16 +1325,27 @@ through `Var`, else the pair itself. -/
     | none => [(A, B)]
 
 /-- Quantified members declared alike, their signatures compared after
-renaming the target's binders to the source's. -/
+renaming the target's binders to the source's. Record members include schemes
+stored on the prototype and received by the source object. -/
 @[nospecialize] def renamedPairs [DecidableEq ι] (G : NormalGraph ι) (r : Renaming G) (X Y : List ι) :
     List (List ι × List ι) :=
-  (schemeComponents G X).flatMap fun i => (schemeComponents G Y).flatMap fun j => match G.schemes i, G.schemes j with
+  let pairs (i j : ι) := match G.schemes i, G.schemes j with
     | some s, some s' =>
       if s.binders = s'.binders || s.binders.length != s'.binders.length then [] else
       let σ := s'.binders.zip (s.binders.map fun p => [p])
       signaturePairs s.signatures (s'.signatures.map (Arrow.map (r.substitute σ))) ++
-        restPairs s.variadic (s'.variadic.map (RestArrow.map (r.substitute σ)))
+        restPairs s.variadic (s'.variadic.map (RestArrow.map (r.substitute σ))) ++
+        s.bounds.flatMap fun b => s'.bounds.filterMap fun b' =>
+          if (s.binders.zip s'.binders).lookup b.1 == some b'.1 then some (b'.2, b.2) else none
     | _, _ => []
+  let direct := (schemeComponents G X).flatMap fun i => (schemeComponents G Y).flatMap (pairs i)
+  let methods := (clausesOf G Y).flatMap fun c => match c with
+    | .refs _ _ _ _ ms _ | .dict _ _ _ _ _ ms _ _ => ms
+    | _ => []
+  direct ++ methods.flatMap fun m =>
+    let sources := (protoChain G PositiveRules.protoChainDepth X).flatMap fun P =>
+      (PositiveRules.viewOf G P m.key).toList.flatten
+    sources.flatMap fun i => m.schemes.flatten.flatMap (pairs i)
 
 /-- A head pair recurring with larger arguments than each of its two or more
 earlier occurrences, none of which it renames: growth. -/

@@ -63,6 +63,7 @@ export type Clause<L = number> =
   | "num"
   /** Semantic top: every value, and no operation through it. */
   | "top"
+  | "source"
   | { boolLit: { value: boolean } }
   /** The double's bit pattern, decimal, as the consumer's UInt64. */
   | { numLit: { bits: string } }
@@ -157,7 +158,8 @@ export const STRING_CLAUSE_TEXT: Record<StringClause, string> = {
   undef: "undefined",
   num: "number",
   str: "string",
-  top: "unknown",
+  top: "calculus top",
+  source: "unknown",
   bigint: "bigint",
   symbol: "symbol",
 };

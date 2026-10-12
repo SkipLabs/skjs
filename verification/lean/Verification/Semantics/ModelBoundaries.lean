@@ -33,7 +33,7 @@ theorem frame_ret_safe {A : Fam} (hA : Adm A) {E K L d} :
         value_safe A n _ h t hv (hA.down_le (n + 1) n (Nat.le_succ n) W t ht)⟩
     · exact Or.inr ⟨trunc n (Nat.le_succ n) W, h, .throw v, WExt_refl _, WorldAdm_trunc _ hw,
         .frameRaise hr, HeapOk_trunc n W h hh,
-        thrown_safe A n _ h ⟨v, .throwV (raises_val hr), hsc⟩⟩
+        thrown_safe A n _ h ⟨v, .throwV (raises_val hr) (raises_sourceVal hr), hsc⟩⟩
     · exact Or.inr ⟨U, h', _, hx, hu, .frameC st, hh', ih U h' t' hu hh' hs⟩
 
 /-! ## Allocation and arrow results -/

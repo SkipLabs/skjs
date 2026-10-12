@@ -58,8 +58,13 @@ def lexicalBinding (c : ResolutionContext E) (source : SchemeRow (Label E.signat
     if member : group ∈ source.resolution then
       match checked : QualifiedGraphs.groupBinders E.graph source group with
       | none => none
-      | some b => some {
-          binding := ⟨name, [b.input], [b.observation], b.result.map fun r => [r.2]⟩
+      | some b =>
+        let view (p : Label E.signature) := [Label.meetOf [p, c.source]]
+        if projections : QualifiedGraphs.sourceView E.graph (view b.input) b.input = true ∧
+            QualifiedGraphs.sourceView E.graph (view b.observation) b.observation = true ∧
+            ∀ r ∈ b.result, QualifiedGraphs.sourceView E.graph (view r.2) r.2 = true then
+          some {
+          binding := ⟨name, view b.input, view b.observation, b.result.map fun r => view r.2⟩
           sound := fun η As length allowed => by
             obtain ⟨ht, ho, kt, ko, hres, hnone⟩ := QualifiedGraphs.groupBinders_some checked
             cases hg : group.result with
@@ -69,7 +74,11 @@ def lexicalBinding (c : ResolutionContext E) (source : SchemeRow (Label E.signat
                 (QualifiedGraphs.assignment_position unique length ht)
                 (QualifiedGraphs.assignment_position unique length ho) kt ko
               simp only [hnone hg, Option.map_none]
-              exact ⟨o, et.symm, eo.symm⟩
+              have vt := QualifiedGraphs.sourceView_sound projections.1 kt _
+                (by rw [et]; exact (c.capabilities.observe_source o.observed).1)
+              have vo := QualifiedGraphs.sourceView_sound projections.2.1 ko _
+                (by rw [eo]; exact (c.capabilities.observe_source o.observed).2)
+              exact ⟨o, et.symm.trans vt.symm, eo.symm.trans vo.symm⟩
             | some slot =>
               obtain ⟨r, hbr, hr, kr⟩ := hres slot hg
               obtain ⟨d, et, eo, er⟩ := QualifiedGraphs.assigned_descriptor E.graph η source As
@@ -78,7 +87,15 @@ def lexicalBinding (c : ResolutionContext E) (source : SchemeRow (Label E.signat
                 (QualifiedGraphs.assignment_position unique length ho)
                 (QualifiedGraphs.assignment_position unique length hr) kt ko kr
               simp only [hbr, Option.map_some]
-              exact ⟨d, et.symm, eo.symm, er.symm⟩ }
+              have vt := QualifiedGraphs.sourceView_sound projections.1 kt _
+                (by rw [et]; exact (c.capabilities.observe_source d.observed).1)
+              have vo := QualifiedGraphs.sourceView_sound projections.2.1 ko _
+                (by rw [eo]; exact (c.capabilities.observe_source d.observed).2)
+              have vr := QualifiedGraphs.sourceView_sound
+                (projections.2.2 (slot, r) (by rw [hbr]; rfl)) kr _
+                (by rw [er]; exact (c.capabilities.resolve_source d.resolved).2)
+              exact ⟨d, et.symm.trans vt.symm, eo.symm.trans vo.symm, er.symm.trans vr.symm⟩ }
+        else none
     else none
   else none
 
@@ -214,12 +231,13 @@ def stableInScope (c : ResolutionContext E) (scope : List (Binding E)) (A : Ty E
 /-- A native promise is observed at its literal payload. -/
 private theorem promise_observed (c : ResolutionContext E) (η : MixedAssignment (Label E.signature))
     (l : Label E.signature)
-    (payload : { A : Ty E // l = (c.promise.application A).label ∧ E.graph.hasKind .value A = true }) :
+    (payload : { A : Ty E // l = (c.promise.application A).label ∧ E.graph.hasKind .value A = true })
+    (source : FamLe (valueMeaning E η payload.1) PositiveNormalization.sourceT) :
     ∃ o : Observation c, o.input = valueMeaning E η [l] ∧
       ∀ x, some payload.1 = some x → o.observation = valueMeaning E η x := by
   obtain ⟨A, rfl, kind⟩ := payload
   refine ⟨ResolutionCapabilities.nativeObservation c.native (valueMeaning E η A)
-    (MixedFamily.value ⟨_, mixedMeaning_valid _ _ _⟩).2, ?_, fun x e => by cases e; rfl⟩
+    (MixedFamily.value ⟨_, mixedMeaning_valid _ _ _⟩).2 source, ?_, fun x e => by cases e; rfl⟩
   exact (c.promise.application_meaning η A kind).symm
 
 /-- Native lifting observes the literal payload and retains its stable result. -/
@@ -229,18 +247,22 @@ def native (c : ResolutionContext E) (scope : List (Binding E)) (l : Label E.sig
   observation := some payload.1
   result := child.result
   sound η hs := by
-    refine ⟨promise_observed c η l payload, fun r hr => ?_⟩
+    obtain ⟨o, ho, _⟩ := (child.sound η hs).1
+    have source : FamLe (valueMeaning E η payload.1) PositiveNormalization.sourceT := by
+      rw [← ho]; exact (c.capabilities.observe_source o.observed).1
+    refine ⟨promise_observed c η l payload source, fun r hr => ?_⟩
     obtain ⟨d, hd, _, hres⟩ := (child.sound η hs).2 r hr
     refine ⟨c.promise.descriptor c.native d, ?_, fun o e => by cases e; exact hd, hres⟩
     exact c.promise.descriptor_input c.native η l payload d hd
 
 /-- A native promise of any payload is observed at that payload. -/
 def promise (c : ResolutionContext E) (scope : List (Binding E)) (l : Label E.signature)
-    (payload : { A : Ty E // l = (c.promise.application A).label ∧ E.graph.hasKind .value A = true }) :
+    (payload : { A : Ty E // l = (c.promise.application A).label ∧ E.graph.hasKind .value A = true })
+    (source : ∀ η, FamLe (valueMeaning E η payload.1) PositiveNormalization.sourceT) :
     Checked c scope [l] where
   observation := some payload.1
   result := none
-  sound η _ := ⟨promise_observed c η l payload, fun _ e => by cases e⟩
+  sound η _ := ⟨promise_observed c η l payload (source η), fun _ e => by cases e⟩
 
 /-- Equivalent input types retain the same classification. -/
 def equivalent (c : ResolutionContext E) (scope : List (Binding E)) {A B : Ty E}
@@ -308,7 +330,11 @@ def check (c : ResolutionContext E) (scope : List (Binding E))
     | .promise => match A with
       | [l] => do
         let payload ← c.promise.payload l
-        return promise c scope l payload
+        if accepted : (CertificateProducer.comparisonUsing E.graph images payload.1 [c.source]).accepted = true then
+          return promise c scope l payload fun η n W v hv =>
+            ResolutionContext.source_values c.sourceSource η n W v
+              (CertificateProducer.comparisonUsing_sound accepted η n W (.inl v) hv)
+        else none
       | _ => none
     | .binder name => do
       let b ← scope.find? (fun b => b.name == name)
@@ -444,7 +470,7 @@ def stableAlias (c : ResolutionContext E) (source : SchemeRow (Label E.signature
         (b.observation, m) :: (b.result.map fun r => (r.2, m)).toList
       else []
 
-def stableAliases (c : ResolutionContext E) (source : SchemeRow (Label E.signature))
+def rawStableAliases (c : ResolutionContext E) (source : SchemeRow (Label E.signature))
     (images : InstanceImageCheck E.graph) :
     List (Label E.signature × Label E.signature) :=
   source.resolution.flatMap (stableAlias c source images)
@@ -453,9 +479,9 @@ def stableAliases (c : ResolutionContext E) (source : SchemeRow (Label E.signatu
 own observation (`Observation.exactStable`) and, where it is resolvable, its
 own result (`Descriptor.exactStable`), so each alias denotes the input at
 every admitted, bounded assignment. -/
-theorem stableAliases_sound (c : ResolutionContext E) (domain : E.domain = c.domain)
+theorem rawStableAliases_sound (c : ResolutionContext E) (domain : E.domain = c.domain)
     (source : SchemeRow (Label E.signature)) (images : InstanceImageCheck E.graph) :
-    ProgramCertificates.AliasesSound E.graph source (stableAliases c source images) := by
+    ProgramCertificates.AliasesSound E.graph source (rawStableAliases c source images) := by
   intro η As length allowed bounded p hp n W v
   obtain ⟨g, hg, hp⟩ := List.mem_flatMap.mp hp
   unfold stableAlias at hp
@@ -526,6 +552,42 @@ theorem stableAliases_sound (c : ResolutionContext E) (domain : E.domain = c.dom
         (QualifiedGraphs.assignment_position unique length hr) kt ko kr
       change mixedValues E.graph η' [r] n W v ↔ _
       rw [input, dr, d.result_eq_input (by rw [← dt]; exact stable), ← dt]
+
+/-- Stable aliases include their source views whenever the target is checked
+to contain only JavaScript values. -/
+def stableAliases (c : ResolutionContext E) (source : SchemeRow (Label E.signature))
+    (images : InstanceImageCheck E.graph) : List (Label E.signature × Label E.signature) :=
+  (rawStableAliases c source images).flatMap fun p =>
+    let view := Label.meetOf [p.1, c.source]
+    p :: if QualifiedGraphs.sourceView E.graph [view] p.1 &&
+        sourceTy E.graph [p.2] && E.graph.parameterKinds p.1 == some .value then
+      [(view, p.2)] else []
+
+theorem stableAliases_sound (c : ResolutionContext E) (domain : E.domain = c.domain)
+    (source : SchemeRow (Label E.signature)) (images : InstanceImageCheck E.graph) :
+    ProgramCertificates.AliasesSound E.graph source (stableAliases c source images) := by
+  intro η As length allowed bounded pair member n W v
+  obtain ⟨p, hp, member⟩ := List.mem_flatMap.mp member
+  have same := rawStableAliases_sound c domain source images η As length allowed bounded p hp
+  simp only [List.mem_cons] at member
+  rcases member with rfl | member
+  · exact same n W v
+  · split at member
+    · rename_i checked
+      simp only [Bool.and_eq_true, beq_iff_eq] at checked
+      obtain ⟨⟨view, target⟩, kind⟩ := checked
+      have source : FamLe (mixedValues E.graph (assign η source.binders As) [p.1])
+          PositiveNormalization.sourceT := by
+        intro j U u hu
+        exact sourceTy_sound target _ j U u ((same j U u).mp hu)
+      have he := QualifiedGraphs.sourceView_sound view kind _ source
+      cases List.mem_singleton.mp member
+      change mixedValues E.graph _ _ n W v ↔ mixedValues E.graph _ _ n W v
+      rw [he]
+      exact same n W v
+    · simp at member
+
+#print axioms rawStableAliases_sound
 
 /-- Construct the qualified body checker only for a valid source signature,
 using the descriptor domain installed in the frozen equations. -/

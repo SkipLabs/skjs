@@ -88,7 +88,8 @@ def isTop : Clause α → Bool
 
 /-- Two clauses can share a member: same shape, or top, which has none. -/
 def overlaps (a b : Clause α) : Bool :=
-  isTop a || isTop b || shape a == shape b
+  isTop a || isTop b || (match a with | .source => true | _ => false) ||
+    (match b with | .source => true | _ => false) || shape a == shape b
 
 /-- A conservative compatibility check: two union labels can share a value
 only if some pair of their clauses has the same outer shape. A parameter or
@@ -239,7 +240,11 @@ theorem compatible_of_clauses {G : NormalGraph ι} {i k : ι} {a b : Clause (Lis
   · subst hta; rfl
   by_cases htb : b = .top
   · subst htb; simp [overlaps, isTop]
-  have hs := (semWithArgs_shape hta hva).symm.trans (semWithArgs_shape htb hvb)
+  by_cases hja : a = .source
+  · subst a; simp [overlaps]
+  by_cases hjb : b = .source
+  · subst b; simp [overlaps]
+  have hs := (semWithArgs_shape hta hja hva).symm.trans (semWithArgs_shape htb hjb hvb)
   simp [overlaps, hs]
 
 /-- Rows sharing a value are compatible. -/
@@ -1230,6 +1235,7 @@ checks over the supplied subtype relation. -/
     (arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop)
     (self : List ι) : Clause (List ι) → Clause (List ι) → Prop
   | _, .top => True
+  | a, .source => sourceClause a = true
   | .list a bs, .list c ds => ∀ q ∈ c :: ds, ∃ p ∈ a :: bs, CoversTuple G R p q
   | .nul, .nul => True
   | .undef, .undef => True
@@ -2646,11 +2652,12 @@ theorem Tuple.position_mem {t : Tuple α} {i : Nat} {A : α} (h : t.position i =
 theorem admitsUndefined_sound {G : NormalGraph ι} {η : MixedAssignment ι} {A : List ι}
     (h : AdmitsUndefined G A) (j : Nat) (U : WorldT j) : mixedValues G η A j U .undef := by
   obtain ⟨c, hc, he⟩ := h
-  have he : c = .undef ∨ c = .top := by cases c <;> simp_all [shape]
+  have he : c = .undef ∨ c = .top ∨ c = .source := by cases c <;> simp_all [shape]
   apply mixed_expand_mpr
-  rcases he with rfl | rfl
+  rcases he with rfl | rfl | rfl
   · exact ⟨.undef, expand_sub hc, ⟨rfl, realmInvariant_of_not_record rfl _ _ _⟩⟩
   · exact ⟨.top, expand_sub hc, ⟨⟨rfl, trivial⟩, realmInvariant_of_not_record rfl _ _ _⟩⟩
+  · exact ⟨.source, expand_sub hc, ⟨⟨rfl, trivial⟩, realmInvariant_of_not_record rfl _ _ _⟩⟩
 
 theorem excludesUndefined_sound {G : NormalGraph ι} {η : MixedAssignment ι} {A : List ι}
     (h : ExcludesUndefined G A) (j : Nat) (U : WorldT j) : ¬ mixedValues G η A j U .undef := by
@@ -2658,7 +2665,8 @@ theorem excludesUndefined_sound {G : NormalGraph ι} {η : MixedAssignment ι} {
   obtain ⟨c, hc, hs⟩ := (mixed_expand η h.1 j U .undef).mp hv
   have hc' := h.2 c hc
   have hn : c ≠ .top := by intro he; subst he; exact hc'.2 rfl
-  exact hc'.1 (semWithArgs_shape hn hs.1).symm
+  have hj : c ≠ .source := by intro he; subst he; exact hc'.2 rfl
+  exact hc'.1 (semWithArgs_shape hn hj hs.1).symm
 
 theorem covers_presence_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : List ι → List ι → Prop}
     {p q : Tuple (List ι)} (hc : CoversPresence G R p q) (n : Nat)
@@ -2927,9 +2935,14 @@ theorem Covers.sound_raw [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Re
       semWithArgs (mixedValues G η) (mixedArgs G η) b n W v := by
   by_cases hb : b = .top
   · subst hb; exact fun hv => semWithArgs_value hv
+  by_cases hjs : b = .source
+  · subst b
+    have hc : sourceClause a = true := by cases a <;> simpa [Covers, CoversWith] using hc
+    exact fun hv => sourceClause_sound hc hv
   cases a <;> cases b <;> simp only [Covers, CoversWith] at hc
   all_goals try contradiction
   all_goals try exact absurd rfl hb
+  all_goals try exact absurd rfl hjs
   case pack.pack => exact fun h => h.elim
   case refs.dict a bs vs os ms ks c ds ws iy ps ns ls cy =>
     intro hv
@@ -3151,7 +3164,8 @@ parameters by a hypothesis (RECURSIVE-EQUATIONS §3.3, §7.3): `x ⊓ B` is belo
     (G.parameterKinds j == some .value && reach j) ||
     (match G.meets j with
       | some (q, ds) => !G.params j && (G.schemes j).isNone && reach q &&
-          (G.meetParams j).all reach && ds == cs
+          (G.meetParams j).all reach &&
+          (ds == cs || ds == [.top] || (ds == [.source] && cs.all sourceClause))
       | none => false)
   | none => false
 
@@ -3201,6 +3215,50 @@ target scheme (`sc`), or its clauses each covered (`cover`). -/
     (∃ q ∈ meetParts G i, G.partRow q = true ∧ ∃ j ∈ T, sc q j) ∨
     ∀ a ∈ (meetClauses G i).flatMap splitClause, cover a
 
+/-- Clause shapes, a meet's clause restriction, or callable membership establish
+that a row contains only JavaScript values. -/
+@[nospecialize] def sourceRow (G : NormalGraph ι) (i : ι) : Bool :=
+  if G.params i then false else
+    if (G.schemes i).isSome then true else
+      match G.meets i with
+      | some (_, cs) => cs.all sourceClause
+      | none => (G i).all sourceClause
+
+@[nospecialize] def sourceTy (G : NormalGraph ι) (A : List ι) : Bool :=
+  A.all (sourceRow G)
+
+theorem sourceTy_sound {G : NormalGraph ι} {A : List ι}
+    (checked : sourceTy G A = true) (η : MixedAssignment ι) :
+    FamLe (mixedValues G η A) sourceT := by
+  intro n W v hv
+  obtain ⟨i, hi, hv⟩ := hv
+  have hc := List.all_eq_true.mp checked i hi
+  unfold sourceRow at hc
+  split at hc
+  · cases hc
+  · rename_i hp
+    have hp : G.params i = false := Bool.eq_false_iff.mpr hp
+    rw [qDenoteWithArgs_unfold] at hv
+    simp only [qLayerWithArgs, hp, Bool.false_eq_true, ite_false] at hv
+    cases hs : G.schemes i with
+    | some s =>
+      rw [hs] at hv
+      obtain ⟨fs, code, oid, rfl, _, hscoped⟩ := hv.1
+      exact ⟨rfl, hscoped⟩
+    | none =>
+      simp only [hs, Option.isSome_none, Bool.false_eq_true, ite_false] at hc hv
+      cases hm : G.meets i with
+      | some p =>
+        rw [hm] at hv hc
+        obtain ⟨c, hc', hv, _⟩ := hv.2
+        exact sourceClause_sound (List.all_eq_true.mp hc c hc') hv
+      | none =>
+        rw [hm] at hv hc
+        obtain ⟨c, hc', hv, _⟩ := hv
+        exact sourceClause_sound (List.all_eq_true.mp hc c hc') hv
+
+#print axioms sourceTy_sound
+
 /-- **A meet target, read part by part**: each part of a target meet row is
 the source row, one of the source meet's parts, or a scheme the source row or
 one of its scheme parts covers; its clauses admit every value or are the
@@ -3210,7 +3268,7 @@ source meet's own. -/
     (∀ q ∈ meetParts G j, G.partRow q = true ∧
       (q = i ∨ (G.meetRow i = true ∧ q ∈ meetParts G i) ∨ sc i q ∨
         (G.meetRow i = true ∧ ∃ s ∈ meetParts G i, G.partRow s = true ∧ sc s q))) ∧
-    (meetClauses G j = [.top] ∨ (G.meetRow i = true ∧ meetClauses G i = meetClauses G j))
+    ((meetClauses G j = [.top] ∨ (meetClauses G j = [.source] ∧ sourceRow G i = true)) ∨ (G.meetRow i = true ∧ meetClauses G i = meetClauses G j))
 
 /-- An opaque meet: a source meet row, whose clauses `meetSources` lists
 unless it has a scheme part, which is then read through one part; or a
@@ -3292,10 +3350,18 @@ theorem meetBelow_sound [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssignm
       simp only [hmj, Bool.and_eq_true, Bool.not_eq_true', Option.isNone_iff_eq_none,
         beq_iff_eq, Bool.or_eq_true, List.contains_iff_mem, List.any_eq_true,
         List.all_eq_true] at h
-      obtain ⟨⟨⟨⟨hjp, hjs⟩, hq⟩, hqs⟩, rfl⟩ := h
+      obtain ⟨⟨⟨⟨hjp, hjs⟩, hq⟩, hqs⟩, hcs⟩ := h
       rw [qDenoteWithArgs_unfold]
       simp only [qLayerWithArgs, hjp, hjs, hmj, Bool.false_eq_true, ite_false]
-      exact ⟨⟨hreach q hq, fun r hr => hreach r (hqs r hr)⟩, hvc⟩
+      refine ⟨⟨hreach q hq, fun r hr => hreach r (hqs r hr)⟩, ?_⟩
+      rcases hcs with (rfl | rfl) | ⟨rfl, hs⟩
+      · exact hvc
+      · obtain ⟨c, _, hv, _⟩ := hvc
+        exact ⟨.top, List.mem_singleton_self _, semWithArgs_value hv,
+          realmInvariant_of_not_record rfl n W v⟩
+      · obtain ⟨c, hc, hv, _⟩ := hvc
+        exact ⟨.source, List.mem_singleton_self _, sourceClause_sound (hs c hc) hv,
+          realmInvariant_of_not_record rfl n W v⟩
 
 /-- **A meet row means its parts and its clauses**, each read at the meet's
 own level. -/
@@ -3329,7 +3395,7 @@ theorem meet_target_value {G : NormalGraph ι} {η : MixedAssignment ι} {i j : 
     (hparts : ∀ q ∈ meetParts G j, G.partRow q = true ∧
       (q = i ∨ (G.meetRow i = true ∧ q ∈ meetParts G i) ∨ sc i q ∨
         (G.meetRow i = true ∧ ∃ s ∈ meetParts G i, G.partRow s = true ∧ sc s q)))
-    (hcl : meetClauses G j = [.top] ∨ (G.meetRow i = true ∧ meetClauses G i = meetClauses G j))
+    (hcl : (meetClauses G j = [.top] ∨ (meetClauses G j = [.source] ∧ sourceRow G i = true)) ∨ (G.meetRow i = true ∧ meetClauses G i = meetClauses G j))
     (hv : qDenoteWithArgs G (mixedParameters G) (η, i) n W v) :
     qDenoteWithArgs G (mixedParameters G) (η, j) n W v := by
   refine (meet_row_iff hj).mpr ⟨fun q hq => ?_, ?_⟩
@@ -3338,12 +3404,27 @@ theorem meet_target_value {G : NormalGraph ι} {η : MixedAssignment ι} {i j : 
     · exact ((meet_row_iff hi).mp hv).1 q hqi
     · exact (part_denote hqp).mp (hsc _ _ h hv)
     · exact (part_denote hqp).mp (hsc _ _ h (meet_part_value hi hs hsp hv))
-  · rcases hcl with h | ⟨hi, h⟩
+  · rcases hcl with (h | ⟨h, hs⟩) | ⟨hi, h⟩
     · rw [h]
       exact ⟨.top, List.mem_singleton_self _, mixedDenote_value G η i hv,
         realmInvariant_of_not_record rfl n W v⟩
+    · rw [h]
+      have hsource : sourceTy G [i] = true := by simpa [sourceTy] using hs
+      exact ⟨.source, List.mem_singleton_self _,
+        sourceTy_sound hsource η n W v ⟨i, List.mem_singleton_self _, hv⟩,
+        realmInvariant_of_not_record rfl n W v⟩
     · rw [← h]
       exact ((meet_row_iff hi).mp hv).2
+
+
+/-- Opaque callable rows belong to the JavaScript universe; calculus top
+also admits arbitrary internal values. -/
+@[nospecialize] def OpaqueUniverse [DecidableEq ι] (G : NormalGraph ι) (T : List ι) (i : ι) : Prop :=
+  .top ∈ clausesOf G T ∨
+    (.source ∈ clausesOf G T ∧ G.params i = false ∧ (G.schemes i).isSome = true)
+
+instance [DecidableEq ι] (G : NormalGraph ι) (T : List ι) (i : ι) :
+    Decidable (OpaqueUniverse G T i) := by unfold OpaqueUniverse; infer_instance
 
 /-- A parameter or scheme row of the source is in the target, or the target
 admits every value: the row has no clauses for a target clause to cover. A
@@ -3355,7 +3436,7 @@ signatures its own cover (`SchemeCoversWith`). -/
 @[nospecialize] def OpaqueWith [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G)) (R : List ι → List ι → Prop) (known : Known ι)
     (arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop)
     (S T : List ι) : Prop :=
-  ∀ i ∈ S, G.plain i = true ∨ i ∈ T ∨ .top ∈ clausesOf G T ∨
+  ∀ i ∈ S, G.plain i = true ∨ i ∈ T ∨ OpaqueUniverse G T i ∨
     MeetOpaque G (SchemeCoversWith G R known arrows)
       (fun a => ∃ b ∈ clausesOf G T, CoversWith G sub R known arrows S a b) T i ∨
     ∃ j ∈ T, SchemeCoversWith G R known arrows i j
@@ -3524,6 +3605,11 @@ one's images; its receiver is not compared. -/
   | some ps, some e, some r => sameLabelLists ps q.arguments.1 && sameLabels e q.arguments.2 && sameLabels r q.result && p.effect == q.effect
   | _, _, _ => false
 
+/-- A receiver universe covers the instance's receiver without a substitution. -/
+@[nospecialize] def receiverUniverse [DecidableEq ι] (G : NormalGraph ι) (P Q : List ι) : Bool :=
+  expand G P == [.top] ||
+    (expand G P == [.source] && sourceTy G Q)
+
 /-- A signature an instance states: a scheme signature's image, or, where the
 scheme's receiver admits every value, one whose parameters and result are its
 images at any receiver. A callable invoked safely with every receiver is
@@ -3533,14 +3619,14 @@ whose receiver is the host. -/
 @[nospecialize] def instSig [DecidableEq ι] (G : NormalGraph ι) (tbl : InstTable ι) (κ : Ctx ι)
     (p q : Arrow (List ι)) : Bool :=
   (sigMatch tbl κ p { q with effect := p.effect } ||
-    (expand G p.receiver == [.top] && sigBodyMatch tbl κ p { q with effect := p.effect })) &&
+    (receiverUniverse G p.receiver q.receiver && sigBodyMatch tbl κ p { q with effect := p.effect })) &&
       p.effect.covers q.effect
 
 /-- The same, for a variadic signature. -/
 @[nospecialize] def instRest [DecidableEq ι] (G : NormalGraph ι) (tbl : InstTable ι) (κ : Ctx ι)
     (p q : RestArrow (List ι)) : Bool :=
   (restMatch tbl κ p { q with effect := p.effect } ||
-    (expand G p.receiver == [.top] && restBodyMatch tbl κ p { q with effect := p.effect })) &&
+    (receiverUniverse G p.receiver q.receiver && restBodyMatch tbl κ p { q with effect := p.effect })) &&
       p.effect.covers q.effect
 
 /-- The context `κ` on the rows `ps` outside `src`, in the order of `ps`. -/
@@ -5237,12 +5323,16 @@ theorem inst_images_sound [DecidableEq ι] {G : NormalGraph ι} (η : MixedAssig
           simp only [List.map_cons, hfam S S' hS, ihs Ts' hr]
   -- A receiver the instance states within a scheme receiver admitting every
   -- value: every receiver is a closed value.
-  have anyRecv : ∀ (P Q : List ι), expand G P = [.top] → ∀ j (hj : j < n) (U : WorldT j),
+  have anyRecv : ∀ (P Q : List ι), receiverUniverse G P Q = true → ∀ j (hj : j < n) (U : WorldT j),
       WExt (trunc j (Nat.le_of_lt hj) W) U → ∀ r, mixedValues G η Q j U r →
         mixedValues G (assign η s.binders As) P j U r := by
     intro P Q hP j hj U _ r hr
-    obtain ⟨l, _, hl⟩ := hr
-    exact top_row_mixed hP (mixedDenote_value G η l hl)
+    simp only [receiverUniverse, Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq] at hP
+    rcases hP with hP | ⟨hP, hQ⟩
+    · obtain ⟨l, _, hl⟩ := hr
+      exact top_row_mixed hP (mixedDenote_value G η l hl)
+    · exact mixed_of_expand hP ⟨sourceTy_sound hQ η j U r hr,
+        realmInvariant_of_not_record rfl j U r⟩
   refine ⟨⟨hinv, fun q' hq' => ?_⟩, ⟨hinv, fun r' hr' => ?_⟩⟩
   · obtain ⟨q, hqL, rfl⟩ := List.mem_map.mp hq'
     obtain ⟨p, hps, hsig⟩ := hL q hqL
@@ -5260,7 +5350,7 @@ theorem inst_images_sound [DecidableEq ι] {G : NormalGraph ι} (η : MixedAssig
       simp only [e1, e2, e3] at hpr
       exact hpr.weaken (Effect.covers_sound heffect) (fun _ _ _ _ h => h)
         (fun _ _ _ _ h => h) (fun _ _ _ _ h => h)
-    · simp only [Bool.and_eq_true, beq_iff_eq] at hbody
+    · simp only [Bool.and_eq_true] at hbody
       obtain ⟨ps, r, h2, h3, s2, s3, he⟩ := sigBodyMatch_some hbody.2
       have e3 := (hfam _ _ h3).trans (sameLabels_values s3)
       have e2 := (hargs _ _ h2).trans (sameLabelLists_values s2)
@@ -5287,7 +5377,7 @@ theorem inst_images_sound [DecidableEq ι] {G : NormalGraph ι} (η : MixedAssig
       simp only [e1, e2, e3, e4] at hpr
       exact hpr.weaken (Effect.covers_sound heffect) (fun _ _ _ _ h => h)
         (fun _ _ _ _ h => h) (fun _ _ _ _ h => h)
-    · simp only [Bool.and_eq_true, beq_iff_eq] at hbody
+    · simp only [Bool.and_eq_true] at hbody
       obtain ⟨ps, e, r, h2, h3, h4, s2, s3, s4, he⟩ := restBodyMatch_some hbody.2
       have e3 := (hpack _ _ h3).trans (sameLabels_arguments s3)
       have e4 := (hfam _ _ h4).trans (sameLabels_values s4)
@@ -5402,7 +5492,7 @@ source part, or the source row, below it by a hypothesis. -/
     (R : List ι → List ι → Prop) (known : Known ι)
     (arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop)
     (hyps : List (ι × ι)) (S T : List ι) : Prop :=
-  ∀ i ∈ S, G.plain i = true ∨ i ∈ T ∨ .top ∈ clausesOf G T ∨
+  ∀ i ∈ S, G.plain i = true ∨ i ∈ T ∨ OpaqueUniverse G T i ∨
     MeetOpaque G (PartCovers G sub R known arrows hyps)
       (fun a => ∃ b ∈ clausesOf G T, CoversWith G sub R known arrows S a b) T i ∨
     (∃ y ∈ T, (i, y) ∈ hyps) ∨ ∃ j ∈ T, SchemeCoversAlpha G sub R known arrows i j
@@ -5621,8 +5711,15 @@ theorem pair_values_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (R
   · rcases (hc.2.1 i hi).resolve_left (by simp [hp]) with
       hB | htop | hmeet | ⟨y, hy, hh⟩ | ⟨j, hj, hsc⟩
     · exact ⟨i, hB, hv⟩
-    · exact mixed_expand_mpr ⟨.top, htop, mixedDenote_value G η i hv,
-        realmInvariant_of_not_record rfl n W v⟩
+    · rcases htop with htop | ⟨hsource, hparam, hscheme⟩
+      · exact mixed_expand_mpr ⟨.top, htop, mixedDenote_value G η i hv,
+          realmInvariant_of_not_record rfl n W v⟩
+      · obtain ⟨s, hs⟩ := Option.isSome_iff_exists.mp hscheme
+        rw [qDenoteWithArgs_unfold] at hv
+        simp only [qLayerWithArgs, hparam, hs, Bool.false_eq_true, ite_false] at hv
+        obtain ⟨fs, code, oid, rfl, _, hscoped⟩ := hv.1
+        exact mixed_expand_mpr ⟨.source, hsource, ⟨rfl, hscoped⟩,
+          realmInvariant_of_not_record rfl n W _⟩
     · rcases hmeet with ⟨hmeet, hsm | hsrc⟩ | ⟨j, hj, hjm, hparts, hcl⟩
       · by_cases hB : i ∈ B
         · exact ⟨i, hB, hv⟩
@@ -5678,7 +5775,9 @@ theorem pair_arguments_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option
     rcases hopaque i hi with h | h | h | h | ⟨y, hy, hh⟩ | ⟨j, -, h⟩
     · simp [hn] at h
     · exact ⟨i, h, by simpa [hp] using ha⟩
-    · exact False.elim (noTop h)
+    · rcases h with h | ⟨_, hparam, _⟩
+      · exact False.elim (noTop h)
+      · simp [NormalGraph.params, hp] at hparam
     · rcases h with ⟨h, -⟩ | ⟨j, hj, hjm, -, -⟩
       · simp [NormalGraph.meetRow, NormalGraph.params, hp] at h
       · -- A meet row is a value row, which a list-sorted target has none of.

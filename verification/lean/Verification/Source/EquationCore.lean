@@ -98,8 +98,9 @@ partial def application (ctx : Ctx) (i : Nat) (supplied : List Union)
   for index in [:d.parameters.size] do
     let p := d.parameters[index]!
     let bound ← field p "bound"
-    if bound != .null && ctx.checkBounds then
-      let upper ← lowerType { ctx with decl := some i, params := values, self := none, binders := [] } bound
+    if ctx.checkBounds then
+      let upper ← if bound == .null then pure [← ground "source" sourceValueClauses]
+        else lowerType { ctx with decl := some i, params := values, self := none, binders := [] } bound
       modify fun s => { s with obligations := s.obligations ++ [⟨values[index]!, upper, ctx.bounds,
         s!"{ctx.site}: the type argument for {d.name}'s {p.getObjValD "name" |>.compress} at {(p.getObjValD "span").compress}", pos⟩] }
   return values.toList
@@ -341,7 +342,9 @@ partial def schemeRow (ctx : Ctx) (term : Json) : M (GraphRow Tree (List Tree)) 
     let n ← str b "name"
     let k := names.idxOf n
     let bound ← field b "bound"
-    if bound == .null then continue
+    if bound == .null then
+      if !packs.contains n then bounds := bounds ++ [(.local k, [← ground "source" sourceValueClauses])]
+      continue
     if packs.contains n then
       let pack ← match kindOf bound with
         | some "array" => pure [← occurrence ctx "pack" (← field bound "element")
@@ -354,7 +357,19 @@ partial def schemeRow (ctx : Ctx) (term : Json) : M (GraphRow Tree (List Tree)) 
         | _ => throw s!"{ctx.site}: the argument-pack bound is not represented; the contract cannot be erased"
       bounds := bounds ++ [(.local k, pack)]
     else bounds := bounds ++ [(.local k, ← lowerType ctx bound)]
-  let inner := { inner with bounds := ctx.bounds ++ bounds }
+  let source := [← top]
+  let binders := inner.binders.map fun (n, b) =>
+    if b.pack then (n, b) else match b.value with
+    | [_] => if names.contains n then
+        (n, { b with value := meetUnions [b.value, source] })
+      else (n, b)
+    | _ => (n, b)
+  let views := (inner.binders.zip binders).filterMap fun ((_, raw), (_, view)) => do
+    let [p] := raw.value | none
+    let [q] := view.value | none
+    let B ← bounds.lookup p
+    return (q, B)
+  let inner := { inner with binders, bounds := ctx.bounds ++ bounds ++ views }
   let mut fixed : List (Arrow (List Tree)) := []
   let mut rests : List (RestArrow (List Tree)) := []
   for f in ← arr term "signatures" do
@@ -379,7 +394,8 @@ partial def declarationRow (h i : Nat) : M (GraphRow Tree (List Tree)) := do
       site := d.name }
   let bounds ← d.parameters.toList.zipIdx.filterMapM fun (p, k) => do
     let b ← field p "bound"
-    if b == .null then pure none else pure (some (Tree.argument k, ← lowerType ctx b))
+    if b == .null then pure (some (Tree.argument k, [← ground "source" sourceValueClauses]))
+    else pure (some (Tree.argument k, ← lowerType ctx b))
   let ctx := { ctx with bounds }
   let own := d.expression
   let empty := kindOf own == some "object" &&

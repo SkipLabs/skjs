@@ -1693,6 +1693,24 @@ for (const [artifacts, arity, refusal] of [
     `source expression obligation at [${at},${at + 4})`);
   invoke(forged, join(artifacts, "evidence.json"), artifacts);
 }
+{
+  // An unconstrained source generic admits unknown, but its independently
+  // extracted bound excludes calculus top and its internal stores.
+  const artifacts = run("generic-unknown-arguments");
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const claims = readClaims(artifacts);
+  const fn = must(claims.functions.find(f => f.name === "forward"), "forward's claims");
+  const at = source.indexOf("identity(value)", source.indexOf("function forward"));
+  const call = must(fn.expressions.find(e => e.pos[0] === at && e.pos[1] === at + "identity(value)".length),
+    "the generic identity call");
+  const argument = must(call.instantiate?.[0], "identity's type argument");
+  argument.type = [claims.types.length];
+  claims.types.push(["top"]);
+  const forged = writeClaims(artifacts, "forged-source-generic-top", claims);
+  refusedAt(artifacts, forged, "forged-source-generic-top",
+    `source direct obligation at [${at},${at + "identity(value)".length})`);
+  invoke(forged, join(artifacts, "evidence.json"), artifacts);
+}
 checkGenericRest(verifier, run("generic-rest"));
 checkOverloads(verifier, run("overloads"));
 checkDefaults(verifier, run("default-parameter-scope"));

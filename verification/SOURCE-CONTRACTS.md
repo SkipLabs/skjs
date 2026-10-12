@@ -400,7 +400,10 @@ so every resolvable input is awaitable: $`\mathsf{Desc}(T,O,R)\Rightarrow\mathsf
 
 $`\mathsf{Resolves}`$ and $`\mathsf{Observes}`$ are the least relations
 closed under the following rules (`ResolutionCapabilities`), with $`P`$ the
-native Promise constructor and $`A`$, $`B`$ value families. They classify an
+native Promise constructor and $`A`$, $`B`$ value families. The stable family
+$`N`$ and every native Promise application are contained in the
+[source-value universe](SOURCE-MODEL.md#source-value-boundary) $`J`$, checked
+from their graph clauses. The rules classify an
 input as stable, a native promise or a union of classified inputs:
 
 ```math
@@ -412,7 +415,7 @@ input as stable, a native promise or a union of classified inputs:
 
 ```math
 \frac{A\le N}{\mathsf{Observes}(A,A)}\ \textsf{stable}\qquad
-\frac{}{\mathsf{Observes}(P\,A,A)}\ \textsf{native}\qquad
+\frac{A\le J}{\mathsf{Observes}(P\,A,A)}\ \textsf{native}\qquad
 \frac{\mathsf{Observes}(A,O)\quad\mathsf{Observes}(B,Q)}
      {\mathsf{Observes}(A\cup B,O\cup Q)}\ \textsf{union}
 ```
@@ -435,6 +438,12 @@ stable. An observation of a stable input is that input
 (`Observation.exactStable`), and a descriptor with a stable input has it as
 its observation and result (`Descriptor.exactStable`): an input of type
 `number` is observed and resolves at exactly `number`.
+
+Every input, observation and result in these relations is contained in $`J`$,
+proved by induction (`Resolves.source`, `Observes.source`). Hence a qualified
+slot $`X`$ equals $`X\cap J`$. Lexical descriptor lookup and instantiation
+preserve this equality (`QualifiedGraphs.sourceView_sound`); the associated
+slots retain the relations imposed by their owning descriptor.
 
 A written bound within $`N`$ makes the qualified parameter its own
 observation and, where it owns one, its own result. The body is certified at
@@ -462,8 +471,8 @@ classifying its type argument, from which $`O_T`$, and $`R_T`$ where $`T`$
 owns it, follow ([claims](SOURCE-CLAIMS.md)). A union certificate's arms
 classify the input's parts in any order (`SourceResolution.check`). A
 `native` certificate classifies a native promise's payload as well, giving its
-result; a `promise` certificate observes a native promise at any payload, by
-the premise-free native rule of $`\mathsf{Observes}`$, and gives no result.
+result; a `promise` certificate observes a native promise at a payload checked
+to lie within $`J`$, and gives no result.
 
 **Resolution operations in the body.** `await` and an async return are the
 qualified intrinsics ([async](#async-functions-and-await)), instantiated at
@@ -1129,7 +1138,7 @@ the observation (`ResolutionCapabilities.Observes.resolve_safe`), and
 to the reviewed `NativeOperationContracts`; both observing operations are
 instances of one `ObservationContract`.
 
-`Promise<void>` is `Promise<unknown>` (`void` is top); async completion
+`Promise<void>` is `Promise<unknown>` (both payload types denote $`J`$); async completion
 fulfills it with `undefined`. A throw in an async body leaves it as a throw.
 A non-promise operand is awaited at its own type when its lifetime contract
 establishes membership in $`N`$. This includes ordinary arrays and records

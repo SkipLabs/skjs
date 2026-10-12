@@ -135,7 +135,8 @@ theorem reject_clause (G : NormalGraph ι) (η : MixedAssignment ι)
   intro hv
   rcases hc with shape | field
   · have ht : c ≠ .top := by intro h; subst c; exact shape.2 rfl
-    exact shape.1 (semWithArgs_shape ht hv).symm
+    have hj : c ≠ .source := by intro h; subst c; exact shape.2 rfl
+    exact shape.1 (semWithArgs_shape ht hj hv).symm
   · cases c <;> try exact field.elim
     rename_i a bs views optional methods bounds
     rcases field with ⟨p, hp, hn⟩ | ⟨o, ho, hn⟩

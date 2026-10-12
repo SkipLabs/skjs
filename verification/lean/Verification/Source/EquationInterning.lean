@@ -64,7 +64,7 @@ def primitives : M Unit := do
   let _ ← prim "false" (.boolLit false)
   let _ ← prim "undefined" .undef
 
-def top : M Tree := prim "unknown" .top
+def top : M Tree := prim "unknown" .source
 
 /-- The empty intersection's refusal. -/
 def emptyMeet : String :=
@@ -358,11 +358,9 @@ def literalLabels (term : Json) : M Union := do
     return [← prim s!"{text}n" (.bigintLit (← (Verification.decodeBigint text : Except String Int)))]
   | _ => throw "unsupported source literal"
 
-/-- The source-value universe: primitives and objects of each code kind.
-An array's element store is an internal value outside this union. -/
+/-- The source-value universe, independent of record realm invariants. -/
 def sourceValueClauses : List (Clause (List Tree)) :=
-  [.nul, .undef, .boolLit true, .boolLit false, .num, .str, .bigint, .symbol,
-    .refs [] [] [], .arrs [] [], .ctors []]
+  [.source]
 
 def atomLabels (term : Json) : M Union := do
   match ← str term "name" with
@@ -373,7 +371,7 @@ def atomLabels (term : Json) : M Union := do
   | "string" => return [← prim "string" .str]
   | "bigint" => return [← prim "bigint" .bigint]
   | "symbol" => return [← prim "symbol" .symbol]
-  | "unknown" => return [← top]
+  | "unknown" => return [← ground "source" sourceValueClauses]
   | "void" => return [← ground "void" sourceValueClauses]
   | "never" => return []
   | "object" =>

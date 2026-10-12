@@ -128,7 +128,7 @@ scheme row's variadic signatures. -/
   -- anonymous, so its `this` is the one it captures. A class value's code
   -- reads no receiver.
   let receiverName := if receiverAnnot.isSome then "this" else ""
-  let top ← lower (SourceTypes.use .top)
+  let top ← lower (SourceTypes.use .source)
   let scheme := match mode with
     | .fn => ProgramCertificates.schemeOf G A
     | _ => none

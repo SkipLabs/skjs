@@ -46,7 +46,7 @@ inductive Sim (E : List Tm) (K : List (Continuation × Option Target)) : Tm → 
   | goto : Sim E K (.goto E K l L d) (.at l (envOf L d))
   | frame : Sim E K (.frame E K t L d k x) (.eval t (envOf L d) k x)
   | done : isVal v = true → Sim E K v (.done v)
-  | raised : isVal v = true → Sim E K (.throw v) (.raised v)
+  | raised : isVal v = true → isSourceVal v = true → Sim E K (.throw v) (.raised v)
 
 theorem sim_goto {E K l m L d} :
     Sim E K (.goto E K l (envMap m L d).1 (envMap m L d).2) (.at l (mapEnv m (envOf L d))) := by
@@ -83,9 +83,9 @@ theorem sim_step {E K ts s h h' s'} (hs : Sim E K ts s)
     | handle hr =>
       refine ⟨_, .frameHandle hr, ?_⟩
       rw [push_envOf]; exact sim_goto
-    | raise hr => exact ⟨_, .frameRaise hr, .raised (raises_val hr)⟩
+    | raise hr => exact ⟨_, .frameRaise hr, .raised (raises_val hr) (raises_sourceVal hr)⟩
   | done hv => cases step
-  | raised hv => cases step
+  | raised _ _ => cases step
 
 /-- **The term running graph code is as safe as the graph.** -/
 theorem safe_of_sim {E K T} : ∀ (n : Nat) (W : WorldT n) (h : Heap) {ts s},
@@ -98,7 +98,7 @@ theorem safe_of_sim {E K T} : ∀ (n : Nat) (W : WorldT n) (h : Heap) {ts s},
     rcases hg with (⟨v, rfl, hv, hT⟩ | ⟨v, rfl, hsc⟩) | ⟨U, h', s', hx, hu, step, hh, hg⟩
     · cases hs; exact Or.inl (Or.inl ⟨hv, hT⟩)
     · cases hs with
-      | raised hv => exact Or.inl (Or.inr ⟨v, .throwV hv, hsc⟩)
+      | raised hv hj => exact Or.inl (Or.inr ⟨v, .throwV hv hj, hsc⟩)
     · obtain ⟨ts', st, hs'⟩ := sim_step hs step
       exact Or.inr ⟨U, h', ts', hx, hu, st, hh, ih U h' hs' hg⟩
 
@@ -203,7 +203,7 @@ theorem preserving_safe_of_sim [DecidableEq ι] {G : NormalGraph ι} {images : I
       (⟨v, rfl, hv, ht⟩ | ⟨v, rfl, hsc⟩) | ⟨U, h', s', hx, hu, st, hok, hs'⟩
     · cases sim; exact .inl (.inl ⟨hv, ht, hp⟩)
     · cases sim with
-      | raised hv => exact .inl (.inr ⟨v, .throwV hv, hsc⟩)
+      | raised hv hj => exact .inl (.inr ⟨v, .throwV hv hj, hsc⟩)
     · obtain ⟨ts', step, sim'⟩ := sim_step sim st
       exact .inr ⟨U, h', ts', hx, hu, step, hok,
         ih U h' ts' s' initial sim' hu hok hs'

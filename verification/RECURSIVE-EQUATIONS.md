@@ -182,6 +182,28 @@ steps, all by $`\textsf{Var}`$, while variances of components of 8 to 36
 members are computed. The measurement covers the checker's questions and
 the fallback searches, not the producer's proof search.
 
+The source-value universe $`J`$ also supports the checked intersection rule:
+
+```math
+A\subseteq J\quad\Longrightarrow\quad P\cap A\subseteq P\cap J.
+```
+
+Clause shapes establish $`A\subseteq J`$ (`sourceClause_sound`); the
+intersection rule is proved by `meetBelow_sound`. A quantified callable is
+also contained in $`J`$, since its semantics requires an invocable object
+(`OpaqueUniverse`, `pair_values_sound`). Internal parameter families remain
+unrestricted until a bound or intersection supplies this premise.
+
+The same premise gives $`A\subseteq A\cap J`$. The checked source-membership
+test recognizes clause restrictions and quantified callables
+(`sourceTy_sound`); `meet_target_value` proves intersection introduction.
+
+Substitution images are compared at two levels: structural equivalence uses
+the subtype rules without proposing quantified instances, and general image
+equivalence may instantiate signatures using those structural equalities.
+Each accepted respelling proves equality in both directions
+(`structuralEquivalent_sound`, `equivalent_sound`).
+
 ### 4.1 Quantified signatures
 
 Two quantified signatures are compared up to renaming of bound variables,

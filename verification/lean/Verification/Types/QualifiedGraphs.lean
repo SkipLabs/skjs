@@ -92,6 +92,43 @@ structure GroupBinders (ι : Type) where
   if G.parameterKinds t == some .value && G.parameterKinds o == some .value &&
       r.all (fun p => G.parameterKinds p.2 == some .value) then some ⟨t, o, r⟩ else none
 
+/-- A source view retains a parameter's JavaScript-valued members. -/
+@[nospecialize] def sourceView [DecidableEq ι] (G : NormalGraph ι) (A : List ι) (p : ι) : Bool :=
+  A == [p] || match A with
+    | [i] => G.meetRow i && PositiveRules.meetParts G i == [p] &&
+        PositiveRules.meetClauses G i == [.source]
+    | _ => false
+
+/-- Source restriction is the identity on a JavaScript-valued parameter. -/
+theorem sourceView_sound [DecidableEq ι] {G : NormalGraph ι} {A : List ι} {p : ι}
+    (checked : sourceView G A p = true) (kind : G.parameterKinds p = some .value)
+    (η : MixedAssignment ι) (source : FamLe (PositiveRules.mixedValues G η [p]) sourceT) :
+    PositiveRules.mixedValues G η A = PositiveRules.mixedValues G η [p] := by
+  simp only [sourceView, Bool.or_eq_true, beq_iff_eq] at checked
+  rcases checked with rfl | checked
+  · rfl
+  · match A with
+    | [i] =>
+      simp only [Bool.and_eq_true, beq_iff_eq] at checked
+      obtain ⟨⟨hm, parts⟩, clauses⟩ := checked
+      have hp : G.partRow p = true := by simp [NormalGraph.partRow, NormalGraph.params, kind]
+      funext n W v
+      apply propext
+      change (∃ q ∈ [i], _) ↔ (∃ q ∈ [p], _)
+      simp only [List.mem_singleton, exists_eq_left]
+      rw [PositiveRules.meet_row_iff hm, parts, clauses]
+      simp only [List.mem_singleton, forall_eq, exists_eq_left]
+      constructor
+      · exact fun h => (PositiveRules.part_denote hp).mpr h.1
+      · intro h
+        refine ⟨(PositiveRules.part_denote hp).mp h, ?_⟩
+        exact ⟨source n W v ⟨p, List.mem_singleton_self _, h⟩,
+          realmInvariant_of_not_record rfl n W v⟩
+    | [] => cases checked
+    | _ :: _ :: _ => cases checked
+
+#print axioms sourceView_sound
+
 /-- A lexical instance retains the input and observation of one enclosing
 group, and its result wherever the target group has one. -/
 @[nospecialize] def groupInstance [DecidableEq ι] (G : NormalGraph ι)
@@ -99,11 +136,11 @@ group, and its result wherever the target group has one. -/
     (target : ResolutionSlots) : Bool :=
   match groupBinders G source g with
   | none => false
-  | some b => args[target.input]? == some [b.input] &&
-      args[target.observation]? == some [b.observation] &&
+  | some b => (args[target.input]?).any (sourceView G · b.input) &&
+      (args[target.observation]?).any (sourceView G · b.observation) &&
       match target.result, b.result with
       | none, _ => true
-      | some slot, some (_, r) => args[slot]? == some [r]
+      | some slot, some (_, r) => (args[slot]?).any (sourceView G · r)
       | some _, none => false
 
 /-- Check a lexical instance against its enclosing scheme. Each target group
@@ -167,8 +204,10 @@ theorem lexicalAdmission_sound [DecidableEq ι] (G : NormalGraph ι)
   | none => simp [hb] at hm
   | some b =>
     rw [hb] at hm
-    simp only [Bool.and_eq_true, beq_iff_eq] at hm
+    simp only [Bool.and_eq_true] at hm
     obtain ⟨⟨hmt, hmo⟩, hmr⟩ := hm
+    obtain ⟨T, hmt, tv⟩ := (Option.any_eq_true _ _).mp hmt
+    obtain ⟨O, hmo, ov⟩ := (Option.any_eq_true _ _).mp hmo
     obtain ⟨ht, ho, kt, ko, hres, _⟩ := groupBinders_some hb
     let F (U : List ι) : MixedFamily :=
       ⟨mixedMeaning G (assign η source.binders As) U,
@@ -179,9 +218,11 @@ theorem lexicalAdmission_sound [DecidableEq ι] (G : NormalGraph ι)
     obtain ⟨d, et, eo⟩ := assigned_observation G η source As ha g hg b.input b.observation
       (assignment_position checked.1.1 hl ht)
       (assignment_position checked.1.1 hl ho) kt ko
-    have et' : (F [b.input]).value.1 = d.input := et
-    have eo' : (F [b.observation]).value.1 = d.observation := eo
-    refine ⟨F [b.input], F [b.observation], at_ _ _ hmt, at_ _ _ hmo,
+    have et' : (F T).value.1 = d.input :=
+      (sourceView_sound tv kt _ (by rw [et]; exact (C.observe_source d.observed).1)).trans et
+    have eo' : (F O).value.1 = d.observation :=
+      (sourceView_sound ov ko _ (by rw [eo]; exact (C.observe_source d.observed).2)).trans eo
+    refine ⟨F T, F O, at_ _ _ hmt, at_ _ _ hmo,
       by rw [et', eo']; exact d.observed, ?_⟩
     intro slot hslot
     have hts : h.result = some slot := hslot
@@ -195,16 +236,19 @@ theorem lexicalAdmission_sound [DecidableEq ι] (G : NormalGraph ι)
         simp at hmr
     obtain ⟨r, hbr, hr, kr⟩ := hres gs hgs
     rw [hbr] at hmr
-    simp only [beq_iff_eq] at hmr
+    obtain ⟨R, hmr, rv⟩ := (Option.any_eq_true _ _).mp hmr
     obtain ⟨e, et, eo, er⟩ := assigned_descriptor G η source As ha g hg gs hgs
       b.input b.observation r
       (assignment_position checked.1.1 hl ht)
       (assignment_position checked.1.1 hl ho)
       (assignment_position checked.1.1 hl hr) kt ko kr
-    have et' : (F [b.input]).value.1 = e.input := et
-    have eo' : (F [b.observation]).value.1 = e.observation := eo
-    have er' : (F [r]).value.1 = e.result := er
-    refine ⟨F [r], at_ _ _ hmr, ?_, ?_, ?_⟩
+    have et' : (F T).value.1 = e.input :=
+      (sourceView_sound tv kt _ (by rw [et]; exact (C.observe_source e.observed).1)).trans et
+    have eo' : (F O).value.1 = e.observation :=
+      (sourceView_sound ov ko _ (by rw [eo]; exact (C.observe_source e.observed).2)).trans eo
+    have er' : (F R).value.1 = e.result :=
+      (sourceView_sound rv kr _ (by rw [er]; exact (C.resolve_source e.resolved).2)).trans er
+    refine ⟨F R, at_ _ _ hmr, ?_, ?_, ?_⟩
     · rw [er']; exact e.stable
     · rw [et', er']; exact e.resolved
     · rw [eo', er']; exact e.forwarded

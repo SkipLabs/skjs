@@ -405,12 +405,9 @@ negation. -/
     | some tag, _ => pure (.singletonTest p tag eq true l r)
     | _, some tag => pure (.singletonTest p tag eq false l r)
     | _, _ =>
-      -- Two objects are strictly equal when they are one object, and a
-      -- primitive is compared by content: an operand of either kind is
-      -- classified. Two operands that may both be of neither kind (any
-      -- value of `unknown`, a store) are refused.
-      let identified := fun (c : PositiveNormalization.Clause (Ty Tree)) =>
-        ProgramTyping.primitiveClause c || ProgramTyping.objectClause c
+      -- The typing rule decides strict equality when either operand's
+      -- clauses contain only JavaScript values.
+      let identified := ProgramTyping.decidingClause (α := Ty Tree) .eq
       if (PositiveRules.expand G L).any (fun c => !identified c) &&
           (PositiveRules.expand G R).any (fun c => !identified c) then
         throw s!"unsupported source expression at [{p.1},{p.2}): strict equality of two operands that may both be values of no known kind, neither a primitive nor an object"

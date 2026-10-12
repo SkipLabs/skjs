@@ -243,7 +243,7 @@ scheme row, its binders standing for the other's. Untrusted:
   if !p.effect.covers q.effect || p.arguments.length != q.arguments.length then none
   -- A scheme receiver admitting every value admits the target's
   -- (`instSig`): it is not matched.
-  let pairs := if expand G p.receiver = [.top] then (p.result :: p.arguments).zip (q.result :: q.arguments)
+  let pairs := if receiverUniverse G p.receiver q.receiver then (p.result :: p.arguments).zip (q.result :: q.arguments)
     else (p.receiver :: p.result :: p.arguments).zip (q.receiver :: q.result :: q.arguments)
   pairs.foldlM (fun st xy => matchRow G bs V fuel st κ xy.1 xy.2) st
 
@@ -251,7 +251,7 @@ scheme row, its binders standing for the other's. Untrusted:
     (st : InstState ι) (κ : Ctx ι) (p q : RestArrow (List ι)) :
     Option (InstState ι) := do
   if !p.effect.covers q.effect || p.arguments.1.length != q.arguments.1.length then none
-  let pairs := if expand G p.receiver = [.top] then (p.arguments.2 :: p.result :: p.arguments.1).zip (q.arguments.2 :: q.result :: q.arguments.1)
+  let pairs := if receiverUniverse G p.receiver q.receiver then (p.arguments.2 :: p.result :: p.arguments.1).zip (q.arguments.2 :: q.result :: q.arguments.1)
     else (p.receiver :: p.arguments.2 :: p.result :: p.arguments.1).zip (q.receiver :: q.arguments.2 :: q.result :: q.arguments.1)
   pairs.foldlM (fun st xy => matchRow G bs V fuel st κ xy.1 xy.2) st
 
@@ -277,17 +277,22 @@ scheme row, its binders standing for the other's. Untrusted:
   -- The target itself is a candidate even when it is opaque; image equality
   -- and bound validation decide whether that proposal establishes inclusion.
   let targetOps := (L.flatMap Arrow.operands ++ M.flatMap RestArrow.operands).eraseDups
-  let throughMeet (b : ι) : Option (Ty ι) := first.meets.findSome? fun (qs, cs, j) =>
+  let throughMeet (found : Ctx ι) (b : ι) : Option (Ty ι) := first.meets.findSome? fun (qs, cs, j) =>
     if !qs.contains b then none else ([j] :: targetOps).find? fun U =>
       match qs.mapM (fun q => if q == b then some U else
-          (first.found.lookup q).orElse fun _ => if s.binders.contains q then none else some [q]) with
+          (found.lookup q).orElse fun _ => if s.binders.contains q then none else some [q]) with
       | some Us =>
         let Ls := Us.map (PositiveRules.clausesOf G) ++ [cs]
         U == [j] || (Us.all G.plainTy &&
           (PositiveRules.sameClauses (G j) (PositiveRules.meetMany Ls) ||
             PositiveRules.sameClauses (G j) (PositiveRules.meetMany Ls.reverse)))
       | none => false
-  let θs := s.binders.map fun b => ((first.found.lookup b).orElse fun _ => throughMeet b).getD [b]
+  let mut found := first.found
+  for _ in [:s.binders.length] do
+    for b in s.binders do
+      if (found.lookup b).isNone then
+        if let some U := throughMeet found b then found := (b, U) :: found
+  let θs := s.binders.map fun b => (found.lookup b).getD [b]
   let κ₀ := s.binders.zip θs
   -- An instance found through a meet row is named by no target row: the
   -- table's domain holds it too.
@@ -345,14 +350,29 @@ matching. Only the common comparison operation validates these choices. -/
             [(l, κ₀, Q.filter (!others.contains ·))]
           | _ => []
         | none => []
-      let patch : InstTable ι := L.flatMap fun q => s.signatures.flatMap fun p =>
-        if p.arguments.length != q.arguments.length then [] else
-        ((p.result :: p.arguments).zip (q.result :: q.arguments)).flatMap fun (P, Q) => respell P Q
-      let patch := patch ++ M.flatMap fun q => s.variadic.flatMap fun p =>
-        if p.arguments.1.length != q.arguments.1.length then [] else
-        ((p.arguments.2 :: p.result :: p.arguments.1).zip (q.arguments.2 :: q.result :: q.arguments.1)).flatMap
-          fun (P, Q) => respell P Q
-      c :: (if patch.isEmpty then [] else [⟨patch.eraseDups ++ table, θs, [], []⟩])
+      let fixedPatch (p q : Arrow (List ι)) : InstTable ι :=
+        let operands := if receiverUniverse G p.receiver q.receiver then
+          (p.result :: p.arguments).zip (q.result :: q.arguments)
+        else (p.receiver :: p.result :: p.arguments).zip (q.receiver :: q.result :: q.arguments)
+        operands.flatMap fun (P, Q) => respell P Q
+      let restPatch (p q : RestArrow (List ι)) : InstTable ι :=
+        let operands := if receiverUniverse G p.receiver q.receiver then
+          (p.arguments.2 :: p.result :: p.arguments.1).zip (q.arguments.2 :: q.result :: q.arguments.1)
+        else (p.receiver :: p.arguments.2 :: p.result :: p.arguments.1).zip
+          (q.receiver :: q.arguments.2 :: q.result :: q.arguments.1)
+        operands.flatMap fun (P, Q) => respell P Q
+      -- Each target chooses one overload. Images of an unused overload need
+      -- not equal that target's operands; the checker validates each choice.
+      let patches := L.foldl (fun patches q => patches.flatMap fun patch =>
+        s.signatures.filterMap fun p =>
+          if p.arguments.length == q.arguments.length && p.effect.covers q.effect then
+            some (patch ++ fixedPatch p q) else none) ([[]] : List (InstTable ι))
+      let patches := M.foldl (fun patches q => patches.flatMap fun patch =>
+        s.variadic.filterMap fun p =>
+          if p.arguments.1.length == q.arguments.1.length && p.effect.covers q.effect then
+            some (patch ++ restPatch p q) else none) patches
+      c :: (patches.filter (! ·.isEmpty)).map fun patch =>
+        ⟨patch.eraseDups ++ table, θs, [], []⟩
   syntactic ++ (matchedInstance G fuel s L M).toList
 
 /-- How deep instance matching follows a type's rows: search only. -/
@@ -861,6 +881,7 @@ came from a different context. No execution budget is inspected. -/
       -- A throw has every type; its operand, at a type of its own.
       let types := (match a with | .var i => Γ[i]?.toList | _ => []) ++ pool
       return types.findCheck? fun B => do
+        if !(decide (SourceValues G B)) then none else do
         let ea ← recur Γ a B
         some (ProgramCertificates.Evidence.node ⟨Γ,t,A⟩ .throw [ea])
     | .ite (.test tag (.var i)) u e =>

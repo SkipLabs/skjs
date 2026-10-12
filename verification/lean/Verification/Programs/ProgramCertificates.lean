@@ -1017,7 +1017,7 @@ declared bounds. -/
   | .sub proof, _, [jt] =>
     jt.context = j.context ∧ jt.term = j.term ∧
     subtype jt.type j.type proof = true
-  | .throw, .throw a, [ja] => ja.context = j.context ∧ ja.term = a
+  | .throw, .throw a, [ja] => ja.context = j.context ∧ ja.term = a ∧ SourceValues G ja.type
   | .merge, .merge d a b, [ja, jb] =>
     ja.context = j.context ∧ ja.term = a ∧ jb.context = j.context ∧ jb.term = b ∧
     ObjectMerge.MergeOk G d ja.type jb.type j.type = true
@@ -1926,10 +1926,10 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
     rw [hΓ, ht] at hj
     exact .sub hj hc
   · rename_i a ja
-    rcases hl with ⟨hΓ, hta⟩
+    rcases hl with ⟨hΓ, hta, hA⟩
     have ha := hp ja (by simp)
     rw [hΓ, hta] at ha
-    exact .throw ha
+    exact .throw hA ha
   · rename_i d a b ja jb
     rcases hl with ⟨hΓa, hta, hΓb, htb, hm⟩
     have ha := hp ja (by simp)
@@ -2629,8 +2629,8 @@ theorem checkTreeUsing_complete [DecidableEq ι] {G : NormalGraph ι}
   | @sub Γ t A B cert ht hc ih =>
     apply node_complete (G := G) (images := images) (j := ⟨Γ, t, B⟩) (r := .sub cert) (js := [⟨Γ,t,A⟩]) ⟨rfl,rfl,hc⟩
     simpa using ih
-  | @throw Γ a A B ha ih =>
-    apply node_complete (G := G) (images := images) (j := ⟨Γ, .throw a, B⟩) (r := .throw) (js := [⟨Γ,a,A⟩]) ⟨rfl,rfl⟩
+  | @throw A Γ a B hA ha ih =>
+    apply node_complete (G := G) (images := images) (j := ⟨Γ, .throw a, B⟩) (r := .throw) (js := [⟨Γ,a,A⟩]) ⟨rfl,rfl,hA⟩
     simpa using ih
   | @merge Γ d a b A B R ha hb hm iha ihb =>
     apply node_complete (G := G) (images := images) (j := ⟨Γ, .merge d a b, R⟩) (r := .merge)

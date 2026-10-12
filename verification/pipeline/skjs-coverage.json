@@ -14,17 +14,17 @@
   "rejected": 2
  },
  "accepted": 2674,
- "verified": 2481,
+ "verified": 2483,
  "byStatus": {
-  "verified (check)": 2481,
-  "unverified (search)": 97,
+  "verified (check)": 2483,
+  "unverified (search)": 95,
   "unsupported (source)": 73,
   "unsupported (proposal)": 23
  },
  "bySuite": {
   "expect-error": {
    "accepted": 2458,
-   "verified": 2267
+   "verified": 2269
   },
   "constprop": {
    "accepted": 66,
@@ -55,7 +55,7 @@
  "filesWithAccepted": 377,
  "functions": {
   "accepted": 2026,
-  "verified": 1851
+  "verified": 1852
  },
  "byGroup": {
   "TypeScript refuses the code too (the pipeline follows TypeScript's types)": {
@@ -136,12 +136,6 @@
    "dependency": 6,
    "files": 1
   },
-  "tests on a value of a type parameter or `unknown` (no rule narrows a parameter row to its meet `T & number`; no object identity)": {
-   "units": 6,
-   "self": 6,
-   "dependency": 0,
-   "files": 3
-  },
   "sloppy (non-strict) code": {
    "units": 6,
    "self": 4,
@@ -153,6 +147,12 @@
    "self": 4,
    "dependency": 0,
    "files": 4
+  },
+  "tests on a value of a type parameter or `unknown` (no rule narrows a parameter row to its meet `T & number`)": {
+   "units": 5,
+   "self": 5,
+   "dependency": 0,
+   "files": 2
   },
   "iterables the program defines: an iterator whose type states no `return`, a spread or a pattern the protocol's lowering does not place, a well-known symbol key other than `Symbol.iterator`": {
    "units": 5,
@@ -219,20 +219,14 @@
    "self": 1,
    "dependency": 0,
    "files": 1
-  },
-  "unclassified: search: reject: unsupported source expression at _: strict equality of two operands that may both be values of no known kind, neither a primitive nor an object": {
-   "units": 1,
-   "self": 1,
-   "dependency": 0,
-   "files": 1
   }
  },
  "exhausted": 0,
- "reachedButRefused": 97,
+ "reachedButRefused": 95,
  "byClass": {
-  "verified": 2481,
+  "verified": 2483,
   "principled": 87,
-  "gap": 96,
+  "gap": 94,
   "unexplained": 0,
   "skjsUnsound": 10
  },
@@ -468,25 +462,13 @@
    "units": 1,
    "files": 1
   },
-  "unmatched: search: reject: unsupported source expression at _: strict equality of two operands that may both be values of no known kind, neither a primitive nor an object": {
-   "class": "gap",
-   "units": 1,
-   "files": 1
-  },
   "SKJS unsoundness: a body falling off its end at a binder bounded by `void`": {
    "class": "skjs-unsound",
    "units": 1,
    "files": 1
-  },
-  "object identity without fields": {
-   "class": "gap",
-   "units": 1,
-   "files": 1
   }
  },
- "unmatchedReasons": [
-  "search: reject: unsupported source expression at _: strict equality of two operands that may both be values of no known kind, neither a primitive nor an object"
- ],
+ "unmatchedReasons": [],
  "skjsUnsoundVerified": [],
  "byKey": {
   "search: reject: TypeScript refuses this code too": 23,
@@ -557,9 +539,7 @@
   "search: reject: the `length` of a mutable tuple read at its arity: the length of a mutable tuple is not fixed by its type, since `push` is allowed on it (an unsoundness": 1,
   "search: reject: a mutable array at one of a wider element: a writable element or field is invariant, as a write through the wider view would break the narrower one; Typ": 1,
   "search: reject: an instance at another whose writable field differs: a writable element or field is invariant, as a write through the wider view would break the narrowe": 1,
-  "source: typeof WithStatic is a class with static members: its statics are bindings of their own, not members of the class value's type": 1,
-  "search: reject: unsupported source expression at _: strict equality of two operands that may both be values of no known kind, neither a primitive nor an object": 1,
-  "search: reject: strict equality with a value of a type parameter: neither operand is known to be a primitive or an object, the kinds strict equality decides, and a valu": 1
+  "source: typeof WithStatic is a class with static members: its statics are bindings of their own, not members of the class value's type": 1
  }
 },
 "excluded": [
@@ -1752,8 +1732,8 @@
 {"source":"tests/expect-error/function-type.ts","name":"testFunctionTypeofObject","kind":"function","line":95,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/function-type.ts","name":"testFunctionInstanceofRhs","kind":"function","line":102,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: `instanceof` whose right operand is not a class declared at the file's top level: nothing in the file says which prototype a constructor from elsewhere gives it","group":"in / instanceof / typeof tests","where":"self","at":"if (x instanceof f) {","detail":"gate: `instanceof` whose right operand is not a class declared at the file's top level: nothing in the file says which prototype a constructor from elsewhere gives its instances (line 2, col 7)","class":"principled"},
 {"source":"tests/expect-error/function-type.ts","name":"testFunctionTruthiness","kind":"function","line":111,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/function-type.ts","name":"testTParamTypeofFunction","kind":"function","line":120,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a `typeof x === \"_\"` test on a value of a type parameter or `unknown`: the values of that shape are the meet of the type parameter with it (`T & number`","group":"tests on a value of a type parameter or `unknown` (no rule narrows a parameter row to its meet `T & number`; no object identity)","where":"self","at":"x","detail":"reject: a `typeof x === \"function\"` test on a value of a type parameter or `unknown`: the values of that shape are the meet of the type parameter with it (`T & number`, a meet row), but a tag test refines only clause rows, and no rule narrows a parameter row to that meet (`unknown` to a callable of  — The available claim for x is T. This return requires {\"arrs\":{\"arrows\":[]}} | {\"ctors\":{\"signatures\":[]}}.","class":"gap"},
-{"source":"tests/expect-error/function-type.ts","name":"testUnknownTypeofFunction","kind":"function","line":128,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a `typeof x === \"_\"` test on a value of a type parameter or `unknown`: the values of that shape are the meet of the type parameter with it (`T & number`","group":"tests on a value of a type parameter or `unknown` (no rule narrows a parameter row to its meet `T & number`; no object identity)","where":"self","at":"x","detail":"reject: a `typeof x === \"function\"` test on a value of a type parameter or `unknown`: the values of that shape are the meet of the type parameter with it (`T & number`, a meet row), but a tag test refines only clause rows, and no rule narrows a parameter row to that meet (`unknown` to a callable of  — The available claim for x is unknown. This return requires {\"arrs\":{\"arrows\":[]}} | {\"ctors\":{\"signatures\":[]}}.","class":"gap"},
+{"source":"tests/expect-error/function-type.ts","name":"testTParamTypeofFunction","kind":"function","line":120,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a `typeof x === \"_\"` test on a value of a type parameter or `unknown`: the values of that shape are the meet of the type parameter with it (`T & number`","group":"tests on a value of a type parameter or `unknown` (no rule narrows a parameter row to its meet `T & number`)","where":"self","at":"x","detail":"reject: a `typeof x === \"function\"` test on a value of a type parameter or `unknown`: the values of that shape are the meet of the type parameter with it (`T & number`, a meet row), but a tag test refines only clause rows, and no rule narrows a parameter row to that meet (`unknown` to a callable of  — The available claim for x is source & T. This return requires {\"arrs\":{\"arrows\":[]}} | {\"ctors\":{\"signatures\":[]}}.","class":"gap"},
+{"source":"tests/expect-error/function-type.ts","name":"testUnknownTypeofFunction","kind":"function","line":128,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a `typeof x === \"_\"` test on a value of a type parameter or `unknown`: the values of that shape are the meet of the type parameter with it (`T & number`","group":"tests on a value of a type parameter or `unknown` (no rule narrows a parameter row to its meet `T & number`)","where":"self","at":"x","detail":"reject: a `typeof x === \"function\"` test on a value of a type parameter or `unknown`: the values of that shape are the meet of the type parameter with it (`T & number`, a meet row), but a tag test refines only clause rows, and no rule narrows a parameter row to that meet (`unknown` to a callable of  — The available claim for x is unknown. This return requires {\"arrs\":{\"arrows\":[]}} | {\"ctors\":{\"signatures\":[]}}.","class":"gap"},
 {"source":"tests/expect-error/function-type.ts","name":"testFnToCallbackInterface","kind":"function","line":139,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/function-union.ts","name":"returnString","kind":"function","line":77,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/function-union.ts","name":"returnBoolean","kind":"function","line":81,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
@@ -1832,10 +1812,10 @@
 {"source":"tests/expect-error/generic-inference-too-narrow.ts","name":"fromGenericCall","kind":"function","line":31,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/generic-inference-too-narrow.ts","name":"fromEmptyArray","kind":"function","line":42,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/generic-inference-too-narrow.ts","name":"fromArrayLiteral","kind":"function","line":52,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/generic-inference-too-narrow.ts","name":"fromNullLiteralDirect","kind":"function","line":61,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: TypeScript refuses this code too","group":"TypeScript refuses the code too (the pipeline follows TypeScript's types)","where":"self","at":"c","detail":"reject: TypeScript refuses this code too (line 12, col 3: Type 'Container<unknown>' is not assignable to type 'Container<number | null>'.); the pipeline follows TypeScript's types — The available claim for c is Container<unknown>. This return requires Container<null | number>.","class":"principled"},
-{"source":"tests/expect-error/generic-inference-too-narrow.ts","name":"fromNullLiteralLocal","kind":"function","line":71,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: TypeScript refuses this code too","group":"TypeScript refuses the code too (the pipeline follows TypeScript's types)","where":"self","at":"c","detail":"reject: TypeScript refuses this code too (line 13, col 3: Type 'Container<unknown>' is not assignable to type 'Container<number | null>'.); the pipeline follows TypeScript's types — The available claim for c is Container<unknown>. This return requires Container<null | number>.","class":"principled"},
-{"source":"tests/expect-error/generic-inference-too-narrow.ts","name":"fromUndefinedLiteralDirect","kind":"function","line":82,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: TypeScript refuses this code too","group":"TypeScript refuses the code too (the pipeline follows TypeScript's types)","where":"self","at":"c","detail":"reject: TypeScript refuses this code too (line 12, col 3: Type 'Container<unknown>' is not assignable to type 'Container<string | undefined>'.); the pipeline follows TypeScript's types — The available claim for c is Container<unknown>. This return requires Container<undefined | string>.","class":"principled"},
-{"source":"tests/expect-error/generic-inference-too-narrow.ts","name":"fromUndefinedLiteralLocal","kind":"function","line":93,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: TypeScript refuses this code too","group":"TypeScript refuses the code too (the pipeline follows TypeScript's types)","where":"self","at":"c","detail":"reject: TypeScript refuses this code too (line 13, col 3: Type 'Container<unknown>' is not assignable to type 'Container<string | undefined>'.); the pipeline follows TypeScript's types — The available claim for c is Container<unknown>. This return requires Container<undefined | string>.","class":"principled"},
+{"source":"tests/expect-error/generic-inference-too-narrow.ts","name":"fromNullLiteralDirect","kind":"function","line":61,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: TypeScript refuses this code too","group":"TypeScript refuses the code too (the pipeline follows TypeScript's types)","where":"self","at":"c","detail":"reject: TypeScript refuses this code too (line 12, col 3: Type 'Container<unknown>' is not assignable to type 'Container<number | null>'.); the pipeline follows TypeScript's types — The available claim for c is Container<source>. This return requires Container<null | number>.","class":"principled"},
+{"source":"tests/expect-error/generic-inference-too-narrow.ts","name":"fromNullLiteralLocal","kind":"function","line":71,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: TypeScript refuses this code too","group":"TypeScript refuses the code too (the pipeline follows TypeScript's types)","where":"self","at":"c","detail":"reject: TypeScript refuses this code too (line 13, col 3: Type 'Container<unknown>' is not assignable to type 'Container<number | null>'.); the pipeline follows TypeScript's types — The available claim for c is Container<source>. This return requires Container<null | number>.","class":"principled"},
+{"source":"tests/expect-error/generic-inference-too-narrow.ts","name":"fromUndefinedLiteralDirect","kind":"function","line":82,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: TypeScript refuses this code too","group":"TypeScript refuses the code too (the pipeline follows TypeScript's types)","where":"self","at":"c","detail":"reject: TypeScript refuses this code too (line 12, col 3: Type 'Container<unknown>' is not assignable to type 'Container<string | undefined>'.); the pipeline follows TypeScript's types — The available claim for c is Container<source>. This return requires Container<undefined | string>.","class":"principled"},
+{"source":"tests/expect-error/generic-inference-too-narrow.ts","name":"fromUndefinedLiteralLocal","kind":"function","line":93,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: TypeScript refuses this code too","group":"TypeScript refuses the code too (the pipeline follows TypeScript's types)","where":"self","at":"c","detail":"reject: TypeScript refuses this code too (line 13, col 3: Type 'Container<unknown>' is not assignable to type 'Container<string | undefined>'.); the pipeline follows TypeScript's types — The available claim for c is Container<source>. This return requires Container<undefined | string>.","class":"principled"},
 {"source":"tests/expect-error/generic-inference-too-narrow.ts","name":"fromLambdaReturn","kind":"function","line":107,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/generic-inference-too-narrow.ts","name":"fromAsyncReturn","kind":"function","line":120,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/generic-inference-too-narrow.ts","name":"fromObjectField","kind":"function","line":133,"skjsMarker":"rejected-self"},
@@ -2096,12 +2076,12 @@
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"genericFlow","kind":"function","line":240,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: `x instanceof C` does not narrow `unknown` to C: an object gets C's prototype without C's constructor running (`Object.create(C.prototype)`, `Object.setPrototyp","group":"in / instanceof / typeof tests","where":"unknown","detail":"unsupported: `x instanceof C` does not narrow `unknown` to C: an object gets C's prototype without C's constructor running (`Object.create(C.prototype)`, `Object.setPrototypeOf`, `Reflect.construct` with C as the new target), so C's prototype on its chain is no evidence of C's fields, and the model ","class":"principled"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"unionRoundTrip","kind":"function","line":249,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: TypeScript types this unannotated closure parameter from its context as `any`, which states no contract","group":"other source forms","where":"self","at":"const selected = x.pick((_item) => true);","detail":"gate: TypeScript types this unannotated closure parameter from its context as `any`, which states no contract (line 19, col 30)","class":"principled"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"hiddenTypeNoEscape","kind":"function","line":260,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"sharedReadOnly","kind":"function","line":273,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: `unknown` used as an array after `Array.isArray`: `Array.isArray(x)`, or `x instanceof Array`, on `unknown` finds that the value owns the store of an ar","group":"arrays and open records: `Array.isArray` on `unknown`, `length` of an array read as a record's","where":"self","at":"sharedRO(u, w)","detail":"reject: `unknown` used as an array after `Array.isArray`: `Array.isArray(x)`, or `x instanceof Array`, on `unknown` finds that the value owns the store of an array, not that it is an array of `Array.prototype`: the array invariant is a fact of every record and dictionary type, and `unknown` is also  — No rule derives this invoke at number from u: unknown, w: unknown, sharedRO: (ReadonlyArray<literal array at [0,0]<unknown>>, ReadonlyArray<literal array at [0,0]<unknown>>) => number.","class":"gap"},
+{"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"sharedReadOnly","kind":"function","line":273,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: `unknown` used as an array after `Array.isArray`: `Array.isArray(x)`, or `x instanceof Array`, on `unknown` finds that the value owns the store of an ar","group":"arrays and open records: `Array.isArray` on `unknown`, `length` of an array read as a record's","where":"self","at":"sharedRO(u, w)","detail":"reject: `unknown` used as an array after `Array.isArray`: `Array.isArray(x)`, or `x instanceof Array`, on `unknown` finds that the value owns the store of an array, not that it is an array of `Array.prototype`: the array invariant is a fact of every record and dictionary type, and `unknown` is also  — No rule derives this invoke at number from u: unknown, w: unknown, sharedRO: (ReadonlyArray<literal array at [0,0]<source>>, ReadonlyArray<literal array at [0,0]<source>>) => number.","class":"gap"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"arrayWrite","kind":"function","line":281,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"arrayPush","kind":"function","line":293,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"arrayRead","kind":"function","line":305,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: `unknown` used as an array after `Array.isArray`, read at an element: `Array.isArray(x)`, or `x instanceof Array`, on `unknown` finds that the value owns the st","group":"arrays and open records: `Array.isArray` on `unknown`, `length` of an array read as a record's","where":"self","detail":"unsupported: `unknown` used as an array after `Array.isArray`, read at an element: `Array.isArray(x)`, or `x instanceof Array`, on `unknown` finds that the value owns the store of an array, not that it is an array of `Array.prototype`: the array invariant is a fact of every record and dictionary typ","class":"gap"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"typedArrayIdentity","kind":"function","line":313,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"separateArrayParams","kind":"function","line":322,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: `unknown` used as an array after `Array.isArray`: `Array.isArray(x)`, or `x instanceof Array`, on `unknown` finds that the value owns the store of an ar","group":"arrays and open records: `Array.isArray` on `unknown`, `length` of an array read as a record's","where":"self","at":"eachLen(u, w)","detail":"reject: `unknown` used as an array after `Array.isArray`: `Array.isArray(x)`, or `x instanceof Array`, on `unknown` finds that the value owns the store of an array, not that it is an array of `Array.prototype`: the array invariant is a fact of every record and dictionary type, and `unknown` is also  — No rule derives this invoke at number from u: unknown, w: unknown, eachLen: (Array<literal array at [0,0]<unknown>>, Array<literal array at [0,0]<unknown>>) => number.","class":"gap"},
+{"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"separateArrayParams","kind":"function","line":322,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: `unknown` used as an array after `Array.isArray`: `Array.isArray(x)`, or `x instanceof Array`, on `unknown` finds that the value owns the store of an ar","group":"arrays and open records: `Array.isArray` on `unknown`, `length` of an array read as a record's","where":"self","at":"eachLen(u, w)","detail":"reject: `unknown` used as an array after `Array.isArray`: `Array.isArray(x)`, or `x instanceof Array`, on `unknown` finds that the value owns the store of an array, not that it is an array of `Array.prototype`: the array invariant is a fact of every record and dictionary type, and `unknown` is also  — No rule derives this invoke at number from u: unknown, w: unknown, eachLen: (Array<literal array at [0,0]<source>>, Array<literal array at [0,0]<source>>) => number.","class":"gap"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"rejectSharedArrayElement","kind":"function","line":332,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"multiBranchInstsWriteBefore","kind":"function","line":360,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/instanceof-generic-skolem-args.ts","name":"multiBranchInstsWriteAfter","kind":"function","line":367,"skjsMarker":"rejected-self"},
@@ -2382,11 +2362,11 @@
 {"source":"tests/expect-error/nullish-coalescing.ts","name":"withSameType","kind":"function","line":21,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/nullish-coalescing.ts","name":"withAnotherType","kind":"function","line":25,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/nullish-coalescing.ts","name":"paramTop","kind":"function","line":29,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/nullish-coalescing.ts","name":"uselessNullOrUndefinedParam","kind":"function","line":33,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: `??` on a value of a type parameter: its values other than null and undefined are the meet `T & {}`, but no rule narrows a parameter row to its meet wit","group":"tests on a value of a type parameter or `unknown` (no rule narrows a parameter row to its meet `T & number`; no object identity)","where":"self","at":"x ?? 0","detail":"reject: `??` on a value of a type parameter: its values other than null and undefined are the meet `T & {}`, but no rule narrows a parameter row to its meet with the non-nullish values — The available claim for x ?? 0 is 0 | type & T. This return requires number.","class":"gap"},
+{"source":"tests/expect-error/nullish-coalescing.ts","name":"uselessNullOrUndefinedParam","kind":"function","line":33,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: `??` on a value of a type parameter: its values other than null and undefined are the meet `T & {}`, but no rule narrows a parameter row to its meet wit","group":"tests on a value of a type parameter or `unknown` (no rule narrows a parameter row to its meet `T & number`)","where":"self","at":"x ?? 0","detail":"reject: `??` on a value of a type parameter: its values other than null and undefined are the meet `T & {}`, but no rule narrows a parameter row to its meet with the non-nullish values — The available claim for x ?? 0 is 0 | type & T. This return requires number.","class":"gap"},
 {"source":"tests/expect-error/nullish-coalescing.ts","name":"uselessNoNullParam","kind":"function","line":38,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/nullish-coalescing.ts","name":"withSameTypeParam","kind":"function","line":43,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: `??` on a value of a type parameter: its values other than null and undefined are the meet `T & {}`, but no rule narrows a parameter row to its meet wit","group":"tests on a value of a type parameter or `unknown` (no rule narrows a parameter row to its meet `T & number`; no object identity)","where":"self","at":"x ?? 0","detail":"reject: `??` on a value of a type parameter: its values other than null and undefined are the meet `T & {}`, but no rule narrows a parameter row to its meet with the non-nullish values — The available claim for x ?? 0 is 0 | type & T. This return requires number.","class":"gap"},
+{"source":"tests/expect-error/nullish-coalescing.ts","name":"withSameTypeParam","kind":"function","line":43,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: `??` on a value of a type parameter: its values other than null and undefined are the meet `T & {}`, but no rule narrows a parameter row to its meet wit","group":"tests on a value of a type parameter or `unknown` (no rule narrows a parameter row to its meet `T & number`)","where":"self","at":"x ?? 0","detail":"reject: `??` on a value of a type parameter: its values other than null and undefined are the meet `T & {}`, but no rule narrows a parameter row to its meet with the non-nullish values — The available claim for x ?? 0 is 0 | type & T. This return requires number.","class":"gap"},
 {"source":"tests/expect-error/nullish-coalescing.ts","name":"withAnotherTypeParamT","kind":"function","line":47,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/nullish-coalescing.ts","name":"withAnotherTypeParamMorePrecise","kind":"function","line":53,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: `??` on a value of a type parameter: its values other than null and undefined are the meet `T & {}`, but no rule narrows a parameter row to its meet wit","group":"tests on a value of a type parameter or `unknown` (no rule narrows a parameter row to its meet `T & number`; no object identity)","where":"self","at":"x ?? 0","detail":"reject: `??` on a value of a type parameter: its values other than null and undefined are the meet `T & {}`, but no rule narrows a parameter row to its meet with the non-nullish values — The available claim for x ?? 0 is 0 | type & T. This return requires string | number.","class":"gap"},
+{"source":"tests/expect-error/nullish-coalescing.ts","name":"withAnotherTypeParamMorePrecise","kind":"function","line":53,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: `??` on a value of a type parameter: its values other than null and undefined are the meet `T & {}`, but no rule narrows a parameter row to its meet wit","group":"tests on a value of a type parameter or `unknown` (no rule narrows a parameter row to its meet `T & number`)","where":"self","at":"x ?? 0","detail":"reject: `??` on a value of a type parameter: its values other than null and undefined are the meet `T & {}`, but no rule narrows a parameter row to its meet with the non-nullish values — The available claim for x ?? 0 is 0 | type & T. This return requires string | number.","class":"gap"},
 {"source":"tests/expect-error/nullish-coalescing.ts","name":"skippedFallback","kind":"function","line":59,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/nullish-coalescing.ts","name":"possibleFallback","kind":"function","line":66,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/nullish-coalescing.ts","name":"resultOfFallback","kind":"function","line":74,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
@@ -3432,8 +3412,8 @@
 {"source":"tests/expect-error/test-lambda-inline.ts","name":"testGenericReturn","kind":"function","line":13,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/test-lambda-inline.ts","name":"takesNarrow","kind":"function","line":18,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/test-lambda-inline.ts","name":"testUnionReturn","kind":"function","line":21,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/test-lambda-inline.ts","name":"mapArr","kind":"function","line":26,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a named function where a signature binding more parameters is expected: its slot is its annotated signature, checked by its own unit, and the arity of a","group":"a named function at a signature binding more parameters, or indifferent to the receiver it requires (its type is its annotated signature)","where":"self","at":"arr.map(f)","detail":"reject: a named function where a signature binding more parameters is expected: its slot is its annotated signature, checked by its own unit, and the arity of an arrow is exact; offering it more parameters would make that slot a claim (DESIGN.md, \"Method members are host-relative\") — No rule derives this invoke at Array<literal array at [0,0]<U>> from f: type<T, U>, arr.map: type<T, U>, %eval@74:84:0%: type<T>.","class":"gap"},
-{"source":"tests/expect-error/test-lambda-inline.ts","name":"testMapCallback","kind":"function","line":29,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a named function where a signature binding more parameters is expected: its slot is its annotated signature, checked by its own unit, and the arity of a","group":"a named function at a signature binding more parameters, or indifferent to the receiver it requires (its type is its annotated signature)","where":"dependency","at":"arr.map(f)","detail":"reject: a named function where a signature binding more parameters is expected: its slot is its annotated signature, checked by its own unit, and the arity of an arrow is exact; offering it more parameters would make that slot a claim (DESIGN.md, \"Method members are host-relative\") — No rule derives this invoke at Array<literal array at [0,0]<U>> from f: type<T, U>, arr.map: type<T, U>, %eval@74:84:0%: type<T>.","class":"gap"},
+{"source":"tests/expect-error/test-lambda-inline.ts","name":"mapArr","kind":"function","line":26,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a named function where a signature binding more parameters is expected: its slot is its annotated signature, checked by its own unit, and the arity of a","group":"a named function at a signature binding more parameters, or indifferent to the receiver it requires (its type is its annotated signature)","where":"self","at":"arr.map(f)","detail":"reject: a named function where a signature binding more parameters is expected: its slot is its annotated signature, checked by its own unit, and the arity of an arrow is exact; offering it more parameters would make that slot a claim (DESIGN.md, \"Method members are host-relative\") — No rule derives this invoke at Array<literal array at [0,0]<source & U>> from f: type<T, U>, arr.map: type<T, U>, %eval@74:84:0%: type<T>.","class":"gap"},
+{"source":"tests/expect-error/test-lambda-inline.ts","name":"testMapCallback","kind":"function","line":29,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a named function where a signature binding more parameters is expected: its slot is its annotated signature, checked by its own unit, and the arity of a","group":"a named function at a signature binding more parameters, or indifferent to the receiver it requires (its type is its annotated signature)","where":"dependency","at":"arr.map(f)","detail":"reject: a named function where a signature binding more parameters is expected: its slot is its annotated signature, checked by its own unit, and the arity of an arrow is exact; offering it more parameters would make that slot a claim (DESIGN.md, \"Method members are host-relative\") — No rule derives this invoke at Array<literal array at [0,0]<source & U>> from f: type<T, U>, arr.map: type<T, U>, %eval@74:84:0%: type<T>.","class":"gap"},
 {"source":"tests/expect-error/test-lambda-inline.ts","name":"compose","kind":"function","line":34,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/test-lambda-inline.ts","name":"testCompose","kind":"function","line":37,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/test-lambda-inline.ts","name":"takesObjFn","kind":"function","line":45,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
@@ -4483,7 +4463,7 @@
 {"source":"tests/expect-error/void.ts","name":"x4","kind":"variable","line":39,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/void.ts","name":"x5","kind":"variable","line":42,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/void.ts","name":"x6","kind":"variable","line":45,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/void.ts","name":"x7","kind":"variable","line":48,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: unsupported source expression at _: strict equality of two operands that may both be values of no known kind, neither a primitive nor an object","group":"unclassified: search: reject: unsupported source expression at _: strict equality of two operands that may both be values of no known kind, neither a primitive nor an object","where":"self","at":"returningVoid() === returningVoid()","detail":"reject: unsupported source expression at [55,90): strict equality of two operands that may both be values of no known kind, neither a primitive nor an object","class":"gap"},
+{"source":"tests/expect-error/void.ts","name":"x7","kind":"variable","line":48,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/void.ts","name":"returningVoidOrNull","kind":"function","line":53,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/void.ts","name":"returningVoidOrNumber","kind":"function","line":56,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/void.ts","name":"returningVoidOrUndefined","kind":"function","line":59,"skjsMarker":"rejected-self"},
@@ -4514,7 +4494,7 @@
 {"source":"tests/expect-error/void.ts","name":"invalidComparison","kind":"function","line":157,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/void.ts","name":"invalidArrayAccess","kind":"function","line":162,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/void.ts","name":"invalidFunctionCall","kind":"function","line":167,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/void.ts","name":"validVoidUnionUsage","kind":"function","line":172,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: strict equality with a value of a type parameter: neither operand is known to be a primitive or an object, the kinds strict equality decides, and a valu","group":"tests on a value of a type parameter or `unknown` (no rule narrows a parameter row to its meet `T & number`; no object identity)","where":"self","at":"value === value","detail":"reject: strict equality with a value of a type parameter: neither operand is known to be a primitive or an object, the kinds strict equality decides, and a value of a type parameter may be of any kind — No rule derives this arith eq at boolean from value: unknown, value: unknown.","class":"gap"},
+{"source":"tests/expect-error/void.ts","name":"validVoidUnionUsage","kind":"function","line":172,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/void.ts","name":"conditionalVoidUnion","kind":"function","line":177,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/void.ts","name":"VoidGenericClass","kind":"class","line":188,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/void.ts","name":"x18","kind":"variable","line":195,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},

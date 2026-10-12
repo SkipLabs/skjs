@@ -29,6 +29,15 @@ partial def mentionsAny (bs : List Tree) (t : Tree) : Bool :=
     | .meet ps => ps.toList.any (mentionsAny bs)
     | _ => false
 
+/-- A parameter observed through fixed intersection restrictions. Matching
+proposes its instance; substitution-image checking retains the restrictions. -/
+def viewBinder (bs : List Tree) (t : Tree) : Option Tree :=
+  if bs.contains t then some t else match t with
+  | .meet ps => match ps.toList.filter (mentionsAny bs ·) with
+    | [b] => if bs.contains b then some b else none
+    | _ => none
+  | _ => none
+
 private def sameSet (a b : List Tree) : Bool := a.all (b.contains ·) && b.all (a.contains ·)
 
 /-- One step of a label's unfolding, as trees: the clauses the equations
@@ -50,9 +59,15 @@ partial def unifyUnion (unfold : Unfold) (fuel : Nat) (bs : List Tree) (θ : Lis
       match θ.lookup b with
       | some U => if sameSet U T then some θ else none
       | none => some (θ ++ [(b, T)])
-    else match T with
-      | [t] => unifyTree unfold fuel bs θ b t
-      | _ => none
+    else
+      let direct := match T with
+        | [t] => unifyTree unfold fuel bs θ b t
+        | _ => none
+      direct.orElse fun _ => match b with
+        | .meet ps => match ps.toList.filter (mentionsAny bs ·) with
+          | [p] => if bs.contains p then unifyUnion unfold fuel bs θ [p] T else none
+          | _ => none
+        | _ => none
   | _ =>
     -- The union's labels mentioning no binder are themselves; the one that
     -- does takes the rest of `T`.
@@ -72,10 +87,10 @@ partial def unifyUnion (unfold : Unfold) (fuel : Nat) (bs : List Tree) (θ : Lis
       -- which may find the binder; a binder then found is its instance, and
       -- one still unfound takes the rest of `T`. Several unfound binders
       -- (`T1 | T2` against `string`) are left to the other operands.
-      let (θ, img) ← (xs.filter (!bs.contains ·)).foldlM (fun (acc : List (Tree × List Tree) × List Tree) x =>
+      let (θ, img) ← (xs.filter (fun x => (viewBinder bs x).isNone)).foldlM (fun (acc : List (Tree × List Tree) × List Tree) x =>
         T.findSome? fun t => (unifyTree unfold fuel bs acc.1 x t).map fun θ => (θ, acc.2 ++ [t]))
         (θ, fixed)
-      let bare := xs.filter (bs.contains ·)
+      let bare := (xs.filterMap (viewBinder bs)).eraseDups
       let img := img ++ (bare.filterMap fun b => θ.lookup b).flatten
       if !img.all (T.contains ·) then none
       match bare.filter (fun b => (θ.lookup b).isNone) with

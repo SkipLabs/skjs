@@ -95,7 +95,8 @@ private def clauseName : Clause (List ι) → String
   | .numLit _ => "numeric literal"
   | .undef => "undefined"
   | .callable .. => "callable object"
-  | .top => "unknown"
+  | .top => "calculus top"
+  | .source => "unknown"
   | .str => "string"
   | .strLit _ => "string literal"
   | .list .. => "array"
@@ -137,6 +138,14 @@ def dependentMeet (T : State) (r : Tree) : Option (List (Clause (List Tree)) × 
   | .param _ _ .value => some ([.top], [r])
   | .meet q cs ps => some (cs, q :: ps)
   | _ => none
+
+/-- Factor common parameter parts from a union of bounded rows. Distribution
+preserves the union of clause constraints and every shared parameter. -/
+def boundParts (T : State) (B : List Tree) : Option (List (Clause (List Tree)) × List Tree) := do
+  let G := graph T
+  let arms ← B.mapM fun r => if G.plain r then some (G r, []) else dependentMeet T r
+  let parts := arms.headD ([], []) |>.2
+  if arms.all (fun a => a.2 == parts) then some (arms.flatMap (·.1), parts) else none
 
 /-- A bounded binder's label: the parameter `p` within `cs` and the
 parameters `also` (`EquationStore.bounded`). -/
@@ -232,8 +241,8 @@ def isNumberAtom : Claim.Atom → Bool
 /-- One arm of a union: its numbers and strings interned, its fixed
 primitives translated to the four fixed labels (`translate`). -/
 def translateArm (t : Claim.Ty) : Lowering (Ty Tree) := do
-  -- `unknown` is semantic top: every value, and no operation through it.
-  if t.top then return [← use .top]
+  -- Source unknown contains JavaScript values, including opaque objects.
+  if t.top then return [← use .source]
   let numbers ← numberLabels ⟨t.top, t.atoms.filter isNumberAtom⟩
   let others ← match translate ⟨t.top, t.atoms.filter (fun a => !isNumberAtom a)⟩ with
     | .ok A => pure A

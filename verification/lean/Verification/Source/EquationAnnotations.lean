@@ -28,15 +28,19 @@ def sourceParameters (tps : Array Json) : Except String (List (String × Option 
   ResolutionWire.validateOwnership parameters
   return parameters
 
-/-- Expanded allocation entries. Qualification remains on the owning scheme;
-associated observation and result slots have no independent bounds. -/
+/-- Expanded allocation entries give every source-value slot its source view.
+Qualification remains on the owning scheme; associated observation and result
+slots have no independent scheme bounds. -/
 def expandedSourceParameters (tps : Array Json) : Except String (Array Json) := do
   let parameters ← sourceParameters tps
   return (tps.toList.zip parameters).flatMap (fun (p, (name, slots)) =>
     let entry (n : String) (bound : Json) := Json.mkObj [
       ("name", toJson n), ("bound", bound), ("resolution", .null)]
-    entry name (p.getObjValD "bound") ::
-      (slots.map fun s => s.names.map (entry · .null)).getD []) |>.toArray
+    entry name (if p.getObjValD "bound" == .null then
+      Json.mkObj [("k", .str "atom"), ("name", .str "unknown"), ("span", toJson ([0, 0] : List Nat))]
+      else p.getObjValD "bound") ::
+      (slots.map fun s => s.names.map (entry ·
+        (Json.mkObj [("k", .str "atom"), ("name", .str "unknown"), ("span", toJson ([0, 0] : List Nat))]))).getD []) |>.toArray
 
 def sourceNames (tps : Array Json) : Except String (List String) := do
   return (← sourceParameters tps).flatMap fun (n, s) => ResolutionWire.ownedNames n s
@@ -59,11 +63,18 @@ def enterUnit (path : String) (scope : List (String × Binding)) (node : Json) (
       binders := names.map fun n => ⟨n, .value⟩ }
   let u ← alloc s!"unit|{path}" d fun u => some (.unit u (liftedCtx ctx items u) node)
   let rigid := names.zipIdx.map fun (n, j) => (n, (⟨false, [mkBound u args j]⟩ : Binding))
-  let inner := rigid ++ scope
-  let bounded ← (tps.toList.zip rigid).mapM fun (p, (n, r)) => do
+  let mut inner := rigid ++ scope
+  let mut bounds : List (Tree × Union) := []
+  let mut bounded : List (String × Binding × Option Union) := []
+  for (p, (n, r)) in tps.toList.zip rigid do
     let b := p.getObjValD "bound"
-    if b == .null then return (n, r, none)
-    return (n, r, some (← lowerType { ctx with binders := inner } b))
+    if b == .null then bounded := bounded ++ [(n, r, none)]
+    else
+      let B ← lowerType { ctx with binders := inner, bounds }
+        b
+      bounded := bounded ++ [(n, r, some B)]
+      inner := (n, ⟨false, meetUnions [r.value, B]⟩) :: inner
+      if let [q] := r.value then bounds := bounds ++ [(q, B)]
   let bindings := bounded.map fun (n, r, B) => match B with
     | none => (n, r)
     | some B => (n, (⟨false, meetUnions [r.value, B]⟩ : Binding))
@@ -90,7 +101,7 @@ def bindNames (scope : List (String × Binding)) (bounds : List (Tree × Union))
   for (p, (n, b)) in tps.toList.zip bound do
     let t := p.getObjValD "bound"
     if t == .null || b.pack then continue
-    let B ← lowerType { binders := inner, bounds := bounds, site := s!"the bound of {n}", source := true } t
+    let B ← lowerType { binders := inner, bounds := out, site := s!"the bound of {n}", source := true } t
     if let [q] := b.value then out := (q, B) :: out
   return (inner, out)
 

@@ -15,6 +15,10 @@ structure Capabilities (N : Fam) where
   observe : Fam → Fam → Prop
   resolve_exact : ∀ {A R}, FamLe A N → resolve A R → R = A
   observe_exact : ∀ {A O}, FamLe A N → observe A O → O = A
+  resolve_source : ∀ {A R}, resolve A R →
+    FamLe A PositiveNormalization.sourceT ∧ FamLe R PositiveNormalization.sourceT
+  observe_source : ∀ {A O}, observe A O →
+    FamLe A PositiveNormalization.sourceT ∧ FamLe O PositiveNormalization.sourceT
 
 /-- Stable inputs have their own type as both observation and resolved result.
 Operation-output inclusions alone do not establish this type equality. -/

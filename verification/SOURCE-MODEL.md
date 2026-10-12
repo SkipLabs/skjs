@@ -34,18 +34,37 @@ comparisons are specified under [guards](#guards) and in the
 [operational language](SEMANTICS.md#operational-language). Operations requiring
 unsupported coercions are refused at the source boundary.
 
+### Source-value boundary
+
+Let $`J`$ be the JavaScript values: primitives and allocated objects, including
+arrays, functions and constructors. Internal array stores are calculus values
+outside $`J`$. Source `unknown` denotes $`J`$. An unconstrained source type
+parameter ranges over types contained in $`J`$; each instantiation checks that
+bound. Argument-pack parameters range over argument lists separately.
+
+Value-parameter occurrences in source signatures denote $`T\cap J`$.
+Declared bounds remain instantiation obligations; dependent bounds retain
+the obligations of every parameter they reference.
+
+Inputs and results carry their source contracts. Exceptions also belong to
+$`J`$: the [throw rule](PROGRAM-TYPING.md#throwing) checks this requirement,
+and the operational exception rules preserve it. External call contracts use
+the same safety semantics, so external code must return values meeting its
+result contract and throw only JavaScript values. A catch variable has type
+`unknown` and can be passed to an unconstrained generic function.
+
+Membership in $`J`$ supplies no field, call or array-layout guarantee.
+The calculus clause `source` denotes $`J`$ independently of the realm's
+record invariants; calculus `top` also includes internal stores. The
+[clause semantics](POSITIVE-TYPES.md#types-and-clauses) owns this distinction.
+
 ### Void
 
-The source type `void` denotes every JavaScript value: null, undefined,
-Booleans, numbers, strings, bigints, symbols, ordinary objects, callable
-objects and constructors. An array belongs through its object identity;
-its internal element store is a separate calculus value. Both value claims
-and declaration contracts translate `void` to this union of existing clauses.
-
-A `void` result supplies no guarantee about which member is returned. A
-`void` parameter must support every member. Strict equality of two `void`
-values produces a Boolean by the existing primitive and object equality
-rules. Membership supplies no number, undefined, field or call guarantee.
+The source type `void` denotes the same JavaScript-value universe as `unknown`.
+A `void` result supplies no guarantee about which member is returned. A `void`
+parameter must support every member. Strict equality of two source values
+produces a Boolean by the primitive and object equality rules. Membership
+supplies no number, undefined, field or call guarantee.
 
 ### Heap and contracts
 

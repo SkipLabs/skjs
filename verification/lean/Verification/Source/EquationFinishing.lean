@@ -50,15 +50,22 @@ def closeObligation (o : Obligation) : Union × Union :=
     | .argument i => .var 1000000 i .value
     | .local j => .var 2000000 j .value
     | t => t
-  let plain (p : Tree) : Union := [var p]
-  let σ (p : Tree) : Union := match o.bounds.find? (·.1 == p) with
-    | some (_, b) => meetUnions [[var p], b.flatMap (treeSubst (plain ∘ .argument) (plain ∘ .local))]
-    | none => plain p
-  -- A name placeholder in scope is its binder met with its declared bound.
-  let named (t : Tree) : Option Union :=
-    if isPlaceholder t then (o.bounds.find? (·.1 == t)).map fun (_, b) => meetUnions [[t], b] else none
+  let rec bounded (fuel : Nat) (seen : List Tree) (p : Tree) : Union :=
+    match fuel with
+    | 0 => [var p]
+    | fuel + 1 =>
+      if seen.contains p then [var p] else
+        match o.bounds.find? (·.1 == p) with
+        | none => [var p]
+        | some (_, B) =>
+          let next := bounded fuel (p :: seen)
+          let B := B.flatMap (treeSubst (next ∘ .argument) (next ∘ .local))
+          let B := B.flatMap (treeReplace fun t => if isPlaceholder t then some (next t) else none)
+          meetUnions [[var p], B]
+  let σ := bounded (o.bounds.length + 1) []
   let close (U : Union) :=
-    (U.flatMap (treeSubst (σ ∘ .argument) (σ ∘ .local))).flatMap (treeReplace named)
+    (U.flatMap (treeSubst (σ ∘ .argument) (σ ∘ .local))).flatMap
+      (treeReplace fun t => if isPlaceholder t then some (σ t) else none)
   (close o.actual, close o.upper)
 
 /-- The lowered heads, hash-consed and compacted, before validation. -/

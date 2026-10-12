@@ -90,16 +90,6 @@ let encode (proposal : Proposal_types.t) =
         | [] -> []) (distributed (t::ts)))
     (* An intersection, whose row Lean builds from its operands'. *)
     | Meet (t,ts) -> [Meet (List.map label_list (t::ts))]
-    | Atoms atoms when List.sort_uniq compare atoms = List.sort_uniq compare source_value_atoms ->
-      (* Keep the complete source-value universe in one closed union row,
-         matching declaration lowering, including under recursive applications. *)
-      let clauses = List.concat_map (fun a -> List.concat_map (function
-        | Row i -> (match List.nth !rows i with
-            | Array clauses -> clauses
-            | _ -> fail "source-value atom has no clause row")
-        | Decl _ | Meet _ | Arr _ | Binder _ -> fail "source-value atom is not closed")
-        (atom_labels a)) source_value_atoms in
-      [Row (intern (Array clauses))]
     | Atoms atoms -> List.sort_uniq compare (List.concat_map atom_labels atoms)
   and atom_labels = function
     | Nul -> [Row 0] | True -> [Row 1] | False -> [Row 2] | Undef -> [Row 3]
@@ -108,7 +98,7 @@ let encode (proposal : Proposal_types.t) =
     | NumLit bits -> [Row (intern (Array [Object ["numLit",Object ["bits",String (Printf.sprintf "%Lu" bits)]]]))]
     | StrLit value -> [Row (intern (Array [Object ["strLit",Object ["value",String value]]]))]
     | BigintLit value -> [Row (intern (Array [Object ["bigintLit",Object ["value",Number value]]]))]
-    | Top -> [Row (intern (Array [String "top"]))]
+    | Top -> [Row (intern (Array [String "source"]))]
     | Callable -> [Row (intern (Array [Object ["arrs",Object ["arrows",Array []]]]))]
     | Ctors signatures ->
       List.iter (fun (s:Semantic.signature) ->
@@ -149,8 +139,8 @@ let encode (proposal : Proposal_types.t) =
       (* A bounded value binder is read within its bound, as in the
          closure claim. Keep the bound itself on the scheme as well. *)
       let within_bounds = List.filter_map (fun (q:Semantic.quantifier) ->
-        match q.bound with
-        | Some (ValueArgument bound) -> Some (q.identity, ValueArgument (Meet (Rigid q.identity,[bound])))
+        match Option.value q.bound ~default:(ValueArgument top) with
+        | ValueArgument bound -> Some (q.identity, ValueArgument (Meet (Rigid q.identity,[bound])))
         | _ -> None) s.quantified in
       let body = Inference.substitute_signature within_bounds {s with quantified=[]} in
       let signature,variadic = match body.variadic,body.rest_pack with
@@ -161,10 +151,11 @@ let encode (proposal : Proposal_types.t) =
               pack_labels (Pack {required=[];optional_elements=[];rest=Some element;readonly=false;presence=Dense})])
             (labels body.result)]
         | _,Some _ -> unsupported "a pack parameter in a generic method's scheme" in
-      let bounds = List.filter_map (fun (q:Semantic.quantifier) ->
-        Option.map (fun bound -> Array [label_json (Binder q.identity.spelling);
+      let bounds = List.map (fun (q:Semantic.quantifier) ->
+        let bound = Option.value q.bound ~default:(ValueArgument top) in
+        Array [label_json (Binder q.identity.spelling);
           (match bound with ValueArgument t -> labels t | PackArgument p -> pack_labels p
-           | ResolutionArgument _ -> unsupported "a resolution descriptor is not a method binder bound")]) q.bound) s.quantified in
+           | ResolutionArgument _ -> unsupported "a resolution descriptor is not a method binder bound")]) s.quantified in
       [Row (intern (Object ["scheme",Object (["binders",Array binders;"signatures",Array signature]
         @ (if bounds = [] then [] else ["bounds",Array bounds])
         @ (if resolution = [] then [] else ["resolution",Array resolution])

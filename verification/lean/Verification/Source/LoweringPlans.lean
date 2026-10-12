@@ -334,20 +334,37 @@ the call's typing. -/
   let some s := G.schemes i | throw (refuse "explicit type arguments need a generic member")
   if args.length > s.binders.length then
     throw (refuse "more explicit type arguments than the member has binders")
+  -- Source checks use the same validated equations and image equality as
+  -- the final request, including intersections in generic signatures.
+  let F ← EquationStore.freeze T
+  let S ← EquationLowering.closedUnion F.equations "explicit method receiver" S
+  let M ← EquationLowering.closedUnion F.equations "explicit method instance" M
+  let args ← (args.mapM (EquationLowering.closedUnion F.equations "explicit type argument") : Except String _)
+  let G := StoreView.graph F.store
+  let [i] := S | throw (refuse "explicit type arguments need a generic member")
+  let some s := G.schemes i | throw (refuse "explicit type arguments need a generic member")
   let [.arrs L Ms] := PositiveRules.expand G M
     | throw (refuse "the call's claimed method is not an instance of its member")
-  let images := StoreView.images T
+  let images := StoreView.images F.store
   let candidates := CertificateProducer.instanceCandidates G images.sub 64 s L Ms
   let c ← match PositiveCertificates.selectInstancesUsing G images S M candidates
       (CertificateProducer.instantiationUsing G images CertificateProducer.instanceFuel)
       (CertificateProducer.rowInstances G images CertificateProducer.instanceFuel) with
     | .established (c, _) => pure c
     | .notEstablished => throw (refuse "the call's claimed method is not an instance of its member")
-    | .exhausted rounds visited => throw (subtypeFailure T pos .schemeElimination S M
+    | .exhausted rounds visited => throw (subtypeFailure T pos .schemeElimination
+        (S.map Subtype.val) (M.map Subtype.val)
         (.exhausted T.subtypeBudget.rounds rounds visited) "subtype search exhausted while checking the method instance")
   for (A, θ) in args.zip c.instances do
-    requireSameMeaning T pos .schemeElimination A θ
-      "the call's instance is not the one its explicit type arguments state"
+    for (X, Y) in [(A, θ), (θ, A)] do
+      match CertificateProducer.comparisonUsing G images X Y with
+      | .established _ => pure ()
+      | .notEstablished => throw (subtypeFailure T pos .schemeElimination
+          (X.map Subtype.val) (Y.map Subtype.val) .notEstablished
+          "the call's instance is not the one its explicit type arguments state")
+      | .exhausted rounds visited => throw (subtypeFailure T pos .schemeElimination
+          (X.map Subtype.val) (Y.map Subtype.val)
+          (.exhausted T.subtypeBudget.rounds rounds visited) "subtype search exhausted while checking the explicit type argument")
 
 /-- A plan at a meet row, a bounded binder read as its row met with its bound,
 cast to the bound: the row holding exactly the meet's clauses, which the meet

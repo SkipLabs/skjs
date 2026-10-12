@@ -370,11 +370,43 @@ def eitherImages {ι : Type} [DecidableEq ι] {G : NormalGraph ι} (a b : Instan
   gen := b.gen
   budget := b.budget
 
+/-- Structural image equality uses the subtype engine without proposing any
+quantified instances, so it cannot recursively request another image check. -/
+def structuralEquivalent (E : Equations) (v : Variances E) (budget : SearchBudget)
+    (X Y : List (Label E.signature)) : Bool :=
+  let I := { E.images v with budget }
+  (PositiveCertificates.compareUsing E.graph I X Y (fun _ _ => []) (fun _ => [])).accepted &&
+    (PositiveCertificates.compareUsing E.graph I Y X (fun _ _ => []) (fun _ => [])).accepted
+
+theorem structuralEquivalent_sound {E : Equations} {v : Variances E} {budget X Y}
+    (checked : structuralEquivalent E v budget X Y = true) :
+    ∀ η, mixedMeaning E.graph η X = mixedMeaning E.graph η Y := by
+  obtain ⟨left, right⟩ := Bool.and_eq_true_iff.mp checked
+  intro η
+  funext n W x
+  exact propext ⟨PositiveCertificates.compareUsing_sound left η n W x,
+    PositiveCertificates.compareUsing_sound right η n W x⟩
+
+/-- Exact substitution images may be respelled by a structurally equal type.
+This independent first layer supports instance checking inside image equality. -/
+def structuralImages (E : Equations) (v : Variances E) (budget : SearchBudget) :
+    InstanceImageCheck E.graph :=
+  { E.images v with
+    budget
+    compare := fun _ c => ComparisonResult.fromBool
+      (substitutionTableOkUpTo (structuralEquivalent E v budget) c.table)
+    sound := fun bs c hlen hkinds checked η =>
+      E.substitutionTableUpTo_instanceImages (structuralEquivalent E v budget)
+        (fun _ _ h => structuralEquivalent_sound h) η bs c.instances c.table hlen hkinds
+        (by simpa only [ComparisonResult.accepted_fromBool] using checked) }
+
+#print axioms structuralEquivalent_sound
+
 /-- Semantic equality by the common subtype operation in both directions,
 with the equations' validated variances and image checker. -/
 def compareEquivalent (E : Equations) (v : Variances E) (X Y : List (Label E.signature))
     (budget : SearchBudget := {}) : ComparisonResult Unit :=
-  let I := { E.images v with budget := budget }
+  let I := structuralImages E v budget
   ((CertificateProducer.comparisonUsing E.graph I X Y).map fun _ => ()).andThen fun _ =>
     (CertificateProducer.comparisonUsing E.graph I Y X).map fun _ => ()
 
@@ -580,6 +612,10 @@ structure ResolutionContext (E : Equations) where
   within : ∀ l ∈ stable, l.withinHeads (· ∈ promise.region.heads)
   closed : ∀ l ∈ stable, l.free = []
   shape : NativePromiseSeparation.Shape E.graph (promise.application [NativePromise.parameter E]).label stable
+  source : Label E.signature
+  sourceSource : ProgramTyping.SourceValues E.graph [source]
+  nativeSource : ProgramTyping.SourceValues E.graph [(promise.application [NativePromise.parameter E]).label]
+  stableSource : ProgramTyping.SourceValues E.graph stable
 
 namespace ResolutionContext
 
@@ -595,9 +631,23 @@ theorem nativeSeparate (c : ResolutionContext E) (A : Fam) (valid : ValueFam A) 
 
 #print axioms nativeSeparate
 
+theorem source_values {G : NormalGraph ι} {A : List ι}
+    (h : ProgramTyping.SourceValues G A) (η : MixedAssignment ι) :
+    FamLe (mixedValues G η A) sourceT := sourceTy_sound h η
+
 theorem native (c : ResolutionContext E) :
-    ResolutionCapabilities.NativeSeparation c.promise.constructor c.stableFamily :=
-  ⟨c.promise.constructor_valid, c.nativeSeparate⟩
+    ResolutionCapabilities.NativeSeparation c.promise.constructor c.stableFamily where
+  valid := c.promise.constructor_valid
+  separate := c.nativeSeparate
+  native_source A valid := by
+    classical
+    unfold NativePromise.constructor
+    rw [dif_pos valid]
+    exact source_values c.nativeSource _
+  stable_source := source_values c.stableSource _
+
+#print axioms source_values
+#print axioms native
 
 def capabilities (c : ResolutionContext E) : ResolutionDescriptors.Capabilities c.stableFamily :=
   ResolutionCapabilities.capabilities c.native
@@ -611,6 +661,22 @@ def withDomain (c : ResolutionContext E) (D : SchemeDomain (Label E.signature) .
   stable := c.stable
   within := c.within
   closed := c.closed
+  source := c.source
+  sourceSource := by
+    rw [Equations.graph_domain]
+    dsimp only [ProgramTyping.SourceValues, sourceTy, sourceRow,
+      NormalGraph.plain, NormalGraph.params, NormalGraph.clauses]
+    exact c.sourceSource
+  nativeSource := by
+    rw [Equations.graph_domain]
+    dsimp only [ProgramTyping.SourceValues, sourceTy, sourceRow,
+      NormalGraph.plain, NormalGraph.params, NormalGraph.clauses]
+    exact c.nativeSource
+  stableSource := by
+    rw [Equations.graph_domain]
+    dsimp only [ProgramTyping.SourceValues, sourceTy, sourceRow,
+      NormalGraph.plain, NormalGraph.params, NormalGraph.clauses]
+    exact c.stableSource
   shape := by
     rw [Equations.graph_domain]
     exact ⟨c.shape.views, c.shape.methods, c.shape.bounds, c.shape.plain, c.shape.row,
@@ -657,7 +723,15 @@ def resolutionContext (s : State) (p : NativePromise E) :
       (∀ l ∈ stable, l.free = []) then
     let some shape := NativePromiseSeparation.check E.graph (p.application [NativePromise.parameter E]).label stable
       | throw "native Promise structure does not establish separation from stable values"
-    return some ⟨p, stable, checked.1, checked.2, shape⟩
+    let some h := (List.range s.heads.size).find? (fun h =>
+      (s.heads[h]?).any fun d => d.kinds.isEmpty && d.binders.isEmpty && d.body == some (.clauses [.source]))
+      | throw "native resolution requires the JavaScript value universe"
+    let source ← closedLabel E "JavaScript value universe" (mkApp h [])
+    if hs : ProgramTyping.SourceValues E.graph [source] ∧
+        ProgramTyping.SourceValues E.graph [(p.application [NativePromise.parameter E]).label] ∧
+        ProgramTyping.SourceValues E.graph stable then
+      return some ⟨p, stable, checked.1, checked.2, shape, source, hs.1, hs.2.1, hs.2.2⟩
+    else throw "native resolution inputs must contain only JavaScript values"
   else throw "native stable-value bound must be closed within the ordinary dependency region"
 
 /-- Native identity comes from the declaration document; a user declaration

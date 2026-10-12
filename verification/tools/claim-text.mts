@@ -316,6 +316,7 @@ const _handled = {
   num: 1,
   str: 1,
   top: 1,
+  source: 1,
   list: 1,
   boolLit: 1,
   numLit: 1,
@@ -356,7 +357,8 @@ function liftClause(types: Table, clause: unknown, depth: number): unknown {
   if (clause === "str") return { a: "string" };
   if (clause === "bigint") return { a: "bigint" };
   if (clause === "symbol") return { a: "symbol" };
-  if (clause === "top") return "unknown";
+  if (clause === "top") return "calculus top";
+  if (clause === "source") return "unknown";
   // A clause states one kind, under its own key. The table above is what
   // says these are all of them; here the key is only read.
   const body = (key: string): unknown =>
@@ -557,7 +559,7 @@ function liftType(types: Table, labels: unknown, depth: number): Shown {
   if (
     labels.some((label) => {
       const row = rowAt(types, label);
-      return Array.isArray(row) && row.includes("top");
+      return Array.isArray(row) && row.includes("source");
     })
   )
     return { top: true, atoms: [] };

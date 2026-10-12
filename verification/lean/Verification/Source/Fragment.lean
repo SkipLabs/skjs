@@ -80,7 +80,7 @@ mutual
 and record fields. Every union and overload arm is checked. -/
 partial def callableType (j : Json) : SourceTypes.Lowering (Ty Tree) := do
   fieldsExactly j ["top","atoms"]
-  if ← (← jField j "top").getBool? then return [← SourceTypes.use .top]
+  if ← (← jField j "top").getBool? then return [← SourceTypes.use .source]
   let arms ← (← jArr j "atoms").mapM fun atom => do
     if (← jStr (← jField atom "a")) == "graph" then
       fieldsExactly atom ["a", "label"]
@@ -269,7 +269,7 @@ def translate (j : Json) : SourceTypes.Lowering (Ty Tree) := do
     throw "type claim unavailable from producer"
   fieldsExactly j ["top","atoms"]
   -- `unknown` is semantic top: every value, and no operation through it.
-  if ← (← jField j "top").getBool? then return [← SourceTypes.use .top]
+  if ← (← jField j "top").getBool? then return [← SourceTypes.use .source]
   let atoms ← jArr j "atoms"
   let tagged ← atoms.mapM fun atom => do return (← jStr (← jField atom "a"),atom)
   -- A conjunction is one arm of the union, not a union of its own, so each

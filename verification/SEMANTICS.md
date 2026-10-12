@@ -714,7 +714,7 @@ observational equivalence is assumed.
 ## Computations and recursive types
 
 `Safe A 0 W h e` imposes no obligation. At a positive budget, either `e` is a
-value belonging to `A`, or it throws a closed value, or it can step with one
+value belonging to `A`, or it throws a closed JavaScript value, or it can step with one
 budget spent, preserving heap satisfaction in an admissible extension of the
 truncated world. This is partial correctness/safety, not termination, and a
 throw is an outcome, as a value is: a type says what a value is, never that
@@ -728,17 +728,22 @@ safety shape is that of [Wright and Felleisen 1994](REFERENCES.md#wright-and-fel
 [Safety.lean](lean/Verification/Semantics/Safety.lean) defines the safety predicate `Safe` and function types, and proves `Safe` monotone in its result type (`Safe_mono`) and the function types admissible (`callsT_adm`, `restsT_adm`).
 
 **Throws.** `throw a` (`Tm.throw`) evaluates `a` (`throwC`), then throws its
-value. A term *throws* $v$ (`Raises t v`) when `throw v`, $v$ a value, is in
+value. A term *throws* $`v`$ (`Raises t v`) when `throw v`, $`v`$ a JavaScript value, is in
 evaluation position: under exactly the contexts the step relation evaluates
 in, one constructor per congruence rule of `Step`:
 
 ```math
-\frac{v\ \text{a value}}{\mathsf{throw}\ v\ \text{raises}\ v}
+\frac{v\in J}{\mathsf{throw}\ v\ \text{raises}\ v}
 \qquad
 \frac{t\ \text{raises}\ v}{E[t]\ \text{raises}\ v}
 \qquad
 E ::= [\,]\ a\mid f\,[\,]\mid\mathsf{let}([\,],b)\mid\mathsf{read}([\,])\mid v\mathbin{op}[\,]\mid\cdots
 ```
+
+Here $`J`$ is the [source-value universe](SOURCE-MODEL.md#source-value-boundary).
+`raises_sourceVal` proves that every exception belongs to it. Throwing an
+internal store is stuck; a safe external callable therefore cannot expose a
+store as an exception.
 
 A throwing term is not a value, does not step, and throws one value
 (`raises_not_val`, `raises_no_step`, `Raises_det`), so evaluation stays
@@ -864,10 +869,10 @@ about the host and the unit's callers, stated in the
 [trust surface](DESIGN.md#trust-surface). The heap premise `HeapOk` is
 unchanged.
 
-**What it does not cover.** `unknown` (the `top` clause) asks nothing more of
-its members: it is also the type a handler binds a thrown value at, and the
-throw outcome of `Safe` is any closed value, of which the model states
-nothing, so `Array.isArray` on `unknown` narrows nothing. A type parameter's
+**What it does not cover.** Source `unknown` (the `source` clause) constrains
+the value's outer form, without the record realm invariant. A handler binds
+its exception at this type. `Array.isArray` on `unknown` therefore supplies
+no element-store contract. A type parameter's
 row asks what its assignment gives. And no invariant ties an object whose
 prototype chain holds a class's prototype to the class's fields: JavaScript
 gives any object any prototype (`Object.create`, `Object.setPrototypeOf`,

@@ -392,7 +392,10 @@ private partial def schemeRowOf (t : ClaimType Tree) : SchemeM (Tree × List (St
   let mut bounds : List (Tree × List Tree) := []
   for ((n, l), p) in params.zip tps do
     match p.bound with
-    | none => rows := rows ++ [(n, l)]
+    | none =>
+      let B := [← internS .source]
+      rows := rows ++ [(n, ← boundedRow l B)]
+      bounds := bounds ++ [(l, B)]
     | some (.param m) =>
       if !names.contains m then
         let B ← groundT (.param m)
@@ -639,14 +642,18 @@ a type of clause rows, `T extends { length: number }` read as `T ⊓ { length:
 number }`, or when the bound is an earlier binder, `U extends T` read as
 `U ⊓ T` (`SourceTypes.dependentMeet`). Every assignment of the parameter is
 an instance: one within the bound is the binder itself, and the body is
-certified at all of them. Any other bound leaves the parameter alone. -/
+certified at all of them. Compound bounds retain their intersection; a union
+with common parameter parts factors those parts before forming the row. -/
 def binderRows (T : EquationStore.State) (binders : List (String × Tree × Option (List Tree))) :
     Except String (EquationStore.State × List (String × Tree)) := do
   let owner := binders.map fun (n, p, _) => (p, n)
   let (rows, T) ← (binders.foldlM (fun (rows : List (String × Tree)) (n, p, bound) => do
-    let G := SourceTypes.graph (← get)
-    let general (B : List Tree) : SourceTypes.Lowering Tree :=
-      if B.isEmpty || !G.plainTy B then pure p else SourceTypes.bounded p (B.flatMap G)
+    let general (B : List Tree) : SourceTypes.Lowering Tree := do
+      match SourceTypes.boundParts (← get) B with
+      | some (cs, parts) => SourceTypes.bounded p cs parts
+      | none => match B with
+        | [q] => pure (EquationGraphs.canonMeet [p, q])
+        | _ => throw "a binder's union bound requires common parameter parts"
     let row : Tree ← match bound with
       | none => pure p
       | some [q] =>

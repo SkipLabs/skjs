@@ -32,7 +32,7 @@ structure NodeEvidence (ι : Type) where
   effect : Option (HeapExpressionRules.StepEvidence ι) := none
   output : HeapKnowledge.Knowledge := ⟨[],[],[]⟩
   /-- For a node with a handler: the type the thrown value is bound at, which
-  must admit every value, and the evidence for the edge to the handler. -/
+  must admit every JavaScript value, and the evidence for the edge to the handler. -/
   handler : Option (Ty ι × EdgeEvidence ι) := none
 
 abbrev Certificate (ι : Type) := List (NodeEvidence ι)
@@ -178,16 +178,17 @@ theorem checkBranchTargetUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images 
       CheckResult.accepted_ofBool, checkObservedUsing] <;> rfl
 
 
-/-- A type every closed value inhabits: one of its clauses is top. A thrown
-value is bound at such a type, since anything at all may be thrown. -/
-def admitsAll (G : NormalGraph ι) (T : Ty ι) : Bool := (expand G T).any isTop
+/-- A type admitting every closed JavaScript value. -/
+def admitsAll (G : NormalGraph ι) (T : Ty ι) : Bool :=
+  (expand G T).any fun c => match c with | .top | .source => true | _ => false
 
 theorem admitsAll_sound {G : NormalGraph ι} {T : Ty ι} (h : admitsAll G T = true)
-    {n W v} (hv : isVal v = true) (hs : Scoped 0 v) : meaning G T n W v := by
+    {n W v} (hv : isSourceVal v = true) (hs : Scoped 0 v) : meaning G T n W v := by
   obtain ⟨c, hc, ht⟩ := List.any_eq_true.mp h
-  cases c <;> simp [isTop] at ht
-  exact (expand_sem G T (plain_of_mem_expand hc) n W v).mpr
-    ⟨.top, hc, ⟨hv, hs⟩, realmInvariant_of_not_record rfl n W v⟩
+  apply (expand_sem G T (plain_of_mem_expand hc) n W v).mpr
+  cases c <;> simp only [Bool.false_eq_true] at ht
+  · exact ⟨.top, hc, ⟨sourceVal_isVal hv, hs⟩, realmInvariant_of_not_record rfl n W v⟩
+  · exact ⟨.source, hc, ⟨hv, hs⟩, realmInvariant_of_not_record rfl n W v⟩
 
 /-- The facts that hold wherever a node's expression throws: only what its
 entry knowledge says without the heap (immutable values, alias and distinct
@@ -530,7 +531,7 @@ theorem state_progress [DecidableEq ι] {G : NormalGraph ι} {images : InstanceI
         obtain ⟨T, facts, hT, htarget, hfacts⟩ := hx
         exact Or.inr ⟨U, h, _, WExt_refl _, hw', .handle hr, hh',
           (target_state htarget
-            (he'.push (admitsAll_sound hT (raises_val hr) hsc)) (hfacts v h))⟩
+            (he'.push (admitsAll_sound hT (raises_sourceVal hr) hsc)) (hfacts v h))⟩
     · exact Or.inr ⟨V, h', .eval t' ρ k x, hx', hu, .expr step, hok,
         ⟨Γ,A,out,he.transfer n (Nat.le_succ n) V hx',hsafe,hk,hx⟩⟩
 

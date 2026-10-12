@@ -49,7 +49,8 @@ The clauses, with what each denotes:
 
 | Clause | Denotes |
 | --- | --- |
-| `top` | every closed value; membership grants no operation |
+| `top` | every closed calculus value, including internal stores |
+| `source` | every closed JavaScript primitive or object; excludes internal stores |
 | `nul`, `undef` | exactly null; exactly undefined |
 | `bool`, `boolLit b` | true or false; exactly $b$ |
 | `num`, `numLit x` | any number; exactly the number with bit pattern $x$ |
@@ -67,7 +68,7 @@ The clauses, with what each denotes:
 The **shape** of a clause is the kind of value it admits: null, boolean,
 plain object (`refs`, `dict`), function (`arrs`, `callable`), undefined,
 number, string, array, bigint, symbol, class or argument list. A value has
-exactly one shape, and `top` has none.
+exactly one shape; `top` and `source` each admit multiple shapes.
 
 Singletons sit below their primitive: $\mathsf{boolLit}\,b\le\mathsf{bool}$,
 $\mathsf{numLit}\,x\le\mathsf{num}$, $\mathsf{strLit}\,s\le\mathsf{str}$,
@@ -268,15 +269,15 @@ $\sigma$ ([SEMANTICS](SEMANTICS.md#the-array-invariant)):
 \mathsf{view}(\sigma{:}\mathsf{AnyStore},\mathsf{proto}{:}⟦P_{\mathcal R}⟧)_n(W,v)\land\mathsf{own}(\mathsf{outside}\,N_{\mathcal R})_n(W,v)
 ```
 
-with $\mathsf{AnyStore}$ the possibly sparse stores of values
-($\mathsf{list}\langle;;\mathsf{top}\rangle$, readonly). Only the world is read,
+with $`\mathsf{AnyStore}`$ the possibly sparse stores of JavaScript values
+($`\mathsf{list}\langle;;J\rangle`$, readonly). Only the world is read,
 through the contracts of $\sigma$ and $\mathsf{proto}$, so the invariant is
 admissible and read below the level (`arrayInvariant_adm`,
 `arrayInvariant_congr`). $P_{\mathcal R}$ is read at one fixed assignment
 (`ParameterInterpretation.realmAt`), so a row's meaning stays independent of
 the graph's own assignment; `ArrayProto` reads no parameter row, and a rule
 relating the invariant to a type checks that (`realmFree`). Every other clause
-(`top`, primitives, functions, classes, stores, packs) asks nothing more, and
+(`top`, `source`, primitives, functions, classes, stores, packs) asks nothing more, and
 a graph without a realm asks nothing. Coverage keeps it (a record is covered
 by records only, `CoversWith.record`), and so do meets (`meetLists_row`),
 renamings (`realmInvariant_map`) and instance images (`clauseImg_row`).
@@ -539,6 +540,8 @@ clauses,
 So everything reduces to the conjunction of two clauses:
 
 - `top` is the unit: $\mathsf{top}\land c=c$.
+- `source` meets `top` as `source`, a store or pack clause as bottom, and
+  every other clause as that clause.
 - Clauses of **different shapes** meet as $\bot$: no value has two shapes.
 - **Primitives** follow their lattice: $c\land c=c$, a singleton meets its
   primitive as the singleton, and two different singletons meet as $\bot$.
@@ -629,7 +632,8 @@ union inclusion, transitivity and the scheme rules.
 ### Clause coverage
 
 $\Delta;S\vdash c\sqsubseteq d$ says clause $c$ of source type $S$ is covered
-by target clause $d$. Every clause is covered by `top`; identical primitives,
+by target clause $d$. Every clause is covered by `top`; every clause except `top` and `list` is
+covered by `source` (`sourceClause_sound`). Identical primitives,
 and a singleton by its primitive, are covered trivially; different shapes are
 never covered. `dict` is covered by `dict`, and by `refs`, forgetting its
 index contracts (below); `refs` covers `refs`, and `dict` through an own-key

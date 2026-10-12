@@ -405,15 +405,18 @@ and the realm's prototype and owns no key it provides. So where the test holds,
 a member of such a type is a member of the realm's `sparse ReadonlyArray<unknown>`, the
 array shape over a store of values (`realmArrayLabel`). -/
 
-/-- A type every value meets: one of its rows holds `top`. -/
+/-- A type every JavaScript value meets. -/
 def valuesTy [DecidableEq ι] (G : NormalGraph ι) (T : Ty ι) : Bool :=
-  T.any fun t => G.plain t && (G t).contains .top
+  T.any fun t => G.plain t && ((G t).contains .top || (G t).contains .source)
 
 theorem valuesTy_sound [DecidableEq ι] {G : NormalGraph ι} {T : Ty ι} (h : valuesTy G T = true)
-    {n W v} (hv : topT n W v) : meaning G T n W v := by
+    {n W v} (hv : sourceT n W v) : meaning G T n W v := by
   obtain ⟨t, ht, hp⟩ := List.any_eq_true.mp h
-  simp only [Bool.and_eq_true, List.contains_iff_mem] at hp
-  exact ⟨t, ht, (unfold_plain hp.1 n W v).mpr ⟨.top, hp.2, hv, realmInvariant_of_not_record rfl n W v⟩⟩
+  simp only [Bool.and_eq_true, Bool.or_eq_true, List.contains_iff_mem] at hp
+  refine ⟨t, ht, (unfold_plain hp.1 n W v).mpr ?_⟩
+  rcases hp.2 with h | h
+  · exact ⟨.top, h, ⟨sourceVal_isVal hv.1, hv.2⟩, realmInvariant_of_not_record rfl n W v⟩
+  · exact ⟨.source, h, hv, realmInvariant_of_not_record rfl n W v⟩
 
 /-- A type holding every possibly sparse store of values: a readonly array store at a
 type every value meets. -/

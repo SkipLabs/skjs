@@ -140,10 +140,6 @@ let meet_objects a b = match a,b with
       indexes=(match x.indexes with [] -> y.indexes | own -> own);
       calls=x.calls @ y.calls}])
   | _ -> None
-(* The complete source-value universe, excluding internal array stores. *)
-let source_value_atoms = [Nul;Undef;True;False;Num;Str;Bigint;Symbol;
-  Shape {fields=[];indexes=[];calls=[];elements=None};Callable;Ctors []]
-let source_values = Atoms source_value_atoms
 let top = Atoms [Top]
 let arrow ?(call_effect=Unrestricted) params result =
   Atoms [Shape {fields=[];indexes=[];calls=[{quantified=[];receiver=top;params;variadic=None;rest_pack=None;result;call_effect}];elements=None}]

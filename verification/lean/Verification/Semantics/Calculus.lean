@@ -557,6 +557,14 @@ def isVal : Tm → Bool
   | .nul | .undef | .tru | .fls | .num _ | .str _ | .bigint _ | .sym _ | .objAt .. | .arr _ => true
   | _ => false
 
+/-- Values exposed to JavaScript. Element stores are internal machine values. -/
+def isSourceVal : Tm → Bool
+  | .nul | .undef | .tru | .fls | .num _ | .str _ | .bigint _ | .sym _ | .objAt .. => true
+  | _ => false
+
+theorem sourceVal_isVal {v : Tm} (h : isSourceVal v = true) : isVal v = true := by
+  cases v <;> simp_all [isSourceVal, isVal]
+
 /-- `ToPropertyKey` on the primitives whose conversion runs no code and that
 a computed key reaches: a string is its own key, a symbol its identity, and a
 number the key its `ToString` spells (`numberToString`), so `o[1]` reads
@@ -697,13 +705,8 @@ def primitiveEquals (a b : Tm) : Bool :=
   | .num n, .bigint i | .bigint i, .num n => doubleIntOrder n i == some .eq
   | _, _ => sameValue a b
 
-/-- Strict equality (`===`) of two values, as JavaScript's `IsStrictlyEqual`.
-A primitive compares by content (`sameValue`), and differs from every
-object. Two objects are equal when they are one object: an object value is the
-locations of its fields, which only its allocation creates, fresh, so two
-objects with a field are one exactly when their locations are. Two objects
-without fields carry no identity here, and have no answer; nor do two stores,
-which no source compares. -/
+/-- Strict equality compares primitives by JavaScript value equality and
+objects by allocated identity. Two internal element stores have no answer. -/
 def strictEquals (a b : Tm) : Option Bool :=
   if !(isVal a && isVal b) then none
   else if isPrim a || isPrim b then some (sameValue a b)
@@ -1648,7 +1651,7 @@ constructor here the congruence rule of the same name with a throw in place of
 a step. Such a term does not step (`raises_no_step`); the thrown value leaves
 every context it is in, until a handler catches it. -/
 inductive Raises : Tm → Tm → Prop where
-  | throwV : isVal v = true → Raises (.throw v) v
+  | throwV : isVal v = true → isSourceVal v = true → Raises (.throw v) v
   | throwC : Raises a v → Raises (.throw a) v
   | callL : Raises f v → Raises (.invoke f r args) v
   | callRecv : isVal f = true → Raises r v → Raises (.invoke f r args) v
@@ -2003,6 +2006,9 @@ throws is determined. -/
 theorem raises_not_val {t v : Tm} (h : Raises t v) : isVal t = false := by
   cases h <;> rfl
 
+theorem raises_sourceVal {t v : Tm} (h : Raises t v) : isSourceVal v = true := by
+  induction h <;> assumption
+
 theorem raises_val {t v : Tm} (h : Raises t v) : isVal v = true := by
   induction h <;> assumption
 
@@ -2061,7 +2067,7 @@ theorem prefix_position {pre rest : List Tm} {t : Tm} (hp : ∀ w ∈ pre, isVal
 /-- **A throwing term does not step.** -/
 theorem raises_no_step {t v : Tm} (hr : Raises t v) : ∀ {h h' t'}, ¬ Step h t h' t' := by
   induction hr with
-  | throwV hv => intro _ _ _ s; cases s with | throwC s => exact value_no_step hv s
+  | throwV hv _ => intro _ _ _ s; cases s with | throwC s => exact value_no_step hv s
   | throwC _ ih => intro _ _ _ s; cases s with | throwC s => exact ih s
   | callL hf ih =>
     intro _ _ _ s
@@ -2249,13 +2255,13 @@ theorem raises_no_step {t v : Tm} (hr : Raises t v) : ∀ {h h' t'}, ¬ Step h t
 /-- **The thrown value is determined.** -/
 theorem Raises_det {t v w : Tm} (h1 : Raises t v) (h2 : Raises t w) : v = w := by
   induction h1 generalizing w with
-  | throwV hv =>
+  | throwV hv _ =>
     cases h2 with
     | throwV => rfl
     | throwC h => rw [raises_not_val h] at hv; contradiction
   | throwC h ih =>
     cases h2 with
-    | throwV hv => rw [raises_not_val h] at hv; contradiction
+    | throwV hv _ => rw [raises_not_val h] at hv; contradiction
     | throwC h' => exact ih h'
   | callL h ih =>
     cases h2 with

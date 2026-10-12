@@ -606,7 +606,7 @@ type is of objects meeting the realm's
 [array invariant](SEMANTICS.md#the-array-invariant), so an allocation owning
 the store key $`\sigma`$ must be an array of the realm
 ($`\mathsf{realm}\vDash\overline{f{:}A}`$, `allocRealm`): its store field at a
-store type (every clause a `list`, whose members are possibly sparse stores of values,
+store type (every clause a `list`, whose element types contain only JavaScript values,
 `storeTy_sound`), its prototype field at the realm's prototype type
 $`P_{\mathcal R}`$, which reads no parameter row (`realmFree`, so it means the
 same at the assignment the invariant reads it at, `realmFree_meaning`), and
@@ -810,15 +810,12 @@ one code-table entry per signature; `callCallable`, `readCallable` and
 creation allocates the object, and its code, checked in the table, is not
 run.
 
-The clause `top` is semantic top: every closed value inhabits it, and
-membership permits nothing, since no read, call, arithmetic or shape rule has
-a premise it satisfies; a narrowing fact must be established separately. Every
-clause is below it, its intersection with a clause is that clause, and a tag
-test on it has no answer. The source type `unknown` denotes it. A `void`
-result is a distinct source atom that forgets its guarantee about the value
-into the same top: the callee still runs and its effects still happen, only
-the result's contract says nothing. `undefined` remains a particular value,
-which a body produces by completing, and there is no void value or tag.
+The clause `top` is semantic top: every closed calculus value inhabits it.
+The clause `source` contains every closed JavaScript primitive and object,
+including arrays through their identity. Source `unknown` and `void` denote
+`source`, as specified by the [source-value boundary](SOURCE-MODEL.md#source-value-boundary).
+`undefined` is a particular value, which a body produces by completing;
+there is no void value or tag.
 
 A record clause also carries _views_: fields read through a capability. A
 view names a location whose stored contract implies the stated family, so a
@@ -1433,17 +1430,18 @@ The graph checker below discharges that enumeration obligation.
 
 `throw a` has every type: it never produces a value, and a throw is an
 outcome safety admits ([Source model](SOURCE-MODEL.md#throws)). Its operand is typed at a
-type of its own, since it runs first:
+type of its own contained in the JavaScript-value universe $`J`$, since it runs first:
 
 ```math
-\frac{\Gamma\vdash_G a:A}{\Gamma\vdash_G\mathsf{throw}\ a:B}\ \textsf{throw}
+\frac{\Gamma\vdash_G a:A\qquad A\subseteq J}{\Gamma\vdash_G\mathsf{throw}\ a:B}\ \textsf{throw}
 ```
 
 The soundness case composes `a`'s safety with the throw's context rule
 (`bind` over `Tm.throw`) and closes with `thrown_safe`: the value `a` produces
-is closed, as every member of a type is (`meaning_value`). Evidence names the
-rule `throw` with the operand's derivation as its one premise; the producer
-types a slot operand at the slot's type.
+is a closed JavaScript value (`SourceValues.sound`, `meaning_value`). Evidence
+names the rule `throw` with the operand's derivation; the checker also requires
+all its clauses to contain only source values. The producer searches for a
+type satisfying that requirement.
 
 ### Allocation from parts
 
@@ -1622,14 +1620,14 @@ lets the throw end the run, in the state $`\mathsf{raised}(v)`$. The machine:
 
 Node evidence for a node with a handler supplies the type $`T`$ the thrown value
 is bound at and the handler edge's certificate. `checkHandler` requires $`T`$ to
-admit every value, one of its clauses being top (`admitsAll`), and the edge to
+admit every JavaScript value, with a `source` or `top` clause (`admitsAll`), and the edge to
 check against the target's claims under the facts that hold wherever the
 expression throws, which are those of the node's entry that do not mention the
 heap (`handlerFacts`: immutable values, alias and distinct links, shifted past
 the thrown value's slot):
 
 ```math
-\frac{\mathsf{top}\in\mathrm{expand}_G(T)\quad
+\frac{\{\mathsf{source},\mathsf{top}\}\cap\mathrm{expand}_G(T)\ne\varnothing\quad
       \mathrm{TargetOk}_G(C,\ T{:}\Gamma,\ \ell,\ \mathrm{handlerFacts}(K))}
      {\mathrm{HandlerOk}_G(C,\Gamma,K,\ell)}\ \textsf{handler}
 ```
@@ -1804,7 +1802,7 @@ Four implementations discharge the tested-slot obligation:
   keeps is kept in the destination, or is a clause row each clause of which
   answers `false` or is a record's; and the destination holds $`L`$
   (`arraySlice`, `arraySlice_sound`, with the marker `subset`). A label with
-  `top`, and a parameter row, is no record's: `unknown` and a type parameter
+  `source` or `top`, and a parameter row, is no record's: `unknown` and a type parameter
   are not narrowed so:
 
 ```math

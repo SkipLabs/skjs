@@ -40,7 +40,7 @@ set_option maxHeartbeats 1000000
   let handler ← match node.handler with
     | none => pure none
     | some h => do
-      let top ← lower (SourceTypes.use .top)
+      let top ← lower (SourceTypes.use .source)
       let captured ← h.scope.mapM fun descriptor => do
         let some binding := scope.find? (fun b => b.source == descriptor)
           | throw s!"internal flow error: lost handler binding '{descriptor.name}'"

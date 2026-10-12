@@ -76,6 +76,8 @@ inductive Clause (α : Type) where
   reads, calls or tests through it without a narrowing fact. `unknown`
   denotes it. Source `void` denotes the union of primitives and objects. -/
   | top
+  /-- Every closed JavaScript value, excluding internal stores. -/
+  | source
   /-- Strings, and one string; appended last so every earlier case order holds. -/
   | str
   | strLit (value : String)
@@ -103,8 +105,11 @@ inductive Clause (α : Type) where
 /-- Every value. A closed value, as every member of every family is. -/
 def topT : Fam := fun _ _ v => isVal v = true ∧ Scoped 0 v
 
+def sourceT : Fam := fun _ _ v => isSourceVal v = true ∧ Scoped 0 v
+
 def semWithArgs (X : α → Fam) (P : α → ArgFam) : Clause α → Fam
   | .top => topT
+  | .source => sourceT
   | .list a bs => fun n W v => listT (tupleFams X a) n W v ∧ ∀ b ∈ bs, listT (tupleFams X b) n W v
   | .nul => nulT
   | .undef => undefT
@@ -165,6 +170,8 @@ def eval (X : α → Fam) (P : α → ArgFam) : Formula α → Fam
 /-- Intersection of clauses: preserve all constraints of the same shape. -/
 def meet : Clause α → Clause α → List (Clause α)
   | .top, c | c, .top => [c]
+  | .source, .list .. | .list .., .source | .source, .pack .. | .pack .., .source => []
+  | .source, c | c, .source => [c]
   | .list a bs, .list c ds => [.list a (bs ++ c :: ds)]
   | .nul, .nul => [.nul]
   | .undef, .undef => [.undef]
@@ -228,9 +235,8 @@ def arrayClauseOf (store proto : α) (excluded : List PropKey) (readonly : Bool)
     [] [] [⟨false, excluded⟩]
 
 /-- A record or dictionary clause: the clauses the array invariant applies to
-(`PositiveGraphs.realmInvariant`), the object types of values the host
-builds. `unknown` is not one: it is also what a handler binds a thrown value
-at, of which the model states nothing. -/
+(`PositiveGraphs.realmInvariant`). The source-value universe constrains only
+the outer value form and carries no record invariant. -/
 def Clause.record : Clause α → Bool
   | .refs .. | .dict .. => true
   | _ => false
@@ -273,6 +279,7 @@ def shape : Clause α → Nat
   | .undef => 4 | .num | .numLit _ => 5 | .str | .strLit _ => 6
   | .top => 7 | .list .. => 8 | .bigint | .bigintLit _ => 9 | .symbol => 10 | .ctors .. => 11
   | .pack .. => 12
+  | .source => 7
 
 def valueShape : Val → Nat
   | .nul => 0 | .tru | .fls => 1 | .objAt _ .absent _ => 2 | .undef => 4
@@ -290,6 +297,7 @@ theorem semWithArgs_value {X : α → Fam} {P : α → ArgFam} {c : Clause α} {
     (h : semWithArgs X P c n W v) : isVal v = true ∧ Scoped 0 v := by
   cases c with
   | top => exact h
+  | source => exact ⟨sourceVal_isVal h.1, h.2⟩
   | list a bs => obtain ⟨ls, rfl, _⟩ := h.1; exact ⟨rfl, trivial⟩
   | nul => subst v; exact ⟨rfl, trivial⟩
   | bool => rcases h with rfl | rfl <;> exact ⟨rfl, trivial⟩
@@ -310,11 +318,12 @@ theorem semWithArgs_value {X : α → Fam} {P : α → ArgFam} {c : Clause α} {
   | pack a bs => exact h.elim
 
 
-/-- A member's shape is its clause's, except under top, which has none. -/
+/-- A member's shape is its clause's, except under the two value universes. -/
 theorem semWithArgs_shape {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
-    (hc : c ≠ .top) (h : semWithArgs X P c n W v) : valueShape v = shape c := by
+    (hc : c ≠ .top) (hj : c ≠ .source) (h : semWithArgs X P c n W v) : valueShape v = shape c := by
   cases c with
   | top => exact absurd rfl hc
+  | source => exact absurd rfl hj
   | list a bs => obtain ⟨ls, rfl, _⟩ := h.1; rfl
   | nul => cases h; rfl
   | bool => rcases h with h | h <;> cases h <;> rfl
@@ -345,6 +354,45 @@ theorem semWithArgs_shape {X : α → Fam} {P : α → ArgFam} {c : Clause α} {
     split at hc <;> simp_all [valueShape, shape]
   | pack a bs => exact h.elim
 
+/-- Every inhabited clause other than calculus top or an element-store clause
+contains only JavaScript values. Argument-pack clauses have no term members. -/
+theorem semWithArgs_source {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
+    (ht : c ≠ .top) (hl : ∀ a bs, c ≠ .list a bs)
+    (h : semWithArgs X P c n W v) : sourceT n W v := by
+  have hv := semWithArgs_value h
+  refine ⟨?_, hv.2⟩
+  by_cases hj : c = .source
+  · subst c; exact h.1
+  have hs := semWithArgs_shape ht hj h
+  cases v <;> simp_all [isSourceVal, isVal, valueShape]
+  cases c <;> simp_all [shape]
+
+/-- A clause whose term members are source values. -/
+def sourceClause : Clause α → Bool
+  | .top | .list .. => false
+  | _ => true
+
+theorem sourceClause_sound {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
+    (hc : sourceClause c = true) (h : semWithArgs X P c n W v) : sourceT n W v := by
+  apply semWithArgs_source (by intro e; subst c; cases hc) (by intros a bs e; subst c; cases hc) h
+
+private theorem meet_source (X : α → Fam) (P : α → ArgFam) (c : Clause α) (n W v) :
+    semList X P (meet .source c) n W v ↔ sourceT n W v ∧ semWithArgs X P c n W v := by
+  cases c with
+  | top =>
+    simp only [meet, singleton_sem, semWithArgs]
+    exact ⟨fun h => ⟨h, sourceVal_isVal h.1, h.2⟩, And.left⟩
+  | source => simp [meet, singleton_sem, semWithArgs]
+  | list a bs =>
+    simp only [meet, semList, setSem, List.not_mem_nil, false_and, exists_false, false_iff]
+    rintro ⟨hj, hv⟩
+    obtain ⟨ls, rfl, _⟩ := hv.1
+    exact Bool.noConfusion hj.1
+  | pack a bs => simp [meet, semList, setSem, semWithArgs]
+  | _ =>
+    simp only [meet, singleton_sem]
+    exact ⟨fun h => ⟨semWithArgs_source (by simp) (by intros; simp) h, h⟩, And.right⟩
+
 theorem meet_sound (X : α → Fam) (P : α → ArgFam) (a b : Clause α) (n : Nat) (W : WorldT n) (v : Val) :
     semList X P (meet a b) n W v ↔ interT (semWithArgs X P a) (semWithArgs X P b) n W v := by
   by_cases ha : a = .top
@@ -357,6 +405,13 @@ theorem meet_sound (X : α → Fam) (P : α → ArgFam) (a b : Clause α) (n : N
       cases a <;> first | exact absurd rfl ha | rfl
     rw [hm, singleton_sem]
     exact ⟨fun h => ⟨h, semWithArgs_value h⟩, fun h => h.1⟩
+  by_cases hja : a = .source
+  · subst a; exact meet_source X P b n W v
+  by_cases hjb : b = .source
+  · subst b
+    have hm : meet a .source = meet .source a := by cases a <;> rfl
+    rw [hm, meet_source]
+    exact and_comm
   by_cases hs : shape a = shape b
   · cases a <;> cases b <;> simp only [shape] at hs
     all_goals try contradiction
@@ -494,7 +549,7 @@ theorem meet_sound (X : α → Fam) (P : α → ArgFam) (a b : Clause α) (n : N
     constructor
     · intro h; exact False.elim (nil_sem X P n W v h)
     · rintro ⟨hva, hvb⟩
-      exact False.elim (hs ((semWithArgs_shape ha hva).symm.trans (semWithArgs_shape hb hvb)))
+      exact False.elim (hs ((semWithArgs_shape ha hja hva).symm.trans (semWithArgs_shape hb hjb hvb)))
 
 /-- Every key a member's clause says it owns, each bound admits: a clause
 with a member is consistent. -/
@@ -626,7 +681,7 @@ theorem semWithArgs_adm (X : α → Fam) (P : α → ArgFam) (c : Clause α) : A
   | pack a bs => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
   | bigintLit _ => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
   | undef => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
-  | top => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
+  | top | source => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
   | list a bs => exact ⟨fun n W v h => ⟨(listT_adm _).down n W v h.1,
         fun b hb => (listT_adm _).down n W v (h.2 b hb)⟩,
       fun n W U hx v h => ⟨(listT_adm _).mono n W U hx v h.1,
@@ -745,7 +800,7 @@ theorem semWithArgs_congr (X Y : α → Fam) (P Q : α → ArgFam) (n : Nat) (h 
   | bigintLit _ => rfl
   | symbol => rfl
   | undef => rfl
-  | top => rfl
+  | top | source => rfl
   | list a bs =>
     exact and_congr (list_congr_below X Y a n h W v) (forall_congr' fun b => forall_congr' fun _ => list_congr_below X Y b n h W v)
   | refs a bs vs os ms ks =>
@@ -802,6 +857,7 @@ def mapFields {κ : Type} (f : α → β) (fs : List (κ × α)) : List (κ × �
 
 def Clause.map (f : α → β) : Clause α → Clause β
   | .top => .top
+  | .source => .source
   | .nul => .nul
   | .undef => .undef
   | .bool => .bool
@@ -987,5 +1043,6 @@ theorem map_of_operands {c : Clause α} {f : α → α} (h : ∀ a ∈ c.operand
       map_self fun t ht => tuple_self fun x hx => h x (.inr ⟨t, ht, hx⟩)⟩
   | _ => rfl
 
+#print axioms sourceClause_sound
 #print axioms normalize_sound
 end Verification.PositiveNormalization

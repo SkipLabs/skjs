@@ -168,9 +168,21 @@ theorem realmFree_meaning [DecidableEq ι] {G : NormalGraph ι} {P : Ty ι}
     change qDenoteWithArgs G (mixedParameters G) (ParameterAssignment.empty .mixed, l) n W v at hv
     rw [← heq l hl] at hv; exact hv
 
+/-- A type containing only JavaScript values. -/
+def SourceValues (G : NormalGraph ι) (A : Ty ι) : Prop := sourceTy G A = true
+
+instance [DecidableEq ι] (G : NormalGraph ι) (A : Ty ι) : Decidable (SourceValues G A) := by
+  unfold SourceValues; infer_instance
+
+theorem SourceValues.sound {G : NormalGraph ι} {A : Ty ι} (h : SourceValues G A)
+    {n W v} (hv : meaning G A n W v) : isSourceVal v = true :=
+  (sourceTy_sound h G.env n W v hv).1
+
 /-- A type whose every clause is a store's. -/
 def storeTy (G : NormalGraph ι) (S : Ty ι) : Bool :=
-  G.plainTy S && (expand G S).all fun c => match c with | .list .. => true | _ => false
+  G.plainTy S && (expand G S).all fun c => match c with
+    | .list a _ => a.operands.all (sourceTy G)
+    | _ => false
 
 /-- A store type's members are stores of values. -/
 theorem storeTy_sound {G : NormalGraph ι} {S : Ty ι} (h : storeTy G S = true) {n W v}
@@ -180,12 +192,17 @@ theorem storeTy_sound {G : NormalGraph ι} {S : Ty ι} (h : storeTy G S = true) 
   have hl := h.2 c hc
   cases c with
   | list a bs =>
+    have hj : ∀ B ∈ a.operands, SourceValues G B := by
+      simpa only [List.all_eq_true, SourceValues] using hl
     refine listT_anyStore (fun A hA j W' u hu => ?_) hv.1
     simp only [tupleFams] at hA
     rcases hA with hA | hA | hA
-    · obtain ⟨B, -, rfl⟩ := List.mem_map.mp hA; exact meaning_value hu
-    · obtain ⟨B, -, rfl⟩ := List.mem_map.mp hA; exact meaning_value hu
-    · obtain ⟨B, -, hB⟩ := Option.map_eq_some_iff.mp hA; subst hB; exact meaning_value hu
+    · obtain ⟨B, hB, rfl⟩ := List.mem_map.mp hA
+      exact ⟨(hj B (by simp [Tuple.operands, hB])).sound hu, (meaning_value hu).2⟩
+    · obtain ⟨B, hB, rfl⟩ := List.mem_map.mp hA
+      exact ⟨(hj B (by simp [Tuple.operands, hB])).sound hu, (meaning_value hu).2⟩
+    · obtain ⟨B, hB, he⟩ := Option.map_eq_some_iff.mp hA; subst he
+      exact ⟨(hj B (by simp [Tuple.operands, hB])).sound hu, (meaning_value hu).2⟩
   | _ => simp at hl
 
 /-- **An allocation meets the realm's invariant**: it owns no store, or it is
@@ -685,7 +702,7 @@ def arrayAnswer (c : Clause α) : Option Bool := keyAnswer CallArguments.arraySt
 
 def tagClause (tag : Tag) (c : Clause α) : Option Bool :=
   match tag, c with
-  | _, .top => none
+  | _, .top | _, .source => none
   | .numEq bits, .numLit value => some (numberEqual value bits)
   | .strEq s, .strLit t => some (s == t)
   | .boolEq b, .boolLit c => some (b == c)
@@ -756,7 +773,7 @@ theorem tagClause_sound {S : α → Fam} {P : α → ArgFam} {c tag q n W v}
       subst v
       rfl
     all_goals
-      have hs := semWithArgs_shape (by simp) hv
+      have hs := semWithArgs_shape (by simp) (by simp) hv
       cases v <;> simp_all [valueShape,tagHolds,shape]
   | strEq s =>
     cases c <;> simp [ht, tagClause, tagShape, shape] at hq
@@ -766,7 +783,7 @@ theorem tagClause_sound {S : α → Fam} {P : α → ArgFam} {c tag q n W v}
       subst v
       rfl
     all_goals
-      have hs := semWithArgs_shape (by simp) hv
+      have hs := semWithArgs_shape (by simp) (by simp) hv
       cases v <;> simp_all [valueShape,tagHolds,shape]
   | boolEq b =>
     cases c <;> simp [ht, tagClause, tagShape, shape] at hq
@@ -776,7 +793,7 @@ theorem tagClause_sound {S : α → Fam} {P : α → ArgFam} {c tag q n W v}
       subst v
       cases b <;> cases c <;> rfl
     all_goals
-      have hs := semWithArgs_shape (by simp) hv
+      have hs := semWithArgs_shape (by simp) (by simp) hv
       cases v <;> simp_all [valueShape,tagHolds,shape]
   | bigintEq i =>
     cases c <;> simp [ht, tagClause, tagShape, shape] at hq
@@ -786,7 +803,7 @@ theorem tagClause_sound {S : α → Fam} {P : α → ArgFam} {c tag q n W v}
       subst v
       simp [tagHolds]
     all_goals
-      have hs := semWithArgs_shape (by simp) hv
+      have hs := semWithArgs_shape (by simp) (by simp) hv
       cases v <;> simp_all [valueShape,tagHolds,shape]
   | truthy =>
     cases c <;> simp [ht, tagClause, tagShape, shape] at hq
@@ -796,7 +813,7 @@ theorem tagClause_sound {S : α → Fam} {P : α → ArgFam} {c tag q n W v}
     case strLit t => change v = .str t at hv; subst v; simp [tagHolds]
     case bigintLit i => change v = .bigint i at hv; subst v; simp [tagHolds]
     all_goals
-      have hs := semWithArgs_shape (by simp) hv
+      have hs := semWithArgs_shape (by simp) (by simp) hv
       simp only [shape] at hs
       first
         | exact truthy_of_shape.1 (by omega)
@@ -804,13 +821,16 @@ theorem tagClause_sound {S : α → Fam} {P : α → ArgFam} {c tag q n W v}
   | isArray =>
     by_cases hc : c = .top
     · subst hc; simp [tagClause] at hq
+    by_cases hj : c = .source
+    · subst hj; simp [tagClause] at hq
     subst ht
     cases c
     case top => exact absurd rfl hc
+    case source => exact absurd rfl hj
     case refs => exact arrayAnswer_sound (by simpa [tagClause] using hq) hv
     case dict => exact arrayAnswer_sound (by simpa [tagClause] using hq) hv
     all_goals
-      have hs := semWithArgs_shape (by simp) hv
+      have hs := semWithArgs_shape (by simp) (by simp) hv
       simp [tagClause, tagShape, shape] at hq
       subst q
       cases v <;> simp_all [valueShape, tagHolds, shape]
@@ -820,9 +840,12 @@ theorem tagClause_sound {S : α → Fam} {P : α → ArgFam} {c tag q n W v}
   | hasKey k =>
     by_cases hc : c = .top
     · subst hc; simp [tagClause] at hq
+    by_cases hj : c = .source
+    · subst hj; simp [tagClause] at hq
     subst ht
     cases c
     case top => exact absurd rfl hc
+    case source => exact absurd rfl hj
     case refs =>
       obtain ⟨flds, oid, rfl, h⟩ := keyAnswer_sound (inAnswer_keyAnswer (by simpa [tagClause] using hq)) hv
       simpa [tagHolds] using h
@@ -831,7 +854,7 @@ theorem tagClause_sound {S : α → Fam} {P : α → ArgFam} {c tag q n W v}
       simpa [tagHolds] using h
     -- Another object clause's answer is unknown; a primitive owns no key.
     all_goals
-      have hs := semWithArgs_shape (by simp) hv
+      have hs := semWithArgs_shape (by simp) (by simp) hv
       simp [tagClause, tagShape, shape] at hq
     all_goals
       subst q
@@ -845,10 +868,12 @@ theorem tagClause_sound {S : α → Fam} {P : α → ArgFam} {c tag q n W v}
   | typeofObject =>
     by_cases hc : c = .top
     · subst hc; simp [tagClause] at hq
+    by_cases hj : c = .source
+    · subst hj; simp [tagClause] at hq
     have htag : some (tagHolds tag v) = tagShape tag (valueShape v) := by
       rw [ht]
       cases v <;> first | rfl | (rename_i fs code _; cases code <;> first | rfl | (rename_i kind; cases kind <;> rfl) | (rename_i kind _; cases kind <;> rfl))
-    rw [semWithArgs_shape hc hv, ht] at htag
+    rw [semWithArgs_shape hc hj hv, ht] at htag
     exact Option.some.inj (htag.trans (by simpa only [ht,tagClause] using hq))
 
 theorem answers_sound {G : NormalGraph ι} {A tag q n W v}
@@ -887,13 +912,14 @@ theorem tagClause_protoFree {S : α → Fam} {P : α → ArgFam} {c tag q n W v}
       have hin : inAnswer k (Clause.dict a bs vs ds os ms ks cs) = some q := by simpa [tagClause] using hq
       exact inAnswer_protoFree hin hv
     case top => simp [tagClause] at hq
+    case source => simp [tagClause] at hq
     -- Another clause's members are no objects, whose answer is `false`, or
     -- objects whose answer is unknown.
     all_goals
       cases v with
       | objAt fs code =>
         exfalso
-        have hs := semWithArgs_shape (by simp) hv
+        have hs := semWithArgs_shape (by simp) (by simp) hv
         simp only [tagClause] at hq
         rw [← hs] at hq
         cases code with
@@ -1243,7 +1269,7 @@ instance [DecidableEq ι] (G : NormalGraph ι) (op : Arith) (A B N : Ty ι) :
 /-- A clause whose members decide an equality operator against any value:
 primitives or objects for strict equality, nullish values for loose. -/
 def decidingClause (op : Arith) (c : Clause α) : Bool :=
-  (decide (op = .eq) && (primitiveClause c || objectClause c)) ||
+  (decide (op = .eq) && sourceClause c) ||
     (decide (op = .looseEq) && nullishClause c)
 
 /-- An operand type every clause of which decides the equality operator. -/
@@ -1263,9 +1289,8 @@ theorem decidingClause_sound {X : α → Fam} {P : α → ArgFam} {op : Arith} {
   simp only [decidingClause, Bool.or_eq_true, Bool.and_eq_true, decide_eq_true_eq] at hc
   rcases hc with ⟨rfl, hc⟩ | ⟨rfl, hc⟩
   · have hk : (isPrim v = true) ∨ ∃ fs code oid, v = .objAt fs code oid := by
-      rcases hc with hc | hc
-      · exact .inl (primitiveClause_member hc hv)
-      · exact .inr (objectClause_member hc hv)
+      have hj := (sourceClause_sound hc hv).1
+      cases v <;> simp_all [isSourceVal, isPrim]
     obtain ⟨q, hq⟩ := strictEquals_some hval hw (by
       rcases hk with hk | hk
       · exact .inl (by simp [hk])
@@ -2310,9 +2335,9 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
       Γ[i]? = some O → memberOf G O k = some m → F ∈ m.schemes → expand G F = [] →
       HasTyWith G images subtyping Γ (.letE (.readAt k (.var i)) (.makeAt (.bound (.var 0) (.var (i + 1)) []) [] [])) F
   /-- `throw a` has every type: it never produces a value, and a throw is an
-  outcome safety admits. Its operand is typed at a type of its own, since it
-  runs first. -/
-  | throw : HasTyWith G images subtyping Γ a A → HasTyWith G images subtyping Γ (.throw a) B
+  outcome safety admits. Its operand runs first and must produce a
+  JavaScript value. -/
+  | throw : SourceValues G A → HasTyWith G images subtyping Γ a A → HasTyWith G images subtyping Γ (.throw a) B
   /-- **An allocation from parts.** The accumulator, then the source; the
   result is what `MergeOk` states each pair of their clauses gives: a fresh
   plain object holding the accumulator's own fields and, over them, the own
@@ -3533,11 +3558,11 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         intro oid
         exact (meaning_adm G F).down_le (q + 2) (q + 1) (by omega) U _
           (hon.2.2 oid _ (List.mem_map_of_mem hF))
-  | throw ha iha =>
+  | throw hA ha iha =>
     intro n W h ρ he hw hh
     apply bind Tm.throw Step.throwC Raises.throwC n W h _ hw hh (iha n W h ρ he hw hh)
     intro j hj U hx hu heap v hok hv ha'
-    exact thrown_safe _ _ _ _ ⟨v, .throwV hv, (meaning_value ha').2⟩
+    exact thrown_safe _ _ _ _ ⟨v, .throwV hv (hA.sound ha'), (meaning_value ha').2⟩
   | sub ht hc ih =>
     intro n W h ρ he hw hh
     exact Safe_mono n (fun k _ V v hv => subtyping.sound hc k V v hv)
@@ -3568,6 +3593,7 @@ theorem HasTy.closed_safe {G : NormalGraph ι} {t A} (ht : HasTy G [] t A)
 #print axioms meaning_assign_free
 #print axioms HasTy.closed_safe
 #print axioms tagClause_sound
+#print axioms SourceValues.sound
 #print axioms opResult_sound
 #print axioms realmFree_meaning
 #print axioms storeTy_sound

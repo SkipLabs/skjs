@@ -87,7 +87,7 @@ private def genericOf (name : String) (pos : Nat × Nat) (path : String) (node :
   let bounds ← tps.toList.mapM fun p => do
     let n ← (str p "name" : Except String String)
     let b := p.getObjValD "bound"
-    if b == .null then return (n, none)
+    if b == .null then return (n, some [← ground "source" sourceValueClauses])
     return (n, some (← lowerType { binders := scope, site := s!"{path}: the bound of {n}", checkBounds := false } b))
   return { name, pos, binders, resolution := ResolutionWire.groups parameters, type := t, bounds }
 

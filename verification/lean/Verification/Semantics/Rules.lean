@@ -539,7 +539,7 @@ theorem arith_throw_safe {S : Fam} (op : Arith) (a b : Tm) (ht : binopThrows op 
       WExt_appendW _ _, WorldAdm_append (WorldAdm_trunc _ hadm) hcadm, .arithThrow ht,
       heap_alloc p _ h (res nulT) .nul (HeapOk_trunc p W h hok) (WorldAdm_trunc _ hadm)
         (fun _ _ => rfl), ?_⟩
-    exact thrown_safe _ _ _ _ ⟨thrownError h.length, .throwV rfl, by simp [thrownError, Scoped]⟩
+    exact thrown_safe _ _ _ _ ⟨thrownError h.length, .throwV rfl rfl, by simp [thrownError, Scoped]⟩
 
 /-- **Branching on a shape test.** The two branches are checked under the answer
 they run in, which is what makes this narrowing rather than a plain conditional:
