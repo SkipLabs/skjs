@@ -1060,13 +1060,13 @@ $A$ not in $B$, with no scheme part and below no row of $B$ by its parameters
 member of $p\sqcap\vec c$ is in one of $\vec c$, so covering them puts it in
 $B$: a meet row is below its clauses (`meet_clause_of`). A meet row is below a
 row **by its parameters** (`meetBelow`, sound by `meetBelow_sound`) when the
-row is one of its value parameters, or a meet row of some of them within the
-same clauses:
+row is one of its value parameters, or a meet row of some of them within
+clauses including its own, so `T ⊓ number` is below `T ⊓ (number | null)`:
 
 ```math
 \frac{j\in\{p\}\cup\vec q}{p\sqcap\vec q\sqcap\vec c\ \sqsubseteq_{\mathsf{par}}\ j}
 \qquad
-\frac{\{p'\}\cup\vec q'\subseteq\{p\}\cup\vec q\qquad\vec c'=\vec c}
+\frac{\{p'\}\cup\vec q'\subseteq\{p\}\cup\vec q\qquad\vec c\subseteq\vec c'}
      {p\sqcap\vec q\sqcap\vec c\ \sqsubseteq_{\mathsf{par}}\ p'\sqcap\vec q'\sqcap\vec c'}
 ```
 

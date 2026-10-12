@@ -1090,7 +1090,8 @@ theorem objectClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause α}
   cases c with
   | refs | dict => obtain ⟨fs, oid, h, _⟩ := hv.1.1; exact ⟨fs, .absent, oid, h⟩
   | callable => obtain ⟨fs, code, oid, h, _⟩ := hv.1.1.1; exact ⟨fs, code, oid, h⟩
-  | arrs | ctors => obtain ⟨fs, code, oid, h, _⟩ := hv.1.1; exact ⟨fs, code, oid, h⟩
+  | arrs => obtain ⟨fs, code, oid, h, _⟩ := hv.1.1; exact ⟨fs, code, oid, h⟩
+  | ctors => obtain ⟨fs, _, _, _, _, _, _, oid, h, _⟩ := hv.1.1; exact ⟨fs, _, oid, h⟩
   | _ => simp [objectClause] at hc
 
 /-- Strict equality answers when one operand is a primitive or an object. -/
@@ -1771,7 +1772,7 @@ theorem ctorsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {U : Ty
     (hvs : EnvOk G Cs (envOf vs .nul) n W) (hsc : ∀ v ∈ vs, Scoped 0 v) (hvalues : CallArguments.Values vs) :
     ctorsT (L.map fun p => (p.1.map (meaning G), meaning G p.2)) n W
       (.objAt fs (.graph arity E K start vs .construct) oid) := by
-  refine ⟨⟨fs, _, _, rfl, rfl, by simpa [Scoped] using hsc⟩, ?_⟩
+  refine ⟨⟨fs, _, _, _, _, _, _, _, rfl, by simpa [Scoped] using hsc⟩, ?_⟩
   intro q hq j hj V hx hv heap hh args _ ha
   obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hq
   refine ⟨_, ⟨fs, _, _, _, rfl, rfl, rfl⟩, ?_⟩

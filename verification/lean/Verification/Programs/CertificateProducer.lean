@@ -981,6 +981,8 @@ observation comes from graph dispatch, never from supplied point annotations. -/
             then some {}
             -- A passed `Array.isArray`: a record's member is an array of the realm.
             else if t == .isArray && q && BranchRefinement.arraySlice G A B then some {}
+            -- A type parameter's value: its meet with what the test admits.
+            else if BranchRefinement.meetSlice G A B t q then some {}
             else none
       else (subtypeUsing G images A B).orElse (fun _ => match o with
         -- An object the tested value was read from keeps the labels whose

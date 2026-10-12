@@ -1783,16 +1783,44 @@ Four implementations discharge the tested-slot obligation:
   labels to the supplied destination. Mixed-shape labels are retained intact.
   Filtering is a conservative algorithm, not the definition of `ObservedSub`.
   Alternatively, a passed test naming one primitive family is covered by that
-  family's clause in the destination, whatever the tested type, `unknown`
+  family's clause, $`F_t`$, in the destination, whatever the tested type, `unknown`
   included (`tagMember`, with the marker `subset`): every value `typeof`
   answers `"string"` for is a string. So is equality with one number other
   than a zero, which holds of that number alone, or with one string:
-  $`x\equiv 1`$ with $`x:\mathsf{number}`$ gives $`x:1`$. A type parameter's
+  $`x\equiv 1`$ with $`x:\mathsf{number}`$ gives $`x:1`$. A passed
+  `typeof x === "function"` is covered by the two function clauses without
+  signatures together, $`F_{\mathsf{isFun}}`$ = `arrs [] []` and `ctors [] []`, TypeScript's
+  `Function`: every value `typeof` calls a function is invocable or a class
+  ([`Function`](POSITIVE-TYPES.md#functions-and-classes)). A type parameter's
   value is covered so too: where `typeof x === "number"` holds of `x: T`,
   `x` is a `number`, which is what TypeScript's `T & number` holds, though
-  no longer read as a `T`; where the test fails, `x` keeps its row, whose
-  values the tag slice cannot divide. A more precise algorithm can implement
-  the same contract without changing the edge or environment rule.
+  no longer read as a `T`. A more precise algorithm can implement the same
+  contract without changing the edge or environment rule.
+- **Type parameter's value:** a meet row $`p\sqcap\vec q\sqcap\vec c`$, a
+  bounded binder's value ([meet rows](POSITIVE-TYPES.md#parameter-and-scheme-rows)),
+  keeps its parts where a test answers, and only its values in a clause the
+  test does not contradict. Each such clause is a clause of a destination
+  meet row of the same parts or fewer, or the destination's meet rows of
+  those parts together hold the family the test names (`familyMember`, as
+  above), with the marker `subset` (`meetSlice`, `meetSlice_sound`). So
+  `x: T extends number | null` is `T ⊓ number` where `x ?? d` takes `x`, and
+  `x: T` is `T ⊓ Function` where `typeof x === "function"` holds: TypeScript's
+  `T & {}` and `T & Function`, still read as a `T`. The rule reads no part, so
+  it holds at every assignment of the parameters. With $`\mathsf{mt}_B`$ the
+  meet rows of $`B`$ whose parts are among $`p,\vec q`$, $`\mathsf{cl}(m)`$ a
+  meet row's clauses and $`F_t`$ the family clauses of a test $`t`$:
+
+```math
+\frac{\forall c\in\vec c.\;\;\mathsf{tag}(t,c)=\lnot q\ \lor\
+         \exists m\in\mathsf{mt}_B.\;c\in\mathsf{cl}(m)\ \lor\
+         \bigl(q\land F_t\subseteq\textstyle\bigcup_{m\in\mathsf{mt}_B}\mathsf{cl}(m)\bigr)}
+      {p\sqcap\vec q\sqcap\vec c\ \preceq_{t=q}\ B}\ \textsf{tag-meet}
+```
+
+  Source lowering gives a test's arms these narrowed meet rows
+  (`observedSlice`); the producer claims them where the bound states the
+  values (`narrow_rigid`), and keeps `T` where the bound is `unknown`, whose
+  values other than null and undefined no clause row states.
 - **Array of the realm:** a passed `Array.isArray` finds an object owning
   the store key. A member of a record or dictionary clause meets the realm's
   [array invariant](SEMANTICS.md#the-array-invariant), so such a member is a
@@ -1827,9 +1855,9 @@ Four implementations discharge the tested-slot obligation:
   about each operand) (`promotes_sound`, with the marker `subset`):
 
 ```math
-\frac{\mathsf{tagHolds}(t,v)=\mathsf{true}\ \Rightarrow\ v\in⟦c⟧\quad c\in\mathrm{expand}_G(B)}
+\frac{\mathsf{tagHolds}(t,v)=\mathsf{true}\ \Rightarrow\ v\in⟦F_t⟧\quad F_t\subseteq\mathrm{expand}_G(B)}
      {A\preceq_{t=\mathsf{true}}B}\ \textsf{tag-member}
-\qquad t\in\{\mathsf{isStr},\mathsf{isNum},\mathsf{isBigint},\mathsf{isSymbol},\mathsf{isUndef},\mathsf{isNul},\mathsf{isBool},\mathsf{numEq}(b)_{b\neq\pm0},\mathsf{strEq}(s)\}
+\qquad t\in\{\mathsf{isStr},\mathsf{isNum},\mathsf{isBigint},\mathsf{isSymbol},\mathsf{isUndef},\mathsf{isNul},\mathsf{isBool},\mathsf{numEq}(b)_{b\neq\pm0},\mathsf{strEq}(s),\mathsf{isFun}\}
 ```
 
 ```math

@@ -12,6 +12,26 @@ namespace LoweringExecution
 
 set_option maxHeartbeats 1000000
 
+/-- The labels of `A` a tag test answering `q` keeps (`tagSlice`), each meet
+row narrowed to the meets of its parts with each clause the test does not
+contradict, one meet row per clause as a claimed intersection distributes over
+a union, and dropped where it contradicts every one: `T ⊓ (null | number)` is
+`T ⊓ number` where a nullish test fails (`BranchRefinement.meetSlice`). -/
+@[nospecialize] def observedSlice (A : Ty Tree) (tag : Tag) (q : Bool) : Compiler (Ty Tree) := do
+  let T ← table
+  let G := SourceTypes.graph T
+  let mut kept : Ty Tree := []
+  for a in BranchRefinement.tagSlice G A tag q do
+    match StoreView.row T a with
+    | .meet p cs also =>
+      let left := cs.filter fun c => tagClause tag c != some (!q)
+      if left.length == cs.length then kept := kept ++ [a]
+      else
+        for c in left do
+          kept := kept ++ [← lower (SourceTypes.bounded p [c] also)]
+    | _ => kept := kept ++ [a]
+  return kept
+
 @[nospecialize] partial def executionSaved (scope : List (ScopeBinding Tree))
     (Γ : List (Ty Tree)) (value : SourceExecution.Saved) : Compiler (Nat × Ty Tree) := do
   let some (i, .value) := resolve scope value.name
@@ -415,8 +435,8 @@ prepared predicate without replaying an effectful source operand. -/
       let tag := match test with
         | .truthy => Tag.truthy | .nullish => .isNullish | .defined => .isUndef
       let answer := test != .defined
-      let Y := BranchRefinement.tagSlice G A tag answer
-      let N := BranchRefinement.tagSlice G A tag (!answer)
+      let Y ← observedSlice A tag answer
+      let N ← observedSlice A tag (!answer)
       let alias := match origin with
         | .var _ name => valueSlot scope' name
         | _ => none

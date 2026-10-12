@@ -8,6 +8,7 @@ let primitive_shape shape = List.mem shape ["string";"number";"bigint";"symbol";
 let rec rigid_arm = function Rigid _ -> true | Union ts -> List.exists rigid_arm ts | _ -> false
 (* Keep the atoms of a `typeof` test's shape where it holds, and the others
    where it fails. *)
+let any_function = Atoms [Callable;Ctors []]
 let rec typeof_slice shape holds = function
   | Atoms xs when not (List.mem Top xs) ->
     let has = function
@@ -35,17 +36,22 @@ let rec typeof_slice shape holds = function
     Atoms (List.filter (fun a -> match has a with
       | Some result -> result = holds | None -> true) xs)
   (* `unknown`, where a test naming one primitive family holds: that
-     family, whatever the value was (a caught value, say). *)
+     family, whatever the value was (a caught value, say); where
+     `typeof x === "function"` holds, a function: one invocable, or a class
+     (`Function`, of no known signature). *)
   | Atoms _ when holds ->
     (match shape with
      | "string" -> Atoms [Str] | "number" -> Atoms [Num] | "bigint" -> Atoms [Bigint]
      | "symbol" -> Atoms [Symbol] | "undefined" -> Atoms [Undef] | "boolean" -> bool
+     | "function" -> any_function
      | _ -> Atoms [Top])
   (* A type parameter's value, where a test naming one primitive family
      holds: that family, as for `unknown` (TypeScript's `T & number`, of
-     which the model states the `number`). *)
+     which the model states the `number`). Where `typeof x === "function"`
+     holds, the meet of the parameter with a function, `T & Function`. *)
   | Rigid _ when holds && primitive_shape shape ->
     typeof_slice shape holds (Atoms [Top])
+  | Rigid _ as t when holds && shape = "function" -> Meet (t,[any_function])
   (* A union's arms each; an intersection's values are its principal's, so
      it goes where none of those can. *)
   | Union ts -> List.fold_left union (Atoms []) (List.map (typeof_slice shape holds) ts)

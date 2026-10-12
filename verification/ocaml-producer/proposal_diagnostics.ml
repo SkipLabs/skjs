@@ -105,10 +105,6 @@ let invariance_reason =
   "a writable element or field is invariant, as a write through the wider view would break the narrower \
    one; TypeScript relates them covariantly, which is unsound, and SKJS infers the narrower from a \
    later use"
-let shape_test_reason =
-  "the values of that shape are the meet of the type parameter with it (`T & number`, a meet row), \
-   but a tag test refines only clause rows, and no rule narrows a parameter row to that meet \
-   (`unknown` to a callable of no known signature)"
 let family_test_reason =
   "the value is narrowed to that primitive family, and a tag test does not narrow a type parameter's \
    row to its meet with the family, the `T & number` of TypeScript, so it is no longer read as a `T`"

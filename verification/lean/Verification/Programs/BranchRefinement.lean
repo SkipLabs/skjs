@@ -326,28 +326,35 @@ representation, join, or inferred invariant is required by this contract. -/
 def ObservedSub (G : NormalGraph ι) (A B : Ty ι) (o : Observation) : Prop :=
   ∀ n W v, meaning G A n W v → o.holds v → meaning G B n W v
 
-/-- Whether one clause of `B` holds every value a passed tag test admits:
-`string` after `typeof x === "string"`, whatever `x` was before, `unknown`
-included. Only the tests that name one primitive family do. -/
-def tagMember (G : NormalGraph ι) (B : Ty ι) : Tag → Bool → Bool
-  | .isStr, true => (expand G B).any fun c => match c with | .str => true | _ => false
-  | .isNum, true => (expand G B).any fun c => match c with | .num => true | _ => false
-  | .isBigint, true => (expand G B).any fun c => match c with | .bigint => true | _ => false
-  | .isSymbol, true => (expand G B).any fun c => match c with | .symbol => true | _ => false
-  | .isUndef, true => (expand G B).any fun c => match c with | .undef => true | _ => false
-  | .isNul, true => (expand G B).any fun c => match c with | .nul => true | _ => false
-  | .isBool, true => (expand G B).any fun c => match c with | .bool => true | _ => false
+/-- Whether one of the clauses `cs` holds every value a passed tag test
+admits: `string` after `typeof x === "string"`, whatever `x` was before,
+`unknown` included. A test naming one primitive family needs that family's
+clause; `typeof x === "function"` needs both function clauses without
+signatures, `arrs [] []` for the invocable values and `ctors [] []` for the
+class values. -/
+def familyMember (cs : List (Clause α)) : Tag → Bool → Bool
+  | .isStr, true => cs.any fun c => match c with | .str => true | _ => false
+  | .isNum, true => cs.any fun c => match c with | .num => true | _ => false
+  | .isBigint, true => cs.any fun c => match c with | .bigint => true | _ => false
+  | .isSymbol, true => cs.any fun c => match c with | .symbol => true | _ => false
+  | .isUndef, true => cs.any fun c => match c with | .undef => true | _ => false
+  | .isNul, true => cs.any fun c => match c with | .nul => true | _ => false
+  | .isBool, true => cs.any fun c => match c with | .bool => true | _ => false
+  | .isFun, true => (cs.any fun c => match c with | .arrs [] [] => true | _ => false) &&
+      cs.any fun c => match c with | .ctors [] [] => true | _ => false
   -- Equality with one number other than a zero, or one string, holds of that
   -- value alone.
   | .numEq b, true => b &&& 0x7fffffffffffffff != 0 &&
-      (expand G B).any fun c => match c with | .numLit b' => b' == b | _ => false
-  | .strEq s, true => (expand G B).any fun c => match c with | .strLit s' => s' == s | _ => false
+      cs.any fun c => match c with | .numLit b' => b' == b | _ => false
+  | .strEq s, true => cs.any fun c => match c with | .strLit s' => s' == s | _ => false
   | _, _ => false
 
-theorem tagMember_sound {G : NormalGraph ι} {B : Ty ι} {t : Tag} {q : Bool}
-    (hm : tagMember G B t q = true) {n W v} (hv : isVal v = true) (ht : tagHolds t v = q) :
-    meaning G B n W v := by
-  cases t <;> cases q <;> simp only [tagMember, Bool.false_eq_true] at hm
+/-- A closed value a family test admits is in one of the family's clauses,
+none of them a record's. -/
+theorem familyMember_sound {X : α → Fam} {P : α → ArgFam} {cs : List (Clause α)} {t : Tag} {q : Bool}
+    (hm : familyMember cs t q = true) {n W v} (hv : isVal v = true) (hs : Scoped 0 v)
+    (ht : tagHolds t v = q) : ∃ c ∈ cs, semWithArgs X P c n W v ∧ c.record = false := by
+  cases t <;> cases q <;> simp only [familyMember, Bool.false_eq_true] at hm
   case numEq.true b =>
     simp only [Bool.and_eq_true, bne_iff_ne, ne_eq] at hm
     obtain ⟨c, hc, hk⟩ := List.any_eq_true.mp hm.2
@@ -358,7 +365,7 @@ theorem tagMember_sound {G : NormalGraph ι} {B : Ty ι} {t : Tag} {q : Bool}
     simp only [numberEqual, Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at ht
     rcases ht.2 with h | h
     · subst h
-      exact expand_sem_mpr ⟨_, expand_sub hc, by simp [semWithArgs], realmInvariant_of_not_record rfl _ _ _⟩
+      exact ⟨_, hc, by simp [semWithArgs], rfl⟩
     · exact absurd h.2 hm.1
   case strEq.true s =>
     obtain ⟨c, hc, hk⟩ := List.any_eq_true.mp hm
@@ -366,14 +373,103 @@ theorem tagMember_sound {G : NormalGraph ι} {B : Ty ι} {t : Tag} {q : Bool}
     subst hk
     cases v <;> simp [tagHolds, isVal] at ht hv
     subst ht
-    exact expand_sem_mpr ⟨_, expand_sub hc, by simp [semWithArgs], realmInvariant_of_not_record rfl _ _ _⟩
+    exact ⟨_, hc, by simp [semWithArgs], rfl⟩
+  case isFun.true =>
+    simp only [Bool.and_eq_true, List.any_eq_true] at hm
+    obtain ⟨⟨a, ha, hka⟩, ⟨k, hk, hkk⟩⟩ := hm
+    cases v <;> simp [tagHolds] at ht
+    rename_i fs code oid
+    cases code with
+    | absent => simp at ht
+    | bound target r pre =>
+      have hi : Invocable (.objAt fs (.bound target r pre) oid) := ⟨_, _, _, rfl, rfl, hs⟩
+      refine ⟨a, ha, ?_, ?_⟩ <;> (split at hka <;> simp at hka)
+      · exact ⟨⟨hi, by simp⟩, ⟨hi, by simp⟩⟩
+      · rfl
+    | graph arity E K start caps kind rest =>
+      cases kind with
+      | call =>
+        have hi : Invocable (.objAt fs (.graph arity E K start caps .call rest) oid) :=
+          ⟨_, _, _, rfl, rfl, hs⟩
+        refine ⟨a, ha, ?_, ?_⟩ <;> (split at hka <;> simp at hka)
+        · exact ⟨⟨hi, by simp⟩, ⟨hi, by simp⟩⟩
+        · rfl
+      | construct =>
+        have hc : Constructible (.objAt fs (.graph arity E K start caps .construct rest) oid) :=
+          ⟨_, _, _, _, _, _, _, _, rfl, hs⟩
+        refine ⟨k, hk, ?_, ?_⟩ <;> (split at hkk <;> simp at hkk)
+        · exact ⟨⟨hc, by simp⟩, ⟨hc, by simp⟩⟩
+        · rfl
   all_goals
     obtain ⟨c, hc, hk⟩ := List.any_eq_true.mp hm
     cases c <;> simp at hk
     cases v <;> simp [tagHolds, isVal] at ht hv <;>
-      exact expand_sem_mpr ⟨_, expand_sub hc, by
-        simp [semWithArgs, nulT, undefT, boolT, numT, strT, bigintT, symbolT],
-        realmInvariant_of_not_record rfl _ _ _⟩
+      exact ⟨_, hc, by simp [semWithArgs, nulT, undefT, boolT, numT, strT, bigintT, symbolT], rfl⟩
+
+/-- Whether one clause of `B` holds every value a passed tag test admits
+(`familyMember`). -/
+def tagMember (G : NormalGraph ι) (B : Ty ι) (t : Tag) (q : Bool) : Bool :=
+  familyMember (expand G B) t q
+
+theorem tagMember_sound {G : NormalGraph ι} {B : Ty ι} {t : Tag} {q : Bool}
+    (hm : tagMember G B t q = true) {n W v} (hv : isVal v = true) (hs : Scoped 0 v)
+    (ht : tagHolds t v = q) : meaning G B n W v := by
+  obtain ⟨c, hc, hcv, hrec⟩ := familyMember_sound hm hv hs ht
+  exact expand_sem_mpr ⟨c, expand_sub hc, hcv, realmInvariant_of_not_record hrec _ _ _⟩
+
+/-! ### A type parameter's value under a test
+
+A meet row `p ⊓ cs` holds the values the assignment gives its parts that are
+also in its clauses `cs`. Where a test answers `q`, such a value is in a
+clause the test does not contradict, so it is in a meet row of the same parts
+(or of fewer) holding that clause, or, for a family test, holding the family's
+clauses: `T ⊓ (null | undefined | number)` is `T ⊓ number` where `x ?? d`
+takes `x`, and `T ⊓ unknown` is `T ⊓ Function` where `typeof x === "function"`
+holds. The parts are not read, so this holds at every assignment of them. -/
+
+/-- The meet rows of `B` whose parts are among the meet row `a`'s. -/
+def meetTargets [DecidableEq ι] (G : NormalGraph ι) (a : ι) (B : Ty ι) : List ι :=
+  B.filter fun b => G.meetRow b && (meetParts G b).all fun p => (meetParts G a).contains p
+
+/-- Every label the tag slice keeps is in `B`, or is a meet row each of
+whose clauses the test contradicts, a meet target of `B` holds, or whose
+family the meet targets' clauses hold. -/
+def meetSlice [DecidableEq ι] (G : NormalGraph ι) (A B : Ty ι) (t : Tag) (q : Bool) : Bool :=
+  (tagSlice G A t q).all fun a => B.contains a ||
+    (G.meetRow a && (meetClauses G a).all fun c => tagClause t c == some (!q) ||
+      (meetTargets G a B).any (fun b => (meetClauses G b).contains c) ||
+      familyMember ((meetTargets G a B).flatMap (meetClauses G)) t q)
+
+theorem meetSlice_sound [DecidableEq ι] {G : NormalGraph ι} {A B : Ty ι} {t : Tag} {q : Bool}
+    (h : meetSlice G A B t q = true) {n W v} (hv : meaning G A n W v)
+    (ho : tagHolds t v = q ∨ protoFree t v = false) : meaning G B n W v := by
+  obtain ⟨a, ha, hva⟩ := tagSlice_sound hv ho
+  have ha' := List.all_eq_true.mp h a ha
+  simp only [Bool.or_eq_true, Bool.and_eq_true, List.contains_iff_mem] at ha'
+  rcases ha' with hB | ⟨hmr, hcs⟩
+  · exact ⟨a, hB, hva⟩
+  obtain ⟨hparts, c, hc, hcv⟩ := (meet_row_iff (η := G.env) hmr).mp hva
+  have target : ∀ b ∈ meetTargets G a B, (∃ d ∈ meetClauses G b, mixedSem G G.env d n W v) →
+      meaning G B n W v := by
+    intro b hb hd
+    simp only [meetTargets, List.mem_filter, Bool.and_eq_true, List.all_eq_true,
+      List.contains_iff_mem] at hb
+    exact ⟨b, hb.1, (meet_row_iff hb.2.1).mpr ⟨fun p hp => hparts p (hb.2.2 p hp), hd⟩⟩
+  have hcc := List.all_eq_true.mp hcs c hc
+  simp only [Bool.or_eq_true, beq_iff_eq, List.any_eq_true, List.contains_iff_mem] at hcc
+  rcases hcc with (hno | ⟨b, hb, hcb⟩) | hfam
+  · have hpf := tagClause_protoFree hno hcv.1
+    have hans := tagClause_sound hno hcv.1
+    rcases ho with ho | ho
+    · rw [ho] at hans; cases q <;> simp at hans
+    · rw [hpf] at ho; cases ho
+  · exact target b hb ⟨c, hcb, hcv⟩
+  · have hq : tagHolds t v = q := ho.resolve_right (by
+      cases t <;> cases q <;> simp [familyMember] at hfam <;> simp [protoFree])
+    obtain ⟨d, hd, hdv, hrec⟩ := familyMember_sound (X := mixedValues G G.env) (P := mixedArgs G G.env)
+      hfam (meaning_value hv).1 (meaning_value hv).2 hq
+    obtain ⟨b, hb, hdb⟩ := List.mem_flatMap.mp hd
+    exact target b hb ⟨d, hdb, hdv, realmInvariant_of_not_record hrec n W v⟩
 
 /-- A passed `hasKey` test finds its key present: `check` of the key. -/
 def presentKey (t : Tag) (q : Bool) (check : PropKey → Bool) : Bool :=
@@ -543,7 +639,7 @@ an algorithm for the tag case, not the meaning of refinement. -/
   | .tag t q =>
       (ProgramCertificates.checkSubtypeUsing G images (tagSlice G A t q) B p).orElse fun _ =>
       CheckResult.ofBool (tagMember G B t q || presentKey t q (promotes G (tagSlice G A t q) B) ||
-        (t == .isArray && q && arraySlice G A B))
+        (t == .isArray && q && arraySlice G A B) || meetSlice G A B t q)
 
 @[nospecialize] def checkObservedSubUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (A B : Ty ι) (o : Observation) (p : PositiveCertificates.SubtypeChoices ι) : Bool :=
@@ -556,7 +652,7 @@ theorem checkObservedSubUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images :
   | .boolean q => booleanMember G B q
   | .tag t q => PositiveCertificates.checkUsing G images (tagSlice G A t q) B p || tagMember G B t q ||
       presentKey t q (promotes G (tagSlice G A t q) B) ||
-      (t == .isArray && q && arraySlice G A B) := by
+      (t == .isArray && q && arraySlice G A B) || meetSlice G A B t q := by
   cases o <;> simp only [checkObservedSubUsing, checkObservedSubResult, CheckResult.accepted_ofBool,
     CheckResult.accepted_orElse, ProgramCertificates.checkSubtypeUsing_accepted, Bool.or_assoc]
 
@@ -572,15 +668,16 @@ theorem checkObservedSub_sound [DecidableEq ι] {G : NormalGraph ι} {images : I
     exact booleanMember_sound hb n W
   | tag t q =>
     simp only [checkObservedSubUsing_eq, Bool.or_eq_true, Bool.and_eq_true] at hc
-    rcases hc with ((hc | hm) | hk) | ⟨⟨ht, hq⟩, hs⟩
+    rcases hc with (((hc | hm) | hk) | ⟨⟨ht, hq⟩, hs⟩) | hmeet
     · exact PositiveCertificates.acceptedUsing hc n W v (tagSlice_sound hv ho)
-    · exact tagMember_sound hm (meaning_value hv).1 (ho.resolve_right (by
-        cases t <;> simp [tagMember] at hm <;> simp [protoFree]))
+    · exact tagMember_sound hm (meaning_value hv).1 (meaning_value hv).2 (ho.resolve_right (by
+        cases t <;> cases q <;> simp [tagMember, familyMember] at hm <;> simp [protoFree]))
     · obtain ⟨k, hp, hkey⟩ := presentKey_sound hk ho
       exact promotes_sound hp (tagSlice_sound hv ho) hkey
     · have ht := beq_iff_eq.mp ht
       subst ht; subst hq
       exact arraySlice_sound hs hv (ho.resolve_right (by simp [protoFree]))
+    · exact meetSlice_sound hmeet hv ho
 
 /-- The finite image checker, the default. -/
 abbrev checkObservedSub [DecidableEq ι] (G : NormalGraph ι) :=
@@ -842,4 +939,6 @@ theorem ObservedCovers.env [DecidableEq ι] {G : NormalGraph ι} {Γ Δ i o mapp
 #print axioms ObservedCovers.env
 #print axioms realmArray_of_record
 #print axioms arraySlice_sound
+#print axioms familyMember_sound
+#print axioms meetSlice_sound
 end Verification.BranchRefinement

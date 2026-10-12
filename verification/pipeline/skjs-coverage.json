@@ -14,17 +14,17 @@
   "rejected": 2
  },
  "accepted": 2674,
- "verified": 2484,
+ "verified": 2489,
  "byStatus": {
-  "verified (check)": 2484,
-  "unverified (search)": 94,
+  "verified (check)": 2489,
+  "unverified (search)": 89,
   "unsupported (source)": 73,
   "unsupported (proposal)": 23
  },
  "bySuite": {
   "expect-error": {
    "accepted": 2458,
-   "verified": 2270
+   "verified": 2275
   },
   "constprop": {
    "accepted": 66,
@@ -51,11 +51,11 @@
    "verified": 8
   }
  },
- "filesAllVerified": 300,
+ "filesAllVerified": 301,
  "filesWithAccepted": 377,
  "functions": {
   "accepted": 2026,
-  "verified": 1853
+  "verified": 1858
  },
  "byGroup": {
   "TypeScript refuses the code too (the pipeline follows TypeScript's types)": {
@@ -148,12 +148,6 @@
    "dependency": 0,
    "files": 4
   },
-  "tests on a value of a type parameter or `unknown` (no rule narrows a parameter row to its meet `T & number`)": {
-   "units": 5,
-   "self": 5,
-   "dependency": 0,
-   "files": 2
-  },
   "iterables the program defines: an iterator whose type states no `return`, a spread or a pattern the protocol's lowering does not place, a well-known symbol key other than `Symbol.iterator`": {
    "units": 5,
    "self": 4,
@@ -216,11 +210,11 @@
   }
  },
  "exhausted": 0,
- "reachedButRefused": 94,
+ "reachedButRefused": 89,
  "byClass": {
-  "verified": 2484,
+  "verified": 2489,
   "principled": 87,
-  "gap": 93,
+  "gap": 88,
   "unexplained": 0,
   "skjsUnsound": 10
  },
@@ -233,8 +227,8 @@
   },
   "generics: generic closures, methods, function types, dependent bounds": {
    "class": "gap",
-   "units": 13,
-   "files": 8
+   "units": 8,
+   "files": 6
   },
   "a named function at a longer signature": {
    "class": "gap",
@@ -482,13 +476,11 @@
   "search: reject: source refusal at _: a write at a key known only at run time may add the key to an object another reference holds, which would see the object's keys cha": 3,
   "search: reject: `unknown` used as an array after `Array.isArray`: `Array.isArray(x)`, or `x instanceof Array`, on `unknown` finds that the value owns the store of an ar": 3,
   "source: keyof is keyof [number], whose part unique symbol is a unique symbol, which no type of the fragment names": 3,
-  "search: reject: `??` on a value of a type parameter: its values other than null and undefined are the meet `T & {}`, but no rule narrows a parameter row to its meet wit": 3,
   "proposal: a type parameter types both a value and a rest parameter's argument list: an argument list is not a runtime value": 3,
   "search: reject: the modeled await requires a native promise or a stably non-thenable value: JavaScript adopts a thenable, calling its `then`, instead of settling to it;": 3,
   "source: an iterable whose iterator's type states no `return` is outside the fragment here: a loop left early, or a throw out of its body, calls the iterator's `return` ": 3,
   "search: reject: source refusal at _: the declarations required by this unit cannot be interpreted: /functions/0/params/0/type: the intersection is empty: its operands h": 2,
   "search: reject: a relational comparison of operands that may not both be numbers or both strings: `<` converts such an operand to a number or a string first (`undefined": 2,
-  "search: reject: a `typeof x === \"_\"` test on a value of a type parameter or `unknown`: the values of that shape are the meet of the type parameter with it (`T & number`": 2,
   "source: array literal spreads and holes are outside the fragment": 2,
   "source: a well-known symbol key other than `Symbol.iterator` is outside the fragment: it changes how the host treats the object, which the model does not state, and `Sy": 2,
   "source: keyof is number | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | \"_\" | ... 34 more ... | unique symbol, whose part unique s": 2,
@@ -1725,8 +1717,8 @@
 {"source":"tests/expect-error/function-type.ts","name":"testFunctionTypeofObject","kind":"function","line":95,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/function-type.ts","name":"testFunctionInstanceofRhs","kind":"function","line":102,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: `instanceof` whose right operand is not a class declared at the file's top level: nothing in the file says which prototype a constructor from elsewhere gives it","group":"in / instanceof / typeof tests","where":"self","at":"if (x instanceof f) {","detail":"gate: `instanceof` whose right operand is not a class declared at the file's top level: nothing in the file says which prototype a constructor from elsewhere gives its instances (line 2, col 7)","class":"principled"},
 {"source":"tests/expect-error/function-type.ts","name":"testFunctionTruthiness","kind":"function","line":111,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/function-type.ts","name":"testTParamTypeofFunction","kind":"function","line":120,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a `typeof x === \"_\"` test on a value of a type parameter or `unknown`: the values of that shape are the meet of the type parameter with it (`T & number`","group":"tests on a value of a type parameter or `unknown` (no rule narrows a parameter row to its meet `T & number`)","where":"self","at":"x","detail":"reject: a `typeof x === \"function\"` test on a value of a type parameter or `unknown`: the values of that shape are the meet of the type parameter with it (`T & number`, a meet row), but a tag test refines only clause rows, and no rule narrows a parameter row to that meet (`unknown` to a callable of  — The available claim for x is source & T. This return requires {\"arrs\":{\"arrows\":[]}} | {\"ctors\":{\"signatures\":[]}}.","class":"gap"},
-{"source":"tests/expect-error/function-type.ts","name":"testUnknownTypeofFunction","kind":"function","line":128,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: a `typeof x === \"_\"` test on a value of a type parameter or `unknown`: the values of that shape are the meet of the type parameter with it (`T & number`","group":"tests on a value of a type parameter or `unknown` (no rule narrows a parameter row to its meet `T & number`)","where":"self","at":"x","detail":"reject: a `typeof x === \"function\"` test on a value of a type parameter or `unknown`: the values of that shape are the meet of the type parameter with it (`T & number`, a meet row), but a tag test refines only clause rows, and no rule narrows a parameter row to that meet (`unknown` to a callable of  — The available claim for x is unknown. This return requires {\"arrs\":{\"arrows\":[]}} | {\"ctors\":{\"signatures\":[]}}.","class":"gap"},
+{"source":"tests/expect-error/function-type.ts","name":"testTParamTypeofFunction","kind":"function","line":120,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
+{"source":"tests/expect-error/function-type.ts","name":"testUnknownTypeofFunction","kind":"function","line":128,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/function-type.ts","name":"testFnToCallbackInterface","kind":"function","line":139,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/function-union.ts","name":"returnString","kind":"function","line":77,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/function-union.ts","name":"returnBoolean","kind":"function","line":81,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
@@ -2355,11 +2347,11 @@
 {"source":"tests/expect-error/nullish-coalescing.ts","name":"withSameType","kind":"function","line":21,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/nullish-coalescing.ts","name":"withAnotherType","kind":"function","line":25,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/nullish-coalescing.ts","name":"paramTop","kind":"function","line":29,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/nullish-coalescing.ts","name":"uselessNullOrUndefinedParam","kind":"function","line":33,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: `??` on a value of a type parameter: its values other than null and undefined are the meet `T & {}`, but no rule narrows a parameter row to its meet wit","group":"tests on a value of a type parameter or `unknown` (no rule narrows a parameter row to its meet `T & number`)","where":"self","at":"x ?? 0","detail":"reject: `??` on a value of a type parameter: its values other than null and undefined are the meet `T & {}`, but no rule narrows a parameter row to its meet with the non-nullish values — The available claim for x ?? 0 is 0 | type & T. This return requires number.","class":"gap"},
+{"source":"tests/expect-error/nullish-coalescing.ts","name":"uselessNullOrUndefinedParam","kind":"function","line":33,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/nullish-coalescing.ts","name":"uselessNoNullParam","kind":"function","line":38,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/nullish-coalescing.ts","name":"withSameTypeParam","kind":"function","line":43,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: `??` on a value of a type parameter: its values other than null and undefined are the meet `T & {}`, but no rule narrows a parameter row to its meet wit","group":"tests on a value of a type parameter or `unknown` (no rule narrows a parameter row to its meet `T & number`)","where":"self","at":"x ?? 0","detail":"reject: `??` on a value of a type parameter: its values other than null and undefined are the meet `T & {}`, but no rule narrows a parameter row to its meet with the non-nullish values — The available claim for x ?? 0 is 0 | type & T. This return requires number.","class":"gap"},
+{"source":"tests/expect-error/nullish-coalescing.ts","name":"withSameTypeParam","kind":"function","line":43,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/nullish-coalescing.ts","name":"withAnotherTypeParamT","kind":"function","line":47,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
-{"source":"tests/expect-error/nullish-coalescing.ts","name":"withAnotherTypeParamMorePrecise","kind":"function","line":53,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: `??` on a value of a type parameter: its values other than null and undefined are the meet `T & {}`, but no rule narrows a parameter row to its meet wit","group":"tests on a value of a type parameter or `unknown` (no rule narrows a parameter row to its meet `T & number`)","where":"self","at":"x ?? 0","detail":"reject: `??` on a value of a type parameter: its values other than null and undefined are the meet `T & {}`, but no rule narrows a parameter row to its meet with the non-nullish values — The available claim for x ?? 0 is 0 | type & T. This return requires string | number.","class":"gap"},
+{"source":"tests/expect-error/nullish-coalescing.ts","name":"withAnotherTypeParamMorePrecise","kind":"function","line":53,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/nullish-coalescing.ts","name":"skippedFallback","kind":"function","line":59,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/nullish-coalescing.ts","name":"possibleFallback","kind":"function","line":66,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/nullish-coalescing.ts","name":"resultOfFallback","kind":"function","line":74,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check","class":"verified"},

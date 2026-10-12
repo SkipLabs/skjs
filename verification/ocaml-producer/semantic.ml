@@ -193,6 +193,20 @@ let rec without_nullish = function
   | Atoms xs -> ground (List.filter (function Nul | Undef -> false | _ -> true) xs)
   | Rigid _ as t -> t | Union ts -> List.fold_left union (Atoms []) (List.map without_nullish ts)
   | Meet (t,ts) -> Meet (without_nullish t,ts)
+(* The values of `t` a test keeps, [slice] reading each arm: a type
+   parameter's are the meet of it with what the test keeps of its bound,
+   where the bound is of atoms other than `unknown`: none where it keeps
+   none, the parameter itself where it keeps all. *)
+let narrow_rigid bounds slice t =
+  let rec arm = function
+    | Rigid r as t -> (match List.assoc_opt r bounds with
+      | Some (Atoms xs as bound) when not (List.mem Top xs) ->
+        let kept = slice bound in
+        if kept = bound then t else if kept = Atoms [] then Atoms [] else Meet (t,[kept])
+      | _ -> t)
+    | Union ts -> List.fold_left union (Atoms []) (List.map arm ts)
+    | t -> slice t in
+  arm t
 (* JavaScript's `ToBoolean` of every value of an atom, where the atom settles
 it: null, undefined, `false`, the two zeros, NaN, `""` and `0n` are falsy,
 every object, function, class and symbol truthy. *)

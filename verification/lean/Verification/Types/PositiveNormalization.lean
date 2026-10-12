@@ -314,7 +314,7 @@ theorem semWithArgs_value {X : α → Fam} {P : α → ArgFam} {c : Clause α} {
   | bigint => obtain ⟨i, rfl⟩ := h; exact ⟨rfl, trivial⟩
   | bigintLit i => subst v; exact ⟨rfl, trivial⟩
   | symbol => obtain ⟨i, rfl⟩ := h; exact ⟨rfl, trivial⟩
-  | ctors L S => obtain ⟨fs, c, _, rfl, -, hs⟩ := h.1.1; exact ⟨rfl, hs⟩
+  | ctors L S => obtain ⟨_, _, _, _, _, _, _, _, rfl, hs⟩ := h.1.1; exact ⟨rfl, hs⟩
   | pack a bs => exact h.elim
 
 
@@ -349,9 +349,8 @@ theorem semWithArgs_shape {X : α → Fam} {P : α → ArgFam} {c : Clause α} {
   | bigintLit i => cases h; rfl
   | symbol => obtain ⟨i, rfl⟩ := h; rfl
   | ctors L S =>
-    obtain ⟨fs, c, _, rfl, hc, -⟩ := h.1.1
-    unfold CallArguments.construction at hc
-    split at hc <;> simp_all [valueShape, shape]
+    obtain ⟨_, _, _, _, _, _, _, _, rfl, -⟩ := h.1.1
+    rfl
   | pack a bs => exact h.elim
 
 /-- Every inhabited clause other than calculus top or an element-store clause

@@ -364,10 +364,12 @@ def restsT (S : List (Fam × List Fam × ArgFam × Fam)) : Fam := fun k W v =>
 
 /-! ### Construct signatures -/
 
-/-- A class value: an object whose code is construct-only, without a rest,
-and closed. -/
+/-- A class value: a closed object whose code is construct-only. Every
+function value is one of these or `Invocable`, which is what `typeof` calls a
+function; a construct signature additionally needs `new` to run it
+(`ConstructsTo`). -/
 def Constructible (v : Val) : Prop :=
-  ∃ fs c oid, v = .objAt fs c oid ∧ (CallArguments.construction c).isSome ∧ Scoped 0 v
+  ∃ fs n E K s caps rest oid, v = .objAt fs (.graph n E K s caps .construct rest) oid ∧ Scoped 0 v
 
 /-- What `new v(args)` runs, in one step: a class value's body, with
 `undefined` for its receiver and the actuals for its parameters. -/

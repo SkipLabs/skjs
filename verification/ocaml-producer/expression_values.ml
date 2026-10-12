@@ -89,9 +89,6 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
          if rigid_arm x then
            S.explain site ("a `typeof x === \"" ^ shape ^ "\"` test on a value of a type parameter or `unknown`: "
              ^ family_test_reason)
-       | Some x, Some shape when not (rigid_arm x) ->
-         S.explain site ("a `typeof x === \"" ^ shape ^ "\"` test on a value of a type parameter or `unknown`: "
-           ^ shape_test_reason)
        | _ -> ());
       (* A cell read at its contract where the use asks for less. *)
       (match expected, List.assoc_opt n env with
@@ -319,11 +316,15 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
     | Conditional (c,a,b) -> ignore (expr env c);
       let left = expr ?expected env a in
       let right = expr ?expected env b in union left right
+    (* The left operand's values other than null and undefined, a type
+       parameter's the meet of it with its bound's, `T ⊓ number` for
+       `T extends number | null`, where the bound states them. *)
     | Coalesce (a,b) -> let left=expr env a in let right=expr ?expected env b in
-      if expected <> None && rigid_arm left then
-        S.explain site ("`??` on a value of a type parameter: its values other than null and undefined are \
-          the meet `T & {}`, but no rule narrows a parameter row to its meet with the non-nullish values");
-      union (without_nullish left) right
+      let present = narrow_rigid (S.rigid_bounds ()) without_nullish left in
+      if expected <> None && rigid_arm present then
+        S.explain site ("`??` on a value of a type parameter whose bound states no values other than null \
+          and undefined: those are the meet `T & {}`, which no clause row states");
+      union present right
     (* The body runs where the receiver is present, and reads it so; a
        nullish receiver gives `undefined`. An inner chain's receiver hides
        an outer one's. *)

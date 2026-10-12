@@ -4,15 +4,15 @@ How much of what SKJS accepts in its own test suite the pipeline
 (`verify-source.mts`: parser → OCaml producer → Lean search and check) verifies, what
 stops the rest, and where the two disagree because SKJS is wrong.
 
-Measurement checkpoint: October 12, 2026 (full verifier-only run, using the
+Measurement checkpoint: October 13, 2026 (full verifier-only run, using the
 SKJS acceptance results recorded on October 9; SKJS was not rerun).
 The reviewed nested-promise search failure is classified by its unit and
 exact obligation.
 
-**2,484 of 2,674 SKJS-accepted units verify (92.9%); 1,853 of 2,026
-accepted functions (91.5%).** 300 of the 377 files with an accepted unit
+**2,489 of 2,674 SKJS-accepted units verify (93.1%); 1,858 of 2,026
+accepted functions (91.7%).** 301 of the 377 files with an accepted unit
 verify entirely. There are 87 principled refusals, 10 registered SKJS-unsound
-units, 93 gaps and no unmatched or unexplained refusals.
+units, 88 gaps and no unmatched or unexplained refusals.
 
 `mapArr` and `testMapCallback` fail at the native call: an arbitrary
 one-argument callback supplies no contract for the three actuals `map` passes.
@@ -55,14 +55,14 @@ is not part of `verification/test-all.sh`.
 
 | Suite | Harness verdict | Files | Units | Accepted | Verified | Accepted functions | Verified functions |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `tests/expect-error` | `@ts-expect-error` / `@skjs-expect-error` name the next non-annotation line (`tests/Helpers.sk` `findExpectErrors`); `@skjs-expect-warning` is not an error | 399 (374 with units) | 3,883 | 2,458 | 2,270 | 1,863 | 1,692 |
+| `tests/expect-error` | `@ts-expect-error` / `@skjs-expect-error` name the next non-annotation line (`tests/Helpers.sk` `findExpectErrors`); `@skjs-expect-warning` is not an error | 399 (374 with units) | 3,883 | 2,458 | 2,275 | 1,863 | 1,697 |
 | `tests/callgraph` | no error allowed | 25 | 59 | 59 | 57 | 51 | 49 |
 | `tests/constprop` | no error allowed | 14 | 66 | 66 | 66 | 49 | 49 |
 | `tests/deadcode` | no error allowed | 7 | 27 | 27 | 27 | 16 | 16 |
 | `tests/cfg` | no error allowed | 7 | 22 | 22 | 22 | 21 | 21 |
 | `tests/projects` | expect-error markers, under the project's tsconfig | 24 of 68 | 44 | 34 | 34 | 23 | 23 |
 | `tests/ts-conformance/cases` | lines listed in `reference/*.errors.txt` | 4 | 9 | 8 | 8 | 3 | 3 |
-| **total** | | **480** | **4,110** | **2,674** | **2,484** | **2,026** | **1,853** |
+| **total** | | **480** | **4,110** | **2,674** | **2,489** | **2,026** | **1,858** |
 
 Excluded (79 files, listed in the JSON with reasons): `ts-conformance/not-supported`
 (31) and `callgraph-unsupported` (4) assert only that SKJS reports errors;
@@ -119,10 +119,10 @@ is.
 
 | Phase of first blocker | Units |
 | --- | ---: |
-| verified | 2,484 |
+| verified | 2,489 |
 | source (gate) | 73 |
 | proposal (producer) | 23 |
-| search (Lean) | 94 |
+| search (Lean) | 89 |
 
 **Refusal classes.** The project's goal is that every accepted unit either
 verifies or is refused for a specific, principled reason. Each accepted unit
@@ -204,10 +204,10 @@ blocker's key is given (`summary.byReason` and `summary.byClass` of
 
 | Class | Units |
 | --- | ---: |
-| verified | 2,484 |
+| verified | 2,489 |
 | principled (P) | 87 |
 | SKJS unsound (S) | 10 |
-| gap (G) | 93 |
+| gap (G) | 88 |
 | unexplained (U) | 0 |
 | **accepted** | **2,674** |
 
@@ -235,7 +235,6 @@ First blocker, not every missing feature of a unit:
 | cells read at their contract (contents known only as primitives or as no `undefined`, and forgotten across a step that may write them) | 6 | 4 | 0 | 4 |
 | classes: modifiers, inheritance, fields, parameter properties, receivers | 6 | 3 | 3 | 3 |
 | enums | 6 | 0 | 6 | 1 |
-| tests on a value of a type parameter or `unknown` (no rule narrows a parameter row to its meet `T & number`) | 5 | 5 | 0 | 2 |
 | sloppy (non-strict) code | 6 | 4 | 2 | 3 |
 | object literal members (methods, accessors, spreads) | 5 | 4 | 0 | 4 |
 | iterables the program defines: an iterator whose type states no `return`, a spread or a pattern the protocol's lowering does not place, a well-known symbol key other than `Symbol.iterator` | 5 | 4 | 1 | 4 |

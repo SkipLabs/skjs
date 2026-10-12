@@ -2988,21 +2988,15 @@ theorem Covers.sound_raw [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Re
         · rename_i τ hP
           obtain ⟨hopt, hrest, hd, hres⟩ := hfp
           intro j hj U hx hu heap hh args hvals ha
-          cases j with
-          | zero =>
-            obtain ⟨fs, c, oid, rfl, hc, -⟩ := hv.1
-            obtain ⟨enter, he⟩ := Option.isSome_iff_exists.mp hc
-            exact ⟨_, ⟨fs, c, enter, oid, rfl, he, rfl⟩, trivial⟩
-          | succ i =>
-            obtain ⟨hlen, hfix, hpack⟩ := ha
-            simp only [List.length_map] at hlen hfix hpack
-            have htup := mixed_pack_exact hP hopt hrest hpack
-            have hall := ArgsT_append hfix htup
-            rw [List.take_append_drop, ← List.map_append] at hall
-            obtain ⟨result, hcon, hsafe⟩ := hv.2 _ (List.mem_map_of_mem hp) (i + 1) hj U hx hu heap hh
-              args hvals (Domains.sound hd (fun a b hab => hr (i + 1) hj a b hab) hall)
-            exact ⟨result, hcon, Safe_mono (i + 1) (fun m hm V u hu => hr m (by omega) _ _ hres V u hu)
-              U heap _ hsafe⟩
+          obtain ⟨hlen, hfix, hpack⟩ := ha
+          simp only [List.length_map] at hlen hfix hpack
+          have htup := mixed_pack_exact hP hopt hrest hpack
+          have hall := ArgsT_append hfix htup
+          rw [List.take_append_drop, ← List.map_append] at hall
+          obtain ⟨result, hcon, hsafe⟩ := hv.2 _ (List.mem_map_of_mem hp) j hj U hx hu heap hh
+            args hvals (Domains.sound hd (fun a b hab => hr j hj a b hab) hall)
+          exact ⟨result, hcon, Safe_mono j (fun m hm V u hu => hr m (by omega) _ _ hres V u hu)
+            U heap _ hsafe⟩
         · exact hfp.elim
   · exact id
   · exact id
@@ -3149,9 +3143,10 @@ theorem meet_clause_of {G : NormalGraph ι} {η : MixedAssignment ι} {i : ι}
   exact ⟨c, by simp [hm, hc], hcv⟩
 
 /-- A meet row below a row by its parameters: the row is one of the meet's
-value parameters, or a meet row of some of them within the same clauses.
-`U ⊓ T` is below `T`, and `U ⊓ T ⊓ B` below `T ⊓ B`: a value of the meet is
-what the assignment gives each of its parameters, within its clauses. In a
+value parameters, or a meet row of some of them within clauses including the
+meet's. `U ⊓ T` is below `T`, `U ⊓ T ⊓ B` below `T ⊓ B`, and `T ⊓ number`
+below `T ⊓ (number | null)`: a value of the meet is what the assignment gives
+each of its parameters, within its clauses. In a
 family pair a target parameter may instead be above one of the meet's
 parameters by a hypothesis (RECURSIVE-EQUATIONS §3.3, §7.3): `x ⊓ B` is below
 `y ⊓ B`, and below `y`, when `x ≤ y`. -/
@@ -3165,7 +3160,7 @@ parameters by a hypothesis (RECURSIVE-EQUATIONS §3.3, §7.3): `x ⊓ B` is belo
     (match G.meets j with
       | some (q, ds) => !G.params j && (G.schemes j).isNone && reach q &&
           (G.meetParams j).all reach &&
-          (ds == cs || ds == [.top] || (ds == [.source] && cs.all sourceClause))
+          (cs.all (ds.contains ·) || ds == [.top] || (ds == [.source] && cs.all sourceClause))
       | none => false)
   | none => false
 
@@ -3354,8 +3349,9 @@ theorem meetBelow_sound [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssignm
       rw [qDenoteWithArgs_unfold]
       simp only [qLayerWithArgs, hjp, hjs, hmj, Bool.false_eq_true, ite_false]
       refine ⟨⟨hreach q hq, fun r hr => hreach r (hqs r hr)⟩, ?_⟩
-      rcases hcs with (rfl | rfl) | ⟨rfl, hs⟩
-      · exact hvc
+      rcases hcs with (hsub | rfl) | ⟨rfl, hs⟩
+      · obtain ⟨c, hc, hv⟩ := hvc
+        exact ⟨c, hsub c hc, hv⟩
       · obtain ⟨c, _, hv, _⟩ := hvc
         exact ⟨.top, List.mem_singleton_self _, semWithArgs_value hv,
           realmInvariant_of_not_record rfl n W v⟩
