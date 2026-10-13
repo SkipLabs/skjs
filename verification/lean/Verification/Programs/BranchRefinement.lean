@@ -303,11 +303,11 @@ theorem promotes_sound [DecidableEq ι] {G : NormalGraph ι} {A B : Ty ι} {k : 
   simp only [promotes, Bool.and_eq_true, List.all_eq_true, List.any_eq_true] at hp
   obtain ⟨c, hc, hcv, hinv⟩ := (expand_sem G A hp.1 n W v).mp hv
   obtain ⟨d, hd, hw⟩ := hp.2 c hc
+  -- `weaker` holds of two reference clauses only, and `promote` keeps every
+  -- other clause as it is.
   have hdr : d.record = true ∧ c.record = true := by
-    cases d <;> cases hpc : promote k c <;> simp [weaker, hpc] at hw
-    all_goals
-      refine ⟨rfl, ?_⟩
-      cases c <;> simp_all [promote, Clause.record]
+    cases d <;> try exact (Bool.false_ne_true hw).elim
+    cases c <;> first | exact ⟨rfl, rfl⟩ | exact (Bool.false_ne_true hw).elim
   exact expand_sem_mpr ⟨d, expand_sub hd, weaker_sound hw (promote_sound hcv hk),
     (realmInvariant_record hdr.2 hdr.1).mp hinv⟩
 
