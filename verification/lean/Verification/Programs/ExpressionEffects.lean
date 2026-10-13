@@ -159,10 +159,12 @@ private theorem call_local_sound [DecidableEq ι] {G : NormalGraph ι}
     SafePost (meaning G j.type) (CallEffects.Effect.preservesInputHeap.post h)
       n W h (instantiate 0 ρ j.term) := by
   rcases j with ⟨Γ,t,A⟩
-  simp only [LocalUsing] at hl
-  split at hl <;> try contradiction
-  rename_i effect f r args jf jr jas heffect
-  cases heffect
+  -- The rule admits only a call with a callee and a receiver premise.
+  cases t <;> try exact (hl : False).elim
+  rename_i f r args
+  rcases ps with _ | ⟨jf, _ | ⟨jr, jas⟩⟩
+  · exact (hl : False).elim
+  · exact (hl : False).elim
   obtain ⟨hΓf, htf, hΓr, htr, hargs, hundef, hcontexts, hL⟩ := hl
   have context : ∀ p ∈ jf::jr::jas, p.context = Γ := by
     intro p hp
@@ -250,9 +252,7 @@ theorem selectedCall_sound [DecidableEq ι] {G : NormalGraph ι}
         cases rest with
         | cons _ _ => contradiction
         | nil =>
-          have hlocal := ht.1
-          simp only [LocalUsing] at hlocal
-          obtain ⟨hctx,hterm,hsub⟩ := hlocal
+          obtain ⟨hctx,hterm,hsub⟩ := ht.1
           have ih := selectedCall_sound child (ht.2 ⟨child,by simp⟩ (by simp)) hp hcodes
             (ρ := ρ) (n := n) (W := W) (h := h) (by rw [hctx]; exact he) hw hh
           apply consequence (fun j W v hv => PositiveCertificates.acceptedUsing hsub j W v hv)

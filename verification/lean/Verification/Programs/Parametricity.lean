@@ -218,7 +218,7 @@ theorem Local_reassign (j : Sequent ι) (r : Rule ι) (ps : List (Sequent ι))
     (codes : CodeEntry ι → Bool := fun _ => false) :
     LocalUsing (reassign G η) (images.reassign η) j r ps codes = LocalUsing G images j r ps codes := by
   unfold LocalUsing MemberProofsUsing
-  simp only [check_fun_reassign, CallProofs_reassign, RestProofs_reassign, graphCodesChecked_reassign,
+  simp (config := { iota := false }) only [check_fun_reassign, CallProofs_reassign, RestProofs_reassign, graphCodesChecked_reassign,
     allocRealm_reassign]
   rfl
 
@@ -230,7 +230,7 @@ theorem LocalWith_reassign (j : Sequent ι) (r : Rule ι) (ps : List (Sequent ι
     LocalUsing (reassign G η) (images.reassign η) j r ps codes subtype =
       LocalUsing G images j r ps codes subtype := by
   unfold LocalUsing MemberProofsUsing
-  simp only [check_fun_reassign, CallProofs_reassign, RestProofs_reassign,
+  simp (config := { iota := false }) only [check_fun_reassign, CallProofs_reassign, RestProofs_reassign,
     graphCodesChecked_reassign, allocRealm_reassign]
   rfl
 

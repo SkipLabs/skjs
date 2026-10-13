@@ -1213,10 +1213,25 @@ theorem binopThrows_values {op : Arith} {a b : Tm} (h : binopThrows op a b = tru
 /-- An operator never both answers and throws. -/
 theorem binop_not_throws {op : Arith} {a b v : Tm} (h : binop op a b = some v) :
     binopThrows op a b = false := by
-  obtain ⟨ha, hb, -⟩ := binop_values h
-  cases a <;> simp [isVal] at ha <;> cases b <;> simp [isVal] at hb <;>
-    cases op <;> simp_all [binop, binopThrows, bigintArith, isPrim, isSym, Arith.relational, primString] <;>
-    (obtain ⟨_, ⟨h1, _⟩, _⟩ := h; exact h1)
+  cases hc : binopThrows op a b
+  · rfl
+  exfalso
+  unfold binopThrows at hc
+  split at hc
+  · cases hc
+  · cases hc
+  -- A bigint division or remainder by zero, or a negative exponent, has no answer.
+  · split at hc <;> simp_all [binop, bigintArith, Arith.relational] <;> omega
+  -- A number and a bigint answer only a comparison.
+  · simp_all [binop]
+  · simp_all [binop]
+  -- A symbol and another primitive have no answer.
+  · simp only [Bool.or_eq_true, Bool.and_eq_true] at hc
+    rcases hc with ⟨h1, h2⟩ | ⟨h1, h2⟩
+    · cases a <;> simp only [isSym, Bool.false_eq_true] at h1
+      cases b <;> simp only [isPrim, Bool.false_eq_true] at h2 <;> simp_all [binop, primString]
+    · cases b <;> simp only [isSym, Bool.false_eq_true] at h2
+      cases a <;> simp only [isPrim, Bool.false_eq_true] at h1 <;> simp_all [binop, primString]
 
 /-- `ToBoolean` of a number: false for the two zeros and NaN, which is the one
 double not equal to itself. -/

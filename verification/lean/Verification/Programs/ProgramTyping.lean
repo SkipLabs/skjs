@@ -762,119 +762,62 @@ theorem truthy_of_shape {v : Val} :
     | _ => simp [valueShape, tagHolds]
   | _ => simp [valueShape, tagHolds]
 
+/-- A shape's answer is the test's on every value of that shape. Shape 7
+collects the terms that are no values, which a clause other than top and
+source never admits. -/
+private theorem tagShape_sound {tag : Tag} {v : Val} {q : Bool} (h7 : valueShape v ≠ 7)
+    (hq : tagShape tag (valueShape v) = some q) : tagHolds tag v = q := by
+  cases tag <;> cases v
+  all_goals first
+    | exact absurd rfl h7
+    | (cases hq <;> rfl)
+    | (rename_i code _; cases code <;> first
+        | exact absurd rfl h7
+        | (cases hq <;> rfl)
+        | (rename_i kind _; cases kind <;> (cases hq <;> rfl)))
+
 theorem tagClause_sound {S : α → Fam} {P : α → ArgFam} {c tag q n W v}
     (hq : tagClause tag c = some q) (hv : semWithArgs S P c n W v) : tagHolds tag v = q := by
-  cases ht : tag with
-  | numEq bits =>
-    cases c <;> simp [ht, tagClause, tagShape, shape] at hq
-    all_goals subst q
-    case numLit value =>
-      change v = .num value at hv
-      subst v
-      rfl
-    all_goals
-      have hs := semWithArgs_shape (by simp) (by simp) hv
-      cases v <;> simp_all [valueShape,tagHolds,shape]
-  | strEq s =>
-    cases c <;> simp [ht, tagClause, tagShape, shape] at hq
-    all_goals subst q
-    case strLit t =>
-      change v = .str t at hv
-      subst v
-      rfl
-    all_goals
-      have hs := semWithArgs_shape (by simp) (by simp) hv
-      cases v <;> simp_all [valueShape,tagHolds,shape]
-  | boolEq b =>
-    cases c <;> simp [ht, tagClause, tagShape, shape] at hq
-    all_goals subst q
-    case boolLit c =>
-      change v = (if c then .tru else .fls) at hv
-      subst v
-      cases b <;> cases c <;> rfl
-    all_goals
-      have hs := semWithArgs_shape (by simp) (by simp) hv
-      cases v <;> simp_all [valueShape,tagHolds,shape]
-  | bigintEq i =>
-    cases c <;> simp [ht, tagClause, tagShape, shape] at hq
-    all_goals subst q
-    case bigintLit j =>
-      change v = .bigint j at hv
-      subst v
-      simp [tagHolds]
-    all_goals
-      have hs := semWithArgs_shape (by simp) (by simp) hv
-      cases v <;> simp_all [valueShape,tagHolds,shape]
-  | truthy =>
-    cases c <;> simp [ht, tagClause, tagShape, shape] at hq
-    all_goals subst q
-    case boolLit b => cases b <;> cases hv <;> rfl
-    case numLit value => change v = .num value at hv; subst v; rfl
-    case strLit t => change v = .str t at hv; subst v; simp [tagHolds]
-    case bigintLit i => change v = .bigint i at hv; subst v; simp [tagHolds]
-    all_goals
-      have hs := semWithArgs_shape (by simp) (by simp) hv
-      simp only [shape] at hs
-      first
-        | exact truthy_of_shape.1 (by omega)
-        | exact truthy_of_shape.2 (by omega)
-  | isArray =>
-    by_cases hc : c = .top
-    · subst hc; simp [tagClause] at hq
-    by_cases hj : c = .source
-    · subst hj; simp [tagClause] at hq
-    subst ht
-    cases c
-    case top => exact absurd rfl hc
-    case source => exact absurd rfl hj
-    case refs => exact arrayAnswer_sound (by simpa [tagClause] using hq) hv
-    case dict => exact arrayAnswer_sound (by simpa [tagClause] using hq) hv
-    all_goals
-      have hs := semWithArgs_shape (by simp) (by simp) hv
-      simp [tagClause, tagShape, shape] at hq
-      subst q
-      cases v <;> simp_all [valueShape, tagHolds, shape]
-      all_goals try (rename_i code _; cases code with
-        | graph _ _ _ _ _ kind _ => cases kind <;> simp_all []
-        | _ => simp_all [])
-  | hasKey k =>
-    by_cases hc : c = .top
-    · subst hc; simp [tagClause] at hq
-    by_cases hj : c = .source
-    · subst hj; simp [tagClause] at hq
-    subst ht
-    cases c
-    case top => exact absurd rfl hc
-    case source => exact absurd rfl hj
-    case refs =>
-      obtain ⟨flds, oid, rfl, h⟩ := keyAnswer_sound (inAnswer_keyAnswer (by simpa [tagClause] using hq)) hv
-      simpa [tagHolds] using h
-    case dict =>
-      obtain ⟨flds, oid, rfl, h⟩ := keyAnswer_sound (inAnswer_keyAnswer (by simpa [tagClause] using hq)) hv
-      simpa [tagHolds] using h
-    -- Another object clause's answer is unknown; a primitive owns no key.
-    all_goals
-      have hs := semWithArgs_shape (by simp) (by simp) hv
-      simp [tagClause, tagShape, shape] at hq
-    all_goals
-      subst q
-      cases v with
-      | objAt fs code _ =>
-        cases code with
-        | graph _ _ _ _ _ kind _ => cases kind <;> simp_all [valueShape, shape]
-        | _ => simp_all [valueShape, shape]
-      | _ => simp_all [valueShape, tagHolds, shape]
-  | isNul | isBool | isRef | isFun | isUndef | isNullish | isNum | isStr | isBigint | isSymbol
-  | typeofObject =>
-    by_cases hc : c = .top
-    · subst hc; simp [tagClause] at hq
-    by_cases hj : c = .source
-    · subst hj; simp [tagClause] at hq
-    have htag : some (tagHolds tag v) = tagShape tag (valueShape v) := by
-      rw [ht]
-      cases v <;> first | rfl | (rename_i fs code _; cases code <;> first | rfl | (rename_i kind; cases kind <;> rfl) | (rename_i kind _; cases kind <;> rfl))
-    rw [semWithArgs_shape hc hj hv, ht] at htag
-    exact Option.some.inj (htag.trans (by simpa only [ht,tagClause] using hq))
+  by_cases hc : c = .top
+  · subst hc; cases tag <;> simp [tagClause] at hq
+  by_cases hj : c = .source
+  · subst hj; cases tag <;> simp [tagClause] at hq
+  have hs := semWithArgs_shape hc hj hv
+  -- Every clause but an object clause and a singleton answers by its shape.
+  have byShape : tagClause tag c = tagShape tag (shape c) → tagHolds tag v = q := fun h =>
+    tagShape_sound (by rw [hs]; cases c <;> simp_all [shape]) (by rw [hs, ← h]; exact hq)
+  cases tag <;> cases c
+  all_goals try first
+    | exact absurd rfl hc
+    | exact absurd rfl hj
+    | exact byShape rfl
+  case numEq.numLit value =>
+    change v = .num value at hv; subst v; simpa only [tagClause, tagHolds, Option.some.injEq] using hq
+  case strEq.strLit t =>
+    change v = .str t at hv; subst v; simpa only [tagClause, tagHolds, Option.some.injEq] using hq
+  case boolEq.boolLit b c =>
+    change v = (if c then .tru else .fls) at hv; subst v
+    simp only [tagClause, Option.some.injEq] at hq; subst q; cases b <;> cases c <;> rfl
+  case bigintEq.bigintLit i j =>
+    change v = .bigint j at hv; subst v; simpa only [tagClause, tagHolds, Option.some.injEq] using hq
+  case truthy.boolLit b =>
+    simp only [tagClause, Option.some.injEq] at hq; subst q; cases b <;> cases hv <;> rfl
+  case truthy.numLit value =>
+    change v = .num value at hv; subst v; simpa only [tagClause, tagHolds, Option.some.injEq] using hq
+  case truthy.strLit t =>
+    change v = .str t at hv; subst v; simpa only [tagClause, tagHolds, Option.some.injEq] using hq
+  case truthy.bigintLit i =>
+    change v = .bigint i at hv; subst v; simpa only [tagClause, tagHolds, Option.some.injEq] using hq
+  case isArray.refs => exact arrayAnswer_sound (by simpa only [tagClause] using hq) hv
+  case isArray.dict => exact arrayAnswer_sound (by simpa only [tagClause] using hq) hv
+  case hasKey.refs k _ _ _ _ _ _ =>
+    obtain ⟨flds, oid, rfl, h⟩ :=
+      keyAnswer_sound (inAnswer_keyAnswer (by simpa only [tagClause] using hq)) hv
+    simpa [tagHolds] using h
+  case hasKey.dict k _ _ _ _ _ _ _ _ =>
+    obtain ⟨flds, oid, rfl, h⟩ :=
+      keyAnswer_sound (inAnswer_keyAnswer (by simpa only [tagClause] using hq)) hv
+    simpa [tagHolds] using h
 
 theorem answers_sound {G : NormalGraph ι} {A tag q n W v}
     (hq : Answers G A tag q) (hv : meaning G A n W v) : tagHolds tag v = q := by

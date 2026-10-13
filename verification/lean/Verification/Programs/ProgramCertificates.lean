@@ -1070,7 +1070,9 @@ theorem localCheckUsing_accepted [DecidableEq ι] (G : NormalGraph ι)
     · change ((CheckResult.ofBool _).bind _).accepted = true ↔ _
       simp only [CheckResult.accepted_bind, CheckResult.accepted_ofBool,
         checkMemberProofs_accepted, Bool.and_eq_true, decide_eq_true_eq]
-      simp_all [LocalUsing, and_assoc]
+      rename_i heq
+      unfold LocalUsing
+      simp only [heq, and_assoc]
     · change (false = true) ↔ LocalUsing G images j (.bindMember proofs rests receivers) _ codes
       simp only [Bool.false_eq_true, false_iff]
       intro h
@@ -1086,7 +1088,10 @@ theorem localCheckUsing_accepted [DecidableEq ι] (G : NormalGraph ι)
       | cons x xs => rfl
       | nil =>
         by_cases h : jt.context = j.context ∧ jt.term = j.term
-        · simp [localCheckUsing, h, checkSubtypeUsing_accepted, LocalUsing]
+        · have hL : LocalUsing G images j (.sub choices) [jt] codes ↔
+              jt.context = j.context ∧ jt.term = j.term ∧
+                PositiveCertificates.checkUsing G images jt.type j.type choices = true := Iff.rfl
+          simp [localCheckUsing, h, checkSubtypeUsing_accepted, hL]
         · have hf : ¬ LocalUsing G images j (.sub choices) [jt] codes := by
             intro hp
             exact h ⟨hp.1, hp.2.1⟩
@@ -2130,7 +2135,7 @@ theorem checkTreeUsing_complete [DecidableEq ι] {G : NormalGraph ι}
       (j := ⟨Γ, .makeAt (.graph arity E K start (caps.map fun c => .var c.2) .call rest)
         (parts.map Prod.fst) (parts.map fun p => p.2.2), F⟩)
       (js := (parts.map fun p => ⟨Γ, p.2.2, p.2.1⟩) ++ caps.map fun c => ⟨Γ, .var c.2, c.1⟩)
-    · simp only [LocalUsing,
+    · unfold LocalUsing; simp only [
         show expand G F = [.callable (parts.map fun p => (p.1, p.2.1)) [] L S] from hr]
       have hlenp : (parts.map fun p => (⟨Γ, p.2.2, p.2.1⟩ : Sequent ι)).length
           = (parts.map Prod.fst).length := by simp
@@ -2196,7 +2201,7 @@ theorem checkTreeUsing_complete [DecidableEq ι] {G : NormalGraph ι}
           exact ihu A hA
   | @readCallable Γ a F P Ps L S f A ha hr hm ih =>
     apply node_complete (G := G) (images := images) (j := ⟨Γ,.readAt f a,A⟩) (r := .readCallable) (js := [⟨Γ,a,F⟩])
-    · simpa [LocalUsing,show expand G F = [.callable P Ps L S] from hr] using hm
+    · unfold LocalUsing; simpa [show expand G F = [.callable P Ps L S] from hr] using hm
     · simpa using ih
   | @writeCallable Γ a F P Ps L S f A b N ha hr hm hb hn iha ihb =>
     apply node_complete (G := G) (images := images) (j := ⟨Γ,.writeAt f a b,N⟩) (r := .writeCallable)
@@ -2289,7 +2294,7 @@ theorem checkTreeUsing_complete [DecidableEq ι] {G : NormalGraph ι}
     apply node_complete (G := G) (images := images)
       (j := ⟨Γ, .makeAt .absent (parts.map Prod.fst) (parts.map fun p => p.2.2), Ref⟩)
       (r := .alloc) (js := parts.map fun p => ⟨Γ, p.2.2, p.2.1⟩)
-    · simp only [LocalUsing, show expand G Ref = [.refs (parts.map fun p => (p.1, p.2.1)) [] [] [] [] ks] from hr]
+    · unfold LocalUsing; simp only [show expand G Ref = [.refs (parts.map fun p => (p.1, p.2.1)) [] [] [] [] ks] from hr]
       refine ⟨hnd, by simp, by simp [List.map_map, Function.comp_def], by
         intro q hq; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hq; rfl, ?_, ?_, hreal⟩
       · simp only [List.map_map, Function.comp_def]
@@ -2304,7 +2309,7 @@ theorem checkTreeUsing_complete [DecidableEq ι] {G : NormalGraph ι}
     apply node_complete (G := G) (images := images)
       (j := ⟨Γ, .makeAt .absent (parts.map Prod.fst) (parts.map fun p => p.2.2), Ref⟩)
       (r := .alloc) (js := parts.map fun p => ⟨Γ, p.2.2, p.2.1⟩)
-    · simp only [LocalUsing, show expand G Ref =
+    · unfold LocalUsing; simp only [show expand G Ref =
         [.dict (parts.map fun p => (p.1, p.2.1)) [] [] ix os [] [] cs] from hr]
       refine ⟨hnd, hnp, hns, by simp, by simp [List.map_map, Function.comp_def], by
         intro q hq; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hq; rfl, ?_, ?_, habs, hos⟩
@@ -2357,7 +2362,7 @@ theorem checkTreeUsing_complete [DecidableEq ι] {G : NormalGraph ι}
   | @arrLit Γ L T xs hr hreq hbound hpos hx ih =>
     apply node_complete (G := G) (images := images) (j := ⟨Γ, .arrLit (xs.map Prod.snd), L⟩) (r := .arrLit)
       (js := xs.map fun p => ⟨Γ, p.2, p.1⟩)
-    · simp only [LocalUsing, show expand G L = [.list T []] from hr]
+    · unfold LocalUsing; simp only [show expand G L = [.list T []] from hr]
       refine ⟨by simp [List.map_map, Function.comp_def],
         by intro p hp; obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp; rfl,
         by simpa using hreq, by simpa using hbound, ?_⟩
@@ -2463,7 +2468,7 @@ theorem checkTreeUsing_complete [DecidableEq ι] {G : NormalGraph ι}
       · exact iht
   | @ifBoolVar Γ i C T F t A e hi hb hT hF ht he iht ihe =>
     apply node_complete (r := .ifBoolVar T F) (js := [⟨Γ.set i T,t,A⟩,⟨Γ.set i F,e,A⟩])
-    · exact ⟨by simpa only [LocalUsing, hi] using hb,hT,hF,rfl,rfl⟩
+    · exact ⟨by simpa only [hi] using hb,hT,hF,rfl,rfl⟩
     · intro j hj
       simp only [List.mem_cons, List.not_mem_nil, or_false] at hj
       rcases hj with rfl | rfl
@@ -2473,16 +2478,16 @@ theorem checkTreeUsing_complete [DecidableEq ι] {G : NormalGraph ι}
     cases q with
     | true =>
       apply node_complete (r := .ifTrue) (js := [⟨Γ,u,B⟩])
-      · simpa only [LocalUsing, hi, true_and] using hq
+      · unfold LocalUsing; simpa only [hi, true_and] using hq
       · simpa using iht rfl
     | false =>
       apply node_complete (r := .ifFalse) (js := [⟨Γ,e,B⟩])
-      · simpa only [LocalUsing, hi, true_and] using hq
+      · unfold LocalUsing; simpa only [hi, true_and] using hq
       · simpa using ihe rfl
   | @unionVar Γ i C t A hi ht ih =>
     apply node_complete (r := .unionVar i)
       (js := C.map (fun a => ⟨Γ.set i [a], t, A⟩))
-    · simp [LocalUsing,hi]
+    · unfold LocalUsing; simp [hi]
     · intro j hj
       obtain ⟨a,ha,rfl⟩ := List.mem_map.mp hj
       exact ih a ha
