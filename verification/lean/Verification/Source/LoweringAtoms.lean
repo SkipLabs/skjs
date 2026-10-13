@@ -39,6 +39,294 @@ new observation of their source expression. -/
       let facts ← pointwise.mapM fun (fld, R) => do return (⟨0,← contents R,fld⟩ : HeapFacts.Fact)
       checkpoint source (A::Γ) facts next (scope := held ⟨"",some source⟩ :: scope)
 
+/-- Call lowering compiles its operands through the supplied atomic compiler. -/
+@[nospecialize] private def compileCall
+    (compile : List (ScopeBinding Tree) → List (Ty Tree) → Fragment.Expr → Target → Compiler Target)
+    (fc : SourceClaims.Function Tree) (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree))
+    (e callee : Fragment.Expr) (args : List Fragment.Expr) (A : Ty Tree) (next : Target) : Compiler Target := do
+  let original := (← originalExpression).getD e
+  let savedReceiver ← match (← savedReceiver) with
+    | none => pure none
+    | some name => do
+      let some (i, .value) := resolve scope name
+        | throw "internal execution plan: missing saved call receiver"
+      let some O := Γ[i]? | throw "internal execution plan: saved receiver type"
+      pure (some (i, O))
+  let sourceArgs := match original with
+    | .call _ _ xs _ _ | .invoke _ _ xs _ _ | .callWithReceiver _ _ _ xs => xs
+    | _ => args
+  let operands := match e with
+    | .callWithReceiver _ _ receiver _ => receiver :: args
+    | _ => args
+  let spreads := match e with
+    | .call _ _ _ s _ | .invoke _ _ _ s _ => s
+    | _ => []
+  -- A method call saves the object, a computed key, then the method read
+  -- from it; the method is the callee and the object the receiver. The
+  -- saved slots sit where a plain call's one callee slot does.
+  let method : Option (Fragment.Expr × Option Fragment.Expr × (Tm → Tm)) ← match e with
+    | .invoke _ (.read _ fld o) _ _ typeArgs => do
+      let O ← exprType fc o
+      explicitInstance e.span O (← exprType fc callee) fld typeArgs
+      let G := SourceTypes.graph (← table)
+      pure (some (o, none, memberHead G O fld))
+    | .invoke _ (.index _ (some fld) o key) _ _ typeArgs => do
+      let O ← exprType fc o
+      explicitInstance e.span O (← exprType fc callee) fld typeArgs
+      let G := SourceTypes.graph (← table)
+      pure (some (o, some key, memberHead G O fld))
+    | .invoke _ (.elemAt _ o key) _ _ typeArgs => do
+      if !typeArgs.isEmpty then
+        throw (locatedRefusal (← table) e.span .schemeElimination
+          ("explicit type arguments on an element call are outside the fragment: an element that " ++
+            "is a generic closure is claimed at a quantified callable, which the claim format does not encode"))
+      let K ← exprType fc key
+      let index ← arrayKeyTerm K
+      pure (some (o, some key, fun obj => .elemAt (.readAt SourceTypes.storeField obj) index))
+    | .invoke .. => throw "a method call's target must name a field or an element"
+    | _ => pure none
+  let headType ← exprType fc callee
+  let B ← match original, savedReceiver with
+    | .invoke _ originalCallee _ _ _, some _ => exprType fc originalCallee
+    | _, _ => pure headType
+  -- A method of an object of a union whose alternatives read different
+  -- members, `x.toString()` on `string | number`, is read and called in
+  -- one step dispatched on the object (`dispatchCallTerm`), after the
+  -- actuals: so no actual may run code.
+  let dispatch : Option PropKey ← if savedReceiver.isSome then executionDispatch fc original
+    else match e, method, callee with
+    | .invoke _ _ _ [] _, some (o, none, _), .read _ fld _ => do
+      let O ← exprType fc o
+      let plain : Fragment.Expr → Bool := fun a => match a with
+        | .var .. | .lit .. => true
+        | _ => false
+      let G := SourceTypes.graph (← table)
+      pure (if O.length > 1 && B.length > 1 && args.all plain
+          && (ProgramTyping.restSigs G B).isEmpty then some fld else none)
+    | _, _, _ => pure none
+  let headTys : List (Ty Tree) ← match method, dispatch with
+    | none, _ => pure [headType]
+    | some (o, _, _), some _ => do pure [← exprType fc o]
+    | some (o, key, _), none => do
+      let O ← exprType fc o
+      let keyTy ← key.mapM (exprType fc)
+      pure (B :: keyTy.toList ++ [O])
+  let headScope := match method, dispatch with
+    | none, _ => [held ⟨"",some callee.span⟩]
+    | some (o, _, _), some _ => [held ⟨"",some o.span⟩]
+    | some (o, key, _), none => held ⟨"",some callee.span⟩ ::
+        (key.map fun k => held ⟨"",some k.span⟩).toList ++ [held ⟨"",some o.span⟩]
+  let h := headTys.length
+  -- Into a variadic callee a spread may be anywhere among the actuals past
+  -- the fixed ones. The call reads a spread once every actual is evaluated;
+  -- a spread followed by an actual that runs code is therefore copied where
+  -- it is written, `[...xs]`, and the call spreads the copy, which nothing
+  -- else can reach. Into fixed parameters each spread stands for a tuple's
+  -- required positions, read once every actual is evaluated: no actual
+  -- after the first spread may run code.
+  let calleeGraph := SourceTypes.graph (← table)
+  let restSignatures := ProgramTyping.restSigs calleeGraph B
+  let variadic := !restSignatures.isEmpty
+  -- A rest that is one tuple contract, an argument pack's instance, takes
+  -- a spread as fixed parameters do: its tuple's positions.
+  let tupleRest := variadic && restSignatures.all fun ⟨_, (_, P), _, _⟩ =>
+    (PositiveRules.restElem calleeGraph P).isNone
+  let runsCode : Fragment.Expr → Bool := fun a => match a with
+    | .var .. | .lit .. => false
+    | _ => true
+  let copied := if variadic && !tupleRest then spreads.filter fun i => (args.drop (i + 1)).any runsCode
+    else []
+  let spread := (!variadic || tupleRest) && !spreads.isEmpty
+  let spreadOrder := spreads.eraseDups.mergeSort (· ≤ ·)
+  if spread then
+    let first := spreadOrder.headD args.length
+    if (sourceArgs.drop (first + 1)).any runsCode then
+      throw (locatedRefusal (← table) e.span .bindingAnnotation
+        "a spread into fixed parameters followed by an actual that runs code is outside the fragment")
+  let As₀ ← operands.mapM (exprType fc)
+  -- A dense tuple keeps its exact positions when copied. Other arrays use
+  -- the existing unbounded copy rule, whose result may have holes.
+  let copyTypes ← copied.mapM fun i => do
+    let G := SourceTypes.graph (← table)
+    let some original := As₀[i]? | throw "a spread argument needs an operand"
+    if let some S := storeOf G original then
+      if let [.list T []] := PositiveRules.expand G S then
+        if T.optional.isEmpty && T.rest.isNone then
+          return (i, S)
+    let some ⟨_, (_, P), _, _⟩ := (ProgramTyping.restSigs G B).head? | throw "a spread needs a variadic callee"
+    let some E := PositiveRules.restElem G P
+      | throw "a spread into a rest needs an element rest"
+    if !E.contains Labels.undef then
+      throw (locatedRefusal (← table) e.span .bindingAnnotation
+        "a spread copied before a later actual runs needs a rest element type that admits `undefined`")
+    let C ← lower (SourceTypes.use (.list ⟨[], [], some E, false, .dense⟩ []))
+    recordHints [C]
+    pure (i, [C])
+  let As := As₀.zipIdx.map fun (A, i) =>
+    (copyTypes.lookup i).getD A
+  let n := As.length
+  -- A spread stands for the required positions of its operand's tuple
+  -- contract. Those elements are read here, after every other argument has
+  -- been evaluated, which is where a call reads them; the operand is a name,
+  -- so nothing is evaluated twice. No iterator of the source's own can be
+  -- installed in this fragment, so the array's positions are what a spread
+  -- yields (DESIGN.md, "Trust surface").
+  let spreadElements : List (Nat × List (Ty Tree)) ← if !spread then pure [] else
+    spreadOrder.mapM fun i => do
+      let some arrayTy := As[i]? | throw "a spread argument needs an operand"
+      let G := SourceTypes.graph (← table)
+      let sourceStore := match PositiveRules.expand G arrayTy with
+        | [.list ..] => some arrayTy
+        | _ => storeOf G arrayTy
+      let some S := sourceStore | throw "a spread argument needs a tuple contract"
+      match PositiveRules.expand G S with
+      | [.list T []] =>
+        if !T.optional.isEmpty || T.rest.isSome then
+          throw "a spread argument needs a tuple contract of required positions"
+        pure (i, T.required)
+      | _ => throw "a spread argument needs a tuple contract of required positions"
+  let elements := spreadElements.flatMap (·.2)
+  -- Each element's operand and its position in that operand's tuple.
+  let sources : List (Nat × Nat) :=
+    spreadElements.flatMap fun (i, Es) => (List.range Es.length).map (i, ·)
+  let k := elements.length
+  let anonymous := held ⟨"",some e.span⟩
+  let temporaries := (operands.map fun a => held ⟨"",some a.span⟩).reverse ++ headScope
+  let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
+    (fun i => if i == 0 then 0 else i+n+h+k))⟩
+  -- An actual sits above the elements a spread reads; a receiver, which is
+  -- an operand and not an actual, sits below them all.
+  -- A spread into fixed parameters is its elements, in order, where it is
+  -- written.
+  let argumentGraph := SourceTypes.graph (← table)
+  let rawStore := fun i => match PositiveRules.expand argumentGraph (As[i]?.getD []) with
+    | [.list ..] => true
+    | _ => false
+  let actuals := ((List.range args.length).foldl (fun (g, out) i =>
+      let v := Tm.var (k + args.length - 1 - i)
+      match spreadElements.lookup i with
+      | some Es => (g + Es.length, out ++ (List.range Es.length).map fun j => Tm.var (k-1-(g+j)))
+      | none =>
+        (g, out ++ [if copied.contains i || (spreads.contains i && rawStore i) then .spread v
+          else if spreads.contains i && variadic then .spread (.readAt SourceTypes.storeField v)
+          else v])) (0, ([] : List Tm))).2
+  let callEnv := elements.reverse ++ As.reverse ++ headTys ++ Γ
+  let G := SourceTypes.graph (← table)
+  let callScope := (List.replicate k anonymous) ++ temporaries ++ scope
+  -- The alternatives' members, as the callee's claim names them, are the
+  -- types the dispatched call is typed at.
+  if dispatch.isSome then recordHints (B)
+  let dispatchArms ← match dispatch, headTys.getLast? with
+    | some fld, some O => primitiveArms callScope callEnv O fld
+    | _, _ => pure []
+  -- `.call` passes its first operand as the receiver; a plain call passes
+  -- `undefined`.
+  let callTerm := match savedReceiver with
+    | some (i, O) => match dispatch with
+      | some fld => dispatchCallTerm G O dispatchArms fld (k+n) actuals
+      | none => Tm.invoke (.var (k+n)) (.var (k+n+h+i)) actuals
+    | none => match e, dispatch, headTys.getLast? with
+      | .callWithReceiver .., _, _ => Tm.invoke (.var (k+n)) (.var (k+n-1)) actuals
+      | .invoke .., some fld, some O => dispatchCallTerm G O dispatchArms fld (k+n) actuals
+      | .invoke .., _, _ => Tm.invoke (.var (k+n)) (.var (k+n+h-1)) actuals
+      | _, _, _ => Tm.call (.var (k+n)) actuals
+  -- The receiver the call passes, the `.call` operand or `undefined`, is
+  -- checked where the call is made at the selected signature's receiver:
+  -- a located obligation, apart from the call's own typing.
+  -- The receiver's selected contract: a fixed signature taking these
+  -- actuals, or the variadic signature the call uses.
+  let receiverOf (Rr : Ty Tree) (actualTys : List (Ty Tree)) : Option (Ty Tree) :=
+    if variadic then
+      let sigs := ProgramTyping.restSigs G B
+      ((sigs.find? fun sig => Rr.all sig.receiver.contains) <|> sigs.head?).map (·.receiver)
+    else if spread then none
+    else match PositiveRules.expand G B with
+      | [.arrs L _] | [.callable _ _ L _] =>
+        match selectSignature G L actualTys Rr with
+        | .ok sig => some sig.receiver
+        | .error _ => none
+      | _ => none
+  match savedReceiver with
+  | some (i, O) =>
+    if let some Rt := receiverOf O As then
+      let plan := DirectProof.cast callEnv Rt (DirectProof.var callEnv (k+n+h+i) O)
+      let source := (scope[i]?.bind (·.source.span)).getD original.span
+      obligation source plan.goal (some plan) "method-receiver" callScope
+  | none => match e, method with
+    | .callWithReceiver _ _ r _, _ =>
+      if let some R₀ := As.head? then
+        if let some Rt := receiverOf R₀ (As.drop 1) then
+          let plan := DirectProof.cast callEnv Rt (DirectProof.var callEnv (k+n-1) R₀)
+          obligation r.span plan.goal (some plan) "method-receiver" callScope
+    | .invoke .., some (o, _, _) =>
+      if let some O := headTys.getLast? then
+        if let some Rt := receiverOf O As then
+          let plan := DirectProof.cast callEnv Rt (DirectProof.var callEnv (k+n+h-1) O)
+          obligation o.span plan.goal (some plan) "method-receiver" callScope
+    | _, _ =>
+      if let some Rt := receiverOf [Labels.undef] As then
+        if !admitsUndefined G Rt then
+          let plan := DirectProof.cast callEnv Rt (DirectProof.node callEnv .undef [Labels.undef] .undef)
+          obligation callee.span plan.goal (some plan) "method-receiver" callScope
+  let call ← emitAt e.span callTerm (.bind drop) callEnv A
+    (scope := (List.replicate k anonymous) ++ temporaries ++ scope)
+  -- The reads run in position order, so they are emitted from the last back.
+  let reads ← (List.range k).reverse.foldlM (fun next g => do
+    let some E := elements[g]? | throw "a spread element has no contract"
+    let some (i, j) := sources[g]? | throw "a spread element has no operand"
+    let index ← indexTerm j
+    let env := (elements.take g).reverse ++ As.reverse ++ headTys ++ Γ
+    let source := if rawStore i then Tm.var (g+n-1-i)
+      else .readAt SourceTypes.storeField (.var (g+n-1-i))
+    emitAt e.span (.elemAt source index)
+      (.bind next) env E "spread-element"
+      (scope := (List.replicate g anonymous) ++ temporaries ++ scope)) call
+  let right ← operands.attach.zipIdx.reverse.foldlM (fun next (⟨arg,_⟩,i) => do
+    let sc := (operands.take i |>.map fun a => held ⟨"",some a.span⟩).reverse ++
+      headScope ++ scope
+    let ctx := (As.take i).reverse ++ headTys ++ Γ
+    if copied.contains i then
+      -- The copy takes the operand's slot: the continuation sees the copied
+      -- store where it would have seen the array.
+      let some A := As₀[i]? | throw "a spread argument needs an operand"
+      let m := (next.mapping.getD (List.range (ctx.length + 1))).map fun j =>
+        if j == 0 then 0 else j + 1
+      let some C := As[i]? | throw "a spread argument needs an operand"
+      let inits ← match PositiveRules.expand (SourceTypes.graph (← table)) C with
+        | [.list T []] =>
+          if T.optional.isEmpty && T.rest.isNone then
+            (List.range T.required.length).mapM fun j => do
+              return Tm.elemAt (.readAt SourceTypes.storeField (.var 0)) (← indexTerm j)
+          else pure [.spread (.readAt SourceTypes.storeField (.var 0))]
+        | _ => throw "a spread copy needs an array store contract"
+      let copy ← emitAt arg.span (.arrLit inits)
+        (.bind ⟨next.label, some m⟩) (A :: ctx) C "spread-copy"
+        (scope := held ⟨"",some arg.span⟩ :: sc)
+      compile sc ctx arg ⟨copy.label, none⟩
+    else compile sc ctx arg next) reads
+  match method, dispatch with
+  | none, _ => compile scope Γ callee right
+  | some (o, _, _), some _ => compile scope Γ o right
+  | some (o, key, readTerm), none =>
+    -- The method is read from the saved object, below any saved key; a
+    -- primitive's, by its shape (`dispatchTerm`).
+    let saved := headTys.drop 1
+    let objSlot := saved.length - 1
+    let arms ← match callee, headTys.getLast? with
+      | .read _ fld _, some O | .index _ (some fld) _ _, some O =>
+        do pure (fld, ← primitiveArms (headScope.drop 1 ++ scope) (saved ++ Γ) O fld)
+      | _, _ => pure ("", [])
+    let term := if arms.2.isEmpty then readTerm (.var objSlot)
+      else dispatchTerm arms.2 arms.1 objSlot (.readAt arms.1 (.var objSlot))
+    let read ← emitAt callee.span term (.bind ⟨right.label, none⟩)
+      (saved ++ Γ) B (scope := headScope.drop 1 ++ scope)
+    let afterObject ← match key with
+      | none => pure read
+      | some key => do
+        let some O := headTys.getLast? | throw "internal method call slots"
+        compile (held ⟨"",some o.span⟩ :: scope) (O::Γ) key read
+    compile scope Γ o afterObject
+
 /-- Each expression leaves its result in slot zero and preserves the original
 slots after it. Anonymous temporary slots cannot be named by source identifiers.
 Mappings discard only the temporaries introduced by this expression. -/
@@ -293,288 +581,7 @@ Mappings discard only the temporaries introduced by this expression. -/
     let afterReceiver ← compileAtom recursive fc (held ⟨"",some callee.span⟩ :: scope) (B::Γ) receiver afterList
     compileAtom recursive fc scope Γ callee afterReceiver
   | .call _ callee args _ _ | .callWithReceiver _ callee _ args | .invoke _ callee args _ _ =>
-    let original := (← originalExpression).getD e
-    let savedReceiver ← match (← savedReceiver) with
-      | none => pure none
-      | some name => do
-        let some (i, .value) := resolve scope name
-          | throw "internal execution plan: missing saved call receiver"
-        let some O := Γ[i]? | throw "internal execution plan: saved receiver type"
-        pure (some (i, O))
-    let sourceArgs := match original with
-      | .call _ _ xs _ _ | .invoke _ _ xs _ _ | .callWithReceiver _ _ _ xs => xs
-      | _ => args
-    let operands := match e with
-      | .callWithReceiver _ _ receiver _ => receiver :: args
-      | _ => args
-    let spreads := match e with
-      | .call _ _ _ s _ | .invoke _ _ _ s _ => s
-      | _ => []
-    -- A method call saves the object, a computed key, then the method read
-    -- from it; the method is the callee and the object the receiver. The
-    -- saved slots sit where a plain call's one callee slot does.
-    let method : Option (Fragment.Expr × Option Fragment.Expr × (Tm → Tm)) ← match e with
-      | .invoke _ (.read _ fld o) _ _ typeArgs => do
-        let O ← exprType fc o
-        explicitInstance e.span O (← exprType fc callee) fld typeArgs
-        let G := SourceTypes.graph (← table)
-        pure (some (o, none, memberHead G O fld))
-      | .invoke _ (.index _ (some fld) o key) _ _ typeArgs => do
-        let O ← exprType fc o
-        explicitInstance e.span O (← exprType fc callee) fld typeArgs
-        let G := SourceTypes.graph (← table)
-        pure (some (o, some key, memberHead G O fld))
-      | .invoke _ (.elemAt _ o key) _ _ typeArgs => do
-        if !typeArgs.isEmpty then
-          throw (locatedRefusal (← table) e.span .schemeElimination
-            ("explicit type arguments on an element call are outside the fragment: an element that " ++
-              "is a generic closure is claimed at a quantified callable, which the claim format does not encode"))
-        let K ← exprType fc key
-        let index ← arrayKeyTerm K
-        pure (some (o, some key, fun obj => .elemAt (.readAt SourceTypes.storeField obj) index))
-      | .invoke .. => throw "a method call's target must name a field or an element"
-      | _ => pure none
-    let headType ← exprType fc callee
-    let B ← match original, savedReceiver with
-      | .invoke _ originalCallee _ _ _, some _ => exprType fc originalCallee
-      | _, _ => pure headType
-    -- A method of an object of a union whose alternatives read different
-    -- members, `x.toString()` on `string | number`, is read and called in
-    -- one step dispatched on the object (`dispatchCallTerm`), after the
-    -- actuals: so no actual may run code.
-    let dispatch : Option PropKey ← if savedReceiver.isSome then executionDispatch fc original
-      else match e, method, callee with
-      | .invoke _ _ _ [] _, some (o, none, _), .read _ fld _ => do
-        let O ← exprType fc o
-        let plain : Fragment.Expr → Bool := fun a => match a with
-          | .var .. | .lit .. => true
-          | _ => false
-        let G := SourceTypes.graph (← table)
-        pure (if O.length > 1 && B.length > 1 && args.all plain
-            && (ProgramTyping.restSigs G B).isEmpty then some fld else none)
-      | _, _, _ => pure none
-    let headTys : List (Ty Tree) ← match method, dispatch with
-      | none, _ => pure [headType]
-      | some (o, _, _), some _ => do pure [← exprType fc o]
-      | some (o, key, _), none => do
-        let O ← exprType fc o
-        let keyTy ← key.mapM (exprType fc)
-        pure (B :: keyTy.toList ++ [O])
-    let headScope := match method, dispatch with
-      | none, _ => [held ⟨"",some callee.span⟩]
-      | some (o, _, _), some _ => [held ⟨"",some o.span⟩]
-      | some (o, key, _), none => held ⟨"",some callee.span⟩ ::
-          (key.map fun k => held ⟨"",some k.span⟩).toList ++ [held ⟨"",some o.span⟩]
-    let h := headTys.length
-    -- Into a variadic callee a spread may be anywhere among the actuals past
-    -- the fixed ones. The call reads a spread once every actual is evaluated;
-    -- a spread followed by an actual that runs code is therefore copied where
-    -- it is written, `[...xs]`, and the call spreads the copy, which nothing
-    -- else can reach. Into fixed parameters each spread stands for a tuple's
-    -- required positions, read once every actual is evaluated: no actual
-    -- after the first spread may run code.
-    let calleeGraph := SourceTypes.graph (← table)
-    let restSignatures := ProgramTyping.restSigs calleeGraph B
-    let variadic := !restSignatures.isEmpty
-    -- A rest that is one tuple contract, an argument pack's instance, takes
-    -- a spread as fixed parameters do: its tuple's positions.
-    let tupleRest := variadic && restSignatures.all fun ⟨_, (_, P), _, _⟩ =>
-      (PositiveRules.restElem calleeGraph P).isNone
-    let runsCode : Fragment.Expr → Bool := fun a => match a with
-      | .var .. | .lit .. => false
-      | _ => true
-    let copied := if variadic && !tupleRest then spreads.filter fun i => (args.drop (i + 1)).any runsCode
-      else []
-    let spread := (!variadic || tupleRest) && !spreads.isEmpty
-    let spreadOrder := spreads.eraseDups.mergeSort (· ≤ ·)
-    if spread then
-      let first := spreadOrder.headD args.length
-      if (sourceArgs.drop (first + 1)).any runsCode then
-        throw (locatedRefusal (← table) e.span .bindingAnnotation
-          "a spread into fixed parameters followed by an actual that runs code is outside the fragment")
-    let As₀ ← operands.mapM (exprType fc)
-    -- A dense tuple keeps its exact positions when copied. Other arrays use
-    -- the existing unbounded copy rule, whose result may have holes.
-    let copyTypes ← copied.mapM fun i => do
-      let G := SourceTypes.graph (← table)
-      let some original := As₀[i]? | throw "a spread argument needs an operand"
-      if let some S := storeOf G original then
-        if let [.list T []] := PositiveRules.expand G S then
-          if T.optional.isEmpty && T.rest.isNone then
-            return (i, S)
-      let some ⟨_, (_, P), _, _⟩ := (ProgramTyping.restSigs G B).head? | throw "a spread needs a variadic callee"
-      let some E := PositiveRules.restElem G P
-        | throw "a spread into a rest needs an element rest"
-      if !E.contains Labels.undef then
-        throw (locatedRefusal (← table) e.span .bindingAnnotation
-          "a spread copied before a later actual runs needs a rest element type that admits `undefined`")
-      let C ← lower (SourceTypes.use (.list ⟨[], [], some E, false, .dense⟩ []))
-      recordHints [C]
-      pure (i, [C])
-    let As := As₀.zipIdx.map fun (A, i) =>
-      (copyTypes.lookup i).getD A
-    let n := As.length
-    -- A spread stands for the required positions of its operand's tuple
-    -- contract. Those elements are read here, after every other argument has
-    -- been evaluated, which is where a call reads them; the operand is a name,
-    -- so nothing is evaluated twice. No iterator of the source's own can be
-    -- installed in this fragment, so the array's positions are what a spread
-    -- yields (DESIGN.md, "Trust surface").
-    let spreadElements : List (Nat × List (Ty Tree)) ← if !spread then pure [] else
-      spreadOrder.mapM fun i => do
-        let some arrayTy := As[i]? | throw "a spread argument needs an operand"
-        let G := SourceTypes.graph (← table)
-        let sourceStore := match PositiveRules.expand G arrayTy with
-          | [.list ..] => some arrayTy
-          | _ => storeOf G arrayTy
-        let some S := sourceStore | throw "a spread argument needs a tuple contract"
-        match PositiveRules.expand G S with
-        | [.list T []] =>
-          if !T.optional.isEmpty || T.rest.isSome then
-            throw "a spread argument needs a tuple contract of required positions"
-          pure (i, T.required)
-        | _ => throw "a spread argument needs a tuple contract of required positions"
-    let elements := spreadElements.flatMap (·.2)
-    -- Each element's operand and its position in that operand's tuple.
-    let sources : List (Nat × Nat) :=
-      spreadElements.flatMap fun (i, Es) => (List.range Es.length).map (i, ·)
-    let k := elements.length
-    let anonymous := held ⟨"",some e.span⟩
-    let temporaries := (operands.map fun a => held ⟨"",some a.span⟩).reverse ++ headScope
-    let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
-      (fun i => if i == 0 then 0 else i+n+h+k))⟩
-    -- An actual sits above the elements a spread reads; a receiver, which is
-    -- an operand and not an actual, sits below them all.
-    -- A spread into fixed parameters is its elements, in order, where it is
-    -- written.
-    let argumentGraph := SourceTypes.graph (← table)
-    let rawStore := fun i => match PositiveRules.expand argumentGraph (As[i]?.getD []) with
-      | [.list ..] => true
-      | _ => false
-    let actuals := ((List.range args.length).foldl (fun (g, out) i =>
-        let v := Tm.var (k + args.length - 1 - i)
-        match spreadElements.lookup i with
-        | some Es => (g + Es.length, out ++ (List.range Es.length).map fun j => Tm.var (k-1-(g+j)))
-        | none =>
-          (g, out ++ [if copied.contains i || (spreads.contains i && rawStore i) then .spread v
-            else if spreads.contains i && variadic then .spread (.readAt SourceTypes.storeField v)
-            else v])) (0, ([] : List Tm))).2
-    let callEnv := elements.reverse ++ As.reverse ++ headTys ++ Γ
-    let G := SourceTypes.graph (← table)
-    let callScope := (List.replicate k anonymous) ++ temporaries ++ scope
-    -- The alternatives' members, as the callee's claim names them, are the
-    -- types the dispatched call is typed at.
-    if dispatch.isSome then recordHints (B)
-    let dispatchArms ← match dispatch, headTys.getLast? with
-      | some fld, some O => primitiveArms callScope callEnv O fld
-      | _, _ => pure []
-    -- `.call` passes its first operand as the receiver; a plain call passes
-    -- `undefined`.
-    let callTerm := match savedReceiver with
-      | some (i, O) => match dispatch with
-        | some fld => dispatchCallTerm G O dispatchArms fld (k+n) actuals
-        | none => Tm.invoke (.var (k+n)) (.var (k+n+h+i)) actuals
-      | none => match e, dispatch, headTys.getLast? with
-        | .callWithReceiver .., _, _ => Tm.invoke (.var (k+n)) (.var (k+n-1)) actuals
-        | .invoke .., some fld, some O => dispatchCallTerm G O dispatchArms fld (k+n) actuals
-        | .invoke .., _, _ => Tm.invoke (.var (k+n)) (.var (k+n+h-1)) actuals
-        | _, _, _ => Tm.call (.var (k+n)) actuals
-    -- The receiver the call passes, the `.call` operand or `undefined`, is
-    -- checked where the call is made at the selected signature's receiver:
-    -- a located obligation, apart from the call's own typing.
-    -- The receiver's selected contract: a fixed signature taking these
-    -- actuals, or the variadic signature the call uses.
-    let receiverOf (Rr : Ty Tree) (actualTys : List (Ty Tree)) : Option (Ty Tree) :=
-      if variadic then
-        let sigs := ProgramTyping.restSigs G B
-        ((sigs.find? fun sig => Rr.all sig.receiver.contains) <|> sigs.head?).map (·.receiver)
-      else if spread then none
-      else match PositiveRules.expand G B with
-        | [.arrs L _] | [.callable _ _ L _] =>
-          match selectSignature G L actualTys Rr with
-          | .ok sig => some sig.receiver
-          | .error _ => none
-        | _ => none
-    match savedReceiver with
-    | some (i, O) =>
-      if let some Rt := receiverOf O As then
-        let plan := DirectProof.cast callEnv Rt (DirectProof.var callEnv (k+n+h+i) O)
-        let source := (scope[i]?.bind (·.source.span)).getD original.span
-        obligation source plan.goal (some plan) "method-receiver" callScope
-    | none => match e, method with
-      | .callWithReceiver _ _ r _, _ =>
-        if let some R₀ := As.head? then
-          if let some Rt := receiverOf R₀ (As.drop 1) then
-            let plan := DirectProof.cast callEnv Rt (DirectProof.var callEnv (k+n-1) R₀)
-            obligation r.span plan.goal (some plan) "method-receiver" callScope
-      | .invoke .., some (o, _, _) =>
-        if let some O := headTys.getLast? then
-          if let some Rt := receiverOf O As then
-            let plan := DirectProof.cast callEnv Rt (DirectProof.var callEnv (k+n+h-1) O)
-            obligation o.span plan.goal (some plan) "method-receiver" callScope
-      | _, _ =>
-        if let some Rt := receiverOf [Labels.undef] As then
-          if !admitsUndefined G Rt then
-            let plan := DirectProof.cast callEnv Rt (DirectProof.node callEnv .undef [Labels.undef] .undef)
-            obligation callee.span plan.goal (some plan) "method-receiver" callScope
-    let call ← emitAt e.span callTerm (.bind drop) callEnv A
-      (scope := (List.replicate k anonymous) ++ temporaries ++ scope)
-    -- The reads run in position order, so they are emitted from the last back.
-    let reads ← (List.range k).reverse.foldlM (fun next g => do
-      let some E := elements[g]? | throw "a spread element has no contract"
-      let some (i, j) := sources[g]? | throw "a spread element has no operand"
-      let index ← indexTerm j
-      let env := (elements.take g).reverse ++ As.reverse ++ headTys ++ Γ
-      let source := if rawStore i then Tm.var (g+n-1-i)
-        else .readAt SourceTypes.storeField (.var (g+n-1-i))
-      emitAt e.span (.elemAt source index)
-        (.bind next) env E "spread-element"
-        (scope := (List.replicate g anonymous) ++ temporaries ++ scope)) call
-    let right ← operands.attach.zipIdx.reverse.foldlM (fun next (⟨arg,_⟩,i) => do
-      let sc := (operands.take i |>.map fun a => held ⟨"",some a.span⟩).reverse ++
-        headScope ++ scope
-      let ctx := (As.take i).reverse ++ headTys ++ Γ
-      if copied.contains i then
-        -- The copy takes the operand's slot: the continuation sees the copied
-        -- store where it would have seen the array.
-        let some A := As₀[i]? | throw "a spread argument needs an operand"
-        let m := (next.mapping.getD (List.range (ctx.length + 1))).map fun j =>
-          if j == 0 then 0 else j + 1
-        let some C := As[i]? | throw "a spread argument needs an operand"
-        let inits ← match PositiveRules.expand (SourceTypes.graph (← table)) C with
-          | [.list T []] =>
-            if T.optional.isEmpty && T.rest.isNone then
-              (List.range T.required.length).mapM fun j => do
-                return Tm.elemAt (.readAt SourceTypes.storeField (.var 0)) (← indexTerm j)
-            else pure [.spread (.readAt SourceTypes.storeField (.var 0))]
-          | _ => throw "a spread copy needs an array store contract"
-        let copy ← emitAt arg.span (.arrLit inits)
-          (.bind ⟨next.label, some m⟩) (A :: ctx) C "spread-copy"
-          (scope := held ⟨"",some arg.span⟩ :: sc)
-        compileAtom recursive fc sc ctx arg ⟨copy.label, none⟩
-      else compileAtom recursive fc sc ctx arg next) reads
-    match method, dispatch with
-    | none, _ => compileAtom recursive fc scope Γ callee right
-    | some (o, _, _), some _ => compileAtom recursive fc scope Γ o right
-    | some (o, key, readTerm), none =>
-      -- The method is read from the saved object, below any saved key; a
-      -- primitive's, by its shape (`dispatchTerm`).
-      let saved := headTys.drop 1
-      let objSlot := saved.length - 1
-      let arms ← match callee, headTys.getLast? with
-        | .read _ fld _, some O | .index _ (some fld) _ _, some O =>
-          do pure (fld, ← primitiveArms (headScope.drop 1 ++ scope) (saved ++ Γ) O fld)
-        | _, _ => pure ("", [])
-      let term := if arms.2.isEmpty then readTerm (.var objSlot)
-        else dispatchTerm arms.2 arms.1 objSlot (.readAt arms.1 (.var objSlot))
-      let read ← emitAt callee.span term (.bind ⟨right.label, none⟩)
-        (saved ++ Γ) B (scope := headScope.drop 1 ++ scope)
-      let afterObject ← match key with
-        | none => pure read
-        | some key => do
-          let some O := headTys.getLast? | throw "internal method call slots"
-          compileAtom recursive fc (held ⟨"",some o.span⟩ :: scope) (O::Γ) key read
-      compileAtom recursive fc scope Γ o afterObject
+    compileCall (compileAtom recursive fc) fc scope Γ e callee args A next
   | .arrayLit _ elems =>
     -- The elements, in order, then the store they fill, then the array
     -- object holding it: two nodes, so the allocation's slots are variables.
