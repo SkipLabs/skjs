@@ -63,6 +63,7 @@ obstacle named. A search failure is neither.
 | A type that normalizes to nothing as a whole (`string & { a: number }`, `(() => void) & number[]`, `number[] & { map: number }`); as an arm of a union such an intersection adds nothing | No value of the model inhabits it (TypeScript keeps a branded primitive); it is refused rather than verified vacuously. |
 | An empty module (no function, no initialization code) | Accepting it would check nothing. |
 | An enum member initializer reading a member of its enum not yet initialized, or the enum itself, through a closure included; a call in one that can read the enum | JavaScript reads the member, or the partial object, before the emit writes it: `enum F { A = ((): number => F.B)(), B = 1 }` gives `F.A` undefined, typed `number` (`invalid-enum-computed-forward`, `invalid-enum-computed-call-order`). |
+| An enum member named `__proto__` | TypeScript's emit writes a member by assignment, which for `__proto__` runs the prototype's setter and creates no property: `enum P { "__proto__" = 1 }` makes `P.__proto__` `Object.prototype`, typed `1` (`invalid-enum-proto-member`). |
 | A member named `NaN` or `Infinity` in an enum with a member TypeScript computes no value for | That member's reverse mapping is written at its value's key, which may be the name: `enum Q { NaN = 1, X = "x".charCodeAt(1) }` makes `Q.NaN` `"X"`, typed `1` (`invalid-enum-computed-nan-name`). |
 
 ### Model limits

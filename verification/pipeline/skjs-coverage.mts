@@ -566,6 +566,8 @@ const CLASSES: ClassEntry[] = [
     why: "TypeScript itself rejects the program or a declaration it depends on" },
   { cls: "principled", label: "an enum member initializer reading its enum before it is built", re: /an enum member initializer reading (a member not yet initialized|its enum)/,
     why: "JavaScript reads the member, or the enum's partial object, before the emit writes it: `enum F { A = ((): number => F.B)(), B = 1 }` gives `F.A` undefined, typed number (`invalid-enum-computed-forward`)" },
+  { cls: "principled", label: "an enum member named __proto__", re: /an enum member named __proto__/,
+    why: "the emit's assignment runs the prototype's setter and creates no property: `enum P { \"__proto__\" = 1 }` makes `P.__proto__` Object.prototype, typed 1 (`invalid-enum-proto-member`)" },
   { cls: "principled", label: "an enum member named NaN or Infinity beside one known only at run time", re: /an enum member named NaN or Infinity/,
     why: "a value known only at run time writes its reverse mapping at its key, which may be the member's name: `enum Q { NaN = 1, X = \"x\".charCodeAt(1) }` makes `Q.NaN` \"X\", typed 1 (`invalid-enum-computed-nan-name`)" },
   { cls: "principled", label: "an empty intersection", re: /the intersection is empty/,

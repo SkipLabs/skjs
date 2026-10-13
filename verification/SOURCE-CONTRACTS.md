@@ -1648,7 +1648,10 @@ to the built-in `sparse ReadonlyArray<unknown>` where it holds
 ## Enums
 
 With $`m_1,\ldots,m_n`$ an enum's members and $`v_i`$ the value TypeScript
-computes for $`m_i`$ (`getConstantValue`), $`\bot`$ where it computes none:
+computes for $`m_i`$ (`getConstantValue`), $`\bot`$ where it computes none.
+No member of any enum is named `__proto__`: TypeScript's emit writes a member
+by assignment, which for that name runs the prototype's setter and creates
+no property.
 
 ```math
 \frac{\forall i.\ v_i\ \text{computed by TypeScript, finite if a number}\quad

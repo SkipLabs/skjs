@@ -658,6 +658,10 @@ class Gate {
     if (!info) return this.fail(null, `enum ${name} missing`);
     return info.members.map((m) => {
       const value = m.value;
+      // TypeScript's emit writes each member by assignment, which for
+      // `__proto__` runs the prototype's setter and creates no property.
+      if (m.name === "__proto__")
+        return this.fail(m.node, "an enum member named __proto__: its assignment runs the prototype's setter, which creates no property");
       if (value === undefined) return { ...m, value: null };
       if (typeof value === "number" && !Number.isFinite(value))
         return this.fail(m.node, "an enum member that is NaN or infinite has no literal type");

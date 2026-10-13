@@ -847,6 +847,8 @@ export const cases: Case[] = [
     status: "unsupported", phase: "source", diagnostic: /an enum member initializer reading a member not yet initialized/ },
   negative("invalid-enum-computed-call-order", "a member initializer calling a module function that reads the enum before it is built",
     /a module function this step reaches reads 'H' before its declaration runs/),
+  { file: "invalid-enum-proto-member", area: "an enum member named __proto__: the emit's assignment runs the prototype's setter and creates no property", kind: "negative",
+    status: "unsupported", phase: "source", diagnostic: /an enum member named __proto__/ },
   positive("ambient-enum", "an ambient enum as the environment's object at its members' object type: an initialized member at its value, an uninitialized one at `number`, no reverse mapping"),
   negative("invalid-ambient-enum-opaque", "an uninitialized ambient enum member is opaque: its declaration states no value"),
   positive("receiver-functions", "a module function's `this` parameter is its receiver: `.call`, `.apply` (an array literal list is its elements) and `.bind` pass it, a plain call passes undefined to `this: void`"),

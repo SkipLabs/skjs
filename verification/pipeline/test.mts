@@ -700,6 +700,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   assert.equal(runEmitted("invalid-enum-computed-forward", "first()"), undefined);
   assert.equal(runEmitted("invalid-enum-computed-call-order", "first()"), undefined);
   assert.equal(runEmitted("invalid-enum-computed-literal", "wrong()"), 2);
+  assert.equal(runEmitted("invalid-enum-proto-member", "proto() === Object.prototype"), true);
   // Exact observation uses the native identity and ordinary constructor.
   // A fulfilled record may acquire a then member before it is observed.
   assert.equal(await runExample("native-promise-record-observation", `(async () => {
