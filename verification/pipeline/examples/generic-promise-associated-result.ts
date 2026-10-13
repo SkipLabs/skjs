@@ -4,10 +4,7 @@ export function accept<T>(value: Awaited<T>): Awaited<T> {
 
 type Cell<T> = { value: Awaited<T> };
 
-export function exchange<T>(
-  cell: Cell<T>,
-  value: Awaited<T>,
-): Awaited<T> {
+export function exchange<T>(cell: Cell<T>, value: Awaited<T>): Awaited<T> {
   const previous = cell.value;
   cell.value = value;
   return previous;

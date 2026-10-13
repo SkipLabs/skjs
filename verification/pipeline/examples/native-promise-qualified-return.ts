@@ -8,7 +8,9 @@ export async function stable<T extends number>(value: T): Promise<T> {
   return value;
 }
 
-export async function stableUnknown<T extends number>(value: T): Promise<unknown> {
+export async function stableUnknown<T extends number>(
+  value: T,
+): Promise<unknown> {
   return value;
 }
 

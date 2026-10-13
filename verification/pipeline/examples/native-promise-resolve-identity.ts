@@ -15,7 +15,9 @@ export function mixedIdentity(
   return Promise.resolve(value);
 }
 
-export async function readIdentity(value: Promise<RecordValue>): Promise<number> {
+export async function readIdentity(
+  value: Promise<RecordValue>,
+): Promise<number> {
   const result = Promise.resolve(value);
   const record = await result;
   return record.n;
