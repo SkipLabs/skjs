@@ -749,279 +749,440 @@ declared bounds. -/
     (codes : CodeEntry ι → Bool := fun _ => false)
     (subtype : Ty ι → Ty ι → PositiveCertificates.SubtypeChoices ι → Bool :=
       PositiveCertificates.checkUsing G images) : Prop :=
-  match r, j.term, ps with
-  | .var, .var i, [] => j.context[i]? = some j.type
-  | .nul, .nul, [] => Represents G j.type .nul
-  | .undef, .undef, [] => Represents G j.type .undef
-  | .tru, .tru, [] | .fls, .fls, [] => Represents G j.type .bool
-  | .truLit, .tru, [] => Represents G j.type (.boolLit true)
-  | .flsLit, .fls, [] => Represents G j.type (.boolLit false)
-  | .numLit, .num b, [] => Represents G j.type (.numLit b)
-  | .num, .num _, [] => Represents G j.type .num
-  | .strLit, .str s, [] => Represents G j.type (.strLit s)
-  | .str, .str _, [] => Represents G j.type .str
-  | .bigintLit, .bigint i, [] => Represents G j.type (.bigintLit i)
-  | .bigint, .bigint _, [] => Represents G j.type .bigint
+  match r with
+  | .var =>
+    match j.term, ps with
+    | .var i, [] => j.context[i]? = some j.type
+    | _, _ => False
+  | .nul =>
+    match j.term, ps with
+    | .nul, [] => Represents G j.type .nul
+    | _, _ => False
+  | .undef =>
+    match j.term, ps with
+    | .undef, [] => Represents G j.type .undef
+    | _, _ => False
+  | .tru =>
+    match j.term, ps with
+    | .tru, [] => Represents G j.type .bool
+    | _, _ => False
+  | .fls =>
+    match j.term, ps with
+    | .fls, [] => Represents G j.type .bool
+    | _, _ => False
+  | .truLit =>
+    match j.term, ps with
+    | .tru, [] => Represents G j.type (.boolLit true)
+    | _, _ => False
+  | .flsLit =>
+    match j.term, ps with
+    | .fls, [] => Represents G j.type (.boolLit false)
+    | _, _ => False
+  | .numLit =>
+    match j.term, ps with
+    | .num b, [] => Represents G j.type (.numLit b)
+    | _, _ => False
+  | .num =>
+    match j.term, ps with
+    | .num _, [] => Represents G j.type .num
+    | _, _ => False
+  | .strLit =>
+    match j.term, ps with
+    | .str s, [] => Represents G j.type (.strLit s)
+    | _, _ => False
+  | .str =>
+    match j.term, ps with
+    | .str _, [] => Represents G j.type .str
+    | _, _ => False
+  | .bigintLit =>
+    match j.term, ps with
+    | .bigint i, [] => Represents G j.type (.bigintLit i)
+    | _, _ => False
+  | .bigint =>
+    match j.term, ps with
+    | .bigint _, [] => Represents G j.type .bigint
+    | _, _ => False
   -- Graph code: one premise per capture, a slot of this context, at the type
   -- the code's table entry states; every signature the type offers is an
   -- entry of the unit's checked table.
-  | .funGraph As, .makeAt (.graph arity E K start caps kind rest) ns inits, ps =>
-    kind = .call ∧ ns = [codeField] ∧ inits = [Tm.nul] ∧ ps.map Sequent.term = caps ∧
-    (∀ q ∈ ps, q.context = j.context) ∧ capSlotsBelow caps j.context.length = true ∧
-    graphCodesChecked G j.type codes arity E K start (ps.map Sequent.type) rest As = true
+  | .funGraph As =>
+    match j.term, ps with
+    | .makeAt (.graph arity E K start caps kind rest) ns inits, ps =>
+      kind = .call ∧ ns = [codeField] ∧ inits = [Tm.nul] ∧ ps.map Sequent.term = caps ∧
+      (∀ q ∈ ps, q.context = j.context) ∧ capSlotsBelow caps j.context.length = true ∧
+      graphCodesChecked G j.type codes arity E K start (ps.map Sequent.type) rest As = true
+    | _, _ => False
   -- A class value: as a function's code, construct-only, at its construct
   -- signatures with `undefined` for the receiver.
-  | .ctorGraph U, .makeAt (.graph arity E K start caps kind rest) ns inits, ps =>
-    kind = .construct ∧ rest = false ∧ ns = [codeField] ∧ inits = [Tm.nul] ∧ ps.map Sequent.term = caps ∧
-    (∀ q ∈ ps, q.context = j.context) ∧ capSlotsBelow caps j.context.length = true ∧
-    Represents G U .undef ∧
-    ctorCodesChecked G j.type U codes arity E K start (ps.map Sequent.type) = true
+  | .ctorGraph U =>
+    match j.term, ps with
+    | .makeAt (.graph arity E K start caps kind rest) ns inits, ps =>
+      kind = .construct ∧ rest = false ∧ ns = [codeField] ∧ inits = [Tm.nul] ∧ ps.map Sequent.term = caps ∧
+      (∀ q ∈ ps, q.context = j.context) ∧ capSlotsBelow caps j.context.length = true ∧
+      Represents G U .undef ∧
+      ctorCodesChecked G j.type U codes arity E K start (ps.map Sequent.type) = true
+    | _, _ => False
   -- A callable object: one premise per named field, then one per capture.
-  | .callableGraph As, .makeAt (.graph arity E K start caps kind rest) ns inits, ps =>
-    match expand G j.type with
-    | [.callable P [] L S] =>
-      kind = .call ∧ ns.Nodup ∧ ns.length = inits.length ∧
-      (ps.take ns.length).map Sequent.term = inits ∧
-      (∀ p ∈ ps, p.context = j.context) ∧
-      P = ns.zip ((ps.take ns.length).map Sequent.type) ∧
-      (ps.drop ns.length).map Sequent.term = caps ∧ capSlotsBelow caps j.context.length = true ∧
-      offersChecked G codes arity E K start ((ps.drop ns.length).map Sequent.type) rest L S As = true
-    | _ => False
+  | .callableGraph As =>
+    match j.term, ps with
+    | .makeAt (.graph arity E K start caps kind rest) ns inits, ps =>
+      match expand G j.type with
+      | [.callable P [] L S] =>
+        kind = .call ∧ ns.Nodup ∧ ns.length = inits.length ∧
+        (ps.take ns.length).map Sequent.term = inits ∧
+        (∀ p ∈ ps, p.context = j.context) ∧
+        P = ns.zip ((ps.take ns.length).map Sequent.type) ∧
+        (ps.drop ns.length).map Sequent.term = caps ∧ capSlotsBelow caps j.context.length = true ∧
+        offersChecked G codes arity E K start ((ps.drop ns.length).map Sequent.type) rest L S As = true
+      | _ => False
+    | _, _ => False
   -- The callee, then the receiver at the selected signature's receiver, then
   -- the actual premises in order, then one premise per position the signature
   -- declares and this call omits. Each of those proves `undefined` at its
   -- declared type: the value the machine binds there.
-  | .app effect, .invoke f r args, jf :: jr :: jas =>
-    jf.context = j.context ∧ jf.term = f ∧ jr.context = j.context ∧ jr.term = r ∧
-    (jas.take args.length).map Sequent.term = args ∧
-    (∀ ja ∈ jas.drop args.length, ja.term = .undef) ∧
-    (∀ ja ∈ jas, ja.context = j.context) ∧
-    match expand G jf.type with
-    | [.arrs L _] => ⟨jr.type, jas.map Sequent.type, j.type, effect⟩ ∈ L
-    | _ => False
-  | .letE, .letE a b, [ja, jb] =>
-    ja.context = j.context ∧ ja.term = a ∧ jb = ⟨ja.type :: j.context, b, j.type⟩
-  | .alloc, .makeAt .absent ns inits, ps =>
-    match expand G j.type with
-    | [.refs fs [] [] [] [] ks] =>
-      ns.Nodup ∧ ns.length = ps.length ∧ ps.map Sequent.term = inits ∧
-      (∀ p ∈ ps, p.context = j.context) ∧ fs = ns.zip (ps.map Sequent.type) ∧
-      (∀ K ∈ ks, ∀ n ∈ ns, K.admits n = true) ∧ allocRealm G fs = true
-    -- A literal allocated directly at a dictionary: each field an index's
-    -- class may admit at exactly that index's type, each optional field
-    -- absent (`HasTyUsing.allocDict`).
-    | [.dict fs [] [] ix os [] [] cs] =>
-      ns.Nodup ∧ CallArguments.protoField ∉ ns ∧ CallArguments.arrayStoreField ∉ ns ∧
-      ns.length = ps.length ∧ ps.map Sequent.term = inits ∧
-      (∀ p ∈ ps, p.context = j.context) ∧ fs = ns.zip (ps.map Sequent.type) ∧
-      (∀ f ∈ fs, ∀ y ∈ ix ++ cs, y.1.may f.1 = true → f.2 = y.2) ∧
-      (∀ o ∈ os, o.key ∉ ns) ∧
-      (∀ o ∈ os, ∀ y ∈ cs, y.1.may o.key = true → o.type = y.2 ∨ PositiveRules.Uninhabited G y.2)
-    | _ => False
-  | .read, .readAt f a, [ja] =>
-    ja.context = j.context ∧ ja.term = a ∧
-    (match expand G ja.type with
-     | [c] => (f, j.type) ∈ ((namedMembers c).map Prod.fst).getD []
-     | _ => False)
-  | .readView, .readAt f a, [ja] =>
-    ja.context = j.context ∧ ja.term = a ∧
-    (match expand G ja.type with
-     | [c] => (f, j.type) ∈ ((namedMembers c).map Prod.snd).getD []
-     | _ => False)
+  | .app effect =>
+    match j.term, ps with
+    | .invoke f r args, jf :: jr :: jas =>
+      jf.context = j.context ∧ jf.term = f ∧ jr.context = j.context ∧ jr.term = r ∧
+      (jas.take args.length).map Sequent.term = args ∧
+      (∀ ja ∈ jas.drop args.length, ja.term = .undef) ∧
+      (∀ ja ∈ jas, ja.context = j.context) ∧
+      match expand G jf.type with
+      | [.arrs L _] => ⟨jr.type, jas.map Sequent.type, j.type, effect⟩ ∈ L
+      | _ => False
+    | _, _ => False
+  | .letE =>
+    match j.term, ps with
+    | .letE a b, [ja, jb] =>
+      ja.context = j.context ∧ ja.term = a ∧ jb = ⟨ja.type :: j.context, b, j.type⟩
+    | _, _ => False
+  | .alloc =>
+    match j.term, ps with
+    | .makeAt .absent ns inits, ps =>
+      match expand G j.type with
+      | [.refs fs [] [] [] [] ks] =>
+        ns.Nodup ∧ ns.length = ps.length ∧ ps.map Sequent.term = inits ∧
+        (∀ p ∈ ps, p.context = j.context) ∧ fs = ns.zip (ps.map Sequent.type) ∧
+        (∀ K ∈ ks, ∀ n ∈ ns, K.admits n = true) ∧ allocRealm G fs = true
+      -- A literal allocated directly at a dictionary: each field an index's
+      -- class may admit at exactly that index's type, each optional field
+      -- absent (`HasTyUsing.allocDict`).
+      | [.dict fs [] [] ix os [] [] cs] =>
+        ns.Nodup ∧ CallArguments.protoField ∉ ns ∧ CallArguments.arrayStoreField ∉ ns ∧
+        ns.length = ps.length ∧ ps.map Sequent.term = inits ∧
+        (∀ p ∈ ps, p.context = j.context) ∧ fs = ns.zip (ps.map Sequent.type) ∧
+        (∀ f ∈ fs, ∀ y ∈ ix ++ cs, y.1.may f.1 = true → f.2 = y.2) ∧
+        (∀ o ∈ os, o.key ∉ ns) ∧
+        (∀ o ∈ os, ∀ y ∈ cs, y.1.may o.key = true → o.type = y.2 ∨ PositiveRules.Uninhabited G y.2)
+      | _ => False
+    | _, _ => False
+  | .read =>
+    match j.term, ps with
+    | .readAt f a, [ja] =>
+      ja.context = j.context ∧ ja.term = a ∧
+      (match expand G ja.type with
+       | [c] => (f, j.type) ∈ ((namedMembers c).map Prod.fst).getD []
+       | _ => False)
+    | _, _ => False
+  | .readView =>
+    match j.term, ps with
+    | .readAt f a, [ja] =>
+      ja.context = j.context ∧ ja.term = a ∧
+      (match expand G ja.type with
+       | [c] => (f, j.type) ∈ ((namedMembers c).map Prod.snd).getD []
+       | _ => False)
+    | _, _ => False
   -- A key a bound of the object does not admit is read from its prototype `P`, which
   -- the object holds under the reserved key; `P`'s field or view gives the type.
-  | .readProto P, .readAt f a, [ja] =>
-    ja.context = j.context ∧ ja.term = a ∧
-    (match expand G ja.type with
-     | [.refs fs [] vs _ _ ks] =>
-       (∃ K ∈ ks, K.admits f = false) ∧ (CallArguments.protoField, P) ∈ fs ++ vs ∧
-       ProtoMember G P f j.type
-     | _ => False)
-  | .readOptional A U, .readAt f a, [ja] =>
-    ja.context = j.context ∧ ja.term = a ∧ Represents G U .undef ∧ j.type = A ++ U ∧
-    (match expand G ja.type with
-     | [.refs _ [] _ os _ _] => ∃ o ∈ os, o.key = f ∧ o.type = A
-     | _ => False)
-  | .readDict K A U, .readAt f a, [ja] =>
-    ja.context = j.context ∧ ja.term = a ∧ Represents G U .undef ∧ j.type = A ++ U ∧
-    K.surely f = true ∧
-    (match expand G ja.type with
-     | [.dict _ [] _ ix _ _ _ _] => (K, A) ∈ ix
-     | _ => False)
-  | .indexDict K KK A U, .indexAt a key, [ja, jk] =>
-    ja.context = j.context ∧ ja.term = a ∧
-    jk.context = j.context ∧ jk.term = key ∧
-    Represents G jk.type (keyClause KK) ∧ KK.within K = true ∧
-    Represents G U .undef ∧ j.type = A ++ U ∧
-    (match expand G ja.type with
-     | [.dict _ [] _ ix _ _ _ _] => (K, A) ∈ ix
-     | _ => False)
-  | .write, .writeAt f a b, [ja, jb] =>
-    ja.context = j.context ∧ ja.term = a ∧ jb.context = j.context ∧ jb.term = b ∧
-    Represents G j.type .nul ∧
-    (match expand G ja.type with
-     | [.refs fs [] _ _ _ _] => (f, jb.type) ∈ fs
-     | _ => False)
-  | .arith, .arith op a b, [ja, jb] =>
-    ja.context = j.context ∧ ja.term = a ∧ jb.context = j.context ∧ jb.term = b ∧
-    OperatorTypes G op ja.type jb.type j.type
-  | .test, .test _ a, [ja] =>
-    ja.context = j.context ∧ ja.term = a ∧
-    (.boolLit true) ∈ expand G j.type ∧ (.boolLit false) ∈ expand G j.type
-  | .arrLit, .arrLit inits, ps =>
-    match expand G j.type with
-    | [.list T []] =>
-      ps.map Sequent.term = inits ∧ (∀ p ∈ ps, p.context = j.context) ∧
-      T.required.length ≤ ps.length ∧
-      (T.rest = none → ps.length ≤ T.required.length + T.optional.length) ∧
-      ∀ q ∈ ps.zipIdx, positionTy T q.2 = some q.1.type
-    | _ => False
-  | .elem, .elemAt a i, [ja, ji] =>
-    ja.context = j.context ∧ ja.term = a ∧ ji.context = j.context ∧ ji.term = i ∧
-    (match expand G ja.type, expand G ji.type with
-     | [.list T []], [.numLit b] => requiredAt T b = some j.type
-     | _, _ => False)
-  | .elemOpt U, .elemAt a i, [ja, ji] =>
-    ja.context = j.context ∧ ja.term = a ∧ ji.context = j.context ∧ ji.term = i ∧
-    Represents G U .undef ∧
-    (match expand G ja.type, expand G ji.type with
-     | [.list T []], [.numLit b] => optionalAt T b U = some j.type
-     | _, _ => False)
-  | .elemAny U, .elemAt a i, [ja, ji] =>
-    ja.context = j.context ∧ ja.term = a ∧ ji.context = j.context ∧ ji.term = i ∧
-    Represents G U .undef ∧ Answers G ji.type .isNum true ∧
-    (match expand G ja.type with
-     | [.list ⟨[], [], some E, _, _⟩ []] => j.type = E ++ U
-     | _ => False)
-  | .setElem, .setElem a i v, [ja, ji, jv] =>
-    ja.context = j.context ∧ ja.term = a ∧ ji.context = j.context ∧ ji.term = i ∧
-    jv.context = j.context ∧ jv.term = v ∧ j.type = ja.type ∧
-    (match expand G ja.type, expand G ji.type with
-     | [.list T []], [.numLit b] =>
-       -- At most the required length: in bounds or appending, never a hole.
-       namedAt T b = some jv.type ∧ (indexOfBits b).getD 0 ≤ T.required.length ∧
-         T.readonly = false
-     | _, _ => False)
-  | .len, .lenOf a, [ja] =>
-    ja.context = j.context ∧ ja.term = a ∧ Represents G j.type .num ∧
-    (match expand G ja.type with
-     | [.list _ []] => True
-     | _ => False)
-  | .lenStr, .lenOf a, [ja] =>
-    ja.context = j.context ∧ ja.term = a ∧ Represents G j.type .num ∧
-    Answers G ja.type .isStr true
-  | .elemStr T U, .elemAt a i, [ja, ji] =>
-    ja.context = j.context ∧ ja.term = a ∧ ji.context = j.context ∧ ji.term = i ∧
-    Answers G ja.type .isStr true ∧ Answers G ji.type .isNum true ∧
-    Represents G T .str ∧ Represents G U .undef ∧ j.type = T ++ U
-  | .ifBool, .ite c t e, [jc,jt,je] =>
-    jc.context = j.context ∧ jc.term = c ∧ Answers G jc.type .isBool true ∧
-    jt = ⟨j.context,t,j.type⟩ ∧ je = ⟨j.context,e,j.type⟩
-  | .ifKnown q, .ite c t e, [jc,jb] =>
-    jc.context = j.context ∧ jc.term = c ∧ Represents G jc.type (.boolLit q) ∧
-    jb = ⟨j.context, (if q then t else e), j.type⟩
-  | .ifBoolVar T F, .ite (.var i) t e, [jt,je] =>
-    (match j.context[i]? with | some C => Answers G C .isBool true | none => False) ∧
-    Represents G T (.boolLit true) ∧ Represents G F (.boolLit false) ∧
-    jt = ⟨j.context.set i T,t,j.type⟩ ∧ je = ⟨j.context.set i F,e,j.type⟩
-  | .ifTrue, .ite (.test tag (.var i)) u _, [ju] =>
-    ju = ⟨j.context, u, j.type⟩ ∧
-    match j.context[i]? with
-    | some A => Answers G A tag true
-    | none => False
-  | .ifFalse, .ite (.test tag (.var i)) _ e, [je] =>
-    je = ⟨j.context, e, j.type⟩ ∧
-    match j.context[i]? with
-    | some A => Answers G A tag false
-    | none => False
-  | .unionVar i, _, ps =>
-    match j.context[i]? with
-    | some C => ps = C.map (fun a => ⟨j.context.set i [a], j.term, j.type⟩)
-    | none => False
-  | .callCallable effect, .invoke f r args, jf :: jr :: jas =>
-    jf.context = j.context ∧ jf.term = f ∧ jr.context = j.context ∧ jr.term = r ∧
-    (jas.take args.length).map Sequent.term = args ∧
-    (∀ ja ∈ jas.drop args.length, ja.term = .undef) ∧
-    (∀ ja ∈ jas, ja.context = j.context) ∧
-    match expand G jf.type with
-    | [.callable _ _ L _] => ⟨jr.type, jas.map Sequent.type,j.type, effect⟩ ∈ L
-    | _ => False
-  | .readCallable, .readAt f a, [ja] =>
-    ja.context = j.context ∧ ja.term = a ∧
-    match expand G ja.type with
-    | [.callable P _ _ _] => (f, j.type) ∈ P
-    | _ => False
-  | .writeCallable, .writeAt f a b, [ja,jb] =>
-    ja.context = j.context ∧ ja.term = a ∧ jb.context = j.context ∧ jb.term = b ∧
-    Represents G j.type .nul ∧
-    match expand G ja.type with
-    | [.callable P _ _ _] => (f, jb.type) ∈ P
-    | _ => False
+  | .readProto P =>
+    match j.term, ps with
+    | .readAt f a, [ja] =>
+      ja.context = j.context ∧ ja.term = a ∧
+      (match expand G ja.type with
+       | [.refs fs [] vs _ _ ks] =>
+         (∃ K ∈ ks, K.admits f = false) ∧ (CallArguments.protoField, P) ∈ fs ++ vs ∧
+         ProtoMember G P f j.type
+       | _ => False)
+    | _, _ => False
+  | .readOptional A U =>
+    match j.term, ps with
+    | .readAt f a, [ja] =>
+      ja.context = j.context ∧ ja.term = a ∧ Represents G U .undef ∧ j.type = A ++ U ∧
+      (match expand G ja.type with
+       | [.refs _ [] _ os _ _] => ∃ o ∈ os, o.key = f ∧ o.type = A
+       | _ => False)
+    | _, _ => False
+  | .readDict K A U =>
+    match j.term, ps with
+    | .readAt f a, [ja] =>
+      ja.context = j.context ∧ ja.term = a ∧ Represents G U .undef ∧ j.type = A ++ U ∧
+      K.surely f = true ∧
+      (match expand G ja.type with
+       | [.dict _ [] _ ix _ _ _ _] => (K, A) ∈ ix
+       | _ => False)
+    | _, _ => False
+  | .indexDict K KK A U =>
+    match j.term, ps with
+    | .indexAt a key, [ja, jk] =>
+      ja.context = j.context ∧ ja.term = a ∧
+      jk.context = j.context ∧ jk.term = key ∧
+      Represents G jk.type (keyClause KK) ∧ KK.within K = true ∧
+      Represents G U .undef ∧ j.type = A ++ U ∧
+      (match expand G ja.type with
+       | [.dict _ [] _ ix _ _ _ _] => (K, A) ∈ ix
+       | _ => False)
+    | _, _ => False
+  | .write =>
+    match j.term, ps with
+    | .writeAt f a b, [ja, jb] =>
+      ja.context = j.context ∧ ja.term = a ∧ jb.context = j.context ∧ jb.term = b ∧
+      Represents G j.type .nul ∧
+      (match expand G ja.type with
+       | [.refs fs [] _ _ _ _] => (f, jb.type) ∈ fs
+       | _ => False)
+    | _, _ => False
+  | .arith =>
+    match j.term, ps with
+    | .arith op a b, [ja, jb] =>
+      ja.context = j.context ∧ ja.term = a ∧ jb.context = j.context ∧ jb.term = b ∧
+      OperatorTypes G op ja.type jb.type j.type
+    | _, _ => False
+  | .test =>
+    match j.term, ps with
+    | .test _ a, [ja] =>
+      ja.context = j.context ∧ ja.term = a ∧
+      (.boolLit true) ∈ expand G j.type ∧ (.boolLit false) ∈ expand G j.type
+    | _, _ => False
+  | .arrLit =>
+    match j.term, ps with
+    | .arrLit inits, ps =>
+      match expand G j.type with
+      | [.list T []] =>
+        ps.map Sequent.term = inits ∧ (∀ p ∈ ps, p.context = j.context) ∧
+        T.required.length ≤ ps.length ∧
+        (T.rest = none → ps.length ≤ T.required.length + T.optional.length) ∧
+        ∀ q ∈ ps.zipIdx, positionTy T q.2 = some q.1.type
+      | _ => False
+    | _, _ => False
+  | .elem =>
+    match j.term, ps with
+    | .elemAt a i, [ja, ji] =>
+      ja.context = j.context ∧ ja.term = a ∧ ji.context = j.context ∧ ji.term = i ∧
+      (match expand G ja.type, expand G ji.type with
+       | [.list T []], [.numLit b] => requiredAt T b = some j.type
+       | _, _ => False)
+    | _, _ => False
+  | .elemOpt U =>
+    match j.term, ps with
+    | .elemAt a i, [ja, ji] =>
+      ja.context = j.context ∧ ja.term = a ∧ ji.context = j.context ∧ ji.term = i ∧
+      Represents G U .undef ∧
+      (match expand G ja.type, expand G ji.type with
+       | [.list T []], [.numLit b] => optionalAt T b U = some j.type
+       | _, _ => False)
+    | _, _ => False
+  | .elemAny U =>
+    match j.term, ps with
+    | .elemAt a i, [ja, ji] =>
+      ja.context = j.context ∧ ja.term = a ∧ ji.context = j.context ∧ ji.term = i ∧
+      Represents G U .undef ∧ Answers G ji.type .isNum true ∧
+      (match expand G ja.type with
+       | [.list ⟨[], [], some E, _, _⟩ []] => j.type = E ++ U
+       | _ => False)
+    | _, _ => False
+  | .setElem =>
+    match j.term, ps with
+    | .setElem a i v, [ja, ji, jv] =>
+      ja.context = j.context ∧ ja.term = a ∧ ji.context = j.context ∧ ji.term = i ∧
+      jv.context = j.context ∧ jv.term = v ∧ j.type = ja.type ∧
+      (match expand G ja.type, expand G ji.type with
+       | [.list T []], [.numLit b] =>
+         -- At most the required length: in bounds or appending, never a hole.
+         namedAt T b = some jv.type ∧ (indexOfBits b).getD 0 ≤ T.required.length ∧
+           T.readonly = false
+       | _, _ => False)
+    | _, _ => False
+  | .len =>
+    match j.term, ps with
+    | .lenOf a, [ja] =>
+      ja.context = j.context ∧ ja.term = a ∧ Represents G j.type .num ∧
+      (match expand G ja.type with
+       | [.list _ []] => True
+       | _ => False)
+    | _, _ => False
+  | .lenStr =>
+    match j.term, ps with
+    | .lenOf a, [ja] =>
+      ja.context = j.context ∧ ja.term = a ∧ Represents G j.type .num ∧
+      Answers G ja.type .isStr true
+    | _, _ => False
+  | .elemStr T U =>
+    match j.term, ps with
+    | .elemAt a i, [ja, ji] =>
+      ja.context = j.context ∧ ja.term = a ∧ ji.context = j.context ∧ ji.term = i ∧
+      Answers G ja.type .isStr true ∧ Answers G ji.type .isNum true ∧
+      Represents G T .str ∧ Represents G U .undef ∧ j.type = T ++ U
+    | _, _ => False
+  | .ifBool =>
+    match j.term, ps with
+    | .ite c t e, [jc,jt,je] =>
+      jc.context = j.context ∧ jc.term = c ∧ Answers G jc.type .isBool true ∧
+      jt = ⟨j.context,t,j.type⟩ ∧ je = ⟨j.context,e,j.type⟩
+    | _, _ => False
+  | .ifKnown q =>
+    match j.term, ps with
+    | .ite c t e, [jc,jb] =>
+      jc.context = j.context ∧ jc.term = c ∧ Represents G jc.type (.boolLit q) ∧
+      jb = ⟨j.context, (if q then t else e), j.type⟩
+    | _, _ => False
+  | .ifBoolVar T F =>
+    match j.term, ps with
+    | .ite (.var i) t e, [jt,je] =>
+      (match j.context[i]? with | some C => Answers G C .isBool true | none => False) ∧
+      Represents G T (.boolLit true) ∧ Represents G F (.boolLit false) ∧
+      jt = ⟨j.context.set i T,t,j.type⟩ ∧ je = ⟨j.context.set i F,e,j.type⟩
+    | _, _ => False
+  | .ifTrue =>
+    match j.term, ps with
+    | .ite (.test tag (.var i)) u _, [ju] =>
+      ju = ⟨j.context, u, j.type⟩ ∧
+      match j.context[i]? with
+      | some A => Answers G A tag true
+      | none => False
+    | _, _ => False
+  | .ifFalse =>
+    match j.term, ps with
+    | .ite (.test tag (.var i)) _ e, [je] =>
+      je = ⟨j.context, e, j.type⟩ ∧
+      match j.context[i]? with
+      | some A => Answers G A tag false
+      | none => False
+    | _, _ => False
+  | .unionVar i =>
+    match j.term, ps with
+    | _, ps =>
+      match j.context[i]? with
+      | some C => ps = C.map (fun a => ⟨j.context.set i [a], j.term, j.type⟩)
+      | none => False
+  | .callCallable effect =>
+    match j.term, ps with
+    | .invoke f r args, jf :: jr :: jas =>
+      jf.context = j.context ∧ jf.term = f ∧ jr.context = j.context ∧ jr.term = r ∧
+      (jas.take args.length).map Sequent.term = args ∧
+      (∀ ja ∈ jas.drop args.length, ja.term = .undef) ∧
+      (∀ ja ∈ jas, ja.context = j.context) ∧
+      match expand G jf.type with
+      | [.callable _ _ L _] => ⟨jr.type, jas.map Sequent.type,j.type, effect⟩ ∈ L
+      | _ => False
+    | _, _ => False
+  | .readCallable =>
+    match j.term, ps with
+    | .readAt f a, [ja] =>
+      ja.context = j.context ∧ ja.term = a ∧
+      match expand G ja.type with
+      | [.callable P _ _ _] => (f, j.type) ∈ P
+      | _ => False
+    | _, _ => False
+  | .writeCallable =>
+    match j.term, ps with
+    | .writeAt f a b, [ja,jb] =>
+      ja.context = j.context ∧ ja.term = a ∧ jb.context = j.context ∧ jb.term = b ∧
+      Represents G j.type .nul ∧
+      match expand G ja.type with
+      | [.callable P _ _ _] => (f, jb.type) ∈ P
+      | _ => False
+    | _, _ => False
   -- The one premise is the store the spread reads.
-  | .arrCopy E, .arrLit [.spread s], [js] =>
-    js.context = j.context ∧ js.term = s ∧ SpreadsInto G js.type E ∧
-    match expand G j.type with
-    | [.list ⟨[], [], some E', false, _⟩ []] => E = E'
-    | _ => False
+  | .arrCopy E =>
+    match j.term, ps with
+    | .arrLit [.spread s], [js] =>
+      js.context = j.context ∧ js.term = s ∧ SpreadsInto G js.type E ∧
+      match expand G j.type with
+      | [.list ⟨[], [], some E', false, _⟩ []] => E = E'
+      | _ => False
+    | _, _ => False
   -- The callee, the receiver, the fixed actuals, one `undefined` premise per
   -- fixed position the call omits, then one premise per further part: the
   -- actual itself, or the store a spread reads. A call that omits a position
   -- writes no part.
-  | .callRest effect k u flags P, .invoke f r args, jf :: jr :: jas =>
-    jf.context = j.context ∧ jf.term = f ∧ jr.context = j.context ∧ jr.term = r ∧
-    (∀ ja ∈ jas, ja.context = j.context) ∧
-    jas.length = k + u + flags.length ∧ (u = 0 ∨ flags = []) ∧
-    args = (jas.take k).map Sequent.term ++
-      (flags.zip (jas.drop (k + u))).map (fun q => spreadTerm (q.1, q.2.term)) ∧
-    (∀ ja ∈ (jas.drop k).take u, ja.term = .undef) ∧
-    RestParts G P ((flags.zip (jas.drop (k + u))).map fun q => (q.1, q.2.type)) ∧
-    ⟨jr.type, ((jas.take (k + u)).map Sequent.type, P), j.type, effect⟩ ∈ restSigs G jf.type
+  | .callRest effect k u flags P =>
+    match j.term, ps with
+    | .invoke f r args, jf :: jr :: jas =>
+      jf.context = j.context ∧ jf.term = f ∧ jr.context = j.context ∧ jr.term = r ∧
+      (∀ ja ∈ jas, ja.context = j.context) ∧
+      jas.length = k + u + flags.length ∧ (u = 0 ∨ flags = []) ∧
+      args = (jas.take k).map Sequent.term ++
+        (flags.zip (jas.drop (k + u))).map (fun q => spreadTerm (q.1, q.2.term)) ∧
+      (∀ ja ∈ (jas.drop k).take u, ja.term = .undef) ∧
+      RestParts G P ((flags.zip (jas.drop (k + u))).map fun q => (q.1, q.2.type)) ∧
+      ⟨jr.type, ((jas.take (k + u)).map Sequent.type, P), j.type, effect⟩ ∈ restSigs G jf.type
+    | _, _ => False
   -- `.bind`'s saved slots, with no premises: the target's selected signature
   -- starts with the prefix slots' contracts, and the result takes the rest at
   -- the one receiver it states, whatever that is.
-  | .bindE, .makeAt (.bound (.var t) (.var r) pre) ns inits, [] =>
-    ns = [] ∧ inits = [] ∧
-    match varSlots pre, j.context[t]?, j.context[r]?, expand G j.type with
-    | some saved, some T, some Rt, [.arrs [⟨_, Ds, R, effect⟩] []] =>
-      saved.map (j.context[·]?) = (saved.filterMap (j.context[·]?)).map some ∧
-      ⟨Rt, saved.filterMap (j.context[·]?) ++ Ds, R, effect⟩ ∈ callSigs G T
-    | _, _, _, _ => False
+  | .bindE =>
+    match j.term, ps with
+    | .makeAt (.bound (.var t) (.var r) pre) ns inits, [] =>
+      ns = [] ∧ inits = [] ∧
+      match varSlots pre, j.context[t]?, j.context[r]?, expand G j.type with
+      | some saved, some T, some Rt, [.arrs [⟨_, Ds, R, effect⟩] []] =>
+        saved.map (j.context[·]?) = (saved.filterMap (j.context[·]?)).map some ∧
+        ⟨Rt, saved.filterMap (j.context[·]?) ++ Ds, R, effect⟩ ∈ callSigs G T
+      | _, _, _, _ => False
+    | _, _ => False
   -- As `bindE`, for a variadic signature of the target with an element rest:
   -- the prefix takes its first fixed positions, and past them the element.
-  | .bindRestE, .makeAt (.bound (.var t) (.var r) pre) ns inits, [] =>
-    ns = [] ∧ inits = [] ∧
-    match varSlots pre, j.context[t]?, j.context[r]?, expand G j.type with
-    | some saved, some T, some Rt, [.arrs [] [⟨_, (Ds, E'), R, effect⟩]] =>
-      saved.map (j.context[·]?) = (saved.filterMap (j.context[·]?)).map some ∧
-      ∃ s ∈ restSigs G T, s.receiver = Rt ∧ s.arguments.2 = E' ∧ s.result = R ∧ s.effect = effect ∧
-        Ds = s.arguments.1.drop saved.length ∧ ∃ El ∈ (restElem G E').toList,
-        saved.filterMap (j.context[·]?) =
-          s.arguments.1.take saved.length ++ List.replicate (saved.length - s.arguments.1.length) El
-    | _, _, _, _ => False
+  | .bindRestE =>
+    match j.term, ps with
+    | .makeAt (.bound (.var t) (.var r) pre) ns inits, [] =>
+      ns = [] ∧ inits = [] ∧
+      match varSlots pre, j.context[t]?, j.context[r]?, expand G j.type with
+      | some saved, some T, some Rt, [.arrs [] [⟨_, (Ds, E'), R, effect⟩]] =>
+        saved.map (j.context[·]?) = (saved.filterMap (j.context[·]?)).map some ∧
+        ∃ s ∈ restSigs G T, s.receiver = Rt ∧ s.arguments.2 = E' ∧ s.result = R ∧ s.effect = effect ∧
+          Ds = s.arguments.1.drop saved.length ∧ ∃ El ∈ (restElem G E').toList,
+          saved.filterMap (j.context[·]?) =
+            s.arguments.1.take saved.length ++ List.replicate (saved.length - s.arguments.1.length) El
+      | _, _, _, _ => False
+    | _, _ => False
   -- A member read from a slot's object and bound to that same object, with no
   -- premises: the result's signatures are the member's, at any receiver.
-  | .bindMember proofs rests receivers, .letE (.readAt k (.var i)) (.makeAt (.bound (.var 0) (.var r) pre) ns inits),
+  | .bindMember proofs rests receivers =>
+    match j.term, ps with
+    | .letE (.readAt k (.var i)) (.makeAt (.bound (.var 0) (.var r) pre) ns inits),
       [] =>
-    r = i + 1 ∧ pre = [] ∧ ns = [] ∧ inits = [] ∧
-    MemberProofsUsing G images j.context[i]? j.type k proofs rests receivers
+      r = i + 1 ∧ pre = [] ∧ ns = [] ∧ inits = [] ∧
+      MemberProofsUsing G images j.context[i]? j.type k proofs rests receivers
+    | _, _ => False
   -- The constructor, the actual premises in order, then one premise per
   -- position the signature declares and `new` omits, proving `undefined`
   -- there, as for `.app`.
-  | .construct, .construct f args, jf :: jas =>
-    jf.context = j.context ∧ jf.term = f ∧ (jas.take args.length).map Sequent.term = args ∧
-    (∀ ja ∈ jas.drop args.length, ja.term = .undef) ∧
-    (∀ ja ∈ jas, ja.context = j.context) ∧
-    match expand G jf.type with
-    | [.ctors L] => (jas.map Sequent.type, j.type) ∈ L
-    | _ => False
-  | .sub proof, _, [jt] =>
-    jt.context = j.context ∧ jt.term = j.term ∧
-    subtype jt.type j.type proof = true
-  | .throw, .throw a, [ja] => ja.context = j.context ∧ ja.term = a ∧ SourceValues G ja.type
-  | .merge, .merge d a b, [ja, jb] =>
-    ja.context = j.context ∧ ja.term = a ∧ jb.context = j.context ∧ jb.term = b ∧
-    ObjectMerge.MergeOk G d ja.type jb.type j.type = true
-  | _, _, _ => False
+  | .construct =>
+    match j.term, ps with
+    | .construct f args, jf :: jas =>
+      jf.context = j.context ∧ jf.term = f ∧ (jas.take args.length).map Sequent.term = args ∧
+      (∀ ja ∈ jas.drop args.length, ja.term = .undef) ∧
+      (∀ ja ∈ jas, ja.context = j.context) ∧
+      match expand G jf.type with
+      | [.ctors L] => (jas.map Sequent.type, j.type) ∈ L
+      | _ => False
+    | _, _ => False
+  | .sub proof =>
+    match j.term, ps with
+    | _, [jt] =>
+      jt.context = j.context ∧ jt.term = j.term ∧
+      subtype jt.type j.type proof = true
+    | _, _ => False
+  | .throw =>
+    match j.term, ps with
+    | .throw a, [ja] => ja.context = j.context ∧ ja.term = a ∧ SourceValues G ja.type
+    | _, _ => False
+  | .merge =>
+    match j.term, ps with
+    | .merge d a b, [ja, jb] =>
+      ja.context = j.context ∧ ja.term = a ∧ jb.context = j.context ∧ jb.term = b ∧
+      ObjectMerge.MergeOk G d ja.type jb.type j.type = true
+    | _, _ => False
 
 instance [DecidableEq ι] (G : NormalGraph ι) (images : PositiveCertificates.InstanceImageCheck G)
     (j : Sequent ι) (r : Rule ι) (ps)
@@ -1029,7 +1190,7 @@ instance [DecidableEq ι] (G : NormalGraph ι) (images : PositiveCertificates.In
     (subtype : Ty ι → Ty ι → PositiveCertificates.SubtypeChoices ι → Bool) :
     Decidable (LocalUsing G images j r ps codes subtype) := by
   unfold LocalUsing
-  split <;> try infer_instance
+  split <;> (try split) <;> try infer_instance
   all_goals try dsimp [Represents, Answers]
   all_goals first | infer_instance | (split <;> infer_instance)
 
@@ -1078,8 +1239,6 @@ theorem localCheckUsing_accepted [DecidableEq ι] (G : NormalGraph ι)
       intro h
       unfold LocalUsing at h
       split at h <;> simp_all
-      rename_i hnot
-      exact hnot _ _ _ [] [] [] rfl rfl rfl rfl rfl rfl
   case sub choices =>
     cases ps with
     | nil => rfl
@@ -1352,7 +1511,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
     (hp : ∀ p ∈ ps, HasTyUsing G images (subtyping := subtyping) p.context p.term p.type) : HasTyUsing G images (subtyping := subtyping) j.context j.term j.type := by
   rcases j with ⟨Γ, t, A⟩
   unfold LocalUsing at hl
-  split at hl <;> (try dsimp only at *) <;> (try subst t)
+  split at hl <;> (try split at hl) <;> (try contradiction) <;> (try dsimp only at *) <;> (try subst t)
   · exact .var hl
   · exact .nul hl
   · exact .undef hl
@@ -1366,11 +1525,11 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
   · exact .str hl
   · exact .bigintLit hl
   · exact .bigint hl
-  · rename_i ps As arity E K start caps kind rest ns inits
+  · rename_i As ps _ _ arity E K start caps kind rest ns inits
     obtain ⟨rfl, rfl, rfl, hterms, hctx, hslots, hok⟩ := hl
     subst caps
     exact funGraph_of_local hcodes hctx hslots hok hp
-  · rename_i ps U arity E K start caps kind rest ns inits
+  · rename_i U ps _ _ arity E K start caps kind rest ns inits
     obtain ⟨rfl, rfl, rfl, rfl, hterms, hctx, hslots, hu, hok⟩ := hl
     subst caps
     obtain ⟨caps, hvar, hfst, hlt, hcap⟩ := caps_of_local hctx hslots hp
@@ -1383,7 +1542,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
         hlt hcap
     · contradiction
   · split at hl
-    · rename_i ps _ _ _ As arity E K start caps kind rest ns inits _ P L S hF
+    · rename_i _ As ps _ _ arity E K start caps kind rest ns inits _ P L S hF
       obtain ⟨rfl, hnd, hlen, hterms, hctx, rfl, hcaps, hslots, hok⟩ := hl
       have hctxd : ∀ q ∈ ps.drop ns.length, q.context = Γ :=
         fun q hq => hctx q (List.mem_of_mem_drop hq)
@@ -1465,7 +1624,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
     have ha := hp ja (by simp)
     rw [hΓ, ht] at ha
     exact .letE ha (hp ⟨ja.type :: Γ, b, A⟩ (by simp))
-  · rename_i ps _ _ _ ns inits
+  · rename_i _ ps _ _ ns inits
     split at hl
     · rename_i fs ks he
       obtain ⟨hnd, hlen, hterms, hctx, rfl, hk, hreal⟩ := hl
@@ -1568,7 +1727,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
       | none => simp [hc] at hr
       | some m => simp only [hc, Option.map_some, Option.getD_some] at hr; exact .readView ha he hc hr
     · contradiction
-  · rename_i P f a ja
+  · rename_i P _ _ f a ja
     rcases hl with ⟨hΓ, ht, hr⟩
     have ha := hp ja (by simp)
     rw [hΓ, ht] at ha
@@ -1581,7 +1740,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
         exact .readProto ha he hK hf hpr hPe hP
       · contradiction
     · contradiction
-  · rename_i A U f a ja
+  · rename_i A U _ _ f a ja
     rcases hl with ⟨hΓ, ht, hUnd, eq, hr⟩
     have ha := hp ja (by simp)
     rw [hΓ, ht] at ha
@@ -1593,7 +1752,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
       subst hf hA
       exact .readOptional ha he ho hUnd
     · contradiction
-  · rename_i K A U f a ja
+  · rename_i K A U _ _ f a ja
     rcases hl with ⟨hΓ, ht, hUnd, eq, hsure, hr⟩
     have ha := hp ja (by simp)
     rw [hΓ, ht] at ha
@@ -1602,7 +1761,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
       subst eq
       exact .readDict ha he hr hsure hUnd
     · contradiction
-  · rename_i K KK E U a key ja jk
+  · rename_i K KK E U _ _ a key ja jk
     rcases hl with ⟨hΓa, hta, hΓk, htk, hStr, hwithin, hUnd, eq, hr⟩
     have ha := hp ja (by simp)
     have hk := hp jk (by simp)
@@ -1635,7 +1794,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
     have ha := hp ja (by simp)
     rw [hΓ, hta] at ha
     exact .test ha ht hf
-  · rename_i psl r x ps' inits
+  · rename_i _ psl x ps' inits
     split at hl
     · rename_i T hT
       obtain ⟨hterms, hctx, hreq, hbound, hpos⟩ := hl
@@ -1667,7 +1826,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
       obtain ⟨k, hk, hA⟩ := hr
       exact .elem ha hT hi hI hk hA
     · contradiction
-  · rename_i U a i ja ji
+  · rename_i U _ _ a i ja ji
     rcases hl with ⟨hΓa, hta, hΓi, hti, hU, hr⟩
     have ha := hp ja (by simp)
     have hi := hp ji (by simp)
@@ -1684,7 +1843,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
         obtain ⟨A, hA, rfl⟩ := hr
         exact .elemOpt ha hT hi hI hk hnone hA hU
     · contradiction
-  · rename_i U a i ja ji
+  · rename_i U _ _ a i ja ji
     rcases hl with ⟨hΓa, hta, hΓi, hti, hU, hq, hr⟩
     have ha := hp ja (by simp)
     have hi := hp ji (by simp)
@@ -1725,7 +1884,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
     have ha := hp ja (by simp)
     rw [hΓ, hta] at ha
     exact .lenStr ha hs hn
-  · rename_i T U a i ja ji
+  · rename_i T U _ _ a i ja ji
     rcases hl with ⟨hΓa, hta, hΓi, hti, hs, hq, hT, hU, hty⟩
     have ha := hp ja (by simp)
     have hi := hp ji (by simp)
@@ -1738,12 +1897,12 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
     have hcond := hp jc (by simp)
     rw [hΓ, hc] at hcond
     exact .ifBool hcond hb (hp ⟨Γ,t,A⟩ (by simp)) (hp ⟨Γ,e,A⟩ (by simp))
-  · rename_i q c t e jc jb
+  · rename_i q _ _ c t e jc jb
     rcases hl with ⟨hΓ,hc,hq,rfl⟩
     have hcond := hp jc (by simp)
     rw [hΓ,hc] at hcond
     exact .ifKnown hcond hq (hp ⟨Γ,(if q then t else e),A⟩ (by simp))
-  · rename_i T F i t e jt je
+  · rename_i T F _ _ i t e jt je
     rcases hl with ⟨hb,hT,hF,rfl,rfl⟩
     split at hb
     · rename_i C hc
@@ -1761,7 +1920,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
     · rename_i D hd
       exact .ifTag hd hq (by intro h; cases h) (fun _ => hp ⟨Γ, e, A⟩ (by simp))
     · contradiction
-  · rename_i t ps i
+  · rename_i i ps _ _
     split at hl
     · rename_i C hi
       apply HasTyUsing.unionVar hi
@@ -1820,7 +1979,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
     · rename_i P Ps L he
       exact .writeCallable ha he hL hb hn
     · contradiction
-  · rename_i E s js
+  · rename_i E _ _ s js
     rcases hl with ⟨hΓ, ht, hsp, hr⟩
     have h := hp js (by simp)
     rw [hΓ, ht] at h
@@ -1829,7 +1988,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
       cases hr
       exact .arrCopy h hsp hT
     · contradiction
-  · rename_i k u flags P f r args jf jr jas
+  · rename_i k u flags P _ _ f r args jf jr jas
     rcases hl with ⟨hΓf, htf, hΓr, htr, hctx, hlen, hshort, rfl, hundef, hparts, hL⟩
     have hf := hp jf (by simp)
     rw [hΓf, htf] at hf
@@ -1925,7 +2084,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
         (by rw [hsplit]; exact hL) hxs hu
       simpa only [List.map_map, Function.comp_def, hterms] using hc
     · contradiction
-  · rename_i proof t jt
+  · rename_i proof _ t jt
     rcases hl with ⟨hΓ, ht, hc⟩
     have hj := hp jt (by simp)
     rw [hΓ, ht] at hj
