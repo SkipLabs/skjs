@@ -526,6 +526,11 @@ type ClassEntry = { cls: RefusalClass; label: string; re: RegExp; why: string; r
 const CLASSES: ClassEntry[] = [
   // Reviewed search failures: require both the unit and its observed obligation.
   // A different failure in the same unit falls through to the general classifier.
+  { cls: "principled", label: "SKJS closed-object semantics are outside the pipeline",
+    unit: "tests/expect-error/json-generated-service.ts#GraphResource",
+    re: /^search: reject: source direct obligation at _: GraphCollections: the type argument for EagerCollection/,
+    detail: /GraphCollections: the type argument for EagerCollection's "V".*does not establish its declared bound/,
+    why: "the environment deliberately reads Closed<T> as T; the resulting open record does not meet the JSON index bound. SKJS's stronger closed-object contract is an intentionally unsupported extension" },
   { cls: "principled", label: "a nested async return annotation requires a promise fulfillment value",
     unit: "tests/expect-error/promise-object.ts#testAwaitNested",
     re: /^search: reject: source expression obligation at _: evidence search failed: no derivation of its return-contract claim$/,

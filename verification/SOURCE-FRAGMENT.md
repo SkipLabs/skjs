@@ -24,6 +24,7 @@ obstacle named. A search failure is neither.
 
 | Construct | Refused because |
 | --- | --- |
+| A program requiring SKJS's closed-object meaning of `Closed<T>` to satisfy a contract | The pipeline deliberately interprets `Closed<T>` as `T`. The stronger SKJS extension is outside its scope; an open record does not establish a JSON index bound merely because its named fields are JSON values. |
 | `new Array(n)`, `new Array(x)` with one argument | A numeric argument constructs holes; a readable element contract excluding `undefined` cannot justify those reads. The source gate refuses the ambiguous one-argument form. |
 | An element write at an index not proven in bounds or appending | It could create a hole. |
 | A mutable `Dog[]` as an `Animal[]`, a mutable dictionary of `true` as one of `boolean`, a readonly view as a writable one | Mutable storage is invariant: a write through the wider alias breaks the narrower one's contract (TypeScript's covariance is unsound). |
