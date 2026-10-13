@@ -21,6 +21,8 @@ export function claimOfTerm(term: TypeTerm): ClaimType {
         ? { a: "booleanlit", v: term.name }
         : term.name === "bigint" ? { a: "bigintlit", v: term.text }
         : { a: term.name === "number" ? "numberlit" : "stringlit", v: term.text });
+    case "unique":
+      throw Error("a unique symbol type has no claim form: it is a graph row");
     case "union": {
       const parts = term.parts.map(claimOfTerm);
       if (parts.some(p => p.top)) return { top: true, atoms: [] };

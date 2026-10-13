@@ -25,6 +25,9 @@ and atom = Nul | Undef | True | False | Num | Str | NumLit of int64 | StrLit of 
          | Bigint | Symbol
          (* One bigint: its canonical decimal integer. *)
          | BigintLit of string
+         (* One symbol: the one the declaration document lists at this index,
+            as a symbol key [Key] names it. *)
+         | SymbolLit of int
          (* A class value: construct signatures, which `new` meets and no call
             does. A signature's receiver is unused: `new` passes none. *)
          | Ctors of signature list
@@ -121,7 +124,7 @@ let rec mentions_rigid = function
       | Exact fs -> List.exists (fun (f:field) -> mentions_rigid f.read) fs
       | Ctors signatures -> List.exists signature_mentions_rigid signatures
       | Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Top
-      | Bigint | Symbol | BigintLit _ | Callable -> false) atoms
+      | Bigint | Symbol | BigintLit _ | SymbolLit _ | Callable -> false) atoms
 and sequence_mentions_rigid s = List.exists mentions_rigid
     (s.required @ s.optional_elements @ Option.to_list s.rest)
 and signature_mentions_rigid (s:signature) =
@@ -158,7 +161,7 @@ let union a b = match a,b with
 let rec widen = function
   | Atoms xs -> ground (List.concat_map (function
       | True | False -> [True;False] | NumLit _ -> [Num] | StrLit _ -> [Str]
-      | BigintLit _ -> [Bigint]
+      | BigintLit _ -> [Bigint] | SymbolLit _ -> [Symbol]
       | a -> [a]) xs)
   | Rigid _ as t -> t | Union ts -> List.fold_left union (Atoms []) (List.map widen ts)
   | Meet (t,ts) -> Meet (widen t,ts)
@@ -212,7 +215,7 @@ it: null, undefined, `false`, the two zeros, NaN, `""` and `0n` are falsy,
 every object, function, class and symbol truthy. *)
 let truthiness = function
   | Nul | Undef | False -> Some false
-  | True | Symbol | Shape _ | Exact _ | Ctors _ | Callable -> Some true
+  | True | Symbol | SymbolLit _ | Shape _ | Exact _ | Ctors _ | Callable -> Some true
   | NumLit bits -> let x = Int64.float_of_bits bits in Some (not (x = 0. || Float.is_nan x))
   | StrLit s -> Some (s <> "")
   | BigintLit i -> Some (i <> "0")

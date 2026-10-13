@@ -784,8 +784,22 @@ is refused rather than verified vacuously:
 `typeof x`, `keyof T`, `T[K]`, template literal types and intersections of
 primitives and literals mean the type TypeScript's checker computes
 (`computed-types.mts`). With $`\mathit{ts}(\tau)`$ the checker's type of the
-node $`\tau`$ and $`\mathsf{lits}(t)`$ for $`t`$ as a union of literals and
-primitive families when it is exactly one:
+node $`\tau`$ and $`\mathsf{lits}(t)`$ for $`t`$ as a union of literals,
+primitive families and unique symbols when it is exactly one. A unique symbol
+is the type of the one constant or readonly property declaring it, and it is
+the singleton of the symbol that declaration names as a
+[symbol key](#library-globals), $`\mathrm{sym}(k)`$: the type of
+`Symbol.iterator` is $`\mathsf{symbolLit}`$ of the symbol the key
+`[Symbol.iterator]` names, so `keyof [number]` holds `Symbol.iterator` and
+`Symbol.unscopables` beside `number`, `"0"`, `"length"` and the method
+names, and `keyof Promise<number>` holds `Symbol.toStringTag` beside
+`"then"`, `"catch"` and `"finally"`:
+
+```math
+\frac{\mathit{ts}(\tau)\ \text{the unique symbol declared by}\ k}
+     {⟦\tau⟧=\mathsf{symbolLit}(\mathrm{sym}(k))}\ \textsf{unique-symbol}
+```
+
 
 ```math
 \frac{\mathsf{lits}(\mathit{ts}(\tau))=U}{⟦\tau⟧=U}\ \textsf{computed}
@@ -842,8 +856,9 @@ from the checker (`inferredTerm`):
 Refused: a template literal type with a `$`{string}` or ``${number}` hole; a
 form over a function's own type parameter (`keyof T`, `T[number]` with `T`
 the function's binder), which denotes a function of the type an instance
-names, not of the values a parameter row stands for; `keyof` with a
-unique-symbol key, which no type of the fragment names; `typeof` of a binding
+names, not of the values a parameter row stands for; a unique symbol whose
+declaration names no symbol (a constant made neither by `Symbol()` nor by
+`Symbol.for` of a string literal); `typeof` of a binding
 TypeScript infers another type for (a `let`, a method, a `const` assertion);
 `typeof C` of a class with statics.
 

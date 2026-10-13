@@ -57,7 +57,7 @@ open S
             | Some bound -> settled allow_objects seen (r::seen_rigids) bound
             | None -> false))
         | Atoms xs -> List.for_all (function
-            | Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Bigint | BigintLit _ | Symbol -> true
+            | Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Bigint | BigintLit _ | Symbol | SymbolLit _ -> true
             | Named (id,args) when List.mem id promises ->
               n <> "%AsyncReturn%" || List.for_all (settled true seen seen_rigids) args
             | Named (id,args) when not (List.mem id seen) ->

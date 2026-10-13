@@ -56,7 +56,7 @@ The clauses, with what each denotes:
 | `num`, `numLit x` | any number; exactly the number with bit pattern $x$ |
 | `str`, `strLit s` | any string; exactly $s$ |
 | `bigint`, `bigintLit i` | any bigint; exactly the bigint $i\in\mathbb Z$ |
-| `symbol` | any symbol (an opaque identity) |
+| `symbol`, `symbolLit n` | any symbol (an opaque identity); exactly the symbol $\mathsf{sym}(n)$ |
 | `refs` | a plain object under record contracts, readonly views, optional fields and methods ([Records](#records)) |
 | `dict` | a `refs` object whose present keys of each index's class (every string key, the canonical numeric ones, or every symbol key) also meet readonly and writable index contracts |
 | `list` | an array under one or more tuple contracts ([Arrays](#arrays)) |
@@ -72,10 +72,25 @@ exactly one shape; `top` and `source` each admit multiple shapes.
 
 Singletons sit below their primitive: $\mathsf{boolLit}\,b\le\mathsf{bool}$,
 $\mathsf{numLit}\,x\le\mathsf{num}$, $\mathsf{strLit}\,s\le\mathsf{str}$,
-$\mathsf{bigintLit}\,i\le\mathsf{bigint}$; two singletons of one primitive
+$\mathsf{bigintLit}\,i\le\mathsf{bigint}$,
+$\mathsf{symbolLit}\,n\le\mathsf{symbol}$; two singletons of one primitive
 meet only when equal, and a singleton meets its family at itself. A bigint's
 identity is its integer, so every spelling of one (`16n`, `0x10n`, `1_6n`)
-is one singleton.
+is one singleton. A symbol singleton's identity $n$ is the one a symbol key
+$\mathsf{sym}(n)$ carries: the $n$-th `unique symbol` declaration the
+declaration document lists, so the type of `Symbol.iterator` and the key
+`[Symbol.iterator]` name one symbol.
+
+```math
+⟦\mathsf{symbolLit}\,n⟧_k(W,v)\iff v=\mathsf{sym}(n)
+\qquad
+\mathsf{symbolLit}\,n\sqcap\mathsf{symbol}=\mathsf{symbolLit}\,n
+\qquad
+\mathsf{symbolLit}\,m\sqcap\mathsf{symbolLit}\,n=
+\begin{cases}\mathsf{symbolLit}\,n & m=n\\ \bot & m\ne n\end{cases}
+```
+
+Lean: `meet_sound` (the meets), `Covers.sound` (both subtypings).
 
 Lean: `Clause`, `semWithArgs`, `shape`, `valueShape`
 (`Types/PositiveNormalization.lean`).

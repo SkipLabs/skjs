@@ -32,7 +32,7 @@ export function visitType(term: TypeTerm, visit: (term: TypeTerm, bound: Readonl
   visit(term, bound);
   const go = (part: TypeTerm): void => visitType(part, visit, bound);
   switch (term.k) {
-    case "atom": case "literal": case "callable": case "self": case "parameter": case "binder": return;
+    case "atom": case "literal": case "unique": case "callable": case "self": case "parameter": case "binder": return;
     case "union": case "intersection": term.parts.forEach(go); return;
     case "array": go(term.element); return;
     case "tuple":
@@ -580,7 +580,7 @@ export function substitute(term: TypeTerm, args: readonly TypeTerm[]): TypeTerm 
       if (!arg) throw Error("declaration parameter index outside its application");
       return arg;
     }
-    case "atom": case "literal": case "self": case "binder": case "callable": return term;
+    case "atom": case "literal": case "unique": case "self": case "binder": case "callable": return term;
     case "union": case "intersection": return { ...term, parts: term.parts.map(go) };
     case "array": return { ...term, element: go(term.element) };
     case "tuple": return { ...term, required: term.required.map(go), optional: term.optional.map(go),

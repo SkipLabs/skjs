@@ -1199,6 +1199,27 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   assert.match(invoke(writeClaims(indexed, "forged-missing-named-view", claims), join(indexed, "evidence.json"), indexed),
     /claimed parameter type differs from the source annotation/);
 }
+{
+  // A `keyof` with a unique symbol names that one symbol: claims naming
+  // another symbol, or every symbol, in its place differ from the annotation
+  // the verifier reads itself.
+  const keyed = run("keyof-unique-symbol");
+  for (const [name, clause] of [
+    ["other-unique-symbol", (id: number) => ({ symbolLit: { id: id + 1 } })],
+    ["every-symbol", () => "symbol"],
+  ] as const) {
+    const claims = readClaims(keyed);
+    const rows = claims.types.filter((row) => row.length === 1 && typeof row[0] === "object" && "symbolLit" in row[0]);
+    assert.ok(rows.length > 0, "the claims name a unique symbol");
+    for (const row of rows) {
+      const [only] = row;
+      if (typeof only === "object" && "symbolLit" in only) row[0] = clause(only.symbolLit.id);
+    }
+    assert.match(invoke(writeClaims(keyed, `forged-${name}`, claims), join(keyed, "evidence.json"), keyed),
+      /claimed (return|parameter) type differs from the source annotation/, name);
+  }
+  process.stdout.write("a keyof's unique symbol claimed as another symbol or every symbol: refused\n");
+}
 // A method or constructor claim is compared with its annotation by meaning, so
 // another row for Values<number> is admitted; a domain wider than the
 // annotation, here one that also admits undefined, is still refused.

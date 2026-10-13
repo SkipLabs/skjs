@@ -156,7 +156,7 @@ Ordinary table clauses use the native graph vocabulary:
 | Clause | Contract |
 | --- | --- |
 | `"nul"`, `"undef"`, `"bool"`, `"num"`, `"str"`, `"bigint"`, `"symbol"`, `"top"` | Primitive types and the universal type |
-| `boolLit`, `numLit`, `strLit`, `bigintLit` objects | Singleton values |
+| `boolLit`, `numLit`, `strLit`, `bigintLit`, `symbolLit` objects | Singleton values; `symbolLit`'s `id` is the declaration document's listed symbol a symbol key `{"symbol": id}` names |
 | `refs` | Required invariant fields, readonly views, and optional object capabilities |
 | `dict` | Object fields plus index contracts |
 | `list` | Array-store tuple contracts |

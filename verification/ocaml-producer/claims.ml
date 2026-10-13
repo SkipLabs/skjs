@@ -98,6 +98,7 @@ let encode (proposal : Proposal_types.t) =
     | NumLit bits -> [Row (intern (Array [Object ["numLit",Object ["bits",String (Printf.sprintf "%Lu" bits)]]]))]
     | StrLit value -> [Row (intern (Array [Object ["strLit",Object ["value",String value]]]))]
     | BigintLit value -> [Row (intern (Array [Object ["bigintLit",Object ["value",Number value]]]))]
+    | SymbolLit id -> [Row (intern (Array [Object ["symbolLit",Object ["id",Number (string_of_int id)]]]))]
     | Top -> [Row (intern (Array [String "source"]))]
     | Callable -> [Row (intern (Array [Object ["arrs",Object ["arrows",Array []]]]))]
     | Ctors signatures ->
@@ -319,7 +320,7 @@ let encode (proposal : Proposal_types.t) =
         | Exact fs -> List.exists (fun (f:Semantic.field) -> contains_symbolic f.read) fs
         | Ctors signatures -> List.exists signature_contains_symbolic signatures
         | Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Top
-        | Bigint | Symbol | BigintLit _ | Callable -> false) atoms
+        | Bigint | Symbol | BigintLit _ | SymbolLit _ | Callable -> false) atoms
   and pack_contains_symbolic = function
     | PackParameter _ -> true
     | Pack s -> sequence_contains_symbolic s

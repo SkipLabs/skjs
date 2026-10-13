@@ -315,7 +315,8 @@ def objOf : Clause (List ι) → Option (Obj ι)
 /-- A clause whose values own no enumerable property: `null`, `undefined`,
 Booleans, numbers, bigints and symbols. A spread of one copies nothing. -/
 def emptyClause : Clause (List ι) → Bool
-  | .nul | .undef | .bool | .boolLit _ | .num | .numLit _ | .bigint | .bigintLit _ | .symbol => true
+  | .nul | .undef | .bool | .boolLit _ | .num | .numLit _ | .bigint | .bigintLit _ | .symbol
+  | .symbolLit _ => true
   | _ => false
 
 /-- What the semantics of a plain-object clause gives a merge. -/
@@ -390,6 +391,7 @@ theorem emptyClause_ownData {G : NormalGraph ι} {c : Clause (List ι)} (he : em
   · subst hv; exact ⟨rfl, rfl⟩
   · obtain ⟨_, rfl⟩ := hv; exact ⟨rfl, rfl⟩
   · obtain ⟨_, rfl⟩ := hv; exact ⟨rfl, rfl⟩
+  · subst hv; exact ⟨rfl, rfl⟩
   · subst hv; exact ⟨rfl, rfl⟩
 
 
@@ -501,7 +503,7 @@ store key, `[]`, which is a string. -/
 def noStore (G : NormalGraph ι) (T : List ι) : Bool :=
   G.plainTy T && (expand G T).all fun c => match c with
     | .nul | .undef | .bool | .boolLit _ | .num | .numLit _ | .str | .strLit _
-    | .bigint | .bigintLit _ | .symbol | .refs .. | .dict .. => true
+    | .bigint | .bigintLit _ | .symbol | .symbolLit _ | .refs .. | .dict .. => true
     | _ => false
 
 omit [DecidableEq ι] in
@@ -523,6 +525,7 @@ theorem noStore_sound {G : NormalGraph ι} {T : List ι} (h : noStore G T = true
   | bigint => simp only [semWithArgs, bigintT] at hs; obtain ⟨_, h1⟩ := hs; cases h1
   | bigintLit _ => simp only [semWithArgs] at hs; cases hs
   | symbol => simp only [semWithArgs, symbolT] at hs; obtain ⟨_, h1⟩ := hs; cases h1
+  | symbolLit _ => simp only [semWithArgs] at hs; cases hs
   | refs a bs vs os ms ks =>
     simp only [semWithArgs, ReferenceConjunctions.refsT, recT] at hs
     obtain ⟨⟨⟨_, _, h1, -⟩, -⟩, -⟩ := hs; cases h1

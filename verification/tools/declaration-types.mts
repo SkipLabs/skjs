@@ -54,6 +54,9 @@ export type TypeTerm =
   /* A number's `text` is its decimal spelling, a bigint's its canonical
      decimal integer; either may be negative. */
   | { k: "literal"; name: "true" | "false" | "string" | "number" | "bigint"; text: string; span: Span }
+  /** A `unique symbol` type: the one symbol the `symbol`-th listed `unique
+   * symbol` declaration holds, as the symbol key `{ symbol }` names it. */
+  | { k: "unique"; symbol: number; span: Span }
   | { k: "union" | "intersection"; parts: TypeTerm[]; span: Span }
   | { k: "array"; presence: ArrayPresence; readonly: boolean; element: TypeTerm; span: Span }
   | { k: "tuple"; presence: ArrayPresence; readonly: boolean; required: TypeTerm[];

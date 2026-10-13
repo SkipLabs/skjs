@@ -107,6 +107,7 @@ let rec source_type ctx j =
   (* The standard library's `Function`: callable or constructible, with no
      signature, as Lean lowers it. *)
   | "callable" -> Atoms [Callable;Ctors []]
+  | "unique" -> (match field "symbol" j with Number i -> Atoms [SymbolLit (int_of_string i)] | _ -> unsupported "unique symbol identity")
   | "literal" -> (match text "name" j with
     | "true" -> Atoms [True] | "false" -> Atoms [False]
     | "number" -> number_literal_type (text "text" j)

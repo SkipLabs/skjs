@@ -1254,6 +1254,8 @@ checks over the supplied subtype relation. -/
   | .symbol, .symbol => True
   | .bigintLit _, .bigint => True
   | .bigintLit a, .bigintLit b => a = b
+  | .symbolLit _, .symbol => True
+  | .symbolLit a, .symbolLit b => a = b
   | .refs a bs vs os ms ks, .refs c ds ws ps ns ls => CoversFields R (a :: bs) (c :: ds) ∧
       CoversViews R (a :: bs) vs ws ∧ CoversOptional R (a :: bs) vs os ks ps ∧
       CoversMethods G sub R known self ((a :: bs).flatten ++ vs) ks ms ns ∧ CoversBounds ks ls
@@ -3098,6 +3100,11 @@ theorem Covers.sound_raw [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Re
     rename_i i
     intro hv; cases hv; exact ⟨i, rfl⟩
   · -- bigintLit ≤ bigintLit at equal integers
+    cases hc; exact id
+  · -- symbolLit ≤ symbol: the singleton inhabits the family
+    rename_i i
+    intro hv; cases hv; exact ⟨i, rfl⟩
+  · -- symbolLit ≤ symbolLit at equal identities
     cases hc; exact id
 
 /-- Coverage in a row: a record target's invariant is the record source's. -/

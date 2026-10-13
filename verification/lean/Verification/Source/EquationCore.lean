@@ -11,6 +11,7 @@ partial def lowerType (ctx : Ctx) (term : Json) : M Union := do
   match ← str term "k" with
   | "atom" => atomLabels term
   | "literal" => literalLabels term
+  | "unique" => uniqueLabels term
   | "union" | "intersection" => do
     let (U, meets) ← lowerArm ctx term
     unionOfArms ctx.site U meets

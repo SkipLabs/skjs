@@ -862,6 +862,18 @@ export function collectDeclarations(file: string, options: {
         return node => typeTerm(scope, node, alias);
       },
       equation: reference => valueScope(client, "an alias's equation").equation?.(reference) ?? null,
+      // A `unique symbol` type is the type of the one constant or readonly
+      // property declaring it (`Symbol.iterator`'s is `SymbolConstructor`'s
+      // `iterator`), which names its symbol as a computed key does.
+      unique: type => {
+        const nodes = (type.getSymbol()?.declarations ?? []).map(d => d.resolve());
+        const [node, ...more] = nodes;
+        const name = node && (ts.isVariableDeclaration(node) || ts.isPropertySignatureDeclaration(node)) &&
+          node.name && ts.isIdentifier(node.name) ? node.name : null;
+        if (!name || more.length)
+          throw Error(`the unique symbol ${checker.typeToString(type)} is declared by no one constant`);
+        return symbolOf(name);
+      },
     };
     const roots: { root: TypeRoot; node: TypeDeclaration }[] = [];
     const values: ValueRoot[] = [];

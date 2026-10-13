@@ -104,6 +104,7 @@ private def clauseName : Clause (List ι) → String
   | .bigint => "bigint"
   | .bigintLit _ => "bigint literal"
   | .symbol => "symbol"
+  | .symbolLit _ => "unique symbol"
   | .ctors .. => "constructor"
 
 def render (T : State) (A : Ty Tree) : String :=

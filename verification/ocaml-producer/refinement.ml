@@ -24,7 +24,7 @@ let rec typeof_slice shape holds = function
       | Exact _ when shape="object" -> Some true
       | Num | NumLit _ -> Some (shape="number") | Str | StrLit _ -> Some (shape="string")
       | True | False -> Some (shape="boolean") | Undef -> Some (shape="undefined")
-      | Bigint | BigintLit _ -> Some (shape="bigint") | Symbol -> Some (shape="symbol")
+      | Bigint | BigintLit _ -> Some (shape="bigint") | Symbol | SymbolLit _ -> Some (shape="symbol")
       | Shape s -> Some (shape="function" && s.calls<>[])
       | Exact _ -> Some false
       (* A class is a function to `typeof`. *)
@@ -100,7 +100,7 @@ let key_slice key holds = function
           then None else Some false)
       | Ctors _ | Callable | Named _ | Top -> None
       | Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _
-      | Bigint | Symbol | BigintLit _ -> Some false in
+      | Bigint | Symbol | BigintLit _ | SymbolLit _ -> Some false in
     Atoms (List.filter_map (fun a -> match has a with
       | Some result -> if result = holds then Some a else None
       | None -> Some (if holds then present key a else a)) xs)

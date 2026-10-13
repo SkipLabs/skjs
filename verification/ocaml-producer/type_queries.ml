@@ -28,7 +28,7 @@ let rec plausible_subtype_with excludes actual expected =
   | Atoms _,Atoms [Top] -> true
   | Atoms xs,Atoms ys -> List.for_all (fun x -> List.exists (fun y ->
       x=y || match x,y with
-      | NumLit _,Num | StrLit _,Str | BigintLit _,Bigint -> true
+      | NumLit _,Num | StrLit _,Str | BigintLit _,Bigint | SymbolLit _,Symbol -> true
       | Shape a,Shape b when a.fields=b.fields && a.indexes=b.indexes && plausible_elements excludes a.elements b.elements ->
         List.for_all (fun (q:Semantic.signature) -> List.exists (fun (p:Semantic.signature) ->
           (p.call_effect=q.call_effect || q.call_effect=Unrestricted) &&

@@ -100,6 +100,9 @@ inductive Clause (α : Type) where
   /-- One bigint, below the `bigint` family as a number singleton is below
   the number family; appended last so every earlier case order holds. -/
   | bigintLit (value : Int)
+  /-- One symbol, below the `symbol` family: the symbol of a `unique symbol`
+  constant, by its identity; appended last so every earlier case order holds. -/
+  | symbolLit (id : Nat)
   deriving Repr, DecidableEq
 
 /-- Every value. A closed value, as every member of every family is. -/
@@ -121,6 +124,7 @@ def semWithArgs (X : α → Fam) (P : α → ArgFam) : Clause α → Fam
   | .strLit s => fun _ _ v => v = .str s
   | .bigint => bigintT
   | .bigintLit i => fun _ _ v => v = .bigint i
+  | .symbolLit i => fun _ _ v => v = .sym i
   | .symbol => symbolT
   | .refs a bs vs os ms ks => fun n W v =>
       refsT (famsOf X a) (bs.map (famsOf X)) n W v ∧ viewT (famsOf X vs) n W v ∧
@@ -188,6 +192,8 @@ def meet : Clause α → Clause α → List (Clause α)
   | .bigint, .bigintLit i | .bigintLit i, .bigint => [.bigintLit i]
   | .bigintLit a, .bigintLit b => if a == b then [.bigintLit a] else []
   | .symbol, .symbol => [.symbol]
+  | .symbol, .symbolLit i | .symbolLit i, .symbol => [.symbolLit i]
+  | .symbolLit a, .symbolLit b => if a == b then [.symbolLit a] else []
   -- Object contracts meet on one object: their first operands are one record
   -- (`ReferenceConjunctions.flatten`), whose named fields the read rules find.
   | .refs a bs vs os ms ks, .refs c ds ws ps ns ls =>
@@ -277,7 +283,7 @@ private theorem nil_sem (X : α → Fam) (P : α → ArgFam) (n W v) : ¬ semLis
 def shape : Clause α → Nat
   | .nul => 0 | .bool | .boolLit _ => 1 | .refs .. | .dict .. => 2 | .arrs .. | .callable .. => 3
   | .undef => 4 | .num | .numLit _ => 5 | .str | .strLit _ => 6
-  | .top => 7 | .list .. => 8 | .bigint | .bigintLit _ => 9 | .symbol => 10 | .ctors .. => 11
+  | .top => 7 | .list .. => 8 | .bigint | .bigintLit _ => 9 | .symbol | .symbolLit _ => 10 | .ctors .. => 11
   | .pack .. => 12
   | .source => 7
 
@@ -313,6 +319,7 @@ theorem semWithArgs_value {X : α → Fam} {P : α → ArgFam} {c : Clause α} {
   | strLit s => subst v; exact ⟨rfl, trivial⟩
   | bigint => obtain ⟨i, rfl⟩ := h; exact ⟨rfl, trivial⟩
   | bigintLit i => subst v; exact ⟨rfl, trivial⟩
+  | symbolLit i => subst v; exact ⟨rfl, trivial⟩
   | symbol => obtain ⟨i, rfl⟩ := h; exact ⟨rfl, trivial⟩
   | ctors L S => obtain ⟨_, _, _, _, _, _, _, _, rfl, hs⟩ := h.1.1; exact ⟨rfl, hs⟩
   | pack a bs => exact h.elim
@@ -347,6 +354,7 @@ theorem semWithArgs_shape {X : α → Fam} {P : α → ArgFam} {c : Clause α} {
   | strLit s => cases h; rfl
   | bigint => obtain ⟨i, rfl⟩ := h; rfl
   | bigintLit i => cases h; rfl
+  | symbolLit i => cases h; rfl
   | symbol => obtain ⟨i, rfl⟩ := h; rfl
   | ctors L S =>
     obtain ⟨_, _, _, _, _, _, _, _, rfl, -⟩ := h.1.1
@@ -527,6 +535,10 @@ theorem meet_sound (X : α → Fam) (P : α → ArgFam) (a b : Clause α) (n : N
       intro hv; subst v; exact ⟨i, rfl⟩
     · -- symbol ∩ symbol
       simp [singleton_sem, semWithArgs, interT, symbolT]
+    · -- symbol ∩ symbolLit: the singleton already implies the family
+      rename_i i
+      simp [singleton_sem, semWithArgs, interT, symbolT]
+      intro hv; subst v; exact ⟨i, rfl⟩
     · -- ctors ∩ ctors: every construct signature of both
       simp only [singleton_sem, semWithArgs, List.map_append, interT]
       rw [ctorsT_append, ctorRestsT_append]
@@ -539,6 +551,16 @@ theorem meet_sound (X : α → Fam) (P : α → ArgFam) (a b : Clause α) (n : N
       simp [singleton_sem, semWithArgs, interT, bigintT]
       intro hv; subst v; exact ⟨i, rfl⟩
     · -- bigintLit ∩ bigintLit: equal integers are equal bigints
+      rename_i a b
+      by_cases hab : a = b
+      · subst hab; simp [singleton_sem, semWithArgs, interT]
+      · simp [semList, setSem, semWithArgs, interT, hab]
+        intro hv; subst hv; simp [hab]
+    · -- symbolLit ∩ symbol
+      rename_i i
+      simp [singleton_sem, semWithArgs, interT, symbolT]
+      intro hv; subst v; exact ⟨i, rfl⟩
+    · -- symbolLit ∩ symbolLit: equal identities are equal symbols
       rename_i a b
       by_cases hab : a = b
       · subst hab; simp [singleton_sem, semWithArgs, interT]
@@ -683,6 +705,7 @@ theorem semWithArgs_adm (X : α → Fam) (P : α → ArgFam) (c : Clause α) : A
   | ctors L S => exact interT_adm _ _ (ctorsT_adm _) (ctorRestsT_adm _)
   | pack a bs => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
   | bigintLit _ => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
+  | symbolLit _ => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
   | undef => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
   | top | source => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
   | list a bs => exact ⟨fun n W v h => ⟨(listT_adm _).down n W v h.1,
@@ -802,6 +825,7 @@ theorem semWithArgs_congr (X Y : α → Fam) (P Q : α → ArgFam) (n : Nat) (h 
   | bigint => rfl
   | bigintLit _ => rfl
   | symbol => rfl
+  | symbolLit _ => rfl
   | undef => rfl
   | top | source => rfl
   | list a bs =>
@@ -872,6 +896,7 @@ def Clause.map (f : α → β) : Clause α → Clause β
   | .bigint => .bigint
   | .bigintLit v => .bigintLit v
   | .symbol => .symbol
+  | .symbolLit v => .symbolLit v
   | .list a bs => .list (a.map f) (bs.map (·.map f))
   | .refs a bs vs os ms ks => .refs (mapFields f a) (bs.map (mapFields f)) (mapFields f vs)
       (os.map (·.map f)) (ms.map (Sig.map f)) ks

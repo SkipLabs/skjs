@@ -358,6 +358,14 @@ def literalLabels (term : Json) : M Union := do
     return [← prim s!"{text}n" (.bigintLit (← (Verification.decodeBigint text : Except String Int)))]
   | _ => throw "unsupported source literal"
 
+/-- A `unique symbol` type's label: the one symbol whose identity is the
+`symbol`-th listed `unique symbol` declaration, as a symbol key `{"symbol": i}`
+names it. -/
+def uniqueLabels (term : Json) : M Union := do
+  fieldsExactly term ["k", "symbol", "span"]
+  let id ← (← field term "symbol").getNat?
+  return [← prim s!"unique symbol {id}" (.symbolLit id)]
+
 /-- The source-value universe, independent of record realm invariants. -/
 def sourceValueClauses : List (Clause (List Tree)) :=
   [.source]

@@ -301,7 +301,9 @@ relies on; `truLit` and `flsLit` are the Boolean singleton introductions, and
 `numLit` and `num` the numeric ones, a literal at its own singleton and at the
 family, `strLit` and `str` the same for strings, and `bigintLit` and `bigint`
 for bigints. A bigint term and clause carry the integer as a JSON number of any
-length, `{"bigint":{"value":-5}}` and `{"bigintLit":{"value":-5}}`. These names are not written anywhere: `RequestJson.lean` derives
+length, `{"bigint":{"value":-5}}` and `{"bigintLit":{"value":-5}}`. A symbol
+singleton clause carries its symbol's identity, `{"symbolLit":{"id":0}}`, the
+index a symbol key `{"symbol":0}` carries; no term introduces it. These names are not written anywhere: `RequestJson.lean` derives
 ToJson/FromJson for `Rule`, so this list is the inductive's constructors and a
 rule added there extends the protocol. `verification/tests/rule-inventory.mts`
 holds the two to the same set. Expression sequents repeat their

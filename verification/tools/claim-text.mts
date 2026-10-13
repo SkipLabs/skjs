@@ -330,6 +330,7 @@ const _handled = {
   bigint: 1,
   symbol: 1,
   bigintLit: 1,
+  symbolLit: 1,
 } satisfies Record<StringClause | ClauseKey, 1>;
 void _handled;
 
@@ -384,6 +385,10 @@ function liftClause(types: Table, clause: unknown, depth: number): unknown {
       a: "bigintlit",
       v: String(isObject(bigintLit) ? bigintLit.value : undefined),
     };
+  // A symbol singleton has no claim form; the reader names it.
+  const symbolLit = body("symbolLit");
+  if (symbolLit)
+    return `unique symbol ${String(isObject(symbolLit) ? symbolLit.id : undefined)}`;
   const strLit = body("strLit");
   if (strLit)
     return {

@@ -76,6 +76,9 @@ export type Clause<L = number> =
   /** One bigint, as its integer: a JSON number of any length, which a
    * reader of this document shows and never computes with. */
   | { bigintLit: { value: number } }
+  /** One symbol: the declaration document's `id`-th listed symbol, the one
+   * a symbol key `{"symbol": id}` names. */
+  | { symbolLit: { id: number } }
   /** `views` are read capabilities: a field read at a sound upper bound on
    * its contents, with no write permission through this contract. `optional`
    * fields constrain their key only where the object has it, as a view there
@@ -345,6 +348,11 @@ export function decodeGraph(value: unknown): TypeGraph {
       if (typeof value !== "number" || !Number.isInteger(value))
         throw Error("invalid bigint literal");
     },
+    symbolLit: (b) => {
+      const id = obj(b, ["id"]).id;
+      if (typeof id !== "number" || !Number.isSafeInteger(id) || id < 0)
+        throw Error("invalid symbol identity");
+    },
     refs: (b) => {
       const r = objOptional(b, ["first", "rest", "views"], ["optional", "methods", "bounds"]);
       fields(r.first);
@@ -509,6 +517,7 @@ function clauseText(c: Clause): string {
   if ("numLit" in c) return String(numberOfBits(c.numLit.bits));
   if ("strLit" in c) return JSON.stringify(c.strLit.value);
   if ("bigintLit" in c) return `${c.bigintLit.value}n`;
+  if ("symbolLit" in c) return `unique symbol ${c.symbolLit.id}`;
   if ("list" in c)
     return [c.list.first, ...c.list.rest].map(printTuple).join(" & ");
   if ("pack" in c)

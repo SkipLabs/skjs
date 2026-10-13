@@ -90,7 +90,7 @@ and substitute_atom ?meet solution = function
   | Named (id,args) -> Named (id,List.map (substitute ?meet solution) args)
   | Ctors signatures -> Ctors (List.map (substitute_signature ?meet solution) signatures)
   | (Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Top
-    | Bigint | Symbol | BigintLit _ | Callable) as atom -> atom
+    | Bigint | Symbol | BigintLit _ | SymbolLit _ | Callable) as atom -> atom
 and substitute_pack ?meet solution = function
   | PackParameter identity as original ->
     (match List.assoc_opt identity solution with
@@ -158,12 +158,13 @@ let meet_atom a b =
   | Num,NumLit _ -> Some [b] | NumLit _,Num -> Some [a]
   | Str,StrLit _ -> Some [b] | StrLit _,Str -> Some [a]
   | Bigint,BigintLit _ -> Some [b] | BigintLit _,Bigint -> Some [a]
+  | Symbol,SymbolLit _ -> Some [b] | SymbolLit _,Symbol -> Some [a]
   | Ctors a,Ctors b -> Some [Ctors (a @ b)]
   | Shape _,_ | _,Shape _ | Exact _,_ | _,Exact _ | Named _,_ | _,Named _
   | Ctors _,_ | _,Ctors _ | Callable,_ | _,Callable -> None
   | Bigint,Bigint -> Some [Bigint] | Symbol,Symbol -> Some [Symbol]
-  | (Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Bigint | Symbol | BigintLit _),
-    (Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Bigint | Symbol | BigintLit _) -> Some []
+  | (Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Bigint | Symbol | BigintLit _ | SymbolLit _),
+    (Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Bigint | Symbol | BigintLit _ | SymbolLit _) -> Some []
 
 let meet a b =
   if a=b then Some a else match a,b with
@@ -371,7 +372,7 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) ?(native = fun _ -> fals
         let objective = function
           | Named _ | Shape _ | Exact _ | Ctors _ | Callable -> true
           | Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Top
-          | Bigint | Symbol | BigintLit _ -> false in
+          | Bigint | Symbol | BigintLit _ | SymbolLit _ -> false in
         (* An object part goes to an arm whose binders it can fix; a
            ground arm takes only a part it names. *)
         let open_arm = Semantic.mentions_rigid in
@@ -489,6 +490,7 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) ?(native = fun _ -> fals
         | NumLit _ -> not (List.mem Num atoms)
         | StrLit _ -> not (List.mem Str atoms)
         | BigintLit _ -> not (List.mem Bigint atoms)
+        | SymbolLit _ -> not (List.mem Symbol atoms)
         | _ -> true) atoms)
     | t -> t in
   let join = function [] -> None | first::rest -> Some (absorb (List.fold_left union first rest)) in

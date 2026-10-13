@@ -35,6 +35,11 @@ export type ComputedContext = {
   /** A generic alias's equation at a reference's arguments, when it is an
    * array, a tuple or another alias's application; null otherwise. */
   equation(reference: Extract<TypeTerm, { k: "reference" }>): TypeTerm | null;
+  /** The identity of the symbol a `unique symbol` type names: the index of
+   * the `unique symbol` constant or well-known symbol declaring it among the
+   * listed symbols, as a computed key `[k]` naming it is read. Throws the
+   * reason where the symbol it holds is not known. */
+  unique(type: Type): number;
 };
 
 /** The number's decimal spelling, as a literal type's text is written. */
@@ -53,10 +58,11 @@ function bigintValue(value: unknown): string | null {
 
 /** `type` as a union of the fragment's primitive families and literals, when
  * it is exactly one: each part a literal (string, number, bigint, Boolean), a
- * primitive family, `null`, `undefined`, `void`, `unknown` or `never`. An enum
- * literal, a unique symbol, an object, a type parameter or a string pattern
- * is not one, and the answer is null. */
-export function literalUnion(type: Type, span: Span): TypeTerm | null {
+ * primitive family, `null`, `undefined`, `void`, `unknown` or `never`, and,
+ * where `unique` identifies symbols, a unique symbol. An enum literal, an
+ * object, a type parameter or a string pattern is not one, and the answer is
+ * null. */
+export function literalUnion(type: Type, span: Span, unique?: (part: Type) => number): TypeTerm | null {
   const parts = type.isUnionType() ? type.getTypes() : [type];
   const terms: TypeTerm[] = [];
   const atom = (name: Extract<TypeTerm, { k: "atom" }>["name"]): TypeTerm => ({ k: "atom", name, span });
@@ -80,6 +86,7 @@ export function literalUnion(type: Type, span: Span): TypeTerm | null {
     else if (f & TypeFlags.Number) terms.push(atom("number"));
     else if (f & TypeFlags.BigInt) terms.push(atom("bigint"));
     else if (f & TypeFlags.ESSymbol) terms.push(atom("symbol"));
+    else if (f & TypeFlags.UniqueESSymbol && unique) terms.push({ k: "unique", symbol: unique(part), span });
     else if (f & TypeFlags.Null) terms.push(atom("null"));
     else if (f & TypeFlags.Undefined) terms.push(atom("undefined"));
     else if (f & TypeFlags.Void) terms.push(atom("void"));
@@ -113,7 +120,7 @@ export function computedType(context: ComputedContext, node: TypeNode, span: Spa
   const form = computedForm(node) ?? "a computed type";
   const type = checker.getTypeFromTypeNode(node);
   if (!type || type.isErrorType()) throw Error(`TypeScript computes no type for this ${form}: it is not valid TypeScript`);
-  const literals = literalUnion(type, span);
+  const literals = literalUnion(type, span, context.unique);
   if (literals) return literals;
   const computed = describe(checker, type);
   if (ts.isTypeReferenceNode(node)) return aliasApplication(context, node, span, read, computed);
@@ -177,8 +184,7 @@ function keysOf(object: TypeTerm, span: Span): TypeTerm | null {
 function inexpressible(checker: Checker, type: Type): string {
   const parts = type.isUnionType() ? type.getTypes() : [type];
   const part = parts.find(p => literalUnion(p, [0, 0]) === null) ?? type;
-  const what = part.flags & TypeFlags.UniqueESSymbol ? "a unique symbol, which no type of the fragment names"
-    : part.flags & TypeFlags.EnumLiteral ? "an enum member, outside the fragment"
+  const what = part.flags & TypeFlags.EnumLiteral ? "an enum member, outside the fragment"
     : "not a literal or a primitive";
   return `whose part ${checker.typeToString(part)} is ${what}`;
 }
