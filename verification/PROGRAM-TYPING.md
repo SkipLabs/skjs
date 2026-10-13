@@ -969,6 +969,23 @@ and owning no other key, and `readProto` reads the member there. A method call
 `s.m(a)` reads the member so and invokes it with `s` as its receiver, which
 the member's signature names (`this: string`).
 
+An array's `length` is its store's. A read of `length` where
+$`x`$'s type $`B`$ holds arrays beside other values branches on
+$`\mathsf{isArray}`$, each edge binding $`x`$ refined:
+
+```math
+\mathsf{isArray}(x)\ ?\ \mathsf{lenOf}\;(\mathsf{readAt}\;\sigma\;x)\ :\ r(x),
+\qquad
+x:R\ \text{on the true edge},\quad x:\mathsf{tagSlice}_G(B,\mathsf{isArray},\mathsf{false})\ \text{on the false edge}
+```
+
+with $`R`$ the realm's sparse `readonly unknown[]` and $`r`$ the read above at
+the false edge's type. The true edge is `arraySlice`'s: an array label and a
+record or dictionary owning $`\sigma`$ are arrays of the realm
+([array invariant](SEMANTICS.md#the-array-invariant)), whose store `len`
+reads; on the false edge `tagSlice` drops the array labels. The test reads
+no heap, and each arm is JavaScript's read for the values reaching it.
+
 Every binary operator has one rule, `arith`, for arithmetic on numbers and on
 bigints, for string concatenation, relational comparison and equality alike ([its
 meaning](SEMANTICS.md#operational-language), `binop`). A clause pair

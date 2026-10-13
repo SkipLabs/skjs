@@ -48,19 +48,8 @@ let iteration_reason =
    kind: a union of host kinds has no one intrinsic (an iterable the program defines, or a union with \
    one, runs the iterator protocol)"
 let array_or_record_reason =
-  "an array keeps its length in its store, not at a location a field of a record names, and an open record \
-   may be an array carrying other keys, so no rule reads `length` on a union of an array and a record"
-(* `length` read on a union of an array and an open record naming it: refused
-   by name. *)
-let refuse_length_union state declarations pos t name =
-  if name = Name "length" then
-    let atoms = flat_atoms declarations t in
-    let names_length = function
-      | Shape {elements=None;calls=[];fields;_} ->
-        List.exists (fun (f:Semantic.field) -> f.name = name) fields
-      | _ -> false in
-    if List.exists array_atom atoms && List.exists names_length atoms then
-      explain state pos ("a read of `length` on a union of an array and a record: " ^ array_or_record_reason)
+  "an array keeps its length in its store, not at a location a field of a record names, so no array meets \
+   a record naming `length`"
 let module_arity_reason =
   "its slot is its annotated signature, checked by its own unit, and the arity of an arrow is exact; \
    offering it more parameters would make that slot a claim (DESIGN.md, \"Method members are host-relative\")"

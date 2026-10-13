@@ -371,6 +371,34 @@ Mappings discard only the temporaries introduced by this expression. -/
     -- An array's `length` is its store's, read as a number; a primitive's
     -- member is read by its shape (`dispatchTerm`).
     let G := SourceTypes.graph (← table)
+    -- `length` of a value that may be an array or something else:
+    -- `Array.isArray` selects the realm's `readonly unknown[]`, whose length
+    -- is its store's, and every other value reads `length` as it reads it.
+    -- The test binds the value refined on each edge (`arraySlice`,
+    -- `tagSlice`).
+    if fld == "length" && B.any (fun l => arraysOnly G [l]) && !arraysOnly G B then
+      let receiver := held ⟨"",some a.span⟩
+      let u ← lower (SourceTypes.use .source)
+      let store ← lower (SourceTypes.use (.list ⟨[], [], some [u], true, .sparse⟩ []))
+      let R : Ty Tree := [← lower (SourceTypes.use (SourceTypes.arrayOf (← table) store true))]
+      let S : Ty Tree := [store]
+      let F := BranchRefinement.tagSlice G B .isArray false
+      let drop2 := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
+        (fun i => if i == 0 then 0 else i+2))⟩
+      let length ← emitAt e.span (.lenOf (.var 0)) (.bind drop2) (S::R::Γ) A
+        (scope := held ⟨"",some e.span⟩ :: receiver :: scope)
+      let array ← emitAt e.span (.readAt SourceTypes.storeField (.var 0)) (.bind length) (R::Γ) S
+        (scope := receiver :: scope)
+      let arms ← primitiveArms (receiver :: scope) (F::Γ) F fld
+      let other ← emitAt e.span (dispatchTerm arms fld 0 (.readAt fld (.var 0))) (.bind drop) (F::Γ) A
+        (scope := receiver :: scope)
+      -- The tested value is pushed on each edge; the slot it was saved in is
+      -- dropped.
+      let refined := fun (t : Target) => (⟨t.label, some ((t.mapping.getD (List.range (Γ.length+1))).map
+        (fun i => if i == 0 then 0 else i+1))⟩ : Target)
+      let test ← emitAt e.span (.var 0) (.tagBind .isArray (refined array) (refined other)) (B::Γ) B
+        "tag-dispatch" (scope := receiver :: scope)
+      return ← compileAtom recursive fc scope Γ a test
     let object := if fld == "length" && arraysOnly G B
       then Tm.lenOf (.readAt SourceTypes.storeField (.var 0)) else .readAt fld (.var 0)
     let arms ← primitiveArms (held ⟨"",some a.span⟩ :: scope) (B::Γ) B fld

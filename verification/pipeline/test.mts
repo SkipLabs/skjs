@@ -594,6 +594,10 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     "an explicit comparator never invokes the element's invalid conversion method");
   // Object.assign writes a function's `name`, which is not writable: it throws.
   assert.throws(() => runExample("invalid-function-fields-inferred", "named()"), /read only property 'name'/);
+  // A dictionary beside an array: TypeScript types its `length` `number`, and
+  // an empty one has none.
+  assert.equal(runExample("invalid-length-array-or-dictionary", "size({})"), undefined,
+    "invalid-length-array-or-dictionary: the actual source returns undefined despite its number contract");
   // A rest typed by an intersection: TypeScript accepts the call at an instance
   // where the declared contract holds no array, and the result is no boolean.
   assert.equal(runExample("invalid-rest-intersection", "typeof wrong()"), "number",

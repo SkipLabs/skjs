@@ -167,7 +167,6 @@ module Access (S : sig val state : t end) = struct
     open_array_tests= !(state.diagnostics.Proposal_diagnostics.open_array_tests);
     unknown_instance_tests= !(state.diagnostics.Proposal_diagnostics.unknown_instance_tests) }
   let explain = Proposal_diagnostics.explain state.diagnostics
-  let refuse_length_union = Proposal_diagnostics.refuse_length_union state.diagnostics
   let observe_method_call pos =
     let observations=state.diagnostics.Proposal_diagnostics.method_callees in
     observations := pos :: !observations

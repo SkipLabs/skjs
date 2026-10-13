@@ -98,6 +98,7 @@ only through its members).
 | Rest parameters typed by a type parameter (11 coverage units) | done: 7 verified, 2 principled, 2 gaps (verifier-only coverage run, 2,484 → 2,491 verified). A module function's rest typed by its own type parameter is an argument pack each call instantiates within its bound, the body seeing the fresh array at the bound ([rule](PROGRAM-TYPING.md#judgments-and-constructor-views), `packRest_store_safe`; `rest-pack-parameter`, `invalid-rest-pack-argument` rejected); a parameter typing the rest and anything else is [refused on principle](SOURCE-FRAGMENT.md#refused-on-principle) (`invalid-rest-pack-value`, run under Node). A declared type parameter typing a value and a rest is instantiated at an array or tuple type whose tuple contract gives the rest's argument lists (`instancePack`; `rest-pack-declared`; `invalid-rest-pack-declared`, `invalid-rest-pack-declared-call` and a forged non-array instance refused), and a spread of a tuple of required positions into a pack instance is its positions (`invalid-rest-pack-spread` refused). A rest typed by a class's type parameter inside the class (`RestRunner`, `keepArgument`) remains: its argument lists are a value's elements, which the heap holds, and an argument pack's contract is heap-free | the units of `generic-spread-params`, `readonly-rest-params`, `rest-inference-stability`, `observed-array-rest` and `variadic-rest-corner-cases` refused for their rest verify or carry a principled refusal |
 | Generic function and constructor types (4 coverage units) | open: 3 verified, 1 gap. A generic function type in an annotation is a scheme row, as in a declaration; a generic closure's omitted result is its body's; a generic module function read as a value has its scheme as its slot; instances may be any type, schemes included ([generic function and constructor types](SOURCE-CONTRACTS.md#generic-function-and-constructor-types), `Scheme.moduleScheme`). A scheme row has a kind: call signatures or construct signatures, a generic constructor type, met by class values (`SchemeRow.construct`, `sigsT`, `covers_body_sound`); a generic class read as a value has its construct scheme as its slot. Cases: `generic-function-type-annotation`, `generic-constructor-type`; `invalid-generic-function-type-annotation`, `invalid-generic-function-type-bound`, `invalid-generic-closure-field`, `invalid-generic-constructor-type` refused and misbehave under Node, `invalid-generic-constructor-as-function` refused. `testGenericTupleConstraint` stops at the allocation lemma of the world-extension relation: an array's prototype is a member of the realm's prototype type, which the model never shows inhabited ([model limits](SOURCE-FRAGMENT.md#model-limits)) | `genericArrowField`, `testUnionWithGenerics` and `testConstructorSignatureTypes` verify; `testGenericTupleConstraint` verifies or carries a principled refusal |
 | Coverage group "`keyof` with unique symbols" (6 gaps) | done: 6 verified | a `unique symbol` type is the singleton `symbolLit` of the symbol its declaration names as a key ([unique-symbol](SOURCE-CONTRACTS.md#computed-types); meets and subtyping in `meet_sound`, `Covers.sound`), so `keyof [number]`, `keyof string` and `keyof Promise<number>` hold `Symbol.iterator`, `Symbol.unscopables` or `Symbol.toStringTag` exactly. `keyof-unique-symbol` verifies; a string `"1"` at `keyof [number]`, any symbol and another unique symbol at `keyof Promise<number>`, and forged claims naming another symbol or every symbol are refused. Verifier-only coverage run over d10eba371 and this change: 2,502 verified, the six units gained and none lost; full Lean build and all six suites pass |
+| Coverage group "arrays and open records": `Array.isArray` on `unknown`, `length` of an array or a record (6 gaps) | 1 verified, 5 gaps | a read of `length` on a type holding arrays beside other values branches on `Array.isArray`, the array arm reading its store's length at the realm's `readonly unknown[]` (`arraySlice`), the other arm reading as before ([member reads](PROGRAM-TYPING.md), `length-array-or-record`; `invalid-length-array-or-dictionary` rejected): `array-object-union-operations#testCommonProperty` verifies; verifier-only coverage run 2,503 verified, no unit lost. The four `instanceof Array` units on `unknown` and an array at a record's readonly `length` stay gaps, their design in [next steps](#next-steps) |
 
 **Promise (step 5).** Closed when `promise-covariance` verifies and
 `invalid-promise-covariance` is rejected at its own obligation; the
@@ -232,13 +233,17 @@ cannot replace an arbitrary structural interface whose method may capture the
 interface's type parameter. Any future simplification must preserve that
 semantic difference.
 
-**The array invariant at `unknown`, and a record's `length`.** `Array.isArray`
-on `unknown` needs the invariant of every value, a thrown one included: the
-throw outcome of `Safe` would carry it, which makes it relative to the graph's
-realm. `length` read on a union of an array and a record naming `length`
-needs a dispatch on `Array.isArray`, the store's length on one arm and the
-field on the other, with the invariant excluding an own `length` key, which
-the model's arrays never have. Until then both are located search failures.
+**The array invariant at `unknown`, and an array at a record's `length`.**
+`Array.isArray` on `unknown` needs the invariant of every value: the `source`
+clause carrying it in a row; the store's elements meeting it too, since an
+element is read at `unknown` (the realm naming its `unknown` row, which the
+invariant's store contract reads, as it reads `ArrayProto`'s); a thrown value
+meeting it, so the throw outcome of `Safe` and `SafeGraph` carries it, which
+makes safety relative to the graph's realm; and a type parameter's assignment
+within it. An array where a record with a readonly `length` is expected needs
+that view to admit an array, whose `length` is its store's, at a type
+admitting every array length, and each `length` read at such a record to
+dispatch on `Array.isArray`. Until then both are located search failures.
 
 **Keys known only at run time.** A key-adding write at one of several literal
 keys needs a dispatch on the key, one copy per key; at a number or a symbol,

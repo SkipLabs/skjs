@@ -42,8 +42,8 @@ it, in this order:
   runs the iterator protocol); an open record or `unknown` that
   `Array.isArray` or `instanceof Array` found an array, used as one (the
   object owns an array's store, not a proven array of `Array.prototype`);
-  `length` on a union of an array and a record naming it, an array used as
-  such a record, a mutable tuple's `length` at its arity; a named function
+  an array used as a record naming `length`, a mutable tuple's `length` at
+  its arity; a named function
   (a module function or a parameter) where a signature binding more
   parameters, or indifferent to the receiver it requires, is expected (its
   type is its annotated signature); an instance of a declaration with

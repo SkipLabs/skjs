@@ -46,7 +46,6 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
        | Id o,Name k when List.mem (o,k) (observations ()).Analysis_capabilities.dictionary_keys && expected <> None ->
          S.explain site ("a read of a key `in` found in a dictionary: " ^ dictionary_presence_reason)
        | _ -> ());
-      S.refuse_length_union declarations site receiver n;
       (match expected with
        | Some x when n = Name "length"
            && List.exists (function

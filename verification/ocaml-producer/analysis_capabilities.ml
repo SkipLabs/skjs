@@ -53,7 +53,6 @@ end
 module type Observations = sig
   val observations : unit -> observations
   val explain : Json.t -> string -> unit
-  val refuse_length_union : Source.declaration list -> Json.t -> ty -> Semantic.key -> unit
 end
 
 module type Path_queries = sig
