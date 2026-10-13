@@ -318,7 +318,9 @@ theorem checkClauseWith_complete [DecidableEq ι] {G : NormalGraph ι} {sub : Op
     [DecidableRel R] {known self a b}
     (h : Covers G sub R known self a b) : ∃ es, checkClauseWith G sub R known es self a b = true := by
   simp only [checkClauseWith, decide_eq_true_eq]
-  cases a <;> cases b <;> simp only [Covers, CoversWith] at *
+  unfold Covers at h
+  unfold CoversWith at h ⊢
+  cases a <;> cases b <;> simp only at *
   all_goals try contradiction
   all_goals first
     | exact ⟨[], h⟩

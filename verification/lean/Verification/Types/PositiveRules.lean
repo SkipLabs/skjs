@@ -195,8 +195,10 @@ theorem expand_sem (G : NormalGraph ι) (S : List ι) (hS : G.plainTy S = true) 
 `normalize_sound`: the union of the parts denotes exactly the original clause. -/
 theorem splitClause_sem (X : α → Fam) (P : α → ArgFam) (c : Clause α) (n W v) :
     semList X P (splitClause c) n W v ↔ semWithArgs X P c n W v := by
-  cases c
-  all_goals simp [splitClause, semList, setSem, semWithArgs, boolT]
+  by_cases hb : c = .bool
+  · subst hb; simp [splitClause, semList, setSem, semWithArgs, boolT]
+  · have hs : splitClause c = [c] := by cases c <;> first | exact absurd rfl hb | rfl
+    simp [hs, semList, setSem]
 
 /-- The split is meaning preserving in a row too: only `bool` splits, and
 neither it nor its parts is a record's. -/
@@ -1322,7 +1324,8 @@ theorem CoversWith.mono [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Ren
     {arrows arrows' : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop}
     (ha : ∀ L S M, arrows L S M → arrows' L S M) {self a b}
     (h : CoversWith G sub R known arrows self a b) : CoversWith G sub R known arrows' self a b := by
-  cases a <;> cases b <;> simp only [CoversWith] at *
+  unfold CoversWith at h ⊢
+  cases a <;> cases b <;> simp only at *
   all_goals first
     | exact h
     | exact ⟨ha _ _ _ h.1, h.2⟩
@@ -1343,7 +1346,8 @@ theorem covers_writable_keeps [DecidableEq ι] {G : NormalGraph ι} {sub : Optio
     {ms : List (MethodMembers.Sig (List ι))} {ls : List KeyBound}
     (h : CoversWith G sub R known arrows self c (.dict a bs vs ix os ms ls cy)) :
     ∀ y ∈ cy, Uninhabited G y.2 ∨ ∀ K ∈ c.keyBounds, K.keeps y.1 = true := by
-  cases c <;> simp only [CoversWith] at h
+  unfold CoversWith at h
+  cases c <;> simp only at h
   all_goals try exact h.elim
   · exact fun y hy => .inl (h.2.2.2.2.2.2 y hy)
   · exact h.2.2.2.2.2.2
@@ -2919,7 +2923,11 @@ theorem covers_arguments_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R
 /-- A record clause is covered by record clauses only. -/
 theorem CoversWith.record [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)} {R known arrows self} {a b : Clause (List ι)}
     (hc : CoversWith G sub R known arrows self a b) (hb : b.record = true) : a.record = true := by
-  cases a <;> cases b <;> simp_all [CoversWith, Clause.record]
+  unfold CoversWith at hc
+  cases a <;> cases b <;> first
+    | rfl
+    | (simp only at hc; done)
+    | simp [Clause.record] at hb
 
 /-- Coverage of the clauses themselves, the row's invariant aside. -/
 theorem Covers.sound_raw [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)} {η : MixedAssignment ι} {R known self a b}
@@ -2937,9 +2945,10 @@ theorem Covers.sound_raw [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Re
   · subst hb; exact fun hv => semWithArgs_value hv
   by_cases hjs : b = .source
   · subst b
-    have hc : sourceClause a = true := by cases a <;> simpa [Covers, CoversWith] using hc
+    have hc : sourceClause a = true := by unfold Covers CoversWith at hc; cases a <;> simpa using hc
     exact fun hv => sourceClause_sound hc hv
-  cases a <;> cases b <;> simp only [Covers, CoversWith] at hc
+  unfold Covers CoversWith at hc
+  cases a <;> cases b <;> simp only at hc
   all_goals try contradiction
   all_goals try exact absurd rfl hb
   all_goals try exact absurd rfl hjs
@@ -3508,7 +3517,8 @@ theorem covers_arrs_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (R
     (W : WorldT n) (v : Val) :
     semWithArgs (mixedValues G η) (mixedArgs G η) (.arrs L S) n W v →
       semWithArgs (mixedValues G η) (mixedArgs G η) (.arrs M T) n W v := by
-  simp only [Covers, CoversWith] at hc
+  unfold Covers CoversWith at hc
+  simp only at hc
   intro hv
   refine ⟨⟨hv.1.1, fun p hp => ?_⟩, ⟨hv.1.1, fun t ht => ?_⟩⟩
   · obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
