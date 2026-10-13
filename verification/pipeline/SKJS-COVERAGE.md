@@ -77,6 +77,10 @@ Every top-level value-level statement (function with a body, class, variable
 statement, top-level code other than an empty `;`) is a unit. Its derived file holds it plus, in source
 order, every top-level statement it reaches by name, transitively (aliases,
 interfaces, ambient declarations, other functions, overload signatures). A
+derived file sits beside a copy of its source in a temporary copy of the test
+tree, so relative imports retain their targets, including transitive imports.
+Its project lists only the derived file and the environment declarations;
+other copied files enter through imports. A
 unit is marker-accepted when no statement of that closure has an error line
 (1,364 units are rejected themselves, 70 through a dependency).
 
@@ -190,9 +194,6 @@ unsoundness was reached and refused for its original reason.
   confirmation guards acceptance, not the pipeline's view.
 - A derived file of a module is written as a script (`export {}` is itself
   outside the fragment).
-- A derived file is written beside the others, not beside its source, so a
-  relative import of a sibling test file (`symbols.ts` importing
-  `./symbols-export.js`) does not resolve: 1 unit.
 - Twelve producer refusals have no location (`where: "unknown"`).
 
 ## Refusals by class

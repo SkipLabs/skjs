@@ -63,6 +63,7 @@ import path from "node:path";
 import os from "node:os";
 import { spawnSync } from "node:child_process";
 import * as ts from "../tools/node_modules/typescript/dist/ast/index.js";
+import { API } from "../tools/node_modules/typescript/dist/api/sync/api.js";
 import { openText, close } from "../tools/fragment-parse.mts";
 import { childrenOf, nameOf } from "../tools/syntax.mts";
 import { checkApart, type Outcome } from "./verify-source.mts";
@@ -385,6 +386,24 @@ const environment = (derived: string) => ({
  * SKJS confirmation must fail if the checker could not run; marker-only
  * measurement is a separate mode, never a silent fallback. */
 function skjsVerdicts(files: string[]): Set<string> {
+  // SKJS requires imported source files on its command line. TypeScript's
+  // project supplies the transitive source set in the copied test tree.
+  const dependencies = new Map<string, readonly string[]>();
+  const api = new API({ cwd: outDir });
+  try {
+    for (const file of files) {
+      if (/\b(?:import|export)\b/.test(fs.readFileSync(file, "utf8"))) {
+        const config = projectOf(file);
+        const snapshot = api.updateSnapshot({ openFiles: [file], openProjects: [config] });
+        const project = snapshot.getProject(config);
+        if (!project) throw Error(`SKJS confirmation cannot load ${config}`);
+        dependencies.set(file, project.program.getSourceFileNames().filter((f) =>
+          f !== file && f.startsWith(outDir + path.sep)));
+      }
+    }
+  } finally {
+    api.close();
+  }
   const main = process.env.SKJS_ROOT ?? (() => {
     const r = spawnSync("git", ["worktree", "list", "--porcelain"], { cwd: repo, encoding: "utf8" });
     return /^worktree (.+)$/m.exec(r.stdout)?.[1] ?? repo;
@@ -392,12 +411,17 @@ function skjsVerdicts(files: string[]): Set<string> {
   const bin = process.env.SKJS_BIN ?? "target/host/dev/skjs";
   const image = process.env.DOCKER_IMAGE ?? "skiplabs/skip:latest";
   const skip = process.env.SKIP_DIR ?? path.resolve(main, "../skip");
-  const inside = files.map((f) => `/work/corpus/${path.relative(outDir, f)}`);
+  const insidePath = (f: string) => `/work/corpus/${path.relative(outDir, f)}`;
+  const inside = files.map(insidePath);
+  // Every xargs batch needs the imports, even when its callers are split.
+  const support = [...new Set([...dependencies.values()].flat())].map(insidePath);
+  const quote = (s: string) => "'" + s.replaceAll("'", "'\\''") + "'";
+  const command = [bin, "check", "--import-stubs", "import-stubs", ...support].map(quote).join(" ");
   const list = path.join(outDir, "skjs-files.txt");
-  fs.writeFileSync(list, inside.join("\n") + "\n");
+  fs.writeFileSync(list, inside.join("\0") + "\0");
   const r = spawnSync("docker", ["run", "--rm", "-v", `${main}:/work/skjs`, "-v", `${skip}:/work/skip`,
     "-v", `${outDir}:/work/corpus`, "-w", "/work/skjs", image, "sh", "-c",
-    `xargs ${bin} check --import-stubs import-stubs < /work/corpus/skjs-files.txt`],
+    `xargs -0 ${command} < /work/corpus/skjs-files.txt`],
     { encoding: "utf8", maxBuffer: 256 * 1024 * 1024, timeout: 900_000 });
   if (r.error || r.status === null)
     throw Error(`SKJS confirmation failed: ${r.error?.message ?? r.signal}`);
@@ -414,6 +438,8 @@ function skjsVerdicts(files: string[]): Set<string> {
   // cannot establish acceptance of files lacking a parsed diagnostic.
   if (r.status !== 0 && (r.status !== 123 || rejected.size === 0))
     throw Error(`SKJS confirmation failed: exit ${r.status}, ${rejected.size} checker diagnostic files:\n${output.slice(0, 2000)}`);
+  for (const [file, deps] of dependencies)
+    if (deps.some((dep) => rejected.has(dep))) rejected.add(file);
   return rejected;
 }
 
@@ -758,6 +784,10 @@ async function main() {
   const { sources, excluded } = corpus();
   fs.rmSync(outDir, { recursive: true, force: true });
   fs.mkdirSync(outDir, { recursive: true });
+  // Keep relative imports beside their sources, including transitive imports.
+  // Each unit's project lists only its derived file and the environment;
+  // the compiler reaches other copied files through imports.
+  fs.cpSync(path.join(repo, "tests"), path.join(outDir, "tests"), { recursive: true });
   const units: Unit[] = [];
   const failed: { file: string; reason: string }[] = [];
   for (const src of sources) {
@@ -766,7 +796,7 @@ async function main() {
       for (const u of us) {
         if (u.skjsMarker !== "accepted") { units.push(u); continue; }
         const slug = `${src.file.replace(/^tests\//, "").replace(/\.ts$/, "").replace(/[^A-Za-z0-9_-]+/g, "_")}__${u.name.replace(/[^A-Za-z0-9_-]+/g, "_")}`;
-        const derived = path.join(outDir, `${slug}.ts`);
+        const derived = path.join(outDir, path.dirname(src.file), `${slug}.ts`);
         fs.writeFileSync(derived, derive(u, stmts, isModule));
         fs.writeFileSync(projectOf(derived), JSON.stringify(environment(derived), null, 1) + "\n");
         u.derived = derived;
