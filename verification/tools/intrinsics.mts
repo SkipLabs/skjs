@@ -198,6 +198,53 @@ export function restFromIntrinsic(k: number):
       rest: binder, span }], { k: "array", presence: "readable", readonly: false, element: binder, span }) };
 }
 
+/** A number's spelling as a literal: its `Number::toString`, which reads back
+ * as the same double, and `-0` for negative zero, which that spells `0`. */
+export function numberText(value: number): string {
+  return Object.is(value, -0) ? "-0" : String(value);
+}
+
+/** The literal type of an enum member's value. */
+export function literalTerm(value: string | number, at: [number, number]): TypeTerm {
+  return typeof value === "string"
+    ? { k: "literal", name: "string", text: value, span: at }
+    : { k: "literal", name: "number", text: numberText(value), span: at };
+}
+
+/** An enum's members: each one's name, and its value where TypeScript
+ * computes one (`getConstantValue`), `undefined` where it is known only at
+ * run time. */
+export type EnumMemberValue = { name: string; value: string | number | undefined };
+
+/** The object type of an enum one of whose members' values is known only at
+ * run time, or of an ambient enum: each member a readonly field at its
+ * value's literal type, or at `number` where its value is known only at run
+ * time (TypeScript requires such a member to be a number). It states no
+ * reverse mapping, whose keys are values known only at run time, or, for an
+ * ambient enum, the environment's. */
+export function enumMembersTerm(members: readonly EnumMemberValue[], at: [number, number]): TypeTerm {
+  return { k: "object", span: at, stringIndex: null, calls: [], fields: members.map(m => ({
+    name: m.name, optional: false, readonly: true,
+    type: m.value === undefined ? { k: "atom", name: "number", span: at } : literalTerm(m.value, at), span: at })) };
+}
+
+/** The intrinsic building the object of the enum `name` one of whose
+ * members' values is known only at run time. */
+export const enumIntrinsicName = (name: string): string => `%Enum:${name}%`;
+
+/** `%Enum:E%(o: O): O`, with `O` the enum's `enumMembersTerm`: given the
+ * fresh object of its members at their values, it returns that object with
+ * the reverse mapping TypeScript's emit adds, for each numeric member in
+ * turn the property its value's `ToString` names, holding the member's
+ * name. Those keys are canonical numeric strings, none a member's name (the
+ * parser refuses a member named `NaN` or `Infinity`, and TypeScript any other
+ * numeric name), so every member keeps its field. */
+export function enumIntrinsic(name: string, members: readonly EnumMemberValue[]):
+    { name: string; typeParams: SourceTypeParameter<TypeTerm>[]; type: Signature } {
+  const object = enumMembersTerm(members, span);
+  return { name: enumIntrinsicName(name), typeParams: [], type: fn([object], object) };
+}
+
 /** The intrinsics' binders and signatures, given the standard library's
  * `Promise` applied to an argument. */
 export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: ReadonlySet<string>):

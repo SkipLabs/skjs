@@ -110,7 +110,7 @@ Each call is checked against the conjunction, so it is typed by any overload
 whose parameters admit its actuals. A generic overload is refused.
 
 An ambient declaration the module writes (`declare function`, `declare
-const`, `declare class`) runs nothing and is in scope everywhere, read as an
+const`, `declare class`, `declare enum`) runs nothing and is in scope everywhere, read as an
 import is. With $`D`$ the declarations TypeScript binds $`x`$ to:
 
 ```math
@@ -1648,7 +1648,7 @@ to the built-in `sparse ReadonlyArray<unknown>` where it holds
 ## Enums
 
 With $`m_1,\ldots,m_n`$ an enum's members and $`v_i`$ the value TypeScript
-computes for $`m_i`$ (`getConstantValue`):
+computes for $`m_i`$ (`getConstantValue`), $`\bot`$ where it computes none:
 
 ```math
 \frac{\forall i.\ v_i\ \text{computed by TypeScript, finite if a number}\quad
@@ -1661,6 +1661,54 @@ value's literal type, in JavaScript's key order where the declaration is. The
 type `E` is $`\bigcup_i\{v_i\}`$, `E.A` the literal type of `A`'s value, and
 `typeof E` is $`\mathcal O(E)`$. A `const enum` read is its member's value
 (`constEnumReads`), and the declaration runs nothing.
+
+A member TypeScript computes no value for has an initializer $`e_i`$ whose
+value, a number (TypeScript requires it), is known only at run time, and so
+is the key of its reverse mapping. Such an enum's object type states its
+members only, each at its value's type
+$`\tau_i`$, $`\{v_i\}`$ or $`\mathtt{number}`$ where $`v_i=\bot`$:
+
+```math
+\mathcal O^{\circ}(E)=\{\overline{\mathtt{readonly}\ m_i:\tau_i}\},\qquad
+E=\textstyle\bigcup_i\tau_i .
+```
+
+The declaration runs each such initializer in order, bound to a constant of
+its own, then builds the object with the trusted step
+$`\%\mathsf{Enum{:}E}\%:(\mathcal O^{\circ}(E))\Rightarrow\mathcal O^{\circ}(E)`$,
+which adds the reverse mapping
+([intrinsics](tools/intrinsics.mts)):
+
+```math
+\frac{\exists i.\ v_i=\bot\qquad
+      \forall i.\ m_i\notin\{\texttt{NaN},\texttt{Infinity}\}\qquad
+      \forall i.\ v_i=\bot\Rightarrow \mathrm{reads}_E(e_i)\subseteq\{m_j\mid j<i\}}
+     {\texttt{enum E}\{\vec m\}\ \leadsto\
+      \overline{\texttt{const}\ \%E.m_i\%:\mathtt{number}=e_i[\overline{m_j:=u_j}]}^{\,v_i=\bot};\
+      \texttt{const E}:\mathcal O^{\circ}(E)=\%\mathsf{Enum{:}E}\%(\{\overline{m_i:u_i}\})}
+```
+
+with $`u_j`$ the constant $`\%E.m_j\%`$ where $`v_j=\bot`$ and the literal
+$`v_j`$ otherwise, and $`\mathrm{reads}_E(e)`$ the members of `E` that $`e`$
+reads, bare, `E.M` or `E["M"]`, as TypeScript binds them (`enumMemberRead`);
+any other read of `E` in $`e_i`$ is refused. JavaScript writes each member's
+property and its reverse entry between the initializers; only a read of `E`
+could observe that order, and a call in an initializer that can read `E`
+before it is bound is refused by the initialization order check. A member
+named by a canonical numeric string other than `NaN` and `Infinity` is a
+TypeScript error (TS2452), so no reverse key is a member's name.
+
+An ambient enum (`declare enum`, not `const`) runs nothing: its object is
+the environment's, read as a `declare const` is
+([ambient values](#imported-ambient-and-global-values)), with $`v_i=\bot`$ for a
+member it does not initialize, which TypeScript leaves opaque:
+
+```math
+\frac{\texttt{declare enum E}\{\vec m\}}
+     {\Gamma(E)=\mathcal O^{\circ}(E)}\ \textsf{ambient-enum}
+```
+
+The type `E` is $`\bigcup_i\tau_i`$ there too.
 
 ## Const assertions
 

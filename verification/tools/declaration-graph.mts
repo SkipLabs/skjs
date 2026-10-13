@@ -22,7 +22,7 @@ import { classInstance, computedAlias, computedForm, expandMapped, mapped, membe
 import { arrayPrototype, interfaceOverlay, overlay, primitiveKinds, primitivePrototype, primitivePrototypeName, type OverlayEntry,
   type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
 import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateMapName, iterateSetName, iterateStringName,
-  iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName } from "./intrinsics.mts";
+  iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm } from "./intrinsics.mts";
 import { globalEntry, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { computedType, enclosingBinders, inferredTerm, literalUnion, type ComputedContext } from "./computed-types.mts";
 import type { DeclarationIdentity, DeclarationDocument, PropertyKey, Reference, TypeDefinition, TypeRoot, TypeTerm, ValueRoot } from "./declaration-types.mts";
@@ -394,6 +394,13 @@ export function collectDeclarations(file: string, options: {
    * (PROGRAM-TYPING.md, "Enums"), or undefined where it computes none. */
   enums?: readonly Span[];
   enumMember?: (span: Span, value: string | number | undefined) => void;
+  /** An ambient enum (`declare enum`, not `const`) joins the values as the
+   * environment's object, at its members' object type (`enumMembersTerm`).
+   * An enum with a member TypeScript computes no value for joins the
+   * intrinsic `%Enum:E%` that builds its object (`enumIntrinsic`), and each
+   * read of one of its members in such a member's initializer, bare or
+   * `E.M`, `E["M"]`, is reported to `enumMemberRead` with the member's span. */
+  enumMemberRead?: (span: Span, member: Span) => void;
   /** The client's reads `X.y` and `X["y"]` with `X` an identifier: each that
    * TypeScript binds to a member of a `const enum` the client declares is
    * reported to `constEnumRead` with the member's value, which TypeScript
@@ -1478,8 +1485,60 @@ export function collectDeclarations(file: string, options: {
       } catch (error) {
         throw new DeclarationError(span, error instanceof Error ? error.message : String(error));
       }
-      for (const member of statement.members)
-        options.enumMember?.([member.getStart(client), member.end], checker.getConstantValue(member));
+      const members = statement.members.map(member => {
+        const value = checker.getConstantValue(member);
+        options.enumMember?.([member.getStart(client), member.end], value);
+        return { node: member, name: ts.isIdentifier(member.name) || ts.isStringLiteral(member.name) ? member.name.text : "", value };
+      });
+      const modifier = (kind: ts.SyntaxKind) => !!statement.modifiers?.some(m => m.kind === kind);
+      if (modifier(ts.SyntaxKind.ConstKeyword)) continue;
+      const at: Span = [statement.getStart(client), statement.end];
+      // An ambient enum is the environment's object, read as a `declare
+      // const` of its members' object type is (`enumMembersTerm`).
+      if (modifier(ts.SyntaxKind.DeclareKeyword)) {
+        values.push({ binding: { local: statement.name.text, imported: statement.name.text, specifier: ambientSpecifier, span: at },
+          declaration: { module: idOf(client), name: statement.name.text, span: at }, construct: false, typeParams: [],
+          type: enumMembersTerm(members, at) });
+        continue;
+      }
+      if (members.every(m => m.value !== undefined)) continue;
+      // An enum with a member whose value is known only at run time is built
+      // by `%Enum:E%` (`enumIntrinsic`). A read in a member's initializer of
+      // a member of the same enum, bare or `E.M`, `E["M"]`, is reported to
+      // `enumMemberRead` with the member's span.
+      const intrinsic = enumIntrinsic(statement.name.text, members);
+      values.push({ binding: { local: intrinsic.name, imported: intrinsic.name, specifier: intrinsicModule, span: at },
+        declaration: { module: intrinsicModule, name: intrinsic.name, span: [0, 0] },
+        construct: false, typeParams: intrinsic.typeParams, type: intrinsic.type });
+      const same = (a: Node | undefined, b: Node): boolean => !!a && a.getSourceFile() === client && a.pos === b.pos && a.end === b.end;
+      const ownMember = (node: Node | undefined): Node | undefined =>
+        node && ts.isEnumMember(node) ? members.find(m => same(node, m.node))?.node : undefined;
+      const ownEnum = (node: Node): boolean => ts.isIdentifier(node) &&
+        !!targetOf(checker, node)?.declarations.some(d => same(d.resolve(), statement));
+      const memberNamed = (name: string): Node | undefined => members.find(m => m.name === name)?.node;
+      const report = (read: Node, member: Node): void => {
+        options.enumMemberRead?.([read.getStart(client), read.end], [member.getStart(client), member.end]);
+      };
+      // `forEachChild` stops at a callback's truthy result: `visit` has none.
+      const visit = (node: Node): void => {
+        if (ts.isPropertyAccessExpression(node) && ownEnum(node.expression)) {
+          const member = memberNamed(node.name.text);
+          if (member) return report(node, member);
+        }
+        if (ts.isElementAccessExpression(node) && ownEnum(node.expression) &&
+            ts.isStringLiteral(node.argumentExpression)) {
+          const member = memberNamed(node.argumentExpression.text);
+          if (member) return report(node, member);
+        }
+        if (ts.isPropertyAccessExpression(node)) return visit(node.expression);
+        if (ts.isIdentifier(node)) {
+          const member = ownMember(targetOf(checker, node)?.declarations[0]?.resolve());
+          if (member) report(node, member);
+          return;
+        }
+        node.forEachChild(visit);
+      };
+      for (const m of members) if (m.value === undefined && m.node.initializer) visit(m.node.initializer);
     }
     for (const span of options.constEnumReads ?? []) {
       const access = expressionAt(client, span);

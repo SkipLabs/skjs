@@ -46,6 +46,17 @@ function must<T>(value: T | null | undefined, message: string): T {
 const runExample = (file: string, expression: string): unknown =>
   vm.runInNewContext(`${stripTypes(readFileSync(join(here, "examples", `${file}.ts`), "utf8"))
     .replace(/^export /gm, "")}\n${expression}`, {}, { timeout: 1000 });
+/** Run an example as TypeScript's own emit compiles it, then `expression`:
+ * an enum, which type stripping does not erase, and whose member reads a
+ * transforming stripper may replace by their values. TypeScript emits the
+ * file whatever errors it reports. */
+const runEmitted = (file: string, expression: string): unknown => {
+  const out = mkdtempSync(join(tmpdir(), "emitted-"));
+  const tsc = spawnSync(join(here, "..", "tools", "node_modules", ".bin", "tsc"),
+    ["--target", "es2022", "--strict", "--outDir", out, join(here, "examples", `${file}.ts`)], { encoding: "utf8", timeout: 60_000 });
+  assert.ifError(tsc.error);
+  return vm.runInNewContext(`${readFileSync(join(out, `${file}.js`), "utf8")}\n${expression}`, {}, { timeout: 1000 });
+};
 /** Check `claims` against `evidence` with the verifier's acceptance entry, and
  * require a refusal; its words, for the caller to match. */
 const invoke = (claims: string, evidence: string, artifacts: string,
@@ -681,6 +692,14 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     const xs = Loud.from([1, 2]); built = 0;
     const result = doubled(xs);
     JSON.stringify([result instanceof Loud, built, Array.from(result)]);`), "[true,1,[2,4]]");
+  // An enum member known only at run time: its reverse mapping replaces a
+  // member named by its value's key; a member read before it is written is
+  // undefined, through a closure or a module function; its value is a
+  // number, not a literal.
+  assert.equal(runEmitted("invalid-enum-computed-nan-name", "one()"), "X");
+  assert.equal(runEmitted("invalid-enum-computed-forward", "first()"), undefined);
+  assert.equal(runEmitted("invalid-enum-computed-call-order", "first()"), undefined);
+  assert.equal(runEmitted("invalid-enum-computed-literal", "wrong()"), 2);
   // Exact observation uses the native identity and ordinary constructor.
   // A fulfilled record may acquire a then member before it is observed.
   assert.equal(await runExample("native-promise-record-observation", `(async () => {
