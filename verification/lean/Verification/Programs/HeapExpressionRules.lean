@@ -834,7 +834,6 @@ theorem pure_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImage
   have hs := ht.sound n W h ρ he hw hh
   have hpClosed := pure_instantiate (d := 0) hp hc he
   cases t <;> simp only [pureTerm,isVal] at hp
-  all_goals try contradiction
   case var i =>
     have hi : i < Γ.length := by simpa [checkScope] using hc
     have hv := meaning_value (he.2 i Γ[i] (List.getElem?_eq_some_iff.mpr ⟨hi,rfl⟩))
