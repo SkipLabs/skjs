@@ -1204,10 +1204,11 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   // another symbol, or every symbol, in its place differ from the annotation
   // the verifier reads itself.
   const keyed = run("keyof-unique-symbol");
-  for (const [name, clause] of [
-    ["other-unique-symbol", (id: number) => ({ symbolLit: { id: id + 1 } })],
+  const forgeries: [string, (id: number) => Row[number]][] = [
+    ["other-unique-symbol", (id) => ({ symbolLit: { id: id + 1 } })],
     ["every-symbol", () => "symbol"],
-  ] as const) {
+  ];
+  for (const [name, clause] of forgeries) {
     const claims = readClaims(keyed);
     const rows = claims.types.filter((row) => row.length === 1 && typeof row[0] === "object" && "symbolLit" in row[0]);
     assert.ok(rows.length > 0, "the claims name a unique symbol");
