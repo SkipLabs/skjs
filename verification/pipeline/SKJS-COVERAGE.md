@@ -32,19 +32,18 @@ Membership alone does not show that the pipeline reached the corresponding
 obligation: an earlier refusal can mask it. Verified, gated and rejected outcomes
 remain separate in the JSON; aggregate “done” totals are not a closure criterion.
 
-[skjs-coverage.mts](skjs-coverage.mts) measures coverage. Rerun:
+[skjs-coverage.mts](skjs-coverage.mts) measures verifier coverage of units
+selected by the tests' expected-error annotations:
 
 ```sh
-node verification/pipeline/skjs-coverage.mts --skjs --width 3   # about 220 s
+node verification/pipeline/skjs-coverage.mts --width 3
 ```
 
-An explicitly requested `--skjs` run aborts if checker confirmation cannot run;
-it never falls back to markers or publishes an unconfirmed coverage result.
-
 It writes [skjs-coverage.json](skjs-coverage.json) (summary, one row per unit,
-one line per row, so a rerun's movement is a line diff). `--skjs` runs SKJS in
-Docker from the main checkout (`SKJS_ROOT`, `SKJS_BIN`, `DOCKER_IMAGE`,
-`SKIP_DIR` override); without it the expectation markers alone decide.
+one line per row, so a rerun's movement is a line diff). Selection uses the
+expectation markers; the script runs only the verifier pipeline. The recorded
+measurement above uses the October 9 SKJS acceptance results; a fresh run
+includes the two marker-accepted parse-error units that measurement excludes.
 `--only <substring>` narrows the corpus, `--keep` keeps check artifacts,
 `--out` places the derived files (default `$TMPDIR/skjs-coverage`). The script
 is not part of `verification/test-all.sh`.

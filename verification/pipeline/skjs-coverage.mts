@@ -3,7 +3,7 @@
  * SKJS coverage: how much of what SKJS accepts in its own test suite this
  * pipeline (parser → OCaml producer → Lean) verifies, and what stops the rest.
  *
- *   node verification/pipeline/skjs-coverage.mts [--skjs] [--only <substr>]
+ *   node verification/pipeline/skjs-coverage.mts [--only <substr>]
  *        [--out <dir>] [--result <json>] [--width <n>] [--keep]
  *
  * An assessment, never a test: nothing here is asserted, every outcome is a
@@ -31,12 +31,8 @@
  * file holds it and, in source order, every top-level statement it reaches by
  * name, transitively (types, ambient declarations, other functions). A unit is
  * SKJS-accepted when no statement of that closure carries an error line; the
- * unit's own error and a dependency's are recorded apart. With `--skjs`, SKJS
- * itself is run over every derived file (Docker, from the main checkout that
- * holds the built binary: `SKJS_ROOT`, default the repository's main
- * worktree), and its verdict is recorded beside the marker one; a unit SKJS
- * rejects is not counted as accepted. Without `--skjs` the markers alone
- * decide (`skjs: "not-run"`). Every derived file is regenerated under `--out`
+ * unit's own error and a dependency's are recorded apart. Selection uses
+ * the expected-error annotations. Every derived file is regenerated under `--out`
  * (default: a directory in the system's temporary directory).
  *
  * Each derived file is checked in SKJS's test environment (see `environment`
@@ -63,7 +59,6 @@ import path from "node:path";
 import os from "node:os";
 import { spawnSync } from "node:child_process";
 import * as ts from "../tools/node_modules/typescript/dist/ast/index.js";
-import { API } from "../tools/node_modules/typescript/dist/api/sync/api.js";
 import { openText, close } from "../tools/fragment-parse.mts";
 import { childrenOf, nameOf } from "../tools/syntax.mts";
 import { checkApart, type Outcome } from "./verify-source.mts";
@@ -74,6 +69,15 @@ const repo = path.resolve(here, "../..");
 
 /* ------------------------------------------------------------ arguments -- */
 const argv = process.argv.slice(2);
+for (let i = 0; i < argv.length; i++) {
+  const arg = argv[i];
+  if (["--only", "--out", "--result", "--width"].includes(arg)) {
+    if (!argv[i + 1] || argv[i + 1].startsWith("--")) throw Error(`Missing value for ${arg}`);
+    i++;
+  } else if (arg !== "--keep") {
+    throw Error(`Unknown argument: ${arg}`);
+  }
+}
 const flag = (name: string) => argv.includes(name);
 const option = (name: string, fallback: string) => {
   const i = argv.indexOf(name);
@@ -379,69 +383,6 @@ const environment = (derived: string) => ({
   extends: path.join(environmentDir, "tsconfig.json"),
   files: [derived, path.join(environmentDir, "skjs-environment.d.ts")],
 });
-
-/* ----------------------------------------------------------------- SKJS -- */
-/** SKJS's own verdict on every derived file, from one container invocation.
- * Returns the derived paths it reported an error in. An explicitly requested
- * SKJS confirmation must fail if the checker could not run; marker-only
- * measurement is a separate mode, never a silent fallback. */
-function skjsVerdicts(files: string[]): Set<string> {
-  // SKJS requires imported source files on its command line. TypeScript's
-  // project supplies the transitive source set in the copied test tree.
-  const dependencies = new Map<string, readonly string[]>();
-  const api = new API({ cwd: outDir });
-  try {
-    for (const file of files) {
-      if (/\b(?:import|export)\b/.test(fs.readFileSync(file, "utf8"))) {
-        const config = projectOf(file);
-        const snapshot = api.updateSnapshot({ openFiles: [file], openProjects: [config] });
-        const project = snapshot.getProject(config);
-        if (!project) throw Error(`SKJS confirmation cannot load ${config}`);
-        dependencies.set(file, project.program.getSourceFileNames().filter((f) =>
-          f !== file && f.startsWith(outDir + path.sep)));
-      }
-    }
-  } finally {
-    api.close();
-  }
-  const main = process.env.SKJS_ROOT ?? (() => {
-    const r = spawnSync("git", ["worktree", "list", "--porcelain"], { cwd: repo, encoding: "utf8" });
-    return /^worktree (.+)$/m.exec(r.stdout)?.[1] ?? repo;
-  })();
-  const bin = process.env.SKJS_BIN ?? "target/host/dev/skjs";
-  const image = process.env.DOCKER_IMAGE ?? "skiplabs/skip:latest";
-  const skip = process.env.SKIP_DIR ?? path.resolve(main, "../skip");
-  const insidePath = (f: string) => `/work/corpus/${path.relative(outDir, f)}`;
-  const inside = files.map(insidePath);
-  // Every xargs batch needs the imports, even when its callers are split.
-  const support = [...new Set([...dependencies.values()].flat())].map(insidePath);
-  const quote = (s: string) => "'" + s.replaceAll("'", "'\\''") + "'";
-  const command = [bin, "check", "--import-stubs", "import-stubs", ...support].map(quote).join(" ");
-  const list = path.join(outDir, "skjs-files.txt");
-  fs.writeFileSync(list, inside.join("\0") + "\0");
-  const r = spawnSync("docker", ["run", "--rm", "-v", `${main}:/work/skjs`, "-v", `${skip}:/work/skip`,
-    "-v", `${outDir}:/work/corpus`, "-w", "/work/skjs", image, "sh", "-c",
-    `xargs -0 ${command} < /work/corpus/skjs-files.txt`],
-    { encoding: "utf8", maxBuffer: 256 * 1024 * 1024, timeout: 900_000 });
-  if (r.error || r.status === null)
-    throw Error(`SKJS confirmation failed: ${r.error?.message ?? r.signal}`);
-  const output = r.stdout + "\n" + r.stderr;
-  fs.writeFileSync(path.join(outDir, "skjs-output.txt"), output);
-  const rejected = new Set<string>();
-  for (const block of output.split(/(?=^File ")/m)) {
-    const named = /^File "([^"]+)"/.exec(block);
-    if (named && /^error/m.test(block))
-      rejected.add(path.join(outDir, path.relative("/work/corpus", named[1])));
-  }
-  // xargs returns 123 for an ordinary nonzero checker exit. Its other
-  // failures (launch, signal, command not found), and Docker's failures,
-  // cannot establish acceptance of files lacking a parsed diagnostic.
-  if (r.status !== 0 && (r.status !== 123 || rejected.size === 0))
-    throw Error(`SKJS confirmation failed: exit ${r.status}, ${rejected.size} checker diagnostic files:\n${output.slice(0, 2000)}`);
-  for (const [file, deps] of dependencies)
-    if (deps.some((dep) => rejected.has(dep))) rejected.add(file);
-  return rejected;
-}
 
 /* --------------------------------------------------------------- groups -- */
 /* A blocker's text is the pipeline's own sentence. Positions and quoted
@@ -767,7 +708,6 @@ function checkedCode(o: Extract<Outcome, { status: "verified" }>, u: Unit): bool
 
 type Row = Omit<Unit, "closure" | "derived" | "self" | "selfNames" | "selfLines" | "selfSpan"> & {
   closureSize: number;
-  skjs?: "accepted" | "rejected" | "not-run";
   status?: Outcome["status"];
   phase?: string;
   detail?: string;
@@ -814,9 +754,6 @@ async function main() {
   });
   process.stderr.write(`corpus: ${sources.length} files, ${units.length} units, ${candidates.length} SKJS-accepted by the markers\n`);
 
-  let skjs: Set<string> | undefined;
-  if (flag("--skjs")) skjs = skjsVerdicts(candidates.map((u) => u.derived));
-
   // The pipeline runs the producer's built executable: build it from this
   // checkout's sources, so the coverage run measures them.
   const dune = spawnSync("dune", ["build", "--root", path.join(here, "../ocaml-producer")], { stdio: "inherit" });
@@ -849,7 +786,6 @@ async function main() {
   candidates.forEach((u, i) => {
     const row = byId.get(u.id);
     if (!row) throw new Error(`no row for the unit ${u.id}`);
-    row.skjs = skjs === undefined ? "not-run" : skjs.has(u.derived) ? "rejected" : "accepted";
     const settled = outcomes[i];
     let full = "";
     if (settled.status === "rejected") {
@@ -875,12 +811,12 @@ async function main() {
     }
   });
 
-  // Classes, for the accepted units (a unit SKJS rejects has none).
+  // Classes for the units selected by the expected-error annotations.
   const reasonOf = new Map<string, string>();
   const unmatched = new Set<string>();
   const unsoundVerified: string[] = [];
   for (const row of rows) {
-    if (row.skjsMarker !== "accepted" || row.skjs === "rejected") continue;
+    if (row.skjsMarker !== "accepted") continue;
     if (row.status === "verified") {
       row.class = "verified";
       if (SKJS_UNSOUND[row.id]) unsoundVerified.push(row.id);
@@ -907,7 +843,7 @@ async function main() {
   for (const id of unsoundVerified)
     process.stderr.write(`warning: ${id}, a confirmed SKJS unsoundness, verified: read it\n`);
 
-  const accepted = rows.filter((r) => r.skjsMarker === "accepted" && r.skjs !== "rejected");
+  const accepted = rows.filter((r) => r.skjsMarker === "accepted");
   const count = <T,>(xs: T[], f: (x: T) => string) => {
     const m = new Map<string, number>();
     for (const x of xs) m.set(f(x), (m.get(f(x)) ?? 0) + 1);
@@ -920,7 +856,6 @@ async function main() {
     unreadableFiles: failed.length,
     units: rows.length,
     unitsByMarker: count(rows, (r) => r.skjsMarker),
-    skjsConfirmation: count(rows.flatMap((r) => r.skjs ? [r.skjs] : []), (confirmed) => confirmed),
     accepted: accepted.length,
     verified: accepted.filter((r) => r.status === "verified").length,
     byStatus: count(accepted, (r) => `${r.status} (${r.phase})`),
@@ -975,7 +910,7 @@ async function main() {
     `"failed": ${JSON.stringify(failed)},\n` +
     `"rows": [\n${rows.map((r) => JSON.stringify(slim(r))).join(",\n")}\n]\n}\n`);
   process.stderr.write(`elapsed: ${Math.round((Date.now() - started) / 1000)} s\n`);
-  process.stdout.write(`${summary.verified}/${summary.accepted} SKJS-accepted units verified ` +
+  process.stdout.write(`${summary.verified}/${summary.accepted} marker-accepted units verified ` +
     `(${summary.units} units in ${summary.corpusFiles} files)\n`);
   const c = summary.byClass;
   process.stdout.write(`${c.verified} verified + ${c.principled + c.skjsUnsound} refused on principle ` +
