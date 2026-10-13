@@ -39,7 +39,8 @@ a body with no parameters that completes with `undefined`. A module with
 neither runs nothing and states no claim; it is refused, so an acceptance
 always checked some code. A class's methods are closures its initialization
 allocates, so they are checked in that unit. A module function's slot is its
-annotated signature; a module constant is read at its annotation or at the
+annotated signature, a generic one's read as a value its
+[scheme](#generic-function-types); a module constant is read at its annotation or at the
 initialization unit's claim for its initializer
 ([module constants](SOURCE-ELABORATION.md#mutable-bindings-and-module-constants)). The
 initialization unit refuses a call, direct or through module functions, that
@@ -234,6 +235,69 @@ generic unit's binders are the owned parameters of its head
 (`EquationLowering.enterUnit`), a generic closure's those of the scheme its
 claim states (`Scheme.schemeRowOf`), and each annotation and claim inside
 reads the name as that parameter (`EquationStore.rebind`).
+
+### Generic function types
+
+A generic function type `<p₁ extends β₁, …>(x⃗: A⃗) => R`, in a declaration
+or in an annotation, is the scheme row
+$`S=(\vec p;\ \top,\vec A\to R;\ \vec\beta)`$ whose signature takes any
+receiver, a binder without a bound bounded by the source values
+([scheme rows](POSITIVE-TYPES.md#parameter-and-scheme-rows)). A value of it
+meets its signature at every instance within the bounds, in every world,
+at every level:
+
+```math
+v\in⟦S⟧_n(W)\iff\mathsf{Invocable}(v)\land\forall j\le n.\ \forall\vec X\in\mathcal D_S.\
+  \mathsf{Bounded}_j(\vec X)\Rightarrow v\in_j\mathsf{Calls}\bigl((\top,\vec A\to R)[\vec p\mapsto\vec X]\bigr).
+```
+
+Three sources give a value of such a type:
+
+```math
+\frac{f\ \text{a generic closure}\ \langle\vec p\le\vec\beta\rangle(\vec x:\vec A)\Rightarrow e\quad
+      \vec p,\ \vec x:\vec A\vdash e:R}
+     {f:(\vec p;\ \top,\vec A\to R;\ \vec\beta)}\ \textsf{closure}
+\qquad
+\frac{g\ \text{a generic module value}\quad \mathsf{sig}(g)=\forall\vec p\le\vec\beta.\ \vec A\to R\quad g\ \text{read, not called}}
+     {g:(\vec p;\ \top,\vec A\to R;\ \vec\beta)}\ \textsf{module-scheme}
+```
+
+and the scheme an annotation or a declaration states. A closure without a
+result annotation is claimed at its body's type, widened as TypeScript
+widens an inferred result, which the closure's code is then checked at
+([generic closures](CALLABLES.md#overloads-polymorphism-and-binding)). In
+**module-scheme**, $`g`$ is a generic module function, certified at every
+assignment of its binders (`Parametricity.accept_reassign`), or an import,
+assumed at its declaration: either way it meets $`\vec A\to R`$ at each
+instance within $`\vec\beta`$, which is membership in the scheme row. Its slot
+reads each binder as its meet with its bound, as a closure's scheme does
+(`Scheme.moduleScheme`); a binder bounded by another binder, a
+resolution-qualified binder and a binder typing a rest are refused there,
+since the scheme row states none of them. A generic module value that is
+called is read at the instances its calls name (`Scheme.moduleInstances`).
+
+Schemes relate by quantified coverage up to renaming
+([RECURSIVE-EQUATIONS §4.1](RECURSIVE-EQUATIONS.md#41-quantified-signatures));
+a union of schemes is met by a member of either arm. So `identity<T>` meets
+`(<T>(x: T) => T) | (<T>(x: T) => string)` at its first arm, and a function
+returning a string at every type argument meets only the second.
+
+**Admitted instantiations.** A call of a scheme-typed value is typed at one
+instance, $`\vec p\mapsto\vec\theta`$ with ground types $`\vec\theta`$, each
+within its bound, checked by the instance rule
+([instances](POSITIVE-TYPES.md#instances-of-a-scheme-row)); a comparison
+instantiates the source scheme's binders at the target's, which it takes
+rigidly. No type argument is itself a scheme row or a free binder
+([claims](SOURCE-CLAIMS.md#quantified-callables-and-their-eliminations)).
+The meaning quantifies over every admissible family $`\vec X\in\mathcal D_S`$,
+a semantic family closed downward in the level, not over the types the
+checker can write, so no instance is defined by the scheme being defined:
+the denotation is the guarded fixed point of the row equations, the
+signature's operands read below the level, and it exists whatever the
+families range over (`QInv`, admissibility of `schemeSemWithArgs`). An
+instance at any type the checker writes is one of those families, so the
+restriction to ground type arguments is one of decidability, not of
+soundness.
 
 ### Binders met with ground types
 

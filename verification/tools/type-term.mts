@@ -411,10 +411,10 @@ function readTypeTerm(scope: TermScope, node: TypeNode | undefined, at: Node | n
   if (ts.isMappedTypeNode(node)) return expandMapped(mapped(scope, node), span, message => scope.fail(node, message));
   if (ts.isFunctionTypeNode(node)) {
     if (!node.typeParameters?.length) return oneTerm(signatures(scope, node.parameters, node.type, node, span), span);
-    // A declaration's generic function type, `<A>(x: A) => R`, is a scheme
-    // whose signatures take any receiver, or the one a `this` parameter
-    // states.
-    if (scope.annotation || !node.type) scope.fail(node, "generic function types are outside the fragment");
+    // A generic function type, `<A>(x: A) => R`, in a declaration or an
+    // annotation, is a scheme whose signatures take any receiver, or the one
+    // a `this` parameter states.
+    if (!node.type) scope.fail(node, "generic function types are outside the fragment");
     const { binders, forms } = quantified(scope, node.typeParameters, node.parameters, node.type, node, span);
     return { k: "scheme", binders,
       signatures: forms.map(m => ({ ...m, receiver: m.receiver ?? { k: "atom", name: "unknown", span } })), span };

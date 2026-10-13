@@ -268,6 +268,57 @@ def moduleInstances (T : EquationStore.State) (g : Instantiable)
   return (T, Json.mkObj [("top", toJson false), ("atoms", toJson [callable])],
     calls.map (·.2.1), calls.map (·.1))
 
+/-- A generic module value read as a value, not called: its slot is the scheme
+its declaration states, `∀p⃗ ≤ β. Σ`, with its binders fresh parameter rows.
+A generic module function is certified at every assignment of its binders,
+and an imported one is assumed at its declared type, so the value meets its
+signatures at every instance within the bounds, which is scheme membership.
+A bound reading another binder, a resolution-qualified binder and a binder
+typing a rest are refused: the scheme row states none of them. Returns the
+grown table and the slot's type in claim form. -/
+def moduleScheme (T : EquationStore.State) (g : Instantiable) :
+    Except String (EquationStore.State × Json) := do
+  if !g.resolution.isEmpty then
+    throw s!"'{g.name}' read as a value is a resolution-qualified scheme, which a scheme row does not state"
+  let (T, ps) := EquationStore.binders T g.binders
+  let graph (A : List Tree) : Json := Json.mkObj [("top", toJson false),
+    ("atoms", toJson (A.map fun l => Json.mkObj [("a", toJson "graph"), ("label", toJson l)]))]
+  let at_ (rows : List Tree) := g.binders.zip rows |>.map fun (n, l) => (n, graph [l])
+  -- The bounds, read outside the binders.
+  let ((_, bounds), T) ← g.instantiate (at_ ps) T
+  let (T₁, top) := EquationStore.intern T [.source]
+  let free (B : List Tree) : Bool :=
+    B.any fun l => EquationStore.substitute (ps.map fun p => (p, top)) l != [l]
+  let mut T := T₁
+  let mut rows : List (Tree × List Tree) := []
+  let mut reads : List Tree := []
+  for (n, p) in g.binders.zip ps do
+    let B ← match bounds.lookup n with
+      | some (some upper) => do
+        let (B, grown) ← (Fragment.translate upper).run T
+        T := grown
+        if free B then
+          throw s!"a bound of '{g.name}' reads another of its binders, which a scheme row's bound does not"
+        pure B
+      | _ => pure [top]
+    rows := rows ++ [(p, B)]
+    -- A binder is read as its meet with its bound, as a generic closure's
+    -- scheme reads it (`schemeRowOf`): at an instance within the bound, the
+    -- meet is the instance.
+    let G := SourceTypes.graph T
+    if G.plainTy B then
+      let (grown, m) := EquationStore.bounded T p (B.flatMap G) []
+      T := grown
+      reads := reads ++ [m]
+    else reads := reads ++ [p]
+  let ((callable, _), grown) ← g.instantiate (at_ reads) T
+  let (A, grown) ← (Fragment.translate callable).run grown
+  let (L, S) ← match PositiveRules.expand (SourceTypes.graph grown) A with
+    | [.arrs L S] => pure (L, S)
+    | _ => throw s!"'{g.name}' read as a value is not one callable"
+  let (grown, label) := EquationStore.scheme grown ps L rows S
+  return (grown, graph [label])
+
 /-- A claim with a generic unit's binders read as their parameter rows, in
 ground form. A claim that does not ground keeps the reason at its site, as
 `ground` does, so only a site the extraction reads refuses. -/

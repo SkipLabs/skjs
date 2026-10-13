@@ -122,13 +122,12 @@ let encode (proposal : Proposal_types.t) =
           Array [key_json f.name;labels f.read]) fs);"rest",Array [];"views",Array [];
         "bounds",Array [Object ["among",Bool true;
           "keys",Array (List.map (fun (f:Semantic.field) -> key_json f.name) fs)]]]]]))]
-    (* A class's generic method, held by its prototype: a scheme row. Its
-       binders are the parser's names for the closure's binders (`"key"#k`),
-       which the row binds. A binder the source spells is scoped, and no row
-       states it. *)
+    (* A quantified signature inside a type (a class's generic method held by
+       its prototype, a field of a generic function type): a scheme row,
+       which binds its binders' names, the parser's for a closure's binders
+       (`"key"#k`) or the ones the source spells. *)
     | Shape {fields=[];indexes=[];elements=None;calls=[s]}
-        when s.quantified <> [] && List.for_all (fun (q:Semantic.quantifier) ->
-          String.contains q.identity.spelling '#') s.quantified ->
+        when s.quantified <> [] ->
       let binders = List.map (fun (q:Semantic.rigid) -> label_json (Binder q.spelling))
         (List.concat_map quantifier_identities s.quantified) in
       let _,resolution = List.fold_left (fun (offset,groups) (q:Semantic.quantifier) ->

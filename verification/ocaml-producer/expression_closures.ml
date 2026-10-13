@@ -152,7 +152,6 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
         | _ -> false in
       let result = match written,contextual with
         | Some result,_ -> result
-        | None,_ when quantified <> [] -> Proposal_diagnostics.unsupported "a quantified closure needs its result annotation"
         | None,Some r when fits body_type r -> r
         | None,_ -> widen body_type in
       let params = List.mapi (fun i (_,t) ->

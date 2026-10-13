@@ -147,6 +147,10 @@ def extractPlans (ast claims : Json) (fileKey : String)
       | some j => Scheme.genericClosures ((j.getObjVal? "body").toOption.getD .null)
       | none => []
     let graphClosures := !closures.isEmpty
+    -- The calls a scheme-typed local makes: a generic module value's calls
+    -- name instances its slot holds (`Scheme.moduleInstances`) instead.
+    let localCalls := (f.body.flatMap Fragment.Stmt.callees).filter fun call =>
+      !generics.any (·.name == call.2.2.1)
     let mut sourceScheme : Option (SchemeRow Tree) := none
     if !tps.isEmpty then
       -- A generic unit is an ordinary graph request: each binder is read as
@@ -175,8 +179,8 @@ def extractPlans (ast claims : Json) (fileKey : String)
       let (T, rows) ← match binderRows d.types binders with
         | .ok r => pure r
         | .error reason => throw (sourceRefusal d.types f.namePos .genericValidation reason)
-      let (T, atRows, scopes) ← if graphClosures then
-          match Scheme.closureRows T rows closures (f.body.flatMap Fragment.Stmt.callees) c with
+      let (T, atRows, scopes) ← if graphClosures || c.hasScheme then
+          match Scheme.closureRows T rows closures localCalls c with
           | .ok r => pure r
           | .error reason => throw (sourceRefusal T f.namePos .schemeIntroduction reason)
         else
@@ -190,12 +194,12 @@ def extractPlans (ast claims : Json) (fileKey : String)
         f := { f with body }
       else
         f := (← Fragment.decodeFn source).1
-    else if graphClosures && c.hasScheme then
-      -- A generic closure in a unit without binders of its own: its scheme is
-      -- a scheme row, its code graph code checked at the row's signatures.
+    else if c.hasScheme then
+      -- A scheme claim in a unit without binders of its own is a scheme row;
+      -- a generic closure's code is graph code checked at its row's
+      -- signatures.
       let some source := unitSource | throw "a unit's source function is missing"
-      let (T, claims, scopes) ← match Scheme.closureRows d.types [] closures
-          (f.body.flatMap Fragment.Stmt.callees) c with
+      let (T, claims, scopes) ← match Scheme.closureRows d.types [] closures localCalls c with
         | .ok r => pure r
         | .error reason => throw (sourceRefusal d.types f.namePos .schemeIntroduction reason)
       d := { d with types := T }
@@ -212,33 +216,36 @@ def extractPlans (ast claims : Json) (fileKey : String)
       let mut module := module
       let mut c := c
       -- A generic module function this unit calls: its slot holds the instances
-      -- the calls name, and those reads and calls are claimed at them.
-      if !c.hasScheme then
-        for g in generics.filter (fun g => !(initClaims.isSome && classNames.contains g.name)) do
-          if (f.body.flatMap Fragment.Stmt.callees).any (·.2.2.1 == g.name) then
-            match Scheme.moduleInstances d.types g f.body c sourceScheme
-              (tps.flatMap fun p => ResolutionWire.ownedNames p.name p.resolution) with
-            | .ok (T, slot, reads, calls) =>
-              d := { d with types := T }
-              -- The callee reads are claimed at the slot's type, which the
-              -- source fixes; the producer's reading of them is not needed.
-              let (A, T) ← match (Fragment.translate slot).run d.types with
-                | .ok r => pure r
-                | .error reason => throw (sourceRefusal d.types g.pos .schemeElimination reason)
-              d := { d with types := T }
-              module := module ++ [(g.name, g.pos, .ok (.written slot))]
-              c := { c with expressions := c.expressions.map fun e =>
-                if reads.contains e.pos then { e with type := .labels A }
-                else if calls.contains e.pos then { e with instantiate := none } else e }
-            | .error (.obligation failure, T) => throw (directFailure T failure)
-            | .error (.exhausted failure limit rounds visited, T) =>
-              throw (directFailure T failure (.exhausted limit rounds visited))
-            | .error (.refusal pos role reason, _) => throw (sourceRefusal d.types pos role reason)
-      -- Every generic closure's scheme is a scheme row by now; a scheme claim
-      -- left names no closure of the source.
-      if c.hasScheme then
-        throw (sourceRefusal d.types f.namePos .schemeIntroduction
-          "a scheme claim has no quantified closure in its source")
+      -- the calls name, and those reads and calls are claimed at them. The
+      -- unit's scheme claims are scheme rows by now (`Scheme.closureRows`).
+      for g in generics.filter (fun g => !(initClaims.isSome && classNames.contains g.name)) do
+        if (f.body.flatMap Fragment.Stmt.callees).any (·.2.2.1 == g.name) then
+          match Scheme.moduleInstances d.types g f.body c sourceScheme
+            (tps.flatMap fun p => ResolutionWire.ownedNames p.name p.resolution) with
+          | .ok (T, slot, reads, calls) =>
+            d := { d with types := T }
+            -- The callee reads are claimed at the slot's type, which the
+            -- source fixes; the producer's reading of them is not needed.
+            let (A, T) ← match (Fragment.translate slot).run d.types with
+              | .ok r => pure r
+              | .error reason => throw (sourceRefusal d.types g.pos .schemeElimination reason)
+            d := { d with types := T }
+            module := module ++ [(g.name, g.pos, .ok (.written slot))]
+            c := { c with expressions := c.expressions.map fun e =>
+              if reads.contains e.pos then { e with type := .labels A }
+              else if calls.contains e.pos then { e with instantiate := none } else e }
+          | .error (.obligation failure, T) => throw (directFailure T failure)
+          | .error (.exhausted failure limit rounds visited, T) =>
+            throw (directFailure T failure (.exhausted limit rounds visited))
+          | .error (.refusal pos role reason, _) => throw (sourceRefusal d.types pos role reason)
+        -- A generic function the unit reads only as a value: its slot is its
+        -- scheme.
+        else if !classNames.contains g.name && (Fragment.stmtsFreeNames f.body).contains g.name then
+          match Scheme.moduleScheme d.types g with
+          | .ok (T, slot) =>
+            d := { d with types := T }
+            module := module ++ [(g.name, g.pos, .ok (.written slot))]
+          | .error reason => throw (sourceRefusal d.types g.pos .schemeIntroduction reason)
       let request ← extractNormalizedFn d.types f c.normalized module
       return .graph f.name f.namePos { request with sourceScheme }
     -- A generic unit's graph extraction reports where it stops as a

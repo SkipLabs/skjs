@@ -878,6 +878,13 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     // itself where another scheme was passed for it.
     ["generic-function-type-member", "pass({ twice: () => (x) => [x, x] }).twice()(1).join()", "1,1"],
     ["invalid-generic-function-type-member", "wrong({ twice: () => (x) => x }).twice()(1)", 1],
+    // A generic function type in an annotation: a value of it is used at an
+    // instance; another scheme, a narrower bound or a constant result gives a
+    // value outside it there.
+    ["generic-function-type-annotation", "[local(), bounded()].join()", "a,abc"],
+    ["invalid-generic-function-type-annotation", "typeof wrong()", "string"],
+    ["invalid-generic-function-type-bound", "typeof unbounded()", "number"],
+    ["invalid-generic-closure-field", "typeof wrong()", "number"],
   ] as const)
     assert.equal(runExample(file, expression), expected, file);
   // A class has no plain call: calling it throws.
