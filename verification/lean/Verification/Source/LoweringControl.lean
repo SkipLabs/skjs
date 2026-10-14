@@ -81,21 +81,30 @@ may be replaced by the recovered Boolean witness. -/
   emitAt cond.span (.var 0) transfer (A::Γ) A
     (scope := held ⟨"",some cond.span⟩ :: scope)
 
+/-- Whether a condition holds an `Array.isArray` test. -/
+def arrayTested : Fragment.Expr → Bool
+  | .not _ e => arrayTested e
+  | .logical _ _ l r => arrayTested l || arrayTested r
+  | .shapeTest _ .isArray _ _ => true
+  | _ => false
+
 /-- Facts justified on the path to a short-circuit operand. Only immutable
 source bindings are refined; every generated edge checks this candidate context.
 A true conjunction / false disjunction establishes both operand outcomes. The
 other outcomes deliberately retain the input context rather than compute a join. -/
 @[nospecialize] def conditionContext (G : PositiveGraphs.NormalGraph ι) (scope : List (ScopeBinding ι)) (Γ : List (Ty ι))
-    (cond : Fragment.Expr) (answer : Bool) : List (Ty ι) :=
+    (cond : Fragment.Expr) (answer : Bool) (arrays : Option (Ty ι) := none) : List (Ty ι) :=
   match cond with
-  | .not _ e => conditionContext G scope Γ e (!answer)
+  | .not _ e => conditionContext G scope Γ e (!answer) arrays
   | .logical _ andOp left right =>
     if answer == andOp then
-      conditionContext G scope (conditionContext G scope Γ left answer) right answer
+      conditionContext G scope (conditionContext G scope Γ left answer arrays) right answer arrays
     else Γ
   | _ =>
     if let some (i, tag, equal) := conditionTag G scope Γ cond then
-      Γ.set i (BranchRefinement.tagSlice G (Γ[i]?.getD []) tag (answer == equal))
+      match tag, answer == equal, arrays with
+      | .isArray, true, some R => Γ.set i (arrayRefine G (Γ[i]?.getD []) R)
+      | _, _, _ => Γ.set i (BranchRefinement.tagSlice G (Γ[i]?.getD []) tag (answer == equal))
     else if let some i := testedSlot scope Γ cond then
       Γ.set i (if answer then [Labels.tru] else [Labels.fls])
     else Γ

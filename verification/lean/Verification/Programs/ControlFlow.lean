@@ -188,7 +188,7 @@ theorem admitsAll_sound {G : NormalGraph ι} {T : Ty ι} (h : admitsAll G T = tr
   obtain ⟨c, hc, ht⟩ := List.any_eq_true.mp h
   apply (expand_sem G T (plain_of_mem_expand hc) n W v).mpr
   cases c <;> simp only [Bool.false_eq_true] at ht
-  · exact ⟨.top, hc, ⟨sourceVal_isVal hv, hs⟩, realmInvariant_of_not_record rfl n W v⟩
+  · exact ⟨.top, hc, ⟨sourceVal_isVal hv, hs⟩, realmInvariant_of_unrealmed rfl n W v⟩
   · exact ⟨.source, hc, ⟨hv, hs⟩, hinv⟩
 
 /-- The facts that hold wherever a node's expression throws: only what its

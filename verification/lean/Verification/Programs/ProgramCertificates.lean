@@ -692,7 +692,7 @@ with each aliased label read as its alias. -/
 
 theorem lexicalComparison_sound [DecidableEq ι] {G : NormalGraph ι}
     {images : PositiveCertificates.InstanceImageCheck G} {source : SchemeRow ι}
-    {N : Fam} {C : ResolutionDescriptors.Capabilities N}
+    {N : Fam} {C : ResolutionDescriptors.Capabilities (excOf G) N}
     (domain : G.domain = ResolutionDescriptors.descriptorDomain C)
     (η : MixedAssignment ι) (As : List MixedFamily)
     (length : As.length = source.binders.length) (allowed : G.domain.allowed source As)
@@ -715,7 +715,7 @@ theorem lexicalComparison_sound [DecidableEq ι] {G : NormalGraph ι}
         exact PositiveCertificates.checkUsing_sound
           (by simpa only [PositiveCertificates.ComparisonResult.accepted_fromBool] using h) _
       have step := QualifiedGraphs.compareLexicalInstance_sound G images source domain
-        η As length allowed bounds lexical
+        η As length allowed (fun _ _ _ h => h) bounds lexical
       exact mixed_of_expand target (step n W v hv)
     · cases lexical
 
@@ -724,7 +724,7 @@ program typing, at an assignment permitted by the enclosing scheme within its
 declared bounds. -/
 @[nospecialize] def lexicalBodySubtyping [DecidableEq ι] (G : NormalGraph ι)
     (images : PositiveCertificates.InstanceImageCheck G) (source : SchemeRow ι)
-    {N : Fam} {C : ResolutionDescriptors.Capabilities N}
+    {N : Fam} {C : ResolutionDescriptors.Capabilities (excOf G) N}
     (domain : G.domain = ResolutionDescriptors.descriptorDomain C)
     (aliases : List (ι × ι)) (aliasesSound : AliasesSound G source aliases)
     (η : MixedAssignment ι) (As : List MixedFamily)

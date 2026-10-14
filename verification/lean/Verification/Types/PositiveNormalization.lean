@@ -247,6 +247,13 @@ def Clause.record : Clause α → Bool
   | .refs .. | .dict .. => true
   | _ => false
 
+/-- The clauses the realm's array invariant applies to in a row
+(`PositiveGraphs.realmInvariant`): records, dictionaries and `source`, the
+realm's `unknown`. -/
+def Clause.realmed : Clause α → Bool
+  | .refs .. | .dict .. | .source => true
+  | _ => false
+
 /-- The keys an object clause says its object owns: its fields' and views'. -/
 def Clause.presentKeys : Clause α → List PropKey
   | .refs a bs vs .. | .dict a bs vs .. => ((a :: bs).flatten ++ vs).map (·.1)
@@ -922,6 +929,37 @@ theorem meet_record {a b d : Clause α} (h : d ∈ meet a b) : d.record = (a.rec
   cases a <;> cases b <;> unfold meet at h <;> simp only [List.mem_singleton, List.not_mem_nil] at h <;>
     (try split at h) <;> (try simp only [List.mem_singleton, List.not_mem_nil] at h) <;>
     (try subst h) <;> simp_all [Clause.record]
+
+theorem Clause.realmed_of_record {c : Clause α} (h : c.record = true) : c.realmed = true := by
+  cases c <;> simp_all [Clause.record, Clause.realmed]
+
+@[simp] theorem Clause.realmed_map (f : α → β) (c : Clause α) : (c.map f).realmed = c.realmed := by
+  cases c <;> rfl
+
+/-- A clause of a meet the realm's invariant applies to comes from an operand
+it applies to. -/
+theorem realmed_of_meet {a b d : Clause α} (h : d ∈ meet a b) (hd : d.realmed = true) :
+    a.realmed = true ∨ b.realmed = true := by
+  cases a <;> cases b <;> unfold meet at h <;> simp only [List.mem_singleton, List.not_mem_nil] at h <;>
+    (try split at h) <;> (try simp only [List.mem_singleton, List.not_mem_nil] at h) <;>
+    (try subst h) <;> simp_all [Clause.realmed]
+
+/-- Only top meets top in top. -/
+theorem top_of_meet {a b : Clause α} (h : Clause.top ∈ meet a b) : a = .top ∧ b = .top := by
+  cases a <;> cases b <;> unfold meet at h <;> simp only [List.mem_singleton, List.not_mem_nil] at h <;>
+    (try split at h) <;> (try simp only [List.mem_singleton, List.not_mem_nil] at h) <;>
+    simp_all
+
+/-- A member of a clause other than top that the realm's invariant does not
+apply to is no plain object: its shape is a primitive's, a store's or a
+callable's. -/
+theorem semWithArgs_not_plain {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
+    (hc : c ≠ .top) (hr : c.realmed = false) (h : semWithArgs Ξ X P c n W v) :
+    ∀ flds oid, v ≠ .objAt flds .absent oid := by
+  intro flds oid he
+  subst he
+  have hs := semWithArgs_shape hc (by rintro rfl; cases hr) h
+  cases c <;> simp_all [valueShape, shape, Clause.realmed]
 
 /-- Every operand of a clause. -/
 def Clause.operands : Clause α → List α

@@ -216,14 +216,15 @@ its positions. An array's `length` is read from its store, in a statement and
 in a closed expression alike. An array pattern's rest over a tuple of
 required positions is reads; any other is a slice, a call of the trusted
 `%RestFrom:k%` ([patterns](SOURCE-ELABORATION.md#patterns)).
-Every record and dictionary type is of objects meeting the **array
-invariant**: one owning the store key is an array of the realm, a possibly sparse store
-and `Array.prototype`, owning no key it provides. Allocation keeps it, since
-an allocation owning the store key is typed only as such an array and a
-merge copies no store; it is assumed of every value a unit receives at such a
-type ([the array invariant](SEMANTICS.md#the-array-invariant)). So where
-`Array.isArray` holds, a record arm is `readonly unknown[]`. `unknown`, which
-is also what a handler binds a thrown value at, carries no invariant.
+Every record and dictionary type, and `unknown`, is of values meeting the
+**array invariant**: an object owning the store key is an array of the realm,
+a possibly sparse store of `unknown` values and `Array.prototype`, owning no
+key it provides. Allocation keeps it, since an allocation owning the store key
+is typed only as such an array and a merge copies no store; it is assumed of
+every value a unit receives at such a type and of every value a function it
+receives throws, and a thrown value, of `unknown`, is what a handler binds
+([the array invariant](SEMANTICS.md#the-array-invariant)). So where
+`Array.isArray` holds, a record arm and `unknown` are `readonly unknown[]`.
 
 ### Index signatures
 

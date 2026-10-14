@@ -18,10 +18,10 @@ contradict, one meet row per clause as a claimed intersection distributes over
 a union, and dropped where it contradicts every one: `T ⊓ (null | number)` is
 `T ⊓ number` where a nullish test fails (`BranchRefinement.meetSlice`). -/
 @[nospecialize] def observedSlice (A : Ty Tree) (tag : Tag) (q : Bool) : Compiler (Ty Tree) := do
+  let base ← tagRefine A tag q
   let T ← table
-  let G := SourceTypes.graph T
   let mut kept : Ty Tree := []
-  for a in BranchRefinement.tagSlice G A tag q do
+  for a in base do
     match StoreView.row T a with
     | .meet p cs also =>
       let left := cs.filter fun c => tagClause tag c != some (!q)
@@ -551,8 +551,9 @@ prepared predicate without replaying an effectful source operand. -/
         | _ => none
       let correlated := test == .truthy && !Y.isEmpty && !N.isEmpty &&
         BranchRefinement.onlyBoolean G A && readOnly origin && !origin.freeNames.contains ""
+      let arrays ← if correlated && arrayTested origin then some <$> realmArrayTy else pure none
       let arm := fun (truth : Bool) (T : Ty Tree) (body : SourceExecution.Plan) => do
-        let base := if correlated then conditionContext G scope' Δ origin truth else
+        let base := if correlated then conditionContext G scope' Δ origin truth arrays else
           match alias with
           | some i => Δ.set i T
           | none => Δ

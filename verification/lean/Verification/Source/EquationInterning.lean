@@ -56,6 +56,9 @@ def ground (name : String) (cs : List (Clause (List Tree))) : M Tree := do
 
 def prim (name : String) (c : Clause (List Tree)) : M Tree := ground name [c]
 
+/-- The key of the realm's `unknown`: the nullary head of the `source` clause. -/
+def unknownKey : String := s!"ground|{reprStr ([.source] : List (Clause (List Tree)))}"
+
 /-- The four primitive values' heads come first, as `LabelStore.Labels`
 requires: `null`, `true`, `false`, `undefined`. -/
 def primitives : M Unit := do
@@ -172,6 +175,8 @@ with none), the prototype is an object of which nothing is known. -/
 def arrayHead (readonly : Bool) (proto : Tree) : M Nat := do
   let excluded := (← get).excluded
   modify fun s => { s with arrays := true }
+  -- The realm's `unknown`, the type of an array's elements.
+  let _ ← ground "unknown" [.source]
   alloc s!"array|{readonly}"
     { name := if readonly then "ReadonlyArray" else "Array", kind := .array readonly, kinds := [.value],
       body := some (.clauses [arrayClauseOf [.argument 0] [proto] excluded readonly]) } fun _ => none

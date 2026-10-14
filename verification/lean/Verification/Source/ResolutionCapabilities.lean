@@ -16,28 +16,28 @@ inductive Resolves (P : Fam → Fam) (N : Fam) : Fam → Fam → Prop where
       Resolves P N (unionT A B) (unionT R S)
 
 /-- Observation reads a native promise's literal fulfillment family once. -/
-inductive Observes (P : Fam → Fam) (N : Fam) : Fam → Fam → Prop where
-  | stable {A} : ValueFam A → FamLe A N → Observes P N A A
-  | native {A} : ValueFam A → FamLe A sourceT → Observes P N (P A) A
-  | union {A B O Q} : Observes P N A O → Observes P N B Q →
-      Observes P N (unionT A B) (unionT O Q)
+inductive Observes (P : Fam → Fam) (N U : Fam) : Fam → Fam → Prop where
+  | stable {A} : ValueFam A → FamLe A N → Observes P N U A A
+  | native {A} : ValueFam A → FamLe A U → Observes P N U (P A) A
+  | union {A B O Q} : Observes P N U A O → Observes P N U B Q →
+      Observes P N U (unionT A B) (unionT O Q)
 
 /-- The native constructor preserves value families and keeps every
 application outside the stable family. -/
-structure NativeSeparation (P : Fam → Fam) (N : Fam) : Prop where
+structure NativeSeparation (P : Fam → Fam) (N U : Fam) : Prop where
   valid : ∀ A, ValueFam A → ValueFam (P A)
   separate : ∀ A, ValueFam A → ¬ FamLe (P A) N
-  native_source : ∀ A, ValueFam A → FamLe (P A) sourceT
-  stable_source : FamLe N sourceT
+  native_source : ∀ A, ValueFam A → FamLe (P A) U
+  stable_source : FamLe N U
 
 private theorem union_valid {A B : Fam} (ha : ValueFam A) (hb : ValueFam B) :
     ValueFam (unionT A B) :=
   ⟨unionT_adm A B ha.1 hb.1, fun n W v h => h.elim (ha.2 n W v) (hb.2 n W v)⟩
 
 section
-variable {P : Fam → Fam} {N : Fam}
+variable {P : Fam → Fam} {N U : Fam}
 
-theorem Resolves.input_valid (h : NativeSeparation P N) {A R} (r : Resolves P N A R) :
+theorem Resolves.input_valid (h : NativeSeparation P N U) {A R} (r : Resolves P N A R) :
     ValueFam A := by
   induction r with
   | stable hv _ => exact hv
@@ -46,7 +46,7 @@ theorem Resolves.input_valid (h : NativeSeparation P N) {A R} (r : Resolves P N 
 
 /-- Resolution is exact on stable inputs: a union of stable arms resolves
 arm by arm to itself, and a native application is never stable. -/
-theorem Resolves.exact (h : NativeSeparation P N) {A R} (r : Resolves P N A R) :
+theorem Resolves.exact (h : NativeSeparation P N U) {A R} (r : Resolves P N A R) :
     FamLe A N → R = A := by
   induction r with
   | stable => intro _; rfl
@@ -57,7 +57,7 @@ theorem Resolves.exact (h : NativeSeparation P N) {A R} (r : Resolves P N A R) :
         ih₂ (fun n W v hv => hn n W v (Or.inr hv))]
 
 /-- Observation is exact on stable inputs, by the same case analysis. -/
-theorem Observes.exact (h : NativeSeparation P N) {A O} (o : Observes P N A O) :
+theorem Observes.exact (h : NativeSeparation P N U) {A O} (o : Observes P N U A O) :
     FamLe A N → O = A := by
   induction o with
   | stable => intro _; rfl
@@ -68,8 +68,8 @@ theorem Observes.exact (h : NativeSeparation P N) {A O} (o : Observes P N A O) :
         ih₂ (fun n W v hv => hn n W v (Or.inr hv))]
 
 /-- Resolution and observation carry only JavaScript values at every slot. -/
-theorem Resolves.source (h : NativeSeparation P N) {A R} (r : Resolves P N A R) :
-    FamLe A sourceT ∧ FamLe R sourceT := by
+theorem Resolves.source (h : NativeSeparation P N U) {A R} (r : Resolves P N A R) :
+    FamLe A U ∧ FamLe R U := by
   induction r with
   | stable _ hn => exact ⟨fun n W v hv => h.stable_source n W v (hn n W v hv),
       fun n W v hv => h.stable_source n W v (hn n W v hv)⟩
@@ -77,8 +77,8 @@ theorem Resolves.source (h : NativeSeparation P N) {A R} (r : Resolves P N A R) 
   | union _ _ ih₁ ih₂ => exact ⟨fun n W v hv => hv.elim (ih₁.1 n W v) (ih₂.1 n W v),
       fun n W v hv => hv.elim (ih₁.2 n W v) (ih₂.2 n W v)⟩
 
-theorem Observes.source (h : NativeSeparation P N) {A O} (o : Observes P N A O) :
-    FamLe A sourceT ∧ FamLe O sourceT := by
+theorem Observes.source (h : NativeSeparation P N U) {A O} (o : Observes P N U A O) :
+    FamLe A U ∧ FamLe O U := by
   induction o with
   | stable _ hn => exact ⟨fun n W v hv => h.stable_source n W v (hn n W v hv),
       fun n W v hv => h.stable_source n W v (hn n W v hv)⟩
@@ -88,16 +88,16 @@ theorem Observes.source (h : NativeSeparation P N) {A O} (o : Observes P N A O) 
 
 end
 
-def capabilities {P : Fam → Fam} {N : Fam} (h : NativeSeparation P N) : Capabilities N where
+def capabilities {P : Fam → Fam} {N U : Fam} (h : NativeSeparation P N U) : Capabilities U N where
   resolve := Resolves P N
-  observe := Observes P N
+  observe := Observes P N U
   resolve_exact hn r := r.exact h hn
   observe_exact hn o := o.exact h hn
   resolve_source r := r.source h
   observe_source o := o.source h
 
 section
-variable {P : Fam → Fam} {N : Fam} (h : NativeSeparation P N)
+variable {P : Fam → Fam} {N U : Fam} (h : NativeSeparation P N U)
 
 /-- A stable leaf is its own observation. -/
 def stableObservation (A : Fam) (ha : ValueFam A) (hn : FamLe A N) :
@@ -109,7 +109,7 @@ def stableObservation (A : Fam) (ha : ValueFam A) (hn : FamLe A N) :
   observed := .stable ha hn
 
 /-- A native promise of any payload is observed at that payload. -/
-def nativeObservation (A : Fam) (ha : ValueFam A) (hs : FamLe A sourceT) : Observation (capabilities h) where
+def nativeObservation (A : Fam) (ha : ValueFam A) (hs : FamLe A U) : Observation (capabilities h) where
   input := P A
   observation := A
   input_valid := h.valid A ha
@@ -171,11 +171,12 @@ theorem Resolves.describe {A R} (r : Resolves P N A R) :
 
 end
 
-/-- The descriptor domain depends only on the constructor and stable family. -/
-theorem domain_congr {ι : Type} {P P' : Fam → Fam} {N N' : Fam}
-    (h : NativeSeparation P N) (h' : NativeSeparation P' N') (hp : P' = P) (hn : N' = N) :
+/-- The descriptor domain depends only on the constructor, the stable family and the value universe. -/
+theorem domain_congr {ι : Type} {P P' : Fam → Fam} {N N' U U' : Fam}
+    (h : NativeSeparation P N U) (h' : NativeSeparation P' N' U') (hp : P' = P) (hn : N' = N)
+    (hu : U' = U) :
     descriptorDomain (ι := ι) (capabilities h') = descriptorDomain (capabilities h) := by
-  subst hp hn
+  subst hp hn hu
   rfl
 
 #print axioms Resolves.source
@@ -233,29 +234,29 @@ on a stable input it produces `F` of the input, on a native promise `F` of
 its payload. `await` is such an operation with `F` the identity, and
 `Promise.resolve`, which returns a native promise itself and wraps a stable
 value in a fresh one, with `F` the native constructor. -/
-structure ObservationContract (Ξ : Fam) (P : Fam → Fam) (N : Fam) (op : Val → Tm) (F : Fam → Fam) : Prop where
+structure ObservationContract (Ξ : Fam) (P : Fam → Fam) (N U : Fam) (op : Val → Tm) (F : Fam → Fam) : Prop where
   mono : ∀ {A B}, FamLe A B → FamLe (F A) (F B)
   stable : ∀ {A}, ValueFam A → FamLe A N → OperationContract Ξ op A (F A)
-  native : ∀ A, FamLe A sourceT → OperationContract Ξ op (P A) (F A)
+  native : ∀ A, FamLe A U → OperationContract Ξ op (P A) (F A)
 
 /-- Reviewed host contracts expressed in the verifier's own world and safety
 model. `observe` returns a native promise's delivered value, `identity` is
 `Promise.resolve`, and `fresh` returns a fresh native promise resolved with
 its input. These are explicit premises, not consequences of structural
 Promise methods. -/
-structure NativeOperationContracts (Ξ : Fam) (P : Fam → Fam) (N : Fam)
+structure NativeOperationContracts (Ξ : Fam) (P : Fam → Fam) (N U : Fam)
     (observe identity fresh : Val → Tm) : Prop where
   promise_mono : ∀ {A B}, FamLe A B → FamLe (P A) (P B)
-  observes : ObservationContract Ξ P N observe id
-  identifies : ObservationContract Ξ P N identity P
+  observes : ObservationContract Ξ P N U observe id
+  identifies : ObservationContract Ξ P N U identity P
   fresh_stable : ∀ {A}, ValueFam A → FamLe A N → OperationContract Ξ fresh A (P A)
   fresh_native : ∀ {A R}, OperationContract Ξ fresh A (P R) →
     OperationContract Ξ fresh (P A) (P R)
 
 /-- Every finite observation derivation supplies the actual safety contract of
 an observing operation: `F` of the observation. -/
-theorem Observes.safe {P N op F} (host : ObservationContract Ξ P N op F)
-    {A O} (h : Observes P N A O) : OperationContract Ξ op A (F O) := by
+theorem Observes.safe {P N U op F} (host : ObservationContract Ξ P N U op F)
+    {A O} (h : Observes P N U A O) : OperationContract Ξ op A (F O) := by
   induction h with
   | stable hv hn => exact host.stable hv hn
   | native _ hs => exact host.native _ hs
@@ -265,22 +266,22 @@ theorem Observes.safe {P N op F} (host : ObservationContract Ξ P N op F)
         ih₂.widen (host.mono (fun _ _ _ h => Or.inr h))⟩
 
 /-- `await` of an awaitable input yields its observation. -/
-theorem Observes.await_safe {P N observe identity fresh}
-    (host : NativeOperationContracts Ξ P N observe identity fresh)
-    {A O} (h : Observes P N A O) : OperationContract Ξ observe A O :=
+theorem Observes.await_safe {P N U observe identity fresh}
+    (host : NativeOperationContracts Ξ P N U observe identity fresh)
+    {A O} (h : Observes P N U A O) : OperationContract Ξ observe A O :=
   h.safe host.observes
 
 /-- `Promise.resolve` of an awaitable input is a native promise of its
 observation. -/
-theorem Observes.resolve_safe {P N observe identity fresh}
-    (host : NativeOperationContracts Ξ P N observe identity fresh)
-    {A O} (h : Observes P N A O) : OperationContract Ξ identity A (P O) :=
+theorem Observes.resolve_safe {P N U observe identity fresh}
+    (host : NativeOperationContracts Ξ P N U observe identity fresh)
+    {A O} (h : Observes P N U A O) : OperationContract Ξ identity A (P O) :=
   h.safe host.identifies
 
 /-- Resolution derivations produce the declared native result; safety includes
 world evolution and every intermediate computation admitted by Safe. -/
-theorem Resolves.safe {P N observe identity fresh}
-    (host : NativeOperationContracts Ξ P N observe identity fresh)
+theorem Resolves.safe {P N U observe identity fresh}
+    (host : NativeOperationContracts Ξ P N U observe identity fresh)
     {A R} (h : Resolves P N A R) : OperationContract Ξ fresh A (P R) := by
   induction h with
   | stable hv hn => exact host.fresh_stable hv hn

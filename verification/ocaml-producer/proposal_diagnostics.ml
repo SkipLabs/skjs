@@ -18,7 +18,6 @@ type state = {
   shape_tests : (string * string) list ref;
   (* Fields tested equal to undefined. *)
   (* Unknown names whose values pass Array.isArray. *)
-  open_array_tests : string list ref;
   (* Unknown names whose values pass a class instanceof test. *)
   unknown_instance_tests : string list ref;
 }
@@ -29,7 +28,6 @@ let create ?(explaining=false) () = {
   for_in_keys = ref [];
   method_callees = ref [];
   shape_tests = ref [];
-  open_array_tests = ref [];
   unknown_instance_tests = ref [];
 }
 
@@ -139,14 +137,12 @@ let method_member declarations t key =
          | None -> List.exists (fun (f:Semantic.field) -> f.name = Name proto_key && go (depth+1) f.read) fields)
       | _ -> false) (try flat_atoms declarations t with Json.Error _ -> []) in
   go 0 t
+let realm_array_reason =
+  "`Array.isArray` finds a `readonly unknown[]` in `unknown` or a record, an array whose store holds \
+   elements of a contract no type of the program names, which the binder's instance would have to be"
 let mutable_tuple_length_reason =
   "the length of a mutable tuple is not fixed by its type, since `push` is allowed on it (an unsoundness \
    of TypeScript), so its `length` is a number"
-let open_array_reason =
-  "`Array.isArray(x)`, or `x instanceof Array`, on `unknown` finds that the value owns the store of an \
-   array, not that it is an array of `Array.prototype`: the array invariant is a fact of every record and \
-   dictionary type, and `unknown` is also the type a handler binds a thrown value at, of which the model \
-   states nothing"
 let unknown_instance_reason =
   "`x instanceof C` does not narrow `unknown` to C: an object gets C's prototype without C's constructor \
    running (`Object.create(C.prototype)`, `Object.setPrototypeOf`, `Reflect.construct` with C as the new \

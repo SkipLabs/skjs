@@ -233,9 +233,9 @@ theorem splitClause_row (G : NormalGraph ι) (A X : List ι → Fam) (P : List �
   case bool =>
     simp only [splitClause, setSem, rowSem, List.mem_cons, List.not_mem_nil, or_false,
       exists_eq_or_imp, exists_eq_left]
-    simp only [realmInvariant_of_not_record (G := G) (X := A) (show (Clause.bool : Clause (List ι)).record = false from rfl),
-      realmInvariant_of_not_record (G := G) (X := A) (show (Clause.boolLit true : Clause (List ι)).record = false from rfl),
-      realmInvariant_of_not_record (G := G) (X := A) (show (Clause.boolLit false : Clause (List ι)).record = false from rfl),
+    simp only [realmInvariant_of_unrealmed (G := G) (X := A) (show (Clause.bool : Clause (List ι)).realmed = false from rfl),
+      realmInvariant_of_unrealmed (G := G) (X := A) (show (Clause.boolLit true : Clause (List ι)).realmed = false from rfl),
+      realmInvariant_of_unrealmed (G := G) (X := A) (show (Clause.boolLit false : Clause (List ι)).realmed = false from rfl),
       and_true, semWithArgs, boolT]
     constructor
     · rintro (h | h) <;> simp [h]
@@ -2689,9 +2689,9 @@ theorem admitsUndefined_sound {G : NormalGraph ι} {η : MixedAssignment ι} {A 
   have he : c = .undef ∨ c = .top ∨ c = .source := by cases c <;> simp_all [shape]
   apply mixed_expand_mpr
   rcases he with rfl | rfl | rfl
-  · exact ⟨.undef, expand_sub hc, ⟨rfl, realmInvariant_of_not_record rfl _ _ _⟩⟩
-  · exact ⟨.top, expand_sub hc, ⟨⟨rfl, trivial⟩, realmInvariant_of_not_record rfl _ _ _⟩⟩
-  · exact ⟨.source, expand_sub hc, ⟨⟨rfl, trivial⟩, realmInvariant_of_not_record rfl _ _ _⟩⟩
+  · exact ⟨.undef, expand_sub hc, ⟨rfl, realmInvariant_of_unrealmed rfl _ _ _⟩⟩
+  · exact ⟨.top, expand_sub hc, ⟨⟨rfl, trivial⟩, realmInvariant_of_unrealmed rfl _ _ _⟩⟩
+  · exact ⟨.source, expand_sub hc, ⟨⟨rfl, trivial⟩, realmInvariant_of_not_plain (fun _ _ h => nomatch h)⟩⟩
 
 theorem excludesUndefined_sound {G : NormalGraph ι} {η : MixedAssignment ι} {A : List ι}
     (h : ExcludesUndefined G A) (j : Nat) (U : WorldT j) : ¬ mixedValues G η A j U .undef := by
@@ -2959,6 +2959,13 @@ theorem CoversWith.record [DecidableEq ι] {G : NormalGraph ι} {sub : Option (R
     | (simp only at hc; done)
     | simp [Clause.record] at hb
 
+/-- A clause the realm's invariant applies to is covered by no top. -/
+theorem CoversWith.not_top [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)} {R known arrows self} {a b : Clause (List ι)}
+    (hc : CoversWith G sub R known arrows self a b) (hb : b.realmed = true) : a ≠ .top := by
+  rintro rfl
+  unfold CoversWith at hc
+  cases b <;> simp_all [Clause.realmed, sourceClause]
+
 /-- **Construct signatures, soundly.** A class value meeting construct
 signatures meets every one they cover: each target signature's actual lists
 are lists of a covering source signature, and its result is within the
@@ -3166,9 +3173,9 @@ theorem Covers.sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renami
     mixedSem G η a n W v → mixedSem G η b n W v := by
   rintro ⟨hv, hinv⟩
   refine ⟨Covers.sound_raw hc hknown n hr hpa hre W v hself hv, ?_⟩
-  cases hbr : b.record
-  · exact realmInvariant_of_not_record hbr n W v
-  · exact (realmInvariant_record (CoversWith.record hc hbr) hbr).mp hinv
+  cases hbr : b.realmed
+  · exact realmInvariant_of_unrealmed hbr n W v
+  · exact realmInvariant_of_member ⟨hv, hinv⟩ (CoversWith.not_top hc hbr) hbr
 
 /-- A type's meaning is a family of closed values. -/
 theorem meaning_valueFam (G : NormalGraph ι) (S : List ι) : ValueFam (meaning G S) :=
@@ -3284,9 +3291,9 @@ that a row contains only JavaScript values. -/
 @[nospecialize] def sourceTy (G : NormalGraph ι) (A : List ι) : Bool :=
   A.all (sourceRow G)
 
-theorem sourceTy_sound {G : NormalGraph ι} {A : List ι}
+theorem sourceTy_exc {G : NormalGraph ι} {A : List ι}
     (checked : sourceTy G A = true) (η : MixedAssignment ι) :
-    FamLe (mixedValues G η A) sourceT := by
+    FamLe (mixedValues G η A) (excOf G) := by
   intro n W v hv
   obtain ⟨i, hi, hv⟩ := hv
   have hc := List.all_eq_true.mp checked i hi
@@ -3300,19 +3307,26 @@ theorem sourceTy_sound {G : NormalGraph ι} {A : List ι}
     cases hs : G.schemes i with
     | some s =>
       rw [hs] at hv
+      have hn := hv.1.not_plain
       obtain ⟨fs, code, oid, rfl, hscoped⟩ := hv.1.obj
-      exact ⟨rfl, hscoped⟩
+      exact ⟨⟨rfl, hscoped⟩, realmInvariant_of_not_plain hn⟩
     | none =>
       simp only [hs, Option.isSome_none, Bool.false_eq_true, ite_false] at hc hv
       cases hm : G.meets i with
       | some p =>
         rw [hm] at hv hc
-        obtain ⟨c, hc', hv, _⟩ := hv.2
-        exact sourceClause_sound (List.all_eq_true.mp hc c hc') hv
+        obtain ⟨c, hc', hv⟩ := hv.2
+        exact realmExc_of_member hv (List.all_eq_true.mp hc c hc')
       | none =>
         rw [hm] at hv hc
-        obtain ⟨c, hc', hv, _⟩ := hv
-        exact sourceClause_sound (List.all_eq_true.mp hc c hc') hv
+        obtain ⟨c, hc', hv⟩ := hv
+        exact realmExc_of_member hv (List.all_eq_true.mp hc c hc')
+
+/-- A type of JavaScript values. -/
+theorem sourceTy_sound {G : NormalGraph ι} {A : List ι}
+    (checked : sourceTy G A = true) (η : MixedAssignment ι) :
+    FamLe (mixedValues G η A) sourceT :=
+  fun n W v hv => (sourceTy_exc checked η n W v hv).1
 
 #print axioms sourceTy_sound
 
@@ -3416,10 +3430,9 @@ theorem meetBelow_sound [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssignm
         exact ⟨c, hsub c hc, hv⟩
       · obtain ⟨c, _, hv, _⟩ := hvc
         exact ⟨.top, List.mem_singleton_self _, semWithArgs_value hv,
-          realmInvariant_of_not_record rfl n W v⟩
-      · obtain ⟨c, hc, hv, _⟩ := hvc
-        exact ⟨.source, List.mem_singleton_self _, sourceClause_sound (hs c hc) hv,
-          realmInvariant_of_not_record rfl n W v⟩
+          realmInvariant_of_unrealmed rfl n W v⟩
+      · obtain ⟨c, hc, hv, hinv⟩ := hvc
+        exact ⟨.source, List.mem_singleton_self _, realmExc_of_member ⟨hv, hinv⟩ (hs c hc)⟩
 
 /-- **A meet row means its parts and its clauses**, each read at the meet's
 own level. -/
@@ -3465,12 +3478,11 @@ theorem meet_target_value {G : NormalGraph ι} {η : MixedAssignment ι} {i j : 
   · rcases hcl with (h | ⟨h, hs⟩) | ⟨hi, h⟩
     · rw [h]
       exact ⟨.top, List.mem_singleton_self _, mixedDenote_value G η i hv,
-        realmInvariant_of_not_record rfl n W v⟩
+        realmInvariant_of_unrealmed rfl n W v⟩
     · rw [h]
       have hsource : sourceTy G [i] = true := by simpa [sourceTy] using hs
       exact ⟨.source, List.mem_singleton_self _,
-        sourceTy_sound hsource η n W v ⟨i, List.mem_singleton_self _, hv⟩,
-        realmInvariant_of_not_record rfl n W v⟩
+        sourceTy_exc hsource η n W v ⟨i, List.mem_singleton_self _, hv⟩⟩
     · rw [← h]
       exact ((meet_row_iff hi).mp hv).2
 
@@ -4463,7 +4475,36 @@ theorem restBodyMatch_some [DecidableEq ι] {tbl : InstTable ι} {κ : Ctx ι}
 theorem top_row_mixed {G : NormalGraph ι} {η : MixedAssignment ι} {S : List ι}
     (h : expand G S = [.top]) {n W v} (hv : isVal v = true ∧ Scoped 0 v) :
     mixedValues G η S n W v :=
-  mixed_of_expand h ⟨hv, realmInvariant_of_not_record rfl n W v⟩
+  mixed_of_expand h ⟨hv, realmInvariant_of_unrealmed rfl n W v⟩
+
+/-- A type holding the realm's `unknown`: one of its labels is a clause row
+with a `source` clause. -/
+@[nospecialize] def unknownTy (G : NormalGraph ι) (T : List ι) : Bool :=
+  T.any fun t => (G t).any fun c => match c with | .source => true | _ => false
+
+/-- A value of the realm's `unknown` is a member of a type holding it. -/
+theorem unknownTy_sound {G : NormalGraph ι} {η : MixedAssignment ι} {T : List ι}
+    (h : unknownTy G T = true) {n W v} (hv : excOf G n W v) : mixedValues G η T n W v := by
+  obtain ⟨t, ht, hp⟩ := List.any_eq_true.mp h
+  obtain ⟨c, hc, hs⟩ := List.any_eq_true.mp hp
+  cases c <;> simp only [Bool.false_eq_true] at hs
+  exact mixed_expand_mpr ⟨.source, List.mem_flatMap.mpr ⟨t, ht, hc⟩, hv⟩
+
+/-- A type of the realm's `unknown` alone: each label a clause row of `source`
+clauses only. -/
+@[nospecialize] def exactUnknown (G : NormalGraph ι) (U : List ι) : Bool :=
+  U.all fun u => G.plain u && (G u).all fun c => match c with | .source => true | _ => false
+
+/-- A member of a type of the realm's `unknown` alone is of the exception family. -/
+theorem exactUnknown_sound {G : NormalGraph ι} {η : MixedAssignment ι} {U : List ι}
+    (h : exactUnknown G U = true) {n W v} (hv : mixedValues G η U n W v) : excOf G n W v := by
+  obtain ⟨u, hu, hv⟩ := hv
+  have hp := List.all_eq_true.mp h u hu
+  simp only [Bool.and_eq_true, List.all_eq_true] at hp
+  obtain ⟨c, hc, hrow⟩ := (mixed_unfold_plain η hp.1 n W v).mp hv
+  have hs := hp.2 c hc
+  cases c <;> simp only [Bool.false_eq_true] at hs
+  exact hrow
 
 theorem sigImg_some [DecidableEq ι] {tbl : InstTable ι} {κ : Ctx ι}
     {p q : Arrow (List ι)} (h : sigImg tbl κ p = some q) :
@@ -5408,8 +5449,7 @@ theorem inst_images_sound [DecidableEq ι] {G : NormalGraph ι} (η : MixedAssig
     rcases hP with hP | ⟨hP, hQ⟩
     · obtain ⟨l, _, hl⟩ := hr
       exact top_row_mixed hP (mixedDenote_value G η l hl)
-    · exact mixed_of_expand hP ⟨sourceTy_sound hQ η j U r hr,
-        realmInvariant_of_not_record rfl j U r⟩
+    · exact mixed_of_expand hP (sourceTy_exc hQ η j U r hr)
   refine ⟨⟨hinv, fun q' hq' => ?_⟩, ⟨hinv, fun r' hr' => ?_⟩⟩
   · obtain ⟨q, hqL, rfl⟩ := List.mem_map.mp hq'
     obtain ⟨p, hps, hsig⟩ := hL q hqL
@@ -5793,13 +5833,14 @@ theorem pair_values_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (R
     · exact ⟨i, hB, hv⟩
     · rcases htop with htop | ⟨hsource, hparam, hscheme⟩
       · exact mixed_expand_mpr ⟨.top, htop, mixedDenote_value G η i hv,
-          realmInvariant_of_not_record rfl n W v⟩
+          realmInvariant_of_unrealmed rfl n W v⟩
       · obtain ⟨s, hs⟩ := Option.isSome_iff_exists.mp hscheme
         rw [qDenoteWithArgs_unfold] at hv
         simp only [qLayerWithArgs, hparam, hs, Bool.false_eq_true, ite_false] at hv
+        have hn := hv.1.not_plain
         obtain ⟨fs, code, oid, rfl, hscoped⟩ := hv.1.obj
         exact mixed_expand_mpr ⟨.source, hsource, ⟨rfl, hscoped⟩,
-          realmInvariant_of_not_record rfl n W _⟩
+          realmInvariant_of_not_plain hn⟩
     · rcases hmeet with ⟨hmeet, hsm | hsrc⟩ | ⟨j, hj, hjm, hparts, hcl⟩
       · by_cases hB : i ∈ B
         · exact ⟨i, hB, hv⟩
@@ -6482,7 +6523,7 @@ theorem InstArrs.mixed_sound [DecidableEq ι] {G : NormalGraph ι} {S L M} (h : 
   obtain ⟨i, s, tbl, θs, D, V, rfl, hp, hq, hcon, hlen, hal, hkinds, hbnd, hok, hL, hM⟩ := h
   intro η n W v hv
   exact ⟨inst_mixed_sound η hp hq hcon hlen (hal η) (fun b hb U hU => hbnd b hb U hU η) hkinds hok hL hM n W v hv,
-    realmInvariant_of_not_record rfl n W v⟩
+    realmInvariant_of_unrealmed rfl n W v⟩
 
 #print axioms covers_presence_sound
 #print axioms covers_ctors_sound

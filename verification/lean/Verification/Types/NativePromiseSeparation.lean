@@ -107,7 +107,7 @@ theorem witness_realm (G : NormalGraph ι) (X : List ι → Fam)
   cases hr : G.realm with
   | none => simp [realmInvariant, hr]
   | some r =>
-    by_cases hc : c.record = true
+    by_cases hc : c.realmed = true
     · simp only [realmInvariant, hr, hc, if_true]
       rintro fs oid he hs
       cases he

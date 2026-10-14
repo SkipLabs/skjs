@@ -378,6 +378,8 @@ of which an array owns. It is what the array invariant (`arrayInvariant`)
 reads. -/
 structure ArrayRealm (ι : Type) where
   proto : List ι
+  /-- The realm's `unknown`: the type of an array's elements, and of a thrown value. -/
+  unknown : List ι
   keys : List PropKey
   deriving DecidableEq, Repr
 
@@ -485,19 +487,20 @@ environment premise, through `meaning`). The store key is a key no source
 spells and no step adds, so the invariant is a fact of the object's identity:
 it reads the world's contracts only, never the heap. -/
 
-/-- The store every array holds, read at the weakest element type: a possibly sparse
-store of values. -/
-def anyStoreT : Fam := listT ⟨[], [], some sourceT, true, .sparse⟩
+/-- The store an array of the realm holds: possibly sparse, each element a
+value of `U`, the realm's `unknown`. -/
+def realmStoreT (U : Fam) : Fam := listT ⟨[], [], some U, true, .sparse⟩
 
-/-- A store under any tuple contract of values is a store of values. -/
-theorem listT_anyStore {T : TupleF}
+/-- A store under a tuple contract whose positions are within `U` is a store
+of the realm. -/
+theorem listT_realmStore {U : Fam} {T : TupleF}
     (hT : ∀ A, (A ∈ T.required ∨ A ∈ T.optional ∨ T.rest = some A) →
-      ∀ j (W : WorldT j) u, A j W u → sourceT j W u)
-    {k : Nat} {W : WorldT k} {v : Val} (h : listT T k W v) : anyStoreT k W v := by
+      ∀ j (W : WorldT j) u, A j W u → U j W u)
+    {k : Nat} {W : WorldT k} {v : Val} (h : listT T k W v) : realmStoreT U k W v := by
   obtain ⟨ls, rfl, hd, hlen, hbound, hreq, hopt, hrest⟩ := h
   refine ⟨ls, rfl, (by simp [StorePresence]), by simp, by simp, by simp, by simp, ?_⟩
   intro i l _ hl
-  refine ⟨sourceT, ?_⟩
+  refine ⟨U, ?_⟩
   simp only [true_and]
   by_cases hi : i < T.required.length
   · obtain ⟨l', c, hl', hw, hag⟩ := hreq i (T.required[i]) (List.getElem?_eq_getElem hi)
@@ -517,19 +520,30 @@ theorem listT_anyStore {T : TupleF}
       exact ⟨c, hw, fun j hj W' u => ⟨fun hu => hT _ (.inr (.inr hE)) j W' u
         ((hag j hj W' u).1 hu), fun h => nomatch h⟩⟩
 
-/-- **The array invariant**, with `P` the prototype's type and `N` the keys it
+/-- A store of the realm reads its element type below the level. -/
+theorem realmStoreT_congr {U U' : Fam} {n : Nat} (h : Agree U U' n) (W : WorldT n) (v : Val) :
+    realmStoreT U n W v → realmStoreT U' n W v := by
+  rintro ⟨ls, rfl, hd, hlen, hbound, hreq, hopt, hrest⟩
+  refine ⟨ls, rfl, (by simp [StorePresence]), by simp, by simp, by simp, by simp, ?_⟩
+  intro i l hi hl
+  obtain ⟨E, c, hE, hw, hag⟩ := hrest i l hi hl
+  cases hE
+  exact ⟨U', c, rfl, hw, fun j hj W' u => (hag j hj W' u).congr (h j hj W' u)⟩
+
+/-- **The array invariant**, with `P` the prototype's type, `U` the realm's
+`unknown`, the type of an array's elements, and `N` the keys the prototype
 provides. -/
-def arrayInvariant (P : Fam) (N : List PropKey) : Fam := fun k W v =>
+def arrayInvariant (P U : Fam) (N : List PropKey) : Fam := fun k W v =>
   ∀ flds oid, v = .objAt flds .absent oid → (flds.lookup CallArguments.arrayStoreField).isSome = true →
-    viewT [(CallArguments.arrayStoreField, anyStoreT), (CallArguments.protoField, P)] k W v ∧
+    viewT [(CallArguments.arrayStoreField, realmStoreT U), (CallArguments.protoField, P)] k W v ∧
       ownKeysT ⟨false, N⟩ k W v
 
 /-- What a row asks of the members of one of its clauses beyond the clause:
-the array invariant, where the graph states the realm and the clause is a
-record's. -/
+the array invariant, where the graph states the realm and the clause is one it
+applies to (`Clause.realmed`: a record, a dictionary, `source`). -/
 def realmInvariant (G : NormalGraph ι) (X : List ι → Fam) (c : Clause (List ι)) : Fam :=
   match G.realm with
-  | some r => if c.record then arrayInvariant (X r.proto) r.keys else fun _ _ _ => True
+  | some r => if c.realmed then arrayInvariant (X r.proto) (X r.unknown) r.keys else fun _ _ _ => True
   | none => fun _ _ _ => True
 
 /-- **The graph's exception family**: the values of the realm's `unknown`,
@@ -545,7 +559,7 @@ fixed assignment (`ParameterInterpretation.realmAt`). -/
 def rowSem (G : NormalGraph ι) (A X : List ι → Fam) (P : List ι → ArgFam) (c : Clause (List ι)) : Fam :=
   fun n W v => semWithArgs (realmExc G A) X P c n W v ∧ realmInvariant G A c n W v
 
-theorem arrayInvariant_adm (P : Fam) (N : List PropKey) : Adm (arrayInvariant P N) := by
+theorem arrayInvariant_adm (P U : Fam) (N : List PropKey) : Adm (arrayInvariant P U N) := by
   constructor
   · intro n W v h flds oid hv hs
     obtain ⟨h1, h2⟩ := h flds oid hv hs
@@ -556,18 +570,23 @@ theorem arrayInvariant_adm (P : Fam) (N : List PropKey) : Adm (arrayInvariant P 
 
 /-- The invariant reads the prototype's type only below the budget, through
 the contract of the prototype key. -/
-theorem arrayInvariant_congr {P Q : Fam} (N : List PropKey) {n : Nat} (h : Agree P Q n)
-    (W : WorldT n) (v : Val) : arrayInvariant P N n W v ↔ arrayInvariant Q N n W v := by
-  have side : ∀ (P Q : Fam), Agree P Q n → arrayInvariant P N n W v → arrayInvariant Q N n W v := by
-    intro P Q h hv flds oid he hs
+theorem arrayInvariant_congr {P Q U U' : Fam} (N : List PropKey) {n : Nat} (h : Agree P Q n)
+    (hu : Agree U U' n) (W : WorldT n) (v : Val) :
+    arrayInvariant P U N n W v ↔ arrayInvariant Q U' N n W v := by
+  have side : ∀ (P Q U U' : Fam), Agree P Q n → Agree U U' n →
+      arrayInvariant P U N n W v → arrayInvariant Q U' N n W v := by
+    intro P Q U U' h hu hv flds oid he hs
     obtain ⟨h1, h2⟩ := hv flds oid he hs
     refine ⟨fun f T hm => ?_, h2⟩
     simp only [List.mem_cons, Prod.mk.injEq, List.not_mem_nil, or_false] at hm
     rcases hm with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
-    · exact h1 CallArguments.arrayStoreField anyStoreT (by simp)
+    · obtain ⟨flds', l, c, oid', he', hf, hl, hag⟩ := h1 CallArguments.arrayStoreField (realmStoreT U) (by simp)
+      exact ⟨flds', l, c, oid', he', hf, hl, fun j hj W' u hu' =>
+        realmStoreT_congr (fun m hm W'' w => hu m (by omega) W'' w) W' u (hag j hj W' u hu')⟩
     · obtain ⟨flds', l, c, oid', he', hf, hl, hag⟩ := h1 CallArguments.protoField P (by simp)
       exact ⟨flds', l, c, oid', he', hf, hl, fun j hj W' u hu => (h j hj W' u).mp (hag j hj W' u hu)⟩
-  exact ⟨side P Q h, side Q P fun j hj W' u => (h j hj W' u).symm⟩
+  exact ⟨side P Q U U' h hu, side Q P U' U (fun j hj W' u => (h j hj W' u).symm)
+    (fun j hj W' u => (hu j hj W' u).symm)⟩
 
 theorem realmInvariant_adm (G : NormalGraph ι) (X : List ι → Fam) (c : Clause (List ι)) :
     Adm (realmInvariant G X c) := by
@@ -575,9 +594,9 @@ theorem realmInvariant_adm (G : NormalGraph ι) (X : List ι → Fam) (c : Claus
   cases G.realm with
   | none => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
   | some r =>
-    cases c.record
+    cases c.realmed
     · exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
-    · exact arrayInvariant_adm _ _
+    · exact arrayInvariant_adm _ _ _
 
 theorem realmInvariant_congr (G : NormalGraph ι) (X Y : List ι → Fam) (n : Nat)
     (h : ∀ a, Agree (X a) (Y a) n) (c : Clause (List ι)) (W : WorldT n) (v : Val) :
@@ -586,9 +605,23 @@ theorem realmInvariant_congr (G : NormalGraph ι) (X Y : List ι → Fam) (n : N
   cases G.realm with
   | none => exact Iff.rfl
   | some r =>
-    cases c.record
+    cases c.realmed
     · exact Iff.rfl
-    · exact arrayInvariant_congr _ (h _) W v
+    · exact arrayInvariant_congr _ (h _) (h _) W v
+
+/-- Two graphs of one realm whose prototype and `unknown` types mean the same
+have one exception family. -/
+theorem realmExc_eq {G H : NormalGraph ι} {A B : List ι → Fam} (hr : H.realm = G.realm)
+    (h : ∀ r, G.realm = some r → A r.proto = B r.proto ∧ A r.unknown = B r.unknown) :
+    realmExc H A = realmExc G B := by
+  funext n W v
+  unfold realmExc realmInvariant
+  rw [hr]
+  cases hg : G.realm with
+  | none => rfl
+  | some r =>
+    obtain ⟨h1, h2⟩ := h r hg
+    simp only [h1, h2]
 
 theorem realmExc_adm (G : NormalGraph ι) (A : List ι → Fam) : Adm (realmExc G A) :=
   interT_adm _ _ ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩ (realmInvariant_adm G A .source)
@@ -618,26 +651,27 @@ theorem rowSem_congr (G : NormalGraph ι) (A B X Y : List ι → Fam) (P Q : Lis
   and_congr (semWithArgs_congr X Y P Q n (realmExc_congr G A B n hA) h hP c W v)
     (realmInvariant_congr G A B n hA c W v)
 
-/-- A clause that is not a record's asks nothing more in a row. -/
-theorem realmInvariant_of_not_record {G : NormalGraph ι} {X : List ι → Fam} {c : Clause (List ι)}
-    (hc : c.record = false) (n W v) : realmInvariant G X c n W v := by
+/-- A clause the realm's invariant does not apply to asks nothing more in a row. -/
+theorem realmInvariant_of_unrealmed {G : NormalGraph ι} {X : List ι → Fam} {c : Clause (List ι)}
+    (hc : c.realmed = false) (n W v) : realmInvariant G X c n W v := by
   unfold realmInvariant
   cases G.realm with
   | none => trivial
   | some r => simp [hc]
 
-/-- Clauses none of which is a record's mean in a row what they mean alone. -/
+/-- Clauses none of which the invariant applies to mean in a row what they
+mean alone. -/
 theorem setSem_row_plain {G : NormalGraph ι} {A X : List ι → Fam} {P : List ι → ArgFam}
-    {cs : List (Clause (List ι))} (hc : ∀ c ∈ cs, c.record = false) (n W v) :
+    {cs : List (Clause (List ι))} (hc : ∀ c ∈ cs, c.realmed = false) (n W v) :
     setSem (rowSem G A X P) cs n W v ↔ semList (realmExc G A) X P cs n W v := by
   constructor
   · rintro ⟨c, hm, hv, -⟩; exact ⟨c, hm, hv⟩
-  · rintro ⟨c, hm, hv⟩; exact ⟨c, hm, hv, realmInvariant_of_not_record (hc c hm) n W v⟩
+  · rintro ⟨c, hm, hv⟩; exact ⟨c, hm, hv, realmInvariant_of_unrealmed (hc c hm) n W v⟩
 
-/-- The same, as a rewrite: a clause that is not a record's asks nothing. -/
-theorem realmInvariant_iff_of_not_record {G : NormalGraph ι} {X : List ι → Fam}
-    {c : Clause (List ι)} (hc : c.record = false) (n W v) : realmInvariant G X c n W v ↔ True :=
-  iff_true_intro (realmInvariant_of_not_record hc n W v)
+/-- The same, as a rewrite. -/
+theorem realmInvariant_iff_of_unrealmed {G : NormalGraph ι} {X : List ι → Fam}
+    {c : Clause (List ι)} (hc : c.realmed = false) (n W v) : realmInvariant G X c n W v ↔ True :=
+  iff_true_intro (realmInvariant_of_unrealmed hc n W v)
 
 /-- A graph without a realm asks nothing more. -/
 theorem realmInvariant_of_none {G : NormalGraph ι} {X : List ι → Fam} {c : Clause (List ι)}
@@ -647,16 +681,16 @@ theorem realmInvariant_of_none {G : NormalGraph ι} {X : List ι → Fam} {c : C
   trivial
 
 /-- An object that does not own the store key meets the invariant. -/
-theorem arrayInvariant_of_lookup {P : Fam} {N : List PropKey} {n W flds code}
+theorem arrayInvariant_of_lookup {P U : Fam} {N : List PropKey} {n W flds code}
     (h : flds.lookup CallArguments.arrayStoreField = none) :
-    arrayInvariant P N n W (.objAt flds code oid) := by
+    arrayInvariant P U N n W (.objAt flds code oid) := by
   intro flds' oid' he hs
   cases he
   simp [h] at hs
 
 /-- A value that is not a plain object meets the invariant. -/
-theorem arrayInvariant_of_not_plain {P : Fam} {N : List PropKey} {n W v}
-    (h : ∀ flds oid, v ≠ .objAt flds .absent oid) : arrayInvariant P N n W v :=
+theorem arrayInvariant_of_not_plain {P U : Fam} {N : List PropKey} {n W v}
+    (h : ∀ flds oid, v ≠ .objAt flds .absent oid) : arrayInvariant P U N n W v :=
   fun flds oid he _ => absurd he (h flds oid)
 
 /-- A row's clause without the store key, or not a plain object, asks nothing
@@ -668,7 +702,7 @@ theorem realmInvariant_of_lookup {G : NormalGraph ι} {X : List ι → Fam} {c :
   cases G.realm with
   | none => trivial
   | some r =>
-    cases c.record
+    cases c.realmed
     · trivial
     · exact arrayInvariant_of_lookup h
 
@@ -678,7 +712,7 @@ theorem realmInvariant_of_not_plain {G : NormalGraph ι} {X : List ι → Fam} {
   cases G.realm with
   | none => trivial
   | some r =>
-    cases c.record
+    cases c.realmed
     · trivial
     · exact arrayInvariant_of_not_plain h
 
@@ -687,29 +721,43 @@ fresh object owning no key. -/
 theorem realmExc_errors (G : NormalGraph ι) (A : List ι → Fam) : ErrorsIn (realmExc G A) :=
   fun _ _ _ => ⟨⟨rfl, by simp [thrownError, Scoped]⟩, realmInvariant_of_lookup (by simp)⟩
 
-/-- Two record clauses of one graph ask the same of their members. -/
-theorem realmInvariant_record {G : NormalGraph ι} {X : List ι → Fam} {c d : Clause (List ι)}
-    (hc : c.record = true) (hd : d.record = true) {n W v} :
+/-- Two clauses the invariant applies to ask the same of their members. -/
+theorem realmInvariant_realmed {G : NormalGraph ι} {X : List ι → Fam} {c d : Clause (List ι)}
+    (hc : c.realmed = true) (hd : d.realmed = true) {n W v} :
     realmInvariant G X c n W v ↔ realmInvariant G X d n W v := by
   unfold realmInvariant
   cases G.realm with
   | none => exact Iff.rfl
   | some r => simp [hc, hd]
 
+/-- A member of a clause of a row meets what the realm asks of every clause
+but top: the clause's own invariant where it is one the invariant applies to,
+nothing otherwise, its member being no plain object. -/
+theorem realmInvariant_of_member {G : NormalGraph ι} {Z X : List ι → Fam} {P : List ι → ArgFam}
+    {c d : Clause (List ι)} {n W v} (hv : rowSem G Z X P c n W v) (hc : c ≠ .top)
+    (hd : d.realmed = true) : realmInvariant G Z d n W v := by
+  cases hcr : c.realmed
+  · exact realmInvariant_of_not_plain (semWithArgs_not_plain hc hcr hv.1)
+  · exact (realmInvariant_realmed hcr hd).mp hv.2
+
+/-- A JavaScript value meets the realm's `unknown` where it is a member of a
+row's clause other than top. -/
+theorem realmExc_of_member {G : NormalGraph ι} {Z X : List ι → Fam} {P : List ι → ArgFam}
+    {c : Clause (List ι)} {n W v} (hv : rowSem G Z X P c n W v) (hc : sourceClause c = true) :
+    realmExc G Z n W v :=
+  ⟨sourceClause_sound hc hv.1, realmInvariant_of_member hv (by rintro rfl; cases hc) rfl⟩
+
 /-- Renaming a clause's operands keeps what the realm asks of it. -/
 theorem realmInvariant_map (G : NormalGraph ι) (X : List ι → Fam) (f : List ι → List ι)
     (c : Clause (List ι)) : realmInvariant G X (c.map f) = realmInvariant G X c := by
   unfold realmInvariant
-  rw [Clause.record_map]
+  rw [Clause.realmed_map]
 
 /-- A meet of rows, read in a row, is the meet of what each asks. -/
 theorem meetLists_row (G : NormalGraph ι) (Z X : List ι → Fam) (P : List ι → ArgFam)
     (A B : List (Clause (List ι))) (n W v) :
     setSem (rowSem G Z X P) (meetLists A B) n W v ↔
       setSem (rowSem G Z X P) A n W v ∧ setSem (rowSem G Z X P) B n W v := by
-  have side : ∀ {c d : Clause (List ι)}, d.record = true → c.record = true →
-      realmInvariant G Z d n W v → realmInvariant G Z c n W v := fun hd hc h =>
-    (realmInvariant_record hd hc).mp h
   constructor
   · rintro ⟨c, hc, hv, hinv⟩
     obtain ⟨a, ha, b, hb, hm⟩ : ∃ a ∈ A, ∃ b ∈ B, c ∈ meet a b := by
@@ -717,27 +765,30 @@ theorem meetLists_row (G : NormalGraph ι) (Z X : List ι → Fam) (P : List ι 
       obtain ⟨a, ha, b, hb, hm, -⟩ := hc
       exact ⟨a, ha, b, hb, hm⟩
     have hh := (meet_sound X P a b n W v).mp ⟨c, hm, hv⟩
-    have hr := meet_record hm
+    -- What the realm asks of a realmed operand: the meet's clause is not top.
+    have side : ∀ d, d.realmed = true → (d = a ∨ d = b) → realmInvariant G Z d n W v := by
+      intro d hd hdab
+      refine realmInvariant_of_member ⟨hv, hinv⟩ ?_ hd
+      rintro rfl
+      obtain ⟨rfl, rfl⟩ := top_of_meet hm
+      rcases hdab with rfl | rfl <;> cases hd
     refine ⟨⟨a, ha, hh.1, ?_⟩, ⟨b, hb, hh.2, ?_⟩⟩
-    · cases har : a.record
-      · exact realmInvariant_of_not_record har n W v
-      · exact side (by simp [hr, har]) har hinv
-    · cases hbr : b.record
-      · exact realmInvariant_of_not_record hbr n W v
-      · exact side (by simp [hr, hbr]) hbr hinv
+    · cases har : a.realmed
+      · exact realmInvariant_of_unrealmed har n W v
+      · exact side a har (.inl rfl)
+    · cases hbr : b.realmed
+      · exact realmInvariant_of_unrealmed hbr n W v
+      · exact side b hbr (.inr rfl)
   · rintro ⟨⟨a, ha, hva, hia⟩, ⟨b, hb, hvb, hib⟩⟩
     obtain ⟨c, hc, hv⟩ := (meet_sound X P a b n W v).mpr ⟨hva, hvb⟩
     refine ⟨c, ?_, hv, ?_⟩
     · simp only [meetLists, List.mem_flatMap, List.mem_filter]
       exact ⟨a, ha, b, hb, hc, semWithArgs_consistent hv⟩
-    · have hr := meet_record hc
-      cases hcr : c.record
-      · exact realmInvariant_of_not_record hcr n W v
-      · rw [hcr] at hr
-        cases har : a.record
-        · have hbr : b.record = true := by simpa [har] using hr.symm
-          exact side hbr hcr hib
-        · exact side har hcr hia
+    · cases hcr : c.realmed
+      · exact realmInvariant_of_unrealmed hcr n W v
+      · rcases realmed_of_meet hc hcr with har | hbr
+        · exact (realmInvariant_realmed har hcr).mp hia
+        · exact (realmInvariant_realmed hbr hcr).mp hib
 
 def normalLayer (G : NormalGraph ι) (X : ι → Fam) (i : ι) : Fam :=
   setSem (rowSem G (setSem X) (setSem X) (plainArguments G (setSem X))) (G i)
@@ -985,6 +1036,15 @@ theorem Callee.val {c : Bool} {v : Val} (h : Callee c v) : isVal v = true ∧ Sc
   · obtain ⟨fs, n, E, K, s, caps, rest, oid, rfl, hs⟩ := h; exact ⟨rfl, hs⟩
   · exact ⟨h.val, h.scoped⟩
 
+
+/-- A scheme's member has code: it is no plain object. -/
+theorem Callee.not_plain {c : Bool} {v : Val} (h : Callee c v) : ∀ flds oid, v ≠ .objAt flds .absent oid := by
+  intro flds oid he
+  subst he
+  unfold Callee at h
+  split at h
+  · obtain ⟨fs, n, E, K, s, caps, rest, oid', he, -⟩ := h; cases he
+  · obtain ⟨fs, code, oid', he, hc, -⟩ := h; cases he; cases hc
 /-- Universal quantification has one implementation for both semantic sorts.
 The body still denotes a runtime callable; its parameters may denote lists. -/
 noncomputable def boundedSem

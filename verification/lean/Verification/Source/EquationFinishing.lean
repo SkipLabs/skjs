@@ -38,9 +38,10 @@ def rawHeads (drafts : Array Draft) (bodies : Array (GraphRow Tree (List Tree)))
       header := { parameters := d.kinds.length, binders := d.binders, kinds := d.kinds }
       body := bodies[h]! }
 
-def realmOf (E : Equations) (proto : Option Nat) (excluded : List PropKey) :
+def realmOf (E : Equations) (proto unknown : Option Nat) (excluded : List PropKey) :
     Option (ArrayRealm (Label E.signature)) :=
-  proto.bind fun p => (Label.ofTree? (mkApp p [])).map fun l => ⟨[l], excluded⟩
+  proto.bind fun p => unknown.bind fun u => (Label.ofTree? (mkApp p [])).bind fun l =>
+    (Label.ofTree? (mkApp u [])).map fun k => ⟨[l], [k], excluded⟩
 
 /-- A bound obligation's closed form: inside a template, the head's
 parameters are read as bounded parameter labels, each a family variable met
@@ -96,7 +97,8 @@ def compact (s : State) : Except String Built := do
 def Built.equations (b : Built) : Except String Equations := do
   let E ← Equations.ofRaw (rawHeads b.drafts b.bodies)
   let proto := b.state.proto.map b.rename
-  return { E with realm := if b.state.arrays then realmOf E proto b.state.excluded else none }
+  let unknown := (b.state.keys.get? unknownKey).map b.rename
+  return { E with realm := if b.state.arrays then realmOf E proto unknown b.state.excluded else none }
 
 /-- The store the units grow, from the compacted heads: their rows, their
 keys (a key that spells a head index spelled again with the new one), the

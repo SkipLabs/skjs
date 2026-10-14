@@ -330,7 +330,7 @@ private theorem mapped_clause_agree (G : NormalGraph ι) (η θ : MixedAssignmen
   apply and_congr
   · exact mapped_sem_agree G η θ f g h c W v
   · unfold realmInvariant
-    simp only [Clause.record_map]
+    simp only [Clause.realmed_map]
 
 /-- The value half of the application-congruence induction for a clause head.
 All recursive operand reasoning is below the current step index. -/

@@ -10,15 +10,15 @@ open PositiveGraphs
 /-- Fresh settlement and observation retain independent operation contracts.
 Both are exact on stable inputs: an input within `N` is its own observation
 and its own resolved result. -/
-structure Capabilities (N : Fam) where
+structure Capabilities (U N : Fam) where
   resolve : Fam → Fam → Prop
   observe : Fam → Fam → Prop
   resolve_exact : ∀ {A R}, FamLe A N → resolve A R → R = A
   observe_exact : ∀ {A O}, FamLe A N → observe A O → O = A
   resolve_source : ∀ {A R}, resolve A R →
-    FamLe A PositiveNormalization.sourceT ∧ FamLe R PositiveNormalization.sourceT
+    FamLe A U ∧ FamLe R U
   observe_source : ∀ {A O}, observe A O →
-    FamLe A PositiveNormalization.sourceT ∧ FamLe O PositiveNormalization.sourceT
+    FamLe A U ∧ FamLe O U
 
 /-- Stable inputs have their own type as both observation and resolved result.
 Operation-output inclusions alone do not establish this type equality. -/
@@ -26,7 +26,7 @@ def StableExact (N A O R : Fam) : Prop :=
   FamLe A N → O = A ∧ R = A
 
 /-- An awaitable input and its literal observation (`X : Awaitable`). -/
-structure Observation {N : Fam} (C : Capabilities N) where
+structure Observation {U N : Fam} (C : Capabilities U N) where
   input : Fam
   observation : Fam
   input_valid : ValueFam input
@@ -35,7 +35,7 @@ structure Observation {N : Fam} (C : Capabilities N) where
 
 /-- A resolvable input (`X : Resolvable`): an observation together with a
 stable result that both the input and its observation resolve to. -/
-structure Descriptor {N : Fam} (C : Capabilities N) extends Observation C where
+structure Descriptor {U N : Fam} (C : Capabilities U N) extends Observation C where
   result : Fam
   result_valid : ValueFam result
   stable : FamLe result N
@@ -43,16 +43,16 @@ structure Descriptor {N : Fam} (C : Capabilities N) extends Observation C where
   forwarded : C.resolve observation result
 
 /-- A stable input is its own observation. -/
-theorem Observation.exactStable {N : Fam} {C : Capabilities N} (o : Observation C)
+theorem Observation.exactStable {U N : Fam} {C : Capabilities U N} (o : Observation C)
     (h : FamLe o.input N) : o.observation = o.input :=
   C.observe_exact h o.observed
 
 /-- Stable exactness follows from the capabilities' exactness. -/
-theorem Descriptor.exactStable {N : Fam} {C : Capabilities N} (d : Descriptor C) :
+theorem Descriptor.exactStable {U N : Fam} {C : Capabilities U N} (d : Descriptor C) :
     StableExact N d.input d.observation d.result :=
   fun h => ⟨C.observe_exact h d.observed, C.resolve_exact h d.resolved⟩
 
-theorem Descriptor.result_eq_input {N : Fam} {C : Capabilities N}
+theorem Descriptor.result_eq_input {U N : Fam} {C : Capabilities U N}
     (d : Descriptor C) (h : FamLe d.input N) : d.result = d.input :=
   (d.exactStable h).2
 
@@ -61,7 +61,7 @@ abbrev ProtectedSlots (s : SchemeRow ι) := s.protectedSlots
 /-- One allowed tuple retains the observation contract, and, where the group
 has a result slot, both resolution contracts. The value projection permits
 ordinary argument-list binders alongside resolution groups. -/
-def SlotCoherent {N : Fam} (C : Capabilities N) (As : List MixedFamily)
+def SlotCoherent {U N : Fam} (C : Capabilities U N) (As : List MixedFamily)
     (g : ResolutionSlots) : Prop :=
   ∃ T O : MixedFamily,
     As[g.input]? = some T ∧ As[g.observation]? = some O ∧ C.observe T.value.1 O.value.1 ∧
@@ -70,7 +70,7 @@ def SlotCoherent {N : Fam} (C : Capabilities N) (As : List MixedFamily)
 
 /-- The fixed descriptor universe is shared by all schemes in the graph.
 Ordinary schemes retain their unrestricted substitutions. -/
-def descriptorDomain {N : Fam} (C : Capabilities N) : SchemeDomain ι .mixed where
+def descriptorDomain {U N : Fam} (C : Capabilities U N) : SchemeDomain ι .mixed where
   allowed s As := ProtectedSlots s ∧ ∀ g ∈ s.resolution, SlotCoherent C As g
   ordinary_allowed := by
     intro s As hs
@@ -80,7 +80,7 @@ def descriptorDomain {N : Fam} (C : Capabilities N) : SchemeDomain ι .mixed whe
     exact and_congr hp (by rw [hm])
 
 /-- Allowed-instance elimination exposes a genuine observation for every group. -/
-theorem allowed_observation {N : Fam} (C : Capabilities N) (s : SchemeRow ι)
+theorem allowed_observation {U N : Fam} (C : Capabilities U N) (s : SchemeRow ι)
     (As : List MixedFamily) (ha : (descriptorDomain C).allowed s As)
     (g : ResolutionSlots) (hg : g ∈ s.resolution) :
     ∃ (o : Observation C) (T O : MixedFamily),
@@ -91,7 +91,7 @@ theorem allowed_observation {N : Fam} (C : Capabilities N) (s : SchemeRow ι)
 
 /-- A group with a result slot exposes a genuine descriptor, including the
 literal observation family rather than a result inferred from the input alone. -/
-theorem allowed_descriptor {N : Fam} (C : Capabilities N) (s : SchemeRow ι)
+theorem allowed_descriptor {U N : Fam} (C : Capabilities U N) (s : SchemeRow ι)
     (As : List MixedFamily) (ha : (descriptorDomain C).allowed s As)
     (g : ResolutionSlots) (hg : g ∈ s.resolution) (r : Nat) (hr : g.result = some r) :
     ∃ (d : Descriptor C) (T O R : MixedFamily),

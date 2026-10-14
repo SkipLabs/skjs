@@ -41,9 +41,9 @@ theorem represents_raw {G : NormalGraph ι} {A c} (hr : Represents G A c) (n W v
 /-- A member of a clause that is not a record's is a member of the type it
 represents: the realm asks nothing of it. -/
 theorem represents_back {G : NormalGraph ι} {A c} (hr : Represents G A c) (n W v)
-    (hc : c.record = false := by rfl) :
+    (hc : c.realmed = false := by rfl) :
     semWithArgs (excOf G) (meaning G) (argMeaning G) c n W v → meaning G A n W v :=
-  fun h => (represents_sem hr n W v).mpr ⟨h, realmInvariant_of_not_record hc n W v⟩
+  fun h => (represents_sem hr n W v).mpr ⟨h, realmInvariant_of_unrealmed hc n W v⟩
 
 /-- A value of a class's key clause is a key the class admits, by the
 `ToPropertyKey` a computed key's step applies. -/
@@ -182,7 +182,7 @@ theorem SourceValues.sound {G : NormalGraph ι} {A : Ty ι} (h : SourceValues G 
 /-- A value of a type of JavaScript values is of the graph's exception family. -/
 theorem SourceValues.exc {G : NormalGraph ι} {A : Ty ι} (h : SourceValues G A)
     {n W v} (hv : meaning G A n W v) : excOf G n W v :=
-  ⟨sourceTy_sound h G.env n W v hv, realmInvariant_of_not_record rfl n W v⟩
+  sourceTy_exc h G.env n W v hv
 
 /-- A type whose every clause is a store's. -/
 def storeTy (G : NormalGraph ι) (S : Ty ι) : Bool :=
@@ -190,9 +190,11 @@ def storeTy (G : NormalGraph ι) (S : Ty ι) : Bool :=
     | .list a _ => a.operands.all (sourceTy G)
     | _ => false
 
-/-- A store type's members are stores of values. -/
-theorem storeTy_sound {G : NormalGraph ι} {S : Ty ι} (h : storeTy G S = true) {n W v}
-    (hv : meaning G S n W v) : anyStoreT n W v := by
+/-- A store type's members are stores of the realm, given a type `U` holding
+the realm's `unknown`. -/
+theorem storeTy_sound {G : NormalGraph ι} {S U : Ty ι} (h : storeTy G S = true)
+    (hu : unknownTy G U = true) {η : MixedAssignment ι} {n W v}
+    (hv : meaning G S n W v) : realmStoreT (mixedValues G η U) n W v := by
   simp only [storeTy, Bool.and_eq_true, List.all_eq_true] at h
   obtain ⟨c, hc, hv, -⟩ := (expand_sem G S h.1 n W v).mp hv
   have hl := h.2 c hc
@@ -200,15 +202,15 @@ theorem storeTy_sound {G : NormalGraph ι} {S : Ty ι} (h : storeTy G S = true) 
   | list a bs =>
     have hj : ∀ B ∈ a.operands, SourceValues G B := by
       simpa only [List.all_eq_true, SourceValues] using hl
-    refine listT_anyStore (fun A hA j W' u hu => ?_) hv.1
+    refine listT_realmStore (fun A hA j W' u hu' => ?_) hv.1
     simp only [tupleFams] at hA
     rcases hA with hA | hA | hA
     · obtain ⟨B, hB, rfl⟩ := List.mem_map.mp hA
-      exact ⟨(hj B (by simp [Tuple.operands, hB])).sound hu, (meaning_value hu).2⟩
+      exact unknownTy_sound hu ((hj B (by simp [Tuple.operands, hB])).exc hu')
     · obtain ⟨B, hB, rfl⟩ := List.mem_map.mp hA
-      exact ⟨(hj B (by simp [Tuple.operands, hB])).sound hu, (meaning_value hu).2⟩
+      exact unknownTy_sound hu ((hj B (by simp [Tuple.operands, hB])).exc hu')
     · obtain ⟨B, hB, he⟩ := Option.map_eq_some_iff.mp hA; subst he
-      exact ⟨(hj B (by simp [Tuple.operands, hB])).sound hu, (meaning_value hu).2⟩
+      exact unknownTy_sound hu ((hj B (by simp [Tuple.operands, hB])).exc hu')
   | _ => simp at hl
 
 /-- **An allocation meets the realm's invariant**: it owns no store, or it is
@@ -218,7 +220,7 @@ def allocRealm [DecidableEq ι] (G : NormalGraph ι) (parts : List (PropKey × T
   !parts.any (·.1 == CallArguments.arrayStoreField) ||
   match G.realm with
   | none => true
-  | some r => realmFree G r.proto && parts.all (fun p => !r.keys.contains p.1) &&
+  | some r => realmFree G r.proto && unknownTy G r.unknown && parts.all (fun p => !r.keys.contains p.1) &&
       parts.any (fun p => p.1 == CallArguments.arrayStoreField && storeTy G p.2) &&
       parts.any (fun p => p.1 == CallArguments.protoField && p.2 == r.proto)
 
@@ -247,10 +249,10 @@ theorem allocRealm_sound [DecidableEq ι] {G : NormalGraph ι} {parts : List (Pr
       rw [hr] at hok
       simp only [Bool.and_eq_true, List.all_eq_true, List.any_eq_true, Bool.not_eq_true',
         beq_iff_eq] at hok
-      obtain ⟨⟨⟨hfree, hkeys⟩, ⟨ps, hps, hsk, hst⟩⟩, ⟨pp, hpp, hpk, hpr⟩⟩ := hok
+      obtain ⟨⟨⟨⟨hfree, hunk⟩, hkeys⟩, ⟨ps, hps, hsk, hst⟩⟩, ⟨pp, hpp, hpk, hpr⟩⟩ := hok
       unfold realmInvariant
       rw [hr]
-      cases c.record
+      cases c.realmed
       · trivial
       · intro flds oid he _
         cases he
@@ -259,7 +261,7 @@ theorem allocRealm_sound [DecidableEq ι] {G : NormalGraph ι} {parts : List (Pr
           rcases hm with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
           · obtain ⟨flds, l, c, oid', he, hl, hw, hag⟩ := recT_at (hmem ps hps) hrec
             refine ⟨flds, l, c, oid', he, by rw [← hsk]; exact hl, hw, fun j hj W' u hu => ?_⟩
-            exact storeTy_sound hst ((hag j hj W' u).mp hu)
+            exact storeTy_sound hst hunk ((hag j hj W' u).mp hu)
           · obtain ⟨flds, l, c, oid', he, hl, hw, hag⟩ := recT_at (hmem pp hpp) hrec
             refine ⟨flds, l, c, oid', he, by rw [← hpk]; exact hl, hw, fun j hj W' u hu => ?_⟩
             rw [← hpr]
@@ -3080,8 +3082,8 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     | succ p =>
       apply Safe_mono (p+1) (fun m _ X v hv => ?_) U heap _ (test_value_safe k av hav p U heap hu hok)
       rcases hv with rfl | rfl
-      · exact expand_sem_mpr ⟨_, expand_sub ht, rfl, realmInvariant_of_not_record rfl _ _ _⟩
-      · exact expand_sem_mpr ⟨_, expand_sub hf, rfl, realmInvariant_of_not_record rfl _ _ _⟩
+      · exact expand_sem_mpr ⟨_, expand_sub ht, rfl, realmInvariant_of_unrealmed rfl _ _ _⟩
+      · exact expand_sem_mpr ⟨_, expand_sub hf, rfl, realmInvariant_of_unrealmed rfl _ _ _⟩
   | @merge Γ d a b A B R ha hb hm iha ihb =>
     intro n W h ρ he hw hh
     apply bind (fun a => .merge d a (instantiate 0 ρ b)) Step.mergeC1 Raises.mergeC1 n W h _ hw hh
@@ -3122,8 +3124,8 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       obtain ⟨z, hz, hr⟩ := hres
       refine arith_value_safe op av bv z hz k V heap' hv hok' (fun m U => ?_)
       rcases hr with rfl | rfl
-      · exact expand_sem_mpr ⟨_, expand_sub hn.1, rfl, realmInvariant_of_not_record rfl _ _ _⟩
-      · exact expand_sem_mpr ⟨_, expand_sub hn.2, rfl, realmInvariant_of_not_record rfl _ _ _⟩
+      · exact expand_sem_mpr ⟨_, expand_sub hn.1, rfl, realmInvariant_of_unrealmed rfl _ _ _⟩
+      · exact expand_sem_mpr ⟨_, expand_sub hn.2, rfl, realmInvariant_of_unrealmed rfl _ _ _⟩
     unfold ClauseOperatorTypes at hopt
     split at hopt
     case h_2 => exact hopt.elim
@@ -3140,8 +3142,8 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     | str => obtain ⟨s, rfl⟩ := hr; exact (represents_back hn m U _) ⟨s, rfl⟩
     | bool =>
       rcases hr with rfl | rfl
-      · exact expand_sem_mpr ⟨_, expand_sub hn.1, rfl, realmInvariant_of_not_record rfl _ _ _⟩
-      · exact expand_sem_mpr ⟨_, expand_sub hn.2, rfl, realmInvariant_of_not_record rfl _ _ _⟩
+      · exact expand_sem_mpr ⟨_, expand_sub hn.1, rfl, realmInvariant_of_unrealmed rfl _ _ _⟩
+      · exact expand_sem_mpr ⟨_, expand_sub hn.2, rfl, realmInvariant_of_unrealmed rfl _ _ _⟩
   | @write Γ a Ref fs vs os ms ks f A b N ha hr hm hb hn iha ihb =>
     intro n W h ρ he hw hh
     apply bind (fun a => .writeAt f a (instantiate 0 ρ b)) Step.writeC1 Raises.writeC1 n W h _ hw hh

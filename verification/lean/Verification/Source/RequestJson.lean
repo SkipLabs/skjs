@@ -434,7 +434,7 @@ The ordinary graph assignment also has a proof for this same check. -/
 structure QualifiedBody (G : NormalGraph ι) (images : PositiveCertificates.InstanceImageCheck G) where
   source : SchemeRow ι
   stable : Fam
-  capabilities : ResolutionDescriptors.Capabilities stable
+  capabilities : ResolutionDescriptors.Capabilities (excOf G) stable
   domain : G.domain = ResolutionDescriptors.descriptorDomain capabilities
   body : BodySubtyping G
   /-- Labels the body reads as one another, each pair denoting the same
@@ -827,7 +827,7 @@ theorem verify_safe_at {r : Request σ ι} {c : Response ι} (hc : verify r c = 
 safe at every admitted tuple of type arguments. The checked program, claims,
 input frame and code table are the same ones used by request acceptance. -/
 theorem verify_qualified_safe_at {r : Request σ ι} {c : Response ι}
-    (source : SchemeRow ι) {N : Fam} {C : ResolutionDescriptors.Capabilities N}
+    (source : SchemeRow ι) {N : Fam} {C : ResolutionDescriptors.Capabilities (excOf (graph r)) N}
     (domain : (graph r).domain = ResolutionDescriptors.descriptorDomain C)
     (body : BodySubtyping (graph r))
     (aliases : List (ι × ι)) (aliasesSound : ProgramCertificates.AliasesSound (graph r) source aliases)

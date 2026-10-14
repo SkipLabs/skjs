@@ -77,20 +77,19 @@ open S
           else "fresh async resolution requires a stably non-thenable payload, also when adopting a native promise: "
             ^ thenable_reason ^ "; primitives, ordinary arrays and lifetime primitive `then` contracts establish this bound")
     | _ -> ()
-  (* A name `Array.isArray` found an array of, where it was `unknown`, used
-     where every array would do. *)
-  let explain_open_array site env n expected =
+  (* An array `Array.isArray` found in `unknown` or a record, the realm's
+     `readonly unknown[]`, passed where a call wants a mutable array of a
+     binder: the binder's instance would be the array's own element contract. *)
+  let explain_realm_array site env n expected =
     match expected with
-    | Some x when List.mem n (observations ()).Analysis_capabilities.open_array_tests ->
-      let any_array = function
-        | Shape {elements=Some {required=[];optional_elements=[];rest=Some (Atoms [Top] | Rigid _);_};
-                 fields=[];indexes=[];calls=[]} -> true
+    | Some x ->
+      let at_binder = function
+        | Shape {elements=Some {rest=Some (Rigid _);readonly=false;_};_} -> true
         | _ -> false in
-      let wanted = flat_atoms declarations x in
       let actual = try resolve env n with Json.Error _ -> Atoms [] in
-      if wanted <> [] && List.for_all any_array wanted && actual = top
-      then S.explain site ("`unknown` used as an array after `Array.isArray`: " ^ open_array_reason)
-    | _ -> ()
+      if actual = Refinement.any_array && List.exists at_binder (flat_atoms declarations x) then
+        S.explain site ("an array of the realm at a generic call's mutable array of a binder: " ^ realm_array_reason)
+    | None -> ()
   (* A record at an index signature, which TypeScript admits through an
      implicit index signature. *)
   let explain_record_at_index site env n expected =

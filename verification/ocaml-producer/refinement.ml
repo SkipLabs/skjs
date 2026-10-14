@@ -57,12 +57,12 @@ let rec typeof_slice shape holds = function
   | Union ts -> List.fold_left union (Atoms []) (List.map (typeof_slice shape holds) ts)
   | Meet (t,_) when typeof_slice shape holds t = Atoms [] -> Atoms []
   | t -> t
-(* Where `Array.isArray` holds, an open record's arm is an array of the realm:
-   a record type is of objects meeting the array invariant, so one owning an
-   array's store holds a possibly sparse store and `Array.prototype` (Lean's
-   `arraySlice`). Such arms become `sparse ReadonlyArray<unknown>`; an array arm stays;
-   `unknown` and a type parameter's arms, of which the invariant says nothing,
-   stay as they are. *)
+(* Where `Array.isArray` holds, an open record's arm and `unknown`'s are an
+   array of the realm: record types and `unknown` are of values meeting the
+   array invariant, so one owning an array's store holds a possibly sparse
+   store of `unknown` and `Array.prototype` (Lean's `arraySlice`). Such arms
+   become `sparse ReadonlyArray<unknown>`; an array arm stays; a type
+   parameter's arm, of which the invariant says nothing, stays as it is. *)
 let any_array = array {required=[];optional_elements=[];rest=Some top;readonly=true;presence=Sparse}
 let array_slice declarations t =
   let sliced = typeof_slice "array" true t in
@@ -70,9 +70,9 @@ let array_slice declarations t =
     | Atoms _ -> true | Union ts -> List.for_all plain ts | Rigid _ | Meet _ -> false in
   if not (plain sliced) then sliced else
   let atoms = flat_atoms declarations sliced in
-  if List.mem Top atoms || not (List.exists open_record_atom atoms) then sliced
+  if not (List.mem Top atoms || List.exists open_record_atom atoms) then sliced
   else match typeof_slice "array" true (Atoms atoms) with
-    | Atoms kept -> union (ground (List.filter (fun a -> not (open_record_atom a)) kept)) any_array
+    | Atoms kept -> union (ground (List.filter (fun a -> a <> Top && not (open_record_atom a)) kept)) any_array
     | _ -> sliced
 (* Keep the atoms that may own the key where `key in o` held, and those that
    may lack it where it failed: a record's required field is owned, a fresh
@@ -197,10 +197,6 @@ let rec branch_with state ?(modules = fun _ -> None) ?(claimed = fun _ -> None) 
       | _ -> ());
     let env = refine_value env name (if shape = "array" && truth = equal then array_slice declarations
       else typeof_slice shape (truth = equal)) in
-    (if shape = "array" && truth = equal then match List.assoc_opt name env with
-      | Some b when binding_type b = top ->
-        state.open_array_tests := name :: !(state.open_array_tests)
-      | _ -> ());
     env
   | HasKey ({node=Literal (LString key);_},{node=Id name;_}) ->
     refine_value env name (key_slice key truth)

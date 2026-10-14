@@ -9,7 +9,7 @@ namespace Verification.QualifiedGraphs
 open PositiveGraphs PositiveNormalization ResolutionDescriptors Tower
 open PositiveCertificates (ComparisonResult)
 
-variable {ι : Type} {N : Fam} {C : Capabilities N}
+variable {ι : Type} {U N : Fam} {C : Capabilities U N}
 
 open Classical in
 /-- A value binder's assigned family, read through the graph. -/
@@ -102,7 +102,7 @@ structure GroupBinders (ι : Type) where
 /-- Source restriction is the identity on a JavaScript-valued parameter. -/
 theorem sourceView_sound [DecidableEq ι] {G : NormalGraph ι} {A : List ι} {p : ι}
     (checked : sourceView G A p = true) (kind : G.parameterKinds p = some .value)
-    (η : MixedAssignment ι) (source : FamLe (PositiveRules.mixedValues G η [p]) sourceT) :
+    (η : MixedAssignment ι) (source : FamLe (PositiveRules.mixedValues G η [p]) (PositiveRules.excOf G)) :
     PositiveRules.mixedValues G η A = PositiveRules.mixedValues G η [p] := by
   simp only [sourceView, Bool.or_eq_true, beq_iff_eq] at checked
   rcases checked with rfl | checked
@@ -122,8 +122,7 @@ theorem sourceView_sound [DecidableEq ι] {G : NormalGraph ι} {A : List ι} {p 
       · exact fun h => (PositiveRules.part_denote hp).mpr h.1
       · intro h
         refine ⟨(PositiveRules.part_denote hp).mp h, ?_⟩
-        exact ⟨source n W v ⟨p, List.mem_singleton_self _, h⟩,
-          realmInvariant_of_not_record rfl n W v⟩
+        exact source n W v ⟨p, List.mem_singleton_self _, h⟩
     | [] => cases checked
     | _ :: _ :: _ => cases checked
 
@@ -190,7 +189,7 @@ theorem lexicalAdmission_sound [DecidableEq ι] (G : NormalGraph ι)
     (checked : lexicalAdmission G source target args = true)
     (η : MixedAssignment ι) (As : List MixedFamily)
     (hl : As.length = source.binders.length)
-    (ha : (descriptorDomain C).allowed source As) :
+    (ha : (descriptorDomain C).allowed source As) (hU : FamLe U (PositiveRules.excOf G)) :
     (descriptorDomain C).allowed target
       (args.map fun U => ⟨mixedMeaning G (assign η source.binders As) U,
         mixedMeaning_valid G (assign η source.binders As) U⟩) := by
@@ -219,9 +218,9 @@ theorem lexicalAdmission_sound [DecidableEq ι] (G : NormalGraph ι)
       (assignment_position checked.1.1 hl ht)
       (assignment_position checked.1.1 hl ho) kt ko
     have et' : (F T).value.1 = d.input :=
-      (sourceView_sound tv kt _ (by rw [et]; exact (C.observe_source d.observed).1)).trans et
+      (sourceView_sound tv kt _ (by rw [et]; exact fun n W v h => hU n W v ((C.observe_source d.observed).1 n W v h))).trans et
     have eo' : (F O).value.1 = d.observation :=
-      (sourceView_sound ov ko _ (by rw [eo]; exact (C.observe_source d.observed).2)).trans eo
+      (sourceView_sound ov ko _ (by rw [eo]; exact fun n W v h => hU n W v ((C.observe_source d.observed).2 n W v h))).trans eo
     refine ⟨F T, F O, at_ _ _ hmt, at_ _ _ hmo,
       by rw [et', eo']; exact d.observed, ?_⟩
     intro slot hslot
@@ -243,11 +242,11 @@ theorem lexicalAdmission_sound [DecidableEq ι] (G : NormalGraph ι)
       (assignment_position checked.1.1 hl ho)
       (assignment_position checked.1.1 hl hr) kt ko kr
     have et' : (F T).value.1 = e.input :=
-      (sourceView_sound tv kt _ (by rw [et]; exact (C.observe_source e.observed).1)).trans et
+      (sourceView_sound tv kt _ (by rw [et]; exact fun n W v h => hU n W v ((C.observe_source e.observed).1 n W v h))).trans et
     have eo' : (F O).value.1 = e.observation :=
-      (sourceView_sound ov ko _ (by rw [eo]; exact (C.observe_source e.observed).2)).trans eo
+      (sourceView_sound ov ko _ (by rw [eo]; exact fun n W v h => hU n W v ((C.observe_source e.observed).2 n W v h))).trans eo
     have er' : (F R).value.1 = e.result :=
-      (sourceView_sound rv kr _ (by rw [er]; exact (C.resolve_source e.resolved).2)).trans er
+      (sourceView_sound rv kr _ (by rw [er]; exact fun n W v h => hU n W v ((C.resolve_source e.resolved).2 n W v h))).trans er
     refine ⟨F R, at_ _ _ hmr, ?_, ?_, ?_⟩
     · rw [er']; exact e.stable
     · rw [et', er']; exact e.resolved
@@ -275,6 +274,7 @@ theorem compareLexicalInstance_sound [DecidableEq ι] (G : NormalGraph ι)
     {compare : List ι → List ι → σ → ComparisonResult α × σ}
     {empty S L M c state} (η : MixedAssignment ι) (As : List MixedFamily)
     (hl : As.length = source.binders.length) (ha : G.domain.allowed source As)
+    (hU : FamLe U (PositiveRules.excOf G))
     (hc : ∀ U V prior, (compare U V prior).1.accepted = true →
       FamLe (mixedMeaning G (assign η source.binders As) U)
         (mixedMeaning G (assign η source.binders As) V))
@@ -286,7 +286,7 @@ theorem compareLexicalInstance_sound [DecidableEq ι] (G : NormalGraph ι)
   intro target inst h
   simp only [ComparisonResult.accepted_fromBool] at h
   rw [hd] at ha ⊢
-  exact lexicalAdmission_sound G source target inst.instances h η As hl ha
+  exact lexicalAdmission_sound G source target inst.instances h η As hl ha hU
 
 #print axioms compareLexicalInstance_sound
 

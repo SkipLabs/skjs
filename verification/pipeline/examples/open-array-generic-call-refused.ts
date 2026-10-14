@@ -1,6 +1,6 @@
-// `x instanceof Array` on `unknown` finds that the value owns an array's
-// store, not that it is an array of `Array.prototype`: passed where a
-// generic call expects an array, it is refused by that reason.
+// `x instanceof Array` on `unknown` finds an array of the realm, a
+// `readonly unknown[]`: a generic call at a mutable `Array<A>` needs, as `A`,
+// the contract of the array's own store, which no type of the graph names.
 declare function size<A>(a: Array<A>): number;
 
 export function sizeOf(x: unknown): number {

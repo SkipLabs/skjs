@@ -624,6 +624,11 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   // an empty one has none.
   assert.equal(runExample("invalid-length-array-or-dictionary", "size({})"), undefined,
     "invalid-length-array-or-dictionary: the actual source returns undefined despite its number contract");
+  // `Array.isArray` on `unknown`: TypeScript reads the array as `any[]`.
+  assert.equal(runExample("invalid-isarray-unknown-element", `typeof head(["a"])`), "string",
+    "invalid-isarray-unknown-element: the actual source returns a string despite its number contract");
+  assert.equal(runExample("invalid-isarray-unknown-push", `const a = ["a"]; grow(a); typeof a[1]`), "number",
+    "invalid-isarray-unknown-push: a number lands in an array of strings");
   // A rest typed by an intersection: TypeScript accepts the call at an instance
   // where the declared contract holds no array, and the result is no boolean.
   assert.equal(runExample("invalid-rest-intersection", "typeof wrong()"), "number",

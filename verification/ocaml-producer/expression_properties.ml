@@ -52,17 +52,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
                | wanted -> List.for_all (function NumLit _ -> true | _ -> false) wanted) ->
          S.explain site ("the `length` of a mutable tuple read at its arity: " ^ mutable_tuple_length_reason)
        | _ -> ());
-      (match e.node with
-       | Id name when List.mem name (observations ()).Analysis_capabilities.open_array_tests ->
-         (try S.field_type declarations [] receiver n with Json.Error m ->
-           S.explain site ("a member of `unknown` read as one of an array after `Array.isArray`: " ^ open_array_reason);
-           (match receiver with
-            | Atoms atoms when String.length m >= 27 && String.sub m 0 27 = "unsupported: missing field "
-                && List.exists (function Shape {elements=Some _;_} -> true | _ -> false) atoms ->
-              Proposal_diagnostics.unsupported ("a read of " ^ key_text n ^ " on a union of an array and a record that does not state it: \
-                a test that the value is an array keeps the record, a value of which may be an array carrying its keys")
-            | _ -> Json.fail m))
-       | _ ->
+      (
          (try S.field_type declarations [] receiver n with Json.Error m
            when String.length m >= 27 && String.sub m 0 27 = "unsupported: missing field "
                 && (match receiver with
@@ -82,12 +72,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
                an object beside null or undefined, which a test does not narrow: what a field is known to hold \
                is a union of primitive values (DESIGN.md, \"Current-content assertions\")")))
     | Index (e,key) -> let receiver=expr env e in let key=expr env key in
-      (match e.node with
-       (* An element of `unknown` read after `Array.isArray`: the test
-          narrows nothing there, so the read is of no object. *)
-       | Id name when List.mem name (observations ()).Analysis_capabilities.open_array_tests && receiver = top ->
-         Proposal_diagnostics.unsupported ("`unknown` used as an array after `Array.isArray`, read at an element: " ^ open_array_reason)
-       | _ -> S.index_type declarations [] receiver key)
+      S.index_type declarations [] receiver key
     (* The right side runs after the receiver and the key: it sees what they
        assigned. *)
     | IndexWrite (receiver,key,rhs) ->

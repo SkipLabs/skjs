@@ -149,8 +149,6 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
           | atoms -> if List.for_all array_atom atoms then
               S.explain site ("an array used as a record naming `length`: " ^ array_or_record_reason))
        | _ -> ());
-      (* An open record `Array.isArray` found an array, used as one. *)
-      explain_open_array site env n expected;
       (* A tuple expected at an iterable other than an array is read as the
          readonly array of its positions, whose prototype's iterator yields
          them: Lean checks the tuple within that view, and the view within

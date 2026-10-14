@@ -1956,25 +1956,28 @@ Four implementations discharge the tested-slot obligation:
   values (`narrow_rigid`), and keeps `T` where the bound is `unknown`, whose
   values other than null and undefined no clause row states.
 - **Array of the realm:** a passed `Array.isArray` finds an object owning
-  the store key. A member of a record or dictionary clause meets the realm's
-  [array invariant](SEMANTICS.md#the-array-invariant), so such a member is a
-  member of the realm's `sparse ReadonlyArray<unknown>`: a clause row $`L`$ holding the
-  array shape over a store of values, $`P_{\mathcal R}`$ and $`N_{\mathcal R}`$
-  (`realmArrayLabel`, `realmArray_of_record`). Each label the tag slice
-  keeps is kept in the destination, or is a clause row each clause of which
-  answers `false` or is a record's; and the destination holds $`L`$
-  (`arraySlice`, `arraySlice_sound`, with the marker `subset`). A label with
-  `source` or `top`, and a parameter row, is no record's: `unknown` and a type parameter
-  are not narrowed so:
+  the store key. A member of a record, dictionary or `source` clause meets
+  the realm's [array invariant](SEMANTICS.md#the-array-invariant), so such a
+  member is a member of the realm's `sparse ReadonlyArray<unknown>`: a clause
+  row $`L`$ holding the array shape over a store of `unknown`,
+  $`P_{\mathcal R}`$ and $`N_{\mathcal R}`$, the realm's `unknown` row holding
+  `source` only (`realmArrayLabel`, `exactUnknown`, `realmArray_of_record`).
+  Each label the tag slice keeps is kept in the destination, or is a clause
+  row each clause of which answers `false` or is one the invariant applies
+  to; and the destination holds $`L`$ (`arraySlice`, `arraySlice_sound`, with
+  the marker `subset`). A label with `top`, and a parameter row, is none of
+  these: `top` and a type parameter are not narrowed so:
 
 ```math
 \frac{\forall a\in T_{\mathsf{isArray}}(A).\;a\in B\ \lor\ \forall c\in G(a).\;
-         \mathsf{tag}(\mathsf{isArray},c)=\mathsf{false}\lor c\ \text{a record's}
+         \mathsf{tag}(\mathsf{isArray},c)=\mathsf{false}\lor c\ \text{a record's, a dictionary's or}\ \mathsf{source}
        \qquad L\in B\qquad G(L)=[\mathsf{Ref}(;\sigma{:}S,\mathsf{proto}{:}P_{\mathcal R};\langle\mathsf{outside}\,N_{\mathcal R}\rangle)]}
       {A\preceq_{\mathsf{isArray}=\mathsf{true}}B}\ \textsf{tag-array}
 ```
 
-  with $`S`$ a readonly store at a type holding `top`.
+  with $`S`$ a readonly store at a type holding `top` or `source`. Each
+  operand of `&&` and `||` sees this refinement where an earlier operand's
+  `Array.isArray` holds (`arrayRefine`, `tagRefine`).
 
 - **Present key:** a passed `in` test finds its key on the object's chain:
   its own, or, where it lacks it, one a prototype holds (`KeyFound`). An

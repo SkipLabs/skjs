@@ -529,7 +529,7 @@ theorem strIn_sound {G : NormalGraph ι} {T : List ι} (h : strIn G T = true) (n
     (u : String) : meaning G T n W (.str u) := by
   obtain ⟨c, hc, hs⟩ := List.any_eq_true.mp h
   cases c <;> simp at hs
-  exact expand_sem_mpr ⟨.str, expand_sub hc, ⟨u, rfl⟩, realmInvariant_of_not_record rfl _ _ _⟩
+  exact expand_sem_mpr ⟨.str, expand_sub hc, ⟨u, rfl⟩, realmInvariant_of_unrealmed rfl _ _ _⟩
 
 /-- A type none of whose members is an array's store: every clause is a
 primitive's or a plain object's. A string index at such a type rules out the

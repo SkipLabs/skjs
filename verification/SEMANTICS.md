@@ -789,18 +789,27 @@ A throwing term is not a value, does not step, and throws one value
 deterministic. No step propagates a throw: the context closure is the
 predicate, and a handler, where there is one, catches it
 ([graphs](PROGRAM-TYPING.md#checked-control-flow-graphs)). The safety
-predicate:
+predicate is relative to an **exception family** $`\Xi`$, the values a throw
+carries:
 
 ```math
-\mathit{Safe}(A)(n{+}1,W,h,t)\iff
-\bigl(t\in A(n{+}1,W)\ \lor\ \exists v\ \text{closed}.\ t\ \text{raises}\ v\bigr)\ \lor\
-\exists W',h',t'.\ h,t\to h',t'\land\ldots\land\mathit{Safe}(A)(n,W',h',t')
+\mathit{Safe}_{\Xi}(A)(n{+}1,W,h,t)\iff
+\bigl(t\in A(n{+}1,W)\ \lor\ \exists v\ \text{closed}.\ t\ \text{raises}\ v\land v\in\Xi(n{+}1,W)\bigr)\ \lor\
+\exists W',h',t'.\ h,t\to h',t'\land\ldots\land\mathit{Safe}_{\Xi}(A)(n,W',h',t')
 ```
+
+A graph's exception family is its realm's `unknown`,
+$`\Xi_G=\mathsf{realmExc}_G`$ ([the array invariant](#the-array-invariant)),
+and every function type of the graph is read with it (`callsT`, `restsT`,
+`ctorsT`, `PromiseWith`, `methodT`, through `semWithArgs`): a function a type
+promises throws only values of `unknown`. An operator that throws
+(`binopThrows`) throws a fresh object owning no key, which every graph's
+exception family holds (`ErrorsIn`, `realmExc_errors`).
 
 Every composition lemma takes, beside its context's step rule, the context's
 throw rule (`bind`, `bind_list` with `ArgRaises`, `ctx_bind`,
-`HeapObservations.bind`); `thrown_safe` makes a throwing term safe at every
-type. `SafePost` is the same with no postcondition on a throw: the facts it
+`HeapObservations.bind`); `thrown_safe` makes a term throwing a value of
+$`\Xi`$ safe at every type. `SafePost` is the same with no postcondition on a throw: the facts it
 states describe the heap a value is produced in.
 
 `SafeGraph` is the same predicate one level up, for the machine that runs a
@@ -817,9 +826,9 @@ node's handler, if it has one. Entering a node
 instantiates its term against $\rho$; the term then steps as usual; a value meets
 the node's continuation, which either finishes the run or moves to the next label
 with a transformed environment; a throw goes to the handler, the thrown value
-bound, or without one ends the run in $\mathsf{raised}(v)$. `SafeGraph P T n W h s`
+bound, or without one ends the run in $\mathsf{raised}(v)$. `SafeGraph Ξ P T n W h s`
 says that at a positive budget the state is $\mathsf{done}(v)$ with $v\in T$,
-or $\mathsf{raised}(v)$ with $v$ closed, or it can take one
+or $\mathsf{raised}(v)$ with $v$ closed and in $`\Xi`$, or it can take one
 graph transition, spending a budget and preserving heap satisfaction in an
 admissible future, and remain safe there. `Safe` is the special case with no
 graph. Starting a graph means starting at $\mathsf{at}(p,\rho)$ for the entry
@@ -859,31 +868,46 @@ owns no key that prototype provides. The model states it in the meaning of
 types, not in the heap premise: the tested value is in a slot, not in the heap,
 and it came from an input, a read, a call's result or an allocation, each of
 which a type describes. With $\mathcal R$ the graph's realm (`ArrayRealm`: the
-row of `ArrayProto` and its declared keys plus `constructor` and `then`):
+row of `ArrayProto`, $P_{\mathcal R}$; the row of `unknown`, $U_{\mathcal R}$;
+and $N_{\mathcal R}$, `ArrayProto`'s declared keys plus `constructor` and
+`then`):
 
 ```math
 \mathsf{Arr}_{\mathcal R}{}_n(W,v)\iff\forall\mathit{flds}.\;
 v=\mathsf{obj}(\mathit{flds},\mathsf{absent})\land\sigma\in\mathrm{dom}(\mathit{flds})\Rightarrow
-\mathsf{view}(\sigma{:}\mathsf{AnyStore},\mathsf{proto}{:}⟦P_{\mathcal R}⟧)_n(W,v)
+\mathsf{view}(\sigma{:}\mathsf{Store}(⟦U_{\mathcal R}⟧),\mathsf{proto}{:}⟦P_{\mathcal R}⟧)_n(W,v)
 \land\mathsf{own}(\mathsf{outside}\,N_{\mathcal R})_n(W,v)
 ```
 
-(`PositiveGraphs.arrayInvariant`), and every record or dictionary clause of a
-row means its members meeting it (`realmInvariant`, `rowSem`;
-[POSITIVE-TYPES](POSITIVE-TYPES.md#the-realms-array-invariant)). It reads the
-world only: the contract of $\sigma$'s location implies a possibly sparse store of values
-in every world and heap to come, and the contract of $\mathsf{proto}$'s implies
-`ArrayProto`. A world grows only by appending contracts and never replaces
-one, so the invariant is admissible (`arrayInvariant_adm`), and nothing a step
-does to the heap can falsify it.
+with $`\mathsf{Store}(U)`$ the possibly sparse stores of values of $`U`$
+(`realmStoreT`; `PositiveGraphs.arrayInvariant`). Every record, dictionary
+and `source` clause of a row means its members meeting it
+(`Clause.realmed`, `realmInvariant`, `rowSem`;
+[POSITIVE-TYPES](POSITIVE-TYPES.md#the-realms-array-invariant)), so the
+realm's `unknown` is
+
+```math
+\Xi_{\mathcal R}{}_n(W,v)\iff v\in J\land\mathsf{Arr}_{\mathcal R}{}_n(W,v)
+```
+
+(`realmExc`), the graph's exception family ([throws](#computations-and-recursive-types)).
+The invariant reads the world only: the contract of $\sigma$'s location
+implies a store of values of `unknown` in every world and heap to come, and
+the contract of $\mathsf{proto}$'s implies `ArrayProto`; $`U_{\mathcal R}`$
+and $`P_{\mathcal R}`$ are read below the level, through those contracts, so
+the recursion through `unknown`'s own meaning is guarded. A world grows only
+by appending contracts and never replaces one, so the invariant is admissible
+(`arrayInvariant_adm`), and nothing a step does to the heap can falsify it.
 
 **Every step keeps it.** A value's keys and their locations are its identity,
 fixed at its allocation, so only allocation creates a value the invariant is
 about:
 
 - an allocation from named fields (`HasTyUsing.alloc`) owning $\sigma$ is typed only
-  as an array of the realm: its store field at a store type, its prototype
-  field at $P_{\mathcal R}$, no name among $N_{\mathcal R}$ (`allocRealm`,
+  as an array of the realm: its store field at a store type whose positions
+  are of JavaScript values, each of which is a value of `unknown`
+  (`sourceTy_exc`, `unknownTy_sound`), its prototype field at
+  $P_{\mathcal R}$, no name among $N_{\mathcal R}$ (`allocRealm`,
   `allocRealm_sound`); every other allocation owns no $\sigma$
   (`realmInvariant_of_lookup`);
 - a literal allocated at a dictionary names neither $\sigma$ nor the prototype
@@ -897,22 +921,28 @@ about:
   not read by the invariant, and a location's contract is fixed.
 
 A read, a call's result, a caught value and a value passed on are values of
-types, which already state what they state.
+types, which already state what they state. A value of a type of JavaScript
+values is one of `unknown` (`sourceTy_exc`): a clause the invariant does not
+apply to, top aside, has no plain object among its members
+(`semWithArgs_not_plain`). So a `throw` throws a value of `unknown`
+(`SourceValues.exc`), and a handler binding its exception at `unknown`
+binds a value of it (`admitsAll_sound`).
 
 **The premise.** The safety theorem (`checkJson_safe`) quantifies over
 environments meeting the unit's inputs at their types (`EnvOk`), so a value
-the unit receives at a record or dictionary type meets the invariant: an
-object owning an array's store is a possibly sparse array holding `Array.prototype`
-(meeting `ArrayProto`) and owning none of its keys. That is an assumption
-about the host and the unit's callers, stated in the
+the unit receives at a record, a dictionary or `unknown` meets the invariant:
+an object owning an array's store is a possibly sparse array of `unknown`
+values holding `Array.prototype` (meeting `ArrayProto`) and owning none of
+its keys; and a function the unit receives throws only such values. That is
+an assumption about the host and the unit's callers, stated in the
 [trust surface](DESIGN.md#trust-surface). The heap premise `HeapOk` is
 unchanged.
 
-**What it does not cover.** Source `unknown` (the `source` clause) constrains
-the value's outer form, without the record realm invariant. A handler binds
-its exception at this type. `Array.isArray` on `unknown` therefore supplies
-no element-store contract. A type parameter's
-row asks what its assignment gives. And no invariant ties an object whose
+**Type parameters and classes.** A type parameter's row asks what its
+assignment gives: an assignment within a bound of `unknown`, a record or a
+dictionary meets the invariant through the bound's meaning, and a qualified
+binder's descriptor families are within the realm's `unknown`
+(`ResolutionDescriptors.Capabilities`). No invariant ties an object whose
 prototype chain holds a class's prototype to the class's fields: JavaScript
 gives any object any prototype (`Object.create`, `Object.setPrototypeOf`,
 `Reflect.construct` with another new target; [ECMA-262](REFERENCES.md#ecma-262)),

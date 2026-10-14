@@ -24,7 +24,7 @@ def mapScheme (e : ι → κ) (s : SchemeRow ι) : SchemeRow κ where
   construct := s.construct
 
 def mapRealm (e : ι → κ) (r : ArrayRealm ι) : ArrayRealm κ :=
-  ⟨r.proto.map e, r.keys⟩
+  ⟨r.proto.map e, r.unknown.map e, r.keys⟩
 
 /-- Row-preserving imports retain every dependency of the template, including
    realm dependencies. Extra source rows are unrestricted. -/
@@ -114,7 +114,7 @@ theorem Embedding.realm_sem {G : NormalGraph ι} {H : NormalGraph κ}
     (E : Embedding G H) (X : List κ → Fam) (c : Clause (List ι)) :
     realmInvariant H X (c.map (List.map E.node)) =
       realmInvariant G (fun S => X (S.map E.node)) c := by
-  simp only [realmInvariant, E.realm, Clause.record_map]
+  simp only [realmInvariant, E.realm, Clause.realmed_map]
   cases G.realm <;> rfl
 
 theorem Embedding.exc {G : NormalGraph ι} {H : NormalGraph κ}
@@ -399,6 +399,7 @@ structure DomainRegion (G : NormalGraph ι) (domain : SchemeDomain ι .mixed)
   reads : ∀ i, D i → ∀ j ∈ PositiveRules.reads G i, D j
   parts : ∀ i, D i → ∀ j ∈ meetParts G i, D j
   realm : ∀ r, G.realm = some r → ∀ j ∈ r.proto, D j
+  unknown : ∀ r, G.realm = some r → ∀ j ∈ r.unknown, D j
   allowed : ∀ i, D i → ∀ s, G.schemes i = some s → ∀ As,
     domain.allowed s As ↔ G.domain.allowed s As
 
@@ -435,6 +436,33 @@ private theorem DomainRegion.arguments {G : NormalGraph ι}
         List.mem_flatten.mpr ⟨T,hT,hj⟩⟩
     · rw [h η j (R.reads i (hs i hi) j hj)]
 
+omit [DecidableEq ι] in
+private theorem DomainRegion.realm_eq {G : NormalGraph ι}
+    {domain : SchemeDomain ι .mixed} {D : ι → Prop}
+    (R : DomainRegion G domain D) {X Y : MixedAssignment ι × ι → Fam}
+    (h : ∀ η i, D i → Y (η,i) = X (η,i)) (c : Clause (List ι)) :
+    realmInvariant { G with domain := domain }
+      (setSem fun j => Y (ParameterAssignment.empty .mixed,j)) c =
+      realmInvariant G (setSem fun j => X (ParameterAssignment.empty .mixed,j)) c := by
+  simp only [realmInvariant]
+  cases hr : G.realm with
+  | none => rfl
+  | some r =>
+    dsimp only
+    rw [region_set h (ParameterAssignment.empty .mixed) r.proto (R.realm r hr),
+      region_set h (ParameterAssignment.empty .mixed) r.unknown (R.unknown r hr)]
+
+omit [DecidableEq ι] in
+private theorem DomainRegion.exc {G : NormalGraph ι}
+    {domain : SchemeDomain ι .mixed} {D : ι → Prop}
+    (R : DomainRegion G domain D) {X Y : MixedAssignment ι × ι → Fam}
+    (h : ∀ η i, D i → Y (η,i) = X (η,i)) :
+    realmExc { G with domain := domain }
+      (setSem fun j => Y (ParameterAssignment.empty .mixed,j)) =
+      realmExc G (setSem fun j => X (ParameterAssignment.empty .mixed,j)) := by
+  unfold realmExc
+  rw [R.realm_eq h .source]
+
 private theorem DomainRegion.row {G : NormalGraph ι}
     {domain : SchemeDomain ι .mixed} {D : ι → Prop}
     (R : DomainRegion G domain D) {X Y : MixedAssignment ι × ι → Fam}
@@ -447,19 +475,10 @@ private theorem DomainRegion.row {G : NormalGraph ι}
       (setSem fun j => Y (η,j)) (graphArguments G η (setSem fun j => Y (η,j))) c =
     rowSem G (setSem fun j => X (ParameterAssignment.empty .mixed,j))
       (setSem fun j => X (η,j)) (graphArguments G η (setSem fun j => X (η,j))) c := by
-  have realm : realmInvariant { G with domain := domain }
-      (setSem fun j => Y (ParameterAssignment.empty .mixed,j)) c =
-      realmInvariant G (setSem fun j => X (ParameterAssignment.empty .mixed,j)) c := by
-    simp only [realmInvariant]
-    cases hr : G.realm with
-    | none => rfl
-    | some r =>
-      dsimp only
-      rw [region_set h (ParameterAssignment.empty .mixed) r.proto (R.realm r hr)]
   funext n W v
   apply propext
   unfold rowSem
-  rw [realm]
+  rw [R.realm_eq h c, R.exc h]
   apply and_congr _ Iff.rfl
   apply semWithArgs_congr_on hc _ _ _ _ n
     (fun j hj => ?_) (fun S hS => ?_) W v
@@ -567,7 +586,10 @@ private theorem DomainRegion.part {G : NormalGraph ι}
   split
   · rfl
   · cases hs : G.schemes i with
-    | some s => exact R.scheme h η i hi s hs
+    | some s =>
+      show schemeSemWithArgs _ (realmExc _ (setSem fun l => Y (ParameterAssignment.empty .mixed, l))) _ η s = _
+      rw [R.exc h]
+      exact R.scheme h η i hi s hs
     | none =>
       funext n W v
       apply propext

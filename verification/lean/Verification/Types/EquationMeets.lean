@@ -92,7 +92,7 @@ theorem setSem_meetAll (G : NormalGraph ι) (Z X : List ι → Fam) (P : List ι
       cases List.mem_singleton.mp hc
       exact hv
     · intro hv
-      exact ⟨.top, List.mem_singleton_self _, hv, realmInvariant_of_not_record rfl n W v⟩
+      exact ⟨.top, List.mem_singleton_self _, hv, realmInvariant_of_unrealmed rfl n W v⟩
   | cons C rest ih =>
     rw [meetAll, meetLists_row, ih, List.forall_mem_cons]
     constructor

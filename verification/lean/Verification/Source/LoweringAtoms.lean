@@ -904,7 +904,10 @@ traverses its operands once instead of evaluating it and then replaying it. -/
         compileAtom recursive fc scope Γ e start
   | .logical _ andOp left right =>
     let _ ← LoweringExpression.closureExpr recursive fc scope Γ cond
-    let H := conditionContext (SourceTypes.graph (← table)) scope Γ left andOp
+    -- Where `Array.isArray` holds, a record or `unknown` arm is the realm's
+    -- `readonly unknown[]` (`arraySlice`).
+    let arrays ← if arrayTested left then some <$> realmArrayTy else pure none
+    let H := conditionContext (SourceTypes.graph (← table)) scope Γ left andOp arrays
     let rhs ← compileConditionAtom recursive fc scope H right yes no
     compileConditionAtom recursive fc scope Γ left (if andOp then rhs else yes) (if andOp then no else rhs)
   | .not _ e =>

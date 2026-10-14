@@ -117,7 +117,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
         (* Any other named function is its annotated signature: one binding
            more parameters is not offered it. *)
         | Id n ->
-          explain_open_array arg.pos env n (Some param);
+          explain_realm_array arg.pos env n (Some param);
           explain_record_at_index arg.pos env n (Some param);
           (match param, (try Some (resolve env n) with Json.Error _ -> None) with
            | Atoms [Shape {calls=[o];_}], Some (Atoms [Shape {calls=[own];fields=[];indexes=[];elements=None}])
@@ -412,7 +412,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
                 | _ -> expr ~expected:bound env arg)
              | None -> expr env arg)
           | p,_ ->
-            (match arg.node with Id n -> explain_open_array arg.pos env n p | _ -> ());
+            (match arg.node with Id n -> explain_realm_array arg.pos env n p | _ -> ());
             expr env arg]) args) @
           List.init (max 0 (List.length signature.params - written_positions)) (fun _ -> Atoms [Undef]) in
         explain_thenable e target actuals;

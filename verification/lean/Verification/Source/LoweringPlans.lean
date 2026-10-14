@@ -185,6 +185,29 @@ the nullish, `undefined` and truthiness tags. -/
       DirectProof.node L term B .ifBool [test, DirectProof.cast L B yes, DirectProof.cast L B no]
   pure (DirectProof.node Γ term B (.unionVar slot) children)
 
+/-- Where `Array.isArray` holds, the labels `arraySlice` keeps of `A`, and the
+realm's `readonly unknown[]`, `R`, for the records and `unknown` it does not:
+the refinement the edge's observation establishes. -/
+@[nospecialize] def arrayRefine (G : PositiveGraphs.NormalGraph ι) (A R : Ty ι) : Ty ι :=
+  let sliced := BranchRefinement.tagSlice G A .isArray true
+  let kept := sliced.filter fun a => !(G.plain a && (G a).all fun c =>
+    ProgramTyping.tagClause .isArray c == some false || c.realmed)
+  if kept.length == sliced.length then sliced else kept ++ R
+
+/-- The realm's `readonly unknown[]`: the array shape over a possibly sparse
+store of `unknown`. -/
+@[nospecialize] def realmArrayTy : Compiler (Ty Tree) := do
+  let u ← lower (SourceTypes.use .source)
+  let store ← lower (SourceTypes.use (.list ⟨[], [], some [u], true, .sparse⟩ []))
+  return [← lower (SourceTypes.use (SourceTypes.arrayOf (← table) store true))]
+
+/-- What a tag test answering `q` keeps of `A`: `tagSlice`, and where
+`Array.isArray` holds, `arrayRefine`. -/
+@[nospecialize] def tagRefine (A : Ty Tree) (tag : Tag) (q : Bool) : Compiler (Ty Tree) := do
+  let G := SourceTypes.graph (← table)
+  if tag == .isArray && q then return arrayRefine G A (← realmArrayTy)
+  else return BranchRefinement.tagSlice G A tag q
+
 /-- Shared conditional proof construction for statement branches, ternaries and
 short-circuit operators. Branch builders retain their own source claims; a
 logical operator's constant arm is administrative and needs no invented claim. -/
@@ -202,8 +225,8 @@ logical operator's constant arm is administrative and needs no invented claim. -
     -- Preserve the evaluated predicate and its claims in an anonymous slot.
     let K := c.type :: H
     let some C := K[tested]? | throw "internal closure tag-guard slot mismatch"
-    let T := K.set tested (BranchRefinement.tagSlice G C tag true)
-    let F := K.set tested (BranchRefinement.tagSlice G C tag false)
+    let T := K.set tested (← tagRefine C tag true)
+    let F := K.set tested (← tagRefine C tag false)
     let t ← yesBranch (held ⟨"",some cond.span⟩ :: scope) (if equal then T else F)
     let e ← noBranch (held ⟨"",some cond.span⟩ :: scope) (if equal then F else T)
     let yes := if equal then t else e

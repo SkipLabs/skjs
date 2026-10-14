@@ -71,7 +71,8 @@ end
 /-- The realm's arrays, where the heads state any: `ArrayProto` and the keys
 it provides. -/
 def realm (s : State) : Option (ArrayRealm Tree) :=
-  if s.arrays then s.proto.map fun p => ⟨[mkApp p []], s.excluded⟩ else none
+  if s.arrays then s.proto.bind fun p => (s.keys.get? unknownKey).map fun u =>
+    ⟨[mkApp p []], [mkApp u []], s.excluded⟩ else none
 
 def graph (s : State) : NormalGraph Tree := NormalGraph.ofRowMap (rowOf s) (realm s)
 
@@ -240,6 +241,11 @@ instance : FromJson State where
           | _ => []
         pure (true, some p, arrayExcludedKeysOf cs)
       | _ => throw "every array views one prototype, a nullary head's application"
+    -- The realm's `unknown`, the type of an array's elements, where arrays are.
+    let unknown : Draft := { name := "unknown", kind := .primitive, kinds := [], body := some (.clauses [.source]) }
+    let (heads, keys) := if arrays && !keys.contains unknownKey then
+        (heads.push unknown, keys.insert unknownKey heads.size)
+      else (heads, keys)
     return { doc := #[], heads, keys, arrays, proto, excluded }
 
 /-- A generic unit's binder is read as its unit gives it (`rebind`): the
@@ -579,14 +585,14 @@ def payload (p : NativePromise E) (l : Label E.signature) :
 
 /-- Native descriptor construction uses the actual source application's
 meaning, and retains the child's literal observation and stable result. -/
-def descriptor (p : NativePromise E) {N : Fam}
-    (h : ResolutionCapabilities.NativeSeparation p.constructor N)
+def descriptor (p : NativePromise E) {N U : Fam}
+    (h : ResolutionCapabilities.NativeSeparation p.constructor N U)
     (d : ResolutionDescriptors.Descriptor (ResolutionCapabilities.capabilities h)) :
     ResolutionDescriptors.Descriptor (ResolutionCapabilities.capabilities h) :=
   ResolutionCapabilities.native h d
 
-theorem descriptor_input (p : NativePromise E) {N : Fam}
-    (h : ResolutionCapabilities.NativeSeparation p.constructor N)
+theorem descriptor_input (p : NativePromise E) {N U : Fam}
+    (h : ResolutionCapabilities.NativeSeparation p.constructor N U)
     (η : MixedAssignment (Label E.signature)) (l : Label E.signature)
     (A : { A : List (Label E.signature) //
       l = (p.application A).label ∧ E.graph.hasKind .value A = true })
@@ -634,10 +640,10 @@ theorem nativeSeparate (c : ResolutionContext E) (A : Fam) (valid : ValueFam A) 
 
 theorem source_values {G : NormalGraph ι} {A : List ι}
     (h : ProgramTyping.SourceValues G A) (η : MixedAssignment ι) :
-    FamLe (mixedValues G η A) sourceT := sourceTy_sound h η
+    FamLe (mixedValues G η A) (excOf G) := sourceTy_exc h η
 
 theorem native (c : ResolutionContext E) :
-    ResolutionCapabilities.NativeSeparation c.promise.constructor c.stableFamily where
+    ResolutionCapabilities.NativeSeparation c.promise.constructor c.stableFamily (excOf E.graph) where
   valid := c.promise.constructor_valid
   separate := c.nativeSeparate
   native_source A valid := by
@@ -650,7 +656,8 @@ theorem native (c : ResolutionContext E) :
 #print axioms source_values
 #print axioms native
 
-def capabilities (c : ResolutionContext E) : ResolutionDescriptors.Capabilities c.stableFamily :=
+def capabilities (c : ResolutionContext E) :
+    ResolutionDescriptors.Capabilities (excOf E.graph) c.stableFamily :=
   ResolutionCapabilities.capabilities c.native
 
 def domain (c : ResolutionContext E) : SchemeDomain (Label E.signature) .mixed :=
@@ -696,11 +703,36 @@ theorem stableFamily_domain (c : ResolutionContext E)
   · have he := c.promise.region.denote D (ParameterAssignment.empty .mixed) l (c.within l hl)
     simpa only [Equations.graph_domain, he] using hv
 
+/-- The realm's `unknown` means the same in either domain: its rows and its
+prototype's are in the native promise's ordinary region. -/
+theorem excOf_domain (c : ResolutionContext E)
+    (D : SchemeDomain (Label E.signature) .mixed) :
+    excOf ({ E with domain := D } : Equations).graph = excOf E.graph := by
+  have hv : ∀ S, (∀ l ∈ S, l.withinHeads (· ∈ c.promise.region.heads)) →
+      realmValues ({ E with domain := D } : Equations).graph S = realmValues E.graph S := by
+    intro S hS
+    funext n W v
+    change (∃ l ∈ S, qDenoteWithArgs _ _ (_,l) n W v) =
+      (∃ l ∈ S, qDenoteWithArgs _ _ (_,l) n W v)
+    apply propext
+    constructor <;> rintro ⟨l, hl, hv⟩ <;> refine ⟨l, hl, ?_⟩
+    · have he := c.promise.region.denote D (ParameterAssignment.empty .mixed) l (hS l hl)
+      simpa only [Equations.graph_domain, he] using hv
+    · have he := c.promise.region.denote D (ParameterAssignment.empty .mixed) l (hS l hl)
+      simpa only [Equations.graph_domain, he] using hv
+  refine realmExc_eq (by rw [Equations.graph_domain]) fun r hr => ?_
+  have hin : r ∈ E.realm.toList := by
+    have hr' : E.realm = some r := hr
+    simp [hr']
+  exact ⟨hv r.proto (fun l hl => c.promise.region.realm r hin l (List.mem_append_left _ hl)),
+    hv r.unknown (fun l hl => c.promise.region.realm r hin l (List.mem_append_right _ hl))⟩
+
 theorem domain_fixed (c : ResolutionContext E)
     (D : SchemeDomain (Label E.signature) .mixed) :
     (c.withDomain D).domain = c.domain := by
   exact ResolutionCapabilities.domain_congr _ _
     (NativePromise.constructor_domain c.promise D) (stableFamily_domain c D)
+    (excOf_domain c D)
 
 theorem stable_meaning (c : ResolutionContext E)
     (η : MixedAssignment (Label E.signature)) :
@@ -826,7 +858,7 @@ def freeze (s : State) : Except String Frozen := do
     | some b => pure b
     | none => throw s!"{d.name}: its row was never lowered"
   let E ← Equations.ofRaw (rawHeads s.heads bodies)
-  let E := { E with realm := if s.arrays then realmOf E s.proto s.excluded else none }
+  let E := { E with realm := if s.arrays then realmOf E s.proto (s.keys.get? unknownKey) s.excluded else none }
   let E := E.memo
   let ⟨p⟩ ← primitive E
   let promise ← nativePromise s E

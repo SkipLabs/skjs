@@ -232,7 +232,7 @@ def stableInScope (c : ResolutionContext E) (scope : List (Binding E)) (A : Ty E
 private theorem promise_observed (c : ResolutionContext E) (η : MixedAssignment (Label E.signature))
     (l : Label E.signature)
     (payload : { A : Ty E // l = (c.promise.application A).label ∧ E.graph.hasKind .value A = true })
-    (source : FamLe (valueMeaning E η payload.1) PositiveNormalization.sourceT) :
+    (source : FamLe (valueMeaning E η payload.1) (excOf E.graph)) :
     ∃ o : Observation c, o.input = valueMeaning E η [l] ∧
       ∀ x, some payload.1 = some x → o.observation = valueMeaning E η x := by
   obtain ⟨A, rfl, kind⟩ := payload
@@ -248,7 +248,7 @@ def native (c : ResolutionContext E) (scope : List (Binding E)) (l : Label E.sig
   result := child.result
   sound η hs := by
     obtain ⟨o, ho, _⟩ := (child.sound η hs).1
-    have source : FamLe (valueMeaning E η payload.1) PositiveNormalization.sourceT := by
+    have source : FamLe (valueMeaning E η payload.1) (excOf E.graph) := by
       rw [← ho]; exact (c.capabilities.observe_source o.observed).1
     refine ⟨promise_observed c η l payload source, fun r hr => ?_⟩
     obtain ⟨d, hd, _, hres⟩ := (child.sound η hs).2 r hr
@@ -258,7 +258,7 @@ def native (c : ResolutionContext E) (scope : List (Binding E)) (l : Label E.sig
 /-- A native promise of any payload is observed at that payload. -/
 def promise (c : ResolutionContext E) (scope : List (Binding E)) (l : Label E.signature)
     (payload : { A : Ty E // l = (c.promise.application A).label ∧ E.graph.hasKind .value A = true })
-    (source : ∀ η, FamLe (valueMeaning E η payload.1) PositiveNormalization.sourceT) :
+    (source : ∀ η, FamLe (valueMeaning E η payload.1) (excOf E.graph)) :
     Checked c scope [l] where
   observation := some payload.1
   result := none
@@ -402,7 +402,7 @@ private theorem empty_allowed (c : ResolutionContext E) (source : SchemeRow (Lab
     simp [hi]
   have bounded : FamLe emptyFamily.value.1 c.stableFamily := fun _ _ _ h => h.elim
   have stable := ResolutionCapabilities.Resolves.stable (P := c.promise.constructor) emptyFamily.value.2 bounded
-  have observe := ResolutionCapabilities.Observes.stable (P := c.promise.constructor) emptyFamily.value.2 bounded
+  have observe := ResolutionCapabilities.Observes.stable (P := c.promise.constructor) (U := excOf E.graph) emptyFamily.value.2 bounded
   refine ⟨emptyFamily, emptyFamily, atPosition _ positions.1,
     atPosition _ (positions.2 _ List.mem_cons_self), observe, fun r hr => ?_⟩
   have hr : r ∈ g.associated := List.mem_cons_of_mem _ (Option.mem_toList.mpr hr)
@@ -577,9 +577,9 @@ theorem stableAliases_sound (c : ResolutionContext E) (domain : E.domain = c.dom
       simp only [Bool.and_eq_true, beq_iff_eq] at checked
       obtain ⟨⟨view, target⟩, kind⟩ := checked
       have source : FamLe (mixedValues E.graph (assign η source.binders As) [p.1])
-          PositiveNormalization.sourceT := by
+          (excOf E.graph) := by
         intro j U u hu
-        exact sourceTy_sound target _ j U u ((same j U u).mp hu)
+        exact sourceTy_exc target _ j U u ((same j U u).mp hu)
       have he := QualifiedGraphs.sourceView_sound view kind _ source
       cases List.mem_singleton.mp member
       change mixedValues E.graph _ _ n W v ↔ mixedValues E.graph _ _ n W v
