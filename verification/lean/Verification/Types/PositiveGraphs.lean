@@ -21,10 +21,13 @@ semantics. A theorem proved for every graph therefore holds at every
 assignment, which is what typing a generic body once, for all of its
 instances, needs. -/
 
-/-- Semantic binders distinguish a runtime value from an argument list. -/
+/-- Semantic binders distinguish a runtime value from an argument list. A
+packed binder is both: a value binder whose values are arrays, and the
+argument lists their elements form (`Packable`). -/
 inductive ParameterKind where
   | value
   | arguments
+  | packed
   deriving DecidableEq, BEq, Repr, Inhabited
 
 deriving instance ReflBEq for ParameterKind
@@ -33,10 +36,45 @@ deriving instance LawfulBEq for ParameterKind
 abbrev ParameterKind.Carrier : ParameterKind → Type
   | .value => Val
   | .arguments => List Val
+  | .packed => Val
 
 abbrev ParameterKind.Closed : (k : ParameterKind) → k.Carrier → Prop
   | .value => fun (v : Val) => isVal v = true ∧ Scoped 0 v
   | .arguments => fun (vs : List Val) => ∀ v ∈ vs, isVal v = true ∧ Scoped 0 v
+  | .packed => fun (v : Val) => isVal v = true ∧ Scoped 0 v
+
+/-- **Packable values.** Arrays whose elements, read from the store any
+satisfying heap of any future world holds, form a list `P` admits two levels
+down: reading the store and spreading it are a step each. A packed binder's
+values are its value component's members that are packable by its list
+component, so a spread of one is a list of the binder (PROGRAM-TYPING.md,
+"Packed binders"). -/
+def Packable (P : WorldFamily (List Val)) : Fam := fun n W v =>
+  ∀ j (hj : j ≤ n) (U : WorldT j), WExt (trunc j hj W) U → ∀ h, HeapOk j U h →
+    ∃ fs c oid l ls vs, v = .objAt fs c oid ∧ fs.lookup CallArguments.arrayStoreField = some l ∧
+      h[l]? = some (.arr ls) ∧ readElems h ls = some vs ∧
+      ∀ i (hi : i + 2 ≤ j), P i (trunc i (by omega) U) vs
+
+theorem Packable_adm (P : WorldFamily (List Val)) : Adm (Packable P) :=
+  ⟨fun n W v hv j hj U hx h hh => hv j (by omega) U (by rwa [trunc_trunc] at hx) h hh,
+   fun n W W' hw v hv j hj U hx h hh =>
+    hv j hj U (WExt_trans (WExt_trunc hj hw) hx) h hh⟩
+
+/-- Packable values depend on `P` only two levels down. -/
+theorem Packable_congr {P Q : WorldFamily (List Val)} {n : Nat}
+    (h : ∀ j, j < n → ∀ (W : WorldT j) vs, P j W vs ↔ Q j W vs) (W : WorldT n) (v : Val) :
+    Packable P n W v ↔ Packable Q n W v := by
+  constructor <;> intro hv j hj U hx hh hok <;>
+    obtain ⟨fs, c, oid, l, ls, vs, h1, h2, h3, h4, h5⟩ := hv j hj U hx hh hok <;>
+    refine ⟨fs, c, oid, l, ls, vs, h1, h2, h3, h4, fun i hi => ?_⟩
+  · exact (h i (by omega) _ vs).mp (h5 i hi)
+  · exact (h i (by omega) _ vs).mpr (h5 i hi)
+
+theorem Packable_mono {P Q : WorldFamily (List Val)} (h : ∀ n W vs, P n W vs → Q n W vs)
+    {n : Nat} {W : WorldT n} {v : Val} (hp : Packable P n W v) : Packable Q n W v := by
+  intro j hj U hx hh hok
+  obtain ⟨fs, c, oid, l, ls, vs, h1, h2, h3, h4, h5⟩ := hp j hj U hx hh hok
+  exact ⟨fs, c, oid, l, ls, vs, h1, h2, h3, h4, fun i hi => h _ _ _ (h5 i hi)⟩
 
 /-- The assignment algebra depends on a carrier and its closedness predicate,
 not on every binder in a scheme having the same source-language kind. -/
@@ -138,25 +176,81 @@ def ParameterAssignment.empty (k : ParameterSpace) : ParameterAssignment k ι :=
 The other component of a mixed semantic family cannot constrain its meaning. -/
 def selectParameter (kind : Option ParameterKind) (A : WorldFamily ParameterSpace.mixed.Carrier) :
     WorldFamily ParameterSpace.mixed.Carrier := fun n W x => match x with
-  | .inl v => kind = some .value ∧ A n W (.inl v)
-  | .inr vs => kind = some .arguments ∧ A n W (.inr vs)
+  | .inl v => (kind = some .value ∧ A n W (.inl v)) ∨
+      (kind = some .packed ∧ A n W (.inl v) ∧ Packable (fun j U vs => A j U (.inr vs)) n W v)
+  | .inr vs => (kind = some .arguments ∨ kind = some .packed) ∧ A n W (.inr vs)
+
+/-- The list component of a mixed family is admissible. -/
+theorem mixed_arguments_adm {A : WorldFamily ParameterSpace.mixed.Carrier} (h : Adm A) :
+    Adm (fun j U vs => A j U (.inr vs) : WorldFamily (List Val)) :=
+  ⟨fun n W vs hv => h.down n W (.inr vs) hv, fun n W U hx vs hv => h.mono n W U hx (.inr vs) hv⟩
 
 theorem selectParameter_valid (kind : Option ParameterKind) {A : WorldFamily ParameterSpace.mixed.Carrier}
     (h : ParameterValid .mixed A) : ParameterValid .mixed (selectParameter kind A) := by
   constructor
   · constructor
     · intro n W x hx
-      cases x <;> exact ⟨hx.1, h.1.down _ _ _ hx.2⟩
+      cases x with
+      | inl v =>
+        rcases hx with ⟨hk, ha⟩ | ⟨hk, ha, hp⟩
+        · exact Or.inl ⟨hk, h.1.down _ _ _ ha⟩
+        · exact Or.inr ⟨hk, h.1.down _ _ _ ha, (Packable_adm _).down _ _ _ hp⟩
+      | inr vs => exact ⟨hx.1, h.1.down _ _ _ hx.2⟩
     · intro n W U hw x hx
-      cases x <;> exact ⟨hx.1, h.1.mono _ _ _ hw _ hx.2⟩
+      cases x with
+      | inl v =>
+        rcases hx with ⟨hk, ha⟩ | ⟨hk, ha, hp⟩
+        · exact Or.inl ⟨hk, h.1.mono _ _ _ hw _ ha⟩
+        · exact Or.inr ⟨hk, h.1.mono _ _ _ hw _ ha, (Packable_adm _).mono _ _ _ hw _ hp⟩
+      | inr vs => exact ⟨hx.1, h.1.mono _ _ _ hw _ hx.2⟩
   · intro n W x hx
-    cases x <;> exact h.2 _ _ _ hx.2
+    cases x with
+    | inl v => rcases hx with ⟨_, ha⟩ | ⟨_, ha, _⟩ <;> exact h.2 _ _ _ ha
+    | inr vs => exact h.2 _ _ _ hx.2
+
+theorem selectParameter_adm (kind : Option ParameterKind) {A : WorldFamily ParameterSpace.mixed.Carrier}
+    (h : Adm A) : Adm (selectParameter kind A) := by
+  constructor
+  · intro n W x hx
+    cases x with
+    | inl v =>
+      rcases hx with ⟨hk, ha⟩ | ⟨hk, ha, hp⟩
+      · exact Or.inl ⟨hk, h.down _ _ _ ha⟩
+      · exact Or.inr ⟨hk, h.down _ _ _ ha, (Packable_adm _).down _ _ _ hp⟩
+    | inr vs => exact ⟨hx.1, h.down _ _ _ hx.2⟩
+  · intro n W U hw x hx
+    cases x with
+    | inl v =>
+      rcases hx with ⟨hk, ha⟩ | ⟨hk, ha, hp⟩
+      · exact Or.inl ⟨hk, h.mono _ _ _ hw _ ha⟩
+      · exact Or.inr ⟨hk, h.mono _ _ _ hw _ ha, (Packable_adm _).mono _ _ _ hw _ hp⟩
+    | inr vs => exact ⟨hx.1, h.mono _ _ _ hw _ hx.2⟩
+
+/-- Selection is nonexpansive: it reads its family at the same levels and,
+for a packed binder's spread, below them. -/
+theorem selectParameter_agree (kind : Option ParameterKind) {A B : WorldFamily ParameterSpace.mixed.Carrier}
+    {n : Nat} (h : Agree A B n) : Agree (selectParameter kind A) (selectParameter kind B) n := by
+  intro m hm W x
+  cases x with
+  | inr vs => exact and_congr Iff.rfl (h m hm W (.inr vs))
+  | inl v =>
+    have hp := Packable_congr (P := fun j U vs => A j U (.inr vs)) (Q := fun j U vs => B j U (.inr vs))
+      (n := m) (fun j hj U vs => h j (by omega) U (.inr vs)) W v
+    simp only [selectParameter]
+    rw [h m hm W (.inl v), hp]
+
+@[simp] theorem selectParameter_value {A : WorldFamily ParameterSpace.mixed.Carrier} {n W v} :
+    selectParameter (some .value) A n W (.inl v) ↔ A n W (.inl v) := by
+  simp [selectParameter]
 
 @[simp] theorem selectParameter_idempotent (kind : Option ParameterKind)
     (A : WorldFamily ParameterSpace.mixed.Carrier) :
     selectParameter kind (selectParameter kind A) = selectParameter kind A := by
   funext n W x
-  cases x <;> simp [selectParameter]
+  cases x with
+  | inr vs => simp [selectParameter]
+  | inl v =>
+    rcases kind with _ | (_ | _ | _) <;> simp [selectParameter]
 
 /-- Positions of a retained resolution input, literal observation and associated
 result among a scheme's binders. An observation-only group (`Awaitable`) has no
@@ -408,9 +502,25 @@ separately. -/
 def NormalGraph.params (G : NormalGraph ι) (i : ι) : Bool :=
   (G.parameterKinds i).isSome
 
+/-- A parameter row with argument-list members: a pack binder, or a packed one. -/
+def NormalGraph.listParam (G : NormalGraph ι) (i : ι) : Bool :=
+  G.parameterKinds i == some .arguments || G.parameterKinds i == some .packed
+
+theorem NormalGraph.listParam_iff {G : NormalGraph ι} {i : ι} :
+    G.listParam i = true ↔ G.parameterKinds i = some .arguments ∨ G.parameterKinds i = some .packed := by
+  simp [NormalGraph.listParam]
+
+theorem NormalGraph.listParam_of_none {G : NormalGraph ι} {i : ι} (h : G.parameterKinds i = none) :
+    G.listParam i = false := by
+  simp [NormalGraph.listParam, h]
+
 /-- A clause row: neither a parameter, a scheme nor a meet. -/
 def NormalGraph.plain (G : NormalGraph ι) (i : ι) : Bool :=
   !G.params i && (G.schemes i).isNone && (G.meets i).isNone
+
+theorem NormalGraph.listParam_of_plain {G : NormalGraph ι} {i : ι} (h : G.plain i = true) :
+    G.listParam i = false := by
+  cases hk : G.parameterKinds i <;> simp_all [NormalGraph.plain, NormalGraph.params, NormalGraph.listParam]
 
 /-- A clause row's three conditions. -/
 theorem NormalGraph.plain_iff {G : NormalGraph ι} {i : ι} :
@@ -959,7 +1069,7 @@ Ordinary value rows and value parameters have no argument-list members.
 Tuple positions use the recursive value meanings at the current level. -/
 def graphArguments (G : NormalGraph ι) : ArgumentInterpreter ι .mixed :=
   fun η X S n W vs => ∃ i ∈ S,
-    if G.parameterKinds i = some .arguments then η.1 i n W (.inr vs)
+    if G.listParam i then η.1 i n W (.inr vs)
     else ∃ c ∈ G i, clauseArguments X c n W vs
 
 /-- A pack parameter denotes its assigned list contract directly. -/
@@ -968,7 +1078,7 @@ theorem graphArguments_parameter (G : NormalGraph ι) (η : MixedAssignment ι)
     graphArguments G η X [i] = fun n W vs => η.1 i n W (.inr vs) := by
   funext n W vs
   apply propext
-  simp [graphArguments, h]
+  simp [graphArguments, NormalGraph.listParam, h]
 
 /-- A tuple row denotes its shapes at the current level, with no encoded
 value and no extra approximation delay. -/
@@ -977,11 +1087,14 @@ theorem graphArguments_pack (G : NormalGraph ι) (η : MixedAssignment ι)
     (h : G i = [.pack a bs]) :
     graphArguments G η X [i] = fun n W vs =>
       ∀ t ∈ a :: bs, ArgumentContracts.Fits (tupleFams X t) n W vs := by
-  have hp : G.parameterKinds i ≠ some .arguments := by
-    intro hp
+  have hp : G.listParam i = false := by
     have hplain := NormalGraph.plain_of_clauses (G := G) (i := i)
       (show Clause.pack a bs ∈ G i by rw [h]; simp)
-    simp [NormalGraph.plain, NormalGraph.params, hp] at hplain
+    have hn : G.parameterKinds i = none := by
+      simp only [NormalGraph.plain, NormalGraph.params, Bool.and_eq_true, Bool.not_eq_true',
+        Option.isSome_eq_false_iff, Option.isNone_iff_eq_none] at hplain
+      exact hplain.1.1
+    simp [NormalGraph.listParam, hn]
   funext n W vs
   apply propext
   simp [graphArguments, clauseArguments, hp, h]
@@ -1010,10 +1123,10 @@ theorem graphArguments_adm (G : NormalGraph ι) (η : MixedAssignment ι)
   intro n W vs h j hj U hx
   obtain ⟨i, hi, h⟩ := h
   refine ⟨i, hi, ?_⟩
-  by_cases hp : G.parameterKinds i = some .arguments
-  · simp only [hp, ite_true] at h ⊢
+  by_cases hp : G.listParam i = true
+  · simp only [hp, if_true] at h ⊢
     exact (η.2 i).1.transfer h j hj U hx
-  · simp only [hp, ite_false] at h ⊢
+  · simp only [hp, if_false, Bool.false_eq_true] at h ⊢
     obtain ⟨c, hc, h⟩ := h
     refine ⟨c, hc, ?_⟩
     cases c <;> try exact h.elim
@@ -1037,10 +1150,10 @@ theorem graphArguments_valid (G : NormalGraph ι) (η : MixedAssignment ι)
   · exact graphArguments_adm G η X (fun S => (hX S).1) S
   · intro n W vs h
     obtain ⟨i, hi, h⟩ := h
-    by_cases hp : G.parameterKinds i = some .arguments
-    · simp only [hp, ite_true] at h
+    by_cases hp : G.listParam i = true
+    · simp only [hp, if_true] at h
       exact (η.2 i).2 n W (.inr vs) h
-    · simp only [hp, ite_false] at h
+    · simp only [hp, if_false, Bool.false_eq_true] at h
       obtain ⟨c, hc, h⟩ := h
       cases c <;> try exact h.elim
       rename_i a bs
@@ -1217,15 +1330,15 @@ def mixedParameters (G : NormalGraph ι) : ParameterInterpretation ι .mixed whe
   parameter := fun i A => selectParameter (G.parameterKinds i) A
   arguments := graphArguments G
   arguments_nonexp := graphArguments_nonexp G
-  value := fun i A n W v => G.parameterKinds i = some .value ∧ A n W (.inl v)
+  value := fun i A n W v => selectParameter (G.parameterKinds i) A n W (.inl v)
   value_parameter := by
     intro i A B h
     funext n W v
     exact congrFun (congrFun (congrFun h n) W) (.inl v)
-  value_adm := fun _ A h =>
-    ⟨fun n W v hv => ⟨hv.1, h.down n W (.inl v) hv.2⟩,
-     fun n W U hx v hv => ⟨hv.1, h.mono n W U hx (.inl v) hv.2⟩⟩
-  value_congr := fun _ _ _ _ h j hj W v => and_congr Iff.rfl (h j hj W (.inl v))
+  value_adm := fun i A h =>
+    ⟨fun n W v hv => (selectParameter_adm (G.parameterKinds i) h).down n W (.inl v) hv,
+     fun n W U hx v hv => (selectParameter_adm (G.parameterKinds i) h).mono n W U hx (.inl v) hv⟩
+  value_congr := fun i _ _ _ h j hj W v => selectParameter_agree (G.parameterKinds i) h j hj W (.inl v)
   bound := fun η X S n W x => match x with
     | .inl v => X S n W v
     | .inr vs => graphArguments G η X S n W vs
@@ -1561,7 +1674,7 @@ theorem mixedDenote_value (G : NormalGraph ι) (η : MixedAssignment ι) (i : ι
   rw [qDenoteWithArgs_unfold] at h
   unfold qLayerWithArgs at h
   split at h
-  · exact (η.2 i).2 n W (.inl v) h.2
+  · rcases h with ⟨_, h⟩ | ⟨_, h, _⟩ <;> exact (η.2 i).2 n W (.inl v) h
   · cases hs : G.schemes i with
     | some s => simp only [hs] at h; exact h.1.val
     | none =>
@@ -1605,7 +1718,7 @@ theorem mixedMeaning_parameter (G : NormalGraph ι) (η : MixedAssignment ι) (i
     simp [qLayerWithArgs, hp, mixedParameters, selectParameter, hi]
   | inr vs =>
     change graphArguments G η _ [i] n W vs ↔ _
-    cases kind <;> simp [graphArguments, hc, hi, selectParameter]
+    cases kind <;> simp [graphArguments, hc, hi, selectParameter, NormalGraph.listParam]
 
 /-- A plain pack row has list members only: no runtime value. -/
 theorem mixedMeaning_pack_value (G : NormalGraph ι) (η : MixedAssignment ι) (i : ι)
@@ -1631,7 +1744,7 @@ theorem mixedMeaning_noValues (G : NormalGraph ι) (η : MixedAssignment ι) (S 
   cases hp : G.parameterKinds i with
   | some k =>
     cases k <;> simp [hp] at hk
-    simp [NormalGraph.params, hp, mixedParameters] at hv
+    simp [NormalGraph.params, hp, mixedParameters, selectParameter] at hv
   | none =>
     cases hq : G.schemes i with
     | some sch => simp [hp, hq] at hk
@@ -1653,9 +1766,9 @@ theorem mixedMeaning_noArguments (G : NormalGraph ι) (η : MixedAssignment ι) 
     ¬ mixedMeaning G η S n W (.inr vs) := by
   rintro ⟨i, hi, hv⟩
   have hk := List.all_eq_true.mp hs i hi
-  by_cases hp : G.parameterKinds i = some .arguments
-  · simp [hp] at hk
-  · simp only [hp, ite_false] at hv
+  by_cases hp : G.listParam i = true
+  · rcases NormalGraph.listParam_iff.mp hp with hp | hp <;> simp [hp] at hk
+  · simp only [hp, if_false, Bool.false_eq_true] at hv
     obtain ⟨c, hc, hv⟩ := hv
     have hplain := NormalGraph.plain_of_clauses hc
     have hparts := NormalGraph.plain_iff.mp hplain
@@ -1678,6 +1791,43 @@ theorem mixedMeaning_selected (G : NormalGraph ι) (η : MixedAssignment ι) (S 
   · simp [selectParameter]
   · simp [selectParameter, mixedMeaning_noArguments G η S hs]
   · simp [selectParameter, mixedMeaning_noValues G η S hs]
+  · simp [selectParameter]
+  · -- A packed-sorted type is a union of packed parameter rows, each of
+    -- whose values is packable by its own lists, so by the union's.
+    rename_i v
+    simp only [selectParameter]
+    constructor
+    · rintro (⟨hk, _⟩ | ⟨_, h, _⟩)
+      · cases hk
+      · exact h
+    · intro h
+      refine Or.inr ⟨by simp, h, ?_⟩
+      obtain ⟨i, hi, hv⟩ := h
+      have hk := List.all_eq_true.mp hs i hi
+      rw [qDenoteWithArgs_unfold] at hv
+      unfold qLayerWithArgs at hv
+      cases hp : G.parameterKinds i with
+      | some k =>
+        cases k <;> simp [hp] at hk
+        simp [NormalGraph.params, hp, mixedParameters, selectParameter] at hv
+        refine Packable_mono ?_ hv.2
+        intro m U vs hvs
+        exact ⟨i, hi, by simpa [NormalGraph.listParam, hp] using hvs⟩
+      | none =>
+        cases hq : G.schemes i with
+        | some sch => simp [hp, hq] at hk
+        | none =>
+          cases hm : G.meets i with
+          | some pc => simp [hp, hq, hm] at hk
+          | none =>
+          simp only [NormalGraph.params, hp, Option.isSome_none, Bool.false_eq_true, ite_false, hq, hm] at hv
+          obtain ⟨c, hc, _⟩ := hv
+          have hplain : G.plain i = true := by simp [NormalGraph.plain, NormalGraph.params, hp, hq, hm]
+          have hr : c ∈ G.rows i := by simpa [NormalGraph.clauses, hplain] using hc
+          simp only [hp, hq, hm, Option.isSome_none, Bool.or_false, Bool.false_eq_true, ite_false,
+            List.all_eq_true] at hk
+          have := hk c hr
+          cases c <;> simp at this
   · simp [selectParameter]
 
 /-- A graph's meaning reads its parameter rows at its own assignment. -/
@@ -1716,11 +1866,10 @@ theorem graphArguments_plainGraph (G : NormalGraph ι) (hG : G.Plain) (η : Mixe
   apply propext
   unfold graphArguments plainArguments
   refine exists_congr fun i => and_congr Iff.rfl ?_
-  have hk : G.parameterKinds i ≠ some .arguments := by
-    intro h
+  have hk : G.listParam i = false := by
     have := hG i
-    simp [NormalGraph.plain, NormalGraph.params, h] at this
-  simp only [hk, ↓reduceIte]
+    cases h : G.parameterKinds i <;> simp_all [NormalGraph.plain, NormalGraph.params, NormalGraph.listParam]
+  simp only [hk, Bool.false_eq_true, ↓reduceIte]
 
 private theorem approx_plain (G : NormalGraph ι) (hG : G.Plain) :
     ∀ k (η : MixedAssignment ι), (fun i => Tower.approx (qLayerWithArgs G (mixedParameters G)) k (η, i)) =

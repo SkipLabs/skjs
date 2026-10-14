@@ -72,6 +72,7 @@ def Types.toList : Types → List Tree
 private def kindOrder : ParameterKind → Nat
   | .value => 0
   | .arguments => 1
+  | .packed => 2
 
 /- A total order on trees, lexicographic on constructors and fields. It fixes
 the canonical order of a meet's parts. -/

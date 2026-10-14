@@ -695,8 +695,8 @@ theorem Equations.arguments_step (equations : Equations) (apps : equations.Appli
     (W : WorldT n) (vs : List Val) :
     mixedArgs equations.graph η [a.label] n W vs ↔
       mixedArgs equations.graph θ [b.label] n W vs := by
-  simp only [mixedArgs, graphArguments, List.mem_singleton, exists_eq_left,
-    equations.kind_application a, equations.kind_application b, reduceCtorEq, ↓reduceIte]
+  simp only [mixedArgs, graphArguments, List.mem_singleton, exists_eq_left, NormalGraph.listParam,
+    equations.kind_application a, equations.kind_application b]
   rcases a with ⟨ha, A, va⟩
   rcases b with ⟨hb, B, vb⟩
   cases head

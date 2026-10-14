@@ -1830,7 +1830,7 @@ theorem compareInstState_sound [DecidableEq ι] {G : NormalGraph ι} {images : I
       | inr vs =>
         have hk : G.parameterKinds i = none := by simpa [NormalGraph.params] using hi
         have hcs : G i = [] := by simp [NormalGraph.clauses, NormalGraph.plain, hs]
-        simp [mixedMeaning, mixedParameters, graphArguments, hk, hcs] at hx
+        simp [mixedMeaning, mixedParameters, graphArguments, hk, hcs, NormalGraph.listParam] at hx
   · cases h
 
 /-- Candidate construction supplies choices; this operation selects an instance

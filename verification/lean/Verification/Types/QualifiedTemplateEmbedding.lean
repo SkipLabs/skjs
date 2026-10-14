@@ -104,11 +104,13 @@ theorem Embedding.arguments {G : NormalGraph ι} {H : NormalGraph κ}
       graphArguments G (pull E.node η) (fun A => X (A.map E.node)) S := by
   funext n W vs
   apply propext
-  simp only [graphArguments, exists_map, E.kinds]
+  simp only [graphArguments, exists_map, NormalGraph.listParam, E.kinds]
   refine exists_congr fun i => and_congr Iff.rfl ?_
-  by_cases hk : G.parameterKinds i = some .arguments
-  · simp [hk, pull]
-  · simp only [hk, ite_false, E.clauses, exists_map, clauseArguments_map]
+  by_cases hk : G.listParam i = true
+  · simp only [NormalGraph.listParam] at hk
+    simp [hk, pull]
+  · simp only [NormalGraph.listParam] at hk
+    simp only [hk, Bool.false_eq_true, ite_false, E.clauses, exists_map, clauseArguments_map]
 
 theorem Embedding.builtins_sem {G : NormalGraph ι} {H : NormalGraph κ}
     (E : Embedding G H) (X : List κ → Fam) (c : Clause (List ι)) :
@@ -424,9 +426,9 @@ private theorem DomainRegion.arguments {G : NormalGraph ι}
   funext n W vs
   apply propext
   apply exists_congr fun i => and_congr_right fun hi => ?_
-  by_cases hp : G.parameterKinds i = some .arguments
-  · simp only [hp, ite_true]
-  · simp only [hp, ite_false]
+  by_cases hp : G.listParam i = true
+  · simp only [hp, if_true]
+  · simp only [hp, Bool.false_eq_true, if_false]
     apply exists_congr fun c => and_congr_right fun hc => ?_
     have hq := (NormalGraph.plain_iff.mp (NormalGraph.plain_of_clauses hc)).2.1
     apply clauseArguments_congr_on (D := PositiveRules.reads G i) (fun T hT j hj => ?_)

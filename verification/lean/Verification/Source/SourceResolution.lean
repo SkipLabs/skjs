@@ -511,7 +511,7 @@ theorem rawStableAliases_sound (c : ResolutionContext E) (domain : E.domain = c.
     intro j U u hu
     have h1 : mixedMeaning E.graph η' [b.input] j U (.inl u) := hu
     rw [mixedMeaning_parameter E.graph η' b.input .value kt] at h1
-    exact bounded (j + 1) (b.input, B) hmem hbinder j (by omega) U (.inl u) h1.2
+    exact bounded (j + 1) (b.input, B) hmem hbinder j (by omega) U (.inl u) (selectParameter_value.mp h1)
   have stable : FamLe (mixedValues E.graph η' [b.input]) c.stableFamily := by
     intro j U u hu
     rw [← c.stable_meaning η]

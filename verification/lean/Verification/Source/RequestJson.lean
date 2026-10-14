@@ -130,13 +130,15 @@ instance (priority := high) [FromJson α] : FromJson (Clause α) :=
   ⟨fun j => derivedClauseFromJson (withEmptyVariadic j)⟩
 instance : ToJson ParameterKind := ⟨fun
   | .value => .str "value"
-  | .arguments => .str "arguments"⟩
+  | .arguments => .str "arguments"
+  | .packed => .str "packed"⟩
 
 instance : FromJson ParameterKind := ⟨fun j => do
   match ← j.getStr? with
   | "value" => return .value
   | "arguments" => return .arguments
-  | _ => throw "expected parameter kind value or arguments"⟩
+  | "packed" => return .packed
+  | _ => throw "expected parameter kind value, arguments or packed"⟩
 
 /-- Resolution groups retain positions among the scheme's binders. -/
 instance : ToJson ResolutionSlots := ⟨fun s => Json.mkObj [

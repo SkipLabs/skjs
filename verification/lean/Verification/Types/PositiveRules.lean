@@ -298,17 +298,16 @@ number of actuals at `E`, which is what a rest `...xs: E[]` says. -/
 theorem graphArguments_plain {G : NormalGraph ι} {η : MixedAssignment ι} {X : List ι → Fam}
     {S : List ι} (hS : G.plainTy S = true) {n W vs} :
     graphArguments G η X S n W vs ↔ ∃ c ∈ clausesOf G S, clauseArguments X c n W vs := by
-  have hk : ∀ i ∈ S, G.parameterKinds i ≠ some .arguments := fun i hi h => by
-    have := List.all_eq_true.mp hS i hi
-    simp [NormalGraph.plain, NormalGraph.params, h] at this
+  have hk : ∀ i ∈ S, G.listParam i = false := fun i hi =>
+    NormalGraph.listParam_of_plain (List.all_eq_true.mp hS i hi)
   constructor
   · rintro ⟨i, hi, h⟩
-    simp only [hk i hi, ↓reduceIte] at h
+    simp only [hk i hi, Bool.false_eq_true, ↓reduceIte] at h
     obtain ⟨c, hc, h⟩ := h
     exact ⟨c, List.mem_flatMap.mpr ⟨i, hi, hc⟩, h⟩
   · rintro ⟨c, hc, h⟩
     obtain ⟨i, hi, hc⟩ := List.mem_flatMap.mp hc
-    exact ⟨i, hi, by simp only [hk i hi, ↓reduceIte]; exact ⟨c, hc, h⟩⟩
+    exact ⟨i, hi, by simp only [hk i hi, Bool.false_eq_true, ↓reduceIte]; exact ⟨c, hc, h⟩⟩
 
 /-- A type whose one clause is a pack admits the lists its tuple fits, at the
 current level. -/
@@ -1906,12 +1905,13 @@ theorem graphArguments_support [DecidableEq ι] {G : NormalGraph ι} {D : ι →
   apply propext
   apply exists_congr fun i => and_congr_right fun hi => ?_
   have ⟨hself, hreads, _⟩ := hF.row (hS i hi)
-  by_cases hp : G.parameterKinds i = some .arguments
-  · simp only [hp, ite_true]
+  by_cases hp : G.listParam i = true
+  · simp only [hp, if_true]
+    have hk := NormalGraph.listParam_iff.mp hp
     have he := congrFun (congrFun (congrFun
-      (h i hi i (hself (by simp [NormalGraph.params, hp]))) n) W) (.inr vs)
-    simpa [mixedParameters, selectParameter, hp] using iff_of_eq he
-  · simp only [hp, ite_false]
+      (h i hi i (hself (by rcases hk with hk | hk <;> simp [NormalGraph.params, hk]))) n) W) (.inr vs)
+    rcases hk with hk | hk <;> simpa [mixedParameters, selectParameter, hk] using iff_of_eq he
+  · simp only [hp, if_false, Bool.false_eq_true]
     apply exists_congr fun c => and_congr_right fun hc => ?_
     have hplain := NormalGraph.plain_of_clauses hc
     have hq : G.schemes i = none := (NormalGraph.plain_iff.mp hplain).2.1
@@ -3917,13 +3917,10 @@ theorem graphArguments_image [DecidableEq ι] (G : NormalGraph ι)
       ∀ v, X S n W v ↔ Y T n W v)
     (he : ∀ v, X [] n W v ↔ Y [] n W v) :
     graphArguments G η X [i] n W vs ↔ graphArguments G θ Y [j] n W vs := by
-  have notArgs : ∀ l, G.plain l = true → G.parameterKinds l ≠ some .arguments := by
-    intro l hl hp
-    simp [NormalGraph.plain, NormalGraph.params, hp] at hl
   have key := sameClauses_iff hrows (fun d => clauseArguments Y d n W vs)
     (fun c f hf hn => by simp only [clauseArguments_members hY hf hn])
   simp only [graphArguments, List.mem_singleton, exists_eq_left,
-    if_neg (notArgs i hi), if_neg (notArgs j hj)]
+    NormalGraph.listParam_of_plain hi, NormalGraph.listParam_of_plain hj, Bool.false_eq_true, if_false]
   rw [key]
   simp only [List.mem_map]
   constructor
@@ -4610,7 +4607,7 @@ theorem meet_noArguments {G : NormalGraph ι} {σ : MixedAssignment ι} {l : ι}
     {n : Nat} {W : WorldT n} {vs : List Val} : ¬ mixedMeaning G σ [l] n W (.inr vs) := by
   have hk : G.parameterKinds l = none := by simpa [NormalGraph.params] using hl
   simp [mixedMeaning, mixedParameters, graphArguments, hk, NormalGraph.clauses,
-    NormalGraph.plain, hm]
+    NormalGraph.plain, hm, NormalGraph.listParam]
 
 /-- A meet row's image has no argument lists either. -/
 theorem meetOk_noArguments [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable ι}
@@ -4693,7 +4690,7 @@ theorem meet_row_value [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable ι
       mixedValues G ηR ((κ.lookup q).getD [q]) n W v) := by
     intro q hq
     rw [partSemWithArgs_param (by simp [NormalGraph.params, hpk q hq])]
-    simp only [mixedParameters, hpk q hq, true_and]
+    simp [mixedParameters, hpk q hq, selectParameter]
     exact meet_param_image (hpk q hq) (fun r hr => by
       cases List.mem_singleton.mp hr; exact hrel q hq)
   have hL : qDenoteWithArgs G (mixedParameters G) (ηL, i) n W v ↔
@@ -4732,7 +4729,7 @@ theorem meet_row_value [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable ι
     have hrv : ∀ r ∈ q :: G.meetParams j,
         (mixedValues G ηR [r] n W v ↔ (mixedParameters G).value r (ηR.1 r) n W v) := by
       intro r hr
-      simp only [mixedParameters, hrk r hr, true_and]
+      simp [mixedParameters, hrk r hr, selectParameter]
       change mixedMeaning G ηR [r] n W (.inl v) ↔ _
       rw [mixedMeaning_parameter G ηR r .value (hrk r hr)]
       simp [selectParameter]
@@ -4848,7 +4845,7 @@ theorem table_row_arguments [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTab
                 intro σ l hl hsch
                 have hk : G.parameterKinds l = none := by simpa [NormalGraph.params] using hl
                 simp [mixedMeaning, mixedParameters, graphArguments, hk,
-                  NormalGraph.clauses, NormalGraph.plain, hsch]
+                  NormalGraph.clauses, NormalGraph.plain, hsch, NormalGraph.listParam]
               -- A scheme contributes values only, regardless of its binders.
               exact iff_of_false (noArgs η i hp (by simp [hs]))
                 (noArgs θ j hj (by simp [ht]))
@@ -5920,7 +5917,7 @@ theorem pair_arguments_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option
   intro W vs ha
   have ⟨hsort, hopaque, hcover⟩ := hc
   simp only [SameKind, Bool.or_eq_true, Bool.and_eq_true] at hsort
-  rcases hsort with ⟨hav, _⟩ | ⟨_, hba⟩
+  rcases hsort with ⟨hav, _⟩ | ⟨haa, hba⟩
   · exact False.elim (mixedMeaning_noArguments G η A hav n W vs ha)
   have noTop : .top ∉ clausesOf G B := by
     intro h
@@ -5933,7 +5930,7 @@ theorem pair_arguments_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option
   · have hn : G.plain i = false := by simp [NormalGraph.plain, NormalGraph.params, hp]
     rcases hopaque i hi with h | h | h | h | ⟨y, hy, hh⟩ | ⟨j, -, h⟩
     · simp [hn] at h
-    · exact ⟨i, h, by simpa [hp] using ha⟩
+    · exact ⟨i, h, by simpa [hp, NormalGraph.listParam] using ha⟩
     · rcases h with h | ⟨_, hparam, _⟩
       · exact False.elim (noTop h)
       · simp [NormalGraph.params, hp] at hparam
@@ -5950,7 +5947,12 @@ theorem pair_arguments_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option
       exact ⟨y, hy, h2⟩
     · have := h.not_param
       simp [NormalGraph.params, hp] at this
-  · simp only [hp, ite_false] at ha
+  · have hlp : G.listParam i = false := by
+      have hk := List.all_eq_true.mp haa i hi
+      cases hq : G.parameterKinds i with
+      | none => simp [NormalGraph.listParam, hq]
+      | some k => cases k <;> simp_all [NormalGraph.listParam]
+    simp only [hlp, Bool.false_eq_true, ite_false] at ha
     obtain ⟨c, hci, hca⟩ := ha
     cases c <;> try contradiction
     case pack a bs =>
@@ -5964,7 +5966,7 @@ theorem pair_arguments_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option
         intro h
         simp [NormalGraph.plain, NormalGraph.params, h] at hjplain
       refine ⟨j, hj, ?_⟩
-      simp only [hjkind, ite_false]
+      simp only [NormalGraph.listParam_of_plain hjplain, Bool.false_eq_true, ite_false]
       refine ⟨.pack d ds, hbj, ?_⟩
       change ∀ q ∈ d :: ds, ArgumentContracts.Fits (tupleFams (mixedValues G η) q) n W vs
       intro q hq

@@ -201,8 +201,8 @@ theorem Equations.meet_noArguments (equations : Equations)
     have hrow' : equations.row ⟨.meet ps, valid⟩ =
         .clauses ((meetAll ((meetClauseLists rows).eraseDups)).filter Clause.isValue) := by
       rw [hrow]; simp only [meetRowOf]; rw [hr]
-    simp only [Equations.graph, NormalGraph.ofRowMap, hrow', reduceCtorEq, ite_false,
-      NormalGraph.clauses, NormalGraph.plain, NormalGraph.params, GraphRow.union] at h
+    simp only [Equations.graph, NormalGraph.ofRowMap, hrow',
+      NormalGraph.clauses, NormalGraph.plain, NormalGraph.params, GraphRow.union, NormalGraph.listParam] at h
     obtain ⟨c, hc, h⟩ := h
     simp only [Option.isSome_none, Bool.not_false, Option.isNone_none, Bool.and_self, ite_true,
       List.mem_filter] at hc
@@ -211,7 +211,7 @@ theorem Equations.meet_noArguments (equations : Equations)
     have hrow' : equations.row ⟨.meet ps, valid⟩ = .meet p (meetAll ((meetClauseLists rows).eraseDups)) rs := by
       rw [hrow]; simp only [meetRowOf]; rw [hr]
     simp [Equations.graph, NormalGraph.ofRowMap, hrow', NormalGraph.clauses, NormalGraph.plain,
-      NormalGraph.params] at h
+      NormalGraph.params, NormalGraph.listParam] at h
 
 theorem mixedMeaning_single_value (G : NormalGraph ι) (η : MixedAssignment ι) (i : ι)
     {n W v} : mixedMeaning G η [i] n W (.inl v) ↔ qDenoteWithArgs G (mixedParameters G) (η, i) n W v := by

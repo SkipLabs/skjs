@@ -13,10 +13,12 @@ open Lean PositiveGraphs
 private def kindName : ParameterKind → String
   | .value => "value"
   | .arguments => "arguments"
+  | .packed => "packed"
 
 private def kindOf : String → Except String ParameterKind
   | "value" => .ok .value
   | "arguments" => .ok .arguments
+  | "packed" => .ok .packed
   | k => .error s!"unknown parameter kind '{k}'"
 
 mutual
