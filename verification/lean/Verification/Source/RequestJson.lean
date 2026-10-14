@@ -205,17 +205,13 @@ instance [FromJson ι] [FromJson α] : FromJson (GraphRow ι α) := ⟨fun j =>
 
 /-! ### The realm's arrays -/
 
-/-- A name in double brackets, which the model keeps for itself: the
-prototype key and a class's prototype object's own key
-(`Fragment.classKeyOf`). -/
-def bracketed : PropKey → Bool
-  | .str s => s.startsWith "[[" && s.endsWith "]]"
+/-- A key a declaration may not name: one the model keeps for itself (the
+array store, the prototype, every other name in double brackets), or one its
+representation of keys moves (`escapedSpelling`), so that a declared key is
+the key a computed one of the same spelling is. -/
+def reservedKey : PropKey → Bool
+  | .str s => escapedSpelling s.toList
   | .sym _ => false
-
-/-- A key the model keeps for itself: the array store, the prototype, and
-every other name in double brackets. -/
-def reservedKey (k : PropKey) : Bool :=
-  k == CallArguments.arrayStoreField || k == CallArguments.protoField || bracketed k
 
 /-- The keys an ordinary array cannot own: its prototype's declared keys,
 `constructor` and `then`. These preserve standard species construction and

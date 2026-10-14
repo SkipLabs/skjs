@@ -1593,6 +1593,42 @@ For heap knowledge a merge is an allocation, as a literal is
 old location, so every fact survives, and its fresh object's fields, under
 whatever keys, are distinct from every field a record-typed slot names.
 
+### Allocation at a computed key
+
+[ComputedKey.lean](lean/Verification/Programs/ComputedKey.lean) states and proves what an allocation at a key known
+only at run time holds. $`\mathsf{makeKey}(k,a)`$ allocates one object owning
+one property at the key $`k`$'s value converts to
+([SEMANTICS](SEMANTICS.md#operational-language)). Its type gives, for each
+clause of the key's type, the object that clause's keys make
+(`keyedClause`):
+
+```math
+\frac{\Gamma\vdash_G k:K\quad\Gamma\vdash_G a:A\quad
+      \forall c\in\mathrm{expand}_G(K).\ \mathrm{keyed}(c,A)\in\mathrm{expand}_G(R)}
+     {\Gamma\vdash_G\mathsf{makeKey}(k,a):R}\ \textsf{makeKey}
+```
+
+```math
+\mathrm{keyed}(c,A)=\begin{cases}
+\mathsf{Ref}(\kappa{:}A;\ \mathsf{among}\,\{\kappa\}) &
+  c\in\{\mathsf{strLit}(s),\mathsf{numLit}(x),\mathsf{symbolLit}(i)\},\ \kappa=\mathsf{key}(c)\\
+\mathsf{Dict}(\theta{:}A\ \text{writable};\ \mathsf{outside}\,\{\texttt{[]},\mathsf{proto}\}) &
+  c\in\{\mathsf{str},\mathsf{num},\mathsf{symbol}\},\ \theta\ \text{its class}
+\end{cases}
+```
+
+with $`\mathsf{key}(c)`$ the key the singleton converts to and no
+$`\mathrm{keyed}(c,A)`$ for any other clause (`KeyedOk`). The soundness case
+evaluates the key and the initializer with `bind`, as `merge` does, and closes
+with `ComputedKey.keyed_values_safe`: the key's value converts to a key of its
+clause's object (`keyed_key`), which is none the model keeps for itself
+(`Unreserved`: $`\mathsf{esc}`$ spells none, a
+number's `ToString` begins with a digit, a minus sign, `NaN` or `Infinity`,
+`numberToString_unreserved`, and a symbol is no string), so the object holds
+no prototype and no store, and the allocation's one location is at $`A`$
+(`make_fields_rule`). For heap knowledge it is an allocation, as a merge is
+(`HeapExpressionRules.makeKey_alloc_sound`).
+
 ### Key-adding writes
 
 A source write that adds a key is the copy of the object with the key,
@@ -1610,7 +1646,31 @@ object at $`\mathsf{Ref}(k{:}W;\ \mathsf{among}\,\{k\})`$ and the merge at the
 record or dictionary `mergeResult` proposes, checked by
 [$`\textsf{merge}`$](#allocation-from-parts); the last node's slot map puts the
 merge's value in $`x`$'s slot. The value of the assignment is discarded: only a
-statement is lowered so. Ownership (`growSites`) is syntactic:
+statement is lowered so. A write $`x[k] = e`$ at a key whose claim is of
+strings, numbers or symbols, and no one key the source spells
+(`computedKeyClaim`), is the same copy with the allocation at the key's
+value, $`o\leftarrow\mathsf{makeKey}(k,v)`$, checked by
+[$`\textsf{makeKey}`$](#allocation-at-a-computed-key) at the type the
+object's writable index states for the key's class where it states one (the
+copy then keeps the index, as a literal meant for a dictionary is allocated
+at it), else at $`W`$. The copy takes string keys only, so a symbol key is the
+other way round, $`x\leftarrow\mathsf{merge}_{[]}(o,x)`$, where every clause of
+$`x`$'s claimed type lists its own keys, each a key the copy takes
+(`listsCopiedKeys`): the copy of $`x`$ then holds all of it, and the
+allocation, which no key of $`x`$'s overwrites, its key. A key of strings and
+symbols both is refused. JavaScript's write is `[[Set]]`, which on an
+ordinary object a literal made defines the property, as the copy does, but
+for `__proto__`, which the realm's `Object.prototype` holds as a setter: where
+the object does not own the key, the setter makes an object or `null` value
+the prototype and does nothing with another. So a key whose claim may be
+`__proto__` (a string, or that singleton) is tested first:
+
+```math
+\mathbf{if}\ k\equiv\texttt{"\_\_proto\_\_"}\land\lnot\,\mathsf{hasKey}(\texttt{\_\_proto\_\_})(x)\ \mathbf{then}\ v\ \mathbf{else}\ (o\leftarrow\mathsf{makeKey}(k,v);\ x\leftarrow\mathsf{merge}_{[]}(x,o);\ v)
+```
+
+two tag dispatches (`strEq`, `hasKey`) where the value's claim holds no
+object nor `null` (`noPrototypeValue`); another value is refused. Ownership (`growSites`) is syntactic:
 
 ```math
 \mathrm{Own}(x,s)\iff
@@ -1631,11 +1691,8 @@ since $`s`$ is in no loop the declaration is outside; a module constant is read
 by the module's functions. With $`\mathrm{Own}(x,s)`$ no reference but
 $`x`$'s slot holds the object, so JavaScript's write in place, which every
 reference would see, and the copy, which only $`x`$ sees, agree. Any other
-write adding a key is refused, located at the write, as is a write of
-`__proto__` (a setter) or a symbol key (the copy takes string keys). A write
-at a key known only at run time is refused on an object another reference
-may hold; on an owned one, at a string, which may spell `[]` or `[[proto]]`,
-keys the model keeps for itself; at a number or symbol it is not lowered.
+write adding a key is refused, located at the write, as is a named write of
+`__proto__` (a setter).
 
 `Object.assign(t, s_1, …, s_n)` copies each source onto its target as a
 spread copies, one $`\mathsf{merge}_{[]}`$ per source as soon as it is

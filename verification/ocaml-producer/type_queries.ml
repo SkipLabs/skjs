@@ -627,6 +627,18 @@ let flat_atoms declarations t =
         | a -> [a]) atoms
     | Rigid _ | Meet _ -> [] in
   go [] t
+(* The keys a key's type names, each a singleton: a string, a number's
+   `ToString` or a symbol. Empty where it names a family (every string, every
+   number, every symbol) or anything else. *)
+let literal_keys declarations t =
+  let atoms = try flat_atoms declarations t with Json.Error _ -> [] in
+  let key = function
+    | StrLit k -> Some (Name k)
+    | NumLit bits -> Option.map (fun k -> Name k) (number_key bits)
+    | SymbolLit i -> Some (Key i)
+    | _ -> None in
+  let keys = List.filter_map key atoms in
+  if atoms <> [] && List.length keys = List.length atoms then List.sort_uniq compare keys else []
 let array_atom = function Shape {elements=Some _;_} -> true | _ -> false
 (* An open record: a plain object whose keys its type does not bound, which
    may be an array carrying other keys. *)

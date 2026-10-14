@@ -368,6 +368,21 @@ singleton; NaN, which no equality test finds, is not one. -/
     let _ ← arrayIndex G K
     pure .element
 
+/-- Whether a key's claim is of keys known only at run time: every clause a
+string, a number or a symbol, singletons or families, and not one key the
+source spells (one string or number singleton, which `growingWrite` reads as
+a named write). -/
+@[nospecialize] def computedKeyClaim (G : PositiveGraphs.NormalGraph ι) (K : Ty ι) : Bool :=
+  let cs := PositiveRules.expand G K
+  G.plainTy K && !cs.isEmpty &&
+  cs.all (fun c => match c with
+    | .strLit _ | .str | .num | .symbolLit _ | .symbol => true
+    | .numLit b => numberEqual b b
+    | _ => false) &&
+  match keySingletons G K with
+  | some ks => (ks.map (·.2)).eraseDups.length > 1
+  | none => true
+
 /-- The tag testing equality with the one value every member of `A` is:
 null, undefined, a number (both zeros are one), a string, a Boolean or a
 bigint. -/
@@ -456,25 +471,19 @@ negation. -/
     let key ← comparisonsExpr fc key
     let r ← comparisonsExpr fc r
     let rhs ← comparisonsExpr fc rhs
+    -- A key-adding write at a key known only at run time on a local's own
+    -- object, which the statement's lowering copies (`computedGrowth`).
+    if (← ownedWrite) == some p then
+      if computedKeyClaim (SourceTypes.graph (← table)) (← exprType fc key) then
+        return .indexWrite p none r key rhs
     match ← keyField fc key (record := ← recordReceiver fc r) (dict := ← dictReceiver fc r) with
     | .field s => return .indexWrite p (some s) r key rhs
     | .dynamic =>
-      -- A write at a key known only at run time may add the key. On an
+      -- A write at a key known only at run time may add the key: on an
       -- object another reference may hold it is refused as a named write
-      -- adding a key is; on a local's own object the key must be one the
-      -- source spells.
-      let K ← exprType fc key
-      let G := SourceTypes.graph (← table)
-      let T ← table
-      let refuse := fun {α : Type} (reason : String) =>
-        (throw (locatedRefusal T p .expressionClaim reason) : Compiler α)
-      if !(← growthSites).contains p then
-        refuse "a write at a key known only at run time may add the key to an object another reference holds, which would see the object's keys change: a key-adding write is typed only on a local's own fresh object that nothing else has reached"
-      if (keySingletons G K).isSome then
-        refuse "a key-adding write at one of several literal keys is not lowered: it needs a dispatch on the key, one copy of the object per key"
-      if (PositiveRules.expand G K).any (fun c => match c with | .str | .top => true | _ => false) then
-        refuse "a key-adding write at a string known only at run time: the key may spell one the model keeps for itself (`[]`, `[[proto]]`), which JavaScript owns as an ordinary property"
-      refuse "a key-adding write at a number or symbol known only at run time is not lowered: the copy that adds the key allocates only keys the source spells"
+      -- adding a key is.
+      throw (locatedRefusal (← table) p .expressionClaim
+        "a write at a key known only at run time may add the key to an object another reference holds, which would see the object's keys change: a key-adding write is typed only on a local's own fresh object that nothing else has reached")
     | .element => return .elemWrite p r key rhs
   | .withValue p f i ft bt => return .withValue p (← comparisonsExpr fc f) (← comparisonsExpr fc i) ft bt
   | .objectAssign p t ss => return .objectAssign p (← comparisonsExpr fc t) (← ss.mapM (comparisonsExpr fc))

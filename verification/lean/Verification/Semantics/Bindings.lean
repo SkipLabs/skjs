@@ -30,6 +30,7 @@ def Scoped (d : Nat) : Tm → Prop
   | .spread a => Scoped d a
   | .throw a => Scoped d a
   | .merge _ a b => Scoped d a ∧ Scoped d b
+  | .makeKey a b => Scoped d a ∧ Scoped d b
   -- Graph code's node expressions are scoped by its own environment, which
   -- invocation supplies whole; only the captures are scoped here.
   | .objAt _ (.graph _ _ _ _ caps _ _) _ => ScopedArgs d caps
@@ -73,6 +74,7 @@ theorem Scoped.mono {t : Tm} {d e : Nat} (h : Scoped d t) (hde : d ≤ e) :
   case spread a ih => exact ih h hde
   case throw a ih => exact ih h hde
   case merge dr a b iha ihb => exact ⟨iha h.1 hde, ihb h.2 hde⟩
+  case makeKey a b iha ihb => exact ⟨iha h.1 hde, ihb h.2 hde⟩
   case read f a ih => exact ih h hde
   case test k a ih => exact ih h hde
   case objGraph fs oid n E K st caps _ _ _ ihc => exact fun a ha => ihc a ha (h a ha) hde
@@ -123,6 +125,7 @@ theorem subst_above {t : Tm} {d j : Nat} (h : Scoped d t) (hj : d ≤ j) (a : Tm
   case spread b ih => rw [ih h hj]
   case throw b ih => rw [ih h hj]
   case merge dr b c ihb ihc => rw [ihb h.1 hj, ihc h.2 hj]
+  case makeKey b c ihb ihc => rw [ihb h.1 hj, ihc h.2 hj]
   case read f b ih => rw [ih h hj]
   case index b key ihb ihkey => rw [ihb h.1 hj, ihkey h.2 hj]
   case test k b ih => rw [ih h hj]
@@ -200,6 +203,7 @@ theorem subst_scoped {t a : Tm} {d j : Nat} (ht : Scoped (d + 1) t)
   case spread b ih => exact ih ht hj
   case throw b ih => exact ih ht hj
   case merge dr b c ihb ihc => exact ⟨ihb ht.1 hj, ihc ht.2 hj⟩
+  case makeKey b c ihb ihc => exact ⟨ihb ht.1 hj, ihc ht.2 hj⟩
   case read f b ih => exact ih ht hj
   case test k b ih => exact ih ht hj
   case objGraph fs oid n E K st caps _ _ _ ihc =>
@@ -273,6 +277,7 @@ theorem instantiate_scoped (ρ : Env) (hρ : ∀ i, Scoped 0 (ρ i)) (t : Tm) (d
   case spread a ih => exact ih _
   case throw a ih => exact ih _
   case merge dr a b iha ihb => exact ⟨iha _, ihb _⟩
+  case makeKey a b iha ihb => exact ⟨iha _, ihb _⟩
   case read f a ih => exact ih d
   case test k a ih => exact ih d
   case objGraph fs oid n E K st caps _ _ _ ihc =>
@@ -359,6 +364,7 @@ theorem instantiate_beta (ρ : Env) (hρ : ∀ i, Scoped 0 (ρ i)) (a t : Tm) (d
   case spread b ih => rw [ih]
   case throw b ih => rw [ih]
   case merge dr b c ihb ihc => rw [ihb, ihc]
+  case makeKey b c ihb ihc => rw [ihb, ihc]
   case read f b ih => rw [ih]
   case index b key ihb ihkey => rw [ihb, ihkey]
   case test k b ih => rw [ih]
@@ -429,6 +435,7 @@ theorem instantiate_above {t : Tm} {d : Nat} (ht : Scoped d t) (ρ : Env) :
   case spread a ih => rw [ih ht]
   case throw a ih => rw [ih ht]
   case merge dr a b iha ihb => rw [iha ht.1, ihb ht.2]
+  case makeKey a b iha ihb => rw [iha ht.1, ihb ht.2]
   case read f a ih => rw [ih ht]
   case test k a ih => rw [ih ht]
   case objGraph fs oid n E K st caps _ _ _ ihc =>

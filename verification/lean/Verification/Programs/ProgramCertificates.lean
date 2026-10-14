@@ -325,6 +325,8 @@ inductive Rule (ι : Type) where
   | throw
   /-- An allocation from parts: the accumulator, then the source. -/
   | merge
+  /-- An allocation at a computed key: the key, then the initializer. -/
+  | makeKey
 
 inductive Evidence (ι : Type) where
   | node (claim : Sequent ι) (rule : Rule ι) (premises : List (Evidence ι))
@@ -1183,6 +1185,12 @@ declared bounds. -/
       ja.context = j.context ∧ ja.term = a ∧ jb.context = j.context ∧ jb.term = b ∧
       ObjectMerge.MergeOk G d ja.type jb.type j.type = true
     | _, _ => False
+  | .makeKey =>
+    match j.term, ps with
+    | .makeKey k a, [jk, ja] =>
+      jk.context = j.context ∧ jk.term = k ∧ ja.context = j.context ∧ ja.term = a ∧
+      ComputedKey.KeyedOk G jk.type ja.type j.type = true
+    | _, _ => False
 
 instance [DecidableEq ι] (G : NormalGraph ι) (images : PositiveCertificates.InstanceImageCheck G)
     (j : Sequent ι) (r : Rule ι) (ps)
@@ -1215,7 +1223,7 @@ retain the subtype outcome; other rule predicates are their declarative checks. 
     | .readOptional .. | .readProto .. | .arrLit | .elem | .setElem | .len | .lenStr | .elemStr ..
     | .elemOpt .. | .elemAny .. | .ifBool | .ifTrue | .ifFalse | .ifKnown .. | .ifBoolVar ..
     | .unionVar .. | .callCallable .. | .readCallable | .writeCallable | .arrCopy ..
-    | .callRest .. | .bindE | .bindRestE | .construct | .throw | .merge =>
+    | .callRest .. | .bindE | .bindRestE | .construct | .throw | .merge | .makeKey =>
       CheckResult.ofBool (decide (LocalUsing G images j r ps codes))
 
 theorem localCheckUsing_accepted [DecidableEq ι] (G : NormalGraph ι)
@@ -1297,7 +1305,7 @@ def checkScope (d : Nat) : Tm → Bool
   | .letE a b => checkScope d a && checkScope (d+1) b
   | .invoke f r args => checkScope d f && checkScope d r && checkScopes d args
   | .construct f args => checkScope d f && checkScopes d args
-  | .writeAt _ a b | .arith _ a b | .elemAt a b | .indexAt a b | .merge _ a b =>
+  | .writeAt _ a b | .arith _ a b | .elemAt a b | .indexAt a b | .merge _ a b | .makeKey a b =>
       checkScope d a && checkScope d b
   | .readAt _ a | .test _ a | .lenOf a | .spread a | .throw a => checkScope d a
   | .setElem a b c => checkScope d a && checkScope d b && checkScope d c
@@ -2101,6 +2109,13 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
     rw [hΓa, hta] at ha
     rw [hΓb, htb] at hb
     exact .merge ha hb hm
+  · rename_i k a jk ja
+    rcases hl with ⟨hΓk, htk, hΓa, hta, hm⟩
+    have hk := hp jk (by simp)
+    have ha := hp ja (by simp)
+    rw [hΓk, htk] at hk
+    rw [hΓa, hta] at ha
+    exact .makeKey hk ha hm
 
 theorem checkTreeUsing_sound [DecidableEq ι] {G : NormalGraph ι}
     {images : PositiveCertificates.InstanceImageCheck G} (e : Evidence ι)
@@ -2804,6 +2819,14 @@ theorem checkTreeUsing_complete [DecidableEq ι] {G : NormalGraph ι}
     rcases hj with rfl | rfl
     · exact iha
     · exact ihb
+  | @makeKey Γ k a K A R hk ha hm ihk iha =>
+    apply node_complete (G := G) (images := images) (j := ⟨Γ, .makeKey k a, R⟩) (r := .makeKey)
+      (js := [⟨Γ,k,K⟩, ⟨Γ,a,A⟩]) ⟨rfl,rfl,rfl,rfl,hm⟩
+    intro j hj
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at hj
+    rcases hj with rfl | rfl
+    · exact ihk
+    · exact iha
 
 /-- A closed derivation has evidence, with every graph code admitted, and
 evidence under a sound code table is a derivation: the checker decides the

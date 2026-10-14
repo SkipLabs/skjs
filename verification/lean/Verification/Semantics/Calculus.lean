@@ -233,6 +233,11 @@ inductive Tm where
   chain of these from a fresh accumulator: `{ ...x, k: e }` copies `x` into
   `{}`, then `{ k: e }` into that (DESIGN.md, "Object literals"). -/
   | merge (drop : List PropKey) (a b : Tm)
+  /-- An allocation at a key known only at run time: evaluate the key, then
+  the initializer, then allocate one fresh plain object owning one property,
+  at the key `ToPropertyKey` gives the key's value (`propertyKey`), holding
+  the initializer's value, as `makeAt` allocates at a key the source spells. -/
+  | makeKey (key init : Tm)
   /-- A run of graph code (`CallCode.graph`) at a node, before it is entered:
   the code's node expressions and continuations, the label, and the
   environment, its slots in order and the value every slot past them holds.
@@ -565,12 +570,61 @@ def isSourceVal : Tm → Bool
 theorem sourceVal_isVal {v : Tm} (h : isSourceVal v = true) : isVal v = true := by
   cases v <;> simp_all [isSourceVal, isVal]
 
+/-- A spelling the model keeps for itself: the array store's `[]` and every
+name in double brackets (the prototype, a function's code, a class's
+prototype object's key). -/
+def reservedSpelling : List Char → Bool
+  | ['[', ']'] => true
+  | '[' :: '[' :: rest => rest.reverse.take 2 == [']', ']']
+  | _ => false
+
+/-- A spelling the model's representation of keys moves: a reserved one, and
+every one beginning with the escape `[!`. -/
+def escapedSpelling (cs : List Char) : Bool :=
+  reservedSpelling cs || cs.take 2 == ['[', '!']
+
+/-- How the model spells JavaScript's string property key `s`: as itself, but
+a spelling the model keeps for itself, or one beginning with the escape `[!`,
+with `[!` before it. The map is injective (`escapeKey_injective`) and spells
+no key the model keeps for itself (`reservedSpelling_escapeKey`): every string
+key JavaScript has is represented apart from the model's own keys, by
+construction. A source key is a spelling it does not move
+(`Fragment.reservedSourceKey`), so it is its own representation. -/
+def escapeKey (s : String) : String :=
+  if escapedSpelling s.toList then String.ofList ('[' :: '!' :: s.toList) else s
+
+theorem reservedSpelling_escapeKey (s : String) : reservedSpelling (escapeKey s).toList = false := by
+  unfold escapeKey
+  split
+  · simp [reservedSpelling]
+  · rename_i h
+    simp only [escapedSpelling, Bool.or_eq_true, not_or, Bool.not_eq_true] at h
+    exact h.1
+
+theorem escapeKey_injective {s t : String} (h : escapeKey s = escapeKey t) : s = t := by
+  have moved : ∀ {a b : String}, escapedSpelling a.toList = true → escapedSpelling b.toList = false →
+      String.ofList ('[' :: '!' :: a.toList) ≠ b := by
+    intro a b ha hb he
+    have hl := congrArg String.toList he
+    rw [String.toList_ofList] at hl
+    rw [← hl] at hb
+    simp [escapedSpelling] at hb
+  unfold escapeKey at h
+  split at h <;> split at h
+  · have hl := congrArg String.toList h
+    simp only [String.toList_ofList, List.cons.injEq, true_and] at hl
+    exact String.toList_injective hl
+  · rename_i ha hb; exact absurd h (moved ha (by simpa using hb))
+  · rename_i ha hb; exact absurd h.symm (moved hb (by simpa using ha))
+  · exact h
+
 /-- `ToPropertyKey` on the primitives whose conversion runs no code and that
-a computed key reaches: a string is its own key, a symbol its identity, and a
-number the key its `ToString` spells (`numberToString`), so `o[1]` reads
-`o["1"]` and `o[0.5]` reads `o["0.5"]`. Any other value has no key here. -/
+a computed key reaches: a string is its own key, spelled as the model
+represents it (`escapeKey`), a symbol its identity, and a number the key its
+`ToString` spells (`numberToString`), so `o[1]` reads `o["1"]` and `o[0.5]`
+reads `o["0.5"]`. Any other value has no key here. -/
 def propertyKey : Tm → Option PropKey
-  | .str s => some (.str s)
+  | .str s => some (.str (escapeKey s))
   | .sym i => some (.sym i)
   | .num b => some (.str (numberToString b))
   | _ => none
@@ -962,6 +1016,10 @@ def tmDecEq (a b : Tm) : Decidable (a = b) := by
     haveI : Decidable (a1 = b1) := tmDecEq a1 b1
     haveI : Decidable (a2 = b2) := tmDecEq a2 b2
     exact decidable_of_iff (a0 = b0 ∧ a1 = b1 ∧ a2 = b2) (by simp only [Tm.merge.injEq])
+  case makeKey.makeKey a0 a1 b0 b1 =>
+    haveI : Decidable (a0 = b0) := tmDecEq a0 b0
+    haveI : Decidable (a1 = b1) := tmDecEq a1 b1
+    exact decidable_of_iff (a0 = b0 ∧ a1 = b1) (by simp only [Tm.makeKey.injEq])
   case goto.goto a0 a1 a2 a3 a4 b0 b1 b2 b3 b4 =>
     haveI : Decidable (a0 = b0) := argsDecEq a0 b0
     haveI : Decidable (a3 = b3) := argsDecEq a3 b3
@@ -1108,6 +1166,7 @@ theorem lookup_slots {ns : List PropKey} (hnd : ns.Nodup) {base i : Nat}
     (spread : ∀ a, P a → P (.spread a))
     (throw : ∀ a, P a → P (.throw a))
     (merge : ∀ d a b, P a → P b → P (.merge d a b))
+    (makeKey : ∀ k a, P k → P a → P (.makeKey k a))
     (objGraph : ∀ fs oid n E K s caps k r, (∀ e ∈ E, P e) → (∀ a ∈ caps, P a) →
       P (.objAt fs (.graph n E K s caps k r) oid))
     (makeGraph : ∀ n E K s caps k r ns args, (∀ e ∈ E, P e) → (∀ a ∈ caps, P a) →
@@ -1122,7 +1181,7 @@ theorem lookup_slots {ns : List PropKey} (hnd : ns.Nodup) {base i : Nat}
       | .bound t r pre => P t ∧ P r ∧ ∀ a ∈ pre, P a
       | .graph _ E _ _ caps _ _ => (∀ e ∈ E, P e) ∧ ∀ a ∈ caps, P a)
     (motive_3 := fun args => ∀ a ∈ args, P a)
-    var invoke construct letE nul undef tru fls num str bigint sym ?_ ?_ read index write test ite arith arr arrLit elemAt setElem lenOf spread throw merge
+    var invoke construct letE nul undef tru fls num str bigint sym ?_ ?_ read index write test ite arith arr arrLit elemAt setElem lenOf spread throw merge makeKey
     (fun E K l L d hE hL hd => goto E K l L d hE hL hd)
     (fun E K t L d k x hE ht hL hd => frame E K t L d k x hE ht hL hd)
     True.intro (fun _ _ _ ht hr hp => ⟨ht, hr, hp⟩)
@@ -1302,6 +1361,7 @@ def subst (j : Nat) (a : Tm) : Tm → Tm
   | .spread x => .spread (subst j a x)
   | .throw x => .throw (subst j a x)
   | .merge d x y => .merge d (subst j a x) (subst j a y)
+  | .makeKey x y => .makeKey (subst j a x) (subst j a y)
   | .objAt fs (.graph n E K s caps k r) oid => .objAt fs (.graph n E K s (substArgs j a caps) k r) oid
   | .makeAt (.graph n E K s caps k r) ns xs =>
       .makeAt (.graph n E K s (substArgs j a caps) k r) ns (substArgs j a xs)
@@ -1615,6 +1675,7 @@ def instantiate (d : Nat) (ρ : Env) : Tm → Tm
   | .spread a => .spread (instantiate d ρ a)
   | .throw a => .throw (instantiate d ρ a)
   | .merge dr a b => .merge dr (instantiate d ρ a) (instantiate d ρ b)
+  | .makeKey k a => .makeKey (instantiate d ρ k) (instantiate d ρ a)
   | .objAt fs (.graph n E K s caps k r) oid => .objAt fs (.graph n E K s (instantiateArgs d ρ caps) k r) oid
   | .makeAt (.graph n E K s caps k r) ns args =>
       .makeAt (.graph n E K s (instantiateArgs d ρ caps) k r) ns (instantiateArgs d ρ args)
@@ -1705,6 +1766,8 @@ inductive Raises : Tm → Tm → Prop where
   | lenC : Raises a v → Raises (.lenOf a) v
   | mergeC1 : Raises a v → Raises (.merge d a b) v
   | mergeC2 : isVal a = true → Raises b v → Raises (.merge d a b) v
+  | makeKeyC1 : Raises k v → Raises (.makeKey k a) v
+  | makeKeyC2 : isVal k = true → Raises a v → Raises (.makeKey k a) v
 
 /-! ## One small step, threading the heap -/
 
@@ -1842,6 +1905,13 @@ inductive Step : Heap → Tm → Heap → Tm → Prop where
   allocation this steps to, which runs no code. -/
   | mergeV {ps : List (PropKey × Tm)} : isVal a = true → isVal b = true → mergeParts h d a b = some ps →
       Step h (.merge d a b) h (.makeAt .absent (ps.map Prod.fst) (ps.map Prod.snd))
+  /-- An allocation at a computed key evaluates its key, then its initializer. -/
+  | makeKeyC1 : Step h k h' k' → Step h (.makeKey k a) h' (.makeKey k' a)
+  | makeKeyC2 : isVal k = true → Step h a h' a' → Step h (.makeKey k a) h' (.makeKey k a')
+  /-- Both values: the key is converted, which runs no code, and the
+  allocation this steps to allocates the one property. -/
+  | makeKeyV {f : PropKey} : isVal a = true → propertyKey k = some f →
+      Step h (.makeKey k a) h (.makeAt .absent [f] [a])
   /-- Graph code with `[[Call]]` is invoked in one step, changing no heap: its
   run starts at the entry label, the receiver in slot 0, then the parameters,
   then the captures, after collecting the rest's store when it has one
@@ -2266,6 +2336,18 @@ theorem raises_no_step {t v : Tm} (hr : Raises t v) : ∀ {h h' t'}, ¬ Step h t
     | mergeC1 s => exact value_no_step hv s
     | mergeC2 _ s => exact ih s
     | mergeV _ hw _ => rw [raises_not_val hr] at hw; contradiction
+  | makeKeyC1 hr ih =>
+    intro _ _ _ s
+    cases s with
+    | makeKeyC1 s => exact ih s
+    | makeKeyC2 hv _ => rw [raises_not_val hr] at hv; contradiction
+    | makeKeyV _ hk => have := propertyKey_val hk; rw [raises_not_val hr] at this; contradiction
+  | makeKeyC2 hv hr ih =>
+    intro _ _ _ s
+    cases s with
+    | makeKeyC1 s => exact value_no_step hv s
+    | makeKeyC2 _ s => exact ih s
+    | makeKeyV hw _ => rw [raises_not_val hr] at hw; contradiction
 
 /-- **The thrown value is determined.** -/
 theorem Raises_det {t v w : Tm} (h1 : Raises t v) (h2 : Raises t w) : v = w := by
@@ -2376,6 +2458,14 @@ theorem Raises_det {t v w : Tm} (h1 : Raises t v) (h2 : Raises t w) : v = w := b
     cases h2 with
     | mergeC1 h' => rw [raises_not_val h'] at hv; contradiction
     | mergeC2 _ h' => exact ih h'
+  | makeKeyC1 h ih =>
+    cases h2 with
+    | makeKeyC1 h' => exact ih h'
+    | makeKeyC2 hv _ => rw [raises_not_val h] at hv; contradiction
+  | makeKeyC2 hv h ih =>
+    cases h2 with
+    | makeKeyC1 h' => rw [raises_not_val h'] at hv; contradiction
+    | makeKeyC2 _ h' => exact ih h'
 
 /-- **Evaluation is deterministic.** One term in one heap has at most one next
 state. Nothing in the safety definition says so — it quantifies existentially
@@ -2871,6 +2961,23 @@ theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
     | mergeC2 _ s' => exact absurd s' (by intro hs; exact value_no_step hw hs)
     | mergeV _ _ hp' =>
       cases Option.some.inj (hp.symm.trans hp')
+      exact ⟨rfl, rfl⟩
+  | makeKeyC1 s ih =>
+    cases s2 with
+    | makeKeyC1 s' => exact (ih s').imp id (congrArg (Tm.makeKey · _))
+    | makeKeyC2 hv _ => exact absurd s (by intro hs; exact value_no_step hv hs)
+    | makeKeyV _ hk => exact absurd s (by intro hs; exact value_no_step (propertyKey_val hk) hs)
+  | makeKeyC2 hv s ih =>
+    cases s2 with
+    | makeKeyC1 s' => exact absurd s' (by intro hs; exact value_no_step hv hs)
+    | makeKeyC2 _ s' => exact (ih s').imp id (congrArg (Tm.makeKey _ ·))
+    | makeKeyV hw _ => exact absurd s (by intro hs; exact value_no_step hw hs)
+  | makeKeyV hv hk =>
+    cases s2 with
+    | makeKeyC1 s' => exact absurd s' (by intro hs; exact value_no_step (propertyKey_val hk) hs)
+    | makeKeyC2 _ s' => exact absurd s' (by intro hs; exact value_no_step hv hs)
+    | makeKeyV _ hk' =>
+      cases Option.some.inj (hk.symm.trans hk')
       exact ⟨rfl, rfl⟩
 
 theorem Raises.makeC {c : CallCode} {a v : Tm} (h : Raises a v) : Raises (.make c a) v :=

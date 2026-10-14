@@ -307,14 +307,15 @@ def translate (j : Json) : SourceTypes.Lowering (Ty Tree) := do
 
 end
 
-/-- Whether the model reserves a key for itself: an array's store, an
-object's prototype and a class's prototype object's own key (`classKeyOf`)
-live under keys no source property may name, the store's `[]` and every name
-in double brackets. A literal owning one would be an array to `Array.isArray`
-and to `in`, or an instance to `instanceof`, and a read of it would read the
-store. -/
-def reservedSourceKey (s : String) : Bool :=
-  PropKey.str s == CallArguments.arrayStoreField || (s.startsWith "[[" && s.endsWith "]]")
+/-- Whether a source key is one the model's representation of keys moves
+(`escapedSpelling`): an array's store, an object's prototype and a class's
+prototype object's own key (`classKeyOf`) live under keys no source property
+may name, the store's `[]` and every name in double brackets, and a key
+beginning with the escape `[!` is where the representation puts a key so
+spelled. A source key is refused where its representation (`escapeKey`) is
+not itself, so that a key the source spells and the same key computed at run
+time (`propertyKey`) are one. -/
+def reservedSourceKey (s : String) : Bool := escapedSpelling s.toList
 
 /-- The key class `C`'s prototype object owns and no other object does:
 `x instanceof C` looks for it along `x`'s prototype chain. -/
@@ -328,7 +329,8 @@ class value, a module value of the initialization unit at the class's
 construct signature (`SourceClaimJson`, the module values). -/
 def selfBindingOf (cls : String) : String := cls ++ ".[[self]]"
 
-#guard reservedSourceKey (classKeyOf "C") && reservedSourceKey "[[proto]]" && reservedSourceKey "[]"
+#guard reservedSourceKey (classKeyOf "C") && reservedSourceKey "[[proto]]" && reservedSourceKey "[]" &&
+  reservedSourceKey "[!x" && !reservedSourceKey "[x" && !reservedSourceKey "a"
 
 /-- A key the source spells: any but a reserved one. -/
 def protoKeyName : String := "[[proto]]"

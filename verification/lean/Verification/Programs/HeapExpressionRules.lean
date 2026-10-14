@@ -696,6 +696,34 @@ theorem merge_alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W h
           · rw [h1]; rfl
           · exact h2
 
+/-- An allocation at a computed key, of two values, allocates a fresh
+object: what was known of the heap stays known, and the new object's field is
+distinct from the context's contract fields, as a literal's are. -/
+theorem makeKey_alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W h}
+    {a b : Tm} (fields : List PropKey)
+    (hva : isVal a = true) (hvb : isVal b = true)
+    (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h) (hh : HeapOk n W h)
+    (hs : Safe (meaning G A) n W h (.makeKey a b)) :
+    SafePost (meaning G A)
+      (fun h' v => HeapKnowledge.Holds (allocOutput k [] (contractFields G Γ) fields) (push v ρ) h')
+      n W h (.makeKey a b) := by
+  cases n with
+  | zero => trivial
+  | succ p =>
+    rcases hs with (⟨hval,_⟩ | hr) | ⟨U,h1,t1,hx,hu,step,hh1,hs1⟩
+    · simp [isVal] at hval
+    · obtain ⟨v, hr, _⟩ := hr
+      cases hr with
+      | makeKeyC1 hr => rw [raises_not_val hr] at hva; contradiction
+      | makeKeyC2 _ hr => rw [raises_not_val hr] at hvb; contradiction
+    · cases step with
+      | makeKeyC1 s => exact absurd s (value_no_step hva)
+      | makeKeyC2 _ s => exact absurd s (value_no_step hvb)
+      | makeKeyV _ hf =>
+        refine Or.inr ⟨U, h, _, hx, hu, .makeKeyV hvb hf, hh1, ?_⟩
+        exact one_step rfl rfl (.makeFields (by simpa using hvb) (by simp))
+          (fresh_holds he hk hh _ _ _ fields) hs1
+
 /-- A write forgets old cell observations, except those about locations known
 to be distinct from the written one, establishes its new contents where the
 written value is a known primitive (`R`), and retains immutable values
@@ -912,13 +940,15 @@ theorem readSlot_eq {t f i} (h : readSlot t = some (f, i)) : t = .readAt f (.var
   unfold readSlot at h
   split at h <;> simp_all
 
-/-- A merge of two slots, which allocates the object it copies into. -/
+/-- A merge of two slots, which allocates the object it copies into, or an
+allocation at one slot's key holding the other's value. -/
 def mergeSlots : Tm → Option (List PropKey × Nat × Nat)
   | .merge d (.var a) (.var b) => some (d, a, b)
+  | .makeKey (.var a) (.var b) => some ([], a, b)
   | _ => none
 
 theorem mergeSlots_eq {t d a b} (h : mergeSlots t = some (d, a, b)) :
-    t = .merge d (.var a) (.var b) := by
+    t = .merge d (.var a) (.var b) ∨ t = .makeKey (.var a) (.var b) := by
   unfold mergeSlots at h
   split at h <;> simp_all
 
@@ -1299,14 +1329,18 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
           obtain ⟨hj,ht,ha,hb⟩ := hp
           have typed := checkTreeUsing_sound e ht hcodes
           rw [hj] at typed
-          have term := mergeSlots_eq hmerge
-          cases hc
-          rw [term] at typed ⊢
-          have hs := typed.sound n W h ρ he hw hh
-          simp only [instantiate] at hs ⊢
           have hva := (meaning_value (he.2 a _ (List.getElem?_eq_getElem ha))).1
           have hvb := (meaning_value (he.2 b _ (List.getElem?_eq_getElem hb))).1
-          exact merge_alloc_sound _ hva hvb he hk hh hs
+          cases hc
+          rcases mergeSlots_eq hmerge with term | term
+          · rw [term] at typed ⊢
+            have hs := typed.sound n W h ρ he hw hh
+            simp only [instantiate] at hs ⊢
+            exact merge_alloc_sound _ hva hvb he hk hh hs
+          · rw [term] at typed ⊢
+            have hs := typed.sound n W h ρ he hw hh
+            simp only [instantiate] at hs ⊢
+            exact makeKey_alloc_sound _ hva hvb he hk hh hs
         · contradiction
       · split at hc
         · rename_i slots hstore
@@ -1347,6 +1381,7 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
 #print axioms bagOperand_sound
 #print axioms alloc_sound
 #print axioms merge_alloc_sound
+#print axioms makeKey_alloc_sound
 #print axioms store_alloc_sound
 #print axioms graphCreation_sound
 #print axioms checkStep_sound

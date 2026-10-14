@@ -877,6 +877,24 @@ came from a different context. No execution budget is inspected. -/
             if ObjectMerge.MergeOk G d R S N then
               coerce G images aliases (.node ⟨Γ,t,N⟩ .merge [ea,eb]) A
             else none
+    | .makeKey k a =>
+      -- The key and the initializer at their slots' types, or a pool type;
+      -- the result the requested type, when each clause of the key's type
+      -- gives one of its clauses, else a pool type coerced to it.
+      let slot (x : Tm) := match x with | .var i => Γ[i]?.toList | _ => []
+      -- The type the requested result holds its one key at.
+      let held := (expand G A).filterMap fun c => match c with
+        | .refs [(_, T)] [] [] [] [] _ => some T
+        | .dict [] [] [] [(_, T)] [] [] [] _ => some T
+        | _ => none
+      return (slot k ++ pool).findCheck? fun K => do
+        let ek ← recur Γ k K
+        (slot a ++ held.eraseDups ++ pool).findCheck? fun B => do
+          let ea ← recur Γ a B
+          (A :: pool).findCheck? fun N =>
+            if ComputedKey.KeyedOk G K B N then
+              coerce G images aliases (.node ⟨Γ,t,N⟩ .makeKey [ek,ea]) A
+            else none
     | .throw a =>
       -- A throw has every type; its operand, at a type of its own.
       let types := (match a with | .var i => Γ[i]?.toList | _ => []) ++ pool
@@ -1045,7 +1063,7 @@ read/value rule may succeed when ordinary derivation search cannot. -/
         if HeapExpressionRules.fieldOperand (expand G Ref) fld ||
             HeapExpressionRules.optionalOperand (expand G Ref) fld then
           choices := choices ++ [.typedRead i e]
-    | .makeAt .. | .merge .. | .arrLit .. =>
+    | .makeAt .. | .merge .. | .makeKey .. | .arrLit .. =>
       choices := choices ++ [.allocated e]
     | .writeAt _ (.var i) (.var v) =>
       choices := choices ++ [.written i v (HeapExpressionRules.valuesAt G j.context k v) e]

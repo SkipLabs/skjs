@@ -1,5 +1,6 @@
 import Verification.Programs.CallableObjects
 import Verification.Programs.ObjectMerge
+import Verification.Programs.ComputedKey
 import Verification.Types.PositiveCertificates
 
 /-!
@@ -2304,6 +2305,15 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
   | merge {d : List PropKey} {a b : Tm} {A B R : Ty ι} :
       HasTyWith G images subtyping Γ a A → HasTyWith G images subtyping Γ b B → ObjectMerge.MergeOk G d A B R = true →
       HasTyWith G images subtyping Γ (.merge d a b) R
+  /-- **An allocation at a computed key.** The key, then the initializer; the
+  result is the one-key object `KeyedOk` states each clause of the key's type
+  gives: the one field a literal key names, or the dictionary over the class
+  of a family's keys, writable at the initializer's type
+  (`ComputedKey.keyed_values_safe`). -/
+  | makeKey {k a : Tm} {K A R : Ty ι} :
+      HasTyWith G images subtyping Γ k K → HasTyWith G images subtyping Γ a A →
+      ComputedKey.KeyedOk G K A R = true →
+      HasTyWith G images subtyping Γ (.makeKey k a) R
   | sub : HasTyWith G images subtyping Γ t A → subtyping.check A B cert = true → HasTyWith G images subtyping Γ t B
 
 /-- Body typing with the ordinary checker as its default. -/
@@ -2313,7 +2323,7 @@ abbrev HasTyUsing (G : NormalGraph ι) (images : PositiveCertificates.InstanceIm
   HasTyWith G images subtyping Γ t A
 
 namespace HasTyUsing
-export HasTyWith (var nul undef tru fls truLit flsLit numLit num bigintLit bigint strLit str funGraph funScheme ctorGraph callableGraph construct callCallable readCallable writeCallable app letE alloc allocDict read readView readProto readOptional readDict indexDict write arith arrLit elem elemOpt elemAny setElem len lenStr elemStr test ifBool ifKnown ifBoolVar ifTag unionVar arrCopy callRest bindE bindRestE bindMember bindScheme throw merge sub)
+export HasTyWith (var nul undef tru fls truLit flsLit numLit num bigintLit bigint strLit str funGraph funScheme ctorGraph callableGraph construct callCallable readCallable writeCallable app letE alloc allocDict read readView readProto readOptional readDict indexDict write arith arrLit elem elemOpt elemAny setElem len lenStr elemStr test ifBool ifKnown ifBoolVar ifTag unionVar arrCopy callRest bindE bindRestE bindMember bindScheme throw merge makeKey sub)
 end HasTyUsing
 
 /-- Existing source requests choose the finite checker. The typing rules
@@ -3077,6 +3087,16 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     intro k hk V hy hv heap' bv hok' hbval hb'
     have ha'' := (meaning_adm G A).mono k _ V hy av ((meaning_adm G A).down_le j k hk U av ha')
     exact ObjectMerge.merge_values_safe hm hv hok' ha'' hb'
+  | @makeKey Γ k a K A R hk ha hm ihk iha =>
+    intro n W h ρ he hw hh
+    apply bind (fun k => .makeKey k (instantiate 0 ρ a)) Step.makeKeyC1 Raises.makeKeyC1 n W h _ hw hh
+      (ihk n W h ρ he hw hh)
+    intro j hj U hx hu heap kv hok hkv hk'
+    apply bind (.makeKey kv) (Step.makeKeyC2 hkv) (Raises.makeKeyC2 hkv) j U heap _ hu hok
+      (iha j U heap ρ (he.transfer j hj U hx) hu hok)
+    intro i hi V hy hv heap' av hok' haval ha'
+    have hk'' := (meaning_adm G K).mono i _ V hy kv ((meaning_adm G K).down_le j i hi U kv hk')
+    exact ComputedKey.keyed_values_safe hm hv hok' hk'' ha'
   | @arith Γ a A b B op N ha hb hopt iha ihb =>
     intro n W h ρ he hw hh
     apply bind (fun a => .arith op a (instantiate 0 ρ b)) Step.arithC1 Raises.arithC1 n W h _ hw hh

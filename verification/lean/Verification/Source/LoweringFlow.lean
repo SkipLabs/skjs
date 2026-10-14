@@ -99,7 +99,7 @@ set_option maxHeartbeats 1000000
             | throw (locatedRefusal (← table) e.span .expressionClaim
                 "Object.assign onto an object another reference may hold adds keys that reference would see: it is lowered on a local's own fresh object that nothing else has reached, outside any loop its declaration does not enclose")
           pure true
-        else do pure (← growingWrite fc scope e).isSome
+        else do if (← computedGrowth fc scope e).isSome then pure true else (·.isSome) <$> growingWrite fc scope e
       withOwnedWrite e.span owned do
         LoweringExecution.executePlanTail recursive fc scope Γ (SourceExecution.build e) fun inner Δ _ => do
           let offset := Δ.length - Γ.length

@@ -318,18 +318,52 @@ of the prototype (`Step.readProto`, `Step.indexProto` for a computed key).
 Without a prototype the read steps to `undefined` (`Step.readMissing`,
 `Step.indexMissing`); a present field still reads its heap location. A computed
 key is converted by `ToPropertyKey` first, where it runs no code: a string is
-its own key, a symbol its identity, and a number the key its `ToString`
-spells, so `o[1]` reads `o["1"]` (`propertyKey`); `indexAt` on any other key
-is stuck:
+its own key, as the model spells it, a symbol its identity, and a number the
+key its `ToString` spells, so `o[1]` reads `o["1"]` (`propertyKey`); `indexAt`
+on any other key is stuck:
 
 ```math
-\mathsf{key}(\mathsf{str}\,s)=\mathsf{str}(s)\qquad
+\mathsf{key}(\mathsf{str}\,s)=\mathsf{str}(\mathsf{esc}(s))\qquad
 \mathsf{key}(\mathsf{sym}\,i)=\mathsf{sym}(i)\qquad
 \mathsf{key}(\mathsf{num}\,x)=\mathsf{str}(\mathsf{ToString}(x))
 \qquad
 \frac{\mathsf{key}(v)=k\quad\mathit{fs}(k)=l\quad h(l)=u}
      {h,\ \mathsf{indexAt}\;(\mathsf{obj}(\mathit{fs},c))\;v\ \to\ h,\ u}
 ```
+
+The model keeps keys for itself: the array store's `[]`, and names in double
+brackets, the prototype's `[[proto]]`, a function's `[[code]]` and a class's
+prototype object's own key. JavaScript's string key $`s`$ is represented
+under $`\mathsf{esc}(s)`$ (`escapeKey`), which prefixes `[!` to a reserved
+spelling and to one beginning `[!`, and is $`s`$ otherwise:
+
+```math
+\mathsf{esc}(s)=\begin{cases}
+\texttt{[!}\,s & s\in R\ \lor\ s\ \text{begins with}\ \texttt{[!}\\
+s & \text{otherwise}
+\end{cases}
+\qquad R=\{\texttt{[]}\}\cup\{\texttt{[[}\,t\,\texttt{]]}\}
+```
+
+$`\mathsf{esc}`$ is injective (`escapeKey_injective`) and its image misses
+$`R`$ (`reservedSpelling_escapeKey`), so every string key JavaScript has is
+represented apart from the model's own keys by construction. A key the
+source spells is one $`\mathsf{esc}`$ leaves as it is
+(`Fragment.reservedSourceKey`), so a key written in the source and the same
+key computed at run time are one.
+
+**Allocation at a computed key.** $`\mathsf{makeKey}(k,a)`$ (`Tm.makeKey`)
+evaluates $`k`$, then $`a`$ (`makeKeyC1`, `makeKeyC2`), and steps to the
+allocation of one fresh plain object owning one property, at the key
+$`k`$'s value converts to, holding $`a`$'s value; it is JavaScript's
+`{ [k]: a }`:
+
+```math
+\frac{\mathsf{key}(v_k)=\kappa\quad v_a\ \text{a value}}
+     {h,\ \mathsf{makeKey}(v_k,v_a)\to h,\ \mathsf{makeAt}(\mathsf{absent},[\kappa],[v_a])}\ (\texttt{makeKeyV})
+```
+
+It is stuck on a key of no other kind; the key's conversion runs no code.
 
 and `indexProto`, `indexMissing` as `readProto`, `readMissing` at
 $\mathsf{key}(v)$:

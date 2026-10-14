@@ -17,10 +17,6 @@ def storeField : PropKey := CallArguments.arrayStoreField
 /-- The field an object holds its prototype in. No source name spells it. -/
 def protoField : PropKey := CallArguments.protoField
 
-/-- A name in double brackets, which the model keeps for itself
-(`RequestJson.bracketed`). -/
-abbrev bracketed : PropKey → Bool := RequestJson.bracketed
-
 /-- A key the model keeps for itself: the array store, the prototype, and
 every other name in double brackets (`RequestJson.reservedKey`). -/
 abbrev reservedKey : PropKey → Bool := RequestJson.reservedKey

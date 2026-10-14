@@ -51,11 +51,13 @@ let transfer (expr:Analysis_state.expression_infer) =
     | Lambda _ | Ctor _ -> mentions n e
     | _ -> List.exists (escapes n) (Source.children e) in
   (* Whether a statement among [ss] adds a key other than [keys] to the
-     object [n] names: `n.k = e` or `n["k"] = e`. *)
+     object [n] names: `n.k = e`, `n["k"] = e`, `n[s] = e` of a symbol, or a
+     write at a key known only at run time. *)
   let rec grows_later n keys ss = List.exists (fun (s:stmt) -> match s.statement with
-    | Effect {node=Write ({node=Id m;_},Name k,_);_}
+    | Effect {node=Write ({node=Id m;_},k,_);_} -> m = n && not (List.mem k keys)
     | Effect {node=IndexWrite ({node=Id m;_},{node=Literal (LString k);_},_);_} ->
       m = n && not (List.mem (Name k) keys)
+    | Effect {node=IndexWrite ({node=Id m;_},_,_);_} -> m = n
     | Effect {node=ObjectAssign ({node=Id m;_},_::_);_} -> m = n
     | If (_,a,b) -> grows_later n keys a || grows_later n keys b
     | Block (_,b) -> grows_later n keys b
@@ -91,25 +93,30 @@ let transfer (expr:Analysis_state.expression_infer) =
        reach its object: from the first statement that may let it escape on
        (but a `return` of it, after which the body runs nothing), it is its
        record, so no other reference, and no callee that may add a key to a
-       writable dictionary, learns which keys it lacks. *)
+       writable dictionary, learns which keys it lacks. An annotated constant
+       of the object itself learns only what its annotation states: the
+       object is its record from the next statement on. *)
+    let loosen env n =
+      forget_exact_local n;
+      List.map (fun (m,b) -> match b with
+        | Value (Atoms atoms) when m = n -> m,Value (Atoms (List.map (function
+            | Exact fields -> Shape {fields;indexes=[];calls=[];elements=None}
+            | a -> a) atoms))
+        | Value (Union ts) when m = n -> m,Value (Union (List.map (function
+            | Atoms atoms -> Atoms (List.map (function
+                | Exact fields -> Shape {fields;indexes=[];calls=[];elements=None}
+                | a -> a) atoms)
+            | t -> t) ts))
+        | _ -> m,b) env in
+    let aliased = List.filter (fun n -> match s.statement with
+      | Declare (false,[(_,Some _,{node=Id m;_})]) -> m = n
+      | _ -> false) (path_facts ()).Proposal_flow.exact_locals in
     let env = List.fold_left (fun env n ->
       let escaping = match s.statement with
         | Return {node=Id _;_} -> false
-        | _ -> List.exists (escapes n) (Source.statement_children s) in
-      if not escaping then env else begin
-        forget_exact_local n;
-        List.map (fun (m,b) -> match b with
-          | Value (Atoms atoms) when m = n -> m,Value (Atoms (List.map (function
-              | Exact fields -> Shape {fields;indexes=[];calls=[];elements=None}
-              | a -> a) atoms))
-          | Value (Union ts) when m = n -> m,Value (Union (List.map (function
-              | Atoms atoms -> Atoms (List.map (function
-                  | Exact fields -> Shape {fields;indexes=[];calls=[];elements=None}
-                  | a -> a) atoms)
-              | t -> t) ts))
-          | _ -> m,b) env
-      end) env (path_facts ()).Proposal_flow.exact_locals in
-    match s.statement with
+        | _ -> not (List.mem n aliased) && List.exists (escapes n) (Source.statement_children s) in
+      if not escaping then env else loosen env n) env (path_facts ()).Proposal_flow.exact_locals in
+    let result = match s.statement with
     | Declare (mutable_,[(n,written,init)]) ->
       if String.ends_with ~suffix:".[[class]]" n then mark_fresh_constructor ();
       (* An unannotated constant's fresh array is built at the array type its
@@ -222,23 +229,42 @@ let transfer (expr:Analysis_state.expression_infer) =
     | Effect ({node=Write ({node=Id n;_},_,_) | IndexWrite ({node=Id n;_},_,_);_} as e)
       when (match List.assoc_opt n env with Some (Value _) -> true | _ -> false) ->
       let t = binding_type (lookup env n) in
-      let c = expr env e in
+      (* A key the write adds is added at the type the object's first later
+         use whole expects for it, where that use states one: the field is
+         writable, so its contract is what the use reads it at. A proposal:
+         Lean checks the value against it. *)
+      let added = match e.node with
+        | Write (_,name,_) -> Some name
+        | IndexWrite (_,{node=Literal (LString k);_},_) -> Some (Name k)
+        | _ -> None in
+      let hint = match added,first_use env n (following_statements s.span) with
+        | Some name,Some use -> Option.bind (object_hint declarations [] use) (fun shape ->
+            List.find_map (fun (f:Semantic.field) ->
+              if f.name = name && not f.host then f.write else None) shape.fields)
+        | _ -> None in
+      let c = expr ?expected:hint env e in
       let claimed (x:expr) = latest_claim x.pos in
-      let receiver,name = match e.node with
-        | Write (r,name,_) -> r,Some name
-        | IndexWrite (r,key,_) -> r,(match claimed key with Some (Atoms [StrLit k]) -> Some (Name k) | _ -> None)
-        | _ -> e,None in
+      (* A key of one of several singletons gives one copy per key: the
+         object is one of them. *)
+      let receiver,names = match e.node with
+        | Write (r,name,_) -> r,[name]
+        | IndexWrite (r,key,_) -> r,(match claimed key with
+          | Some (Atoms [StrLit k]) -> [Name k]
+          | Some t -> literal_keys declarations t
+          | None -> [])
+        | _ -> e,[] in
       let before = env in
       let env = after e env in
-      (match name with
-       | Some name when adds before receiver t name ->
-         record_growth n;
-         List.map (fun (m,b) -> if m=n then m,Value (grown declarations t name c) else m,b) env
-       | _ -> env)
+      if List.exists (adds before receiver t) names then begin
+        record_growth n;
+        let t' = combine (List.map (fun name -> grown declarations t name c) names) in
+        List.map (fun (m,b) -> if m=n then m,Value t' else m,b) env
+      end else env
     | Effect e -> ignore (expr env e); after e env
     | If _ | While _ | Block _ | ForOf _ | Try _ | Closing _ | Break _ | Continue ->
       Json.fail "a structured statement occurs as an atomic flow operation"
-    | Throw e -> ignore (expr env e); after e env  in
+    | Throw e -> ignore (expr env e); after e env in
+    List.fold_left loosen result aliased in
   transfer_statement
 
 let statements (expr:Analysis_state.expression_infer) execute_bindings owner_span env ss =

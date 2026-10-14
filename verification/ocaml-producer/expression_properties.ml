@@ -98,16 +98,22 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
        | Atoms [StrLit k] -> dictionary_growth site t (Name k)
        | Atoms [NumLit bits] -> Option.iter (fun k -> dictionary_growth site t (Name k)) (number_key bits)
        | _ -> ());
-      let name = match key_type with Atoms [StrLit k] -> Some (Name k) | _ -> None in
+      (* A key of one of several singletons adds the one it holds, each at the
+         contract a named write would add it at. *)
+      let names = match key_type with
+        | Atoms [StrLit k] -> [Name k]
+        | _ -> literal_keys declarations key_type in
       let value = expr env rhs in
-      (match name with
-       | Some name when adds env receiver t name -> added_contract declarations t name rhs value
-       | _ -> value)
+      (match List.find_opt (adds env receiver t) names with
+       | Some name -> added_contract declarations t name rhs value
+       | None -> value)
     | Write (receiver,field,rhs) ->
       let t = expr env receiver in
       dictionary_growth site t field;
       let value = expr env rhs in
-      if adds env receiver t field then added_contract declarations t field rhs value else value
+      if adds env receiver t field then
+        (match expected with Some c -> c | None -> added_contract declarations t field rhs value)
+      else value
     | Assign (n,rhs) ->
       if not (List.mem_assoc n env) && List.mem n module_names then
         Proposal_diagnostics.unsupported ("assignment to module function " ^ n);

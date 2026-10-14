@@ -612,6 +612,40 @@ another reference may hold the object and see its keys change. -/
       "a write of `__proto__` runs the prototype's setter: it replaces the prototype, and adds no key")
   return some (i, receiver, fld, key, rhs)
 
+/-- The object an allocation at a key of claim `K`, holding a value of `W`,
+is of: per clause of `K`, the one field a singleton names or the dictionary
+over a family's class (`ComputedKey.keyedClause`). -/
+@[nospecialize] def keyedType (K W : Ty Tree) : Compiler (Ty Tree) := do
+  let G := SourceTypes.graph (← table)
+  let mut labels : List Tree := []
+  for c in PositiveRules.expand G K do
+    let some d := ComputedKey.keyedClause c W
+      | throw "an allocation at a key known only at run time needs a key of strings, numbers or symbols"
+    labels := labels ++ [← lower (SourceTypes.use d)]
+  recordHints labels
+  return labels.eraseDups
+
+/-- A write statement at a key known only at run time on a record or a
+dictionary: `o[k] = e` whose key's claim is no one key the source spells
+(`computedKeyClaim`). On an owned local (`growSites`) it is the copy of the
+object with an allocation at the key over it, returned with the parts the
+write evaluates; any other is refused, since another reference may hold the
+object and see its keys change. -/
+@[nospecialize] def computedGrowth (fc : SourceClaims.Function Tree) (scope : List (ScopeBinding Tree))
+    (e : Fragment.Expr) : Compiler (Option (Nat × Fragment.Expr × Fragment.Expr × Fragment.Expr)) := do
+  let .indexWrite p none receiver key rhs := e | return none
+  if !(← recordReceiver fc receiver) then return none
+  let G := SourceTypes.graph (← table)
+  if !computedKeyClaim G (← exprType fc (← comparisonsExpr fc key)) then return none
+  let sites ← growthSites
+  let owned := match receiver with
+    | .var _ n => (valueSlot scope n).filter fun _ => sites.contains p
+    | _ => none
+  let some i := owned
+    | throw (locatedRefusal (← table) p .expressionClaim
+        "a write at a key known only at run time may add the key to an object another reference holds, which would see the object's keys change: a key-adding write is typed only on a local's own fresh object that nothing else has reached")
+  return some (i, receiver, key, rhs)
+
 /-- The element at literal index `b` of the array `r` reads under `H`, from
 its store: a required position at its type, an optional or rest position at
 its type or `undefined`. -/

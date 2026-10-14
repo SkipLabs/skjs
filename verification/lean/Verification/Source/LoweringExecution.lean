@@ -144,28 +144,123 @@ a union, and dropped where it contradicts every one: `T ⊓ (null | number)` is
         let N ← executionPlanType fc scope (A::Γ) no
         pure (Y ++ N).eraseDups)
 
+/-- A key-adding write on a local's own object, as its copy: the local's slot,
+the saved receiver's and right side's slots, the one-key allocation in the
+statement's context, whether the object is copied onto the allocation
+(`swapped`) rather than the allocation onto it, the key's slot where the key
+may be `__proto__`, and the claims of the write, the allocation and the copy. -/
+private structure Growth where
+  owned : Nat
+  receiver : Nat
+  value : Nat
+  alloc : Tm
+  swapped : Bool
+  proto : Option Nat
+  W : Ty Tree
+  F : Ty Tree
+  M : Ty Tree
+
+/-- Whether every clause of an object's type lists its own keys, each a key a
+copy takes: the copy of such an object holds all of it. -/
+@[nospecialize] private def listsCopiedKeys (G : PositiveGraphs.NormalGraph Tree) (X : Ty Tree) : Bool :=
+  let cs := PositiveRules.expand G X
+  !cs.isEmpty && cs.all fun c => match c with
+    | .refs _ _ _ _ _ ks | .dict _ _ _ _ _ _ ks _ => ks.any fun K => K.among && K.keys.all copiedKey
+    | _ => false
+
+/-- Whether no value of a type is an object or `null`, which the prototype's
+`__proto__` setter would make the object's prototype. -/
+@[nospecialize] private def noPrototypeValue (G : PositiveGraphs.NormalGraph Tree) (V : Ty Tree) : Bool :=
+  let cs := PositiveRules.expand G V
+  G.plainTy V && cs.all fun c => match c with
+    | .undef | .bool | .boolLit _ | .num | .numLit _ | .str | .strLit _ | .bigint | .bigintLit _
+    | .symbol | .symbolLit _ => true
+    | _ => false
+
 /-- A checked owned write replaces its local reference with a fresh copy.
-    Operand slots are supplied by the shared execution plan. -/
+    Operand slots are supplied by the shared execution plan. A string key the
+    source spells is allocated by `makeAt` and copied over the object; a key
+    known only at run time by `makeKey` at the key's value. A symbol key, which
+    the copy of an object does not take, is the allocation the object is copied
+    onto, where the object's type lists its keys, none a symbol, so that copy
+    holds all of it. A string key known only at run time may be `__proto__`,
+    which JavaScript's write gives to the prototype's setter where the object
+    does not own it: with a value no object nor `null` the setter changes
+    nothing, which the lowering dispatches on (`executionEvaluate`); another
+    value is refused. -/
 @[nospecialize] private partial def executionGrowth (fc : SourceClaims.Function Tree)
     (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree))
-    (original prepared : Fragment.Expr) :
-    Compiler (Option (Nat × Nat × Nat × PropKey × Ty Tree × Ty Tree × Ty Tree)) := do
+    (original prepared : Fragment.Expr) : Compiler (Option Growth) := do
   if (← ownedWrite) != some original.span then return none
-  let some (ownedIndex, _, field, _, _) ← growingWrite fc scope original | return none
+  let (ownedIndex, static) ← match ← computedGrowth fc scope original with
+    | some (i, _, _, _) => pure (i, none)
+    | none => match ← growingWrite fc scope original with
+      | some (i, _, field, _, _) => pure (i, some field)
+      | none => return none
   let prepared ← comparisonsExpr fc prepared
-  let (receiver, rhs) ← match prepared with
-    | .write _ _ receiver rhs | .indexWrite _ _ receiver _ rhs => pure (receiver,rhs)
+  let (receiver, key, rhs) ← match prepared with
+    | .write _ _ receiver rhs => pure (receiver, none, rhs)
+    | .indexWrite _ _ receiver key rhs => pure (receiver, some key, rhs)
     | _ => throw "internal execution plan: a prepared owned write has no operands"
   let .var _ receiverName := receiver | throw "internal execution plan: owned receiver was not saved"
   let .var _ rhsName := rhs | throw "internal execution plan: owned right side was not saved"
   let some r := valueSlot scope receiverName | throw "internal execution plan: missing owned receiver"
   let some v := valueSlot scope rhsName | throw "internal execution plan: missing owned right side"
-  let .str name := field | throw (locatedRefusal (← table) original.span .expressionClaim
-    "a key-adding write of a symbol key: the copy that adds the key copies string keys only")
+  let G := SourceTypes.graph (← table)
+  let T ← table
+  let refuse := fun {α : Type} (reason : String) =>
+    (throw (locatedRefusal T original.span .expressionClaim reason) : Compiler α)
   let W ← exprType fc original
-  let F ← groupType [name] [W]
-  let M ← mergeType (Γ[r]?.getD []) F
-  pure (some (ownedIndex,r,v,field,W,F,M))
+  let X := Γ[r]?.getD []
+  let symbolCopy := fun (F : Ty Tree) => do
+    if !listsCopiedKeys G X then
+      refuse "a key-adding write of a symbol key on an object whose type does not list its keys: the copy of an object takes its string keys, and the symbol keys it may own are not known"
+    mergeType F X
+  match static with
+  | some (.str name) =>
+    let F ← groupType [name] [W]
+    let M ← mergeType X F
+    pure (some ⟨ownedIndex, r, v, .makeAt .absent [.str name] [.var v], false, none, W, F, M⟩)
+  | some (.sym i) =>
+    let label ← lower (SourceTypes.use (ComputedKey.oneField (.sym i) W))
+    recordHints [label]
+    let F := [label]
+    let M ← symbolCopy F
+    pure (some ⟨ownedIndex, r, v, .makeAt .absent [.sym i] [.var v], true, none, W, F, M⟩)
+  | none =>
+    let some (.var _ keyName) := key | throw "internal execution plan: owned key was not saved"
+    let some k := valueSlot scope keyName | throw "internal execution plan: missing owned key"
+    let K := Γ[k]?.getD []
+    let cs := PositiveRules.expand G K
+    let symbolic := cs.any fun c => match c with | .symbol | .symbolLit _ => true | _ => false
+    let stringy := cs.any fun c => match c with | .symbol | .symbolLit _ => false | _ => true
+    if symbolic && stringy then
+      refuse "a key-adding write at a key that may be a string or a symbol: the copy holds a string key of the allocation over the object, and the object over a symbol key's allocation"
+    -- A value written where a writable index of the object admits the key
+    -- is allocated at that index's type, as a literal meant for a dictionary
+    -- is (`allocDict`): the copy then keeps the index.
+    let keyClass := fun (c : PositiveNormalization.Clause (Ty Tree)) => match c with
+      | .str | .strLit _ => some IndexKeys.strings
+      | .num | .numLit _ => some IndexKeys.numeric
+      | .symbol | .symbolLit _ => some IndexKeys.symbols
+      | _ => none
+    let classes := (cs.filterMap keyClass).eraseDups
+    let cellType : Option (Ty Tree) := match PositiveRules.expand G X with
+      | [.dict _ _ _ _ _ _ _ cells] =>
+        let ts := classes.map fun K => (cells.find? fun y => IndexKeys.within K y.1).map (·.2)
+        match (ts.filterMap id).eraseDups with
+        | [V] => if ts.all Option.isSome then some V else none
+        | _ => none
+      | _ => none
+    let F ← keyedType K (cellType.getD W)
+    let proto := cs.any fun c => match c with | .str => true | .strLit s => s == "__proto__" | _ => false
+    if proto && !noPrototypeValue G (Γ[v]?.getD []) then
+      refuse "a write at a string key known only at run time may name `__proto__`, whose setter, where the object does not own the key, makes an object or `null` value the object's prototype rather than a property"
+    -- Where the copy is of the object's own type, the local keeps it: the
+    -- path on which the key is `__proto__` leaves the object as it is.
+    let M ← if symbolic then symbolCopy F
+      else if ObjectMerge.MergeOk G [] X F X then pure X else mergeType X F
+    pure (some ⟨ownedIndex, r, v, .makeKey (.var k) (.var v), symbolic, if proto then some k else none, W, F, M⟩)
 
 /-- Typed atomic copies can replace one owned local while every source
     operand remains scheduled by the execution plan. -/
@@ -174,8 +269,8 @@ a union, and dropped where it contradicts every one: `T ⊓ (null | number)` is
     (operation : SourceExecution.Operation) : Compiler (List (Ty Tree)) := do
   match operation with
   | .evaluate original prepared _ =>
-    if let some (i,_,_,_,_,_,M) ← executionGrowth fc scope Γ original prepared then
-      return Γ.set i M
+    if let some g ← executionGrowth fc scope Γ original prepared then
+      return Γ.set g.owned g.M
     if (← ownedWrite) == some original.span then
       if let .objectAssign _ (.var _ name) _ := original then
         let some i := valueSlot scope name | throw "internal execution plan: missing owned Object.assign target"
@@ -188,16 +283,30 @@ a union, and dropped where it contradicts every one: `T ⊓ (null | number)` is
 @[nospecialize] private partial def executionEvaluate (recursive : RecursiveLowering) (fc : SourceClaims.Function Tree)
     (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree))
     (original prepared : Fragment.Expr) (next : Target) : Compiler Target := do
-  if let some (ownedIndex,receiver,rhs,field,W,F,M) ← executionGrowth fc scope Γ original prepared then
+  if let some g ← executionGrowth fc scope Γ original prepared then
     let mapping := (next.mapping.getD (List.range (Γ.length+1))).map
-      (fun j => if j == 0 then 0 else if j == ownedIndex+1 then 1 else j+2)
+      (fun j => if j == 0 then 0 else if j == g.owned+1 then 1 else j+2)
     let merged := held ⟨"",some original.span⟩ :: held ⟨"",some original.span⟩ :: scope
-    let result ← emitAt original.span (.var (rhs+2)) (.bind ⟨next.label,some mapping⟩)
-      (M::F::Γ) W "expression-claim" (scope := merged)
-    let merge ← emitAt original.span (.merge [] (.var (receiver+1)) (.var 0)) (.bind result)
-      (F::Γ) M "owned-copy" (scope := merged.tail)
-    return ← emitAt original.span (.makeAt .absent [field] [.var rhs]) (.bind merge)
-      Γ F "owned-field" (scope := scope)
+    let result ← emitAt original.span (.var (g.value+2)) (.bind ⟨next.label,some mapping⟩)
+      (g.M::g.F::Γ) g.W "expression-claim" (scope := merged)
+    let copy := if g.swapped then Tm.merge [] (.var 0) (.var (g.receiver+1))
+      else .merge [] (.var (g.receiver+1)) (.var 0)
+    let merge ← emitAt original.span copy (.bind result)
+      (g.F::Γ) g.M "owned-copy" (scope := merged.tail)
+    let copied ← emitAt original.span g.alloc (.bind merge)
+      Γ g.F "owned-field" (scope := scope)
+    let some k := g.proto | return copied
+    -- The key is `__proto__` and the object does not own it: the write runs
+    -- the prototype's setter, which with this value changes nothing. Where
+    -- the object owns the key, the write is its copy, as at any other key.
+    let width := Γ.length
+    let kept ← emitAt original.span (.var g.value) (.bind next) Γ g.W "expression-claim" (scope := scope)
+    let owns ← emitAt original.span (.var g.receiver)
+      (.tagBind (.hasKey (.str "__proto__")) (branchMapping width none copied) (branchMapping width none kept))
+      Γ (Γ[g.receiver]?.getD []) "tag-dispatch" (scope := scope)
+    return ← emitAt original.span (.var k)
+      (.tagBind (.strEq "__proto__") (branchMapping width none owns) (branchMapping width none copied))
+      Γ (Γ[k]?.getD []) "tag-dispatch" (scope := scope)
   if let .objectAssign _ target _ := original then
     match target with
     | .alloc .. | .build .. => pure ()

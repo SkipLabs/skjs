@@ -597,6 +597,18 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   assert.equal(runExample("invalid-object-spread-symbol-index", `const s = Symbol();
     typeof open({ [s]: "x" })[s]`), "string",
     "invalid-object-spread-symbol-index: the copy holds a string under a symbol its type says holds a number");
+  // A write at a string key known only at run time: `__proto__` runs the
+  // prototype's setter where the object does not own the key, which with a
+  // number changes nothing, and writes the property where it owns it; with an
+  // object value the setter replaces the prototype, which the pipeline refuses.
+  assert.equal(runExample("computed-key-write", `JSON.stringify([
+    Object.keys(dictionary("__proto__")).length,
+    Object.getPrototypeOf(dictionary("__proto__")) === Object.prototype,
+    copied(JSON.parse('{"__proto__": 1}'), "__proto__")["__proto__"],
+    Object.keys(multiLiteral("b")), Object.keys(numberKey(1.5))])`), '[0,true,5,["b"],["1.5"]]',
+    "computed-key-write: JavaScript's write, which the lowering's dispatch and copies follow");
+  assert.equal(runExample("computed-key-proto-refused", `typeof setProto("__proto__").a`), "string",
+    "computed-key-proto-refused: the setter makes the object value the prototype, whose string the dictionary reads");
   // Object.assign writes a function's `name`, which is not writable: it throws.
   assert.throws(() => runExample("invalid-function-fields-inferred", "named()"), /read only property 'name'/);
   // A dictionary beside an array: TypeScript types its `length` `number`, and
