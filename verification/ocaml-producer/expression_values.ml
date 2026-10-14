@@ -231,14 +231,22 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
     (* `typeof e` names one of eight shapes: a string. *)
     | Unary (Typeof,e) -> ignore (expr env e); Atoms [Str]
     | Unary (_,e) -> numeric_family declarations (expr env e)
-    (* The right side is built at the tuple of the targets' contracts, as
-       TypeScript types it from the targets; each target takes its
-       position's read, or its default, at its storage contract. The value
-       is the right side's. *)
+    (* The right side is built at the tuple of the local targets' contracts,
+       as TypeScript types it from the targets; then each target in turn,
+       a field's reference first, takes its position's read, or its default,
+       at its storage contract. The value is the right side's. *)
     | ArrayAssign (targets,rest,rhs) ->
-      let contract n = match lookup env n with
-        | Storage (contract,_) -> contract
-        | Value _ -> Proposal_diagnostics.unsupported "assignment to immutable binding" in
+      let local (t:expr) = match t.node with
+        | Id n -> (match lookup env n with
+          | Storage (contract,_) -> Some contract
+          | Value _ -> Proposal_diagnostics.unsupported "assignment to immutable binding")
+        | _ -> None in
+      (* A field's reference is evaluated after the right side: its contract
+         is read here quietly, as a hint for the right side's literal, and
+         claimed where the reference is evaluated. *)
+      let contract t = match local t with
+        | Some c -> c
+        | None -> Option.value (quietly (fun () -> target_contract env t)) ~default:Semantic.top in
       (* A literal's positions past the rest's index are the rest's: its
          tuple's positions or its array's element. *)
       let width = match rhs.node,rest with
@@ -256,7 +264,10 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
            | _ -> Semantic.top)
         | None,_ -> Semantic.top) in
       let actual = expr ~expected:(array {required;optional_elements=[];rest=None;readonly=false;presence=Dense}) env rhs in
-      List.iter (fun (_,n,d) -> Option.iter (fun d -> ignore (expr ~expected:(contract n) env d)) d) targets;
+      let evaluated t = match local t with Some c -> c | None -> target_contract env t in
+      List.iter (fun (_,t,d) ->
+        let c = evaluated t in Option.iter (fun d -> ignore (expr ~expected:c env d)) d) targets;
+      let rest = Option.map (fun (start,span,t,slice) -> (start,span,evaluated t,slice)) rest in
       (* The rest's fresh array is claimed at its local's contract where that
          is an array, which a fresh array meets, else at the positions it
          takes. *)
@@ -268,8 +279,8 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
           publish_expression span (array {required=[];optional_elements=[];rest=Some element;readonly=false;presence=Readable})
             (Some ["T",ValueArgument element])
         else
-        let claim = match Semantic.array_element (contract n),declared_head declarations [] actual with
-          | Some _,_ -> contract n
+        let claim = match Semantic.array_element n,declared_head declarations [] actual with
+          | Some _,_ -> n
           | None,Atoms [Shape {elements=Some s;_}] when s.optional_elements=[] && s.rest=None ->
             array {required=List.filteri (fun i _ -> i >= start) s.required;
                    optional_elements=[];rest=None;readonly=false;presence=Dense}

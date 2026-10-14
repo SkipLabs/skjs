@@ -445,7 +445,8 @@ and expr_node =
      side's. *)
   (* A rest's index, span, local and whether it is a slice, which
      `%RestFrom:k%` collects. *)
-  | ArrayAssign of (int * string * expr option) list * (int * Json.t * string * bool) option * expr
+  (* Each target a local ([Id]) or a field ([Read], [Index]). *)
+  | ArrayAssign of (int * expr * expr option) list * (int * Json.t * expr * bool) option * expr
   (* A parameter's type is what the body reads. A defaulted one also admits
      `undefined` where the closure is called; the default replaces it. A rest
      parameter reads the tuple its arguments are collected into, and the
@@ -565,7 +566,9 @@ let rec children e = match e.node with
   | Assign (_,e) | NullishAssign (_,_,e) -> [e]
   | Update (_,t,r,_) -> t :: Option.to_list r
   | LogicalAssign (_,a,b) | Comma (a,b) | HasKey (a,b) | InstanceTest (_,a,b) -> [a;b]
-  | ArrayAssign (targets,_,rhs) -> rhs :: List.filter_map (fun (_,_,d) -> d) targets
+  | ArrayAssign (targets,rest,rhs) ->
+    rhs :: List.concat_map (fun (_,t,d) -> t :: Option.to_list d) targets
+    @ (match rest with Some (_,_,t,_) -> [t] | None -> [])
   | Arith (_,a,b) | Equality (_,a,b) | Write (a,_,b) | Coalesce (a,b) | Optional (a,b) | Index (a,b) | Logical (_,a,b)
   | WithFields (a,b,_,_) -> [a;b]
   | Conditional (a,b,c) | IndexWrite (a,b,c) -> [a;b;c]
@@ -596,8 +599,8 @@ and statement_children s = match s.statement with
 let rec assigns_expr name e = match e.node with
   | Assign (n,_) | NullishAssign (n,_,_) when n = name -> true
   | Update (_,{node=Id n;_},_,_) | LogicalAssign (_,{node=Id n;_},_) when n = name -> true
-  | ArrayAssign (targets,rest,_) when List.exists (fun (_,n,_) -> n = name) targets
-      || (match rest with Some (_,_,n,_) -> n = name | None -> false) -> true
+  | ArrayAssign (targets,rest,_) when List.exists (fun (_,t,_) -> t.node = Id name) targets
+      || (match rest with Some (_,_,t,_) -> t.node = Id name | None -> false) -> true
   | _ -> List.exists (assigns_expr name) (children e)
 let rec assigns name s = match s.statement with
   | Declare (_,bs) -> List.exists (fun (_,_,e) -> assigns_expr name e) bs
@@ -690,10 +693,10 @@ let rec expr binders j =
   | "arrayAssign" ->
     let index q = int_of_string (match field "index" q with
       | Json.Number n -> n | _ -> Json.fail "an index is a number") in
-    ArrayAssign (List.map (fun q -> index q,text "name" q,
+    ArrayAssign (List.map (fun q -> index q,expr binders (field "target" q),
       (match field "default_" q with Null -> None | d -> Some (expr binders d))) (items "targets" j),
       (match field "rest" j with Null -> None
-        | r -> Some (index r,field "pos" r,text "name" r,Json.boolean (field "slice" r))),
+        | r -> Some (index r,field "pos" r,expr binders (field "target" r),Json.boolean (field "slice" r))),
       sub "rhs")
   | "bin" when text "op" j = "&&" || text "op" j = "||" ->
     Logical (text "op" j = "&&",sub "l",sub "r")

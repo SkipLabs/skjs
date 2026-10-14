@@ -983,6 +983,16 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     ["invalid-non-regular-alias", "wrong({ v: 1, next: null })", null],
     ["assertion-snapshot", "assertedSnapshot({ value: 3 })", 3],
     ["saved-field-comparison", "const box = { value: 7 }; JSON.stringify([comparedBeforeWrite(box), box.value])", "[true,null]"],
+    ["array-assign-field-target", "const pair = { first: 1, second: 2 }; const rest = { items: [] }; JSON.stringify([swapInto(pair, rest), pair, rest.items])", '[5,{"first":2,"second":2},[3,4]]'],
+    ["array-assign-field-target", "const box = { slot: 'x' }; JSON.stringify([keyBeforeRead({ order: '' }, box), box.slot])", '["kd","kd"]'],
+    // The array's iterator stays finished once a step found the end: a later
+    // step finds it finished though code grew the array in between.
+    ["array-pattern-exhausted-refused", "holeThenGrow()", 9],
+    ["array-pattern-exhausted-rest-refused", "JSON.stringify(restAfterGrow())", "[9]"],
+    ["array-binding-exhausted-refused", "defaultGrows()", 100],
+    ["array-pattern-steps", "JSON.stringify([freshSource({ slot: 0 }, { n: 0 }), heldSource([], { first: 0, second: 0 }), heldSource([5, 6, 7, 8], { first: 0, second: 0 }), boundDefaults([]), boundDefaults([4, 5, 6, 7])])", "[10,6,19,2,11]"],
+    ["relational-conversion", "JSON.stringify([negativeFirst([]), negativeFirst([-1]), belowLimit(1, 2n)])", "[false,true,true]"],
+    ["relational-boolean-comparison", "JSON.stringify([order(false, true), order(true, false), atMostTrue(true)])", "[true,false,true]"],
     ["saved-field-comparison", "currentAfterWrite({ value: 7 })", null],
     ["invalid-saved-field-comparison", "wrong({ value: 7 })", null],
     // A closure reads a captured cell when it runs, and sees its own write.

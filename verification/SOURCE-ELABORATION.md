@@ -636,9 +636,15 @@ $`\mathsf{elem}(\mathsf{read}_{[\,]}(\_),i)`$ at the type of position $`i`$
 (`positionRead`: a required position at its type, an optional or rest one at
 its type or $`\mathsf{Undef}`$), a hole being a position no element names. The
 array's own iterator, which JavaScript steps, reads the current length and the
-next index at each step, so reading position $`i`$ where its element is bound,
-after any default before it ran, is that step: the trust `%Iterate%` states
-([trust surface](DESIGN.md#trust-surface)). A pattern over a host iterable that
+next index at each step (the trust `%Iterate%` states,
+[trust surface](DESIGN.md#trust-surface)), and once a step found the end it
+stays finished. Reading position $`i`$ where its element is bound, after any
+default before it ran, is that step whenever nothing grew the array after a
+step found its end: without code between the steps the length is the same at
+each, so a later position is past it too. The fragment requires this of a
+pattern over an array another reference may hold: no code that may change an
+array runs after one of its steps and before a later one
+([model limits](SOURCE-FRAGMENT.md#model-limits)). A pattern over a host iterable that
 is not an array is refused; one over an iterable the program defines is the
 iterator protocol's steps ([loops](SOURCE-CONTRACTS.md#loops-and-spreads-over-iterables)).
 
@@ -720,8 +726,26 @@ enumerable keys less the ones the pattern names, onto a fresh object.
 
 A statement `const p = e` holds $`e`$ in an anonymous slot for its one entry,
 binds $`p`$ over it, and drops the slot before the next entry, which states
-$`\Delta`$. An array assignment `[x_1, …, ...r] = e` is the same with each read
-written to its mutable local at the local's storage contract. A parameter
+$`\Delta`$. An array assignment `[t_1, …, ...t_r] = e` holds $`e`$ likewise;
+each target $`t_i`$, in turn, is a mutable local or a field, `o.f` or `o[k]`,
+whose reference is evaluated first, the receiver and then the key, into
+slots; then its position is read and defaulted, and the value written to the
+reference, a local at its storage contract and a field at the field's
+writable contract, as an assignment to it writes ([ECMA-262](REFERENCES.md#ecma-262)'s
+`IteratorDestructuringAssignmentEvaluation`):
+
+```math
+⟦[t_1=d_1,\ldots]=e⟧\;=\;\mathsf{let}\ a=⟦e⟧\ \mathsf{in}\ \mathsf{let}\ \vec s_1=\mathrm{ref}(t_1)\ \mathsf{in}\ \mathsf{let}\ v_1=(a[i_1]\ \mathsf{if\ defined\ else}\ ⟦d_1⟧)\ \mathsf{in}\ \mathrm{put}(\vec s_1,v_1);\ \ldots;\ a
+```
+
+where $`\mathrm{ref}(x)`$ is empty, $`\mathrm{ref}(o.f)`$ is $`⟦o⟧`$ and
+$`\mathrm{ref}(o[k])`$ is $`⟦o⟧,⟦k⟧`$, and $`\mathrm{put}`$ writes the local, or
+the field at the saved receiver and key. A rest's target is evaluated after
+the elements before it, and before its fresh array is collected. The read
+$`a[i_1]`$ is the iterator's step as in a binding pattern: over an array
+another reference may hold, a target's reference evaluated after the first
+step, a default, and a write at a field target's index or `length` that run
+before a later step change no array. A parameter
 written as a pattern or with a default binds a hidden name $`h`$, which the
 caller's argument initializes, and the body starts with the pattern over it,
 in parameter order:

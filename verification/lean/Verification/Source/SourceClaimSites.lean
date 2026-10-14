@@ -38,9 +38,18 @@ private partial def exprSitesCore (includeBodies : Bool) : Fragment.Expr → Sit
   | .arrayLit p es => es.foldl (fun acc a => joinSites acc (exprSitesCore includeBodies a)) ([],[p],[])
   | .objectAssign p t ss => ss.foldl (fun acc a => joinSites acc (exprSitesCore includeBodies a))
       (joinSites ([],[p],[]) (exprSitesCore includeBodies t))
-  | .arrayAssign p targets rest rhs => targets.foldl (fun acc q => match q.default_ with
+  -- A field target is a site, where the value written is claimed, and so
+  -- are its receiver and key; a local target is not one.
+  | .arrayAssign p targets rest rhs =>
+    let reference := fun (acc : Sites) (t : Fragment.Expr) =>
+      t.referenceParts.foldl (fun acc a => joinSites acc (exprSitesCore includeBodies a))
+        (match t with | .var .. => acc | t => joinSites acc ([],[t.span],[]))
+    let withRest := match rest with
+      | some (_, _, q) => reference ([],[],[]) q.target
+      | none => ([],[],[])
+    targets.foldl (fun acc q => let acc := reference acc q.target; match q.default_ with
       | some d => joinSites acc (exprSitesCore includeBodies d) | none => acc)
-      (joinSites ([],p :: (rest.map (·.1)).toList,[]) (exprSitesCore includeBodies rhs))
+      (joinSites (joinSites ([],p :: (rest.map (·.1)).toList,[]) (exprSitesCore includeBodies rhs)) withRest)
   | .elemWrite p a b c => joinSites ([],[p],[]) (joinSites (exprSitesCore includeBodies a) (joinSites (exprSitesCore includeBodies b) (exprSitesCore includeBodies c)))
   | .update p _ a none _ => joinSites ([],[p],[]) (exprSitesCore includeBodies a)
   | .update p _ a (some r) _ => joinSites ([],[p],[]) (joinSites (exprSitesCore includeBodies a) (exprSitesCore includeBodies r))

@@ -275,27 +275,28 @@ private partial def arrayAssignments (root : Span) (original : Expr) (array : Sa
   match targets with
   | [] => match rest with
       | none => pure (.atom original.span (.evaluate original (.var original.span array.name) .none))
-      | some (source, slice, target) => do
+      | some (source, slice, target) => reference root target.target fun location => do
         let value ← saved root source "rest"
         let after := Plan.atom original.span (.evaluate original (.var original.span array.name) .none)
         let discard ← saved root original.span "discard"
         pure (.sequence original.span value (.atom source (.arrayRest source array target.index slice))
           (.sequence original.span discard
-            (.atom source (.referenceWrite source (.local target.name target.namePos) value)) after))
-  | target :: targets => do
-      let value ← saved root target.namePos "element"
-      let read := Plan.atom target.namePos (.positionRead target.namePos array target.index)
+            (.atom source (.referenceWrite source location value)) after))
+  | target :: targets => reference root target.target fun location => do
+      let place := target.target.span
+      let value ← saved root place "element"
+      let read := Plan.atom place (.positionRead place array target.index)
       let read ← match target.default_ with
         | none => pure read
         | some fallback => do
-          let test ← saved root target.namePos "condition"
-          pure (.choose target.namePos target.namePos .defined test read
-            (.atom target.namePos (.evaluate (.var target.namePos test.name) (.var target.namePos test.name) .none))
+          let test ← saved root place "condition"
+          pure (.choose place place .defined test read
+            (.atom place (.evaluate (.var place test.name) (.var place test.name) .none))
             (← expression root fallback))
       let discard ← saved root original.span "discard"
       let after ← arrayAssignments root original array targets rest
       pure (.sequence original.span value read (.sequence original.span discard
-        (.atom target.namePos (.referenceWrite target.namePos (.local target.name target.namePos) value)) after))
+        (.atom place (.referenceWrite place location value)) after))
 end
 
 /-- The source expression's execution tree, with unique internal values scoped

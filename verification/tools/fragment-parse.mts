@@ -64,6 +64,8 @@ import { CHAIN } from "./fragment.mts";
  * so the source builds no object with a `then`, which could pass for one. */
 const FORGED_PROMISE = "an object the source builds with a `then` member could pass for a promise, and a value typed `Promise` is assumed to be a built-in promise";
 import type { Span } from "./span.mts";
+/** An expression inside its parentheses. */
+const skipParentheses = (e: Node): Node => ts.isParenthesizedExpression(e) ? skipParentheses(e.expression) : e;
 // thrown.mts reads what the TypeScript API throws into the message the gate reports, without asserting its type.
 import { messageOf } from "./thrown.mts";
 // syntax.mts reads the name, modifiers and other children a member or declaration of unasked kind carries, checking each is a node.
@@ -2762,25 +2764,32 @@ class Gate {
       node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
       ts.isArrayLiteralExpression(node.left)
     ) {
-      // `[a, b = d, ...r] = rhs`: each element names a mutable local, with a
-      // default written as an assignment inside the literal; a hole names
-      // none, and a rest, last, takes the positions after the others.
+      // `[a, b = d, ...r] = rhs`: each element names a mutable local or a
+      // field, with a default written as an assignment inside the literal; a
+      // hole names none, and a rest, last, takes the positions after the
+      // others. A field target's reference, its receiver and then its key, is
+      // evaluated before its position is read and defaulted.
       const names = new Set<string>();
-      const named = (target: Node): Identifier => {
-        if (!ts.isIdentifier(target))
-          this.fail(target, "an array assignment pattern writing other than a local is outside the fragment: a field target's reference is evaluated before its position is read and defaulted, and the lowering writes locals only");
-        if (target.text === "undefined")
-          this.fail(target, "shadowing undefined is outside the fragment");
-        if (names.has(target.text)) this.fail(target, "duplicate pattern binding");
-        names.add(target.text);
-        return target;
+      const named = (target: Node): Expr => {
+        if (ts.isIdentifier(target)) {
+          if (target.text === "undefined")
+            this.fail(target, "shadowing undefined is outside the fragment");
+          if (names.has(target.text)) this.fail(target, "duplicate pattern binding");
+          names.add(target.text);
+          return { k: "id", pos: this.span(target), name: this.local(target) };
+        }
+        if (!ts.isPropertyAccessExpression(target) && !ts.isElementAccessExpression(target))
+          this.fail(target, "an array assignment pattern writes a local or a field");
+        const reference = this.expr(target);
+        if (reference.k !== "read" && reference.k !== "index")
+          this.fail(target, "an array assignment pattern writes a local or a field");
+        return reference;
       };
       let rest: Extract<Expr, { k: "arrayAssign" }>["rest"] = null;
       const targets: ArrayElemAst[] = node.left.elements.flatMap((el, index): ArrayElemAst[] => {
         if (ts.isOmittedExpression(el)) return [];
         if (ts.isSpreadElement(el)) {
-          const target = named(el.expression);
-          rest = { index, pos: this.span(el), name: this.local(target), namePos: this.span(target),
+          rest = { index, pos: this.span(el), target: named(el.expression),
             slice: this.slices.has(this.span(node.right).join(":")) };
           return [];
         }
@@ -2794,15 +2803,14 @@ class Gate {
           el.operatorToken.kind === ts.SyntaxKind.EqualsToken
             ? el.right
             : null;
-        const name = named(target);
         return [{
           index,
-          name: this.local(name),
-          namePos: this.span(name),
+          target: named(target),
           default_: dflt ? this.expr(dflt) : null,
         }];
       });
       if (targets.length === 0 && !rest) this.fail(node.left, "an empty pattern binds nothing");
+      this.steppedPattern(ts.isArrayLiteralExpression(skipParentheses(node.right)), this.assignedSteps(node.left));
       return {
         k: "arrayAssign",
         pos: this.span(node),
@@ -3187,7 +3195,7 @@ class Gate {
         this.fail(d.initializer, UNCLOSABLE);
       return this.protocolPattern(d.name, d.initializer, node, kind === "client-method");
     }
-    const target = this.pattern(d.name, new Set());
+    const target = this.pattern(d.name, new Set(), ts.isArrayLiteralExpression(skipParentheses(d.initializer)));
     this.initializedBefore(d, [[target, null]]);
     return {
       k: "destructure",
@@ -3457,11 +3465,109 @@ class Gate {
     for (const [t, d] of targets) visit(t, d);
   }
 
+  /* Whether evaluating `e` runs no code but its own and writes nothing but a
+     local: a literal, a name, a field read (the heap has data properties
+     only), a read at a literal key, `!`, `typeof`, `void`, a sign of a
+     literal, `===`, `!==`, `&&`, `||`, `??`, a comma, a conditional, an
+     assignment of a local, an array or object literal of such parts, a
+     closure's creation. Anything else may call, convert an object or write a
+     field. */
+  private inert(e: Node): boolean {
+    if (ts.isNumericLiteral(e) || ts.isBigIntLiteral(e) || ts.isStringLiteral(e) ||
+        ts.isNoSubstitutionTemplateLiteral(e) || ts.isIdentifier(e) || ts.isArrowFunction(e) ||
+        ts.isFunctionExpression(e) || ts.isOmittedExpression(e))
+      return true;
+    switch (e.kind) {
+      case ts.SyntaxKind.TrueKeyword: case ts.SyntaxKind.FalseKeyword:
+      case ts.SyntaxKind.NullKeyword: case ts.SyntaxKind.ThisKeyword:
+        return true;
+    }
+    if (ts.isParenthesizedExpression(e) || ts.isAsExpression(e) || ts.isSatisfiesExpression(e) ||
+        ts.isNonNullExpression(e) || ts.isPropertyAccessExpression(e) || ts.isTypeOfExpression(e) ||
+        ts.isVoidExpression(e))
+      return this.inert(e.expression);
+    if (ts.isElementAccessExpression(e))
+      return this.inert(e.expression) && (ts.isStringLiteral(e.argumentExpression) ||
+        ts.isNumericLiteral(e.argumentExpression));
+    if (ts.isPrefixUnaryExpression(e))
+      return e.operator === ts.SyntaxKind.ExclamationToken ? this.inert(e.operand)
+        : (e.operator === ts.SyntaxKind.MinusToken || e.operator === ts.SyntaxKind.PlusToken) &&
+          (ts.isNumericLiteral(e.operand) || ts.isBigIntLiteral(e.operand));
+    if (ts.isConditionalExpression(e))
+      return this.inert(e.condition) && this.inert(e.whenTrue) && this.inert(e.whenFalse);
+    if (ts.isBinaryExpression(e)) {
+      const op = e.operatorToken.kind;
+      if (op === ts.SyntaxKind.EqualsToken) return ts.isIdentifier(e.left) && this.inert(e.right);
+      return (op === ts.SyntaxKind.EqualsEqualsEqualsToken || op === ts.SyntaxKind.ExclamationEqualsEqualsToken ||
+        op === ts.SyntaxKind.AmpersandAmpersandToken || op === ts.SyntaxKind.BarBarToken ||
+        op === ts.SyntaxKind.QuestionQuestionToken || op === ts.SyntaxKind.CommaToken) &&
+        this.inert(e.left) && this.inert(e.right);
+    }
+    if (ts.isArrayLiteralExpression(e)) return e.elements.every((x) => !ts.isSpreadElement(x) && this.inert(x));
+    if (ts.isObjectLiteralExpression(e))
+      return e.properties.every((p) => ts.isShorthandPropertyAssignment(p) && !p.objectAssignmentInitializer ||
+        ts.isPropertyAssignment(p) && !ts.isComputedPropertyName(p.name) && this.inert(p.initializer));
+    return false;
+  }
+
+  /* The defaults a binding pattern runs, at any depth. */
+  private patternDefaults(node: ts.BindingName): Node[] {
+    if (ts.isIdentifier(node)) return [];
+    return node.elements.flatMap((el): Node[] => ts.isOmittedExpression(el) ? []
+      : [...(el.initializer ? [el.initializer] : []), ...(el.name ? this.patternDefaults(el.name) : [])]);
+  }
+
+  /* JavaScript steps an array pattern's source through the array's iterator,
+     which stays finished once a step found the end; the lowering reads each
+     position when its step runs (`positionRead`, a rest's collection), which
+     is that step while nothing has grown the array since a step found the
+     end. Code that may change an array, run after one step and before a later
+     one, could do so: `[, box[(xs.push(1, 2), "slot")] = 9] = xs` with `xs`
+     empty writes 9 where a read of position 1 finds 2. Over a fresh array
+     literal no other reference reaches the array; over any other source such
+     code is refused. Each element is its target's reference, evaluated before
+     its step (`before`, a field target's receiver and key), and what runs
+     after its step (`after`: its default, a nested pattern's defaults, and a
+     write at a field target's index or `length`, which may be the array's).
+     A write at another named field changes no array's elements or length. */
+  private steppedPattern(fresh: boolean,
+      elements: { node: Node; hole: boolean; before: Node[]; after: Node[] }[]): void {
+    if (fresh) return;
+    let last = -1;
+    elements.forEach((el, i) => { if (!el.hole) last = i; });
+    const refuse = (node: Node, what: string): never => this.fail(node,
+      `an array pattern over an array another reference may hold, with ${what} after one of its steps and before a later one, is outside the fragment: JavaScript steps the array's iterator, which stays finished once a step found the end, while the lowering reads each position, which sees what such code added to the array`);
+    elements.forEach((el, i) => {
+      if (i > 0 && i <= last)
+        for (const n of el.before) if (!this.inert(n)) refuse(n, "a target's reference that may call or write");
+      if (i < last)
+        for (const n of el.after)
+          if (ts.isPropertyAccessExpression(n) || ts.isElementAccessExpression(n)) refuse(n, "a write at a field target's index or length");
+          else if (!this.inert(n)) refuse(n, "a default that may call or write");
+    });
+  }
+
+  /* An array assignment's elements, as `steppedPattern` reads them. */
+  private assignedSteps(left: ts.ArrayLiteralExpression):
+      { node: Node; hole: boolean; before: Node[]; after: Node[] }[] {
+    return left.elements.map((el) => {
+      if (ts.isOmittedExpression(el)) return { node: el, hole: true, before: [], after: [] };
+      const assigned = ts.isBinaryExpression(el) && el.operatorToken.kind === ts.SyntaxKind.EqualsToken;
+      const target = ts.isSpreadElement(el) ? el.expression : assigned ? el.left : el;
+      const before = ts.isPropertyAccessExpression(target) ? [target.expression]
+        : ts.isElementAccessExpression(target) ? [target.expression, target.argumentExpression] : [];
+      const write = ts.isElementAccessExpression(target) ||
+        ts.isPropertyAccessExpression(target) && ts.isIdentifier(target.name) && target.name.text === "length"
+        ? [target] : [];
+      return { node: el, hole: false, before, after: [...(assigned ? [el.right] : []), ...write] };
+    });
+  }
+
   /* What a binding name or pattern binds. An object pattern reads identifier
      keys; its rest binds a fresh object holding the source's other own
      enumerable properties. An array pattern's hole is a position no element
-     names. */
-  private pattern(node: ts.BindingName, names: Set<string>): PatternAst {
+     names; `fresh` says its source is an array literal (`steppedPattern`). */
+  private pattern(node: ts.BindingName, names: Set<string>, fresh = false): PatternAst {
     if (ts.isIdentifier(node)) {
       if (node.text === "undefined")
         this.fail(node, "shadowing undefined is outside the fragment");
@@ -3472,6 +3578,10 @@ class Gate {
     if (node.elements.length === 0)
       this.fail(node, "an empty pattern binds nothing");
     if (ts.isArrayBindingPattern(node)) {
+      this.steppedPattern(fresh, node.elements.map((el) => ts.isOmittedExpression(el) || !el.name
+        ? { node: el, hole: true, before: [], after: [] }
+        : { node: el, hole: false, before: [],
+            after: [...(el.initializer ? [el.initializer] : []), ...this.patternDefaults(el.name)] }));
       const elems: PatternElemAst[] = [];
       let rest: Extract<PatternAst, { k: "array" }>["rest"] = null;
       node.elements.forEach((el, index) => {
@@ -3605,7 +3715,7 @@ class Gate {
     if (ts.isArrayBindingPattern(d.name) &&
         this.iterations.get(this.span(d.initializer).join(":"))?.startsWith("client"))
       return null;
-    const target = this.pattern(d.name, new Set());
+    const target = this.pattern(d.name, new Set(), ts.isArrayLiteralExpression(skipParentheses(d.initializer)));
     this.initializedBefore(d, [[target, null]]);
     const cells: BindingAst[] = [];
     const hide = (t: PatternAst): PatternAst => {

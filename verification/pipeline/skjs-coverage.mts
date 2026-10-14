@@ -545,6 +545,11 @@ const CLASSES: ClassEntry[] = [
   { cls: "gap", label: "a callable value has no admitted call signature", re: /no admitted call signature/,
     why: "the type grants callable shape without an invocation promise",
     review: "an explicit Function annotation intentionally grants no call signature; inspect the callee before treating this as a recoverable library gap" },
+  { cls: "gap", label: "a written local's content read in an expression's branch arm",
+    unit: "tests/expect-error/destructuring-assignment.ts#keyBeforeDefault",
+    re: /^search: reject: source expression obligation at _: evidence search failed: no derivation of its node-typing claim$/,
+    detail: /No rule derives this readAt at 1 from value: \{ value: null \| number \}/,
+    why: "a model limit: the default arm reads the cell `value`, which the key's assignment set to 1; an arm's entry states no cell content, so the read is at the cell's contract `number | null` (an activation slot for a local no closure captures carries the value instead)" },
   // ------------------------------------------------------- unexplained
   { cls: "unexplained", label: "search: no derivation found", re: /evidence search failed|: cannot establish|No rule derives/,
     why: "Lean found no derivation; the obligation is named, its cause is not" },

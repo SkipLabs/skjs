@@ -377,12 +377,12 @@ inductive LogicalOp where
   | nullish | orElse | andAlso
   deriving Repr, DecidableEq
 
-/-- One element of an array pattern: position `index` binds `name`, with a
+/-- One element of an array assignment: position `index` is written to
+`target`, a mutable local (`var`) or a field (`read`, `index`), with a
 default when the read is undefined. -/
 structure ArrayElem (Expr : Type) where
   index : Nat
-  name : String
-  namePos : Span
+  target : Expr
   default_ : Option Expr
 
 /-- What a pattern binds at one place: a name, or a nested pattern over the
@@ -515,10 +515,11 @@ inductive Expr where
   | indexWrite (pos : Span) (field : Option String) (receiver key rhs : Expr)
   /-- An array literal: one element per initializer, in source order. -/
   | arrayLit (pos : Span) (elems : List Expr)
-  /-- `[a, b = d, ...r] = rhs`: the right side once, then each mutable local
-  takes its position of the store, or its default when that read is
-  undefined, and the rest's local the fresh array of the positions after
-  them, claimed at the rest's span; the value is the right side. -/
+  /-- `[a, b = d, ...r] = rhs`: the right side once, then, for each target
+  in turn, its reference (a field's receiver, then its key), then its
+  position of the store, or its default when that read is undefined, written
+  to the reference; the rest's target takes the fresh array of the positions
+  after them, claimed at the rest's span; the value is the right side. -/
   | arrayAssign (pos : Span) (targets : List (ArrayElem Expr)) (rest : Option (Span × Bool × ArrayElem Expr))
       (rhs : Expr)
   /-- `e[key]` with a numeric key: an element read of the array's store, and
@@ -702,7 +703,8 @@ partial def Expr.freeNames : Expr → List String
   | .update _ _ a b _ => a.freeNames ++ (b.map Expr.freeNames).getD []
   | .assign _ n _ e | .nullishAssign _ n _ e => n :: e.freeNames
   | .arrayAssign _ targets rest rhs => rhs.freeNames ++ targets.flatMap
-      (fun q => q.name :: (q.default_.map Expr.freeNames).getD []) ++ (rest.map (·.2.2.name)).toList ++
+      (fun q => q.target.freeNames ++ (q.default_.map Expr.freeNames).getD []) ++
+      ((rest.map (·.2.2.target.freeNames)).getD []) ++
       -- A slice rest reads its `%RestFrom:k%`.
       (rest.filter (·.2.1)).toList.map (fun (_, _, q) => restFromName q.index)
   | .bindWithReceiver _ f r args | .callWithReceiver _ f r args =>
@@ -734,7 +736,8 @@ partial def Expr.callees : Expr → List (Span × Span × String × List Json)
   | .update _ _ a b _ => a.callees ++ (b.map Expr.callees).getD []
   | .assign _ _ _ e | .nullishAssign _ _ _ e => e.callees
   | .arrayAssign _ targets rest rhs => rhs.callees ++ targets.flatMap
-      (fun q => (q.default_.map Expr.callees).getD []) ++
+      (fun q => q.target.callees ++ (q.default_.map Expr.callees).getD []) ++
+      ((rest.map (·.2.2.target.callees)).getD []) ++
       sliceCallees ((rest.filter (·.2.1)).toList.map fun (p, _, q) => (p, q.index))
   | .bindWithReceiver _ f r args | .callWithReceiver _ f r args =>
     f.callees ++ r.callees ++ args.flatMap Expr.callees
@@ -853,14 +856,26 @@ def Expr.span : Expr → Span
 `(o: unknown) => readonly string[]`, the keys it visits, trusted. -/
 def forInName : String := "%ForIn%"
 
+/-- What evaluating an assignment target's reference evaluates: a field's
+receiver, then its key; nothing for a local. -/
+def Expr.referenceParts : Expr → List Expr
+  | .read _ _ receiver => [receiver]
+  | .index _ _ receiver key | .elemAt _ receiver key => [receiver, key]
+  | _ => []
+
+/-- The local an assignment target writes, if it is one. -/
+def Expr.targetLocal : Expr → Option String
+  | .var _ name => some name
+  | _ => none
+
 /-- One element of an array pattern, decoded with the given expression
 decoder, since the structure is shared by statements and expressions. -/
 def decodeArrayElem (decodeExpr : Json → Except String Expr) (q : Json) :
     Except String (ArrayElem Expr) := do
-  fieldsExactly q ["index","name","namePos","default_"]
+  fieldsExactly q ["index","target","default_"]
   let d ← jField q "default_"
   let dflt ← if d == .null then pure none else some <$> decodeExpr d
-  return ⟨← (← jField q "index").getNat?, ← jStr (← jField q "name"), ← jSpan q "namePos", dflt⟩
+  return ⟨← (← jField q "index").getNat?, ← decodeExpr (← jField q "target"), dflt⟩
 
 /-- A statement's own span. -/
 def Stmt.pos : Stmt → Span
@@ -1145,9 +1160,14 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     let rest ← match ← jField j "rest" with
       | .null => pure none
       | r => do
-        fieldsExactly r ["index","pos","name","namePos","slice"]
+        fieldsExactly r ["index","pos","target","slice"]
         pure (some (← jSpan r "pos", ← (← jField r "slice").getBool?,
-          (⟨← (← jField r "index").getNat?, ← jStr (← jField r "name"), ← jSpan r "namePos", none⟩ : ArrayElem Expr)))
+          (⟨← (← jField r "index").getNat?, ← decodeExpr (← jField r "target"), none⟩ : ArrayElem Expr)))
+    let reference : ArrayElem Expr → Bool := fun q => match q.target with
+      | .var .. | .read .. | .index .. => true
+      | _ => false
+    if !(targets.all reference && rest.all (reference ·.2.2)) then
+      throw "an array assignment pattern writes a local or a field"
     let indices := targets.map (·.index) ++ (rest.map (·.2.2.index)).toList
     if indices.isEmpty then throw "an empty pattern binds nothing"
     if !(indices.zip (indices.drop 1)).all (fun (a, b) => a < b) then

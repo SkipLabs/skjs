@@ -62,15 +62,16 @@ export type Expr =
   | { k: "index"; pos: Span; e: Expr; key: Expr }
   /* An array literal: one element per initializer, in source order. */
   | { k: "arrayLit"; pos: Span; elems: Expr[] }
-  /* `[a, b = d, ...r] = rhs`: the right side once, then each mutable local
-     takes its position of the store, or its default when that read is
-     undefined, and the rest's local the fresh array of the positions from its
-     index on, claimed at the rest's span; a `slice` rest, which TypeScript
+  /* `[a, o.f = d, ...r] = rhs`: the right side once, then each target, a
+     mutable local or a field, in turn: its reference (receiver, then key),
+     then its position of the store, or its default when that read is
+     undefined, written to it; the rest's target takes the fresh array of the
+     positions from its index on, claimed at the rest's span; a `slice` rest, which TypeScript
      types as no one tuple of required positions, is collected by
      `%RestFrom:k%` (`intrinsics.mts`). The expression's value is the right
      side. */
   | { k: "arrayAssign"; pos: Span; targets: ArrayElemAst[];
-      rest: { index: number; pos: Span; name: string; namePos: Span; slice: boolean } | null; rhs: Expr }
+      rest: { index: number; pos: Span; target: Expr; slice: boolean } | null; rhs: Expr }
   | { k: "indexWrite"; pos: Span; receiver: Expr; key: Expr; rhs: Expr }
   | { k: "bin"; pos: Span; op: string; l: Expr; r: Expr }
   /* A binary operator on primitive operands: `l`, then `r`, then the
@@ -303,12 +304,12 @@ export interface PatternElemAst {
   default_: Expr | null;
 }
 
-/** One element of an array assignment: position `index` assigns the mutable
- * local `name`. */
+/** One element of an array assignment: position `index` assigns its target,
+ * a mutable local (`id`) or a field (`read`, `index`), whose reference (the
+ * receiver, then the key) is evaluated before the position is read. */
 export interface ArrayElemAst {
   index: number;
-  name: string;
-  namePos: Span;
+  target: Expr;
   default_: Expr | null;
 }
 

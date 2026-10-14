@@ -21,8 +21,10 @@ private partial def assignsExpr (name : String) : Fragment.Expr → Bool
   | .indexWrite _ _ a b c | .elemWrite _ a b c => assignsExpr name a || assignsExpr name b || assignsExpr name c
   | .arith _ _ a b | .elemAt _ a b | .comma _ a b | .inKeys _ a b => assignsExpr name a || assignsExpr name b
   | .arrayLit _ es => es.any (assignsExpr name)
-  | .arrayAssign _ targets rest rhs => targets.any (fun q => q.name == name ||
-      (q.default_.map (assignsExpr name)).getD false) || rest.any (·.2.2.name == name) ||
+  | .arrayAssign _ targets rest rhs => targets.any (fun q => q.target.targetLocal == some name ||
+      q.target.referenceParts.any (assignsExpr name) || (q.default_.map (assignsExpr name)).getD false) ||
+      rest.any (fun r => r.2.2.target.targetLocal == some name ||
+        r.2.2.target.referenceParts.any (assignsExpr name)) ||
       assignsExpr name rhs
   | .logicalAssign _ _ target rhs =>
     (match target with | .var _ n => n == name | _ => false) ||
@@ -146,8 +148,10 @@ partial def closureBodies : Fragment.Expr → List (List Fragment.Stmt)
     closureBodies a ++ closureBodies b ++ closureBodies c
   | .update _ _ a b _ => closureBodies a ++ (b.map closureBodies).getD []
   | .alloc _ _ es | .build _ _ es | .arrayLit _ es => es.flatMap closureBodies
-  | .arrayAssign _ targets _ rhs => closureBodies rhs ++
-    targets.flatMap fun q => (q.default_.map closureBodies).getD []
+  | .arrayAssign _ targets rest rhs => closureBodies rhs ++
+    targets.flatMap (fun q => q.target.referenceParts.flatMap closureBodies ++
+      (q.default_.map closureBodies).getD []) ++
+    ((rest.map fun r => r.2.2.target.referenceParts.flatMap closureBodies).getD [])
   | .assign _ _ _ e | .nullishAssign _ _ _ e => closureBodies e
   | .call _ f args _ _ | .invoke _ f args _ _ | .construct _ f args _ _ =>
     closureBodies f ++ args.flatMap closureBodies

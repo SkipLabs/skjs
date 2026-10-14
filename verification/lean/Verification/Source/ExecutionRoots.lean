@@ -22,8 +22,9 @@ partial def expressionOccurrences (e : Expr) : List Expr :=
     | .elemWrite _ a b c | .indexWrite _ _ a b c | .ifBody _ a b c => [a,b,c]
     | .update _ _ target rhs _ => target :: rhs.toList
     | .objectAssign _ target sources => target :: sources
-    | .arrayAssign _ targets rest rhs => rhs :: targets.flatMap (fun (t : ArrayElem Expr) => t.default_.toList) ++
-        ((rest.map fun (r : Span × Bool × ArrayElem Expr) => r.2.2.default_.toList).getD [])
+    | .arrayAssign _ targets rest rhs => rhs :: targets.flatMap (fun (t : ArrayElem Expr) =>
+          t.target.referenceParts ++ t.default_.toList) ++
+        ((rest.map fun (r : Span × Bool × ArrayElem Expr) => r.2.2.target.referenceParts).getD [])
     | .construct _ callee args _ _ | .call _ callee args _ _ | .invoke _ callee args _ _ => callee :: args
     | .bindWithReceiver _ callee receiver args | .callWithReceiver _ callee receiver args => callee :: receiver :: args
     | .applyWithReceiver _ callee receiver list => callee :: receiver :: list.toList
