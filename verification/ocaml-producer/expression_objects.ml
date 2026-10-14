@@ -90,7 +90,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
         let inferred = expr ?expected env e in
         let t = Option.value expected ~default:(widen inferred) in
         ({name=Name name;optional=false;read=t;write=Some t;host=false;receivers=[]} : Semantic.field) in
-      let group fs = {afields=fs;exact=true;index=None} in
+      let group fs = {empty_alternative with afields=fs} in
       let merge alts b = List.concat_map (fun a -> List.map (merge_alternative a) b) alts in
       let alts,fields = List.fold_left (fun (alts,fields) (name,e) -> match name with
         | Some name -> alts,fields @ [field_of (name,e)]

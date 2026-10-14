@@ -99,7 +99,7 @@ open S
           {a with afields=List.filter (fun (f:Semantic.field) -> not (List.mem f.name drop)) a.afields})
           (source_alternatives declarations [] (get values receiver)) in
         let t=combine (List.map (fun a -> alternative_type
-          (merge_alternative {afields=[];exact=true;index=None} a)) alternatives) in
+          (merge_alternative empty_alternative a)) alternatives) in
         publish source t None; run env (put values value t) next
       | Execution.ArrayRest (source,array,start,slice,value,next) ->
         let original=get values array in

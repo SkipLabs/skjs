@@ -1532,14 +1532,21 @@ given within $`T`$ by $`c_b`$, or by $`c_a`$ where whatever $`c_b`$ gives under 
 within $`T`$; each optional field within its type on both sides, and then $`c_a`$
 holding no prototype; each bound of $`\beta`$ admitting every key either side
 may give (`FieldsOk`). "Within" is label inclusion, whose meaning is a
-union's.
+union's. The model's copy takes no symbol key, where JavaScript's takes an
+own enumerable one, so what $`c_b`$ gives under a symbol key is read as
+JavaScript's copy may give it: $`c_b`$ never gives a symbol key unless a bound
+of its excludes it, and a bound of $`\beta`$ listing keys admits each symbol key
+a bound of $`c_b`$ lists (`Src.never`, `boundOk`). The result's type then holds
+of the model's copy and of JavaScript's alike.
 
 The result may instead be a dictionary
 $`\mathsf{Dict}(\varphi;\iota;\omega;\beta;\chi)`$, of index views $`\iota`$ and
 writable indexes $`\chi`$ beside the same fields, optional fields and bounds
-(`DictOk`): every entry of $`\iota\mathbin{+\!\!+}\chi`$ is at one type $`V`$;
+(`DictOk`): each entry $`K{:}V_K`$ of $`\iota\mathbin{+\!\!+}\chi`$ is at its
+own type, two whose classes overlap at one type (the string and numeric
+classes overlap, the symbol class only itself);
 $`c_a`$ holds no prototype ($`\neg\pi`$ among its keys, by a bound or by an index
-of its own, which `dictViewT` states); and for each class $`K`$ of an entry,
+of its own, which `dictViewT` states); and for each entry $`K{:}V`$,
 whatever either side gives under a key $`K`$ admits is within $`V`$:
 
 ```math
@@ -1553,10 +1560,13 @@ whatever either side gives under a key $`K`$ admits is within $`V`$:
 `classWithin`, over the keys a copy takes, less $`\delta`$, and also no array
 store whose elements a copy would give under index keys: a bound excluding the
 store key, or a string index at a type no member of which is a list
-(`noStore`, since the store key `[]` is a string), unless $`K`$ is the symbol
-class, which admits no key a copy gives. A field or optional field of the
-result whose key a class may admit is within $`V`$, and exactly $`V`$ where a
-writable index's class may admit it, whose locations hold exactly $`V`$; and
+(`noStore`, since the store key `[]` is a string). For the symbol class, which
+admits no key the model's copy gives, $`c_b`$ says what JavaScript's copy gives
+there: a symbol index within $`V`$, or a bound listing its keys, none a
+symbol. A field or optional field of the
+result whose key a class may admit is within that entry's $`V`$, and exactly
+it where a writable index's class may admit it, whose locations hold exactly
+$`V`$; and
 each bound of a result with a writable index keeps that index's class
 ($`b\ \mathsf{keeps}\ K`$, [covering](POSITIVE-TYPES.md#records)): none lists
 keys or excludes one the class may admit, which the keys outside code may add
@@ -1564,14 +1574,15 @@ under the index would contradict. The
 soundness case evaluates the operands with `bind`, as `arith` does, and
 closes with `ObjectMerge.merge_values_safe`, which takes the merge's step,
 then the allocation's by `make_fields_rule`, giving each location the
-contract its result key states, $`V`$ for a key an index's class admits, or its
-copied value for a key the result does not state. Evidence names the rule
-`merge` with the two operands' derivations; the search types a slot operand
-at the slot's type and tries the requested type, then the pool's, for the
-result, coercing; extraction proposes the clauses (`ObjectMerge.mergeResult`:
-where a side states an index, the dictionary over the sides' classes at the
-union of their index types and the admitted fields' types, if the rule
-admits it, else the record) and states them as hints. The last merge of an
+contract its result key states, the $`V`$ of an entry whose class admits the
+key, or its copied value for a key the result does not state. Evidence names
+the rule `merge` with the two operands' derivations; the search types a slot
+operand at the slot's type and tries the requested type, then the pool's,
+for the result, coercing; extraction proposes the clauses
+(`ObjectMerge.mergeResult`: where a side states an index, the dictionary over
+the sides' classes, each at the union of the index types and the admitted
+fields' types of the classes overlapping it, if the rule admits it, else the
+record) and states them as hints. The last merge of an
 object literal is at the literal's claim where the rule admits it: each pair
 of clauses may give a record of the claim's own, so a field written after a
 spread is allocated at the type of the arm each pair gives, as TypeScript

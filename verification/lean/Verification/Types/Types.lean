@@ -304,6 +304,10 @@ theorem IndexKeys.within_admits {a b : IndexKeys} (h : a.within b = true) {k : P
 /-- Two classes that share a key: one is within the other. -/
 def IndexKeys.overlaps (a b : IndexKeys) : Bool := a.within b || b.within a
 
+theorem IndexKeys.overlaps_of_admits {a b : IndexKeys} {k : PropKey} (ha : a.Admits k)
+    (hb : b.Admits k) : a.overlaps b = true := by
+  cases a <;> cases b <;> cases k <;> simp_all [Admits, overlaps, within]
+
 /-- The key `ToPropertyKey` of a number names is canonical numeric. -/
 theorem numeric_admits_number (b : UInt64) : IndexKeys.numeric.Admits (.str (numberToString b)) :=
   ⟨b, rfl⟩

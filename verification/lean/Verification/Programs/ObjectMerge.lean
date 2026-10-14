@@ -448,11 +448,13 @@ def srcOf (c : Clause (List ι)) : Option (Src ι) :=
     | some o => some (.obj o)
     | none => (codeOf c).map .obj
 
-/-- The source never gives the key: it is dropped or reserved, or a bound
-excludes it and, if an array could give it as an index, the store too. -/
+/-- The source never gives the key: it is dropped or a reserved string key,
+or a bound excludes it and, if an array could give it as an index, the store
+too. A symbol key the model's copy does not take, JavaScript's takes where
+the source owns it enumerable: only a bound says it never does. -/
 def Src.never : Src ι → List PropKey → PropKey → Bool
   | .prim, _, _ => true
-  | .obj o, d, k => d.contains k || !copiedKey k ||
+  | .obj o, d, k => d.contains k || (strKey k && !copiedKey k) ||
       (excludes o.bounds k && (!indexKey k || excludes o.bounds arrayStoreKey))
 
 /-- The source surely gives the key, at a value within `T`: its type names it. -/
@@ -539,13 +541,19 @@ theorem noStore_sound {G : NormalGraph ι} {T : List ι} (h : noStore G T = true
   | ctors L S => simp at hw
   | pack a bs => simp at hw
 
-/-- Whatever the source gives under a key the class `K` admits is within `T`:
-a symbol class admits none of the string keys a copy gives; otherwise the
-source owns no store whose elements it would give under index keys, and each
-key it copies is typed. -/
+/-- Whatever the source gives under a key the class `K` admits is within `T`.
+The symbol class admits none of the string keys the model's copy gives;
+JavaScript's copy also gives the source's own enumerable symbol-keyed
+properties, so the source's type says what it holds there, by a symbol index
+within `T` or by listing its keys, none a symbol. Otherwise the source owns no
+store whose elements it would give under index keys, and each key it copies
+is typed. -/
 def Src.classWithin (G : NormalGraph ι) : Src ι → List PropKey → IndexKeys → List ι → Bool
   | .prim, _, _, _ => true
-  | .obj o, d, K, T => K == .symbols ||
+  | .obj o, d, K, T => if K == .symbols then
+    o.indexes.any (fun x => x.1 == .symbols && inLabels x.2 T) ||
+      o.bounds.any (fun B => B.among && B.keys.all fun x => strKey x)
+    else
     (excludes o.bounds arrayStoreKey || o.indexes.any (fun x => x.1 == .strings && noStore G x.2)) &&
     o.named.all (fun p => !K.may p.1 || d.contains p.1 || !copiedKey p.1 || inLabels p.2 T) &&
     o.optional.all (fun q => !K.may q.key || d.contains q.key || !copiedKey q.key || inLabels q.type T) &&
@@ -607,7 +615,7 @@ theorem src_never {G : NormalGraph ι} {o : Obj ι} {n : Nat} {W : WorldT n} {fs
   by_cases hd : d.contains k = true
   · rw [if_pos hd]
   · rw [if_neg hd]
-    rcases hn with (hd' | hc) | ⟨hx, hi⟩
+    rcases hn with (hd' | ⟨-, hc⟩) | ⟨hx, hi⟩
     · exact absurd hd' hd
     · rw [if_neg (by simp [hc]), Option.map_none, Option.none_or]
       exact storeData_lookup_none (.inl (indexKey_of_not_copied hc))
@@ -788,9 +796,8 @@ theorem src_class {G : NormalGraph ι} {o : Obj ι} {p : Nat} {W : WorldT (p + 1
   by_cases hd : d.contains k = true
   · rw [if_pos hd] at hv; cases hv
   rw [if_neg hd] at hv
-  simp only [Src.classWithin, Bool.and_eq_true, List.all_eq_true, Bool.or_eq_true,
-    Bool.not_eq_true', List.any_eq_true, beq_iff_eq] at hc
-  rcases hc with hsym | ⟨⟨⟨hstore, hnamed⟩, hopt⟩, hroute⟩
+  simp only [Src.classWithin] at hc
+  by_cases hsym : K = .symbols
   · subst hsym
     cases k with
     | str s => exact absurd hk (by simp [IndexKeys.Admits])
@@ -798,7 +805,11 @@ theorem src_class {G : NormalGraph ι} {o : Obj ι} {p : Nat} {W : WorldT (p + 1
       rw [if_neg (by simp [copiedKey]), Option.map_none, Option.none_or,
         storeData_lookup_none (.inl rfl)] at hv
       cases hv
-  · have hnone : (storeData h fs).lookup k = none := by
+  · rw [if_neg (by simpa using hsym)] at hc
+    simp only [Bool.and_eq_true, List.all_eq_true, Bool.or_eq_true,
+      Bool.not_eq_true', List.any_eq_true, beq_iff_eq] at hc
+    obtain ⟨⟨⟨hstore, hnamed⟩, hopt⟩, hroute⟩ := hc
+    have hnone : (storeData h fs).lookup k = none := by
       rcases hstore with hx | ⟨x, hx, hstr, hns⟩
       · exact storeData_lookup_none (.inr (excludes_lookup (oid := 0) hx (fun K hK => hf.bounds K hK 0)))
       · unfold storeData
@@ -857,14 +868,16 @@ theorem src_class {G : NormalGraph ι} {o : Obj ι} {p : Nat} {W : WorldT (p + 1
 
 /-- A result key bound follows from the operands': listing keys, the
 accumulator's and the source's own keys are among them (the source owning no
-store, so no index); excluding keys, neither side gives one. -/
+store, so no index), a symbol key the source lists included, which
+JavaScript's copy takes where it is enumerable; excluding keys, neither side
+gives one. -/
 def boundOk (oa : Obj ι) (sb : Src ι) (d : List PropKey) (K : KeyBound) : Bool :=
   if K.among then
     (oa.bounds.any fun Ka => Ka.among && Ka.keys.all fun x => x == arrayStoreKey || K.admits x) &&
     (match sb with
      | .prim => true
      | .obj ob => ob.bounds.any fun Kb => Kb.among && !Kb.keys.contains arrayStoreKey &&
-         Kb.keys.all fun x => !copiedKey x || d.contains x || K.admits x)
+         Kb.keys.all fun x => (strKey x && !copiedKey x) || d.contains x || K.admits x)
   else K.keys.all fun x => oa.neverA x && sb.never d x
 
 /-- A merge result's fields, optional fields and key bounds. Each field is
@@ -880,22 +893,23 @@ def FieldsOk (d : List PropKey) (oa : Obj ι) (sb : Src ι) (fs : List (PropKey 
   (os.isEmpty || oa.neverA CallArguments.protoField) &&
   ks.all (boundOk oa sb d)
 
-/-- A merge result's index: views (`ds`) and writable ones (`cs`), all at one
-type `V`. Whatever either side gives under a key a class admits is within
-`V`, and the accumulator gives no prototype. A field or optional field whose
-key a class may admit is at a type within `V`, and exactly `V` where a
-writable index may admit it, whose locations hold exactly `V`. -/
+/-- A merge result's index: views (`ds`) and writable ones (`cs`), each at its
+type, two whose classes overlap at one type. Whatever either side gives under
+a key a class admits is within its type, and the accumulator gives no
+prototype. A field or optional field whose key a class may admit is at a
+type within that class's, and exactly it where a writable index may admit
+it, whose locations hold exactly that type. -/
 def DictOk (G : NormalGraph ι) (d : List PropKey) (oa : Obj ι) (sb : Src ι)
     (fs : List (PropKey × List ι)) (os : List (OptionalField (List ι)))
     (ds cs : List (IndexKeys × List ι)) : Bool :=
-  match (ds ++ cs).head? with
-  | none => false
-  | some (_, V) =>
-    oa.neverA CallArguments.protoField &&
-    (ds ++ cs).all (fun x => x.2 == V && oa.classWithinA x.1 V && sb.classWithin G d x.1 V) &&
-    fs.all (fun p => (!cs.any (·.1.may p.1) || p.2 == V) && (!ds.any (·.1.may p.1) || inLabels p.2 V)) &&
-    os.all (fun q => (!cs.any (·.1.may q.key) || q.type == V) &&
-      (!ds.any (·.1.may q.key) || inLabels q.type V))
+  !(ds ++ cs).isEmpty &&
+  oa.neverA CallArguments.protoField &&
+  (ds ++ cs).all (fun x => oa.classWithinA x.1 x.2 && sb.classWithin G d x.1 x.2) &&
+  (ds ++ cs).all (fun x => (ds ++ cs).all fun y => !x.1.overlaps y.1 || x.2 == y.2) &&
+  fs.all (fun p => cs.all (fun y => !y.1.may p.1 || p.2 == y.2) &&
+    ds.all (fun y => !y.1.may p.1 || inLabels p.2 y.2)) &&
+  os.all (fun q => cs.all (fun y => !y.1.may q.key || q.type == y.2) &&
+    ds.all (fun y => !y.1.may q.key || inLabels q.type y.2))
 
 /-- **A merge's result, clause by clause.** The accumulator is a plain object
 and the source a plain object or a value owning no enumerable property; the
@@ -937,16 +951,17 @@ theorem mem_of_lookup_slots {ns : List PropKey} {k : PropKey} {base l : Nat}
 
 open Classical in
 /-- The family a merge's allocation stores under an entry: the result's
-field type, or its optional field's, or the type of its index `ix` for a key
-one of the index's classes admits, or, for a key the result does not state,
-exactly the value copied. -/
+field type, or its optional field's, or the type of an index of `ix` whose
+class admits the key, or, for a key the result does not state, exactly the
+value copied. -/
 noncomputable def entryFam (G : NormalGraph ι) (fs : List (PropKey × List ι))
-    (os : List (OptionalField (List ι))) (ix : List IndexKeys × List ι) (e : PropKey × Tm) : Fam :=
+    (os : List (OptionalField (List ι))) (ix : List (IndexKeys × List ι)) (e : PropKey × Tm) : Fam :=
   match fs.lookup e.1 with
   | some T => meaning G T
   | none => match os.find? (·.key == e.1) with
     | some q => meaning G q.type
-    | none => if ∃ K ∈ ix.1, K.Admits e.1 then meaning G ix.2 else fun _ _ u => u = e.2
+    | none => if h : ∃ x ∈ ix, x.1.Admits e.1 then meaning G (Classical.choose h).2
+      else fun _ _ u => u = e.2
 
 omit [DecidableEq ι] in
 theorem entryFam_adm (G : NormalGraph ι) (fs os ix) (e : PropKey × Tm) : Adm (entryFam G fs os ix e) := by
@@ -1121,9 +1136,9 @@ theorem result_facts {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
             simp only [KeyBound.admits, hKa, hst]; rfl
           obtain ⟨hc, hd, hadm⟩ := hs.bound Kb hKb k w hq' hKa hstore
           have := hall k ((admits_among hKa).mp hadm)
-          simp only [Bool.or_eq_true, Bool.not_eq_true'] at this
+          simp only [Bool.or_eq_true, Bool.and_eq_true, Bool.not_eq_true'] at this
           rcases this with (h1 | h1) | h1
-          · rw [hc] at h1; cases h1
+          · rw [hc] at h1; cases h1.2
           · rw [hd] at h1; cases h1
           · exact h1
       | none =>
@@ -1176,7 +1191,8 @@ theorem key_unique {os : List (OptionalField (List ι))} (hnd : (os.map (·.key)
 reads the properties they own now and allocates them: the entries the result
 states at their types, the keys its index admits at the index's type, and
 every other at exactly the value copied. The result is a record (`cr` a
-`refs` clause) or a dictionary over the index `ds`, `cs` at `V`. -/
+`refs` clause) or a dictionary over the index `ds`, `cs`, each at its type,
+two that admit one key at one type. -/
 theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb : Src ι} {p : Nat}
     {W : WorldT (p + 1)} {h : Heap} {va vb : Val} {pa qs : List (PropKey × Tm)}
     (hadm : WorldAdm W) (hok : HeapOk (p + 1) W h) (hs : Sides G d oa sb p W pa qs)
@@ -1185,7 +1201,7 @@ theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
     (hparts : mergeParts h d va vb = some (mergeData pa qs))
     {R : List ι} {cr : Clause (List ι)} {fs : List (PropKey × List ι)}
     {os : List (OptionalField (List ι))} {ks : List KeyBound}
-    {ds cs : List (IndexKeys × List ι)} {V : List ι}
+    {ds cs : List (IndexKeys × List ι)}
     (hcr : cr ∈ expand G R)
     (hshape : cr = .refs fs [] [] os [] ks ∨ (cr = .dict fs [] [] ds os [] ks cs ∧ ds ++ cs ≠ []))
     (hnd : (fs.map Prod.fst ++ os.map (·.key)).Nodup)
@@ -1193,14 +1209,14 @@ theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
     (hos : ∀ q ∈ os, (oa.withinA q.key q.type && sb.within d q.key q.type) = true)
     (hpr : (os.isEmpty || oa.neverA CallArguments.protoField) = true)
     (hks : ∀ K ∈ ks, boundOk oa sb d K = true)
-    (hV : ∀ x ∈ ds ++ cs, x.2 = V)
+    (hov : ∀ x ∈ ds ++ cs, ∀ y ∈ ds ++ cs, ∀ k, x.1.Admits k → y.1.Admits k → x.2 = y.2)
     (hcls : ∀ x ∈ ds ++ cs, ∀ k v, x.1.Admits k → (mergeData pa qs).lookup k = some v →
-      meaning G V p (below W) v)
+      meaning G x.2 p (below W) v)
     (hnp : ds ++ cs ≠ [] → (mergeData pa qs).lookup CallArguments.protoField = none)
-    (hfd : ∀ q ∈ fs, (∀ x ∈ cs, x.1.Admits q.1 → q.2 = V) ∧
-      (∀ x ∈ ds, x.1.Admits q.1 → inLabels q.2 V = true))
-    (hod : ∀ q ∈ os, (∀ x ∈ cs, x.1.Admits q.key → q.type = V) ∧
-      (∀ x ∈ ds, x.1.Admits q.key → inLabels q.type V = true)) :
+    (hfd : ∀ q ∈ fs, (∀ x ∈ cs, x.1.Admits q.1 → q.2 = x.2) ∧
+      (∀ x ∈ ds, x.1.Admits q.1 → inLabels q.2 x.2 = true))
+    (hod : ∀ q ∈ os, (∀ x ∈ cs, x.1.Admits q.key → q.type = x.2) ∧
+      (∀ x ∈ ds, x.1.Admits q.key → inLabels q.type x.2 = true)) :
     Safe (meaning G R) (p + 1) W h (.merge d va vb) := by
   have hnodup := mergeData_nodup hpn hqn
   obtain ⟨hF, hO, hP, hK⟩ := result_facts hs hfs hos hpr hks
@@ -1211,7 +1227,7 @@ theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
     apply lookup_eq_none
     intro hm
     exact (List.nodup_append.mp hnd).2.2 _ hm _ (List.mem_map_of_mem hq) rfl
-  let ix : List IndexKeys × List ι := ((ds ++ cs).map Prod.fst, V)
+  let ix : List (IndexKeys × List ι) := ds ++ cs
   generalize mergeData pa qs = ps at hparts hnodup hF hO hP hK hcls hnp
   have hvals : ∀ v ∈ ps.map Prod.snd, isVal v = true := by
     intro v hv
@@ -1238,9 +1254,8 @@ theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
         simp only [entryFam, hT, hq]
         split
         · rename_i hadmits
-          obtain ⟨K, hK, hadmK⟩ := hadmits
-          obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hK
-          exact hcls x hx e.1 e.2 hadmK hl
+          obtain ⟨hx, hadmK⟩ := Classical.choose_spec hadmits
+          exact hcls _ hx e.1 e.2 hadmK hl
         · rfl
   refine Or.inr ⟨below W, h, .makeAt .absent (ps.map Prod.fst) (ps.map Prod.snd), WExt_refl _,
     WorldAdm_trunc _ hadm, Step.mergeV hva hvb hparts, HeapOk_trunc p W h hok, ?_⟩
@@ -1330,12 +1345,13 @@ theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
       exact ⟨hrefs, hviews, hopt, MethodMembers.methodT_nil _ _ _, hbounds⟩
     · simp only [semWithArgs]
       -- What a location under a key an index class admits holds: exactly
-      -- `V` where a writable index admits it, and within `V` in any case.
+      -- the type of a writable index admitting it, and within the index's
+      -- type in any case.
       have hkey : ∀ x ∈ ds ++ cs, ∀ f l, (slots h.length (ps.map Prod.fst)).lookup f = some l →
           x.1.Admits f → ∃ c : Ctr j, lookup U l = some c ∧
             ((∀ y ∈ cs, y.1.Admits f →
-                ∀ i (hi : i < j) (U' : WorldT i) u, c i hi U' u ↔ meaning G V i U' u) ∧
-             ∀ i (hi : i < j) (U' : WorldT i) u, c i hi U' u → meaning G V i U' u) := by
+                ∀ i (hi : i < j) (U' : WorldT i) u, c i hi U' u ↔ meaning G y.2 i U' u) ∧
+             ∀ i (hi : i < j) (U' : WorldT i) u, c i hi U' u → meaning G x.2 i U' u) := by
         intro x hx f l hl hxf
         obtain ⟨v, c, hv, hU, hag⟩ := hat f l hl
         refine ⟨c, hU, ?_⟩
@@ -1365,12 +1381,14 @@ theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
               · exact inLabels_sound (hq.2 x hx hxf) hc
               · rw [hq.1 x hx hxf] at hc; exact hc
           | none =>
-            have hfam : entryFam G fs os ix (f, v) = meaning G V := by
+            have hex : ∃ z ∈ ix, z.1.Admits f := ⟨x, hx, hxf⟩
+            obtain ⟨hz, hzf⟩ := Classical.choose_spec hex
+            have hfam : entryFam G fs os ix (f, v) = meaning G (Classical.choose hex).2 := by
               simp only [entryFam, hT, hf]
-              rw [if_pos ⟨x.1, List.mem_map_of_mem hx, hxf⟩]
+              rw [dif_pos hex]
             refine ⟨fun y hy hyf i hi U' u => ?_, fun i hi U' u hc => ?_⟩
-            · rw [hag i hi U' u, hfam]
-            · rw [hag i hi U' u, hfam] at hc; exact hc
+            · rw [hag i hi U' u, hfam, hov _ hz y (List.mem_append_right _ hy) f hzf hyf]
+            · rw [hag i hi U' u, hfam, hov _ hz x hx f hzf hxf] at hc; exact hc
       have hnoproto : (slots h.length (ps.map Prod.fst)).lookup CallArguments.protoField = none := by
         apply lookup_slots_none
         intro hm
@@ -1380,10 +1398,8 @@ theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
         fun x hx => ⟨_, _, rfl, hnoproto, fun f l hl hxf => ?_⟩⟩, hopt, MethodMembers.methodT_nil _ _ _,
         hbounds⟩
       · obtain ⟨c, hU, -, himp⟩ := hkey x (List.mem_append_left _ hx) f l hl hxf
-        rw [hV x (List.mem_append_left _ hx)]
         exact ⟨c, hU, himp⟩
       · obtain ⟨c, hU, hiff, -⟩ := hkey x (List.mem_append_right _ hx) f l hl hxf
-        rw [hV x (List.mem_append_right _ hx)]
         exact ⟨c, hU, hiff x hx hxf⟩
 
 /-- The conditions `FieldsOk` states, as `merge_finish` takes them. -/
@@ -1402,36 +1418,34 @@ theorem fieldsOk_facts {d : List PropKey} {oa : Obj ι} {sb : Src ι} {fs : List
 theorem dictOk_facts {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb : Src ι}
     {fs : List (PropKey × List ι)} {os : List (OptionalField (List ι))}
     {ds cs : List (IndexKeys × List ι)} (h : DictOk G d oa sb fs os ds cs = true) :
-    ∃ V, ds ++ cs ≠ [] ∧ oa.neverA CallArguments.protoField = true ∧
-      (∀ x ∈ ds ++ cs, x.2 = V ∧ oa.classWithinA x.1 V = true ∧ sb.classWithin G d x.1 V = true) ∧
-      (∀ q ∈ fs, (∀ x ∈ cs, x.1.Admits q.1 → q.2 = V) ∧
-        (∀ x ∈ ds, x.1.Admits q.1 → inLabels q.2 V = true)) ∧
-      (∀ q ∈ os, (∀ x ∈ cs, x.1.Admits q.key → q.type = V) ∧
-        (∀ x ∈ ds, x.1.Admits q.key → inLabels q.type V = true)) := by
-  unfold DictOk at h
-  split at h
-  · cases h
-  · rename_i K V hhead
-    simp only [Bool.and_eq_true, List.all_eq_true, Bool.or_eq_true, Bool.not_eq_true',
-      beq_iff_eq, List.any_eq_false] at h
-    obtain ⟨⟨⟨hnp, hix⟩, hfs⟩, hos⟩ := h
-    refine ⟨V, ?_, hnp, fun x hx => ?_, fun q hq => ⟨fun x hx hxa => ?_, fun x hx hxa => ?_⟩,
-      fun q hq => ⟨fun x hx hxa => ?_, fun x hx hxa => ?_⟩⟩
-    · intro he; rw [he] at hhead; cases hhead
-    · obtain ⟨⟨h1, h2⟩, h3⟩ := hix x hx
-      exact ⟨h1, h2, h3⟩
-    · rcases (hfs q hq).1 with h1 | h1
-      · exact absurd (IndexKeys.may_of_admits hxa) (by simpa using h1 x hx)
-      · exact h1
-    · rcases (hfs q hq).2 with h1 | h1
-      · exact absurd (IndexKeys.may_of_admits hxa) (by simpa using h1 x hx)
-      · exact h1
-    · rcases (hos q hq).1 with h1 | h1
-      · exact absurd (IndexKeys.may_of_admits hxa) (by simpa using h1 x hx)
-      · exact h1
-    · rcases (hos q hq).2 with h1 | h1
-      · exact absurd (IndexKeys.may_of_admits hxa) (by simpa using h1 x hx)
-      · exact h1
+    ds ++ cs ≠ [] ∧ oa.neverA CallArguments.protoField = true ∧
+      (∀ x ∈ ds ++ cs, oa.classWithinA x.1 x.2 = true ∧ sb.classWithin G d x.1 x.2 = true) ∧
+      (∀ x ∈ ds ++ cs, ∀ y ∈ ds ++ cs, ∀ k, x.1.Admits k → y.1.Admits k → x.2 = y.2) ∧
+      (∀ q ∈ fs, (∀ x ∈ cs, x.1.Admits q.1 → q.2 = x.2) ∧
+        (∀ x ∈ ds, x.1.Admits q.1 → inLabels q.2 x.2 = true)) ∧
+      (∀ q ∈ os, (∀ x ∈ cs, x.1.Admits q.key → q.type = x.2) ∧
+        (∀ x ∈ ds, x.1.Admits q.key → inLabels q.type x.2 = true)) := by
+  simp only [DictOk, Bool.and_eq_true, List.all_eq_true, Bool.or_eq_true,
+    beq_iff_eq, Bool.not_eq_eq_eq_not, Bool.not_true, List.isEmpty_eq_false_iff] at h
+  obtain ⟨⟨⟨⟨⟨hne, hnp⟩, hix⟩, hov⟩, hfs⟩, hos⟩ := h
+  refine ⟨hne, hnp, fun x hx => hix x hx, fun x hx y hy k hxk hyk => ?_,
+    fun q hq => ⟨fun x hx hxa => ?_, fun x hx hxa => ?_⟩,
+    fun q hq => ⟨fun x hx hxa => ?_, fun x hx hxa => ?_⟩⟩
+  · rcases hov x hx y hy with h1 | h1
+    · exact absurd (IndexKeys.overlaps_of_admits hxk hyk) (by simp [h1])
+    · exact h1
+  · rcases (hfs q hq).1 x hx with h1 | h1
+    · exact absurd (IndexKeys.may_of_admits hxa) (by simp [h1])
+    · exact h1
+  · rcases (hfs q hq).2 x hx with h1 | h1
+    · exact absurd (IndexKeys.may_of_admits hxa) (by simp [h1])
+    · exact h1
+  · rcases (hos q hq).1 x hx with h1 | h1
+    · exact absurd (IndexKeys.may_of_admits hxa) (by simp [h1])
+    · exact h1
+  · rcases (hos q hq).2 x hx with h1 | h1
+    · exact absurd (IndexKeys.may_of_admits hxa) (by simp [h1])
+    · exact h1
 
 /-- The two sides of a merge, read through their clauses. -/
 theorem merge_sides {G : NormalGraph ι} {d : List PropKey} {ca cb : Clause (List ι)}
@@ -1486,7 +1500,7 @@ theorem merge_values_safe {G : NormalGraph ι} {d : List PropKey} {A B R : List 
   · rename_i oa sb fs os ks hoa hsrc
     obtain ⟨pa, qs, hpn, hqn, hva, hvb, hparts, hs⟩ := merge_sides (d := d) hoa hsrc hok hsa hsb
     obtain ⟨hnd, hfs, hos, hpr, hks⟩ := fieldsOk_facts hmc
-    exact merge_finish (ds := []) (cs := []) (V := []) hadm hok hs hpn hqn hva hvb hparts hcr
+    exact merge_finish (ds := []) (cs := []) hadm hok hs hpn hqn hva hvb hparts hcr
       (.inl rfl) hnd hfs hos hpr hks (by simp) (by simp) (by simp)
       (fun _ _ => ⟨by simp, by simp⟩) (fun _ _ => ⟨by simp, by simp⟩)
   · rename_i oa sb fs ds os ks cs hoa hsrc
@@ -1494,18 +1508,18 @@ theorem merge_values_safe {G : NormalGraph ι} {d : List PropKey} {A B R : List 
     simp only [Bool.and_eq_true] at hmc
     obtain ⟨⟨hmf, hmd⟩, -⟩ := hmc
     obtain ⟨hnd, hfs, hos, hpr, hks⟩ := fieldsOk_facts hmf
-    obtain ⟨V, hne, hnp, hix, hfd, hod⟩ := dictOk_facts hmd
-    refine merge_finish (V := V) hadm hok hs hpn hqn hva hvb hparts hcr (.inr ⟨rfl, hne⟩) hnd hfs
-      hos hpr hks (fun x hx => (hix x hx).1) ?_ ?_ hfd hod
+    obtain ⟨hne, hnp, hix, hov, hfd, hod⟩ := dictOk_facts hmd
+    refine merge_finish hadm hok hs hpn hqn hva hvb hparts hcr (.inr ⟨rfl, hne⟩) hnd hfs
+      hos hpr hks hov ?_ ?_ hfd hod
     · intro x hx k v hk hv
       rw [lookup_mergeData] at hv
       cases hq : qs.lookup k with
       | some w =>
         rw [hq, Option.some_or] at hv; cases hv
-        exact hs.classB _ _ (hix x hx).2.2 k _ hk hq
+        exact hs.classB _ _ (hix x hx).2 k _ hk hq
       | none =>
         rw [hq, Option.none_or] at hv
-        exact hs.classA _ _ (hix x hx).2.1 k v hk hv
+        exact hs.classA _ _ (hix x hx).1 k v hk hv
     · intro _
       rw [lookup_mergeData, hs.proto, Option.none_or]
       exact hs.neverA _ hnp
@@ -1562,7 +1576,7 @@ def mergeResult (G : NormalGraph ι) (d : List PropKey) (ca cb : Clause (List ι
     | some Ka, .obj ob =>
       match ob.bounds.find? (fun K => K.among && !K.keys.contains arrayStoreKey) with
       | some Kb => [⟨true, (Ka.keys.filter (· != arrayStoreKey) ++
-          Kb.keys.filter (fun x => copiedKey x && !d.contains x)).eraseDups⟩]
+          Kb.keys.filter (fun x => (copiedKey x || !strKey x) && !d.contains x)).eraseDups⟩]
       | none => []
     | none, _ => []
   -- Without a prototype from the accumulator the result has none, which a
@@ -1571,19 +1585,25 @@ def mergeResult (G : NormalGraph ι) (d : List PropKey) (ca cb : Clause (List ι
     then [⟨false, [CallArguments.protoField]⟩] else bound
   let record : Clause (List ι) := .refs fields [] [] optional [] bound
   -- Where a side states an index, the result states one over the same
-  -- classes, writable, at what either side and the fields those classes may
-  -- admit hold, where the rule admits it; otherwise the record.
+  -- classes, writable, each at what either side and the fields the classes
+  -- overlapping it may admit hold, where the rule admits it; otherwise the
+  -- record.
   let bIndexes := match sb with | .prim => [] | .obj ob => ob.indexes
   let classes := (oa.indexes.map Prod.fst ++ bIndexes.map Prod.fst).eraseDups
   if classes.isEmpty then pure record else
-  let admitted (k : PropKey) := classes.any (·.may k)
-  let V := (oa.indexes.flatMap (·.2) ++ bIndexes.flatMap (·.2) ++
-    (fields.filter (admitted ·.1)).flatMap (·.2) ++
-    (optional.filter (admitted ·.key)).flatMap (·.type)).eraseDups
-  let ix := classes.map (·, V)
+  let admittedBy (K : IndexKeys) (k : PropKey) := (classes.filter (·.overlaps K)).any (·.may k)
+  let typeOf (K : IndexKeys) : List ι :=
+    ((oa.indexes.filter (·.1.overlaps K)).flatMap (·.2) ++
+      (bIndexes.filter (·.1.overlaps K)).flatMap (·.2) ++
+      (fields.filter (admittedBy K ·.1)).flatMap (·.2) ++
+      (optional.filter (admittedBy K ·.key)).flatMap (·.type)).eraseDups
+  let ix := classes.map fun K => (K, typeOf K)
+  let typeAt (k : PropKey) : Option (List ι) := (ix.find? (·.1.may k)).map (·.2)
   let dict : Clause (List ι) :=
-    .dict (fields.map fun (k, T) => if admitted k then (k, V) else (k, T)) [] [] ix
-      (optional.map fun q => if admitted q.key then { q with type := V } else q) []
+    .dict (fields.map fun (k, T) => (k, (typeAt k).getD T)) [] [] ix
+      (optional.map fun q => match typeAt q.key with
+        | some V => { q with type := V }
+        | none => q) []
       (bound.filter fun K => ix.all fun y => K.keeps y.1) ix
   pure (if MergeClause G d ca cb dict then dict else record)
 

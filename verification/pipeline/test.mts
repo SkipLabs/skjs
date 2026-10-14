@@ -592,6 +592,11 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
       `${file}: the actual source returns undefined despite its number contract`);
   assert.equal(runExample("native-sort-contracts", "noCoercion({ value: 7 })"), 7,
     "an explicit comparator never invokes the element's invalid conversion method");
+  // A spread copies an own enumerable symbol-keyed property, which a type
+  // stating no symbol key says nothing of.
+  assert.equal(runExample("invalid-object-spread-symbol-index", `const s = Symbol();
+    typeof open({ [s]: "x" })[s]`), "string",
+    "invalid-object-spread-symbol-index: the copy holds a string under a symbol its type says holds a number");
   // Object.assign writes a function's `name`, which is not writable: it throws.
   assert.throws(() => runExample("invalid-function-fields-inferred", "named()"), /read only property 'name'/);
   // A dictionary beside an array: TypeScript types its `length` `number`, and

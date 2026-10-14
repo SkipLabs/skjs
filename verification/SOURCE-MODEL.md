@@ -168,7 +168,9 @@ when it is evaluated
 instance's methods are its prototype's and are not copied, nor is an
 `Error`'s non-enumerable `message`. The model's copy takes string keys
 only, where JavaScript's also takes an own enumerable symbol-keyed property:
-a spread of a value whose type states a symbol key is refused, and the
+a spread of a value whose type states a symbol-keyed field is refused, the
+copy's type states symbol keys only as the source's type says JavaScript's
+copy gives them (a symbol index), and the
 [trust surface](DESIGN.md#trust-surface) states why no typed read observes the
 difference. A
 function's own enumerable properties are the fields its type states (a
@@ -180,8 +182,8 @@ key is the property its `ToString` spells, and a computed key naming a
 symbol's key; `__proto__`, any other computed key and accessors are refused. An object pattern's rest is the same copy less the
 named keys. Where a part is a dictionary and every part says what it gives
 under the index's keys, through an index or its exact keys, the result is a
-writable dictionary at what the parts give there; a spread of an open record
-meets no index. `Object.assign` is the same copy, onto a fresh literal or,
+writable dictionary at what the parts give there, the string and the symbol
+keys each at their own type; a spread of an open record meets no index. `Object.assign` is the same copy, onto a fresh literal or,
 as a statement, a local's own object, from sources whose types rule out an
 own `__proto__`, which it would set through the prototype's setter.
 

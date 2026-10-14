@@ -27,6 +27,13 @@ export function thenOptional(): { a?: string | number } {
   return { ...obj1, ...obj2 };
 }
 
+// The string and the symbol keys are apart, each index at its own type.
+type Entries = { [k: string]: number; [k: symbol]: unknown };
+export function both(a: Entries): Entries {
+  const copy: Entries = { ...a };
+  return copy;
+}
+
 // A key added to a local's own dictionary: its copy keeps the index.
 export function grow(): { [k: string]: number } {
   const d: { [k: string]: number } = {};
