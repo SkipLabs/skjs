@@ -77,7 +77,10 @@ export type Term =
   | { throw: { a: Term } }
   /** Allocate `a`'s fields and, over them, `b`'s own enumerable data
    * properties, but the keys in `drop` (an object literal's spread). */
-  | { merge: { drop: (string | { symbol: number })[]; a: Term; b: Term } };
+  | { merge: { drop: (string | { symbol: number })[]; a: Term; b: Term } }
+  /** Evaluate `key`, then `init`, then allocate one object owning one
+   * property at the key `key`'s value converts to, holding `init`'s value. */
+  | { makeKey: { key: Term; init: Term } };
 /** Every binary operator, as `Arith` in Calculus.lean names them. */
 const OPERATORS = ["add", "sub", "mul", "div", "pow", "xor", "rem", "lt", "le", "gt", "ge", "eq"] as const;
 /** Every tag, checked against `Tag`: adding one there and not here is a type
@@ -223,6 +226,7 @@ export function decodeTerm(value: unknown): Term {
     spread: ["a"],
     throw: ["a"],
     merge: ["drop", "a", "b"],
+    makeKey: ["key", "init"],
   };
   const keys = shape[key];
   if (!keys) throw Error("unknown term constructor");
@@ -310,6 +314,7 @@ const SHOW_TERM: { [K in TermKey]: (a: Args<K>) => string } = {
   arr: a => `store[${a.elems.map(e => (e === null ? "hole" : `ℓ${e}`)).join(", ")}]`,
   spread: a => `...${showTerm(a.a)}`,
   throw: a => `throw ${showTerm(a.a)}`,
+  makeKey: a => `makeKey(${showTerm(a.key)}, ${showTerm(a.init)})`,
   merge: a => `merge(${showTerm(a.a)}, ${showTerm(a.b)}${a.drop.length ? ` drop ${a.drop.map(d => (typeof d === "string" ? d : `sym#${d.symbol}`)).join(", ")}` : ""})`,
 };
 /** A term in the notation of commit records. */
