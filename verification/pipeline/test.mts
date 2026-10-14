@@ -597,6 +597,15 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   assert.equal(runExample("invalid-object-spread-symbol-index", `const s = Symbol();
     typeof open({ [s]: "x" })[s]`), "string",
     "invalid-object-spread-symbol-index: the copy holds a string under a symbol its type says holds a number");
+  // A spread of a string copies its code units at its indices; of a class
+  // value, its static fields.
+  assert.equal(runExample("spread-string-class", `JSON.stringify([afterSpread(), afterClass()])`),
+    '[{"a":""},{"x":1,"b":2}]', "spread-string-class: the copies JavaScript makes");
+  assert.equal(runExample("invalid-spread-string-index", `typeof overIndex("x")[0]`), "string",
+    "invalid-spread-string-index: the string's code unit overwrites the number under `0`");
+  assert.equal(runExample("invalid-spread-class-static", `class D { static a = "s"; }
+    typeof overStatic(D).a`), "string",
+    "invalid-spread-class-static: the class's static field overwrites the number under `a`");
   // A write at a string key known only at run time: `__proto__` runs the
   // prototype's setter where the object does not own the key, which with a
   // number changes nothing, and writes the property where it owns it; with an

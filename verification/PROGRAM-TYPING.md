@@ -1525,7 +1525,11 @@ $`\mathsf{Ref}(\varphi;\omega;\beta)`$ of $`R`$ is given by them
 (`ObjectMerge.MergeClause`): $`c_a`$ a record or dictionary, $`c_b`$ one too, a
 function clause (a function, or a callable object, whose own enumerable
 properties are the fields its bag states and whatever else was assigned to
-it, so it states no bound; `codeOf`), or a
+it, so it states no bound; `codeOf`), a class clause (a class value, whose
+own enumerable properties are its static fields, which its construct
+signatures do not state; `codeOf`), a string clause (a string, whose own
+enumerable properties are its code units, strings, under index keys, so it
+gives no other key; `Src.str`), or a
 clause of values owning no enumerable property (`null`, `undefined`,
 Booleans, numbers, bigints, symbols); each field $`(k{:}T)\in\varphi`$ surely
 given within $`T`$ by $`c_b`$, or by $`c_a`$ where whatever $`c_b`$ gives under $`k`$ is
@@ -1563,7 +1567,8 @@ store key, or a string index at a type no member of which is a list
 (`noStore`, since the store key `[]` is a string). For the symbol class, which
 admits no key the model's copy gives, $`c_b`$ says what JavaScript's copy gives
 there: a symbol index within $`V`$, or a bound listing its keys, none a
-symbol. A field or optional field of the
+symbol. A string source gives strings under its keys, so for another class
+$`V`$ holds every string. A field or optional field of the
 result whose key a class may admit is within that entry's $`V`$, and exactly
 it where a writable index's class may admit it, whose locations hold exactly
 $`V`$; and

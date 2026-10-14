@@ -179,7 +179,11 @@ type leaves open; a function the program creates owns none, its one field,
 which gives it an identity, being under a key no source spells. A numeric
 key is the property its `ToString` spells, and a computed key naming a
 `unique symbol` constant (`Symbol.iterator`, or one the program makes) is that
-symbol's key; `__proto__`, any other computed key and accessors are refused. An object pattern's rest is the same copy less the
+symbol's key; `__proto__`, any other computed key and accessors are refused.
+A string's own enumerable properties are its code units at its indices, which
+its copy takes; a class value's are its static fields, which the model holds
+as bindings, so its copy takes none, where JavaScript's takes them: a class's
+type states no key its copy gives, and the copy's type none of them. An object pattern's rest is the same copy less the
 named keys. Where a part is a dictionary and every part says what it gives
 under the index's keys, through an index or its exact keys, the result is a
 writable dictionary at what the parts give there, the string and the symbol

@@ -134,17 +134,22 @@ $\mathit{fs}$ but $\sigma$ at its value (the first entry of a key, as a read
 finds it); $\mathsf{data}_h(\mathsf{obj}(\mathit{fs},c))$, of an object with
 any call code $c$, is each string key of $\mathit{fs}$ but $\sigma$, $\pi$ and
 the code field $\kappa_{\mathsf{code}}$ at its value, then, for an array, each
-element under its index's decimal spelling; $\mathsf{data}_h$ of
+element under its index's decimal spelling; $\mathsf{data}_h$ of a string is
+each code unit, a one-unit string as `elemAt` reads it, under its index's
+decimal spelling, as JavaScript's string wrapper owns them enumerable
+(`stringData`); $\mathsf{data}_h$ of
 $\mathsf{null}$, $\mathsf{undefined}$, a Boolean, a number, a bigint or a symbol
 is empty; and $P\lhd Q$ keeps $P$'s entries whose key $Q$ lacks, then $Q$'s
-(`mergeParts`, `ownAll`, `ownData`, `mergeData`). A function the program
-creates holds one field, under $\kappa_{\mathsf{code}}$ (`codeField`, spelled
-`[[code]]`, which no source key spells), which gives it a location; a copy
-takes none of it, as JavaScript's function owns no enumerable property. A
+(`mergeParts`, `ownAll`, `ownData`, `mergeData`). A function or class the
+program creates holds one field, under $\kappa_{\mathsf{code}}$ (`codeField`,
+spelled `[[code]]`, which no source key spells), which gives it a location; a
+copy takes none of it, as JavaScript's function owns no enumerable property
+(a class's static fields are bindings of the model,
+[SOURCE-MODEL](SOURCE-MODEL.md#object-literals)). A
 value the heap lacks, or a term that is not a value there, reads as
-`undefined`, so the step never depends on one (`heapVal`). The step is stuck
-on a string. It allocates nothing itself; the `makeAt` it steps to does, as
-a literal's. Symbol-keyed fields are not read ([SOURCE-MODEL](SOURCE-MODEL.md#object-literals)).
+`undefined`, so the step never depends on one (`heapVal`). It allocates
+nothing itself; the `makeAt` it steps to does, as a literal's. Symbol-keyed
+fields are not read ([SOURCE-MODEL](SOURCE-MODEL.md#object-literals)).
 
 **Binary operators.** $a\mathbin{op}b$ (`Tm.arith`) evaluates $a$, then $b$
 (`arithC1`, `arithC2`), then takes one step where the operator answers for the

@@ -631,11 +631,13 @@ theorem step_preserves {h t h' t'} (step : Step h t h' t') :
     · simp only [Names, NamesArgs]
       exact ⟨ht.2.2, trivial⟩
   | @mergeV _ _ _ _ ps _ _ hp =>
-    -- The copied values are the heap's, or `undefined`.
+    -- The copied values are the heap's, `undefined` or strings.
     intro D hh ht
-    have hvs : ∀ p ∈ ps, TermOk D p.2 := fun p hp' =>
-      (mergeParts_vals hp p hp').elim (fun he => he ▸ ⟨trivial, trivial⟩)
-        (fun ⟨hm, _⟩ => (hh.2 _ hm).2)
+    have hvs : ∀ p ∈ ps, TermOk D p.2 := fun p hp' => by
+      rcases mergeParts_vals hp p hp' with he | ⟨hm, _⟩ | ⟨u, he⟩
+      · rw [he]; exact ⟨trivial, trivial⟩
+      · exact (hh.2 _ hm).2
+      · rw [he]; exact ⟨trivial, trivial⟩
     refine ⟨D,.refl D,hh,?_,?_⟩
     · simp only [Scoped, scopedArgs_iff, List.mem_map]
       rintro _ ⟨p, hp', rfl⟩

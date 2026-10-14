@@ -168,6 +168,9 @@ theorem mergeParts_store {h : List Tm} {d : List PropKey} {a b : Tm} {ps : List 
             exact index_key_not_store _
           · simp at he
         · simp at he
+    · cases hb
+      obtain ⟨q, -, rfl⟩ := List.mem_map.mp (mem_firstKeys he)
+      exact index_key_not_store _
     all_goals first | (simp at he; done) | (cases hb; simp at he; done) | (cases hb; done)
 
 /-- In a list naming each key once, an entry is what its key looks up. -/
@@ -247,6 +250,7 @@ theorem ownData_nodup {h : List Tm} {v : Tm} {qs : List (PropKey × Tm)} (hq : o
     (qs.map Prod.fst).Nodup := by
   unfold ownData at hq
   split at hq
+  · cases hq; exact firstKeys_nodup _
   · cases hq; exact firstKeys_nodup _
   all_goals (cases hq <;> simp)
 
@@ -395,12 +399,14 @@ theorem emptyClause_ownData {G : NormalGraph ι} {c : Clause (List ι)} (he : em
   · subst hv; exact ⟨rfl, rfl⟩
 
 
-/-- The part of a function clause a merge's source reads: a function's own
-enumerable properties are whatever was assigned to it, of which its type
-states the bag's fields, if any, and no bound. -/
+/-- The part of a function or class clause a merge's source reads: a
+function's own enumerable properties are whatever was assigned to it, of
+which its type states the bag's fields, if any, and no bound; a class's are
+its static fields, which its construct signatures do not state. -/
 def codeOf : Clause (List ι) → Option (Obj ι)
   | .arrs _ _ => some ⟨[], [], [], [], false⟩
   | .callable a bs _ _ => some ⟨(a :: bs).flatten, [], [], [], false⟩
+  | .ctors _ _ => some ⟨[], [], [], [], false⟩
   | _ => none
 
 omit [DecidableEq ι] in
@@ -435,15 +441,27 @@ theorem codeFacts_of_sem {G : NormalGraph ι} {c : Clause (List ι)} {o : Obj ι
     cases he
     exact ⟨l, c, hl, hc, fun j hj U u hu => (hag j hj U u).mp hu⟩
   · cases ho
+    obtain ⟨⟨⟨fs, n', E, K, s, caps, rest, oid, rfl, -⟩, -⟩, -⟩ := hv
+    exact ⟨fs, _, oid, rfl, ⟨fun p hp => by simp at hp, fun q hq => by simp at hq,
+      fun x hx => by simp at hx, fun K hK => by simp at hK, fun hp => by simp at hp⟩⟩
+  · cases ho
 
-/-- The source side of a merge: values owning no enumerable property, or an
-object, a plain one or a function. -/
+/-- The source side of a merge: values owning no enumerable property, a
+string, which owns its code units at its indices, or an object, a plain one,
+a function or a class. -/
 inductive Src (ι : Type) where
   | prim
+  | str
   | obj (o : Obj ι)
+
+/-- A clause of strings. -/
+def stringClause : Clause (List ι) → Bool
+  | .str | .strLit _ => true
+  | _ => false
 
 def srcOf (c : Clause (List ι)) : Option (Src ι) :=
   if emptyClause c then some .prim else
+  if stringClause c then some .str else
     match objOf c with
     | some o => some (.obj o)
     | none => (codeOf c).map .obj
@@ -454,17 +472,20 @@ too. A symbol key the model's copy does not take, JavaScript's takes where
 the source owns it enumerable: only a bound says it never does. -/
 def Src.never : Src ι → List PropKey → PropKey → Bool
   | .prim, _, _ => true
+  | .str, d, k => d.contains k || !indexKey k
   | .obj o, d, k => d.contains k || (strKey k && !copiedKey k) ||
       (excludes o.bounds k && (!indexKey k || excludes o.bounds arrayStoreKey))
 
 /-- The source surely gives the key, at a value within `T`: its type names it. -/
 def Src.sure : Src ι → List PropKey → PropKey → List ι → Bool
   | .prim, _, _, _ => false
+  | .str, _, _, _ => false
   | .obj o, d, k, T => !d.contains k && copiedKey k && o.named.any fun p => p.1 == k && inLabels p.2 T
 
 /-- Whatever the source gives under the key is within `T`. -/
 def Src.within : Src ι → List PropKey → PropKey → List ι → Bool
   | .prim, _, _, _ => true
+  | .str, d, k, _ => (Src.str : Src ι).never d k
   | .obj o, d, k, T => (Src.obj o).never d k || (Src.obj o).sure d k T ||
       ((o.optional.any fun q => q.key == k && inLabels q.type T) ||
         (o.indexes.any fun x => x.1.surely k && inLabels x.2 T)) &&
@@ -498,6 +519,17 @@ def Obj.classWithinA (o : Obj ι) (K : IndexKeys) (T : List ι) : Bool :=
   (o.indexes.any (fun x => K.within x.1 && inLabels x.2 T) ||
    o.bounds.any fun B => B.among && B.keys.all fun x =>
      !K.may x || x == arrayStoreKey || o.named.any (·.1 == x) || o.optional.any (·.key == x))
+
+/-- A type holding every string: one of its clauses is the string family. -/
+def strIn (G : NormalGraph ι) (T : List ι) : Bool :=
+  (expand G T).any fun c => match c with | .str => true | _ => false
+
+omit [DecidableEq ι] in
+theorem strIn_sound {G : NormalGraph ι} {T : List ι} (h : strIn G T = true) (n : Nat) (W : WorldT n)
+    (u : String) : meaning G T n W (.str u) := by
+  obtain ⟨c, hc, hs⟩ := List.any_eq_true.mp h
+  cases c <;> simp at hs
+  exact expand_sem_mpr ⟨.str, expand_sub hc, ⟨u, rfl⟩, realmInvariant_of_not_record rfl _ _ _⟩
 
 /-- A type none of whose members is an array's store: every clause is a
 primitive's or a plain object's. A string index at such a type rules out the
@@ -550,6 +582,7 @@ store whose elements it would give under index keys, and each key it copies
 is typed. -/
 def Src.classWithin (G : NormalGraph ι) : Src ι → List PropKey → IndexKeys → List ι → Bool
   | .prim, _, _, _ => true
+  | .str, _, K, T => K == .symbols || strIn G T
   | .obj o, d, K, T => if K == .symbols then
     o.indexes.any (fun x => x.1 == .symbols && inLabels x.2 T) ||
       o.bounds.any (fun B => B.among && B.keys.all fun x => strKey x)
@@ -876,6 +909,7 @@ def boundOk (oa : Obj ι) (sb : Src ι) (d : List PropKey) (K : KeyBound) : Bool
     (oa.bounds.any fun Ka => Ka.among && Ka.keys.all fun x => x == arrayStoreKey || K.admits x) &&
     (match sb with
      | .prim => true
+     | .str => false
      | .obj ob => ob.bounds.any fun Kb => Kb.among && !Kb.keys.contains arrayStoreKey &&
          Kb.keys.all fun x => (strKey x && !copiedKey x) || d.contains x || K.admits x)
   else K.keys.all fun x => oa.neverA x && sb.never d x
@@ -984,7 +1018,7 @@ structure Sides (G : NormalGraph ι) (d : List PropKey) (oa : Obj ι) (sb : Src 
   sure : ∀ k T, sb.sure d k T = true → ∃ v, qs.lookup k = some v ∧ meaning G T p (below W) v
   within : ∀ k T, sb.within d k T = true → ∀ v, qs.lookup k = some v → meaning G T p (below W) v
   /-- A key the source gives is one it copied, not dropped, or an index. -/
-  bound : ∀ K ∈ (match sb with | .prim => [] | .obj ob => ob.bounds),
+  bound : ∀ K ∈ (match sb with | .prim | .str => [] | .obj ob => ob.bounds),
     ∀ k v, qs.lookup k = some v → K.among = true → K.admits arrayStoreKey = false →
       copiedKey k = true ∧ d.contains k = false ∧ K.admits k = true
   /-- A key the accumulator gives is its own, not the store. -/
@@ -1067,6 +1101,61 @@ theorem sides_prim {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {p : Na
   classA _ _ hc _ _ hk hv := acc_class hfa hok hp hc hk hv
   classB _ _ _ _ _ _ hv := by simp [List.lookup] at hv
 
+/-- What a string's copy gives under a key: a code unit, a string, at an
+index key. -/
+theorem stringData_lookup {s : String} {d : List PropKey} {k : PropKey} {v : Tm}
+    (hv : ((firstKeys (stringData s)).filter fun e => !d.contains e.1).lookup k = some v) :
+    indexKey k = true ∧ d.contains k = false ∧ ∃ u, v = .str u := by
+  have hm := List.mem_filter.mp (mem_of_lookup hv)
+  obtain ⟨q, -, he⟩ := List.mem_map.mp (mem_firstKeys hm.1)
+  simp only [Prod.mk.injEq] at he
+  obtain ⟨rfl, rfl⟩ := he
+  exact ⟨indexKey_toString _, by simpa using hm.2, _, rfl⟩
+
+/-- A string source gives its code units, each a string, at its index keys. -/
+theorem sides_str {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {p : Nat} {W : WorldT (p + 1)}
+    {fa : List (PropKey × Nat)} (hfa : ObjFacts G oa (p + 1) W fa)
+    {h : Heap} (hok : HeapOk (p + 1) W h) {pa : List (PropKey × Tm)}
+    (hp : ownAll h (.objAt fa .absent oid) = some pa) (s : String) :
+    Sides G d oa .str p W pa ((firstKeys (stringData s)).filter fun e => !d.contains e.1) where
+  neverA _ hn := acc_never hfa hp hn
+  sureA _ _ hs := acc_sure hfa hok hp hs
+  withinA _ _ hs _ hv := acc_within hfa hok hp hs hv
+  never k hn := by
+    cases hv : ((firstKeys (stringData s)).filter fun e => !d.contains e.1).lookup k with
+    | none => rfl
+    | some v =>
+      obtain ⟨hi, hd, -⟩ := stringData_lookup hv
+      simp only [Src.never, hi, Bool.not_true, Bool.or_false] at hn
+      rw [hd] at hn; cases hn
+  sure _ _ hs := by simp [Src.sure] at hs
+  within k _ hs v hv := by
+    obtain ⟨hi, hd, -⟩ := stringData_lookup hv
+    simp only [Src.within, Src.never, hi, Bool.not_true, Bool.or_false] at hs
+    rw [hd] at hs; cases hs
+  bound _ hK := by simp at hK
+  boundA K hK k v hv := by
+    rw [ownAll_lookup hp] at hv
+    by_cases hk : (k != arrayStoreKey) = true
+    · rw [if_pos hk] at hv
+      cases hl : fa.lookup k with
+      | none => rw [hl] at hv; cases hv
+      | some l => exact ⟨by simpa using hk, ownKeysT_admits (hfa.bounds K hK 0) hl⟩
+    · rw [if_neg hk] at hv; cases hv
+  proto := by
+    cases hv : ((firstKeys (stringData s)).filter fun e => !d.contains e.1).lookup CallArguments.protoField with
+    | none => rfl
+    | some v => exact absurd (stringData_lookup hv).1 (by rw [proto_not_index]; decide)
+  classA _ _ hc _ _ hk hv := acc_class hfa hok hp hc hk hv
+  classB K T hc k v hk hv := by
+    obtain ⟨hi, -, u, rfl⟩ := stringData_lookup hv
+    simp only [Src.classWithin, Bool.or_eq_true, beq_iff_eq] at hc
+    rcases hc with rfl | hc
+    · cases k with
+      | str s => exact absurd hk (by simp [IndexKeys.Admits])
+      | sym i => simp [indexKey] at hi
+    · exact strIn_sound hc _ _ u
+
 theorem admits_among {K : KeyBound} (ha : K.among = true) {k : PropKey} :
     K.admits k = true ↔ k ∈ K.keys := by
   simp [KeyBound.admits, ha]
@@ -1128,6 +1217,7 @@ theorem result_facts {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
       | some w =>
         cases sb with
         | prim => rw [hs.never k rfl] at hq'; cases hq'
+        | str => cases hB
         | obj ob =>
           obtain ⟨Kb, hKb, hbits⟩ := List.any_eq_true.mp hB
           simp only [Bool.and_eq_true, Bool.not_eq_true', List.all_eq_true] at hbits
@@ -1232,9 +1322,10 @@ theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
   have hvals : ∀ v ∈ ps.map Prod.snd, isVal v = true := by
     intro v hv
     obtain ⟨e, he, rfl⟩ := List.mem_map.mp hv
-    rcases mergeParts_vals hparts e he with h1 | ⟨-, h2⟩
+    rcases mergeParts_vals hparts e he with h1 | ⟨-, h2⟩ | ⟨u, h3⟩
     · rw [h1]; rfl
     · exact h2
+    · rw [h3]; rfl
   -- The family an entry's location is given, and why its value meets it.
   have hfam : ∀ e ∈ ps, entryFam G fs os ix e p (below W) e.2 := by
     intro e he
@@ -1465,7 +1556,21 @@ theorem merge_sides {G : NormalGraph ι} {d : List PropKey} {ca cb : Clause (Lis
     obtain ⟨hq, hvb⟩ := emptyClause_ownData hempty hsb h
     exact ⟨_, [], ownAll_nodup hp, by simp, rfl, hvb, by simp [mergeParts, hp, hq],
       sides_prim hfa hok hp⟩
-  · -- A plain object or a function: an object whose own fields the copy reads.
+  split at hsrc
+  · rename_i hne hstr
+    cases hsrc
+    -- A string: its code units at its indices.
+    have hs : ∃ s, vb = .str s := by
+      obtain ⟨hsb, -⟩ := hsb
+      cases cb <;> simp [stringClause] at hstr
+      · obtain ⟨s, rfl⟩ := hsb; exact ⟨s, rfl⟩
+      · rename_i s; simp only [semWithArgs] at hsb; exact ⟨s, hsb⟩
+    obtain ⟨s, rfl⟩ := hs
+    have hq : ownData h (.str s) = some (firstKeys (stringData s)) := rfl
+    exact ⟨_, _, ownAll_nodup hp,
+      (ownData_nodup hq).sublist (List.Sublist.map _ List.filter_sublist), rfl, rfl,
+      by simp [mergeParts, hp, hq], sides_str hfa hok hp s⟩
+  · -- A plain object, a function or a class: an object whose own fields the copy reads.
     have hfacts : ∃ ob fb code oidb, sb = .obj ob ∧ vb = .objAt fb code oidb ∧ ObjFacts G ob (p + 1) W fb := by
       split at hsrc
       · rename_i ob hob
@@ -1549,13 +1654,13 @@ def mergeResult (G : NormalGraph ι) (d : List PropKey) (ca cb : Clause (List ι
     Option (Clause (List ι)) := do
   let oa ← objOf ca
   let sb ← srcOf cb
-  let bKeys := match sb with | .prim => [] | .obj ob => ob.keys
+  let bKeys := match sb with | .prim | .str => [] | .obj ob => ob.keys
   let keys := (oa.keys ++ bKeys).eraseDups.filter (· != arrayStoreKey)
   let bNamed (k : PropKey) : Option (List ι) := match sb with
-    | .prim => none
+    | .prim | .str => none
     | .obj ob => if !d.contains k && copiedKey k then ob.namedType k else none
   let bMaybe (k : PropKey) : List ι := match sb with
-    | .prim => []
+    | .prim | .str => []
     | .obj ob => if !d.contains k && copiedKey k then ob.maybeTypes k else []
   let fields := keys.filterMap fun k =>
     match bNamed k with
@@ -1578,6 +1683,7 @@ def mergeResult (G : NormalGraph ι) (d : List PropKey) (ca cb : Clause (List ι
       | some Kb => [⟨true, (Ka.keys.filter (· != arrayStoreKey) ++
           Kb.keys.filter (fun x => (copiedKey x || !strKey x) && !d.contains x)).eraseDups⟩]
       | none => []
+    | some _, .str => []
     | none, _ => []
   -- Without a prototype from the accumulator the result has none, which a
   -- later merge's optional fields need.
@@ -1588,7 +1694,7 @@ def mergeResult (G : NormalGraph ι) (d : List PropKey) (ca cb : Clause (List ι
   -- classes, writable, each at what either side and the fields the classes
   -- overlapping it may admit hold, where the rule admits it; otherwise the
   -- record.
-  let bIndexes := match sb with | .prim => [] | .obj ob => ob.indexes
+  let bIndexes := match sb with | .prim | .str => [] | .obj ob => ob.indexes
   let classes := (oa.indexes.map Prod.fst ++ bIndexes.map Prod.fst).eraseDups
   if classes.isEmpty then pure record else
   let admittedBy (K : IndexKeys) (k : PropKey) := (classes.filter (·.overlaps K)).any (·.may k)

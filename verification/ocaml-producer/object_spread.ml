@@ -18,7 +18,8 @@ let empty_alternative = { afields=[]; exact=true; index=None; symbols=None }
 let method_field (f:Semantic.field) = f.host
 
 (* The alternatives a spread's operand gives: nothing from a primitive other
-   than a string, a record's fields otherwise. *)
+   than a string, a record's fields otherwise, and no key a string's or a
+   class's copy gives. *)
 let string_key (f:Semantic.field) = match f.name with Name _ -> true | Key _ -> false
 let rec source_alternatives declarations seen t = match t with
   | Atoms atoms -> List.concat_map (function
@@ -41,10 +42,10 @@ let rec source_alternatives declarations seen t = match t with
       | Named (id,args) ->
         if List.mem id seen then Proposal_diagnostics.unsupported "unguarded spread cycle";
         source_alternatives declarations (id::seen) (definition declarations id args)
-      (* Each other operand's own enumerable properties are not what its
-         type bounds. *)
-      | Str | StrLit _ -> Proposal_diagnostics.unsupported "a spread copies the own enumerable properties of a plain object; \
-          a string's are its characters at index keys, which no record states"
+      (* A string's own enumerable properties are its code units at its
+         index keys, and a class value's its static fields, which its construct
+         signatures do not state: the copy's type states none of their keys. *)
+      | Str | StrLit _ | Ctors _ | Callable -> [{empty_alternative with exact=false}]
       | Shape {elements=Some _;_} -> Proposal_diagnostics.unsupported "a spread copies the own enumerable properties of a plain object; \
           an array's are its indices and whatever keys it carries, which no record states"
       (* A function's own enumerable properties are whatever was assigned to
@@ -53,10 +54,8 @@ let rec source_alternatives declarations seen t = match t with
         [{afields=List.filter (fun (f:Semantic.field) ->
             not (method_field f) && f.name <> Name proto_key && string_key f) fields;exact=false;index=None;
           symbols=None}]
-      | Shape _ | Callable -> Proposal_diagnostics.unsupported "a spread copies the own enumerable properties of a plain object; \
-          a value that may be a class, or a function with an index signature, owns what its type does not state"
-      | Ctors _ -> Proposal_diagnostics.unsupported "a spread copies the own enumerable properties of a plain object; \
-          a class value's are its static fields, which its construct signatures do not state"
+      | Shape _ -> Proposal_diagnostics.unsupported "a spread copies the own enumerable properties of a plain object; \
+          a function with an index signature owns what its type does not state"
       | _ -> Proposal_diagnostics.unsupported "a spread copies the own enumerable properties of a plain object; one of a string, an array, a function or a class value is outside the fragment") atoms
   | Union ts -> List.concat_map (source_alternatives declarations seen) ts
   | Meet _ | Rigid _ -> Proposal_diagnostics.unsupported "a spread of an intersection or a type parameter is outside the fragment"

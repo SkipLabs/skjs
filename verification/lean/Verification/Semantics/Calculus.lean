@@ -1508,14 +1508,21 @@ def storeData (h : List Tm) (fs : List (PropKey × Nat)) : List (PropKey × Tm) 
     | _ => []
   | none => []
 
+/-- A string's own enumerable properties: each code unit, a one-unit string,
+under its index's decimal spelling (`unitString`, as `elemAt` reads it); its
+`length` is not enumerable. -/
+def stringData (s : String) : List (PropKey × Tm) :=
+  (utf16Units s).zipIdx.map fun p => (.str (toString p.2), .str (unitString p.1))
+
 /-- The own enumerable data properties a spread copies from a value: an
-object's copied fields, a function's included, then an array's elements;
-nothing from `null`, `undefined`, a Boolean, a number, a bigint or a symbol,
-whose wrappers own no enumerable property. A string (its code units) is not
-copied here: the copy is stuck, and no typing rule admits one. -/
+object's copied fields, a function's included, then an array's elements; a
+string's code units at their indices; nothing from `null`, `undefined`, a
+Boolean, a number, a bigint or a symbol, whose wrappers own no enumerable
+property. -/
 def ownData (h : List Tm) : Tm → Option (List (PropKey × Tm))
   | .objAt fs _ _ => some (firstKeys
       ((fs.filter (copiedKey ·.1)).map (fun p => (p.1, heapVal h p.2)) ++ storeData h fs))
+  | .str s => some (firstKeys (stringData s))
   | .nul | .undef | .tru | .fls | .num _ | .bigint _ | .sym _ => some []
   | _ => none
 
@@ -1606,38 +1613,43 @@ theorem mem_mergeData {a b : List (PropKey × Tm)} {p : PropKey × Tm}
   · exact .inl (List.mem_filter.mp h).1
   · exact .inr h
 
-/-- Every value a merge allocates is `undefined` or a value the heap holds. -/
+/-- Every value a merge allocates is `undefined`, a value the heap holds, or
+a string, a code unit a string source gives. -/
 theorem mergeParts_vals {h : List Tm} {d : List PropKey} {a b : Tm} {ps : List (PropKey × Tm)}
     (hp : mergeParts h d a b = some ps) :
-    ∀ p ∈ ps, p.2 = .undef ∨ (p.2 ∈ h ∧ isVal p.2 = true) := by
+    ∀ p ∈ ps, p.2 = .undef ∨ (p.2 ∈ h ∧ isVal p.2 = true) ∨ ∃ u, p.2 = .str u := by
   simp only [mergeParts, Option.bind_eq_bind, Option.bind_eq_some_iff] at hp
   obtain ⟨pa, ha, qb, hb, he⟩ := hp
   cases he
   intro p hp
-  have hA : ∀ p ∈ pa, p.2 = .undef ∨ (p.2 ∈ h ∧ isVal p.2 = true) := by
+  have hA : ∀ p ∈ pa, p.2 = .undef ∨ (p.2 ∈ h ∧ isVal p.2 = true) ∨ ∃ u, p.2 = .str u := by
     unfold ownAll at ha
     split at ha
     · cases ha
       intro p hp
       obtain ⟨r, -, rfl⟩ := List.mem_map.mp (mem_firstKeys hp)
-      exact heapVal_mem h r.2
+      exact (heapVal_mem h r.2).imp_right .inl
     · cases ha
-  have hB : ∀ p ∈ qb, p.2 = .undef ∨ (p.2 ∈ h ∧ isVal p.2 = true) := by
+  have hB : ∀ p ∈ qb, p.2 = .undef ∨ (p.2 ∈ h ∧ isVal p.2 = true) ∨ ∃ u, p.2 = .str u := by
     unfold ownData at hb
     split at hb
     · cases hb
       intro p hp
       rcases List.mem_append.mp (mem_firstKeys hp) with hp | hp
       · obtain ⟨r, -, rfl⟩ := List.mem_map.mp hp
-        exact heapVal_mem h r.2
+        exact (heapVal_mem h r.2).imp_right .inl
       · unfold storeData at hp
         split at hp
         · split at hp
           · obtain ⟨r, -, hr⟩ := List.mem_filterMap.mp hp
             obtain ⟨m, -, rfl⟩ := Option.map_eq_some_iff.mp hr
-            exact heapVal_mem h m
+            exact (heapVal_mem h m).imp_right .inl
           · simp at hp
         · simp at hp
+    · cases hb
+      intro p hp
+      obtain ⟨q, -, rfl⟩ := List.mem_map.mp (mem_firstKeys hp)
+      exact .inr (.inr ⟨_, rfl⟩)
     all_goals (cases hb <;> (intro p hp; simp at hp))
   rcases mem_mergeData hp with hp | hp
   · exact hA p hp

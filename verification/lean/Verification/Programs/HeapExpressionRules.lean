@@ -692,9 +692,10 @@ theorem merge_alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W h
         case vals =>
           intro v hv
           obtain ⟨e, hm, rfl⟩ := List.mem_map.mp hv
-          rcases mergeParts_vals hparts e hm with h1 | ⟨-, h2⟩
+          rcases mergeParts_vals hparts e hm with h1 | ⟨-, h2⟩ | ⟨u, h3⟩
           · rw [h1]; rfl
           · exact h2
+          · rw [h3]; rfl
 
 /-- An allocation at a computed key, of two values, allocates a fresh
 object: what was known of the heap stays known, and the new object's field is
