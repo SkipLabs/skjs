@@ -104,7 +104,7 @@ representation cannot state it yet; the paths are in
 | `o.m?.()` | It would call the tested value with a receiver the lowering does not save. |
 | A generator function (`function*`); `for await` | A body suspended at `yield` is no term of the calculus; an async iterator's steps are promises the model does not adopt. |
 | An array literal spread (`[...xs]`) other than the one element over a program's or a host's iterable | No literal lowering takes a spread. |
-| A library global both constructed and read through members, or both called and read through a method (`new Date()` beside `Date.now()`, `Symbol()` beside `Symbol.for`); an object type with construct signatures and other members | A class value or callable object with members has no clause. |
+| A library global both constructed and read through members, or both called and read through a method (`new Date()` beside `Date.now()`), other than members the overlay reads as intrinsics (`Symbol.for`, `Symbol.keyFor`); an object type with construct signatures and other members | A class value or callable object with members has no clause. |
 | Any library signature the overlays do not list (`Math.random`, `concat`) | Not reviewed; nothing is trusted by default. |
 | A non-library global read other than through a member or a call (`const p = process`) | A global is assumed at the members and calls its references select; a read of the value selects none. |
 | A module function without a result annotation | Its slot is its annotated signature, at which its unit is checked and every call reads it. |

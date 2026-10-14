@@ -23,7 +23,8 @@
  * A global declared outside the standard library, such as Node's `process`,
  * is read as its declaration states, member by member (`selectGlobal`). */
 import type { DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaration-types.mts";
-import { asyncCompleteName, promiseResolveName, newPromiseName, promiseAllName, promiseRejectName } from "./intrinsics.mts";
+import { asyncCompleteName, promiseResolveName, newPromiseName, promiseAllName, promiseRejectName, symbolForName,
+  symbolKeyForName } from "./intrinsics.mts";
 
 type AtomName = Extract<TypeTerm, { k: "atom" }>["name"];
 
@@ -107,8 +108,12 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // A new symbol whose description is the argument converted to a string,
   // which a string or number never fails.
   { global: "Symbol", signature: "(description?: string | number): symbol;" },
-  { global: "Symbol", member: "for", signature: "for(key: string): symbol;" },
-  { global: "Symbol", member: "keyFor", signature: "keyFor(sym: symbol): string | undefined;" },
+  // The registry's members, which read no receiver: each call is a call of
+  // the intrinsic stating its step, so `Symbol` called and read through them
+  // is a callable value of its call signature alone.
+  { global: "Symbol", member: "for", signature: "for(key: string): symbol;", intrinsic: symbolForName },
+  { global: "Symbol", member: "keyFor", signature: "keyFor(sym: symbol): string | undefined;",
+    intrinsic: symbolKeyForName },
   // The well-known symbols, each a symbol: stated at `symbol`, since the
   // reader has no `unique symbol` type of a library property. Which symbol
   // each is, a key the library's types use, is not read.

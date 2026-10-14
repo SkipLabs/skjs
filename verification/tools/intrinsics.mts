@@ -69,7 +69,11 @@
  * `%PromiseReject%(r)`, a promise rejected with `r`, whose await throws, and
  * `new Promise(executor)` is `%NewPromise%(executor)`: the executor is
  * called at once with the promise's resolving functions, and resolving
- * settles the promise to a primitive. */
+ * settles the promise to a primitive. `Symbol.for(k)` is `%SymbolFor%(k)`,
+ * the registry's symbol for the string `k`, and `Symbol.keyFor(s)` is
+ * `%SymbolKeyFor%(s)`, the string the registry holds `s` under, or
+ * `undefined`: neither reads its receiver, and a string or a symbol argument
+ * converts without running code. */
 import { join } from "node:path";
 import type { SourceTypeParameter, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import { resolutionSlots } from "./type-term.mts";
@@ -100,6 +104,8 @@ export const elementAtName = "%ElementAt%";
 export const promiseAllName = "%PromiseAll%";
 export const promiseRejectName = "%PromiseReject%";
 export const newPromiseName = "%NewPromise%";
+export const symbolForName = "%SymbolFor%";
+export const symbolKeyForName = "%SymbolKeyFor%";
 
 type Signature = Extract<TypeTerm, { k: "function" }>;
 type AtomName = Extract<TypeTerm, { k: "atom" }>["name"];
@@ -294,6 +300,8 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
       type: fn([atom("unknown")], { k: "array", presence: "readable", readonly: true, element: atom("string"), span }) }),
     [hasPropertyName]: () => ({ typeParams: [],
       type: fn([either(atom("string"), atom("number"), atom("symbol")), atom("object")], atom("boolean")) }),
+    [symbolForName]: () => ({ typeParams: [], type: fn([atom("string")], atom("symbol")) }),
+    [symbolKeyForName]: () => ({ typeParams: [], type: fn([atom("symbol")], either(atom("string"), atom("undefined"))) }),
     [elementAtName]: () => ({ typeParams: [{ name: "T", bound: null, resolution: null }],
       type: fn([{ k: "array", presence: "readable", readonly: true, element: binder, span }, atom("number")],
         either(binder, atom("undefined"))) }),

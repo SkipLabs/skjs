@@ -175,7 +175,8 @@ The inclusion is why the rule assumes no more than the declaration: a record
 says nothing of keys it does not name, a method's receiver is its host, and a
 `this` result is the host. A declaration's `any` is read as `unknown`. A
 global both called and read through a method, or both constructed and read
-through members, has no clause and is refused. A standard library global is
+through members, has no clause and is refused, unless the overlay reads those
+members as intrinsics. A standard library global is
 read through the reviewed overlay ([Library globals](#library-globals)).
 
 In the SKJS test environment a bare import specifier resolves to SKJS's stub
@@ -1169,7 +1170,16 @@ a call of an [intrinsic](#async-functions-and-await) stating the same step
 
 `Promise.resolve(v)` is `%PromiseResolve%(v)`, `Promise.resolve()` is
 `%AsyncComplete%()`, `Promise.all` is `%PromiseAll%`, `Promise.reject` is
-`%PromiseReject%` and `new Promise` is `%NewPromise%`.
+`%PromiseReject%` and `new Promise` is `%NewPromise%`. `Symbol.for(k)` is
+`%SymbolFor%(k)` and `Symbol.keyFor(s)` is `%SymbolKeyFor%(s)`, members that
+read no receiver; so `Symbol` called and read through them is a value of its
+call signature alone, a fresh symbol of a string or number description:
+
+```math
+\%\mathrm{SymbolFor}\%:(\mathsf{string})\Rightarrow\mathsf{symbol}
+\qquad
+\%\mathrm{SymbolKeyFor}\%:(\mathsf{symbol})\Rightarrow\mathsf{string}\mid\mathsf{undefined}
+```
 
 **Symbol keys.** A computed key `[k]`, in a type, a literal or a read,
 names a `const k: unique symbol` (or a readonly property so declared), and
