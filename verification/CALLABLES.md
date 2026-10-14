@@ -1094,10 +1094,12 @@ the outer assignment. These are rules for quantified invocation contracts, not
 unrestricted generalization of an effectful allocation expression. One
 callable value and one captured world satisfy every admissible assignment,
 while elimination selects a signature only afterwards. A generic closure is
-graph code at a scheme row (**funScheme**,
+graph code at a call scheme row (**funScheme**,
 [core rules](PROGRAM-TYPING.md#judgments-and-constructor-views)), its introduction the table's check
 of its code, which holds at every assignment, a rest, a default or a binder
-bounded by another included.
+bounded by another included; a construct scheme's members are class values
+([scheme rows](POSITIVE-TYPES.md#parameter-and-scheme-rows)), which no closure
+is.
 
 **Generic bodies.** A generic function's body is a graph request whose
 binders are parameter rows $`\vec p`$: rows the graph's assignment interprets,
