@@ -2070,9 +2070,9 @@ theorem numWitness_sound {G : NormalGraph ι} {A : Ty ι} {w : UInt64} (h : numW
     exact rejectsNum_sound (hall c hc) hcv
   · cases h
 
-/-- **A `length` view no array meets**: its type excludes a number, so no
-member is an object owning the store (`arrayLenT`), and the view is at the
-object's own location. -/
+/-- **A `length` view met at its own location**: its type excludes a number,
+so the view's array alternative (`arrayLenT`, which needs every number) does
+not hold, and the view is at the object's own location. -/
 @[nospecialize] def lengthExcluded (G : NormalGraph ι) (A : Ty ι) : Bool := (numWitness G A).isSome
 
 /-- Whether a type's `length` is a view an array may meet (`lenView` reads

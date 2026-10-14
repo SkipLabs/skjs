@@ -755,9 +755,10 @@ $`r`$, and $`\kappa`$ a [property key](POSITIVE-TYPES.md#records):
      {\Gamma\vdash_G a.\kappa:A\cup U}
 ```
 
-A view of `length` at a type excluding a number admits no array, which
-would need every number there ([records](POSITIVE-TYPES.md#records)): it is
-at the object's own location, and `readView` reads it, the number found
+A view of `length` at a type excluding a number is met at the object's own
+location: its array alternative, which needs every number there
+([records](POSITIVE-TYPES.md#records)), does not hold, so `readView` reads
+that location, the number found
 among the first few the type's clauses reject (`numWitness`,
 `lengthExcluded`). Any other view of `length` may be an array's, whose
 `length` is its store's length, so its read tests the object in slot
