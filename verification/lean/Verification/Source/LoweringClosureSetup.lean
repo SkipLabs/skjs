@@ -42,6 +42,7 @@ structure LambdaCode (ι : Type) where
   conts : List (ControlFlow.Continuation × Option ControlFlow.Target)
   start : Nat
   captures : List (Ty ι × Nat)
+  kind : Invoke
   rest : Bool
   arrays : List (Ty ι)
   type : Ty ι
@@ -90,6 +91,7 @@ structure LambdaSetup (ι : Type) where
   pos : Span
   body : Fragment.Expr
   receiverName : String
+  kind : Invoke
   fixedParams : List (String × Json)
   restParam : Option (String × Json)
   restElements : Nat
@@ -128,6 +130,8 @@ scheme row's variadic signatures. -/
   -- anonymous, so its `this` is the one it captures. A class value's code
   -- reads no receiver.
   let receiverName := if receiverAnnot.isSome then "this" else ""
+  -- The code's kind: an arrow's and a class value's code is `call`.
+  let kind := (receiverAnnot.map Prod.snd).getD .call
   let top ← lower (SourceTypes.use .source)
   let scheme := match mode with
     | .fn => ProgramCertificates.schemeOf G A
@@ -138,7 +142,7 @@ scheme row's variadic signatures. -/
     throw "a quantified closure is checked at its scheme row, which its claim does not name"
   let overlays := (fc.arrowClaims.lookup pos).getD []
   let Rsource ← match receiverAnnot with
-    | some annot => lower (Fragment.callableType annot)
+    | some (annot, _) => lower (Fragment.callableType annot)
     | none => pure [top]
   let fixedParams := if hasRest then params.dropLast else params
   let restParam := if hasRest then params.getLast? else none
@@ -247,6 +251,14 @@ scheme row's variadic signatures. -/
     for row in rows do
       requireWithin T pos .bindingAnnotation row.receiver Rsource
         "closure receiver claim is outside the source annotation"
+  -- Sloppy code reading `this` binds an object receiver unchanged and
+  -- converts any other (the global object, a wrapper), which the model has no
+  -- term for: each signature it offers admits objects only (`kindOffers`).
+  if kind == .sloppy then
+    let G := SourceTypes.graph T
+    for R in Rsource :: rows.map (·.receiver) do
+      if !ProgramTyping.kindOffers G .sloppy R then
+        throw (locatedRefusal T pos .bindingAnnotation Fragment.sloppyReceiverReason)
   if !overlays.isEmpty && overlays.length != rows.length then
     throw "per-arrow interior claims do not match the claimed arrows"
   -- The captures: the named bindings in scope the lambda reads (a class's
@@ -263,7 +275,7 @@ scheme row's variadic signatures. -/
     | none => throw "internal closure slot mismatch"
   -- A captured receiver keeps its type here: no statement claim names `this`.
   let captures : List (ScopeBinding Tree) := (caps.zip Cs).map fun ((b, _), C) =>
-    if b.source.name == "this" then { b with fixed := some C } else b
+    if b.source.name == "this" then { b with fixed := some C, captured := true } else { b with captured := true }
   -- The rest is bound after every fixed parameter: a default reading it reads
   -- a binding JavaScript has not yet initialized, and throws.
   if let some (restName, _) := restParam then
@@ -277,7 +289,7 @@ scheme row's variadic signatures. -/
   let receiverName := if ctorReceiver.isSome then "" else receiverName
   let signatures := ((rows.zip stores).zip restTys).map fun ((r, S), t) => (r, S, t)
   let capSlots := (caps.zip Cs).map fun ((_, i), C) => (C, i)
-  return ⟨pos, body, receiverName, fixedParams, restParam, restElements.length, defaults, order,
+  return ⟨pos, body, receiverName, kind, fixedParams, restParam, restElements.length, defaults, order,
     signatures, overlays, captures, capSlots, arity, arrayRest.isSome, offered⟩
 
 

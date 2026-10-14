@@ -205,11 +205,11 @@ theorem capturesFree_reassign (s : SchemeRow ι) (Cs : List (List ι)) :
   simp only [capturesFree, captureDomain, captureFree, readsFrom_reassign, freeMapOf_reassign]
   rfl
 
-theorem graphCodesChecked_reassign (A : List ι) (codes : CodeEntry ι → Bool) (arity : Nat)
+theorem graphCodesChecked_reassign (A : List ι) (codes : CodeEntry ι → Bool) (kind : Invoke) (arity : Nat)
     (E : List Tm) (K : List (ControlFlow.Continuation × Option ControlFlow.Target)) (start : Nat)
     (Cs : List (List ι)) :
-    graphCodesChecked (reassign G η) A codes arity E K start Cs =
-      graphCodesChecked G A codes arity E K start Cs := by
+    graphCodesChecked (reassign G η) A codes kind arity E K start Cs =
+      graphCodesChecked G A codes kind arity E K start Cs := by
   unfold graphCodesChecked
   simp only [capturesFree_reassign]
   rfl

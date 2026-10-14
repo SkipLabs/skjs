@@ -200,20 +200,36 @@ L=\varnothing\ \land\ \forall\sigma=(R,\vec A,P,B)\in S.\;|\vec A|=m\land\mathrm
 \end{cases}
 ```
 
-Soundness is `offers_sem`: code without a rest meets its signatures by
-`callsT_of_graph` and `restsT_of_graph`, code with one its variadic
-signatures by `restsT_of_graphRest`, whose invocation allocates the store
-before the run starts (`graphRest_invoke`). Creation then reads the captures
+Code has a kind $`k`$ ([graph code](SEMANTICS.md#graph-code)): `call` code
+binds every receiver; `sloppy` code, sloppy code that reads `this`, binds an
+object only. Code of a kind offers a signature when the kind binds every
+receiver the signature admits (`KindOffers`, `kindOffers`): any signature for
+`call`; for `sloppy`, one whose receiver type is of clause rows, each an
+object clause (`objectClause`: a record, a dictionary, a function, a callable
+or a constructor):
+
+```math
+\mathrm{Kind}_G(k,L,S)\iff k\ne\mathsf{construct}\ \land\
+  \forall(R,\vec A,B)\in L\cup S^\flat.\;
+  k=\mathsf{call}\ \lor\ \bigl(R\ \text{plain}\land\forall c\in\mathrm{expand}_G(R).\;c\ \text{an object clause}\bigr)
+```
+
+Every receiver such a signature admits is then an object (`kindOffers_binds`,
+from `objectClause_member`). Soundness is `offers_sem`: code without a rest
+meets its signatures by `callsT_of_graph` and `restsT_of_graph`, code with one
+its variadic signatures by `restsT_of_graphRest`, whose invocation allocates
+the store before the run starts (`graphRest_invoke`); each invocation steps,
+since the code's kind binds the receiver. Creation then reads the captures
 only:
 
 ```math
-\frac{\mathrm{Offers}_G(\kappa,\vec C,L,S)
+\frac{\mathrm{Kind}_G(k,L,S)\quad\mathrm{Offers}_G(\kappa,\vec C,L,S)
       \quad\forall i.\;\Gamma\vdash_G x_i:C_i}
      {\Gamma\vdash_G \mathsf{make}(\kappa[\vec x],\mathsf{null}):\bigwedge_{(R,\vec A,B)\in L}(R;\vec A\to B)
        \land\bigwedge_{(R,\vec A,E,B)\in S}(R;\vec A,\ldots E\to B)}\ (\texttt{funGraph})
 ```
 
-where $`\kappa[\vec x]`$ is $`\kappa`$ capturing the slots $`\vec x`$. Its evidence
+where $`\kappa[\vec x]`$ is $`\kappa`$, of kind $`k`$, capturing the slots $`\vec x`$. Its evidence
 (`Rule.funGraph`) names each signature as an entry of the unit's code table:
 the codes a request carries, each checked in order against the table of those
 before it (`GraphCode.checkCodes`), so that every entry meets its signature
@@ -240,6 +256,7 @@ here (`meaning_assign_free`):
 
 ```math
 \frac{G(j)=\forall\vec p.\,(L,S)
+      \quad\mathrm{Kind}_G(k,L,S)
       \quad\forall\eta\,\vec B\in\mathrm{allowed}(j).\;\mathrm{Offers}_{G[\eta,\vec p:=\vec B]}(\kappa,\vec C,L,S)
       \quad\mathrm{fv}(\vec C)\cap\vec p=\emptyset
       \quad\forall i.\;\Gamma\vdash_G x_i:C_i}
@@ -974,7 +991,7 @@ and offering its graph code's signatures as `funGraph` does,
 
 ```math
 \frac{\vec k\ \text{distinct}\quad\forall i.\;\Gamma\vdash_G e_i:A_i
-      \quad\mathrm{Offers}_G(\kappa,\vec C,L,S)
+      \quad\mathrm{Kind}_G(k,L,S)\quad\mathrm{Offers}_G(\kappa,\vec C,L,S)
       \quad\forall j.\;\Gamma\vdash_G x_j:C_j}
      {\Gamma\vdash_G \mathsf{make}(\kappa[\vec x],\overline{k_i{=}e_i}):\mathsf{Callable}(\overline{k_i{:}A_i};L,S)}\ (\texttt{callableGraph})
 ```
@@ -2679,8 +2696,11 @@ locations that differ whatever they hold (`HeapLinks.distinctFrom`, from
 runtime inequality). Allocation states it: a fresh object's locations differ
 from every field each record of a record-typed slot names (`contractFields`).
 The lowering restates, at each statement entry, the links between a private
-cell and the slots whose records' fields it was allocated after, or that were
-allocated after it ([Source model](SOURCE-MODEL.md#current-content-assertions)).
+cell the code allocated and the slots whose records' fields it was allocated
+after, or that were allocated after it
+([Source model](SOURCE-MODEL.md#current-content-assertions)); a cell a
+closure captures was allocated before the closure's entry, which states no
+fact of that allocation, so its body states none of these links.
 
 The practical shape of the gap is worth stating. Facts about several cells
 coexist freely: allocation and reads preserve every one of them, so a program

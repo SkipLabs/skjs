@@ -204,9 +204,11 @@ the trusted parser establishes ECMAScript strict code, through a module or an
 applicable directive prologue. TypeScript's `strict` type-checking option is not
 that evidence. Record this source fact in the fragment and validate it on
 consumption. An enclosing directive can cover methods without adding a directive
-inside a function with default parameters. Sloppy receiver-dependent functions
-stay a located source limitation until global-object substitution and primitive
-boxing have operational rules; neither may be approximated by the strict rule.
+inside a function with default parameters. A sloppy receiver-dependent function
+is `sloppy` code, whose call has a step for an object receiver only
+([graph code](../../SEMANTICS.md#graph-code)); it is admitted at receiver types
+of objects only, and global-object substitution and primitive boxing stay a
+located source limitation; neither is approximated by the strict rule.
 This matches the distinction in
 [OrdinaryCallBindThis](https://tc39.es/ecma262/#sec-ordinarycallbindthis).
 
@@ -341,8 +343,8 @@ an assumed input; a named function expression is accepted where its body does
 not refer to its name. The OCaml producer proposes quantified closure
 signatures and call instances using receiver and actual-argument types.
 What stays refused is refused
-for every function, not for receivers: sloppy code reading `this` (the plan's
-later obligation), a function expression referring to its own name (a
+for every function, not for receivers: sloppy code reading `this` at a receiver
+type that may hold a non-object, a function expression referring to its own name (a
 recursive binding, as a cyclic closure initialization is), and inside a closure
 body the array operations — element reads and spreads — that no closure call
 has.
@@ -360,7 +362,7 @@ retyping captured storage. For `.apply`, add ordered indexed reads and a control
 that distinguishes them from iterator consumption. Each negative must reach its
 intended check, not pass because the parser refused it.
 
-Sloppy functions, `super`/home objects, construction/`new.target`, and
+Sloppy receiver conversion, `super`/home objects, construction/`new.target`, and
 reflective bound-function properties stay explicit later obligations. The
 receiver interface is shared with those future extensions; their semantics are
 not implied by it.

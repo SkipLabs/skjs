@@ -471,9 +471,15 @@ string's `length` and indices are its own
 
 Every signature states its receiver and every call passes one:
 `undefined` for a plain call, the object for a method call, the first
-argument for `.call` and `.apply`. The receiver rule is strict mode's; a
-sloppy function that reads no `this` is the strict one, its receiver being
-unobservable. `.bind` allocates a forwarding descriptor whose
+argument for `.call` and `.apply`. The receiver is bound unchanged, as
+strict code binds it. A sloppy function that reads no `this` is the strict
+one, its receiver being unobservable. A sloppy function that reads `this`
+binds an object unchanged and converts any other receiver (the global
+object, a wrapper object), which the model has no step for
+([graph code](SEMANTICS.md#graph-code)): its code is `sloppy`, offered only at
+signatures whose receiver types hold objects only
+([kinds](PROGRAM-TYPING.md#judgments-and-constructor-views)), and a sloppy
+declaration reading `this` has such a receiver annotation. `.bind` allocates a forwarding descriptor whose
 receiver a later `.bind` or `.call` cannot replace (`callsT_bound`).
 
 ### Generic types

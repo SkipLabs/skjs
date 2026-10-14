@@ -34,7 +34,7 @@ macro_rules
     | exact .iteT
     | exact .iteF
     | exact .testV rfl
-    | exact .callGraph rfl (by decide)
+    | exact .callGraph rfl (by decide) rfl
     | exact .constructGraph (by decide)
     | exact .callBound rfl (by decide)
     | exact .gotoEnter rfl rfl
@@ -254,7 +254,7 @@ theorem returns_expected (callable fresh : Bool) :
       | apply Execution.next (.expr (.makeFnV rfl))
       | apply Execution.next (.expr (.readV rfl))
       | apply Execution.next (.expr (.writeV rfl (by decide)))
-      | apply Execution.next (.expr (.callGraph rfl (by decide)))
+      | apply Execution.next (.expr (.callGraph rfl (by decide) rfl))
       | apply Execution.next (.expr (.gotoEnter rfl rfl))
       | apply Execution.next (.expr (.frameC (.writeV rfl (by decide))))
       | apply Execution.next (.expr (.frameRet rfl))

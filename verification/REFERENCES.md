@@ -394,6 +394,7 @@ trust surface; checked by review and `#guard` tests against node, not proved.
 [DESIGN: the model in brief](SOURCE-MODEL.md#the-model-in-brief),
 [DESIGN: trust surface](DESIGN.md#trust-surface),
 [SEMANTICS: operational language](SEMANTICS.md#operational-language),
+[SEMANTICS: graph code](SEMANTICS.md#graph-code),
 [SEMANTICS: the array invariant](SEMANTICS.md#the-array-invariant),
 [PROGRAM-TYPING: async functions and await](SOURCE-CONTRACTS.md#async-functions-and-await),
 [PROGRAM-TYPING: loops and spreads over iterables](SOURCE-CONTRACTS.md#loops-and-spreads-over-iterables),

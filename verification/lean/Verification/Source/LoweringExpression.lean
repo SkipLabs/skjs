@@ -749,7 +749,7 @@ slots are introduced only after the operand supplying their type is checked. -/
     recordHints [C]
     let casts := (values.zip (P.map Prod.snd)).map fun (v,D) => DirectProof.cast Γ D v
     pure (DirectProof.node Γ
-      (.makeAt (code.code .call) (P.map Prod.fst) (values.map (·.term))) [C]
+      (.makeAt (code.code code.kind) (P.map Prod.fst) (values.map (·.term))) [C]
       (.callableGraph code.arrays) (casts ++ code.capturePlans Γ))
   | .ctor _ lam => do
     -- A class value: its constructor's graph code, construct-only, checked at

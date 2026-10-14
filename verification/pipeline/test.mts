@@ -709,6 +709,24 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     ["invalid-object-growth-reused-name", "reusedName()"], ["invalid-computed-key-alias", `grow("x")`]] as const)
     assert.throws(() => runExample(file, call), /toUpperCase is not a function/,
       `${file}: the actual source reads the added number as a string`);
+  // A function the caller supplies may own a `call` property: `.call` of it
+  // is not the standard method, so the gate refuses these sources.
+  assert.equal(runExample("invalid-call-provenance-spread",
+    `overridden({ read: Object.assign(function () { return 1; }, { call: () => "wrong" }) }, { value: 1 })`), "wrong");
+  assert.equal(runExample("invalid-call-provenance-assign",
+    `probe(Object.assign(() => 1, { call: () => "wrong" }))`), "wrong");
+  assert.equal(runExample("invalid-call-provenance-escape",
+    `probe((f) => { Object.assign(f, { call: () => "wrong" }); })`), "wrong");
+  assert.equal(runExample("invalid-direct-eval", "probe()"), "wrong");
+  assert.equal(runExample("invalid-call-provenance-let",
+    `reassigned(Object.assign(function () { return 1; }, { call: () => "wrong" }), { value: 1 })`), "wrong");
+  // Sloppy code converts a receiver that is not an object: a primitive to a
+  // wrapper object, `undefined` to the global object. The pipeline refuses
+  // sloppy code reading `this` at such a receiver type.
+  assert.equal(runExample("sloppy-this-primitive-refused", "typeof caller()"), "object",
+    "sloppy-this-primitive-refused: the actual source returns a String object despite its string contract");
+  assert.equal(runExample("sloppy-this-closure-refused", "typeof count()"), "undefined",
+    "sloppy-this-closure-refused: the actual source reads the global object despite its number contract");
   // A subclass of Array is its instances' `constructor`, so `map` constructs
   // its result through the subclass (ArraySpeciesCreate): the construction the
   // ordinary array construction assumption excludes, and why the pipeline

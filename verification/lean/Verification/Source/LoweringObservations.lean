@@ -81,6 +81,9 @@ object. -/
   scope.zipIdx.flatMap fun (b,i) =>
     match b.storage with
     | .cell .. =>
+      -- A captured cell was allocated before the closure's entry, which
+      -- knows nothing of that allocation.
+      if b.captured then [] else
       Γ.zipIdx.flatMap fun (A,j) =>
         if i == j then [] else
         let other := scope[j]?

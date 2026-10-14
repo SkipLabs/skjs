@@ -173,7 +173,7 @@ signature's frame, whose certificate the unit's code table records. -/
   let some (P, start) := code | throw "closure claim must name a source arrow"
   let exprs := P.map fun n => n.expression
   let conts := P.map fun n => (n.continuation, n.handler)
-  return (⟨s.arity, exprs, conts, start, s.capSlots, s.rest, s.rows.filterMap (·.2.1), s.offered⟩ :
+  return (⟨s.arity, exprs, conts, start, s.capSlots, s.kind, s.rest, s.rows.filterMap (·.2.1), s.offered⟩ :
     (LambdaCode Tree))
 
 /-- **A closure whose body is a graph** (`Rule.funGraph`): the allocation of its
@@ -181,7 +181,7 @@ code (`lambdaCode`) with the captured slots. -/
 @[nospecialize] partial def graphClosure (recursive : RecursiveLowering) (fc : SourceClaims.Function Tree) (scope : List (ScopeBinding Tree))
     (Γ : List (Ty Tree)) (lam : Fragment.Expr) (A : Ty Tree) : Compiler (DirectProof.Plan Tree) := do
   let c ← lambdaCode recursive fc scope Γ lam A .fn
-  pure (DirectProof.node Γ (Tm.makeFn (c.code .call) .nul) c.type (.funGraph c.arrays) (c.capturePlans Γ))
+  pure (DirectProof.node Γ (Tm.makeFn (c.code c.kind) .nul) c.type (.funGraph c.arrays) (c.capturePlans Γ))
 
 
 

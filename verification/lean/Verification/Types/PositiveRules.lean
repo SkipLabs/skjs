@@ -1150,14 +1150,13 @@ within the source's parameters, and results are covariant. -/
       R t.receiver p.receiver ∧ Domains R (t.arguments.1 ++ τ.required) p.arguments ∧ R p.result t.result ∧ p.effect.covers t.effect = true
   | _ => False
 
-/-- A fixed signature meets a variadic one whose rest is an exact tuple: at the
-current level the list's actuals are at their positions, and at level zero
-there is nothing to prove past the call. -/
+/-- A fixed signature meets a variadic one whose rest is an exact tuple: at
+every level the list's actuals are at their positions, so the call is one the
+fixed signature admits. -/
 theorem fixed_calls_pack_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : List ι → List ι → Prop}
     {p : Arrow (List ι)} {t : RestArrow (List ι)}
     (hc : FixedCallsPack G R p t) (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j) (W : WorldT n) (v : Val)
-    (hinv : Invocable v)
     (hv : PromiseWith Ξ p.effect (ArgsShort (p.arguments.map (mixedValues G η))) (mixedValues G η p.receiver) (mixedValues G η p.result) n W v) :
     PromiseWith Ξ t.effect (ArgsRest (t.arguments.1.map (mixedValues G η)) (mixedArgs G η t.arguments.2)) (mixedValues G η t.receiver)
       (mixedValues G η t.result) n W v := by
@@ -1166,36 +1165,31 @@ theorem fixed_calls_pack_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R
   · rename_i τ hP
     obtain ⟨hopt, hrest, hrecv, hd, hres, heff⟩ := hc
     intro j hj U hx hu heap hh r hrv hrm args hvals ha
-    cases j with
-    | zero =>
-      obtain ⟨result, hi⟩ := Invocable.invoke hinv hrv hvals
-      exact ⟨result, hi, trivial⟩
-    | succ i =>
-      obtain ⟨hshort, hpack⟩ := ha
-      simp only [List.length_map] at hshort hpack
-      have htup := mixed_pack_exact hP hopt hrest hpack
-      have hall : ArgsShort ((t.arguments.1 ++ τ.required).map (mixedValues G η)) (i + 1) U args := by
-        by_cases hl : args.length ≤ t.arguments.1.length
-        · rw [List.drop_eq_nil_of_le hl] at htup
-          have hreq : τ.required = [] := List.eq_nil_of_length_eq_zero (by
-            have := ArgsT_length htup
-            simp at this
-            omega)
-          rw [hreq, List.append_nil]
-          rwa [List.take_of_length_le hl] at hshort
-        · have htl : (args.take t.arguments.1.length).length = t.arguments.1.length := by simp; omega
-          have hfix : ArgsT (t.arguments.1.map (mixedValues G η)) (i + 1) U (args.take t.arguments.1.length) := by
-            have := hshort.2.1
-            rw [htl, show t.arguments.1.length = (t.arguments.1.map (mixedValues G η)).length by simp,
-              List.take_length] at this
-            simpa using this
-          have := ArgsT_append hfix htup
-          rw [List.take_append_drop, ← List.map_append] at this
-          exact ArgsShort_of_exact this
-      obtain ⟨result, hi, hsafe⟩ := hv (i + 1) hj U hx hu heap hh r hrv
-        (hr (i + 1) hj _ _ hrecv U r hrm) args hvals (Domains.short (hr (i + 1) hj) hd hall)
-      exact ⟨result, hi, HeapObservations.consequence_below (fun m hm V u hu => hr m (by omega) _ _ hres V u hu)
-        (Effect.covers_sound heff heap) hsafe⟩
+    obtain ⟨hshort, hpack⟩ := ha
+    simp only [List.length_map] at hshort hpack
+    have htup := mixed_pack_exact hP hopt hrest hpack
+    have hall : ArgsShort ((t.arguments.1 ++ τ.required).map (mixedValues G η)) j U args := by
+      by_cases hl : args.length ≤ t.arguments.1.length
+      · rw [List.drop_eq_nil_of_le hl] at htup
+        have hreq : τ.required = [] := List.eq_nil_of_length_eq_zero (by
+          have := ArgsT_length htup
+          simp at this
+          omega)
+        rw [hreq, List.append_nil]
+        rwa [List.take_of_length_le hl] at hshort
+      · have htl : (args.take t.arguments.1.length).length = t.arguments.1.length := by simp; omega
+        have hfix : ArgsT (t.arguments.1.map (mixedValues G η)) j U (args.take t.arguments.1.length) := by
+          have := hshort.2.1
+          rw [htl, show t.arguments.1.length = (t.arguments.1.map (mixedValues G η)).length by simp,
+            List.take_length] at this
+          simpa using this
+        have := ArgsT_append hfix htup
+        rw [List.take_append_drop, ← List.map_append] at this
+        exact ArgsShort_of_exact this
+    obtain ⟨result, hi, hsafe⟩ := hv j hj U hx hu heap hh r hrv
+      (hr j hj _ _ hrecv U r hrm) args hvals (Domains.short (hr j hj) hd hall)
+    exact ⟨result, hi, HeapObservations.consequence_below (fun m hm V u hu => hr m (by omega) _ _ hres V u hu)
+      (Effect.covers_sound heff heap) hsafe⟩
   · exact hc.elim
 
 /-- A position covered by another: a present source position needs a target
@@ -3141,7 +3135,7 @@ theorem Covers.sound_raw [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Re
     · obtain ⟨t0, ht0, rfl⟩ := List.mem_map.mp ht
       rcases hc.2 t0 ht0 with ⟨s, hs, hst⟩ | ⟨p, hp, hfp⟩
       · exact rest_covers_sound hst n hr hpa W v (hv.2.2 _ (List.mem_map_of_mem hs))
-      · exact fixed_calls_pack_sound hfp n hr W v hv.1.1 (hv.1.2 _ (List.mem_map_of_mem hp))
+      · exact fixed_calls_pack_sound hfp n hr W v (hv.1.2 _ (List.mem_map_of_mem hp))
   · rename_i b
     cases b <;> intro hv <;> cases hv
     · exact Or.inr rfl
@@ -3162,7 +3156,7 @@ theorem Covers.sound_raw [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Re
     · obtain ⟨t0, ht0, rfl⟩ := List.mem_map.mp ht
       rcases hc.2 t0 ht0 with ⟨s, hs, hst⟩ | ⟨p, hp, hfp⟩
       · exact rest_covers_sound hst n hr hpa W v (hv.2.2 _ (List.mem_map_of_mem hs))
-      · exact fixed_calls_pack_sound hfp n hr W v hv.1.2.1 (hv.1.2.2 _ (List.mem_map_of_mem hp))
+      · exact fixed_calls_pack_sound hfp n hr W v (hv.1.2.2 _ (List.mem_map_of_mem hp))
   · rename_i a bs L S c ds M T
     intro hv
     refine ⟨⟨covers_bags_sound hc.1 n hr W v hv.1.1, hv.1.2.1, fun p hp => ?_⟩,
@@ -3172,7 +3166,7 @@ theorem Covers.sound_raw [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Re
     · obtain ⟨t0, ht0, rfl⟩ := List.mem_map.mp ht
       rcases hc.2.2 t0 ht0 with ⟨s, hs, hst⟩ | ⟨p, hp, hfp⟩
       · exact rest_covers_sound hst n hr hpa W v (hv.2.2 _ (List.mem_map_of_mem hs))
-      · exact fixed_calls_pack_sound hfp n hr W v hv.1.2.1 (hv.1.2.2 _ (List.mem_map_of_mem hp))
+      · exact fixed_calls_pack_sound hfp n hr W v (hv.1.2.2 _ (List.mem_map_of_mem hp))
   · -- str ≤ str
     exact id
   · -- strLit ≤ str: the singleton inhabits the family
@@ -3629,7 +3623,7 @@ theorem covers_arrs_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (R
   · obtain ⟨t0, ht0, rfl⟩ := List.mem_map.mp ht
     rcases hc.2 t0 ht0 with ⟨s, hs, hst⟩ | ⟨p, hp, hfp⟩
     · exact rest_covers_sound hst n hr hpa W v (hv.2.2 _ (List.mem_map_of_mem hs))
-    · exact fixed_calls_pack_sound hfp n hr W v hv.1.1 (hv.1.2 _ (List.mem_map_of_mem hp))
+    · exact fixed_calls_pack_sound hfp n hr W v (hv.1.2 _ (List.mem_map_of_mem hp))
 
 /-- **A scheme body, soundly.** A scheme's body covers a clause of its own
 kind, call signatures by call signatures and construct signatures by

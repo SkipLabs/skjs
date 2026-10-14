@@ -86,7 +86,8 @@ def extractPlans (ast claims : Json) (fileKey : String)
       let binders ← classBinders ((ast.getObjVal? "init").toOption.getD (.arr #[]))
       if binders.map (·.name) != (initBinders.map (·.1)).filter (!·.endsWith "#pack") then
         throw "the module initialization's binders are not its generic classes'"
-      pure [(⟨"", span, [], undefinedType, init⟩, binders,
+      -- Nothing calls the initialization unit with a receiver.
+      pure [(⟨"", span, [], undefinedType, init, false⟩, binders,
         ⟨"", span, [], .labels [Labels.undef], c.entries, c.expressions, c.contracts, c.arrows⟩)]
   let decoded := match only with
     | none => all

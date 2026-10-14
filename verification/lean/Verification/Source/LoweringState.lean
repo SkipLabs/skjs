@@ -52,6 +52,10 @@ structure ScopeBinding (ι : Type) where
   /-- A parameter: bound before the body runs, so before any cell the body
   allocates, and at the same time as an assigned parameter's cell. -/
   param : Bool := false
+  /-- A closure's capture: a cell it holds was allocated by the code that
+  created the closure, so no fact of that allocation holds at the closure's
+  entry. -/
+  captured : Bool := false
   deriving Repr
 
 @[nospecialize] def held (d : Descriptor) : ScopeBinding ι := { source := d }

@@ -51,7 +51,7 @@ theorem allocFn_typed {Ξ Rc B : Fam} (hΞ : Adm Ξ) (hB : Adm B)
   refine ⟨⟨_, _, _, rfl, rfl, by simp [Scoped, allocFn, oneNode]⟩, ?_⟩
   intro p hp j hj U hx hu heap hh r hrv hr args hvals ha
   cases List.mem_singleton.mp hp
-  refine ⟨_, .graph hrv hvals, ?_⟩
+  refine ⟨_, .graph hrv hvals rfl, ?_⟩
   cases j with
   | zero => trivial
   | succ j =>
@@ -161,7 +161,7 @@ theorem constant_nested_calls (Rc A : Fam) :
   refine ⟨⟨_, _, _, rfl, rfl, by simp [Scoped, constFn, oneNode]⟩, ?_⟩
   intro p hp j hj U hx hu heap hh r hrv hr args hvals ha
   cases List.mem_singleton.mp hp
-  refine ⟨_, .graph hrv hvals, ?_⟩
+  refine ⟨_, .graph hrv hvals rfl, ?_⟩
   match j, hj with
   | 0, _ => trivial
   | 1, _ =>
@@ -254,7 +254,7 @@ theorem callback_does_not_frame (W : WorldT 5) :
     ¬ SafePost Ξ nulT (fun h _ => Observes h 0 .tru) 5 W [.tru]
       (.app (writer 0) .nul) := by
   intro hs
-  have s1 : Step [.tru] (.app (writer 0) .nul) [.tru] _ := .callGraph rfl (by decide)
+  have s1 : Step [.tru] (.app (writer 0) .nul) [.tru] _ := .callGraph rfl (by decide) rfl
   rcases hs with (⟨hv,_,_⟩ | hr) | ⟨_,_,_,_,_,step,_,hs⟩
   · cases hv
   · exact hr.no_step s1

@@ -120,6 +120,15 @@ did not mention grow it, and the request carries the result. -/
     -- caller writes: a rest parameter is one binding, and its tuple's required
     -- elements are the positions. The array itself is allocated at entry.
     let bindings ← f.params.mapM (fun (p : Fragment.Param) => lower (Fragment.translate p.ty))
+    -- A sloppy function reading `this` binds its receiver as a sloppy call
+    -- does: an object unchanged, any other converted (the global object, a
+    -- wrapper), which the model does not have. Its receiver annotation, the
+    -- entry's assumption, then admits objects only, as sloppy closure code's
+    -- does (`ProgramTyping.kindOffers`).
+    if let (some p, some R) := (f.params.head?, bindings.head?) then
+      if p.name == "this" && f.convertsReceiver && (f.body.flatMap stmtNames).contains "this" &&
+          !ProgramTyping.kindOffers (SourceTypes.graph (← table)) .sloppy R then
+        throw (locatedRefusal (← table) f.namePos .bindingAnnotation Fragment.sloppyReceiverReason)
     let siblingTypes ← siblings.mapM fun (value : ModuleValue Tree) => do
       let (_, pos, ty) := value
       match ty with

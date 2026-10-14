@@ -1733,13 +1733,11 @@ class Gate {
     if (node.kind === ts.SyntaxKind.ThisKeyword) {
       // Only an ordinary function expression, a method, or a declaration
       // stating a `this` parameter binds a receiver.
+      // In sloppy code Lean admits the read where the receiver's type holds
+      // objects only (`Fragment.sloppyReceiverReason`), from the function's
+      // `strict` fact.
       if (this.receiverMode === null)
         this.fail(node, "`this` where no receiver is bound");
-      // Check every source read here, including declaration bodies and lexical
-      // captures. The calculus has no sloppy receiver conversion; checking only
-      // lambda construction leaves declaration entry points unprotected.
-      if (this.receiverMode === "sloppy")
-        this.fail(node, "a function that reads `this` must be strict code: sloppy code replaces an undefined or primitive receiver by the global object or a wrapper object, which the model, whose receiver rule is strict code's, does not have");
       return { k: "this", pos: this.span(node) };
     }
 
@@ -2105,7 +2103,7 @@ class Gate {
           node.arguments.length === 0 ||
           node.arguments.length > 2 ||
           node.arguments.some((arg) => ts.isSpreadElement(arg)) ||
-          !this.localArrow(node.expression.expression)
+          !this.knownLocal(node.expression.expression)
         )
           this.refuseReceiverForm(node,
             ".apply requires a known local function, an explicit receiver and at most one argument list");
@@ -2142,7 +2140,7 @@ class Gate {
           node.typeArguments?.length ||
           node.arguments.length === 0 ||
           node.arguments.some((arg) => ts.isSpreadElement(arg)) ||
-          !this.localArrow(node.expression.expression)
+          !this.knownLocal(node.expression.expression)
         )
           this.refuseReceiverForm(node,
             `.${node.expression.name.text} requires a known local function, an explicit receiver and ordinary arguments`);
@@ -2376,30 +2374,129 @@ class Gate {
     this.fail(node, refusal);
   }
 
-  private localArrow(node: Expression, seen = new Set<number>()): boolean {
+  /** `localArrow`, and every local it follows is confined: code that may
+   * hold the local's value cannot have replaced the member or added an own
+   * `call`, `apply` or `bind`. */
+  private knownLocal(node: Expression): boolean {
+    const seen = new Set<number>();
+    const followed = new Set<string>();
+    return this.localArrow(node, seen, followed) && this.confined(seen, followed);
+  }
+
+  /** Whether the locals declared at `seen` are confined: every reference to
+   * one is the callee of a call, the object of `.call`, `.apply` or `.bind`
+   * (directly or through a member), a spread or a member value in an object
+   * literal another of them is given, the target of a plain assignment to it,
+   * or the object of a read or write of a member other than `call`, `apply`,
+   * `bind` and the members `followed` (which hold the functions followed)
+   * that is not called. Any other reference (an argument, `Object.assign`'s
+   * target, a receiver of a method call, a return, another binding's value,
+   * a read of a followed member) may hand a followed value to code that
+   * replaces its member or adds a `call` of its own. An object literal they
+   * are given holds no accessor: a spread of it runs its getters with the
+   * object as receiver. */
+  private confined(seen: Set<number>, followed: Set<string>): boolean {
+    const decls: ts.VariableDeclaration[] = [];
+    const collect = (n: Node): void => {
+      if (ts.isVariableDeclaration(n) && seen.has(n.getStart(this.file))) decls.push(n);
+      n.forEachChild(collect);
+    };
+    collect(this.file);
+    const names = new Set(decls.flatMap((d) => ts.isIdentifier(d.name) ? [d.name.text] : []));
+    const strip = (n: Node): Node => {
+      let at = n;
+      while (ts.isParenthesizedExpression(at.parent)) at = at.parent;
+      return at;
+    };
+    // A literal one of these locals is given: its initializer, or the right
+    // side of a plain assignment to it.
+    const givenToSeen = (literal: Node): boolean => {
+      const at = strip(literal);
+      const holder = at.parent;
+      if (ts.isVariableDeclaration(holder) && holder.initializer === at)
+        return seen.has(holder.getStart(this.file));
+      if (ts.isBinaryExpression(holder) && holder.right === at &&
+          holder.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+        let left: Expression = holder.left;
+        while (ts.isParenthesizedExpression(left)) left = left.expression;
+        return ts.isIdentifier(left) && names.has(left.text);
+      }
+      return false;
+    };
+    const gateCallee = (access: Node): boolean => {
+      if (!ts.isPropertyAccessExpression(access) || !["call", "apply", "bind"].includes(access.name.text))
+        return false;
+      const call = strip(access).parent;
+      return ts.isCallExpression(call) && call.expression === strip(access);
+    };
+    const allowed = (n: Identifier): boolean => {
+      const at = strip(n);
+      const parent = at.parent;
+      if (ts.isCallExpression(parent) && parent.expression === at) return true;
+      if (ts.isPropertyAccessExpression(parent) && parent.expression === at) {
+        if (gateCallee(parent)) return true;
+        const outer = strip(parent).parent;
+        if (ts.isPropertyAccessExpression(outer) && outer.expression === strip(parent) && gateCallee(outer))
+          return true;
+        // Another member, read or written, not called: its value is not one
+        // followed, and the object is not handed on.
+        const key = parent.name.text;
+        return !followed.has(key) && !["call", "apply", "bind"].includes(key) &&
+          !((ts.isCallExpression(outer) || ts.isNewExpression(outer)) && outer.expression === strip(parent)) &&
+          !ts.isTaggedTemplateExpression(outer);
+      }
+      if (ts.isSpreadAssignment(parent) || (ts.isPropertyAssignment(parent) && parent.initializer === at))
+        return givenToSeen(parent.parent);
+      if (ts.isShorthandPropertyAssignment(parent)) return givenToSeen(parent.parent);
+      if (ts.isBinaryExpression(parent) && parent.left === at &&
+          parent.operatorToken.kind === ts.SyntaxKind.EqualsToken) return true;
+      return false;
+    };
+    let ok = true;
+    const visit = (n: Node): void => {
+      // A type names no value.
+      if (!ok || ts.isTypeNode(n)) return;
+      if (ts.isObjectLiteralExpression(n) && givenToSeen(n) &&
+          n.properties.some((p) => ts.isGetAccessorDeclaration(p) || ts.isSetAccessorDeclaration(p)))
+        ok = false;
+      if (ts.isIdentifier(n) && names.has(n.text)) {
+        const parent = n.parent;
+        const isName =
+          (ts.isPropertyAccessExpression(parent) && parent.name === n) ||
+          (ts.isQualifiedName(parent) && parent.right === n) ||
+          ((ts.isPropertyAssignment(parent) || ts.isMethodDeclaration(parent) ||
+            ts.isPropertyDeclaration(parent) || ts.isGetAccessorDeclaration(parent) ||
+            ts.isSetAccessorDeclaration(parent)) && parent.name === n) ||
+          (ts.isVariableDeclaration(parent) && parent.name === n && seen.has(parent.getStart(this.file)));
+        if (!isName && !allowed(n)) ok = false;
+      }
+      n.forEachChild(visit);
+    };
+    for (const d of decls) {
+      let block: Node | undefined = d.parent;
+      while (block && !ts.isBlock(block)) block = block.parent;
+      if (block) visit(block);
+    }
+    return ok;
+  }
+
+  private localArrow(node: Expression, seen = new Set<number>(), followed = new Set<string>()): boolean {
     if (ts.isParenthesizedExpression(node))
-      return this.localArrow(node.expression, seen);
+      return this.localArrow(node.expression, seen, followed);
     if (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) return true;
     if (
       ts.isPropertyAccessExpression(node) &&
       !node.questionDotToken &&
       ts.isIdentifier(node.expression)
     ) {
+      // A member of a local every value of which is an object literal that
+      // gives the member a known function, which no write in the file can
+      // replace.
       const member = node.name.text;
-      const literal = this.constInitializer(node.expression, seen);
-      if (!literal || !ts.isObjectLiteralExpression(literal)) return false;
       if (this.memberMayBeWritten(member)) return false;
-      return literal.properties.some(
-        (p) =>
-          (ts.isMethodDeclaration(p) &&
-            ts.isIdentifier(p.name) &&
-            p.name.text === member) ||
-          (ts.isPropertyAssignment(p) &&
-            ts.isIdentifier(p.name) &&
-            p.name.text === member &&
-            (ts.isArrowFunction(p.initializer) ||
-              ts.isFunctionExpression(p.initializer))),
-      );
+      followed.add(member);
+      const values = this.localValues(node.expression, seen);
+      return !!values && values.every((v) => this.memberOf(v, member, seen, followed) === true);
     }
     if (
       ts.isCallExpression(node) &&
@@ -2420,11 +2517,46 @@ class Gate {
       ts.isPropertyAccessExpression(node.expression) &&
       node.expression.name.text === "bind"
     )
-      return this.localArrow(node.expression.expression, seen);
+      return this.localArrow(node.expression.expression, seen, followed);
     if (!ts.isIdentifier(node)) return false;
-    const init = this.constInitializer(node, seen);
-    if (init) return this.localArrow(init, seen);
+    const values = this.localValues(node, seen);
+    if (values) return values.every((v) => this.localArrow(v, seen, followed));
     return this.moduleFunction(node);
+  }
+
+  /** What the object literal `value` holds at `member` once built: `true`
+   * where the last of its parts giving the key gives a known local function
+   * (a method, or a value `localArrow` admits), `"absent"` where no part
+   * gives it, `false` where that is not known. A spread gives the key where
+   * its source does: a local every value of which is an object literal, or a
+   * literal; it copies the own enumerable data properties, which a literal's
+   * members are. */
+  private memberOf(value: Expression, member: string, seen: Set<number>,
+      followed: Set<string>): boolean | "absent" {
+    while (ts.isParenthesizedExpression(value)) value = value.expression;
+    if (!ts.isObjectLiteralExpression(value)) return false;
+    let found: boolean | "absent" = "absent";
+    for (const p of value.properties) {
+      if (ts.isSpreadAssignment(p)) {
+        let source = p.expression;
+        while (ts.isParenthesizedExpression(source)) source = source.expression;
+        const sources = ts.isIdentifier(source) ? this.localValues(source, seen)
+          : ts.isObjectLiteralExpression(source) ? [source] : undefined;
+        if (!sources) return false;
+        const parts = sources.map((s) => this.memberOf(s, member, seen, followed));
+        if (parts.every((x) => x === "absent")) continue;
+        // A source that may lack the key leaves the earlier part's value.
+        found = parts.every((x) => x === true || (x === "absent" && found === true));
+        continue;
+      }
+      if (!p.name || ts.isComputedPropertyName(p.name) || ts.isPrivateIdentifier(p.name)) return false;
+      if (p.name.text !== member) continue;
+      found = ts.isMethodDeclaration(p) ? true
+        : ts.isPropertyAssignment(p) ? this.localArrow(p.initializer, seen, followed)
+        : ts.isShorthandPropertyAssignment(p) ? this.localArrow(p.name, seen, followed)
+        : false;
+    }
+    return found;
   }
 
   /** Whether this identifier names one of the file's function declarations
@@ -2484,12 +2616,17 @@ class Gate {
     return found;
   }
 
-  /** The initializer of the `const` this identifier names, lexically, or
-   * none where it names a parameter, a mutable local or nothing here. */
-  private constInitializer(
+  /** Every value the local this identifier names may hold, lexically: a
+   * `const`'s initializer; a `let`'s initializer and the right side of each
+   * plain assignment to it in its block, the only places a write to it can
+   * be. None where it names a parameter, something declared elsewhere, or a
+   * `let` that is written otherwise (a compound assignment, an update, a
+   * pattern, a loop head) or whose name a declaration inside its block
+   * shadows. */
+  private localValues(
     node: Identifier,
     seen: Set<number>,
-  ): Expression | undefined {
+  ): Expression[] | undefined {
     // Held as a string: a narrowing of `node` does not reach into a closure.
     const name = node.text;
     for (let scope = node.parent; scope; scope = scope.parent) {
@@ -2499,26 +2636,87 @@ class Gate {
           for (const decl of statement.declarationList.declarations) {
             if (!ts.isIdentifier(decl.name) || decl.name.text !== name)
               continue;
-            if (
-              !(statement.declarationList.flags & ts.NodeFlags.Const) ||
-              !decl.initializer ||
-              seen.has(decl.getStart(this.file))
-            )
+            if (!decl.initializer || seen.has(decl.getStart(this.file)))
               return undefined;
             seen.add(decl.getStart(this.file));
-            return decl.initializer;
+            if (statement.declarationList.flags & ts.NodeFlags.Const)
+              return [decl.initializer];
+            if (!(statement.declarationList.flags & ts.NodeFlags.Let))
+              return undefined;
+            return this.letWrites(scope, decl.name);
           }
         }
       }
       if (
         ts.isFunctionLikeDeclaration(scope) &&
         scope.parameters?.some(
-          (p) => ts.isIdentifier(p.name) && p.name.text === name,
+          (p) => !ts.isIdentifier(p.name) || p.name.text === name,
         )
       )
         return undefined;
     }
     return undefined;
+  }
+
+  /** The values the `let` declared at `declared` in `block` is given: its
+   * initializer and each plain assignment's right side; none where another
+   * form writes it or a declaration in the block shadows it. */
+  private letWrites(block: ts.Block, declared: Identifier): Expression[] | undefined {
+    const name = declared.text;
+    const values: Expression[] = [];
+    let unknown = false;
+    const outermost = (n: Node): Node => {
+      let at = n;
+      while (ts.isParenthesizedExpression(at.parent) || ts.isArrayLiteralExpression(at.parent) ||
+          ts.isObjectLiteralExpression(at.parent) || ts.isSpreadElement(at.parent) ||
+          ts.isSpreadAssignment(at.parent) || ts.isPropertyAssignment(at.parent) ||
+          ts.isShorthandPropertyAssignment(at.parent))
+        at = at.parent;
+      return at;
+    };
+    const visit = (n: Node): void => {
+      if (unknown) return;
+      // Another declaration of the name inside the block: refused rather
+      // than resolved.
+      const declaredName = n === declared.parent ? undefined
+        : ts.isVariableDeclaration(n) || ts.isParameterDeclaration(n) || ts.isBindingElement(n) ||
+          ts.isFunctionDeclaration(n) || ts.isFunctionExpression(n) ||
+          ts.isClassDeclaration(n) || ts.isClassExpression(n) ? n.name : undefined;
+      if (declaredName && ts.isIdentifier(declaredName) && declaredName.text === name) {
+        unknown = true;
+        return;
+      }
+      if (ts.isIdentifier(n) && n !== declared && n.text === name) {
+        const parent = n.parent;
+        if (ts.isPropertyAccessExpression(parent) && parent.name === n) return;
+        if ((ts.isPropertyAssignment(parent) || ts.isMethodDeclaration(parent)) && parent.name === n) return;
+        const top = outermost(n);
+        const holder = top.parent;
+        if (ts.isBinaryExpression(holder) && holder.left === top &&
+            holder.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+            holder.operatorToken.kind <= ts.SyntaxKind.LastAssignment) {
+          if (outermostIs(top, n) && holder.operatorToken.kind === ts.SyntaxKind.EqualsToken)
+            values.push(holder.right);
+          else unknown = true;
+        } else if ((ts.isPrefixUnaryExpression(holder) || ts.isPostfixUnaryExpression(holder)) &&
+            (holder.operator === ts.SyntaxKind.PlusPlusToken || holder.operator === ts.SyntaxKind.MinusMinusToken)) {
+          unknown = true;
+        } else if ((ts.isForOfStatement(holder) || ts.isForInStatement(holder)) && holder.initializer === top) {
+          unknown = true;
+        }
+      }
+      n.forEachChild(visit);
+    };
+    const outermostIs = (top: Node, n: Node): boolean => {
+      let at: Node = top;
+      while (ts.isParenthesizedExpression(at)) at = at.expression;
+      return at === n;
+    };
+    const decl = declared.parent;
+    if (!ts.isVariableDeclaration(decl) || !decl.initializer) return undefined;
+    values.push(decl.initializer);
+    visit(block);
+    return unknown ? undefined : values;
   }
 
   /** A compound assignment or an increment: the target's parts are evaluated
@@ -4472,6 +4670,7 @@ class Gate {
         params,
         retType,
         body: isAsync ? this.asyncCompletion(node.body, body) : body,
+        strict: this.strict,
       };
     } finally {
       this.leaveTypeParams();
@@ -4805,6 +5004,25 @@ export function parseFile(file: string, carriesContext = false,
   // A "use strict" directive prologue makes the whole file strict.
   const prologue = gate.useStrict(source.statements);
   gate.strict = prologue.strict;
+  // A direct `eval` runs a string as code in the caller's scope, where it may
+  // read and write any local; sloppy code may rebind `eval` and `arguments`.
+  const evalForms = (n: Node): void => {
+    if (ts.isTypeNode(n)) return;
+    if (ts.isCallExpression(n)) {
+      let callee: Expression = n.expression;
+      while (ts.isParenthesizedExpression(callee)) callee = callee.expression;
+      if (ts.isIdentifier(callee) && callee.text === "eval")
+        gate.fail(n, "a direct `eval` call runs a string as code in the caller's scope, which may read and write any of its bindings");
+    }
+    const name = nameOf(n);
+    if ((ts.isParameterDeclaration(n) || ts.isVariableDeclaration(n) || ts.isBindingElement(n) ||
+         ts.isFunctionDeclaration(n) || ts.isFunctionExpression(n) || ts.isClassDeclaration(n) ||
+         ts.isClassExpression(n)) && name && ts.isIdentifier(name) &&
+        (name.text === "eval" || name.text === "arguments"))
+      gate.fail(n, `a binding named \`${name.text}\`: sloppy code gives the name a meaning of its own (a direct eval, the arguments object)`);
+    n.forEachChild(evalForms);
+  };
+  evalForms(source);
   for (const s of source.statements) {
     if (prologue.skip.has(s)) continue;
     if (ts.isTypeAliasDeclaration(s)) aliasNodes.push(s);

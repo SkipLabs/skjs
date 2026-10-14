@@ -476,8 +476,23 @@ node's value then leaves the run or moves along an edge, whose slot map
 $\mu$ acts on the pushed environment as a program's does:
 
 ```math
-\frac{r,\vec a\ \text{values}}{h,\mathsf{invoke}(\mathsf{obj}(\mathit{fs},\mathsf{graph}(m,E,K,s,\vec c,\mathsf{call},\varrho)),r,\vec a)\to h,\mathrm{entry}_\varrho(r,\vec a)}\ (\texttt{callGraph})
+\frac{r,\vec a\ \text{values}\quad\mathrm{binds}(\kappa,r)}{h,\mathsf{invoke}(\mathsf{obj}(\mathit{fs},\mathsf{graph}(m,E,K,s,\vec c,\kappa,\varrho)),r,\vec a)\to h,\mathrm{entry}_\varrho(r,\vec a)}\ (\texttt{callGraph})
 ```
+
+where the code's kind $`\kappa`$ binds the receiver (`Invoke.binds`):
+
+```math
+\mathrm{binds}(\mathsf{call},r)\qquad
+\mathrm{binds}(\mathsf{sloppy},r)\iff r=\mathsf{obj}(\ldots)
+```
+
+`call` code is strict code's, or code that reads no `this`; `sloppy` code is
+sloppy code that reads `this`, whose call binds `this` by
+OrdinaryCallBindThis ([ECMA-262](REFERENCES.md#ecma-262)) with
+`[[ThisMode]]` global: an object unchanged, `undefined` or `null` replaced by
+the global object and a primitive by a wrapper object. The model has the
+first case, the receiver bound unchanged, and no step for the others, so a
+safe run calls sloppy code with objects only.
 
 ```math
 \frac{\vec a\ \text{values}}{h,\mathsf{construct}(\mathsf{obj}(\mathit{fs},\mathsf{graph}(m,E,K,s,\vec c,\mathsf{construct},\varrho)),\vec a)\to h,\mathrm{entry}_\varrho(\mathsf{undefined},\vec a)}\ (\texttt{constructGraph})
@@ -1152,10 +1167,11 @@ not proved: the lowering is a trusted step
 ([trust surface](DESIGN.md#trust-surface)). Generic bodies are graph requests
 over parameter rows, certified at every assignment of those rows
 ([generic bodies](DESIGN.md#generic-bodies)); general difference and negation
-types are not in the calculus. Receivers follow the strict rule only: sloppy
-code's global-object substitution and primitive boxing, `new.target`, and a
-bound function's reflective properties (`name`, `length`) are not modelled,
-and the source forms that would need them are refused. What the source
+types are not in the calculus. A receiver is bound unchanged: sloppy
+code's global-object substitution and primitive boxing have no step
+([graph code](#graph-code)); `new.target` and a bound function's reflective
+properties (`name`, `length`) are not modelled, and the source forms that
+would need them are refused. What the source
 fragment admits is summarised in the
 [README](README.md#current-source-fragment); what it refuses, on principle or
 as a model limit, is the [fragment boundary](SOURCE-FRAGMENT.md#fragment-boundary),

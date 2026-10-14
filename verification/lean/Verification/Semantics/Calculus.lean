@@ -135,9 +135,15 @@ def Arith.relational : Arith → Bool
 /-- Which of JavaScript's internal methods a function's code provides: `call`
 code runs when the function is called (`[[Call]]`), and `construct` code only
 under `new` (`[[Construct]]`), as a class constructor's does, whose plain call
-throws. An arrow's or a method's code is `call`: `new` on it throws. -/
+throws. An arrow's or a method's code is `call`: `new` on it throws.
+`sloppy` code also runs when the function is called: it is the code of a
+sloppy (non-strict) function that reads its receiver, whose call binds
+`this` by `OrdinaryCallBindThis` with `[[ThisMode]]` global: an object
+receiver unchanged, `undefined` or `null` replaced by the global object and
+a primitive by a wrapper object. The model has the first case only
+(`Invoke.binds`). -/
 inductive Invoke where
-  | call | construct
+  | call | construct | sloppy
   deriving Repr, DecidableEq
 
 namespace ControlFlow
@@ -301,6 +307,16 @@ def CallCode.callable : CallCode → Bool
   | .absent => false
   | .graph _ _ _ _ _ .construct _ => false
   | _ => true
+
+/-- Whether a call of code of this kind binds the receiver `r` as `this`:
+`call` code binds every receiver unchanged; `sloppy` code an object, which
+`OrdinaryCallBindThis` leaves unchanged, and no other receiver, whose
+conversion (the global object, a wrapper) the model has no term for, so such
+a call has no step; construct code is not called. -/
+def Invoke.binds : Invoke → Tm → Bool
+  | .call, _ => true
+  | .sloppy, .objAt .. => true
+  | _, _ => false
 
 /-- Graph code's node `l`: its expression, continuation and handler. -/
 def graphNode (exprs : List Tm) (conts : List (ControlFlow.Continuation × Option ControlFlow.Target))
@@ -1992,9 +2008,10 @@ inductive Step : Heap → Tm → Heap → Tm → Prop where
   /-- Graph code with `[[Call]]` is invoked in one step, changing no heap: its
   run starts at the entry label, the receiver in slot 0, then the parameters,
   then the captures, after collecting the rest's store when it has one
-  (`CallArguments.graphEntry`). -/
-  | callGraph : isVal r = true → (∀ a ∈ args, isVal a = true) →
-      Step h (.invoke (.objAt fs (.graph n E K s caps .call rest) oid) r args) h
+  (`CallArguments.graphEntry`). Its kind binds the receiver (`Invoke.binds`):
+  sloppy code is invoked only with an object. -/
+  | callGraph : isVal r = true → (∀ a ∈ args, isVal a = true) → k.binds r = true →
+      Step h (.invoke (.objAt fs (.graph n E K s caps k rest) oid) r args) h
         (CallArguments.graphEntry n E K s caps rest r args)
   /-- `new` on construct-only graph code enters it as a call does, with
   `undefined` for the receiver. -/

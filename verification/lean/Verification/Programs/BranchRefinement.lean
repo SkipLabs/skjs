@@ -460,6 +460,12 @@ theorem familyMember_sound {X : α → Fam} {P : α → ArgFam} {cs : List (Clau
         refine ⟨a, ha, ?_, ?_⟩ <;> (split at hka <;> simp at hka)
         · exact ⟨⟨hi, by simp⟩, ⟨hi, by simp⟩⟩
         · rfl
+      | sloppy =>
+        have hi : Invocable (.objAt fs (.graph arity E K start caps .sloppy rest) oid) :=
+          ⟨_, _, _, rfl, rfl, hs⟩
+        refine ⟨a, ha, ?_, ?_⟩ <;> (split at hka <;> simp at hka)
+        · exact ⟨⟨hi, by simp⟩, ⟨hi, by simp⟩⟩
+        · rfl
       | construct =>
         have hc : Constructible (.objAt fs (.graph arity E K start caps .construct rest) oid) :=
           ⟨_, _, _, _, _, _, _, _, rfl, hs⟩

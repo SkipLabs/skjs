@@ -333,18 +333,6 @@ def Invocable (v : Val) : Prop :=
 theorem Invocable.val {v : Val} (h : Invocable v) : isVal v = true := by
   obtain ⟨fs, code, oid, rfl, -, -⟩ := h; rfl
 
-/-- Code with `[[Call]]` has a call for every ready receiver and list. -/
-theorem Invocable.invoke {v r : Tm} {args : List Tm} (h : Invocable v) (hr : isVal r = true)
-    (ha : CallArguments.Values args) : ∃ result, CallArguments.Invoke ⟨v, r, args⟩ result := by
-  obtain ⟨fs, code, oid, rfl, hc, -⟩ := h
-  cases code with
-  | absent => simp [CallCode.callable] at hc
-  | bound target r₀ pre => exact ⟨_, .bound hr ha⟩
-  | graph arity E K start caps kind rest =>
-    cases kind
-    · exact ⟨_, .graph hr ha⟩
-    · simp [CallCode.callable] at hc
-
 theorem Invocable.scoped {v : Val} (h : Invocable v) : Scoped 0 v := by
   obtain ⟨fs, code, oid, rfl, -, hs⟩ := h; exact hs
 

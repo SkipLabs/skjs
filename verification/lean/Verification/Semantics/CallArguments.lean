@@ -274,17 +274,19 @@ inductive Invoke : Frame → Tm → Prop where
   | bound : isVal r = true → Values args →
       Invoke ⟨.objAt fs (.bound target r₀ pre) oid, r, args⟩ (.invoke target r₀ (pre ++ args))
   /-- Graph code starts its run at its entry, the receiver, the parameters and
-  the captures in its environment, after collecting its rest (`graphEntry`). -/
-  | graph : isVal r = true → Values args →
-      Invoke ⟨.objAt fs (.graph arity E K start caps .call rest) oid, r, args⟩
+  the captures in its environment, after collecting its rest (`graphEntry`),
+  where its kind binds the receiver (`Invoke.binds`). -/
+  | graph : isVal r = true → Values args → kind.binds r = true →
+      Invoke ⟨.objAt fs (.graph arity E K start caps kind rest) oid, r, args⟩
         (graphEntry arity E K start caps rest r args)
 
 /-- The term each kind of code yields for a ready receiver and argument list. -/
 def dispatch : CallCode → Tm → List Tm → Option Tm
   | .bound target r₀ pre, _, args => some (.invoke target r₀ (pre ++ args))
-  | .graph arity E K start caps .call rest, r, args => some (graphEntry arity E K start caps rest r args)
-  -- A class constructor's plain call throws: nothing runs.
-  | .graph _ _ _ _ _ .construct _, _, _ => none
+  -- A class constructor's plain call throws, and sloppy code given another
+  -- receiver than an object converts it: nothing the model runs.
+  | .graph arity E K start caps kind rest, r, args =>
+    if kind.binds r then some (graphEntry arity E K start caps rest r args) else none
   | .absent, _, _ => none
 
 /-- What `new` runs for construct code without a rest, for each ready
@@ -326,21 +328,25 @@ theorem invoke_iff : Invoke frame result ↔
   · intro hi
     cases hi with
     | bound hr hv => exact ⟨_, _, _, rfl, hr, hv, rfl⟩
-    | graph hr hv => exact ⟨_, _, _, rfl, hr, hv, rfl⟩
+    | graph hr hv hk => exact ⟨_, _, _, rfl, hr, hv, by simp [dispatch, hk]⟩
   · rcases frame with ⟨f, r, args⟩
     rintro ⟨fs, code, oid, hf, hr, hv, hd⟩
     cases hf
     cases code with
     | absent => cases hd
     | bound target r₀ pre => cases hd; exact .bound hr hv
-    | graph arity E K start caps kind rest => cases kind <;> cases hd; exact .graph hr hv
+    | graph arity E K start caps kind rest =>
+      simp only [dispatch] at hd
+      split at hd
+      · rename_i hk; cases hd; exact .graph hr hv hk
+      · cases hd
 
 /-- Prepared list dispatch is a step of the maintained term machine. -/
 theorem Invoke.step (hi : Invoke frame body) (h : Heap) :
     Step h (.invoke frame.callee frame.recv frame.args) h body := by
   cases hi with
   | bound hr hv => exact .callBound hr hv
-  | graph hr hv => exact .callGraph hr hv
+  | graph hr hv hk => exact .callGraph hr hv hk
 
 /-- Preparation and native operand reduction are the same transition. -/
 theorem Prepare.step (hp : Prepare h frame h' frame') :
@@ -368,7 +374,7 @@ theorem call_step_iff : Step h (.invoke f r args) h' result ↔
     | callArg hv hr hg hb hs =>
       exact Or.inl ⟨_, .args hv hr (focus_iff.mpr ⟨_, _, _, hg, hb, hs, rfl⟩), rfl⟩
     | callBound hr hv => exact Or.inr ⟨rfl, .bound hr hv⟩
-    | callGraph hr hv => exact Or.inr ⟨rfl, .graph hr hv⟩
+    | callGraph hr hv hk => exact Or.inr ⟨rfl, .graph hr hv hk⟩
     | callSpread hv hr he hp hre => exact Or.inl ⟨_, .splice hv hr he hp hre, rfl⟩
   · rintro (⟨frame, hp, rfl⟩ | ⟨rfl, hi⟩)
     · exact hp.step

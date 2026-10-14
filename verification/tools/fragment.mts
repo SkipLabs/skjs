@@ -333,6 +333,9 @@ export interface FunctionAst {
   params: { name: string; pos: Span; type: TypeTerm; rest?: true }[];
   retType: TypeTerm;
   body: Stmt[];
+  /** Whether the function's code is strict: a sloppy call converts a
+   * receiver that is not an object. */
+  strict: boolean;
 }
 
 export interface Ast {

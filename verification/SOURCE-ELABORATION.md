@@ -1030,6 +1030,66 @@ refused: a class whose constructor calls its parameter's `toString` is not a
 `new (params: Json) => Resource<C>`, as a Json object may own that key at any
 Json (`invalid-sum-sound-binding-constructor.ts`).
 
+### Sloppy code reading `this`
+
+A function whose code is sloppy and reads `this` (its body, a default or a
+nested arrow) binds its receiver as a sloppy call does: an object unchanged,
+any other converted. Its code's kind is `sloppy`
+([graph code](SEMANTICS.md#graph-code)); every other ordinary function's is
+`call`. With $`\mathrm{obj}_G(R)`$ for a receiver type of clause rows each an
+object clause (`kindOffers`), a sloppy closure reading `this` has a receiver
+annotation $`Q_s`$ and claimed receivers of objects only, and a sloppy module
+function reading `this` has a `this` annotation of objects only:
+
+```math
+\frac{\mathrm{obj}_G(Q_s)\qquad\forall(R,\vec A,B)\in L.\;\mathrm{obj}_G(R)}
+     {\lambda\,\mathit{this}{:}Q_s,\vec x{:}\vec D.\,t\ \text{has kind}\ \mathsf{sloppy}\ \text{at}\ \bigwedge L}
+\qquad
+\frac{\mathrm{obj}_G(Q)}
+     {\mathsf{function}\ f(\mathit{this}{:}Q,\ldots)\ \text{sloppy, reading}\ \mathit{this}\ \text{is admitted}}
+```
+
+A module function's `this` is an input assumed at $`Q`$, so a caller passes an
+object, which the sloppy call binds unchanged. Other receiver types are
+refused ([model limits](SOURCE-FRAGMENT.md#model-limits)).
+
+### Calls through `Function.prototype.call`
+
+`f.call(r, ā)`, `f.apply(r, l)` and `f.bind(r, ā)` are the standard methods
+where `f` is a known local function, $`\mathrm{fn}(f)`$; a function a caller
+supplies may own a `call` property. With $`\mathrm{vals}(x)`$ the values a
+local $`x`$ may hold, a `const`'s initializer, or a `let`'s initializer and the
+right side of each plain assignment to it in its block (none where another
+form writes it or a declaration in its block shadows it), and
+$`\mathrm{mem}(o,m)`$ what an object literal $`o`$ holds at $`m`$ once built,
+read from its last part giving $`m`$, a spread giving what its source gives:
+
+```math
+\frac{f\ \text{an arrow or a function expression}}{\mathrm{fn}(f)}
+\qquad
+\frac{\mathrm{vals}(x)\neq\varnothing\quad\forall v\in\mathrm{vals}(x).\;\mathrm{fn}(v)}{\mathrm{fn}(x)}
+\qquad
+\frac{m\ \text{written by no assignment in the file}\quad\forall o\in\mathrm{vals}(x).\;\mathrm{mem}(o,m)\ \text{a known local function}}
+     {\mathrm{fn}(x.m)}
+```
+
+beside a module function declaration with a body, an `Object.assign` callable
+and a `.bind` of a known local function (`localArrow`). A spread copies a
+literal's own enumerable data properties, so the copy's member is the
+source's.
+
+Every local these rules follow is confined (`confined`): each reference to it
+is the callee of a call, the object of `.call`, `.apply` or `.bind`, directly
+or through one member, a spread or a member value in an object literal another
+such local is given, the target of a plain assignment to it, or the object of
+a read or write, not a call, of a member other than `call`, `apply`, `bind`
+and the members the rules follow; and no literal it is given has an accessor,
+which a spread runs with the object as its receiver. Code holding a followed
+value is then the file's own, whose writes the rules above read: any other
+reference (an argument, `Object.assign`'s target, a method call's receiver, a
+return, another binding's value, a read of a followed member) may hand it to
+code that replaces its member or gives the function an own `call`.
+
 ## Certifying inferred call effects
 
 **Definition certification and initial producer inference are implemented;

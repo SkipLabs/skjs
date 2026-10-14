@@ -407,20 +407,21 @@ no fixed signature and each variadic signature with its store type from `As`. -/
       q.1.arguments.1.length == arity && decide (RestStore G q.2 q.1.arguments.2) &&
         codes ⟨arity, E, K, start, Cs, q.1.fixed, some q.2⟩
 
-/-- Every signature the type `A` offers is a checked entry of graph code with
-captures at `Cs`: an arrow type's signatures, or, for a generic closure, a
-scheme row's, whose captures' types then read none of its binders. A table
-entry is checked at every assignment of the parameter rows
-(`CodesSound`), so at every instantiation of the scheme's binders. -/
+/-- Every signature the type `A` offers is a checked entry of graph code of
+kind `kind` with captures at `Cs`, and one the kind offers (`KindOffers`): an
+arrow type's signatures, or, for a generic closure, a scheme row's, whose
+captures' types then read none of its binders. A table entry is checked at
+every assignment of the parameter rows (`CodesSound`), so at every
+instantiation of the scheme's binders. -/
 @[nospecialize] def graphCodesChecked [DecidableEq ι] (G : NormalGraph ι) (A : Ty ι) (codes : CodeEntry ι → Bool)
-    (arity : Nat) (E : List Tm) (K : List (ControlFlow.Continuation × Option ControlFlow.Target))
+    (kind : Invoke) (arity : Nat) (E : List Tm) (K : List (ControlFlow.Continuation × Option ControlFlow.Target))
     (start : Nat) (Cs : List (Ty ι)) (rest : Bool) (As : List (Ty ι)) : Bool :=
   match schemeOf G A with
-  | some (_, s) => !s.construct && capturesFree G s Cs &&
+  | some (_, s) => !s.construct && capturesFree G s Cs && decide (KindOffers G kind s.signatures s.variadic) &&
       offersChecked G codes arity E K start Cs rest s.signatures s.variadic As
   | none =>
     match expand G A with
-    | [.arrs L S] => offersChecked G codes arity E K start Cs rest L S As
+    | [.arrs L S] => decide (KindOffers G kind L S) && offersChecked G codes arity E K start Cs rest L S As
     | _ => false
 
 /-- A class value's construct signatures, each a checked entry of its graph
@@ -822,9 +823,9 @@ declared bounds. -/
   | .funGraph As =>
     match j.term, ps with
     | .makeAt (.graph arity E K start caps kind rest) ns inits, ps =>
-      kind = .call ∧ ns = [codeField] ∧ inits = [Tm.nul] ∧ ps.map Sequent.term = caps ∧
+      ns = [codeField] ∧ inits = [Tm.nul] ∧ ps.map Sequent.term = caps ∧
       (∀ q ∈ ps, q.context = j.context) ∧ capSlotsBelow caps j.context.length = true ∧
-      graphCodesChecked G j.type codes arity E K start (ps.map Sequent.type) rest As = true
+      graphCodesChecked G j.type codes kind arity E K start (ps.map Sequent.type) rest As = true
     | _, _ => False
   -- A class value: as a function's code, construct-only, at its construct
   -- signatures with `undefined` for the receiver.
@@ -842,7 +843,7 @@ declared bounds. -/
     | .makeAt (.graph arity E K start caps kind rest) ns inits, ps =>
       match expand G j.type with
       | [.callable P [] L S] =>
-        kind = .call ∧ ns.Nodup ∧ ns.length = inits.length ∧
+        KindOffers G kind L S ∧ ns.Nodup ∧ ns.length = inits.length ∧
         (ps.take ns.length).map Sequent.term = inits ∧
         (∀ p ∈ ps, p.context = j.context) ∧
         P = ns.zip ((ps.take ns.length).map Sequent.type) ∧
@@ -1453,16 +1454,17 @@ theorem funScheme_of_checked [DecidableEq ι] {G : NormalGraph ι}
     {codes : CodeEntry ι → Bool} (hcodes : SchemeCodesSound G s codes)
     {arity start : Nat} {E : List Tm}
     {K : List (ControlFlow.Continuation × Option ControlFlow.Target)}
-    {caps : List (Ty ι × Nat)} {rest : Bool} {stores : List (Ty ι)}
+    {caps : List (Ty ι × Nat)} {kind : Invoke} {rest : Bool} {stores : List (Ty ι)}
     (hp : G.params j = false) (hs : G.schemes j = some s) (hcon : s.construct = false)
+    (hkind : KindOffers G kind s.signatures s.variadic)
     (hc : offersChecked G codes arity E K start (caps.map Prod.fst) rest
       s.signatures s.variadic stores = true)
     (hfree : capturesFree G s (caps.map Prod.fst) = true)
     (hlt : ∀ c ∈ caps, c.2 < Γ.length)
     (hcap : ∀ c ∈ caps, HasTyUsing G images (subtyping := subtyping) Γ (.var c.2) c.1) :
     HasTyUsing G images (subtyping := subtyping) Γ
-      (.makeFn (.graph arity E K start (caps.map fun c => .var c.2) .call rest) .nul) [j] :=
-  .funScheme hp hs hcon (schemeOffersChecked_sound hcodes hc) (offersChecked_shape hc) hfree hlt hcap
+      (.makeFn (.graph arity E K start (caps.map fun c => .var c.2) kind rest) .nul) [j] :=
+  .funScheme hp hs hcon hkind (schemeOffersChecked_sound hcodes hc) (offersChecked_shape hc) hfree hlt hcap
 
 #print axioms schemeOffersChecked_sound
 #print axioms funScheme_of_checked
@@ -1535,12 +1537,12 @@ theorem funGraph_of_local [DecidableEq ι] {G : NormalGraph ι}
     {images : PositiveCertificates.InstanceImageCheck G} {subtyping : BodySubtyping G} {Γ : List (Ty ι)} {A : Ty ι}
     {codes : CodeEntry ι → Bool} (hcodes : CodesSound G codes) {arity start : Nat}
     {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)}
-    {rest : Bool} {As : List (Ty ι)}
+    {kind : Invoke} {rest : Bool} {As : List (Ty ι)}
     {ps : List (Sequent ι)} (hctx : ∀ q ∈ ps, q.context = Γ)
     (hslots : capSlotsBelow (ps.map Sequent.term) Γ.length = true)
-    (hok : graphCodesChecked G A codes arity E K start (ps.map Sequent.type) rest As = true)
+    (hok : graphCodesChecked G A codes kind arity E K start (ps.map Sequent.type) rest As = true)
     (hp : ∀ p ∈ ps, HasTyUsing G images (subtyping := subtyping) p.context p.term p.type) :
-    HasTyUsing G images (subtyping := subtyping) Γ (.makeFn (.graph arity E K start (ps.map Sequent.term) .call rest) .nul) A := by
+    HasTyUsing G images (subtyping := subtyping) Γ (.makeFn (.graph arity E K start (ps.map Sequent.term) kind rest) .nul) A := by
   obtain ⟨caps, hvar, hfst, hlt, hcap⟩ := caps_of_local hctx hslots hp
   rw [← hvar]
   unfold graphCodesChecked at hok
@@ -1557,13 +1559,14 @@ theorem funGraph_of_local [DecidableEq ι] {G : NormalGraph ι}
         obtain ⟨s', hq, he⟩ := Option.map_eq_some_iff.mp hs
         cases he
         exact funScheme_of_checked (caps := caps) (E := E) (K := K) (start := start) (arity := arity)
-          (hcodes.scheme s) (by simpa using hpar) hq (by simpa using hok.1.1)
-          (by rw [hfst]; exact hok.2) (by rw [hfst]; exact hok.1.2) hlt hcap
+          (hcodes.scheme s) (by simpa using hpar) hq (by simpa using hok.1.1.1) (of_decide_eq_true hok.1.2)
+          (by rw [hfst]; exact hok.2) (by rw [hfst]; exact hok.1.1.2) hlt hcap
     · cases hs
   · split at hok
     · rename_i L S hL
+      simp only [Bool.and_eq_true] at hok
       exact HasTyUsing.funGraph (caps := caps) (E := E) (K := K) (start := start) (arity := arity) hL
-        (by rw [hfst]; exact offersChecked_sound hcodes hok G.env) hlt hcap
+        (of_decide_eq_true hok.1) (by rw [hfst]; exact offersChecked_sound hcodes hok.2 G.env) hlt hcap
     · contradiction
 
 theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
@@ -1587,7 +1590,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
   · exact .bigintLit hl
   · exact .bigint hl
   · rename_i As ps _ _ arity E K start caps kind rest ns inits
-    obtain ⟨rfl, rfl, rfl, hterms, hctx, hslots, hok⟩ := hl
+    obtain ⟨rfl, rfl, hterms, hctx, hslots, hok⟩ := hl
     subst caps
     exact funGraph_of_local hcodes hctx hslots hok hp
   · rename_i U ps _ _ arity E K start caps kind rest ns inits
@@ -1609,7 +1612,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
     · contradiction
   · split at hl
     · rename_i _ As ps _ _ arity E K start caps kind rest ns inits _ P L S hF
-      obtain ⟨rfl, hnd, hlen, hterms, hctx, rfl, hcaps, hslots, hok⟩ := hl
+      obtain ⟨hkind, hnd, hlen, hterms, hctx, rfl, hcaps, hslots, hok⟩ := hl
       have hctxd : ∀ q ∈ ps.drop ns.length, q.context = Γ :=
         fun q hq => hctx q (List.mem_of_mem_drop hq)
       have hpd : ∀ q ∈ ps.drop ns.length, HasTyUsing G images (subtyping := subtyping) q.context q.term q.type :=
@@ -1648,7 +1651,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
         exact h
       have := HasTyUsing.callableGraph (G := G) (images := images) (Γ := Γ) (F := A) (parts := parts) (caps := caps')
         (E := E) (K := K) (start := start) (arity := arity) (rest := rest) (As := As)
-        (by rw [hP]; exact hF) (by rw [hfst']; exact hnd) hpart
+        (by rw [hP]; exact hF) (by rw [hfst']; exact hnd) hpart hkind
         (by rw [hfst]; exact offersChecked_sound hcodes hok G.env) hlt hcap
       rw [hfst', hsnd] at this
       exact this
@@ -2382,34 +2385,34 @@ theorem checkTreeUsing_complete [DecidableEq ι] {G : NormalGraph ι}
   | str hr => exact node_complete (r := .str) (js := []) hr (by simp)
   | bigintLit hr => exact node_complete (r := .bigintLit) (js := []) hr (by simp)
   | bigint hr => exact node_complete (r := .bigint) (js := []) hr (by simp)
-  | @funGraph Γ F L S arity start E K caps rest As hr hspec hlt hcap ih =>
+  | @funGraph Γ F L S arity start E K caps kind rest As hr hkind hspec hlt hcap ih =>
     apply node_complete (r := .funGraph As)
-      (j := ⟨Γ, .makeFn (.graph arity E K start (caps.map fun c => .var c.2) .call rest) .nul, F⟩)
+      (j := ⟨Γ, .makeFn (.graph arity E K start (caps.map fun c => .var c.2) kind rest) .nul, F⟩)
       (js := caps.map fun c => ⟨Γ, .var c.2, c.1⟩)
-    · refine ⟨rfl, rfl, rfl, by simp, ?_, capSlots_complete hlt, ?_⟩
+    · refine ⟨rfl, rfl, by simp, ?_, capSlots_complete hlt, ?_⟩
       · intro q hq
         obtain ⟨c, _, rfl⟩ := List.mem_map.mp hq
         rfl
       · have hmap : (caps.map fun c => (⟨Γ, .var c.2, c.1⟩ : Sequent ι)).map Sequent.type =
             caps.map Prod.fst := by simp
         simp only [graphCodesChecked, schemeOf_plain (Represents.plain hr),
-          show expand G F = [.arrs L S] from hr, hmap]
+          show expand G F = [.arrs L S] from hr, hmap, decide_eq_true hkind, Bool.true_and]
         exact offersChecked_complete hspec
     · intro j hj
       obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hj
       exact ih c hc
-  | @funScheme Γ i s arity start E K caps rest As hp hq hcon _hspec hshape hcf hlt hcap ih =>
+  | @funScheme Γ i s arity start E K caps kind rest As hp hq hcon hkind _hspec hshape hcf hlt hcap ih =>
     apply node_complete (r := .funGraph As)
-      (j := ⟨Γ, .makeFn (.graph arity E K start (caps.map fun c => .var c.2) .call rest) .nul, [i]⟩)
+      (j := ⟨Γ, .makeFn (.graph arity E K start (caps.map fun c => .var c.2) kind rest) .nul, [i]⟩)
       (js := caps.map fun c => ⟨Γ, .var c.2, c.1⟩)
-    · refine ⟨rfl, rfl, rfl, by simp, ?_, capSlots_complete hlt, ?_⟩
+    · refine ⟨rfl, rfl, by simp, ?_, capSlots_complete hlt, ?_⟩
       · intro q hq
         obtain ⟨c, _, rfl⟩ := List.mem_map.mp hq
         rfl
       · have hmap : (caps.map fun c => (⟨Γ, .var c.2, c.1⟩ : Sequent ι)).map Sequent.type =
             caps.map Prod.fst := by simp
         simp only [graphCodesChecked, schemeOf, hp, hq, hmap, hcf, hcon, Bool.false_eq_true,
-          if_false, Option.map_some, Bool.true_and, Bool.not_false]
+          if_false, Option.map_some, Bool.true_and, Bool.not_false, decide_eq_true hkind]
         cases rest with
         | false => simp [offersChecked]
         | true =>
@@ -2436,16 +2439,16 @@ theorem checkTreeUsing_complete [DecidableEq ι] {G : NormalGraph ι}
     · intro j hj
       obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hj
       exact ih c hc
-  | @callableGraph Γ F L S arity start E K caps rest As parts hr hnd hpart hspec hlt hcap ih ihc =>
+  | @callableGraph Γ F L S arity start E K caps kind rest As parts hr hnd hpart hkind hspec hlt hcap ih ihc =>
     apply node_complete (r := .callableGraph As)
-      (j := ⟨Γ, .makeAt (.graph arity E K start (caps.map fun c => .var c.2) .call rest)
+      (j := ⟨Γ, .makeAt (.graph arity E K start (caps.map fun c => .var c.2) kind rest)
         (parts.map Prod.fst) (parts.map fun p => p.2.2), F⟩)
       (js := (parts.map fun p => ⟨Γ, p.2.2, p.2.1⟩) ++ caps.map fun c => ⟨Γ, .var c.2, c.1⟩)
     · unfold LocalUsing; simp only [
         show expand G F = [.callable (parts.map fun p => (p.1, p.2.1)) [] L S] from hr]
       have hlenp : (parts.map fun p => (⟨Γ, p.2.2, p.2.1⟩ : Sequent ι)).length
           = (parts.map Prod.fst).length := by simp
-      refine ⟨trivial, hnd, by simp, ?_, ?_, ?_, ?_, ?_, ?_⟩
+      refine ⟨hkind, hnd, by simp, ?_, ?_, ?_, ?_, ?_, ?_⟩
       · rw [List.take_left' hlenp]
         simp [List.map_map, Function.comp_def]
       · intro q hq

@@ -565,9 +565,11 @@ inductive Expr where
   may omit and the expression that replaces the `undefined` bound there; the
   advertised domain at such a position is the parameter's type with
   `undefined`. `receiver` is none for an arrow, whose `this` is a capture; an
-  ordinary (strict) function binds the receiver of each call as `this`, at the
-  annotation given here. -/
-  | lambda (pos : Span) (receiver : Option Json) (typeParams : List TypeParam)
+  ordinary function binds the receiver of each call as `this`, at the
+  annotation given here, by its code's kind: `sloppy` for sloppy code that
+  reads `this`, whose call converts a receiver that is not an object, and
+  `call` for any other (`Invoke`). -/
+  | lambda (pos : Span) (receiver : Option (Json × Invoke)) (typeParams : List TypeParam)
       (params : List (String × Json)) (defaults : List (Nat × Expr)) (rest : Bool)
       (result : Option Json) (body : Expr)
   /-- A class value: its constructor `lambda` as construct-only code. -/
@@ -842,6 +844,11 @@ def parameterOrder (ps : List (String × Json)) (defaults : List (Nat × Expr)) 
   if !pending.isEmpty then throw "cyclic parameter-default captures require an initialization frame"
   return done
 
+/-- Why sloppy code that reads `this` is refused at a receiver type that may
+hold a value other than an object. -/
+def sloppyReceiverReason : String :=
+  "sloppy code that reads `this` needs a receiver type of objects only: a sloppy call replaces an undefined or primitive receiver by the global object or a wrapper object, which the model does not have"
+
 /-- Singleton notation for small source-adapter fixtures. -/
 abbrev Expr.lam (p : Span) (name : String) (arg result : Json) (body : Expr) : Expr :=
   .lambda p none [] [(name,arg)] [] false result body
@@ -904,6 +911,10 @@ structure Fn where
   params : List Param
   ret : Json
   body : List Stmt
+  /-- Whether a call of the function converts a receiver that is not an
+  object, as a call of sloppy code does; a leading `this` parameter is the
+  receiver. -/
+  convertsReceiver : Bool
 
 private def decodeArith (j : Json) : Except String Arith := do
   match ← jStr j with
@@ -1229,9 +1240,7 @@ partial def decodeExpr (j : Json) : Except String Expr := do
       | some raw => do
         fieldsExactly j ["k","pos","typeParams","receiver","params","result","body"]
         -- An ordinary function records its receiver annotation and whether
-        -- its code is strict. Its receiver rule is the strict one: sloppy code
-        -- substitutes the global object and boxes primitives, which nothing
-        -- here models, so a sloppy function that reads `this` is refused.
+        -- its code is strict, which decides its code's kind below.
         let receiver ← match ← jField j "receiver" with
           | .null => pure none
           | r => do
@@ -1263,13 +1272,16 @@ partial def decodeExpr (j : Json) : Except String Expr := do
       | none => return none
       | some d => return some (i, ← decodeExpr d)
     let body ← decodeExpr (← jField j "body")
-    if let some (_, false) := receiver then
-      if (body :: defaults.map Prod.snd).any (·.freeNames.contains "this") then
-        throw s!"unsupported source expression at [{p.1},{p.2}): a function that reads `this` must be strict code: sloppy code replaces an undefined or primitive receiver by the global object or a wrapper object, which the model, whose receiver rule is strict code's, does not have"
+    -- Sloppy code that reads `this` observes the receiver conversion of a
+    -- sloppy call: its code is `sloppy`, which binds objects only. A body
+    -- that does not read `this` cannot tell the kinds apart.
+    let readsThis := (body :: defaults.map Prod.snd).any (·.freeNames.contains "this")
+    let receiver := receiver.map fun (annot, strict) =>
+      (annot, if !strict && readsThis then Invoke.sloppy else Invoke.call)
     -- A result the source does not annotate is null: the producer's claim
     -- at the closure proposes it, and every claimed arrow's body is checked.
     let result ← jField j "result"
-    return .lambda p (receiver.map Prod.fst) typeParams params defaults (!restAt.isEmpty)
+    return .lambda p receiver typeParams params defaults (!restAt.isEmpty)
       (if result == .null then none else some result) body
   | "conditional" =>
     return .ifBody p (← decodeExpr (← jField j "cond"))
@@ -1400,7 +1412,7 @@ def decodeFn (j : Json) : Except String (Fn × List TypeParam) := do
           if !(← b.getBool?) then throw "a rest parameter is marked by `true`"
           pure true
       return ⟨← jStr (← jField p "name"), ← jField p "type", rest⟩),
-    ← jField j "retType", ← (← jArr j "body").mapM decodeStmt⟩, typeParams)
+    ← jField j "retType", ← (← jArr j "body").mapM decodeStmt, !(← (← jField j "strict").getBool?)⟩, typeParams)
 
 def decodeAstWithParams (j : Json) : Except String (List (Fn × List TypeParam)) := do
   fieldsExactly j ["file", "sourceSha256", "declarations", "init", "functions"]
