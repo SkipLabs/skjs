@@ -530,13 +530,99 @@ theorem realmStoreT_congr {U U' : Fam} {n : Nat} (h : Agree U U' n) (W : WorldT 
   cases hE
   exact ⟨U', c, rfl, hw, fun j hj W' u => (hag j hj W' u).congr (h j hj W' u)⟩
 
+/-- **An array's own fields at canonical numeric keys hold its elements'
+type**, as `Array<T>`'s declared `[n: number]: T` says: a value such a
+field's contract admits at a level is in every family `A` such that the
+store's contract, one level up, is within the possibly sparse stores of `A`
+(an element's contract at a level is stated by the store's one level up).
+So an array of a type whose store holds `T` holds `T` there too, below the
+level (`numeric_of_inv`); an array whose store's contract is a tuple
+contract's and whose numeric fields hold its rest's type meets it
+(`numericOwn_of_store`). It reads the world's contracts only. -/
+def numericOwn (k : Nat) (W : WorldT k) (flds : List (PropKey × Nat)) : Prop :=
+  ∃ (ls : Nat) (cs : Ctr k), flds.lookup CallArguments.arrayStoreField = some ls ∧ lookup W ls = some cs ∧
+    ∀ key l, IndexKeys.numeric.Admits key → flds.lookup key = some l → ∃ c : Ctr k, lookup W l = some c ∧
+      ∀ (j : Nat) (hj : j + 1 < k) (U : WorldT j) (u : Val), c j (by omega) U u →
+        ∀ A : Fam, (∀ (U' : WorldT (j + 1)) (s : Val), cs (j + 1) hj U' s → realmStoreT A (j + 1) U' s) →
+          A j U u
+
+theorem numericOwn_down {n : Nat} {W : WorldT (n + 1)} {flds : List (PropKey × Nat)}
+    (h : numericOwn (n + 1) W flds) : numericOwn n (trunc n (Nat.le_succ n) W) flds := by
+  obtain ⟨ls, cs, hs, hcs, hk⟩ := h
+  refine ⟨ls, _, hs, lookup_trunc (Nat.le_succ n) W ls cs hcs, fun key l hkey hl => ?_⟩
+  obtain ⟨c, hc, hag⟩ := hk key l hkey hl
+  exact ⟨_, lookup_trunc (Nat.le_succ n) W l c hc, fun j hj U u hu A hA =>
+    hag j (by omega) U u hu A fun U' s hs' => hA U' s hs'⟩
+
+theorem numericOwn_mono {n : Nat} {W W' : WorldT n} (hx : WExt W W') {flds : List (PropKey × Nat)}
+    (h : numericOwn n W flds) : numericOwn n W' flds := by
+  obtain ⟨ls, cs, hs, hcs, hk⟩ := h
+  refine ⟨ls, cs, hs, WExt_lookup hx hcs, fun key l hkey hl => ?_⟩
+  obtain ⟨c, hc, hag⟩ := hk key l hkey hl
+  exact ⟨c, WExt_lookup hx hc, hag⟩
+
+/-- An object owning no field at a canonical numeric key states nothing
+there. -/
+theorem numericOwn_of_none {k : Nat} {W : WorldT k} {flds : List (PropKey × Nat)} {ls : Nat}
+    {cs : Ctr k} (hs : flds.lookup CallArguments.arrayStoreField = some ls) (hcs : lookup W ls = some cs)
+    (hn : ∀ key, IndexKeys.numeric.Admits key → flds.lookup key = none) : numericOwn k W flds :=
+  ⟨ls, cs, hs, hcs, fun key l hkey hl => by rw [hn key hkey] at hl; cases hl⟩
+
+/-- **The invariant is inhabited by arrays owning numeric fields**: an array
+whose store's contract admits every store of a tuple contract with no fixed
+positions and rest `T`, and each of whose fields at a canonical numeric key
+holds `T`, meets `numericOwn`. The store `[l]` with `l` of contract `T`, in a
+one-location world, is such a store; the hypothesis on `A` makes `l`'s
+contract within `A`. -/
+theorem numericOwn_of_store {k : Nat} {W : WorldT k} {flds : List (PropKey × Nat)} {ls : Nat}
+    {cs : Ctr k} (hs : flds.lookup CallArguments.arrayStoreField = some ls) (hcs : lookup W ls = some cs)
+    {τ : TupleF} {T : Fam} (hreq : τ.required = []) (hopt : τ.optional = []) (hrest : τ.rest = some T)
+    (hstore : ∀ (j : Nat) (hj : j < k) (U : WorldT j) (s : Val), listT τ j U s → cs j hj U s)
+    (hk : ∀ key l, IndexKeys.numeric.Admits key → flds.lookup key = some l → ∃ c : Ctr k,
+      lookup W l = some c ∧ ∀ (j : Nat) (hj : j < k) (U : WorldT j) (u : Val), c j hj U u → T j U u) :
+    numericOwn k W flds := by
+  refine ⟨ls, cs, hs, hcs, fun key l hkey hl => ?_⟩
+  obtain ⟨c, hc, hag⟩ := hk key l hkey hl
+  refine ⟨c, hc, fun j hj U u hu A hA => ?_⟩
+  let C0 : Ctr (j + 1) := fun i _ X v => T i X v
+  let U' : WorldT (j + 1) := ofList [C0]
+  have hlook : lookup U' 0 = some C0 := by simp [U', lookup]
+  have hlist : listT τ (j + 1) U' (.arr [some 0]) := by
+    refine ⟨[some 0], rfl, fun i _ => ?_, by simp [hreq], by simp [hrest], ?_, ?_, ?_⟩
+    · unfold StorePresence
+      split
+      · simp
+      · trivial
+      · intro i' hi'
+        cases i' with
+        | zero => simp at hi'
+        | succ i' => simp at hi'
+    · intro i A' hA'
+      simp [hreq] at hA'
+    · intro i A' l' hA'
+      simp [hopt] at hA'
+    · intro i l' _ hl'
+      cases i with
+      | succ i => simp at hl'
+      | zero =>
+        simp only [List.getElem?_cons_zero, Option.some.injEq] at hl'
+        subst hl'
+        exact ⟨T, C0, hrest, hlook, fun i hi X v => SlotContract.refl _ _⟩
+  obtain ⟨_, he, -, -, -, -, -, hel⟩ := hA U' _ (hstore (j + 1) hj U' _ hlist)
+  cases he
+  obtain ⟨E, c', hE, hc', hag'⟩ := hel 0 0 (by simp) rfl
+  cases hE
+  rw [hlook] at hc'
+  cases hc'
+  exact (hag' j (Nat.lt_succ_self j) U u).1 (hag j (by omega) U u hu)
+
 /-- **The array invariant**, with `P` the prototype's type, `U` the realm's
 `unknown`, the type of an array's elements, and `N` the keys the prototype
 provides. -/
 def arrayInvariant (P U : Fam) (N : List PropKey) : Fam := fun k W v =>
   ∀ flds oid, v = .objAt flds .absent oid → (flds.lookup CallArguments.arrayStoreField).isSome = true →
     viewT [(CallArguments.arrayStoreField, realmStoreT U), (CallArguments.protoField, P)] k W v ∧
-      ownKeysT ⟨false, N⟩ k W v
+      ownKeysT ⟨false, N⟩ k W v ∧ numericOwn k W flds
 
 /-- What a row asks of the members of one of its clauses beyond the clause:
 the array invariant, where the graph states the realm and the clause is one it
@@ -562,11 +648,11 @@ def rowSem (G : NormalGraph ι) (A X : List ι → Fam) (P : List ι → ArgFam)
 theorem arrayInvariant_adm (P U : Fam) (N : List PropKey) : Adm (arrayInvariant P U N) := by
   constructor
   · intro n W v h flds oid hv hs
-    obtain ⟨h1, h2⟩ := h flds oid hv hs
-    exact ⟨(viewT_adm _).down n W v h1, (ownKeysT_adm _).down n W v h2⟩
+    obtain ⟨h1, h2, h3⟩ := h flds oid hv hs
+    exact ⟨(viewT_adm _).down n W v h1, (ownKeysT_adm _).down n W v h2, numericOwn_down h3⟩
   · intro n W W' hx v h flds oid hv hs
-    obtain ⟨h1, h2⟩ := h flds oid hv hs
-    exact ⟨(viewT_adm _).mono n W W' hx v h1, (ownKeysT_adm _).mono n W W' hx v h2⟩
+    obtain ⟨h1, h2, h3⟩ := h flds oid hv hs
+    exact ⟨(viewT_adm _).mono n W W' hx v h1, (ownKeysT_adm _).mono n W W' hx v h2, numericOwn_mono hx h3⟩
 
 /-- The invariant reads the prototype's type only below the budget, through
 the contract of the prototype key. -/
@@ -576,8 +662,8 @@ theorem arrayInvariant_congr {P Q U U' : Fam} (N : List PropKey) {n : Nat} (h : 
   have side : ∀ (P Q U U' : Fam), Agree P Q n → Agree U U' n →
       arrayInvariant P U N n W v → arrayInvariant Q U' N n W v := by
     intro P Q U U' h hu hv flds oid he hs
-    obtain ⟨h1, h2⟩ := hv flds oid he hs
-    refine ⟨fun f T hm => ?_, h2⟩
+    obtain ⟨h1, h2, h3⟩ := hv flds oid he hs
+    refine ⟨fun f T hm => ?_, h2, h3⟩
     simp only [List.mem_cons, Prod.mk.injEq, List.not_mem_nil, or_false] at hm
     rcases hm with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
     · obtain ⟨flds', l, c, oid', he', hf, hl, hag⟩ := h1 CallArguments.arrayStoreField (realmStoreT U) (by simp)
@@ -1619,6 +1705,7 @@ theorem normalDenote_plain (G : NormalGraph ι) (hG : G.Plain) :
     Tower.approx (normalLayer G) (n + 1) i n
   rw [← approx_plain G hG (n + 1) G.env]
 
+#print axioms numericOwn_of_store
 #print axioms mixedMeaning_selected
 #print axioms mixedMeaning_valid
 #print axioms mixedMeaning_parameter

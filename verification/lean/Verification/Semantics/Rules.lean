@@ -244,6 +244,25 @@ theorem make_fields_rule {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A)
       Q j U (.objAt (slots h.length ns) code (h.length + vs.length))) :
     Safe Ξ Q n W h (.makeAt code ns vs) :=
   OperationWorlds.erase n W h (.makeAt code ns vs)
+    (AllocationWorlds.allocation_safe hA n W h code ns vs hnd hns hAs hvals hadm hok
+      (fun p hp j _ => (hA p.1 (List.of_mem_zip hp).1).down_le n j (by omega) W p.2 (hv p hp)) result)
+
+/-- **Allocating named fields, from values known below the level.** The
+allocation step spends a level, so each value need meet its family only at
+the levels the heap is judged at after it. -/
+theorem make_fields_rule_below {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A)
+    (n : Nat) (W : WorldT n) (h : Heap) (code : CallCode)
+    (ns : List PropKey) (vs : List Val)
+    (hnd : ns.Nodup) (hns : ns.length = vs.length) (hAs : As.length = vs.length)
+    (hvals : ∀ v ∈ vs, isVal v = true)
+    (hadm : WorldAdm W) (hok : HeapOk n W h)
+    (hv : ∀ p ∈ As.zip vs, ∀ (j : Nat) (hj : j + 1 < n), p.1 j (trunc j (by omega) W) p.2)
+    (result : ∀ j (hj : j < n) (U : WorldT j),
+      WExt (trunc j (Nat.le_of_lt hj) W) U →
+      recT (ns.zip As) j U (.objAt (slots h.length ns) .absent (h.length + vs.length)) →
+      Q j U (.objAt (slots h.length ns) code (h.length + vs.length))) :
+    Safe Ξ Q n W h (.makeAt code ns vs) :=
+  OperationWorlds.erase n W h (.makeAt code ns vs)
     (AllocationWorlds.allocation_safe hA n W h code ns vs hnd hns hAs hvals hadm hok hv result)
 
 /-- **Allocating an object with no named field**, as `.bind` does: the

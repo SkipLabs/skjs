@@ -8,27 +8,31 @@ open Type_queries
    own string key it does not name, and a symbol index, the type of every own
    symbol-keyed property, which JavaScript's copy takes where it is
    enumerable. *)
-type alternative = { afields : Semantic.field list; exact : bool; index : ty option; symbols : ty option }
+type alternative = { afields : Semantic.field list; exact : bool; index : ty option; symbols : ty option;
+  numeric : ty option }
 
 (* No fields, and exactly them. *)
-let empty_alternative = { afields=[]; exact=true; index=None; symbols=None }
+let empty_alternative = { afields=[]; exact=true; index=None; symbols=None; numeric=None }
 
 (* A method member is host-relative: its object may hold it on its
    prototype, which a spread does not copy. *)
 let method_field (f:Semantic.field) = f.host
 
+(* A key some number spells. *)
+let numeric_name = function Name s -> canonical_numeric s | Key _ -> false
+
 (* The alternatives a spread's operand gives: nothing from a primitive other
    than a string, a record's fields otherwise, and no key a string's or a
    class's copy gives. *)
 let string_key (f:Semantic.field) = match f.name with Name _ -> true | Key _ -> false
-let rec source_alternatives declarations seen t = match t with
+let rec source_alternatives ?(target=false) declarations seen t = match t with
   | Atoms atoms -> List.concat_map (function
       | Nul | Undef | True | False | Num | NumLit _ | Bigint | BigintLit _ | Symbol ->
         [empty_alternative]
       (* A copy takes no symbol-keyed property, a private slot's included
          (DESIGN.md, "Object literals"). *)
       | Exact fs -> [{afields=List.filter (fun (f:Semantic.field) -> f.name <> Name proto_key && string_key f) fs;
-                      exact=true;index=None;symbols=None}]
+                      exact=true;index=None;symbols=None;numeric=None}]
       | Shape {fields;indexes;calls=[];elements=None} ->
         (* The string index states every own string key's type; a number
            index states only the canonical numeric ones', so a key it covers
@@ -38,26 +42,32 @@ let rec source_alternatives declarations seen t = match t with
           index=Option.map (fun (i:index_signature) -> i.value)
             (List.find_opt (fun (i:index_signature) -> i.keys=Strings) indexes);
           symbols=Option.map (fun (i:index_signature) -> i.value)
-            (List.find_opt (fun (i:index_signature) -> i.keys=Symbols) indexes)}]
+            (List.find_opt (fun (i:index_signature) -> i.keys=Symbols) indexes);numeric=None}]
       | Named (id,args) ->
         if List.mem id seen then Proposal_diagnostics.unsupported "unguarded spread cycle";
-        source_alternatives declarations (id::seen) (definition declarations id args)
+        source_alternatives ~target declarations (id::seen) (definition declarations id args)
       (* A string's own enumerable properties are its code units at its
          index keys, and a class value's its static fields, which its construct
          signatures do not state: the copy's type states none of their keys. *)
       | Str | StrLit _ | Ctors _ | Callable -> [{empty_alternative with exact=false}]
-      | Shape {elements=Some _;_} -> Proposal_diagnostics.unsupported "a spread copies the own enumerable properties of a plain object; \
-          an array's are its indices and whatever keys it carries, which no record states"
+      (* An array's own enumerable properties are its elements, at its index
+         keys, and whatever keys it carries, which its type does not state;
+         at a canonical numeric key, its own field holds an element's type. *)
+      | Shape {elements=Some _;_} when target -> Proposal_diagnostics.unsupported "a copy onto an array: \
+          the copy is a new object, which holds no array store"
+      | Shape {elements=Some s;_} ->
+        [{empty_alternative with exact=false;
+          numeric=Some (combine (s.required @ s.optional_elements @ Option.to_list s.rest))}]
       (* A function's own enumerable properties are whatever was assigned to
          it: its type states its fields, and no other key. *)
       | Shape {fields;indexes=[];calls=_::_;elements=None} ->
         [{afields=List.filter (fun (f:Semantic.field) ->
             not (method_field f) && f.name <> Name proto_key && string_key f) fields;exact=false;index=None;
-          symbols=None}]
+          symbols=None;numeric=None}]
       | Shape _ -> Proposal_diagnostics.unsupported "a spread copies the own enumerable properties of a plain object; \
           a function with an index signature owns what its type does not state"
       | _ -> Proposal_diagnostics.unsupported "a spread copies the own enumerable properties of a plain object; one of a string, an array, a function or a class value is outside the fragment") atoms
-  | Union ts -> List.concat_map (source_alternatives declarations seen) ts
+  | Union ts -> List.concat_map (source_alternatives ~target declarations seen) ts
   | Meet _ | Rigid _ -> Proposal_diagnostics.unsupported "a spread of an intersection or a type parameter is outside the fragment"
 
 (* A source's properties defined over an alternative's: a key the source
@@ -107,14 +117,18 @@ let merge_alternative (a:alternative) (b:alternative) : alternative =
     | _ -> None in
   let index = resolve (fun x -> x.index) (fun f -> string_key f) in
   let symbols = resolve (fun x -> x.symbols) (fun f -> not (string_key f)) in
+  let numeric = match index with
+    | Some _ -> None
+    | None -> resolve (fun x -> x.numeric) (fun f -> numeric_name f.name) in
   { afields=List.map (fun (f:Semantic.field) -> match f.name,index,symbols with
       | Name _,Some v,_ | Key _,_,Some v -> {f with read=v; write=Some v}
       | _ -> f) fields;
-    exact=a.exact && b.exact; index; symbols }
+    exact=a.exact && b.exact; index; symbols; numeric }
 
 let alternative_type (a:alternative) =
   let index keys = Option.map (fun v : index_signature -> {keys;value=v;writable=Some v}) in
-  match Option.to_list (index Strings a.index) @ Option.to_list (index Symbols a.symbols) with
+  match Option.to_list (index Strings a.index) @ Option.to_list (index Numeric a.numeric)
+        @ Option.to_list (index Symbols a.symbols) with
   | _::_ as indexes -> Atoms [Shape {fields=a.afields;indexes;calls=[];elements=None}]
   | [] ->
     if a.exact && List.for_all (fun (f:Semantic.field) -> not f.optional) a.afields

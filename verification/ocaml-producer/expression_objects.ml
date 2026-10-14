@@ -144,7 +144,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
       let alts = List.fold_left (fun alts (s:expr) ->
         mark_exact s;
         merge alts (source_alternatives declarations [] (expr env s)))
-        (source_alternatives declarations [] (expr env target)) sources in
+        (source_alternatives ~target:true declarations [] (expr env target)) sources in
       combine (List.map alternative_type alts)
     | ArrayLiteral es ->
       (* One array arm of the expected type is the literal's contract: an

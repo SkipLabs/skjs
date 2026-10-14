@@ -221,6 +221,7 @@ def allocRealm [DecidableEq ι] (G : NormalGraph ι) (parts : List (PropKey × T
   match G.realm with
   | none => true
   | some r => realmFree G r.proto && unknownTy G r.unknown && parts.all (fun p => !r.keys.contains p.1) &&
+      parts.all (fun p => !IndexKeys.numeric.may p.1) &&
       parts.any (fun p => p.1 == CallArguments.arrayStoreField && storeTy G p.2) &&
       parts.any (fun p => p.1 == CallArguments.protoField && p.2 == r.proto)
 
@@ -249,14 +250,14 @@ theorem allocRealm_sound [DecidableEq ι] {G : NormalGraph ι} {parts : List (Pr
       rw [hr] at hok
       simp only [Bool.and_eq_true, List.all_eq_true, List.any_eq_true, Bool.not_eq_true',
         beq_iff_eq] at hok
-      obtain ⟨⟨⟨⟨hfree, hunk⟩, hkeys⟩, ⟨ps, hps, hsk, hst⟩⟩, ⟨pp, hpp, hpk, hpr⟩⟩ := hok
+      obtain ⟨⟨⟨⟨⟨hfree, hunk⟩, hkeys⟩, hnum⟩, ⟨ps, hps, hsk, hst⟩⟩, ⟨pp, hpp, hpk, hpr⟩⟩ := hok
       unfold realmInvariant
       rw [hr]
       cases c.realmed
       · trivial
       · intro flds oid he _
         cases he
-        refine ⟨fun f T hm => ?_, ⟨_, _, rfl, fun q hq => ?_⟩⟩
+        refine ⟨fun f T hm => ?_, ⟨_, _, rfl, fun q hq => ?_⟩, ?_⟩
         · simp only [List.mem_cons, Prod.mk.injEq, List.not_mem_nil, or_false] at hm
           rcases hm with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
           · obtain ⟨flds, l, c, oid', he, hl, hw, hag⟩ := recT_at (hmem ps hps) hrec
@@ -269,6 +270,16 @@ theorem allocRealm_sound [DecidableEq ι] {G : NormalGraph ι} {parts : List (Pr
         · obtain ⟨p, hp, hq1⟩ := List.mem_map.mp (ObjectMerge.slots_fst_mem hq)
           simp only [KeyBound.admits, hq1 ▸ hkeys p hp]
           rfl
+        · -- The allocation owns no field at a canonical numeric key.
+          obtain ⟨flds, l, c, oid', he, hl, hw, -⟩ := recT_at (hmem ps hps) hrec
+          cases he
+          refine numericOwn_of_none (by rw [← hsk]; exact hl) hw fun key hkey => ?_
+          apply ObjectMerge.lookup_slots_none
+          intro hm
+          obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hm
+          have := hnum p hp
+          rw [IndexKeys.may_of_admits hkey] at this
+          cases this
 
 /-- The rows capture types reach, and those rows' free parameter rows: the
 domain and map a generic closure's captures are checked over. -/

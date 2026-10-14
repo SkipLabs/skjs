@@ -281,6 +281,33 @@ theorem inLabels_sound {G : NormalGraph ι} {A T : List ι} (h : inLabels A T = 
   obtain ⟨i, hi, hv⟩ := hv
   exact ⟨i, List.all_eq_true.mp h i hi |> of_decide_eq_true, hv⟩
 
+/-- A store type whose elements are within `T`: each clause a store's, the
+positions of its first tuple contract within `T`. -/
+def storeIn (G : NormalGraph ι) (S T : List ι) : Bool :=
+  G.plainTy S && (expand G S).all fun c => match c with
+    | .list a _ => a.operands.all (inLabels · T)
+    | _ => false
+
+/-- A store of such a type is a possibly sparse store of `T`. -/
+theorem storeIn_sound {G : NormalGraph ι} {S T : List ι} (h : storeIn G S T = true)
+    {m : Nat} {U : WorldT m} {s : Val} (hs : meaning G S m U s) : realmStoreT (meaning G T) m U s := by
+  simp only [storeIn, Bool.and_eq_true, List.all_eq_true] at h
+  obtain ⟨c, hc, hv, -⟩ := (expand_sem G S h.1 m U s).mp hs
+  have hl := h.2 c hc
+  cases c with
+  | list a bs =>
+    have hin : ∀ B ∈ a.operands, inLabels B T = true := by simpa only [List.all_eq_true] using hl
+    refine listT_realmStore (fun A hA j W' u hu => ?_) hv.1
+    simp only [tupleFams] at hA
+    rcases hA with hA | hA | hA
+    · obtain ⟨B, hB, rfl⟩ := List.mem_map.mp hA
+      exact inLabels_sound (hin B (by simp [Tuple.operands, hB])) hu
+    · obtain ⟨B, hB, rfl⟩ := List.mem_map.mp hA
+      exact inLabels_sound (hin B (by simp [Tuple.operands, hB])) hu
+    · obtain ⟨B, hB, he⟩ := Option.map_eq_some_iff.mp hA; subst he
+      exact inLabels_sound (hin B (by simp [Tuple.operands, hB])) hu
+  | _ => simp at hl
+
 omit [DecidableEq ι] in
 theorem meaning_isVal {G : NormalGraph ι} {A : List ι} {n : Nat} {W : WorldT n} {v : Val}
     (h : meaning G A n W v) : isVal v = true := by
@@ -334,12 +361,41 @@ structure ObjFacts (G : NormalGraph ι) (o : Obj ι) (n : Nat) (W : WorldT n)
     lookup W l = some c ∧ ∀ (j : Nat) (hj : j < n) (U : WorldT j) (u : Val), c j hj U u → meaning G x.2 j U u
   bounds : ∀ K ∈ o.bounds, ∀ oid, ownKeysT K n W (.objAt fs .absent oid)
   plain : o.plain = true → fs.lookup CallArguments.protoField = none
+  /-- An array's own fields at canonical numeric keys hold what its store's
+  elements do (the realm's `numericOwn`). -/
+  numeric : ∀ S T, (CallArguments.arrayStoreField, S) ∈ o.named → storeIn G S T = true →
+    G.realm.isSome = true → ∀ key l, IndexKeys.numeric.Admits key → fs.lookup key = some l →
+    ∃ c : Ctr n, lookup W l = some c ∧
+      ∀ (j : Nat) (hj : j + 1 < n) (U : WorldT j) (u : Val), c j (by omega) U u → meaning G T j U u
 
-omit [DecidableEq ι] in
+/-- An array of a realm-checked clause holds, at its own canonical numeric
+keys, what its store's elements hold. -/
+theorem numeric_of_inv {G : NormalGraph ι} {c : Clause (List ι)} (hc : c.realmed = true)
+    {n : Nat} {W : WorldT n} {fs : List (PropKey × Nat)} {oid : Nat}
+    (hinv : realmInvariant G (realmValues G) c n W (.objAt fs .absent oid)) {S T : List ι}
+    (hσ : ∃ (l : Nat) (c' : Ctr n), fs.lookup CallArguments.arrayStoreField = some l ∧ lookup W l = some c' ∧
+      ∀ (j : Nat) (hj : j < n) (U : WorldT j) (u : Val), c' j hj U u → meaning G S j U u)
+    (hst : storeIn G S T = true) (hr : G.realm.isSome = true) :
+    ∀ key l, IndexKeys.numeric.Admits key → fs.lookup key = some l →
+      ∃ c : Ctr n, lookup W l = some c ∧
+        ∀ (j : Nat) (hj : j + 1 < n) (U : WorldT j) (u : Val), c j (by omega) U u → meaning G T j U u := by
+  intro key l hkey hl
+  obtain ⟨r, hr'⟩ := Option.isSome_iff_exists.mp hr
+  unfold realmInvariant at hinv
+  rw [hr'] at hinv
+  simp only [hc, ite_true] at hinv
+  obtain ⟨lσ, cσ, hlσ, hcσ, hagσ⟩ := hσ
+  obtain ⟨-, -, ls, cs, hls, hcs, hk⟩ := hinv fs oid rfl (by simp [hlσ])
+  rw [hls] at hlσ; cases hlσ
+  rw [hcs] at hcσ; cases hcσ
+  obtain ⟨c, hcw, hag⟩ := hk key l hkey hl
+  exact ⟨c, hcw, fun j hj U u hu => hag j hj U u hu (meaning G T)
+    fun U' s hs => storeIn_sound hst (hagσ (j + 1) hj U' s hs)⟩
+
 theorem objFacts_of_sem {G : NormalGraph ι} {c : Clause (List ι)} {o : Obj ι} (ho : objOf c = some o)
     {n : Nat} {W : WorldT n} {v : Val} (hv : clauseSem G c n W v) :
     ∃ fs oid, v = .objAt fs .absent oid ∧ ObjFacts G o n W fs := by
-  obtain ⟨hv, -⟩ := hv
+  obtain ⟨hv, hinv⟩ := hv
   unfold objOf at ho
   split at ho
   · rename_i a bs vs os ms ks
@@ -348,7 +404,9 @@ theorem objFacts_of_sem {G : NormalGraph ι} {c : Clause (List ι)} {o : Obj ι}
     obtain ⟨fs, oid, rfl, -⟩ := hr.1
     refine ⟨fs, oid, rfl, ⟨fun p hp => ?_, fun q hq l hl => ?_, fun x hx => by simp at hx,
       fun K hK => ownKeysT_reid (hb K hK),
-      fun hp => by simp at hp⟩⟩
+      fun hp => by simp at hp, fun S T hS hst hrl => numeric_of_inv rfl hinv (by
+        obtain ⟨fs', l, c, oid', he, hl, hc, hag⟩ := fields_at (η := G.env) hr hw _ hS
+        cases he; exact ⟨l, c, hl, hc, hag⟩) hst hrl⟩⟩
     · obtain ⟨fs', l, c, oid', he, hl, hc, hag⟩ := fields_at (η := G.env) hr hw p hp
       cases he
       exact ⟨l, c, hl, hc, hag⟩
@@ -367,7 +425,9 @@ theorem objFacts_of_sem {G : NormalGraph ι} {c : Clause (List ι)} {o : Obj ι}
       · exact dictCellT_view (hcs x hx)
     refine ⟨fs, oid, rfl, ⟨fun p hp => ?_, fun q hq l hl => ?_, fun x hx f l hk hl => ?_,
       fun K hK => ownKeysT_reid (hb K hK),
-      fun hp => ?_⟩⟩
+      fun hp => ?_, fun S T hS hst hrl => numeric_of_inv rfl hinv (by
+        obtain ⟨fs', l, c, oid', he, hl, hc, hag⟩ := fields_at (η := G.env) hr hw _ hS
+        cases he; exact ⟨l, c, hl, hc, hag⟩) hst hrl⟩⟩
     · obtain ⟨fs', l, c, oid', he, hl, hc, hag⟩ := fields_at (η := G.env) hr hw p hp
       cases he
       exact ⟨l, c, hl, hc, hag⟩
@@ -405,11 +465,10 @@ which its type states the bag's fields, if any, and no bound; a class's are
 its static fields, which its construct signatures do not state. -/
 def codeOf : Clause (List ι) → Option (Obj ι)
   | .arrs _ _ => some ⟨[], [], [], [], false⟩
-  | .callable a bs _ _ => some ⟨(a :: bs).flatten, [], [], [], false⟩
+  | .callable a bs _ _ => some ⟨(a :: bs).flatten.filter (·.1 != CallArguments.arrayStoreField), [], [], [], false⟩
   | .ctors _ _ => some ⟨[], [], [], [], false⟩
   | _ => none
 
-omit [DecidableEq ι] in
 /-- What the semantics of a function clause gives a merge's source: an object
 with code, whose bag's fields hold their contracts. -/
 theorem codeFacts_of_sem {G : NormalGraph ι} {c : Clause (List ι)} {o : Obj ι} (ho : codeOf c = some o)
@@ -421,12 +480,14 @@ theorem codeFacts_of_sem {G : NormalGraph ι} {c : Clause (List ι)} {o : Obj ι
   · cases ho
     obtain ⟨⟨⟨fs, code, oid, rfl, -, -⟩, -⟩, -⟩ := hv
     exact ⟨fs, code, oid, rfl, ⟨fun p hp => by simp at hp, fun q hq => by simp at hq,
-      fun x hx => by simp at hx, fun K hK => by simp at hK, fun hp => by simp at hp⟩⟩
+      fun x hx => by simp at hx, fun K hK => by simp at hK, fun hp => by simp at hp,
+      fun S T hS => by simp at hS⟩⟩
   · rename_i a bs L S
     cases ho
     obtain ⟨⟨⟨⟨fs, code, oid, rfl, -, ha⟩, hbs⟩, -⟩, -⟩ := hv
     refine ⟨fs, code, oid, rfl, ⟨fun p hp => ?_, fun q hq => by simp at hq,
-      fun x hx => by simp at hx, fun K hK => by simp at hK, fun hp => by simp at hp⟩⟩
+      fun x hx => by simp at hx, fun K hK => by simp at hK, fun hp => by simp at hp,
+      fun S T hS => absurd (List.mem_filter.mp hS).2 (by simp)⟩⟩
     -- The field is one of an operand's, whose bag is over the same fields.
     have hrec : ∀ B ∈ a :: bs, recT (ReferenceConjunctions.famsOf (meaning G) B) n W (.objAt fs .absent oid) := by
       intro B hB
@@ -435,7 +496,7 @@ theorem codeFacts_of_sem {G : NormalGraph ι} {c : Clause (List ι)} {o : Obj ι
       · obtain ⟨fs', code', oid', he, -, hr⟩ := hbs _ (List.mem_map_of_mem hB)
         cases he
         exact hr
-    obtain ⟨B, hB, hpB⟩ := List.mem_flatten.mp hp
+    obtain ⟨B, hB, hpB⟩ := List.mem_flatten.mp (List.mem_filter.mp hp).1
     obtain ⟨flds, l, c, oid', he, hl, hc, hag⟩ :=
       recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨p.2, hpB, rfl⟩) (hrec B hB)
     cases he
@@ -443,7 +504,8 @@ theorem codeFacts_of_sem {G : NormalGraph ι} {c : Clause (List ι)} {o : Obj ι
   · cases ho
     obtain ⟨⟨⟨fs, n', E, K, s, caps, rest, oid, rfl, -⟩, -⟩, -⟩ := hv
     exact ⟨fs, _, oid, rfl, ⟨fun p hp => by simp at hp, fun q hq => by simp at hq,
-      fun x hx => by simp at hx, fun K hK => by simp at hK, fun hp => by simp at hp⟩⟩
+      fun x hx => by simp at hx, fun K hK => by simp at hK, fun hp => by simp at hp,
+      fun S T hS => by simp at hS⟩⟩
   · cases ho
 
 /-- The source side of a merge: values owning no enumerable property, a
@@ -580,7 +642,7 @@ properties, so the source's type says what it holds there, by a symbol index
 within `T` or by listing its keys, none a symbol. Otherwise the source owns no
 store whose elements it would give under index keys, and each key it copies
 is typed. -/
-def Src.classWithin (G : NormalGraph ι) : Src ι → List PropKey → IndexKeys → List ι → Bool
+def Src.classWithinPlain (G : NormalGraph ι) : Src ι → List PropKey → IndexKeys → List ι → Bool
   | .prim, _, _, _ => true
   | .str, _, K, T => K == .symbols || strIn G T
   | .obj o, d, K, T => if K == .symbols then
@@ -593,6 +655,20 @@ def Src.classWithin (G : NormalGraph ι) : Src ι → List PropKey → IndexKeys
     (o.indexes.any (fun x => K.within x.1 && inLabels x.2 T) ||
      o.bounds.any fun B => B.among && B.keys.all fun x =>
        !K.may x || d.contains x || !copiedKey x || o.named.any (·.1 == x) || o.optional.any (·.key == x))
+
+/-- An array source under the canonical numeric keys: its store's elements
+are within `T`, and so, by the realm's invariant (`numericOwn`), are its own
+fields there. -/
+def Src.arrayRoute (G : NormalGraph ι) : Src ι → IndexKeys → List ι → Bool
+  | .obj o, K, T => K == .numeric && G.realm.isSome &&
+      o.named.any fun p => p.1 == CallArguments.arrayStoreField && storeIn G p.2 T
+  | _, _, _ => false
+
+/-- Whatever the source gives under a key the class `K` admits is within `T`:
+by its type's statements (`classWithinPlain`), or, under the canonical
+numeric keys, as an array (`arrayRoute`). -/
+def Src.classWithin (G : NormalGraph ι) (sb : Src ι) (d : List PropKey) (K : IndexKeys) (T : List ι) : Bool :=
+  sb.arrayRoute G K T || sb.classWithinPlain G d K T
 
 /-! ### The copied values are the types say -/
 
@@ -613,6 +689,49 @@ theorem heap_contract_within {G : NormalGraph ι} {p : Nat} {W : WorldT (p + 1)}
     (hw : inLabels A T = true) :
     meaning G T p (trunc p (Nat.le_succ p) W) (heapVal h l) :=
   inLabels_sound hw (heap_contract hok hc hag)
+
+/-- The world a merge's values are read at: one level down. -/
+abbrev below {p : Nat} (W : WorldT (p + 1)) : WorldT p := trunc p (Nat.le_succ p) W
+
+/-- An array's element a copy reads is within what its store type's elements
+are, at every level below the one after the read: the element sits one
+location further than the store. -/
+theorem storeData_typed {G : NormalGraph ι} {p : Nat} {W : WorldT (p + 1)} {h : Heap}
+    (hok : HeapOk (p + 1) W h) {fs : List (PropKey × Nat)} {S T : List ι} {lσ : Nat} {cσ : Ctr (p + 1)}
+    (hl : fs.lookup arrayStoreKey = some lσ) (hc : lookup W lσ = some cσ)
+    (hag : ∀ (j : Nat) (hj : j < p + 1) (U : WorldT j) (u : Val), cσ j hj U u → meaning G S j U u)
+    (hst : storeIn G S T = true) {k : PropKey} {v : Tm} (hv : (storeData h fs).lookup k = some v) :
+    ∀ (j : Nat) (hj : j + 1 < p), meaning G T j (trunc j (by omega) (below W)) v := by
+  intro j hj
+  obtain ⟨u, hu, hmem⟩ := hok.2 lσ cσ hc
+  have hs := storeIn_sound hst (hag p (Nat.lt_succ_self p) _ u (hmem p (Nat.lt_succ_self p)))
+  unfold storeData at hv
+  simp only [hl] at hv
+  rw [hu] at hv
+  obtain ⟨ls, rfl, -, -, -, -, -, hrest⟩ := hs
+  simp only at hv
+  obtain ⟨q, hq, hqe⟩ := List.mem_filterMap.mp (mem_of_lookup hv)
+  obtain ⟨m, hm, he⟩ := Option.map_eq_some_iff.mp hqe
+  simp only [Prod.mk.injEq] at he
+  obtain ⟨-, rfl⟩ := he
+  obtain ⟨i, hi⟩ : ∃ i, ls[i]? = some (some m) ∧ q.2 = i := by
+    obtain ⟨x, i⟩ := q
+    simp only at hm
+    subst hm
+    obtain ⟨hil, hie⟩ := List.mem_zipIdx' hq
+    exact ⟨i, by rw [List.getElem?_eq_getElem hil, hie], rfl⟩
+  obtain ⟨E, c', hE, hc', hag'⟩ := hrest i m (by simp) hi.1
+  cases hE
+  obtain ⟨c'', hc'', rfl⟩ := lookup_trunc_inv (Nat.le_succ p) W m c' hc'
+  obtain ⟨w, hw, hmem'⟩ := hok.2 m c'' hc''
+  have hT : meaning G T j (trunc j (by omega) (below W)) w := by
+    have := (hag' j (by omega) (trunc j (by omega) (below W)) w).1
+    apply this
+    show c'' j _ (trunc j _ (trunc p _ W)) w
+    rw [trunc_trunc]
+    exact hmem' j (by omega)
+  have : heapVal h m = w := by simp [heapVal, hw, meaning_isVal hT]
+  rw [this]; exact hT
 
 /-- The source's copy under a key, less the dropped keys. -/
 theorem srcData_lookup {h : List Tm} {fs : List (PropKey × Nat)} {qs : List (PropKey × Tm)}
@@ -638,7 +757,6 @@ theorem indexKey_of_not_copied {k : PropKey} (h : copiedKey k = false) : indexKe
     simp only [copiedKey, Bool.and_eq_false_iff, bne_eq_false_iff_eq] at h
     rcases h with (rfl | rfl) | rfl <;> decide
 
-omit [DecidableEq ι] in
 theorem src_never {G : NormalGraph ι} {o : Obj ι} {n : Nat} {W : WorldT n} {fs : List (PropKey × Nat)}
     (hf : ObjFacts G o n W fs) {h : List Tm} {qs : List (PropKey × Tm)}
     {cb : CallCode} (hq : ownData h (.objAt fs cb oid) = some qs) {d : List PropKey} {k : PropKey}
@@ -658,9 +776,6 @@ theorem src_never {G : NormalGraph ι} {o : Obj ι} {n : Nat} {W : WorldT n} {fs
       rcases hi with hi | hs
       · exact storeData_lookup_none (.inl hi)
       · exact storeData_lookup_none (.inr (excludes_lookup (oid := 0) hs (fun K hK => hf.bounds K hK 0)))
-
-/-- The world a merge's values are read at: one level down. -/
-abbrev below {p : Nat} (W : WorldT (p + 1)) : WorldT p := trunc p (Nat.le_succ p) W
 
 theorem src_sure {G : NormalGraph ι} {o : Obj ι} {p : Nat} {W : WorldT (p + 1)}
     {fs : List (PropKey × Nat)} (hf : ObjFacts G o (p + 1) W fs) {h : Heap} (hok : HeapOk (p + 1) W h)
@@ -714,7 +829,6 @@ theorem src_within {G : NormalGraph ι} {o : Obj ι} {p : Nat} {W : WorldT (p + 
           exact heap_contract_within hok hcw hag hxe.2
     · rw [if_neg hc] at hv; cases hv
 
-omit [DecidableEq ι] in
 /-- What the accumulator's copy gives under a key. -/
 theorem acc_never {G : NormalGraph ι} {o : Obj ι} {n : Nat} {W : WorldT n} {fs : List (PropKey × Nat)}
     (hf : ObjFacts G o n W fs) {h : List Tm} {ps : List (PropKey × Tm)}
@@ -818,10 +932,10 @@ theorem strings_admit_store : IndexKeys.strings.Admits arrayStoreKey := trivial
 
 /-- What the source gives under a key its class admits, read through
 `classWithin`. -/
-theorem src_class {G : NormalGraph ι} {o : Obj ι} {p : Nat} {W : WorldT (p + 1)}
+theorem src_class_plain {G : NormalGraph ι} {o : Obj ι} {p : Nat} {W : WorldT (p + 1)}
     {fs : List (PropKey × Nat)} (hf : ObjFacts G o (p + 1) W fs) {h : Heap} (hok : HeapOk (p + 1) W h)
     {qs : List (PropKey × Tm)} {cb : CallCode} (hq : ownData h (.objAt fs cb oid) = some qs) {d : List PropKey}
-    {K : IndexKeys} {T : List ι} (hc : (Src.obj o).classWithin G d K T = true) {k : PropKey}
+    {K : IndexKeys} {T : List ι} (hc : (Src.obj o).classWithinPlain G d K T = true) {k : PropKey}
     (hk : K.Admits k) {v : Tm} (hv : (qs.filter fun e => !d.contains e.1).lookup k = some v) :
     meaning G T p (below W) v := by
   have hmay := IndexKeys.may_of_admits hk
@@ -829,7 +943,7 @@ theorem src_class {G : NormalGraph ι} {o : Obj ι} {p : Nat} {W : WorldT (p + 1
   by_cases hd : d.contains k = true
   · rw [if_pos hd] at hv; cases hv
   rw [if_neg hd] at hv
-  simp only [Src.classWithin] at hc
+  simp only [Src.classWithinPlain] at hc
   by_cases hsym : K = .symbols
   · subst hsym
     cases k with
@@ -896,6 +1010,47 @@ theorem src_class {G : NormalGraph ι} {o : Obj ι} {p : Nat} {W : WorldT (p + 1
           · exact typed (.inl h1)
           · exact typed (.inr h1)
     · rw [if_neg hcp] at hv; cases hv
+
+/-- What the source gives under a key its class admits, at every level the
+allocation it is copied into is judged at: by `classWithinPlain`, or, for an
+array under the canonical numeric keys, by its store's elements and its own
+fields there (`arrayRoute`, `storeData_typed`, `ObjFacts.numeric`). -/
+theorem src_class {G : NormalGraph ι} {o : Obj ι} {p : Nat} {W : WorldT (p + 1)}
+    {fs : List (PropKey × Nat)} (hf : ObjFacts G o (p + 1) W fs) {h : Heap} (hok : HeapOk (p + 1) W h)
+    {qs : List (PropKey × Tm)} {cb : CallCode} (hq : ownData h (.objAt fs cb oid) = some qs) {d : List PropKey}
+    {K : IndexKeys} {T : List ι} (hc : (Src.obj o).classWithin G d K T = true) {k : PropKey}
+    (hk : K.Admits k) {v : Tm} (hv : (qs.filter fun e => !d.contains e.1).lookup k = some v) :
+    ∀ (j : Nat) (hj : j + 1 < p), meaning G T j (trunc j (by omega) (below W)) v := by
+  rcases Bool.or_eq_true_iff.mp hc with hr | hc
+  · simp only [Src.arrayRoute, Bool.and_eq_true, beq_iff_eq, List.any_eq_true] at hr
+    obtain ⟨⟨rfl, hrealm⟩, ⟨σ', S⟩, hS, hσ, hst⟩ := hr
+    simp only at hσ
+    subst hσ
+    obtain ⟨lσ, cσ, hlσ, hcσ, hagσ⟩ := hf.named _ hS
+    rw [srcData_lookup hq] at hv
+    split at hv
+    · cases hv
+    cases hown : (if copiedKey k then fs.lookup k else none) with
+    | some l =>
+      rw [hown] at hv
+      simp only [Option.map_some, Option.some_or, Option.some.injEq] at hv
+      subst hv
+      have hl : fs.lookup k = some l := by
+        split at hown
+        · exact hown
+        · cases hown
+      obtain ⟨c, hcw, hag⟩ := hf.numeric S T hS hst hrealm k l hk hl
+      obtain ⟨u, hu, hmem⟩ := hok.2 l c hcw
+      intro j hj
+      have hT := hag j (by omega) _ u (hmem j (by omega))
+      have : heapVal h l = u := by simp [heapVal, hu, meaning_isVal hT]
+      rw [this, below, trunc_trunc]
+      exact hT
+    | none =>
+      rw [hown, Option.map_none, Option.none_or] at hv
+      exact storeData_typed hok hlσ hcσ hagσ hst hv
+  · intro j hj
+    exact (meaning_valueFam G T).1.down_le p j (by omega) (below W) _ (src_class_plain hf hok hq hc hk hv)
 
 /-! ### The rule -/
 
@@ -1028,7 +1183,7 @@ structure Sides (G : NormalGraph ι) (d : List PropKey) (oa : Obj ι) (sb : Src 
   classA : ∀ K T, oa.classWithinA K T = true → ∀ k v, K.Admits k → pa.lookup k = some v →
     meaning G T p (below W) v
   classB : ∀ K T, sb.classWithin G d K T = true → ∀ k v, K.Admits k → qs.lookup k = some v →
-    meaning G T p (below W) v
+    ∀ (j : Nat) (hj : j + 1 < p), meaning G T j (trunc j (by omega) (below W)) v
 
 theorem proto_not_copied : copiedKey CallArguments.protoField = false := by decide
 theorem proto_not_index : indexKey CallArguments.protoField = false := by decide
@@ -1149,7 +1304,8 @@ theorem sides_str {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {p : Nat
   classA _ _ hc _ _ hk hv := acc_class hfa hok hp hc hk hv
   classB K T hc k v hk hv := by
     obtain ⟨hi, -, u, rfl⟩ := stringData_lookup hv
-    simp only [Src.classWithin, Bool.or_eq_true, beq_iff_eq] at hc
+    simp only [Src.classWithin, Src.arrayRoute, Src.classWithinPlain, Bool.false_or, Bool.or_eq_true, beq_iff_eq] at hc
+    intro j hj
     rcases hc with rfl | hc
     · cases k with
       | str s => exact absurd hk (by simp [IndexKeys.Admits])
@@ -1301,7 +1457,7 @@ theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
     (hks : ∀ K ∈ ks, boundOk oa sb d K = true)
     (hov : ∀ x ∈ ds ++ cs, ∀ y ∈ ds ++ cs, ∀ k, x.1.Admits k → y.1.Admits k → x.2 = y.2)
     (hcls : ∀ x ∈ ds ++ cs, ∀ k v, x.1.Admits k → (mergeData pa qs).lookup k = some v →
-      meaning G x.2 p (below W) v)
+      ∀ (j : Nat) (hj : j + 1 < p), meaning G x.2 j (trunc j (by omega) (below W)) v)
     (hnp : ds ++ cs ≠ [] → (mergeData pa qs).lookup CallArguments.protoField = none)
     (hfd : ∀ q ∈ fs, (∀ x ∈ cs, x.1.Admits q.1 → q.2 = x.2) ∧
       (∀ x ∈ ds, x.1.Admits q.1 → inLabels q.2 x.2 = true))
@@ -1327,30 +1483,32 @@ theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
     · exact h2
     · rw [h3]; rfl
   -- The family an entry's location is given, and why its value meets it.
-  have hfam : ∀ e ∈ ps, entryFam G fs os ix e p (below W) e.2 := by
-    intro e he
+  have hfam : ∀ e ∈ ps, ∀ (j : Nat) (hj : j + 1 < p),
+      entryFam G fs os ix e j (trunc j (by omega) (below W)) e.2 := by
+    intro e he j hj
     have hl := lookup_of_mem hnodup he
     cases hT : fs.lookup e.1 with
     | some T =>
       simp only [entryFam, hT]
       obtain ⟨v, hv, hm⟩ := hF (e.1, T) (mem_of_lookup hT)
-      rw [hl] at hv; cases hv; exact hm
+      rw [hl] at hv; cases hv; exact (meaning_valueFam G T).1.down_le p j (by omega) (below W) _ hm
     | none =>
       cases hq : os.find? (·.key == e.1) with
       | some q =>
         simp only [entryFam, hT, hq]
         have hk : q.key = e.1 := by simpa using List.find?_some hq
-        exact hO q (List.mem_of_find?_eq_some hq) e.2 (hk ▸ hl)
+        exact (meaning_valueFam G q.type).1.down_le p j (by omega) (below W) _
+          (hO q (List.mem_of_find?_eq_some hq) e.2 (hk ▸ hl))
       | none =>
         simp only [entryFam, hT, hq]
         split
         · rename_i hadmits
           obtain ⟨hx, hadmK⟩ := Classical.choose_spec hadmits
-          exact hcls _ hx e.1 e.2 hadmK hl
+          exact hcls _ hx e.1 e.2 hadmK hl j hj
         · rfl
   refine Or.inr ⟨below W, h, .makeAt .absent (ps.map Prod.fst) (ps.map Prod.snd), WExt_refl _,
     WorldAdm_trunc _ hadm, Step.mergeV hva hvb hparts, HeapOk_trunc p W h hok, ?_⟩
-  apply make_fields_rule (As := ps.map (entryFam G fs os ix))
+  apply make_fields_rule_below (As := ps.map (entryFam G fs os ix))
     (fun A hA => by obtain ⟨e, -, rfl⟩ := List.mem_map.mp hA; exact entryFam_adm G fs os ix e)
     p (below W) h .absent (ps.map Prod.fst) (ps.map Prod.snd) hnodup (by simp) (by simp) hvals
     (WorldAdm_trunc _ hadm) (HeapOk_trunc p W h hok)
@@ -1624,7 +1782,9 @@ theorem merge_values_safe {G : NormalGraph ι} {d : List PropKey} {A B R : List 
         exact hs.classB _ _ (hix x hx).2 k _ hk hq
       | none =>
         rw [hq, Option.none_or] at hv
-        exact hs.classA _ _ (hix x hx).1 k v hk hv
+        intro j hj
+        exact (meaning_valueFam G x.2).1.down_le p j (by omega) (below W) _
+          (hs.classA _ _ (hix x hx).1 k v hk hv)
     · intro _
       rw [lookup_mergeData, hs.proto, Option.none_or]
       exact hs.neverA _ hnp

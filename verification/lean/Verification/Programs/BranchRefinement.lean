@@ -648,7 +648,7 @@ theorem realmArray_of_record [DecidableEq ι] {G : NormalGraph ι} {L : ι}
       unfold realmInvariant at hinv'
       rw [hr] at hinv'
       simp only [hc, ite_true] at hinv'
-      obtain ⟨hview, hkeys⟩ := hinv' flds oid rfl hst
+      obtain ⟨hview, hkeys, -⟩ := hinv' flds oid rfl hst
       refine ⟨L, List.mem_singleton_self L, (unfold_plain hplain n W _).mpr
         ⟨.refs [] [] [(CallArguments.arrayStoreField, S), (CallArguments.protoField, r.proto)] [] []
           [⟨false, r.keys⟩], by rw [hGL]; simp, ?_, ?_⟩⟩

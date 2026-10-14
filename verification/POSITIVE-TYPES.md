@@ -284,6 +284,7 @@ of the realm where they own the store key $\sigma$
 ```math
 \mathsf{Arr}_{\mathcal R}{}_n(W,v)\iff\forall\mathit{flds}.\;v=\mathsf{obj}(\mathit{flds},\mathsf{absent})\land\sigma\in\mathrm{dom}(\mathit{flds})\Rightarrow
 \mathsf{view}(\sigma{:}\mathsf{Store}(⟦U_{\mathcal R}⟧),\mathsf{proto}{:}⟦P_{\mathcal R}⟧)_n(W,v)\land\mathsf{own}(\mathsf{outside}\,N_{\mathcal R})_n(W,v)
+\land\mathsf{numericOwn}_n(W,\mathit{flds})
 ```
 
 ```math
@@ -291,7 +292,9 @@ of the realm where they own the store key $\sigma$
 ```
 
 with $`\mathsf{Store}(U)`$ the possibly sparse stores of values of $`U`$
-($`\mathsf{list}\langle;;U\rangle`$, readonly), and $`\Xi`$, the realm's
+($`\mathsf{list}\langle;;U\rangle`$, readonly), $`\mathsf{numericOwn}`$ an
+array's own fields at canonical numeric keys within every family its store's
+contract stores ([SEMANTICS](SEMANTICS.md#the-array-invariant)), and $`\Xi`$, the realm's
 `unknown`, the exception family the clause's function types are read with
 (`realmExc`; [throws](SEMANTICS.md#computations-and-recursive-types)). Only
 the world is read, through the contracts of $\sigma$ and $\mathsf{proto}$, so

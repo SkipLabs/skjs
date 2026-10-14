@@ -624,6 +624,9 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   // an empty one has none.
   assert.equal(runExample("invalid-length-array-or-dictionary", "size({})"), undefined,
     "invalid-length-array-or-dictionary: the actual source returns undefined despite its number contract");
+  // An array's `length` is not one of its own enumerable properties.
+  assert.equal(runExample("invalid-array-spread-length", "count([1, 2])"), undefined,
+    "invalid-array-spread-length: the copy has no length despite its number contract");
   // `Array.isArray` on `unknown`: TypeScript reads the array as `any[]`.
   assert.equal(runExample("invalid-isarray-unknown-element", `typeof head(["a"])`), "string",
     "invalid-isarray-unknown-element: the actual source returns a string despite its number contract");

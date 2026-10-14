@@ -1564,7 +1564,22 @@ whatever either side gives under a key $`K`$ admits is within $`V`$:
 `classWithin`, over the keys a copy takes, less $`\delta`$, and also no array
 store whose elements a copy would give under index keys: a bound excluding the
 store key, or a string index at a type no member of which is a list
-(`noStore`, since the store key `[]` is a string). For the symbol class, which
+(`noStore`, since the store key `[]` is a string), or, for the class of the
+canonical numeric keys, an array whose store's elements are within $`V`$
+(`classWithinPlain`; `arrayRoute`):
+
+```math
+\frac{K=\mathsf{numeric}\qquad \mathcal R\ \text{stated}\qquad (\sigma{:}S)\in\varphi_{c_b}\qquad
+      \forall c\in S.\ c=\mathsf{list}\,\tau\ldots\land\ \mathrm{positions}(\tau)\subseteq V}
+     {\mathrm{gives}_K(c_b,V)}\ \textsf{array-source}
+```
+
+its elements are within $`V`$ (`storeData_typed`), and so are its own fields
+at those keys, by the realm invariant's $`\mathsf{numericOwn}`$
+([the array invariant](SEMANTICS.md#the-array-invariant), `ObjFacts.numeric`,
+`numeric_of_inv`). An element sits one location further than its store, so
+the copied values are known one level below the merge's, which the
+allocation, a step later, needs (`make_fields_rule_below`). For the symbol class, which
 admits no key the model's copy gives, $`c_b`$ says what JavaScript's copy gives
 there: a symbol index within $`V`$, or a bound listing its keys, none a
 symbol. A string source gives strings under its keys, so for another class
@@ -1578,7 +1593,7 @@ keys or excludes one the class may admit, which the keys outside code may add
 under the index would contradict. The
 soundness case evaluates the operands with `bind`, as `arith` does, and
 closes with `ObjectMerge.merge_values_safe`, which takes the merge's step,
-then the allocation's by `make_fields_rule`, giving each location the
+then the allocation's by `make_fields_rule_below`, giving each location the
 contract its result key states, the $`V`$ of an entry whose class admits the
 key, or its copied value for a key the result does not state. Evidence names
 the rule `merge` with the two operands' derivations; the search types a slot

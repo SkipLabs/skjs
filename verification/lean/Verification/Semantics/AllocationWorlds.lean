@@ -25,7 +25,7 @@ theorem allocation_safe {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A)
     (hnd : ns.Nodup) (hns : ns.length = vs.length) (hAs : As.length = vs.length)
     (hvals : ∀ v ∈ vs, isVal v = true)
     (hadm : WorldAdm W) (hok : HeapOk n W h)
-    (hv : ∀ p ∈ As.zip vs, p.1 n W p.2)
+    (hv : ∀ p ∈ As.zip vs, ∀ (j : Nat) (hj : j + 1 < n), p.1 j (trunc j (by omega) W) p.2)
     (result : ∀ j (hj : j < n) (U : WorldT j),
       WExt (trunc j (Nat.le_of_lt hj) W) U →
       recT (ns.zip As) j U (.objAt (slots h.length ns) .absent (h.length + vs.length)) →
@@ -47,7 +47,7 @@ theorem allocation_safe {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A)
       obtain ⟨⟨A, v⟩, hm, rfl⟩ := List.mem_map.mp hq
       show A j _ v
       rw [trunc_trunc]
-      exact (hA A (List.of_mem_zip hm).1).down_le (p + 1) j (by omega) W v (hv (A, v) hm)
+      exact hv (A, v) hm j (by omega)
     let contracts := As.map (fun A => (res A : Ctr p)) ++ [res nulT]
     have hcadm' : ∀ c ∈ contracts, CtrAdm c := by
       intro c hc

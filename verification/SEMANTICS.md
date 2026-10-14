@@ -877,10 +877,30 @@ and $N_{\mathcal R}$, `ArrayProto`'s declared keys plus `constructor` and
 v=\mathsf{obj}(\mathit{flds},\mathsf{absent})\land\sigma\in\mathrm{dom}(\mathit{flds})\Rightarrow
 \mathsf{view}(\sigma{:}\mathsf{Store}(⟦U_{\mathcal R}⟧),\mathsf{proto}{:}⟦P_{\mathcal R}⟧)_n(W,v)
 \land\mathsf{own}(\mathsf{outside}\,N_{\mathcal R})_n(W,v)
+\land\mathsf{numericOwn}_n(W,\mathit{flds})
 ```
 
 with $`\mathsf{Store}(U)`$ the possibly sparse stores of values of $`U`$
-(`realmStoreT`; `PositiveGraphs.arrayInvariant`). Every record, dictionary
+(`realmStoreT`; `PositiveGraphs.arrayInvariant`), and
+$`\mathsf{numericOwn}`$ stating `Array<T>`'s declared `[n: number]: T` of
+every array type at once, with $`c_\sigma`$ the contract of the store's
+location and $`c_l`$ that of an own field's:
+
+```math
+\mathsf{numericOwn}_n(W,\mathit{flds})\iff
+\forall\kappa\in\mathsf{numeric}.\;\mathit{flds}(\kappa)=l\Rightarrow
+\forall j{+}1<n.\;\forall A.\;
+c_{\sigma,j+1}\subseteq\mathsf{Store}(A)_{j+1}\Rightarrow c_{l,j}\subseteq A_j .
+```
+
+A store's contract at level $`j+1`$ states its elements' contracts at $`j`$,
+so the field holds at $`j`$ what an element does: an array of a type whose
+store holds $`T`$ holds $`T`$ under its own canonical numeric keys too, below
+the world's level (`numericOwn`, `numeric_of_inv`). An array whose store's
+contract admits every store of `T[]` and whose numeric fields hold $`T`$
+meets it (`numericOwn_of_store`), so an input with `a[-1] = 1` at
+`number[]` is one. An allocation owning the store key
+owns no field at such a key (`allocRealm`). Every record, dictionary
 and `source` clause of a row means its members meeting it
 (`Clause.realmed`, `realmInvariant`, `rowSem`;
 [POSITIVE-TYPES](POSITIVE-TYPES.md#the-realms-array-invariant)), so the
