@@ -49,7 +49,11 @@ Co-Authored-By: <attribution>
   --parse` must read every key. Omit a key that does not apply, except
   `Outcome` and `Trust`, which every behaviour change states.
 - **Mathematics is Unicode, never TeX**: commit messages are read raw in
-  terminals and on GitHub.
+  terminals and on GitHub. In a `Rule:` block, an inference rule is its
+  premises (side by side, separated by three or more spaces), a line of `─`
+  ending with the rule's name in parentheses, then its conclusion; a blank
+  line separates it from other formulas. `_x`, `_{…}` and `^{…}` render as
+  sub- and superscripts; an indented line continues the formula above.
 - **Wording** follows the global writing rules: present facts, positive
   statements, claims as strong as their evidence, each number labelled by what
   produced it.

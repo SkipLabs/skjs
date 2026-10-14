@@ -58,7 +58,8 @@ function readRecord(rev: string): CommitRecord {
     } else if (line.trim()) {
       if (!current || current.block.length) current = pushProse(sections);
       current.text.push(line.trim());
-    } else if (current && !current.name) current = undefined;
+    } else if (current?.block.length) current.block.push("");
+    else if (current && !current.name) current = undefined;
   }
   return {
     sha: git(["rev-parse", "--short=9", rev]).trim(),
@@ -87,6 +88,48 @@ function tests(value: string): string {
   }).join(" ");
 }
 
+/** Mathematics in a rule: sub- and superscripts set as such, on escaped text. */
+function math(text: string): string {
+  return esc(text)
+    .replace(/_\{([^{}]*)\}/g, "<sub>$1</sub>")
+    .replace(/\^\{([^{}]*)\}/g, "<sup>$1</sup>")
+    .replace(/_([A-Za-z0-9\u0370-\u03ff\u2200-\u22ff]+(?:\u20d7)?)/g, "<sub>$1</sub>");
+}
+
+/** A line's parts: runs of three or more spaces separate side-by-side formulas. */
+const parts = (line: string): string[] => line.trim().split(/\s{3,}/).filter(Boolean);
+
+/** Formulas, one row per line, an indented line continuing the one above. */
+const formulas = (lines: string[]): string =>
+  `<div class="formulas">${lines.map(l => `<div class="row${/^\s{2,}/.test(l) ? " cont" : ""}">${parts(l).map(p => `<span>${math(p)}</span>`).join("")}</div>`).join("")}</div>`;
+
+/** A `Rule:` block: groups separated by blank lines; a group with a line of
+ * `─` is an inference rule (premises above, conclusion below, the name after
+ * the bar); any other group is a list of formulas. The text is the record's. */
+function rules(block: string[]): string {
+  const groups: string[][] = [[]];
+  for (const line of block) {
+    if (line.trim()) groups[groups.length - 1].push(line);
+    else if (groups[groups.length - 1].length) groups.push([]);
+  }
+  return `<div class="rules">${groups.filter(g => g.length).map(g => {
+    const bar = g.findIndex(l => /^\s*─{3,}/.test(l));
+    if (bar < 0) return formulas(g);
+    const name = /\(([^()]+)\)\s*$/.exec(g[bar])?.[1] ?? "";
+    // A definition ending in `=`, with its continuation, stays a formula above the rule.
+    let first = 0;
+    for (let i = 0; i < bar; i++) if (/=\s*$/.test(g[i])) first = i + 2;
+    first = Math.min(first, bar);
+    const above = g.slice(0, first);
+    const premises = g.slice(first, bar).flatMap(parts);
+    const conclusion = g.slice(bar + 1);
+    return (above.length ? formulas(above) : "") +
+      `<div class="infer"><div class="frac"><div class="premises">${premises.map(p => `<span>${math(p)}</span>`).join("")}</div>` +
+      `<div class="bar"></div><div class="conclusion">${conclusion.map(l => `<div>${math(l.trim())}</div>`).join("")}</div></div>` +
+      (name ? `<span class="rule-name">${esc(name)}</span>` : "") + `</div>`;
+  }).join("")}</div>`;
+}
+
 function card(r: CommitRecord): string {
   const outcome = r.trailers.get("Outcome") ?? "";
   const out: string[] = [
@@ -99,7 +142,7 @@ function card(r: CommitRecord): string {
   for (const s of r.sections) {
     if (s.name) out.push(`<h4>${esc(s.name)}</h4>`);
     if (s.text.length) out.push(`<p>${inline(s.text.join(" "))}</p>`);
-    if (s.block.length) out.push(`<pre class="${s.name === "Rule" ? "rule" : "code"}">${esc(s.block.join("\n").trimEnd())}</pre>`);
+    if (s.block.length) out.push(s.name === "Rule" ? rules(s.block) : `<pre class="code">${esc(s.block.join("\n").trimEnd())}</pre>`);
   }
   const facts = FACTS.flatMap(k => {
     const v = r.trailers.get(k);
@@ -160,7 +203,7 @@ const CSS = `
 :root { --bg:#f6f7f5; --surface:#fff; --ink:#1d2422; --muted:#5b6662; --rule:#d9dedb; --accent:#1f6f66; --code-bg:#eef1ef; --math-bg:#f3f1ea;
   --ok:#2e7d4f; --ok-bg:#e3f2e8; --principled:#8a5a12; --principled-bg:#f6ecd9; --gap:#5e6870; --gap-bg:#e8ebed; --neutral:#2b5b9c; --neutral-bg:#e2eaf6;
   --trust:#8b2f4b; --trust-bg:#f6e3ea; --neg:#9a3a2a; --neg-bg:#f7e4df;
-  --display:"IBM Plex Serif",Georgia,serif; --body:"IBM Plex Sans","Helvetica Neue",Arial,sans-serif; --mono:"IBM Plex Mono",Menlo,Consolas,monospace; }
+  --display:"IBM Plex Serif",Georgia,serif; --body:"IBM Plex Sans","Helvetica Neue",Arial,sans-serif; --mono:"IBM Plex Mono",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#131816; --surface:#1b2220; --ink:#e3e9e6; --muted:#9aa6a1; --rule:#2f3936; --accent:#6cc3b6; --code-bg:#222b28; --math-bg:#24231d;
   --ok:#7fd3a0; --ok-bg:#1f3428; --principled:#e3b46a; --principled-bg:#382c17; --gap:#aab4bb; --gap-bg:#2a3135; --neutral:#8fb3e8; --neutral-bg:#1e2a3d; --trust:#ec97b1; --trust-bg:#3a2029; --neg:#f0a493; --neg-bg:#3a221d; color-scheme:dark } }
 :root[data-theme="dark"] { --bg:#131816; --surface:#1b2220; --ink:#e3e9e6; --muted:#9aa6a1; --rule:#2f3936; --accent:#6cc3b6; --code-bg:#222b28; --math-bg:#24231d;
@@ -174,7 +217,16 @@ p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
 code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
 pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
 pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
-pre.rule { font:italic 17px/1.7 var(--display); background:var(--math-bg); border-left:3px solid var(--accent) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px; flex-wrap:wrap }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:600 12px/1 var(--body); letter-spacing:.04em; color:var(--accent); white-space:nowrap }
 .card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
 .card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
 .sha { font:12px/1.4 var(--mono); color:var(--muted) }
@@ -211,7 +263,7 @@ ${summary(groups)}
 ${groups.map(g => (g.range ? `<h2 id="g-${esc(g.name)}"><code>${esc(g.range)}</code></h2>` : "") + g.records.map(card).join("\n")).join("\n")}
 </main>`;
 const head = `<title>Commit Records</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&family=STIX+Two+Text:ital,wght@0,400;0,500;1,400&display=swap">
 <style>${CSS}</style>`;
 writeFileSync(outFile, fragment ? `${head}\n${body}\n`
   : `<!doctype html>\n<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">\n${head}</head><body>${body}</body></html>\n`);
