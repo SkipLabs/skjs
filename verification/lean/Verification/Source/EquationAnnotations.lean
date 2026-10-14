@@ -45,6 +45,33 @@ def expandedSourceParameters (tps : Array Json) : Except String (Array Json) := 
 def sourceNames (tps : Array Json) : Except String (List String) := do
   return (← sourceParameters tps).flatMap fun (n, s) => ResolutionWire.ownedNames n s
 
+/-- Whether `node`'s terms use the binder `n` as a packed one: as a value and
+as a rest's argument lists, or as the argument of a declaration's packed
+parameter, whose instance's argument lists the application reads. -/
+partial def binderPacked (n : String) (node : Json) : M Bool := do
+  let u := binderUse n node
+  if u.value && u.pack then return true
+  let rec scan : Json → M Bool
+    | .obj fields => do
+      if fields.toList.lookup "k" == some (.str "reference") then
+        let j := Json.obj fields
+        if let .ok args := j.getObjValAs? (Array Json) "args" then
+          let i ← tryCatch (some <$> referenceIndex j) fun _ => pure none
+          if let some i := i then
+            let packed := packedParameters (← get).doc[i]!.expression
+            for (a, p) in args.toList.zipIdx do
+              if packed.contains p && a.getObjValD "k" == .str "binder" &&
+                  a.getObjValD "name" == .str n then return true
+      for (_, v) in fields.toList do
+        if ← scan v then return true
+      return false
+    | .arr xs => do
+      for x in xs.toList do
+        if ← scan x then return true
+      return false
+    | _ => return false
+  scan node
+
 /-- Enter a generic unit's binders: the unit is a head of its own, lifted over
 the enclosing binders its scheme names, whose binders are `bound(f, A⃗, j)`,
 met with its bound when it has one (§8.1). -/
@@ -53,16 +80,26 @@ def enterUnit (path : String) (scope : List (String × Binding)) (node : Json) (
   let tps ← expandedSourceParameters tps
   let names ← sourceNames tps
   let ctx : Ctx := { binders := scope, site := path, source := true }
-  let items := (mentions names (unitTerms node)).filter fun it => match it with
+  let named := (mentions names (unitTerms node)).filter fun it => match it with
     | .binder n => (scope.lookup n).isSome
     | _ => false
+  -- An enclosing packed binder's argument lists go with it.
+  let items := named ++ named.filterMap fun it => match it with
+    | .binder n => if (scope.lookup (packedName n)).isSome && !named.contains (.binder (packedName n))
+        then some (.binder (packedName n)) else none
+    | _ => none
   let args ← items.mapM fun it => (ctxValue ctx it : Except String Union)
   let name := (node.getObjValAs? String "name").toOption.getD path
+  -- A binder the unit's terms use both as a value and as a rest's argument
+  -- lists is packed: one row, read in both components (PROGRAM-TYPING.md,
+  -- "Packed binders").
+  let packed ← names.filterM fun n => binderPacked n node
   let d : Draft :=
     { name, kind := .unit path, kinds := items.map fun _ => .value,
-      binders := names.map fun n => ⟨n, .value⟩ }
+      binders := names.map fun n => ⟨n, if packed.contains n then .packed else .value⟩ }
   let u ← alloc s!"unit|{path}" d fun u => some (.unit u (liftedCtx ctx items u) node)
-  let rigid := names.zipIdx.map fun (n, j) => (n, (⟨false, [mkBound u args j]⟩ : Binding))
+  let rigid := names.zipIdx.map fun (n, j) =>
+    (n, ({ pack := false, value := [mkBound u args j], packed := packed.contains n } : Binding))
   let mut inner := rigid ++ scope
   let mut bounds : List (Tree × Union) := []
   let mut bounded : List (String × Binding × Option Union) := []
@@ -73,14 +110,20 @@ def enterUnit (path : String) (scope : List (String × Binding)) (node : Json) (
       let B ← lowerType { ctx with binders := inner, bounds }
         b
       bounded := bounded ++ [(n, r, some B)]
-      inner := (n, ⟨false, meetUnions [r.value, B]⟩) :: inner
+      inner := (n, { pack := false, value := meetUnions [r.value, B] }) :: inner
       if let [q] := r.value then bounds := bounds ++ [(q, B)]
-  let bindings := bounded.map fun (n, r, B) => match B with
-    | none => (n, r)
-    | some B => (n, (⟨false, meetUnions [r.value, B]⟩ : Binding))
-  let owned := bounded.filterMap fun (n, r, B) => match r.value with
-    | [t] => some (n, t, B)
-    | _ => none
+  -- A packed binder's argument lists are its row's, under its packed name;
+  -- its values, within its bound, under its name.
+  let bindings := bounded.flatMap fun (n, r, B) =>
+    let lists : List (String × Binding) :=
+      if r.packed then [(packedName n, { pack := true, value := r.value })] else []
+    match B with
+    | none => (n, r) :: lists
+    | some B => (n, ({ pack := false, value := meetUnions [r.value, B], packed := r.packed } : Binding)) :: lists
+  -- A packed binder's argument lists are its row itself, unbounded.
+  let owned := bounded.flatMap fun (n, r, B) => match r.value with
+    | [t] => (n, t, B) :: (if r.packed then [(packedName n, t, none)] else [])
+    | _ => []
   modify fun s => { s with scopes := (path, bindings) :: s.scopes, unitBinders := (path, owned) :: s.unitBinders }
   return bindings ++ scope
 
@@ -92,9 +135,17 @@ def bindNames (scope : List (String × Binding)) (bounds : List (Tree × Union))
   let tps ← expandedSourceParameters tps
   let names ← sourceNames tps
   let bound ← names.mapM fun n => do
-    let pack := (binderUse n node).pack
-    return (n, (⟨pack, [← placeholder n (if pack then .arguments else .value)]⟩ : Binding))
-  let inner := bound ++ scope
+    let u := binderUse n node
+    -- Used as both, a packed binder: a value binder whose rest reads its
+    -- argument lists, under its packed name.
+    if ← binderPacked n node then
+      return (n, ({ pack := false, value := [← placeholder n .packed], packed := true } : Binding))
+    let pack := u.pack
+    return (n, ({ pack, value := [← placeholder n (if pack then .arguments else .value)] } : Binding))
+  let lists : List (String × Binding) ← bound.filterMapM fun (n, b) => do
+    if b.packed then return some (packedName n, { pack := true, value := [← placeholder (packedName n) .packed] })
+    return none
+  let inner := bound ++ lists ++ scope
   -- A value binder's declared bound, read where an application over it
   -- checks a declaration's bound (`closeObligation`).
   let mut out := bounds

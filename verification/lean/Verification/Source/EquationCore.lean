@@ -25,8 +25,9 @@ partial def lowerType (ctx : Ctx) (term : Json) : M Union := do
     fieldsExactly term ["k", "name", "span"]
     let n ← str term "name"
     match ctx.binders.lookup n with
-    | some ⟨false, v⟩ => return v
-    | some ⟨true, _⟩ => throw s!"{ctx.site}: an argument pack used as a value type"
+    | some b =>
+      if b.pack && !b.packed then throw s!"{ctx.site}: an argument pack used as a value type"
+      return b.value
     | none => throw s!"{ctx.site}: the type parameter {n} is not in scope"
   | "reference" => reference ctx term
   | "array" | "tuple" =>
@@ -51,10 +52,18 @@ partial def lowerRest (ctx : Ctx) (term : Json) : M Union := do
   if kindOf term == some "pack" then
     fieldsExactly term ["k", "of", "span"]
     let operand ← field term "of"
+    -- A declaration's own parameter: its argument, which every application
+    -- completes with its array's argument lists (`packOf`).
+    if kindOf operand == some "parameter" then
+      return ← ctxValue ctx (.param (← (← field operand "index").getNat?))
     if kindOf operand != some "binder" then throw s!"{ctx.site}: a pack rest must name a type parameter"
-    match ctx.binders.lookup (← str operand "name") with
-    | some ⟨true, v⟩ => return v
-    | some ⟨false, _⟩ => throw s!"{ctx.site}: a value parameter used as an argument pack"
+    let n ← str operand "name"
+    -- A binder whose argument lists are a placeholder of their own.
+    if let some p := ctx.binders.lookup (packedName n) then return p.value
+    match ctx.binders.lookup n with
+    | some b =>
+      if b.pack || b.packed then return b.value
+      throw s!"{ctx.site}: a value parameter used as an argument pack"
     | none => throw s!"{ctx.site}: a pack parameter outside its generic method"
   return [← occurrence ctx "pack" term (job := fun h c => .pack h c [] (some term))]
 
@@ -78,11 +87,44 @@ partial def declHead (i : Nat) : M Nat := do
 applied to the declaration's head or inlined into its alias. -/
 partial def reference (ctx : Ctx) (term : Json) : M Union := do
   let i ← referenceIndex term
-  let supplied ← (← arr term "args").mapM (lowerType ctx)
+  let argTerms := (← arr term "args").toList
+  let supplied ← argTerms.mapM (lowerType ctx)
   let span : Span ← fromJson? (← field term "span")
   let pos := if ctx.source && ctx.decl.isNone then some span else none
-  let values ← application ctx i supplied.toList pos
+  let values ← application ctx i supplied pos
+  -- A packed parameter's argument, its bound checked, is completed with its
+  -- argument lists.
+  let packed := (packedParameters (← get).doc[i]!.expression).eraseDups
+  let values ← values.zipIdx.mapM fun (U, p) => do
+    match packed.contains p, argTerms[p]? with
+    | true, some t => return normUnion (U ++ (← packOf ctx t))
+    | _, _ => return U
   instantiateDecl ctx i values
+
+/-- The argument lists an argument of a packed parameter adds to it: an
+array's or a tuple's, the lists a call collects into one of its arrays; none
+for a packed binder or an enclosing declaration's packed parameter, whose
+value holds them already; a binder's argument-list placeholder. Any other
+instance is refused: its argument lists are no array's (PROGRAM-TYPING.md,
+"Packed binders"). -/
+partial def packOf (ctx : Ctx) (term : Json) : M Union := do
+  let refuse := s!"{ctx.site}: the instance of a type parameter typing a value and a rest's argument list is no array or tuple type: the argument lists are an array or tuple type's, whose fresh arrays are its values"
+  match kindOf term with
+  | some "array" | some "tuple" => lowerRest ctx term
+  | some "binder" =>
+    let n ← str term "name"
+    if let some p := ctx.binders.lookup (packedName n) then return p.value
+    match ctx.binders.lookup n with
+    | some b => if b.packed then return [] else throw refuse
+    | none => throw refuse
+  | some "parameter" =>
+    let p ← (← field term "index").getNat?
+    match ctx.decl with
+    | some d =>
+      if (packedParameters (← get).doc[d]!.expression).contains p then return []
+      throw refuse
+    | none => throw refuse
+  | _ => throw refuse
 
 /-- Complete an application's arguments with its defaults, which may mention
 earlier parameters, and record its bound obligations. -/
@@ -350,7 +392,7 @@ partial def schemeRow (ctx : Ctx) (term : Json) : M (GraphRow Tree (List Tree)) 
   let (names, packs, resolution) ← (schemeBinders ctx.site term : Except String _)
   let bs ← arr term "binders"
   let inner : Ctx := { ctx with binders := (names.zipIdx.map fun ((n : String), (k : Nat)) =>
-    (n, (⟨packs.contains n, [.local k]⟩ : Binding))) ++ ctx.binders }
+    (n, ({ pack := packs.contains n, value := [.local k] } : Binding))) ++ ctx.binders }
   let mut bounds : List (Tree × List Tree) := []
   for b in bs.toList do
     let n ← str b "name"
@@ -473,8 +515,8 @@ its locals. -/
 partial def rowBody (n : Nat) : M (GraphRow Tree (List Tree)) := do
   let P := (← get).rows
   let scope : List (String × Binding) :=
-    (P.own[n]!.zipIdx.map fun (name, j) => (name, (⟨false, [.local j]⟩ : Binding))) ++
-    (P.free[n]!.zipIdx.map fun (name, i) => (name, (⟨false, [.argument i]⟩ : Binding)))
+    (P.own[n]!.zipIdx.map fun (name, j) => (name, ({ pack := false, value := [.local j] } : Binding))) ++
+    (P.free[n]!.zipIdx.map fun (name, i) => (name, ({ pack := false, value := [.argument i] } : Binding)))
   let row := P.rows[n]!
   -- Only type operands are unions. Scheme binder lists and bound pairs
   -- carry binding structure, so their enumeration is not a union spelling.
@@ -559,9 +601,16 @@ partial def claimLabel (scope : List (String × Binding)) (j : Json) : M Union :
       let n ← n.getStr?
       if n.isEmpty then throw "source claims: a binder's label names it"
       match scope.lookup n with
-      | some ⟨false, v⟩ => return v
-      | some ⟨true, _⟩ => throw s!"source claims: the argument pack {n} used as a value type"
-      | none => return [← placeholder n .value]
+      | some b =>
+        if b.pack && !b.packed then throw s!"source claims: the argument pack {n} used as a value type"
+        return b.value
+      | none =>
+        -- A binder's argument lists, `T#pack`: a pack binder's own row.
+        match (n.dropSuffix? "#pack").bind fun base => scope.lookup base.toString with
+        | some b =>
+          if b.pack then return b.value
+          throw s!"source claims: the value binder {n} used as argument lists"
+        | none => return [← placeholder n (if n.endsWith "#pack" then .packed else .value)]
     else throw s!"source claims: not a label: {j.compress}"
   | _ => throw s!"source claims: not a label: {j.compress}"
 

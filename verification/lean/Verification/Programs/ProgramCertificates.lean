@@ -304,6 +304,9 @@ inductive Rule (ι : Type) where
   /-- How many actuals are fixed, which later ones are spreads, and the rest
   type the further ones fit. -/
   | callRest (effect : Effect) (fixed omitted : Nat) (spreads : List Bool) (rest : Ty ι)
+  /-- How many actuals are fixed before a spread of a value of the packed
+  binder the rest is. -/
+  | callPacked (effect : Effect) (fixed : Nat) (packed : ι) (rest : Ty ι)
   /-- A bound function: its saved slots are read from the context. -/
   | bindE
   /-- A bound variadic function, likewise. -/
@@ -1133,6 +1136,18 @@ declared bounds. -/
       RestParts G P ((flags.zip (jas.drop (k + u))).map fun q => (q.1, q.2.type)) ∧
       ⟨jr.type, ((jas.take (k + u)).map Sequent.type, P), j.type, effect⟩ ∈ restSigs G jf.type
     | _, _ => False
+  -- The callee, the receiver, the fixed actuals, then the value whose store
+  -- the last actual spreads, of the packed binder the rest is.
+  | .callPacked effect k t P =>
+    match j.term, ps with
+    | .invoke f r args, jf :: jr :: jas =>
+      jf.context = j.context ∧ jf.term = f ∧ jr.context = j.context ∧ jr.term = r ∧
+      (∀ ja ∈ jas, ja.context = j.context) ∧ jas.length = k + 1 ∧
+      args = (jas.take k).map Sequent.term ++
+        (jas.drop k).map (fun ja => .spread (.readAt CallArguments.arrayStoreField ja.term)) ∧
+      (∀ ja ∈ jas.drop k, PackedBy G ja.type t) ∧ t ∈ P ∧
+      ⟨jr.type, ((jas.take k).map Sequent.type, P), j.type, effect⟩ ∈ restSigs G jf.type
+    | _, _ => False
   -- `.bind`'s saved slots, with no premises: the target's selected signature
   -- starts with the prefix slots' contracts, and the result takes the rest at
   -- the one receiver it states, whatever that is.
@@ -1259,7 +1274,8 @@ retain the subtype outcome; other rule predicates are their declarative checks. 
     | .readOptional .. | .readProto .. | .arrLit | .elem | .setElem | .len | .lenStr | .elemStr ..
     | .elemOpt .. | .elemAny .. | .ifBool | .ifTrue | .ifFalse | .ifKnown .. | .ifBoolVar ..
     | .unionVar .. | .callCallable .. | .readCallable | .writeCallable | .arrParts ..
-    | .callRest .. | .bindE | .bindRestE | .construct | .constructRest .. | .throw | .merge | .makeKey
+    | .callRest .. | .callPacked .. | .bindE | .bindRestE | .construct | .constructRest .. | .throw | .merge
+    | .makeKey
     | .lenView .. =>
       CheckResult.ofBool (decide (LocalUsing G images j r ps codes))
 
@@ -2083,6 +2099,30 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
         exact h)
       (by simpa [List.map_map, Function.comp_def] using hparts)
     simpa [List.map_map, Function.comp_def] using this
+  · rename_i effect k t P _ _ f r args jf jr jas
+    rcases hl with ⟨hΓf, htf, hΓr, htr, hctx, hlen, rfl, hpk, htP, hL⟩
+    have hf := hp jf (by simp)
+    rw [hΓf, htf] at hf
+    have hrt := hp jr (by simp)
+    rw [hΓr, htr] at hrt
+    obtain ⟨ja, hja⟩ : ∃ ja, jas.drop k = [ja] := by
+      have hl1 : (jas.drop k).length = 1 := by simp; omega
+      match h : jas.drop k, hl1 with
+      | [ja], _ => exact ⟨ja, rfl⟩
+    have hjamem : ja ∈ jas := List.mem_of_mem_drop (by rw [hja]; simp)
+    have ha := hp ja (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ hjamem))
+    rw [hctx ja hjamem] at ha
+    have := HasTyUsing.callPacked (xs := (jas.take k).map fun ja => (ja.type, ja.term)) hf
+      (by simpa [List.map_map, Function.comp_def] using hL) htP hrt
+      (by
+        intro p hm
+        obtain ⟨jb, hjb, rfl⟩ := List.mem_map.mp hm
+        have h := hp jb (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_of_mem_take hjb)))
+        rw [hctx jb (List.mem_of_mem_take hjb)] at h
+        exact h)
+      ha (hpk ja (by rw [hja]; simp))
+    rw [hja]
+    simpa [List.map_map, Function.comp_def] using this
   · obtain ⟨rfl, rfl, hl⟩ := hl
     split at hl
     · rename_i hsaved hT hRt hF
@@ -2864,6 +2904,36 @@ theorem checkTreeUsing_complete [DecidableEq ι] {G : NormalGraph ι}
         · exact ihx p hp'
         · exact ihu A hA
         · exact ihp p hp'
+  | @callPacked effect Γ f r a F Rt A B P xs t hf hmem htP hrt hx ha hpk ihf ihrt ihx iha =>
+    apply node_complete (r := .callPacked effect xs.length t P)
+      (js := ⟨Γ,f,F⟩ :: ⟨Γ,r,Rt⟩ :: (xs.map (fun (p : Ty ι × Tm) => (⟨Γ,p.2,p.1⟩ : Sequent ι)) ++ [(⟨Γ,a,A⟩ : Sequent ι)]))
+    · have hlenx : (xs.map (fun (p : Ty ι × Tm) => (⟨Γ,p.2,p.1⟩ : Sequent ι))).length = xs.length := by simp
+      have htk : (xs.map (fun (p : Ty ι × Tm) => (⟨Γ,p.2,p.1⟩ : Sequent ι)) ++ [(⟨Γ,a,A⟩ : Sequent ι)]).take xs.length =
+          xs.map (fun (p : Ty ι × Tm) => (⟨Γ,p.2,p.1⟩ : Sequent ι)) := List.take_left' hlenx
+      have hdk : (xs.map (fun (p : Ty ι × Tm) => (⟨Γ,p.2,p.1⟩ : Sequent ι)) ++ [(⟨Γ,a,A⟩ : Sequent ι)]).drop xs.length =
+          [(⟨Γ,a,A⟩ : Sequent ι)] := List.drop_left' hlenx
+      refine ⟨rfl, rfl, rfl, rfl, ?_, by simp, ?_, ?_, htP, ?_⟩
+      · intro ja hj
+        simp only [List.mem_append, List.mem_map, List.mem_singleton] at hj
+        rcases hj with ⟨p,_,rfl⟩ | rfl <;> rfl
+      · rw [htk, hdk]
+        simp [List.map_map, Function.comp_def]
+      · rw [hdk]
+        intro ja hj
+        rw [List.mem_singleton] at hj
+        subst hj
+        exact hpk
+      · rw [htk]
+        simpa [List.map_map, Function.comp_def] using hmem
+    · intro j hj
+      rcases List.mem_cons.mp hj with rfl | hj
+      · exact ihf
+      rcases List.mem_cons.mp hj with rfl | hj
+      · exact ihrt
+      · simp only [List.mem_append, List.mem_map, List.mem_singleton] at hj
+        rcases hj with ⟨p,hp',rfl⟩ | rfl
+        · exact ihx p hp'
+        · exact iha
   | @bindE effect Γ F T Rt R Rc t r saved Ps Ds ht hsig hr hmap hF =>
     apply node_complete (r := .bindE) (js := [])
     · refine ⟨rfl, rfl, ?_⟩

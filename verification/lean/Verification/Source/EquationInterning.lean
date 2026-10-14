@@ -122,7 +122,8 @@ def ctxValue (ctx : Ctx) : Item → Except String Union
     | none => .error s!"{ctx.site}: a receiver outside a declaration's methods"
 
 def ctxKind (ctx : Ctx) : Item → ParameterKind
-  | .binder n => if (ctx.binders.lookup n).any (·.pack) then .arguments else .value
+  | .binder n => if (ctx.binders.lookup n).any (·.packed) then .packed
+    else if (ctx.binders.lookup n).any (·.pack) then .arguments else .value
   | _ => .value
 
 /-- The scope inside a head lifted over `items`: each item is its argument. -/
@@ -136,7 +137,8 @@ def liftedCtx (ctx : Ctx) (items : List Item) (h : Nat) : Ctx :=
       | none => []
     self := (indexed.find? (·.1 == .self)).map fun (_, j) => [.argument j]
     binders := indexed.filterMap fun (it, j) => match it with
-      | .binder n => some (n, ⟨(ctx.binders.lookup n).any (·.pack), [.argument j]⟩)
+      | .binder n => some (n, Binding.mk ((ctx.binders.lookup n).any (·.pack)) [.argument j]
+          ((ctx.binders.lookup n).any (·.packed)))
       | _ => none
     owner := some h
     site := ctx.site
@@ -160,7 +162,12 @@ applied to their values here (§8.1). The key is the occurrence's text and the
 kinds of what it mentions: equal keys lower to equal templates. -/
 def occurrence (ctx : Ctx) (tag : String) (term : Json) (shadow : List String := [])
     (binders : List Binder := []) (job : Nat → Ctx → Job) : M Tree := do
-  let items := mentions shadow term
+  -- A packed binder's argument lists, under its packed name, go with it.
+  let named := mentions shadow term
+  let items := named ++ named.filterMap fun it => match it with
+    | .binder n => if (ctx.binders.lookup (packedName n)).isSome && !named.contains (.binder (packedName n))
+        then some (.binder (packedName n)) else none
+    | _ => none
   let args ← items.mapM fun it => (ctxValue ctx it : Except String Union)
   let kinds := items.map (ctxKind ctx)
   let key := s!"{tag}|{reprStr kinds}|{term.compress}"

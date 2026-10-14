@@ -1994,6 +1994,125 @@ theorem rest_call_safe {Rc : Fam} {Ps : List Fam} {E R : Fam} {P : ArgFam}
     (ArgsT_transfer hA hargs i hi X hz) (hEP i X extra hext) (fun e he => hEv i X e (hext e he))
     hX hh3
 
+/-- Every label of `A` is the packed binder `t`, or a meet row of it: each
+value of `A` is one of `t`'s. -/
+def PackedBy (G : NormalGraph ι) (A : Ty ι) (t : ι) : Prop :=
+  G.parameterKinds t = some .packed ∧
+    ∀ l ∈ A, l = t ∨ (G.params l = false ∧ G.schemes l = none ∧ (G.meets l).map Prod.fst = some t)
+
+instance [DecidableEq ι] (G : NormalGraph ι) (A : Ty ι) (t : ι) : Decidable (PackedBy G A t) := by
+  unfold PackedBy; infer_instance
+
+/-- A value of a packed binder, or of a meet row of it, is packable by the
+binder's argument lists. -/
+theorem packedBy_sound {G : NormalGraph ι} {A : Ty ι} {t : ι} (hp : PackedBy G A t)
+    {n W v} (hv : meaning G A n W v) : Packable (argMeaning G [t]) n W v := by
+  obtain ⟨hk, hA⟩ := hp
+  have hparam : G.params t = true := by simp [NormalGraph.params, hk]
+  have hpart : ∀ {m U u}, (mixedParameters G).value t (G.env.1 t) m U u →
+      Packable (argMeaning G [t]) m U u := by
+    intro m U u h
+    simp only [mixedParameters, hk, selectParameter] at h
+    rcases h with ⟨h, _⟩ | ⟨_, _, h⟩
+    · cases h
+    · refine Packable_mono ?_ h
+      intro j U' vs hvs
+      exact ⟨t, List.mem_singleton_self t, by simpa [NormalGraph.listParam, hk] using hvs⟩
+  obtain ⟨l, hl, hv⟩ := hv
+  rcases hA l hl with rfl | ⟨hlp, hls, hm'⟩
+  · change qDenoteWithArgs G (mixedParameters G) (G.env, l) n W v at hv
+    rw [qDenoteWithArgs_unfold] at hv
+    simp only [qLayerWithArgs, hparam, ite_true] at hv
+    exact hpart hv
+  obtain ⟨⟨t', cs⟩, hm, ht⟩ := Option.map_eq_some_iff.mp hm'
+  cases ht
+  change qDenoteWithArgs G (mixedParameters G) (G.env, l) n W v at hv
+  rw [qDenoteWithArgs_unfold] at hv
+  simp only [qLayerWithArgs, hlp, hls, hm, Bool.false_eq_true, ite_false] at hv
+  rw [partSemWithArgs_param hparam] at hv
+  exact hpart hv.1.1
+
+/-- **A spread of a packed value.** The callee, the receiver and the fixed
+actuals run, then the operand; its store is read and spread, a step each, and
+the elements form a list of the rest `P`, which the operand's values are
+packable by (`Packable`). -/
+theorem packed_call_safe {Rc : Fam} {Ps : List Fam} {R V : Fam} {P : ArgFam}
+    (hRc : Adm Rc) (hA : ∀ A ∈ Ps, Adm A) (hAv : ∀ A ∈ Ps, ValOnly A)
+    (hP : Adm P) (hPv : ∀ n W vs, P n W vs → CallArguments.Values vs)
+    (hVP : ∀ n W v, V n W v → Packable P n W v)
+    (xs : List (Fam × Tm)) (hxs : xs.map Prod.fst = Ps)
+    {n W heap f r a} (hw : WorldAdm W) (hh : HeapOk n W heap)
+    (hf : Safe Ξ (restsT Ξ [(Rc, Ps, P, R)]) n W heap f)
+    (hr : FutureSafe Ξ Rc n W r) (hx : ∀ p ∈ xs, FutureSafe Ξ p.1 n W p.2) (ha : FutureSafe Ξ V n W a) :
+    Safe Ξ R n W heap (.invoke f r (xs.map Prod.snd ++
+      [.spread (.readAt CallArguments.arrayStoreField a)])) := by
+  let tail := fun (t : Tm) => [Tm.spread (.readAt CallArguments.arrayStoreField t)]
+  apply bind (fun f => .invoke f r (xs.map Prod.snd ++ tail a)) Step.callL Raises.callL
+    n W heap f hw hh hf
+  intro j0 hj0 U0 hx0 hu0 heap0 v hok0 hv hfun0
+  apply bind (fun r => .invoke v r (xs.map Prod.snd ++ tail a))
+    (Step.callRecv hv) (Raises.callRecv hv) j0 U0 heap0 r hu0 hok0
+    ((hr.transfer hj0 hx0) j0 (Nat.le_refl _) U0 (by rw [trunc_id]; exact WExt_refl _) hu0 heap0 hok0)
+  intro j hj1 U hy1 hu' heap' rv hok hrv hrm
+  have hfun := adm_transfer2 (restsT_adm _) hfun0 hj1 hy1 (Nat.le_refl j)
+    (by rw [trunc_id]; exact WExt_refl _)
+  have hxU : WExt (trunc j (Nat.le_trans hj1 hj0) W) U := by
+    apply WExt_trans _ hy1
+    simpa only [trunc_trunc] using WExt_trunc hj1 hx0
+  have hj : j ≤ n := Nat.le_trans hj1 hj0
+  apply bind_list xs (by intro p hm; exact hA p.1 (hxs ▸ List.mem_map_of_mem hm))
+    (fun args => .invoke v rv (args ++ tail a))
+    (fun hs => (CallArguments.Prepare.args hv hrv (ArgStep_append _ hs)).step)
+    (fun hr => (hr.append _).invoke hv hrv) hu' hok
+    (fun p hm => (hx p hm).transfer hj hxU)
+  intro k hk V' hy hv' heap'' args hok' hargs
+  rw [hxs] at hargs
+  have hvals := ArgsT_values hAv hargs
+  have hkU : WExt (trunc k (Nat.le_trans hk hj) W) V' := by
+    apply WExt_trans _ hy
+    simpa only [trunc_trunc] using WExt_trunc hk hxU
+  apply RestCalls.ctx_bind (A := V) (fun t => .invoke v rv (args ++ tail t))
+    (fun s => RestCalls.call_lift hv hrv hvals (.spreadC (.readC s)))
+    (fun s => RestCalls.call_raise hv hrv hvals (.spreadC (.readC s))) k V' heap'' a hv' hok'
+    ((ha.transfer (Nat.le_trans hk hj) hkU) k (Nat.le_refl _) V'
+      (by rw [trunc_id]; exact WExt_refl _) hv' heap'' hok')
+  intro i hi X hz hX heap3 av hok3 hav hva
+  have hfX := (restsT_adm _).mono i _ X hz v ((restsT_adm _).down_le k i hi V' v
+    ((restsT_adm _).mono k _ V' hy v ((restsT_adm _).down_le j k hk U v hfun)))
+  have hrX := hRc.mono i _ X hz rv (hRc.down_le k i hi V' rv
+    (hRc.mono k _ V' hy rv (hRc.down_le j k hk U rv hrm)))
+  have hargsX := ArgsT_transfer hA hargs i hi X hz
+  cases i with
+  | zero => trivial
+  | succ i =>
+    obtain ⟨fs, c, oid, l, ls, vs, rfl, hl, hls, hrd, hvs⟩ :=
+      hVP (i + 1) X av hva i (Nat.le_refl _) X (by rw [trunc_id]; exact WExt_refl _) heap3 hok3
+    cases i with
+    | zero =>
+      refine Or.inr ⟨trunc 0 (Nat.le_succ 0) X, heap3, _, WExt_refl _, WorldAdm_trunc _ hX,
+        RestCalls.call_lift hv hrv hvals (.spreadC (.readField hl hls)), HeapOk_trunc 0 X heap3 hok3, trivial⟩
+    | succ m =>
+      let X1 := trunc (m + 1) (Nat.le_succ (m + 1)) X
+      refine Or.inr ⟨X1, heap3, _, WExt_refl _, WorldAdm_trunc _ hX,
+        RestCalls.call_lift (rest := []) hv hrv hvals (.spreadC (.readField hl hls)),
+        HeapOk_trunc (m + 1) X heap3 hok3, ?_⟩
+      have hvsv := hPv _ _ _ (hvs m (by omega))
+      let X2 := trunc m (Nat.le_succ m) X1
+      refine Or.inr ⟨X2, heap3, .invoke v rv (args ++ vs), WExt_refl _,
+        WorldAdm_trunc _ (WorldAdm_trunc _ hX),
+        by simpa using Step.callSpread (pre := args) (post := []) hv hrv rfl hvals hrd,
+        HeapOk_trunc m X1 heap3 (HeapOk_trunc (m + 1) X heap3 hok3), ?_⟩
+      have hle : ∀ {F : Fam}, Adm F → ∀ u, F (m + 2) X u → F m X2 u := fun hF u h =>
+        hF.down m X1 u (hF.down (m + 1) X u h)
+      have hPm : P m X2 vs := by
+        have := hvs m (by omega)
+        simpa only [X2, X1, trunc_trunc] using this
+      exact RestCalls.call_elim_rest (s := (Rc, Ps, P, R)) (by simp) hRc hA hAv hP hrv
+        (hle hRc rv hrX) (hle (restsT_adm _) v hfX)
+        (ArgsT_transfer hA hargsX m (by omega) X2 (by simp only [X2, X1, trunc_trunc]; exact WExt_refl _))
+        hPm hvsv (WorldAdm_trunc _ (WorldAdm_trunc _ hX))
+        (HeapOk_trunc m X1 heap3 (HeapOk_trunc (m + 1) X heap3 hok3))
+
 /-- **A variadic call writing no spread.** The callee, the receiver and every
 actual run left to right; the fixed ones meet the signature's parameters, less
 trailing ones `Us` the call omits, each admitting `undefined`, and the further
@@ -2583,6 +2702,17 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
       (∀ p ∈ parts, HasTyWith G images subtyping Γ p.2.2 p.2.1) →
       RestParts G P (parts.map fun p => (p.1, p.2.1)) →
       HasTyWith G images subtyping Γ (.invoke f r (xs.map Prod.snd ++ parts.map fun p => spreadTerm (p.1, p.2.2))) B
+  /-- **A spread of a packed value.** A call at a variadic signature whose
+  rest admits a packed binder `t`'s argument lists, after its fixed actuals,
+  spreads the store of a value of `t`, or of a meet row of it: its elements
+  are one of `t`'s lists. -/
+  | callPacked {effect : Effect} {Γ : List (Ty ι)} {f r a : Tm} {F Rt A B P : Ty ι}
+      {xs : List (Ty ι × Tm)} {t : ι} :
+      HasTyWith G images subtyping Γ f F → ⟨Rt, (xs.map Prod.fst, P), B, effect⟩ ∈ restSigs G F →
+      t ∈ P → HasTyWith G images subtyping Γ r Rt →
+      (∀ p ∈ xs, HasTyWith G images subtyping Γ p.2 p.1) → HasTyWith G images subtyping Γ a A → PackedBy G A t →
+      HasTyWith G images subtyping Γ (.invoke f r (xs.map Prod.snd ++
+        [.spread (.readAt CallArguments.arrayStoreField a)])) B
   /-- **A bound function.** `.bind` saved its target, receiver and prefix in
   slots; allocation stores those values, as they are, in a forwarding
   descriptor with no fields. The result takes the positions the target's
@@ -2659,7 +2789,7 @@ abbrev HasTyUsing (G : NormalGraph ι) (images : PositiveCertificates.InstanceIm
   HasTyWith G images subtyping Γ t A
 
 namespace HasTyUsing
-export HasTyWith (var nul undef tru fls truLit flsLit numLit num bigintLit bigint strLit str funGraph funScheme ctorGraph callableGraph construct constructRest callCallable readCallable writeCallable app letE alloc allocDict read readView lenView readProto readOptional readDict indexDict write arith arrLit elem elemOpt elemAny setElem len lenStr elemStr test ifBool ifKnown ifBoolVar ifTag unionVar arrParts callRest bindE bindRestE bindMember bindScheme throw merge makeKey sub)
+export HasTyWith (var nul undef tru fls truLit flsLit numLit num bigintLit bigint strLit str funGraph funScheme ctorGraph callableGraph construct constructRest callCallable readCallable writeCallable app letE alloc allocDict read readView lenView readProto readOptional readDict indexDict write arith arrLit elem elemOpt elemAny setElem len lenStr elemStr test ifBool ifKnown ifBoolVar ifTag unionVar arrParts callRest callPacked bindE bindRestE bindMember bindScheme throw merge makeKey sub)
 end HasTyUsing
 
 /-- Existing source requests choose the finite checker. The typing rules
@@ -3785,6 +3915,37 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       (fresh_store_safe ro presence (meaning_adm G E) (meaning_valOnly G E) hu hok hex)
     intro k _ V v hv
     exact (represents_back hr k V v) ⟨by simpa [tupleFams] using hv, by simp⟩
+  | @callPacked effect Γ f r a F Rt A B P xs t hf hmem htP hrt hx ha hpk ihf ihrt ihx iha =>
+    intro n W h ρ he hw hh
+    have hfF : Safe (excOf G) (restsT (excOf G) [(meaning G Rt, (xs.map Prod.fst).map (meaning G), argMeaning G P,
+        meaning G B)]) n W h (instantiate 0 ρ f) :=
+      Safe_mono n (fun m _ U v hv => CallEffects.restsT_erase (restsT_of_restSigs hmem hv)) W h _
+        (ihf n W h ρ he hw hh)
+    have hterm : instantiate 0 ρ (.invoke f r (xs.map Prod.snd ++
+          [.spread (.readAt CallArguments.arrayStoreField a)])) =
+        .invoke (instantiate 0 ρ f) (instantiate 0 ρ r)
+          ((xs.map fun p => (meaning G p.1, instantiate 0 ρ p.2)).map Prod.snd ++
+            [.spread (.readAt CallArguments.arrayStoreField (instantiate 0 ρ a))]) := by
+      simp [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
+    rw [hterm]
+    apply packed_call_safe (Rc := meaning G Rt) (Ps := (xs.map Prod.fst).map (meaning G))
+      (R := meaning G B) (V := meaning G A) (P := argMeaning G P)
+      (meaning_adm G Rt)
+      (by intro A hA; obtain ⟨q, _, rfl⟩ := List.mem_map.mp hA; exact meaning_adm G q)
+      (by intro A hA; obtain ⟨q, _, rfl⟩ := List.mem_map.mp hA; exact meaning_valOnly G q)
+      (argMeaning_adm G P)
+      (fun n W vs hvs v hv => ((graphArguments_valid G G.env _ (fun S => meaning_valueFam G S) P).2
+        n W vs hvs v hv).1)
+      (fun n W v hv => Packable_mono (fun m U vs ⟨i, hi, h'⟩ => ⟨i, by
+        rw [List.mem_singleton] at hi; subst hi; exact htP, h'⟩) (packedBy_sound hpk hv))
+      _ (by simp [List.map_map, Function.comp_def]) hw hh hfF
+    · intro j hj U hxU hu heap hok
+      exact ihrt j U heap ρ (he.transfer j hj U hxU) hu hok
+    · intro q hq j hj U hxU hu heap hok
+      obtain ⟨p, hp', rfl⟩ := List.mem_map.mp hq
+      exact ihx p hp' j U heap ρ (he.transfer j hj U hxU) hu hok
+    · intro j hj U hxU hu heap hok
+      exact iha j U heap ρ (he.transfer j hj U hxU) hu hok
   | @callRest effect Γ f r F Rt xs Us P B parts hf hmem hrt hx hu hshort hp hparts
       ihf ihrt ihx ihu ihp =>
     intro n W h ρ he hw hh

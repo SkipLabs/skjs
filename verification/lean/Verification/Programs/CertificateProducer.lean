@@ -676,6 +676,15 @@ came from a different context. No execution budget is inspected. -/
           let eas ← (args.zip Ps).mapM fun (a,D) => recur Γ a D
           let eus ← omitted.mapM fun D => recur Γ .undef D
           let flags := parts.map fun a => match a with | .spread _ => true | _ => false
+          -- A rest that is a packed binder takes one spread of the store of
+          -- one of its values, after the fixed actuals.
+          if let ([.spread (.readAt key a)], some q) :=
+              (parts, P.find? fun l => G.parameterKinds l == some .packed) then
+            if key == CallArguments.arrayStoreField && omitted.isEmpty then
+              let ea ← ((Γ ++ pool).filter fun C => decide (PackedBy G C q)).findCheck? fun C => recur Γ a C
+              let e := ProgramCertificates.Evidence.node ⟨Γ,t,B⟩
+                (.callPacked effect k q P) (ef :: er :: eas ++ [ea])
+              return ← (checkTreeResult G images e).bind fun _ => coerce G images aliases e A
           let eps ← if flags.any id then do
               let E ← restElem G P
               parts.mapM fun a => match a with

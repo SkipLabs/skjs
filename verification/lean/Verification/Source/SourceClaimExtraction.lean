@@ -84,7 +84,7 @@ def extractPlans (ast claims : Json) (fileKey : String)
       let undefinedType := Json.mkObj [("top", toJson false),
         ("atoms", toJson [Json.mkObj [("a", toJson "undefined")]])]
       let binders ← classBinders ((ast.getObjVal? "init").toOption.getD (.arr #[]))
-      if binders.map (·.name) != initBinders.map (·.1) then
+      if binders.map (·.name) != (initBinders.map (·.1)).filter (!·.endsWith "#pack") then
         throw "the module initialization's binders are not its generic classes'"
       pure [(⟨"", span, [], undefinedType, init⟩, binders,
         ⟨"", span, [], .labels [Labels.undef], c.entries, c.expressions, c.contracts, c.arrows⟩)]
@@ -165,7 +165,7 @@ def extractPlans (ast claims : Json) (fileKey : String)
           "a generic closure inside a generic body has binders of its own")
       let binders := if initClaims.isSome then initBinders else
         ((unitBinders.lookup (f.name, f.namePos)).getD [])
-      if binders.map (·.1) != tps.flatMap (fun p => ResolutionWire.ownedNames p.name p.resolution) then
+      if (binders.map (·.1)).filter (!·.endsWith "#pack") != tps.flatMap (fun p => ResolutionWire.ownedNames p.name p.resolution) then
         throw (sourceRefusal d.types f.namePos .genericValidation
           "a generic unit's binders are not the ones its declaration lowers")
       let resolution := ResolutionWire.groups (tps.map fun p => (p.name, p.resolution))

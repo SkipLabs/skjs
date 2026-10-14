@@ -79,10 +79,6 @@ def genericType (ctx : Ctx) (term : Json) : M GenericType := do
     return .construct params (← lowerType ctx (← field term "result"))
   | _ => return .other (← lowerType ctx term)
 
-/-- The name of the argument lists a binder typing a value and a rest stands
-for: a placeholder of its own, instantiated from the binder's instance. -/
-def packedName (n : String) : String := n ++ "#pack"
-
 /-- A type term with each rest typed by one of `names` typed by its packed
 name instead. A nested scheme binding the name hides it. -/
 partial def renamePacks (names : List String) (j : Json) : Json :=
@@ -139,7 +135,7 @@ private def genericOf (name : String) (pos : Nat × Nat) (path : String) (node :
     (type : List (String × Binding) → M GenericType) (packed : List String := []) : M GenericValue := do
   let (scope, _) ← bindNames [] [] node tps
   let scope := (← packed.mapM fun n => do
-    return (packedName n, (⟨true, [← placeholder (packedName n) .arguments]⟩ : Binding))) ++ scope
+    return (packedName n, ({ pack := true, value := [← placeholder (packedName n) .arguments] } : Binding))) ++ scope
   let parameters ← sourceParameters tps
   let binders := parameters.flatMap fun (n, r) => ResolutionWire.ownedNames n r
   let t ← tryCatch (do return Except.ok (← type scope)) fun e => pure (.error e)
@@ -252,7 +248,14 @@ def lowerSource (ast claims : Json) : M (List (String × Union) × List (String 
       let path := s!"/init/{si}/bindings/{bi}"
       let name ← str b "name"
       let pos ← (fromJson? (← field b "namePos") : Except String (Nat × Nat))
-      generics := generics ++ [← genericOf name pos path ctor tps fun scope => do
+      -- A binder typing both a value and a rest's argument lists in the
+      -- class's construct signature: its rest reads its packed name, which
+      -- each instance gives the argument lists of its array (`instancePack`).
+      let packed := tps.toList.filterMap fun p => do
+        let n ← (p.getObjValAs? String "name").toOption
+        let u := binderUse n (b.getObjValD "annot")
+        if u.pack && u.value then some n else none
+      generics := generics ++ [← genericOf name pos path ctor tps (packed := packed) fun scope => do
         genericType { binders := scope, site := s!"{path}/annot", checkBounds := false } (← field b "annot")]
   -- Imported values: a generic one is instantiated at each call.
   let mut values := []

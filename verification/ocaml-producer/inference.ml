@@ -100,7 +100,11 @@ and substitute_pack ?meet solution = function
        tuple type: the argument lists of its tuple contract. *)
     | Some (ValueArgument (Atoms [Shape {elements=Some s;fields=[];indexes=[];calls=[]}])) ->
       Pack {s with readonly=false;presence=Dense}
-    | Some (ValueArgument _ | ResolutionArgument _) -> unsupported ("the instance of " ^ identity.spelling ^
+    (* At another such binder, that binder's lists. *)
+    | Some (ValueArgument (Rigid r | Meet (Rigid r,_))) -> PackParameter r
+    | Some (ValueArgument t) -> unsupported ("the instance of " ^ identity.spelling ^
+        ", a type parameter typing a value and a rest's argument list, is no array or tuple type: " ^ (match t with Atoms [Shape s] -> Printf.sprintf "shape f%d i%d c%d e%b" (List.length s.fields) (List.length s.indexes) (List.length s.calls) (s.elements <> None) | Atoms [Named (n,_)] -> "named " ^ n | Atoms _ -> "atoms" | Rigid _ -> "rigid" | Union _ -> "union" | Meet _ -> "meet"))
+    | Some (ResolutionArgument _) -> unsupported ("the instance of " ^ identity.spelling ^
         ", a type parameter typing a value and a rest's argument list, is no array or tuple type"))
   | Pack sequence -> Pack (substitute_sequence ?meet solution sequence)
 and substitute_sequence ?meet solution sequence = {

@@ -630,6 +630,53 @@ refused, as JavaScript throws. A construct signature is covered by one taking
 as many parameters, each at least as wide, with a result at most as wide:
 `new (params: Specific) => R` is a `new (params: never) => R`.
 
+#### Packed binders
+
+A binder a declaration uses both as a value and as a rest's argument lists
+(`class RestRunner<T extends readonly unknown[]> { args: T; callback: (...args: T) => number }`)
+is **packed**. Its instances are array or tuple types with no other members,
+which every instantiation checks (`instancePack`, `packOf`): the array a call
+of the callback collects is then a value of the instance, a fresh array with
+exactly its elements. A packed binder is one parameter row read in both
+components of its mixed family $`\eta(T)`$: its argument lists are
+$`\eta(T)^{\mathsf{args}}`$, and its values are $`\eta(T)`$'s values that are
+**packable** by those lists:
+
+```math
+⟦T⟧_n(W,v)\iff \eta(T)_n(W,v)\ \land\ \mathrm{Packable}(\eta(T)^{\mathsf{args}})_n(W,v)
+```
+
+```math
+\mathrm{Packable}(P)_n(W,v)\iff \forall j{+}1\le n,\ U\sqsupseteq W|_{j+1},\ h\models_{j+1}U.\
+  v=\mathsf{obj}(\varphi),\ h(\varphi.\mathtt{[]})=\mathsf{arr}(\vec\ell),\ 
+  \mathrm{readElems}_h(\vec\ell)=\vec v,\ \forall i{+}1\le j.\ P_i(U|_i,\vec v)
+```
+
+(`Packable`, `selectParameter`). The relation between the two components is
+in the meaning of the row, so a body checked at every assignment
+(`Parametricity.accepted_at`) needs no assumption about the assignment. A
+spread of a value of the binder, or of a meet row of it, into a variadic
+callee whose rest admits the binder's lists, after the fixed actuals, passes
+one of those lists (`callPacked`, `packed_call_safe`, `packedBy_sound`):
+
+```math
+\frac{\Gamma\vdash_G f:F\quad(R_t,\vec A,P,B)\in\mathrm{restSigs}_G(F)\quad t\in P\quad
+      \Gamma\vdash_G r:R_t\quad\forall i.\;\Gamma\vdash_G a_i:A_i\quad\Gamma\vdash_G a:A\quad
+      \mathrm{PackedBy}_G(A,t)}
+     {\Gamma\vdash_G f(\vec a,\ {\ldots}a.\mathtt{[]}):B}\ \textsf{callPacked}
+```
+
+At an instance, an array or tuple type $`X`$ whose store meets a tuple contract
+$`\tau`$ with no sparse holes is packable by $`\tau`$'s lists: a satisfying
+heap holds at the store's location a store meeting $`\tau`$ one level down,
+whose elements fit $`\tau`$ below that (`packable_of_store`,
+`RestCalls.listT_readElems`). So at $`T:=X`$, with $`T`$'s lists
+$`\mathsf{Pack}(\tau)`$, the binder's values are exactly $`X`$'s. The lemma
+reads only the heap the program already holds; it allocates nothing. A
+declaration's packed parameter's argument at an application is completed
+with those lists (`packOf`), and a packed binder's lists are spelled with its
+packed name, `T#pack`.
+
 #### Variadic construct signatures
 
 A variadic construct signature $`\mathsf{new}(\vec Q,\ {\ldots}P)\Rightarrow B`$

@@ -351,7 +351,13 @@ and pack_bound ctx t = match text "k" t with
       optional_elements=[];rest=None;readonly=false;presence=Dense}
   | _ -> unsupported "a pack parameter's bound is an array or a tuple"
 and source_pack ctx j =
-  if text "k" j <> "binder" then unsupported "a pack rest must name a type parameter";
+  (* A declaration's own parameter typing a rest inside the declaration is a
+     packed one: its instances are arrays or tuples, the lists their elements
+     form. *)
+  if text "k" j = "parameter" then (match source_type ctx j with
+    | Rigid r -> PackParameter r
+    | _ -> unsupported "a pack rest must name a type parameter") else
+  if text "k" j <> "binder" then unsupported "a pack rest must name a type parameter" else
   match List.assoc_opt (text "name" j) ctx.bindings with
   | Some (PackArgument p) -> p
   | Some (ValueArgument (Rigid r)) when ctx.value_packs -> PackParameter r
@@ -890,7 +896,9 @@ let decode ast =
   let init_binders,init_quantified = quantify top (-2000) class_params in
   { file=field "file" ast;digest=field "sourceSha256" ast;
     declarations=definitions;
-    init=List.map (stmt init_binders) (items "init" ast);
+    (* A class's binder typing a rest inside the class is a packed one: its
+       rest is the argument lists of its instance's array. *)
+    init=List.map (stmt {init_binders with value_packs=true}) (items "init" ast);
     init_quantified;
     values=List.mapi (fun index v ->
       (* A generic value's binders quantify its one signature. *)

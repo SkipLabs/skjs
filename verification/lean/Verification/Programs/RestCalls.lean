@@ -190,6 +190,91 @@ theorem listT_spreads {T : TupleF} {E : Fam}
   obtain ⟨vs, hr, he⟩ := readElems_ok hh ls hsome hnone
   exact ⟨ls, vs, rfl, hr, he⟩
 
+/-- Reading a store's elements: one per entry, `undefined` at a hole, the
+heap's value at a location. -/
+theorem readElems_getElem? {h : List Tm} : ∀ {ls : List (Option Nat)} {vs : List Tm},
+    readElems h ls = some vs → vs.length = ls.length ∧
+      ∀ (i : Nat) (v : Tm), vs[i]? = some v → (ls[i]? = some none ∧ v = Tm.undef) ∨
+        ∃ l, ls[i]? = some (some l) ∧ h[l]? = some v
+  | [], vs, hr => by simp [readElems] at hr; subst hr; simp
+  | none :: ls, vs, hr => by
+    simp only [readElems, Option.map_eq_some_iff] at hr
+    obtain ⟨ws, hws, rfl⟩ := hr
+    obtain ⟨hl, hi⟩ := readElems_getElem? hws
+    refine ⟨by simp [hl], ?_⟩
+    intro i v hv
+    cases i with
+    | zero => simp at hv; subst hv; simp
+    | succ i => simpa using hi i v (by simpa using hv)
+  | some l :: ls, vs, hr => by
+    simp only [readElems, Option.bind_eq_some_iff, Option.map_eq_some_iff] at hr
+    obtain ⟨w, hw, ws, hws, rfl⟩ := hr
+    obtain ⟨hl', hi⟩ := readElems_getElem? hws
+    refine ⟨by simp [hl'], ?_⟩
+    intro i v hv
+    cases i with
+    | zero => simp at hv; subst hv; exact Or.inr ⟨l, by simp, hw⟩
+    | succ i => simpa using hi i v (by simpa using hv)
+
+/-- Each location of a store meeting a tuple contract holds a contract that
+implies its position's family. -/
+theorem listT_locations {T : TupleF} {n : Nat} {W : WorldT n} {ls : List (Option Nat)}
+    (hu : listT T n W (.arr ls)) :
+    ∀ (k l : Nat), ls[k]? = some (some l) → ∃ (A : Fam) (c : Ctr n), positionFam T k = some A ∧
+      lookup W l = some c ∧ ∀ (j : Nat) (hj : j < n) (U : WorldT j) (u : Val), c j hj U u → A j U u := by
+  obtain ⟨ls', he, _, _, hbound, hreq, hopt, hrest⟩ := hu
+  cases he
+  intro k l hk
+  by_cases h1 : k < T.required.length
+  · obtain ⟨A, hA⟩ : ∃ A, T.required[k]? = some A := ⟨_, List.getElem?_eq_getElem h1⟩
+    obtain ⟨l', c, hl', hc, hag⟩ := hreq k A hA
+    rw [hk] at hl'; cases hl'
+    exact ⟨A, c, by simp [positionFam, hA], hc, fun j hj U u hu => (hag j hj U u).1 hu⟩
+  · by_cases h2 : k < T.required.length + T.optional.length
+    · obtain ⟨A, hA⟩ : ∃ A, T.optional[k - T.required.length]? = some A :=
+        ⟨_, List.getElem?_eq_getElem (by omega)⟩
+      obtain ⟨c, hc, hag⟩ := hopt (k - T.required.length) A l hA
+        (by rw [show T.required.length + (k - T.required.length) = k by omega]; exact hk)
+      refine ⟨A, c, ?_, hc, fun j hj U u hu => (hag j hj U u).1 hu⟩
+      simp [positionFam, List.getElem?_eq_none (show T.required.length ≤ k by omega), hA]
+    · obtain ⟨A, c, hA, hc, hag⟩ := hrest k l (by omega) hk
+      refine ⟨A, c, ?_, hc, fun j hj U u hu => (hag j hj U u).1 hu⟩
+      simp [positionFam, List.getElem?_eq_none (show T.required.length ≤ k by omega),
+        List.getElem?_eq_none (show T.optional.length ≤ k - T.required.length by omega),
+        show T.required.length + T.optional.length ≤ k by omega, hA]
+
+/-- **A store's elements fit its tuple contract.** Read in a heap satisfying
+the world, the elements of a store meeting a tuple contract with no sparse
+holes form a list the contract admits at every lower level: a location's
+contents meet its contract below the level, and a readable hole's
+`undefined` meets its position. -/
+theorem listT_readElems {T : TupleF} (hpres : T.presence ≠ .sparse) {n : Nat} {W : WorldT n}
+    {h : Heap} {u : Val} (hh : HeapOk n W h) (hu : listT T n W u) :
+    ∃ ls vs, u = .arr ls ∧ readElems h ls = some vs ∧
+      ∀ i (hi : i < n), ArgumentContracts.Fits T i (trunc i (Nat.le_of_lt hi) W) vs := by
+  obtain ⟨ls, rfl, hd, hlen, hbound, -, -, -⟩ := id hu
+  have hloc := listT_locations hu
+  obtain ⟨vs, hr, -⟩ := readElems_ok (E := fun _ _ _ => True) hh ls
+    (fun l hm => by
+      obtain ⟨k, hk⟩ := List.mem_iff_getElem?.mp hm
+      obtain ⟨A, c, -, hc, -⟩ := hloc k l hk
+      exact ⟨c, hc, fun _ _ _ _ _ => trivial⟩)
+    (fun _ _ _ _ => trivial)
+  obtain ⟨hvl, hel⟩ := readElems_getElem? hr
+  refine ⟨ls, vs, rfl, hr, fun i hi => ⟨by omega, fun hn => by have := hbound hn; omega, ?_⟩⟩
+  intro k v A hv hA
+  rcases hel k v hv with ⟨hk, rfl⟩ | ⟨l, hk, hl⟩
+  · have hpd := hd i hi
+    cases hp : T.presence with
+    | dense => simp only [StorePresence, hp] at hpd; exact False.elim (hpd (List.mem_of_getElem? hk))
+    | sparse => exact False.elim (hpres hp)
+    | readable => simp only [StorePresence, hp] at hpd; exact hpd k hk A hA _
+  · obtain ⟨A', c, hA', hc, hag⟩ := hloc k l hk
+    rw [hA] at hA'; cases hA'
+    obtain ⟨w, hw, hmem⟩ := hh.2 l c hc
+    rw [hl] at hw; cases hw
+    exact hag i hi _ v (hmem i hi)
+
 /-- A step of the actual after a completed prefix is a step of the call. -/
 theorem call_lift {h h' : Heap} {f r t t' : Tm} {pre rest : List Tm}
     (hf : isVal f = true) (hr : isVal r = true) (hp : CallArguments.Values pre)

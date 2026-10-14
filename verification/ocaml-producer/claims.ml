@@ -4,6 +4,29 @@ open Proposal_types
 open Semantic
 open Environment
 open Source
+(* The rigid parameters a type uses as a rest's argument lists: a
+   declaration's packed parameters, whose arguments its applications complete
+   with their argument lists. *)
+let rec packed_rigids (t : ty) : rigid list = match t with
+  | Rigid _ -> []
+  | Union ts -> List.concat_map packed_rigids ts
+  | Meet (t,ts) -> List.concat_map packed_rigids (t::ts)
+  | Atoms atoms -> List.concat_map (function
+      | Shape s ->
+        List.concat_map (fun (f:field) ->
+          packed_rigids f.read @ (match f.write with Some w -> packed_rigids w | None -> [])) s.fields
+        @ List.concat_map (fun (i:index_signature) -> packed_rigids i.value) s.indexes
+        @ List.concat_map signature_packed s.calls
+        @ (match s.elements with Some q -> sequence_packed q | None -> [])
+      | Ctors ss -> List.concat_map signature_packed ss
+      | Named (_,args) -> List.concat_map packed_rigids args
+      | Exact fs -> List.concat_map (fun (f:field) -> packed_rigids f.read) fs
+      | _ -> []) atoms
+and signature_packed (s : signature) =
+  (match s.rest_pack with Some (PackParameter r) -> [r] | Some (Pack q) -> sequence_packed q | None -> [])
+  @ List.concat_map packed_rigids (s.receiver :: s.result :: s.params @ Option.to_list s.variadic)
+and sequence_packed (q : sequence) =
+  List.concat_map packed_rigids (q.required @ q.optional_elements @ Option.to_list q.rest)
 (* A property key as the claim wire spells it: the decoding of
    `Source.property_key`. *)
 let key_json = function
@@ -291,9 +314,12 @@ let encode (proposal : Proposal_types.t) =
           Object ["callable",Object (["first",fields;"rest",Array []] @ calls)] in
         [Row (intern (Array [clause]))]
 
-  and pack_labels = function
-    | PackParameter _ -> unsupported "rigid pack nested in a graph type"
-    | Pack sequence -> labels_json [Row (intern (Array [Object ["pack",Object ["first",Object [
+  and pack_labels p = labels_json (pack_label_list p)
+  and pack_label_list = function
+    (* A binder's argument lists: its packed name, which Lean reads as the
+       unit binds it, a pack binder's row or a packed binder's. *)
+    | PackParameter r -> [Binder (r.spelling ^ "#pack")]
+    | Pack sequence -> [Row (intern (Array [Object ["pack",Object ["first",Object [
         "required",Array (List.map labels sequence.required);
         "optional",Array (List.map labels sequence.optional_elements);
         "rest",(match sequence.rest with None -> Null | Some t -> labels t);
@@ -321,7 +347,15 @@ let encode (proposal : Proposal_types.t) =
                 | Semantic.ValueArgument t -> t | _ -> assert false) previous)
             | _ -> None in
           match complete [] args d.parameters d.defaults with
-          | Some args -> [Decl (k,List.map label_list args)]
+          | Some args ->
+            (* A packed parameter's argument with its argument lists: those
+               of its array's tuple contract, or a binder's own. *)
+            let packed = packed_rigids d.expression in
+            [Decl (k,List.map2 (fun parameter arg ->
+              if List.mem parameter packed then
+                List.sort_uniq compare (label_list arg @ pack_label_list
+                  (Inference.substitute_pack [parameter,Semantic.ValueArgument arg] (PackParameter parameter)))
+              else label_list arg) d.parameters args)]
           | None -> unsupported "type application has wrong arity"
         end in
     find 0 declarations

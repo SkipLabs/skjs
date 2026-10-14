@@ -349,6 +349,7 @@ meaning for an invalid serialized type reference. -/
       | .callRest _ _ _ _ E => validTy ok E
       | .arrParts E _ => validTy ok E
       | .constructRest _ _ P => validTy ok P
+      | .callPacked _ _ t P => validTy ok [t] && validTy ok P
       | .readProto P => validTy ok P
       | .elemOpt U | .elemAny U => validTy ok U
       | .elemStr T U => validTy ok T && validTy ok U

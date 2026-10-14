@@ -144,6 +144,16 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
         List.iteri (fun i arg -> Option.iter (fun p ->
           Option.iter (fun state -> state ()) (offer_to arg (substitute p))) (param_at s i)) args in
       (match callee with
+       | Atoms [Shape {calls=[{quantified=[];variadic=None;rest_pack=Some (PackParameter _);params;result;_}];_}]
+           when spreads = [List.length args - 1] && List.length params = List.length args - 1 ->
+         (* A rest that is a packed binder's argument lists, after the fixed
+            actuals: one spread of a value of that binder, whose elements are
+            one of its lists (Lean's `callPacked`). *)
+         no_type_arguments ();
+         List.iteri (fun i e -> match List.nth_opt params i with
+           | Some p -> ignore (expr ~expected:p env e)
+           | None -> ignore (expr env e)) args;
+         result
        | Atoms [Shape {calls=[{quantified=[];variadic=Some element;params;result;_} as signature];_}] ->
          no_type_arguments ();
          offer signature;

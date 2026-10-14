@@ -45,15 +45,16 @@ abbrev ParameterKind.Closed : (k : ParameterKind) → k.Carrier → Prop
 
 /-- **Packable values.** Arrays whose elements, read from the store any
 satisfying heap of any future world holds, form a list `P` admits two levels
-down: reading the store and spreading it are a step each. A packed binder's
+down, its contents being typed one level down: reading the store and
+spreading it are a step each. A packed binder's
 values are its value component's members that are packable by its list
 component, so a spread of one is a list of the binder (PROGRAM-TYPING.md,
 "Packed binders"). -/
 def Packable (P : WorldFamily (List Val)) : Fam := fun n W v =>
-  ∀ j (hj : j ≤ n) (U : WorldT j), WExt (trunc j hj W) U → ∀ h, HeapOk j U h →
+  ∀ j (hj : j + 1 ≤ n) (U : WorldT (j + 1)), WExt (trunc (j + 1) hj W) U → ∀ h, HeapOk (j + 1) U h →
     ∃ fs c oid l ls vs, v = .objAt fs c oid ∧ fs.lookup CallArguments.arrayStoreField = some l ∧
       h[l]? = some (.arr ls) ∧ readElems h ls = some vs ∧
-      ∀ i (hi : i + 2 ≤ j), P i (trunc i (by omega) U) vs
+      ∀ i (hi : i + 1 ≤ j), P i (trunc i (by omega) U) vs
 
 theorem Packable_adm (P : WorldFamily (List Val)) : Adm (Packable P) :=
   ⟨fun n W v hv j hj U hx h hh => hv j (by omega) U (by rwa [trunc_trunc] at hx) h hh,
@@ -75,6 +76,26 @@ theorem Packable_mono {P Q : WorldFamily (List Val)} (h : ∀ n W vs, P n W vs �
   intro j hj U hx hh hok
   obtain ⟨fs, c, oid, l, ls, vs, h1, h2, h3, h4, h5⟩ := hp j hj U hx hh hok
   exact ⟨fs, c, oid, l, ls, vs, h1, h2, h3, h4, fun i hi => h _ _ _ (h5 i hi)⟩
+
+/-- **An array is packable by its tuple contract's lists.** An object whose
+store location's contract is a store meeting a tuple contract with no sparse
+holes: in every satisfying heap the store's elements fit the contract. This
+is the instantiation check of a packed binder at an array or tuple type: its
+values are packable by the argument lists of that type's tuple contract. -/
+theorem packable_of_store {T : TupleF} (hpres : T.presence ≠ .sparse) {n : Nat} {W : WorldT n}
+    {v : Val} {fs : List (PropKey × Nat)} {c : CallCode} {oid l : Nat} {C : Ctr n}
+    (hv : v = .objAt fs c oid) (hl : fs.lookup CallArguments.arrayStoreField = some l)
+    (hC : lookup W l = some C)
+    (hCS : ∀ (j : Nat) (hj : j < n) (U : WorldT j) (u : Val), C j hj U u → listT T j U u) :
+    Packable (ArgumentContracts.Fits T) n W v := by
+  intro j hj U hx h hok
+  have hCU := WExt_lookup hx (lookup_trunc hj W l C hC)
+  obtain ⟨u, hu, hmem⟩ := hok.2 l _ hCU
+  have hlist := hCS j (by omega) _ u (hmem j (by omega))
+  obtain ⟨ls, vs, rfl, hrd, hfits⟩ :=
+    RestCalls.listT_readElems hpres (HeapOk_trunc j U h hok) hlist
+  exact ⟨fs, c, oid, l, ls, vs, hv, hl, hu, hrd, fun i hi => by
+    simpa only [trunc_trunc] using hfits i (by omega)⟩
 
 /-- The assignment algebra depends on a carrier and its closedness predicate,
 not on every binder in a scheme having the same source-language kind. -/

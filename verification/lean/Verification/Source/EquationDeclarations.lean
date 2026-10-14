@@ -165,11 +165,35 @@ partial def mentionsAux (shadow : List String) (acc : Array Item) : Json → Arr
 def mentions (shadow : List String) (term : Json) : List Item :=
   (mentionsAux shadow #[] term).toList
 
-/-- A binder in scope: its kind and what it stands for here. -/
+/-- A binder in scope: its kind and what it stands for here. A packed binder
+(`packed`) is a value binder whose rest uses read its row as argument lists. -/
 structure Binding where
   pack : Bool
   value : Union
+  packed : Bool := false
   deriving Repr, Inhabited
+
+/-- The name of the argument lists a binder typing a value and a rest stands
+for: a placeholder of its own, instantiated from the binder's instance. -/
+def packedName (n : String) : String := n ++ "#pack"
+
+/-- The parameters a declaration's expression uses as a rest's argument
+ lists inside it, `...args: T` for its own `T`: packed parameters, whose
+ arguments are completed with their array's argument lists. -/
+partial def packedParameters : Json → List Nat
+  | .obj fields =>
+    let fields := fields.toList
+    let own := if fields.lookup "k" == some (.str "pack") then
+        match fields.lookup "of" with
+        | some operand =>
+          if (operand.getObjValAs? String "k").toOption == some "parameter" then
+            ((operand.getObjValAs? Nat "index").toOption).toList
+          else []
+        | none => []
+      else []
+    own ++ fields.flatMap fun f => packedParameters f.2
+  | .arr terms => terms.toList.flatMap packedParameters
+  | _ => []
 
 /-- Where a term is lowered: the declaration its `parameter` and `self`
 terms belong to, and their values; the binders in scope; the aliases being

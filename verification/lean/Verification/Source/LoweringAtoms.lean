@@ -129,7 +129,11 @@ new observation of their source expression. -/
   let variadic := !restSignatures.isEmpty
   -- A rest that is one tuple contract, an argument pack's instance, takes
   -- a spread as fixed parameters do: its tuple's positions.
-  let tupleRest := variadic && restSignatures.all fun ⟨_, (_, P), _, _⟩ =>
+  -- A rest that is a packed binder's argument lists takes one spread of the
+  -- store of one of its values (`callPacked`).
+  let packedRest := variadic && restSignatures.all fun ⟨_, (_, P), _, _⟩ =>
+    P.any fun t => calleeGraph.parameterKinds t == some .packed
+  let tupleRest := variadic && !packedRest && restSignatures.all fun ⟨_, (_, P), _, _⟩ =>
     (PositiveRules.restElem calleeGraph P).isNone
   let runsCode : Fragment.Expr → Bool := fun a => match a with
     | .var .. | .lit .. => false

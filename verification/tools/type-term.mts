@@ -740,8 +740,10 @@ export function signatures(scope: TermScope, parameters: readonly ts.ParameterDe
         continue;
       }
       // A rest typed by a type parameter is a pack parameter: the actuals
-      // past the fixed ones are, as one list, at it.
-      if (type.k === "binder") {
+      // past the fixed ones are, as one list, at it. A declaration's own
+      // parameter typing it inside the declaration is a packed one: its
+      // instances are arrays or tuples, and the lists their elements form.
+      if (type.k === "binder" || type.k === "parameter") {
         rest = { k: "pack", of: type, span: spanOf(scope, p) };
         continue;
       }
