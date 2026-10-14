@@ -1441,6 +1441,8 @@ export const cases: Case[] = [
   negative("invalid-length-view-tuple", "a mutable tuple's `length` grows on `push`: no view of it at its arity (run under Node)"),
   negative("invalid-dictionary-inherited-named", "a dictionary read under a name `Object.prototype` holds, by a member access, finds its member where the object lacks the key (run under Node)",
     /No rule derives this readAt at undefined \| number/),
+  negative("invalid-word-count", "a word counter's step reads a dictionary at a word known only at run time, which may name a member every object inherits (`constructor`): the count becomes a string (run under Node)",
+    /a read at a key that may name a member every object inherits from `Object.prototype`/),
   negative("invalid-optional-inherited-key", "an optional field under a name `Object.prototype` holds is its member where the object lacks it (run under Node)",
     /No rule derives this readAt/),
   negative("invalid-pattern-inherited-key", "a pattern's read under a name `Object.prototype` holds finds its member, and the default does not apply (run under Node)",

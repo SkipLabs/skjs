@@ -637,6 +637,8 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   // `Object.prototype`'s member under its name where the object lacks it.
   assert.equal(runExample("invalid-dictionary-inherited-named", "typeof named()"), "function",
     "invalid-dictionary-inherited-named: the read finds Object.prototype.__defineGetter__");
+  assert.equal(runExample("invalid-word-count", "next({}, \"constructor\")"), "function Object() { [native code] }1",
+    "invalid-word-count: the count of `constructor` is a string");
   assert.equal(runExample("invalid-optional-inherited-key", "typeof optional({})"), "function",
     "invalid-optional-inherited-key: the read finds Object.prototype.toString");
   assert.equal(runExample("invalid-pattern-inherited-key", "typeof destructured({})"), "function",
