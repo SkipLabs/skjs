@@ -338,7 +338,7 @@ field or view, or, for a key an own-key bound does not admit, its prototype's, a
       if !ks.any (fun K => !K.admits fld) then none
       let P ← (fs ++ vs).lookup SourceTypes.protoField
       let [.refs gs [] ws _ _ _] := PositiveRules.expand G P | none
-      (gs ++ ws).lookup fld
+      (gs ++ ws.filter (·.1 != lengthKey)).lookup fld
   | [.callable fs _ _ _] => fs.lookup fld
   | _ => none
 
@@ -407,6 +407,16 @@ the bound's member. Any other plan is itself. -/
   recordHints [m]
   return DirectProof.cast Γ [m] a
 
+/-- `length` through a view (`lenView`): the view admits an array, whose
+`length` is its store's, so the read tests the receiver, held in a slot. -/
+@[nospecialize] def lengthView (G : PositiveGraphs.NormalGraph Tree) (Γ : List (Ty Tree))
+    (a : DirectProof.Plan Tree) (B : Ty Tree) : Compiler (DirectProof.Plan Tree) := do
+  if !PositiveRules.numIn G B then
+    throw "a read of `length` through a view whose type neither holds every number nor excludes one: the view may admit an array, whose `length` is its store's"
+  match a.term with
+  | .var i => pure (DirectProof.node Γ (lengthRead i) B (.lenView i) [])
+  | _ => pure (DirectProof.letE Γ a (DirectProof.node (a.type :: Γ) (lengthRead 0) B (.lenView 0) []))
+
 /-- Read a field from a cell plan under context `Γ`: one contract, a callable
 bag, or an explicit union of cell contracts each naming the field. -/
 @[nospecialize] partial def readCell (G : PositiveGraphs.NormalGraph Tree) (Γ : List (Ty Tree)) (fld : PropKey)
@@ -419,14 +429,16 @@ bag, or an explicit union of cell contracts each naming the field. -/
     -- (`readProto`), as at the top level.
     match fs.lookup fld, vs.lookup fld, (os.find? (·.key == fld)).map (·.type) with
     | some B, _, _ => pure (DirectProof.node Γ (.readAt fld a.term) B .read [a])
-    | none, some B, _ => pure (DirectProof.node Γ (.readAt fld a.term) B .readView [a])
+    | none, some B, _ =>
+      if fld == lengthKey && !lengthExcluded G B then lengthView G Γ a B
+      else pure (DirectProof.node Γ (.readAt fld a.term) B .readView [a])
     | none, none, some E => pure (DirectProof.node Γ (.readAt fld a.term) (E ++ [Labels.undef]) (.readOptional E [Labels.undef]) [a])
     | none, none, none =>
       let inherited : Option (Ty Tree × Ty Tree) := do
         if !ks.any (fun K => !K.admits fld) then none
         let P ← (fs ++ vs).lookup SourceTypes.protoField
         let [.refs gs [] ws _ _ _] := PositiveRules.expand G P | none
-        let B ← (gs ++ ws).lookup fld
+        let B ← (gs ++ ws.filter (·.1 != lengthKey)).lookup fld
         pure (P, B)
       let some (P, B) := inherited | throw s!"read of a field '{fld}' the contract does not name"
       pure (DirectProof.node Γ (.readAt fld a.term) B (.readProto P) [a])
@@ -435,7 +447,9 @@ bag, or an explicit union of cell contracts each naming the field. -/
     -- key, which may miss.
     match fs.lookup fld, vs.lookup fld with
     | some B, _ => pure (DirectProof.node Γ (.readAt fld a.term) B .read [a])
-    | none, some B => pure (DirectProof.node Γ (.readAt fld a.term) B .readView [a])
+    | none, some B =>
+      if fld == lengthKey && !lengthExcluded G B then lengthView G Γ a B
+      else pure (DirectProof.node Γ (.readAt fld a.term) B .readView [a])
     | none, none =>
       let some (K, B) := (PositiveNormalization.numericFirst ix).find? (fun (K, _) => K.surely fld)
         | throw s!"read of a key '{fld}' no index of the object constrains"
@@ -529,7 +543,7 @@ is read as an object (`readCell`). -/
     | .proto p P R => do
       let [.refs gs [] ws _ _ _] := PositiveRules.expand G P
         | throw "a primitive's prototype contract must be a record"
-      let some B := (gs ++ ws).lookup fld
+      let some B := (gs ++ ws.filter (·.1 != lengthKey)).lookup fld
         | throw s!"read of a member '{fld}' the primitive's prototype contract does not name"
       let wrapper := DirectProof.node L (.makeAt .absent [SourceTypes.protoField] [.var p]) R .alloc
         [DirectProof.var L p P]

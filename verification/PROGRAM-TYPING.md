@@ -732,7 +732,8 @@ invariant fields, readonly views and optional fields $`\kappa{:}^{r}A`$ of mode
 $`r`$, and $`\kappa`$ a [property key](POSITIVE-TYPES.md#records):
 
 ```math
-\frac{\Gamma\vdash_G a:R\quad R\equiv_G c\quad\mathsf{named}(c)=(\varphi;\psi)\quad(\kappa{:}A)\in\psi}
+\frac{\Gamma\vdash_G a:R\quad R\equiv_G c\quad\mathsf{named}(c)=(\varphi;\psi)\quad(\kappa{:}A)\in\psi
+      \quad\kappa\neq\mathtt{length}\lor\exists b.\;\mathsf{num}(b)\notin A}
      {\Gamma\vdash_G a.\kappa:A}
 \qquad
 \frac{\Gamma\vdash_G a:R\quad R\equiv_G\mathsf{Ref}(\varphi;\psi;\omega)\quad(\kappa{:}^{r}A)\in\omega
@@ -746,6 +747,26 @@ $`r`$, and $`\kappa`$ a [property key](POSITIVE-TYPES.md#records):
      {\Gamma\vdash_G a.\kappa:A\cup U}
 ```
 
+A view of `length` at a type excluding a number admits no array, which
+would need every number there ([records](POSITIVE-TYPES.md#records)): it is
+at the object's own location, and `readView` reads it, the number found
+among the first few the type's clauses reject (`numWitness`,
+`lengthExcluded`). Any other view of `length` may be an array's, whose
+`length` is its store's length, so its read tests the object in slot
+$`i`$: an array's store is a list, in every graph (the realm's invariant, or
+`storeListT` without one), whose length is a number, and any other object's
+`length` is at its own location. The term is
+$`\mathsf{len}_i=\mathsf{if}\ \mathsf{isArray}(x_i)\ \mathsf{then}\ |x_i.\sigma|\ \mathsf{else}\ x_i.\mathtt{length}`$
+(`lengthRead`, `lenView`). A member access, in a body or a closure, and a
+pattern's read of `length` are this term wherever the type's `length` is a
+view an array may meet (`lengthViewed`):
+
+```math
+\frac{\Gamma(i)=R\quad R\equiv_G c\quad\mathsf{named}(c)=(\varphi;\psi)\quad(\mathtt{length}{:}A)\in\psi
+      \quad\mathsf{Number}\subseteq A}
+     {\Gamma\vdash_G\mathsf{len}_i:A}
+```
+
 A key one of the record's own-key bounds $`b`$ does not admit is not the
 object's own, so its read continues at the prototype, which the record holds
 under the reserved key at $`P`$ (`readProto`). For an array, $`b`$ excludes
@@ -755,7 +776,7 @@ further keys the array owns:
 ```math
 \frac{\Gamma\vdash_G a:R\quad R\equiv_G\mathsf{Ref}(\varphi;\psi;\omega;\beta)\quad b\in\beta\quad b\nvDash\kappa\quad
       (\mathsf{proto}{:}P)\in\varphi\,\psi\quad P\equiv_G\mathsf{Ref}(\varphi';\psi';\ldots)\quad
-      (\kappa{:}A)\in\varphi'\,\psi'}
+      (\kappa{:}A)\in\varphi'\,(\psi'\setminus\mathtt{length})}
      {\Gamma\vdash_G a.\kappa:A}
 ```
 

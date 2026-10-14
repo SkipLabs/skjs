@@ -624,6 +624,12 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   // an empty one has none.
   assert.equal(runExample("invalid-length-array-or-dictionary", "size({})"), undefined,
     "invalid-length-array-or-dictionary: the actual source returns undefined despite its number contract");
+  // A view of `length` reads an array's store length, after a push too.
+  assert.equal(runExample("length-view", "lengths([4]) + grown(0)"), 9,
+    "length-view: one, three, two and one, then two after the push");
+  // A mutable tuple's `length` grows past its arity.
+  assert.equal(runExample("invalid-length-view-tuple", "tupleLength(0)"), 2,
+    "invalid-length-view-tuple: the view reads 2 despite its 1 contract");
   // An array's `length` is not one of its own enumerable properties.
   assert.equal(runExample("invalid-array-spread-length", "count([1, 2])"), undefined,
     "invalid-array-spread-length: the copy has no length despite its number contract");

@@ -639,7 +639,6 @@ let literal_keys declarations t =
     | _ -> None in
   let keys = List.filter_map key atoms in
   if atoms <> [] && List.length keys = List.length atoms then List.sort_uniq compare keys else []
-let array_atom = function Shape {elements=Some _;_} -> true | _ -> false
 (* An open record: a plain object whose keys its type does not bound, which
    may be an array carrying other keys. *)
 let open_record_atom = function

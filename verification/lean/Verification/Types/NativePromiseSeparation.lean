@@ -85,9 +85,9 @@ theorem witness_clause (G : NormalGraph ι) (η : MixedAssignment ι)
   · intro key T hm
     obtain ⟨p, hp, he⟩ := List.mem_map.mp hm
     cases he
-    exact ⟨fields (viewKeys vs), 0, emptyCell, 1, rfl,
+    exact .inl (viewT_single ⟨fields (viewKeys vs), 0, emptyCell, 1, rfl,
       fields_lookup _ _ (List.mem_map.mpr ⟨p, hp, rfl⟩), witness_cell,
-      fun _ _ _ _ h => h.elim⟩
+      fun _ _ _ _ h => h.elim⟩)
   · exact ⟨fields (viewKeys vs), 1, rfl, by simp, by simp⟩
   · intro m _
     exact witness_member _ proto m
@@ -104,23 +104,14 @@ theorem witness_realm (G : NormalGraph ι) (X : List ι → Fam)
     (keys : List PropKey) (c : Clause (List ι))
     (ha : CallArguments.arrayStoreField ∉ keys) :
     realmInvariant G X c 1 witnessWorld (witness keys) := by
-  cases hr : G.realm with
-  | none => simp [realmInvariant, hr]
-  | some r =>
-    by_cases hc : c.realmed = true
-    · simp only [realmInvariant, hr, hc, if_true]
-      rintro fs oid he hs
-      cases he
-      rw [fields_absent keys _ ha] at hs
-      cases hs
-    · simp [realmInvariant, hr, hc]
+  exact realmInvariant_of_lookup (fields_absent keys _ ha)
 
 /-- A stable clause excludes the witness by shape, by a required view key the
 witness lacks, or by an optional key it lacks while it has a prototype. -/
 def RejectClause (keys : List PropKey) (c : Clause (List ι)) : Prop :=
   (shape c ≠ 2 ∧ shape c ≠ 7) ∨ match c with
   | .refs _ _ views optional _ _ =>
-      (∃ p ∈ views, p.1 ∉ keys) ∨ ∃ o ∈ optional, o.key ∉ keys
+      (∃ p ∈ views, p.1 ∉ keys ∧ p.1 ≠ lengthKey) ∨ ∃ o ∈ optional, o.key ∉ keys
   | _ => False
 
 instance [DecidableEq ι] (keys : List PropKey) (c : Clause (List ι)) :
@@ -139,9 +130,9 @@ theorem reject_clause (G : NormalGraph ι) (η : MixedAssignment ι)
     exact shape.1 (semWithArgs_shape ht hj hv).symm
   · cases c <;> try exact field.elim
     rename_i a bs views optional methods bounds
-    rcases field with ⟨p, hp, hn⟩ | ⟨o, ho, hn⟩
+    rcases field with ⟨p, hp, hn, hlen⟩ | ⟨o, ho, hn⟩
     · obtain ⟨fs, l, ctr, oid, he, hl, _, _⟩ :=
-        hv.2.1 p.1 (mixedValues G η p.2) (List.mem_map.mpr ⟨p, hp, rfl⟩)
+        viewsT_at (List.mem_map.mpr ⟨p, hp, rfl⟩) hlen hv.2.1
       cases he
       rw [fields_absent keys _ hn] at hl
       cases hl

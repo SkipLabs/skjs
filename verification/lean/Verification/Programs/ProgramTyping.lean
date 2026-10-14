@@ -213,13 +213,27 @@ theorem storeTy_sound {G : NormalGraph ι} {S U : Ty ι} (h : storeTy G S = true
       exact unknownTy_sound hu ((hj B (by simp [Tuple.operands, hB])).exc hu')
   | _ => simp at hl
 
+/-- A type all of whose clauses are stores: its values are lists. -/
+def listsOnly [DecidableEq ι] (G : NormalGraph ι) (S : Ty ι) : Bool :=
+  G.plainTy S && (expand G S).all fun c => match c with | .list .. => true | _ => false
+
+theorem listsOnly_sound [DecidableEq ι] {G : NormalGraph ι} {S : Ty ι} (h : listsOnly G S = true)
+    {n W u} (hu : meaning G S n W u) : ∃ ls, u = .arr ls := by
+  simp only [listsOnly, Bool.and_eq_true, List.all_eq_true] at h
+  obtain ⟨c, hc, hv, -⟩ := (expand_sem G S h.1 n W u).mp hu
+  have := h.2 c hc
+  cases c <;> simp only [Bool.false_eq_true] at this
+  obtain ⟨ls, rfl, -⟩ := hv.1
+  exact ⟨ls, rfl⟩
+
 /-- **An allocation meets the realm's invariant**: it owns no store, or it is
 an array of the realm, holding a store and the realm's prototype and owning
-no key that prototype provides. -/
+no key that prototype provides; without a realm, an array whose store is a
+list. -/
 def allocRealm [DecidableEq ι] (G : NormalGraph ι) (parts : List (PropKey × Ty ι)) : Bool :=
   !parts.any (·.1 == CallArguments.arrayStoreField) ||
   match G.realm with
-  | none => true
+  | none => parts.any (fun p => p.1 == CallArguments.arrayStoreField && listsOnly G p.2)
   | some r => realmFree G r.proto && unknownTy G r.unknown && parts.all (fun p => !r.keys.contains p.1) &&
       parts.all (fun p => !IndexKeys.numeric.may p.1) &&
       parts.any (fun p => p.1 == CallArguments.arrayStoreField && storeTy G p.2) &&
@@ -245,7 +259,22 @@ theorem allocRealm_sound [DecidableEq ι] {G : NormalGraph ι} {parts : List (Pr
     simp [hk] at this
   · simp only [hs, Bool.not_true, Bool.false_or] at hok
     cases hr : G.realm with
-    | none => exact realmInvariant_of_none hr k V _
+    | none =>
+      rw [hr] at hok
+      simp only [Bool.and_eq_true, List.any_eq_true, beq_iff_eq] at hok
+      obtain ⟨ps, hps, hsk, hst⟩ := hok
+      unfold realmInvariant
+      rw [hr]
+      cases c.realmed
+      · trivial
+      · intro flds oid he _
+        cases he
+        intro f T hm
+        simp only [List.mem_singleton, Prod.mk.injEq] at hm
+        obtain ⟨rfl, rfl⟩ := hm
+        obtain ⟨flds, l, c, oid', he, hl, hw, hag⟩ := recT_at (hmem ps hps) hrec
+        exact ⟨flds, l, c, oid', he, by rw [← hsk]; exact hl, hw, fun j hj W' u hu =>
+          listsOnly_sound hst ((hag j hj W' u).mp hu)⟩
     | some r =>
       rw [hr] at hok
       simp only [Bool.and_eq_true, List.all_eq_true, List.any_eq_true, Bool.not_eq_true',
@@ -1984,11 +2013,80 @@ theorem namedMembers_sem {G : NormalGraph ι} {A : Ty ι} {c : Clause (Ty ι)}
     {fs vs : List (PropKey × Ty ι)} (hr : Represents G A c)
     (hc : namedMembers c = some (fs, vs)) {n W v} (h : meaning G A n W v) :
     recT (ReferenceConjunctions.famsOf (meaning G) fs) n W v ∧
-      viewT (ReferenceConjunctions.famsOf (meaning G) vs) n W v := by
+      viewsT (ReferenceConjunctions.famsOf (meaning G) vs) n W v := by
   have hs := (represents_raw hr n W v) h
   match c, hc with
   | .refs _ [] _ _ _ _, rfl => exact ⟨hs.1.1, hs.2.1⟩
   | .dict _ [] _ _ _ _ _ _, rfl => exact ⟨hs.1.1, hs.2.1⟩
+
+/-- A clause with named members is a record's or a dictionary's, which the
+realm's invariant applies to. -/
+theorem namedMembers_realmed {c : Clause α} {fs vs : List (PropKey × α)}
+    (hc : namedMembers c = some (fs, vs)) : c.realmed = true := by
+  match c, hc with
+  | .refs _ [] _ _ _ _, rfl => rfl
+  | .dict _ [] _ _ _ _ _ _, rfl => rfl
+
+/-- **`length`, read where the object may be an array**: an array's is its
+store's length, any other object's its own property's. -/
+def lengthRead (i : Nat) : Tm :=
+  .ite (.test .isArray (.var i)) (.lenOf (.readAt CallArguments.arrayStoreField (.var i)))
+    (.readAt lengthKey (.var i))
+
+/-- Whether a clause's members exclude the number `w`. -/
+def rejectsNum (w : UInt64) (c : Clause α) : Bool :=
+  match c with
+  | .numLit b => b != w
+  | c => tagClause .isNum c == some false
+
+theorem rejectsNum_sound {Ξ : Fam} {S : α → Fam} {P : α → ArgFam} {w : UInt64} {c : Clause α}
+    (h : rejectsNum w c = true) {n W} : ¬ semWithArgs Ξ S P c n W (.num w) := by
+  intro hv
+  unfold rejectsNum at h
+  split at h
+  · simp only [bne_iff_ne, ne_eq] at h
+    simp only [semWithArgs, Tm.num.injEq] at hv
+    exact h hv.symm
+  · have := tagClause_sound (beq_iff_eq.mp h) hv
+    simp [tagHolds] at this
+
+/-- A number no value of the type is, where one is found among the first
+few: one more than its numeric singletons. -/
+@[nospecialize] def numWitness (G : NormalGraph ι) (A : Ty ι) : Option UInt64 :=
+  if G.plainTy A then
+    ((List.range ((expand G A).length + 1)).map Nat.toUInt64).find? fun w =>
+      (expand G A).all (rejectsNum w)
+  else none
+
+theorem numWitness_sound {G : NormalGraph ι} {A : Ty ι} {w : UInt64} (h : numWitness G A = some w)
+    {n W} : ¬ meaning G A n W (.num w) := by
+  intro hv
+  unfold numWitness at h
+  split at h
+  · rename_i hp
+    have hall := List.find?_some h
+    simp only [List.all_eq_true] at hall
+    obtain ⟨c, hc, hcv, -⟩ := (expand_sem G A hp n W _).mp hv
+    exact rejectsNum_sound (hall c hc) hcv
+  · cases h
+
+/-- **A `length` view no array meets**: its type excludes a number, so no
+member is an object owning the store (`arrayLenT`), and the view is at the
+object's own location. -/
+@[nospecialize] def lengthExcluded (G : NormalGraph ι) (A : Ty ι) : Bool := (numWitness G A).isSome
+
+/-- Whether a type's `length` is a view an array may meet (`lenView` reads
+it): its one record or dictionary clause names `length` among its views, not
+among its fields, at a type excluding no number found. -/
+@[nospecialize] def lengthViewed (G : NormalGraph ι) (B : Ty ι) : Bool :=
+  match expand G B with
+  | [c] => match namedMembers c with
+    | some (fs, vs) => (fs.lookup lengthKey).isNone &&
+        match vs.lookup lengthKey with
+        | some A => !lengthExcluded G A
+        | none => false
+    | none => false
+  | _ => false
 
 variable [DecidableEq ι]
 
@@ -2140,9 +2238,19 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
   /-- A named field, of a record or of a dictionary, reads at its contract. -/
   | read : HasTyWith G images subtyping Γ a Ref → Represents G Ref c → namedMembers c = some (fs, vs) →
       (f, A) ∈ fs → HasTyWith G images subtyping Γ (.readAt f a) A
-  /-- A view field reads at its bound: a capability, never a write permission. -/
+  /-- A view field reads at its bound: a capability, never a write permission.
+  A view of `length` is read so where its type excludes a number, so that no
+  array meets it (`lengthExcluded`). -/
   | readView : HasTyWith G images subtyping Γ a Ref → Represents G Ref c → namedMembers c = some (fs, vs) →
-      (f, A) ∈ vs → HasTyWith G images subtyping Γ (.readAt f a) A
+      (f, A) ∈ vs → (f ≠ lengthKey ∨ lengthExcluded G A = true) → HasTyWith G images subtyping Γ (.readAt f a) A
+  /-- **`length` through a view.** A view of `length` admits an array, whose
+  `length` is its store's: the read tests the slot's value, and reads an
+  array's store length, a number the view's type holds, or any other object's
+  own `length` location. -/
+  | lenView {Γ : List (Ty ι)} {i : Nat} {Ref A : Ty ι} {c : Clause (Ty ι)} {fs vs : List (PropKey × Ty ι)} :
+      Γ[i]? = some Ref → Represents G Ref c → namedMembers c = some (fs, vs) → (lengthKey, A) ∈ vs →
+      PositiveRules.numIn G A = true →
+      HasTyWith G images subtyping Γ (lengthRead i) A
   /-- **A read through the prototype.** A key one of the object's key bounds
   does not admit is not its own, so the read continues at the prototype, which the
   object holds under the reserved key at `P`; the prototype's field or view
@@ -2154,7 +2262,7 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
       {ks' : List KeyBound} {f : PropKey} {A : Ty ι} :
       HasTyWith G images subtyping Γ a Ref → Represents G Ref (.refs fs [] vs os ms ks) → K ∈ ks → K.admits f = false →
       (CallArguments.protoField, P) ∈ fs ++ vs → Represents G P (.refs gs [] ws os' ms' ks') →
-      (f, A) ∈ gs ++ ws → HasTyWith G images subtyping Γ (.readAt f a) A
+      (f, A) ∈ gs ++ ws.filter (·.1 != lengthKey) → HasTyWith G images subtyping Γ (.readAt f a) A
   /-- An optional field, writable or readonly, reads at its type or, where the
   object lacks the key, as `undefined`. -/
   | readOptional {a : Tm} {Ref : Ty ι} {fs vs : List (PropKey × Ty ι)} {os : List (OptionalField (Ty ι))}
@@ -2341,7 +2449,7 @@ abbrev HasTyUsing (G : NormalGraph ι) (images : PositiveCertificates.InstanceIm
   HasTyWith G images subtyping Γ t A
 
 namespace HasTyUsing
-export HasTyWith (var nul undef tru fls truLit flsLit numLit num bigintLit bigint strLit str funGraph funScheme ctorGraph callableGraph construct callCallable readCallable writeCallable app letE alloc allocDict read readView readProto readOptional readDict indexDict write arith arrLit elem elemOpt elemAny setElem len lenStr elemStr test ifBool ifKnown ifBoolVar ifTag unionVar arrCopy callRest bindE bindRestE bindMember bindScheme throw merge makeKey sub)
+export HasTyWith (var nul undef tru fls truLit flsLit numLit num bigintLit bigint strLit str funGraph funScheme ctorGraph callableGraph construct callCallable readCallable writeCallable app letE alloc allocDict read readView lenView readProto readOptional readDict indexDict write arith arrLit elem elemOpt elemAny setElem len lenStr elemStr test ifBool ifKnown ifBoolVar ifTag unionVar arrCopy callRest bindE bindRestE bindMember bindScheme throw merge makeKey sub)
 end HasTyUsing
 
 /-- Existing source requests choose the finite checker. The typing rules
@@ -2773,13 +2881,73 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     obtain ⟨flds, l, c, oid', rfl, hf, hl, hag⟩ :=
       recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) (namedMembers_sem hr hc ha').1
     exact read_rule (meaning_valOnly G A) j U heap l hu hok hf hl hag
-  | @readView Γ a Ref c fs vs f A ha hr hc hm ih =>
+  | @readView Γ a Ref c fs vs f A ha hr hc hm hlen ih =>
     intro n W h ρ he hw hh
     apply bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj U hx hu heap v hok hv ha'
-    obtain ⟨flds, l, c, oid', rfl, hf, hl, hag⟩ :=
-      viewT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) (namedMembers_sem hr hc ha').2
-    exact read_view_rule (meaning_valOnly G A) j U heap l hu hok hf hl hag
+    have hviews := (namedMembers_sem hr hc ha').2
+    have hmA : (f, meaning G A) ∈ ReferenceConjunctions.famsOf (meaning G) vs :=
+      ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩
+    cases j with
+    | zero => trivial
+    | succ j =>
+      obtain ⟨flds, l, c, oid', rfl, hf, hl, hag⟩ : ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr (j + 1))
+          (oid : Nat), v = .objAt flds .absent oid ∧ flds.lookup f = some l ∧ lookup U l = some c ∧
+          ∀ (i : Nat) (hi : i < j + 1) (W' : WorldT i) (u : Val), c i hi W' u → meaning G A i W' u := by
+        rcases hlen with hlen | hex
+        · exact viewsT_at hmA hlen hviews
+        · rcases hviews f _ hmA with hv1 | ⟨-, -, hall⟩
+          · exact viewT_at (List.mem_singleton_self _) hv1
+          · obtain ⟨w, hw⟩ := Option.isSome_iff_exists.mp hex
+            exact absurd (hall 0 (by omega) (ofList []) w) (numWitness_sound hw)
+      exact read_view_rule (meaning_valOnly G A) (j + 1) U heap l hu hok hf hl hag
+  | @lenView Γ i Ref A c fs vs hi hr hc hm hnum =>
+    intro n W h ρ henv hw hh
+    have hval := (meaning_value (henv.2 i Ref hi)).1
+    simp only [lengthRead, instantiate, Nat.not_lt_zero, ↓reduceIte, Nat.sub_zero]
+    cases n with
+    | zero => trivial
+    | succ n =>
+      cases n with
+      | zero =>
+        exact Or.inr ⟨trunc 0 (by omega) W, h, _, WExt_refl _, WorldAdm_trunc _ hw,
+          .iteC (.testV hval), HeapOk_trunc 0 W h hh, trivial⟩
+      | succ k =>
+        have henv' := henv.transfer k (by omega) _ (WExt_refl _)
+        have hv := henv'.2 i Ref hi
+        have hw' : WorldAdm (trunc k (by omega) W) := WorldAdm_trunc _ hw
+        have hh' : HeapOk k (trunc k (by omega) W) h := by
+          simpa only [trunc_trunc] using HeapOk_trunc k _ h (HeapOk_trunc (k+1) W h hh)
+        obtain ⟨hsem, hinv⟩ := (represents_sem hr k _ (ρ i)).mp hv
+        obtain ⟨hrec, hviews⟩ := namedMembers_sem hr hc hv
+        obtain ⟨flds, oid, hρ, -⟩ := hrec
+        apply ite_test_rule .isArray (ρ i) hval _ _ k W h hw hh
+        · -- An array: its store is a list, whose length the view's type holds.
+          intro ht
+          rw [hρ] at ht ⊢
+          have hst : (flds.lookup CallArguments.arrayStoreField).isSome = true := ht
+          have hinv' := hinv
+          rw [hρ] at hinv'
+          obtain ⟨l, c', hf, hl, hag⟩ := realmInvariant_store (namedMembers_realmed hc) hinv' hst
+          apply bind Tm.lenOf Step.lenC Raises.lenC k _ h _ hw' hh'
+            (read_view_rule (A := fun _ _ u => ∃ ls, u = .arr ls) (fun _ _ _ ⟨ls, he⟩ => by subst he; rfl)
+              k _ h l hw' hh' hf hl hag)
+          intro j _ U _ hu heap av hok _ ⟨ls, hav⟩
+          subst hav
+          exact len_rule j U heap hu hok (fun m U' => numIn_sound hnum G.env _)
+        · -- Any other object: no store, so the view is at its own location.
+          intro hf
+          rw [hρ] at hf ⊢
+          have hf2 : (flds.lookup CallArguments.arrayStoreField).isSome = false := hf
+          have hns : flds.lookup CallArguments.arrayStoreField = none := by
+            cases hl : flds.lookup CallArguments.arrayStoreField with
+            | none => rfl
+            | some l => rw [hl] at hf2; cases hf2
+          rw [hρ] at hviews
+          obtain ⟨flds', l, c', oid', he', hf', hl, hag⟩ :=
+            viewsT_at_plain (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) hns hviews
+          cases he'
+          exact read_view_rule (meaning_valOnly G A) k _ h l hw' hh' hf' hl hag
   | @readProto Γ a Ref P fs vs os ms ks K gs ws os' ms' ks' f A ha hr hK hf hpr hP hm ih =>
     intro n W h ρ he hw hh
     apply bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
@@ -2792,7 +2960,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       · obtain ⟨flds, l, c, oid', he, hf', hl, hag⟩ :=
           recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨P, hpr, rfl⟩) hs.1.1
         exact ⟨flds, l, c, oid', he, hf', hl, fun i hi V u hu => (hag i hi V u).mp hu⟩
-      · exact viewT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨P, hpr, rfl⟩) hs.2.1
+      · exact viewsT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨P, hpr, rfl⟩) (by decide) hs.2.1
     obtain ⟨flds, l, c, oid, rfl, hpf, hl, hag⟩ := hloc
     have hmiss := ownKeysT_lookup (hs.2.2.2.2 K hK) hf
     apply read_proto_rule j U heap l hu hok hmiss hpf hl hag
@@ -2802,8 +2970,9 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     · obtain ⟨flds', l', c', oid'', rfl, hf', hl', hag'⟩ :=
         recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) hp.1.1
       exact read_rule (meaning_valOnly G A) i V h' l' hV hh' hf' hl' hag'
-    · obtain ⟨flds', l', c', oid'', rfl, hf', hl', hag'⟩ :=
-        viewT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) hp.2.1
+    · obtain ⟨hm, hml⟩ := List.mem_filter.mp hm
+      obtain ⟨flds', l', c', oid'', rfl, hf', hl', hag'⟩ :=
+        viewsT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) (by simpa using hml) hp.2.1
       exact read_view_rule (meaning_valOnly G A) i V h' l' hV hh' hf' hl' hag'
   | @readOptional Γ a Ref fs vs os ms ks f r A U ha hr hm hUnd ih =>
     intro n W h ρ he hw hh

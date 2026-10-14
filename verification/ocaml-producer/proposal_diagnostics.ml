@@ -42,9 +42,6 @@ let iteration_reason =
   "the iteration of one host kind is stated (%Iterate:K%), picked where the whole iterable is of that \
    kind: a union of host kinds has no one intrinsic (an iterable the program defines, or a union with \
    one, runs the iterator protocol)"
-let array_or_record_reason =
-  "an array keeps its length in its store, not at a location a field of a record names, so no array meets \
-   a record naming `length`"
 let module_arity_reason =
   "its slot is its annotated signature, checked by its own unit, and the arity of an arrow is exact; \
    offering it more parameters would make that slot a claim (DESIGN.md, \"Method members are host-relative\")"

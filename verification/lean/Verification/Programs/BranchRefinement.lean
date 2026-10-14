@@ -68,7 +68,7 @@ label, which is timeless; what the field holds later is not claimed. -/
 with `q`: an invariant field or a readonly view. -/
 def fieldAnswers (G : NormalGraph ι) (c : Clause (Ty ι)) (f : PropKey) (tag : Tag) (q : Bool) : Bool :=
   match c with
-  | .refs a _ vs _ _ _ => (a ++ vs).any fun p =>
+  | .refs a _ vs _ _ _ => (a ++ vs.filter (·.1 != lengthKey)).any fun p =>
       decide (p.1 = f) && G.plainTy p.2 && (expand G p.2).all fun c => tagClause tag c == some q
   | _ => false
 
@@ -83,7 +83,7 @@ down: its contract says so, and a heap meeting the world holds it. -/
 theorem field_value {G : NormalGraph ι} {c : Clause (Ty ι)} {f : PropKey} {K : Ty ι}
     {n W h v flds code l u}
     (hK : match c with
-      | .refs a _ vs _ _ _ => (f, K) ∈ a ++ vs
+      | .refs a _ vs _ _ _ => (f, K) ∈ a ++ vs.filter (·.1 != lengthKey)
       | _ => False)
     (hv : semWithArgs (excOf G) (meaning G) (argMeaning G) c (n+1) W v) (hh : HeapOk (n+1) W h)
     (hl : v = .objAt flds code oid) (hf : flds.lookup f = some l) (hu : h[l]? = some u) :
@@ -107,8 +107,9 @@ theorem field_value {G : NormalGraph ι} {c : Clause (Ty ι)} {f : PropKey} {K :
       rw [hf] at hl'
       cases hl'
       exact take c' hc' fun W' w hw => (hag n (Nat.lt_succ_self n) W' w).mp hw
-    · obtain ⟨flds', l', c', oid', hv', hl', hc', himp⟩ :=
-        hv.2.1 f (meaning G K) (ReferenceConjunctions.mem_famsOf.mpr ⟨K, hK, rfl⟩)
+    · obtain ⟨hK, hKl⟩ := List.mem_filter.mp hK
+      obtain ⟨flds', l', c', oid', hv', hl', hc', himp⟩ :=
+        viewsT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨K, hK, rfl⟩) (by simpa using hKl) hv.2.1
       rw [hl] at hv'
       cases hv'
       rw [hf] at hl'
@@ -171,8 +172,9 @@ theorem fieldSlice_absent {G : NormalGraph ι} {A : Ty ι} {f tag q n W v flds c
         obtain ⟨l', _, hl', _⟩ := hall g (meaning G K) (ReferenceConjunctions.mem_famsOf.mpr ⟨K, hK, rfl⟩)
         rw [hf] at hl'
         cases hl'
-      · obtain ⟨flds', l', _, oid', hv', hl', _⟩ :=
-          hcv.2.1 g (meaning G K) (ReferenceConjunctions.mem_famsOf.mpr ⟨K, hK, rfl⟩)
+      · obtain ⟨hK, hKl⟩ := List.mem_filter.mp hK
+        obtain ⟨flds', l', _, oid', hv', hl', _⟩ :=
+          viewsT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨K, hK, rfl⟩) (by simpa using hKl) hcv.2.1
         rw [hl] at hv'
         cases hv'
         rw [hf] at hl'
@@ -255,7 +257,7 @@ theorem promote_sound {X : α → Fam} {P : α → ArgFam} {k : PropKey} {c : Cl
         rcases hm with hm | hm
         · exact hview f T hm
         · cases hm
-          exact ⟨flds, l, c', oid, rfl, hl, hw, fun j hj W' u hu => (hsc j hj W' u).1 hu⟩
+          exact .inl (viewT_single ⟨flds, l, c', oid, rfl, hl, hw, fun j hj W' u hu => (hsc j hj W' u).1 hu⟩)
     · exact hc
   | dict a bs vs ds os ms ks cs =>
     obtain ⟨hr, hview, ⟨hd, hcs⟩, hopt, hmeth, hkeys⟩ := hc
@@ -276,7 +278,7 @@ theorem promote_sound {X : α → Fam} {P : α → ArgFam} {k : PropKey} {c : Cl
           rw [hnp] at hp
           cases hp
       obtain ⟨c, hw, hag⟩ := dictViewT_present (hd x hxd) (IndexKeys.surely_admits hs) hl
-      exact ⟨flds, l, c, oid, rfl, hl, hw, hag⟩
+      exact .inl (viewT_single ⟨flds, l, c, oid, rfl, hl, hw, hag⟩)
   | _ => exact hc
 
 /-- Whether every member of `xs` is one of `ys`. -/
@@ -660,11 +662,11 @@ theorem realmArray_of_record [DecidableEq ι] {G : NormalGraph ι} {L : ι}
           rcases hm with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
           · obtain ⟨flds', l, c', oid', he, hl, hw, hag⟩ := hview CallArguments.arrayStoreField
               (realmStoreT (realmValues G r.unknown)) (by simp)
-            exact ⟨flds', l, c', oid', he, hl, hw, fun j hj W' u hu =>
-              storeOfValues_sound hS hunk (hag j hj W' u hu)⟩
+            exact .inl (viewT_single ⟨flds', l, c', oid', he, hl, hw, fun j hj W' u hu =>
+              storeOfValues_sound hS hunk (hag j hj W' u hu)⟩)
           · obtain ⟨flds', l, c', oid', he, hl, hw, hag⟩ := hview CallArguments.protoField (realmValues G r.proto) (by simp)
-            exact ⟨flds', l, c', oid', he, hl, hw, fun j hj W' u hu =>
-              (realmFree_meaning hfree j W' u).mpr (hag j hj W' u hu)⟩
+            exact .inl (viewT_single ⟨flds', l, c', oid', he, hl, hw, fun j hj W' u hu =>
+              (realmFree_meaning hfree j W' u).mpr (hag j hj W' u hu)⟩)
         · simp only [List.mem_singleton] at hK
           subst hK
           exact hkeys

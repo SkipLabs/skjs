@@ -61,6 +61,25 @@ theorem view_congr_below {ι : Type} (X Y : ι → Fam) (a : List (PropKey × ι
   · obtain ⟨flds, l, c, oid, rfl, hf, hl, hag⟩ := hv f (Y i) (mem_famsOf.mpr ⟨i, hi, rfl⟩)
     exact ⟨flds, l, c, oid, rfl, hf, hl, fun j hj W' u hu => (h i j hj W' u).mpr (hag j hj W' u hu)⟩
 
+/-- Read capabilities, an array's `length` included, read their families
+below the level. -/
+theorem views_congr_below {ι : Type} (X Y : ι → Fam) (a : List (PropKey × ι)) (n : Nat)
+    (h : ∀ i, Agree (X i) (Y i) n) (W : WorldT n) (v : Val) :
+    viewsT (famsOf X a) n W v ↔ viewsT (famsOf Y a) n W v := by
+  have side : ∀ (X Y : ι → Fam), (∀ i, Agree (X i) (Y i) n) →
+      viewsT (famsOf X a) n W v → viewsT (famsOf Y a) n W v := by
+    intro X Y h hv f T hm
+    obtain ⟨i, hi, rfl⟩ := mem_famsOf.mp hm
+    rcases hv f (X i) (mem_famsOf.mpr ⟨i, hi, rfl⟩) with hw | ⟨hf, hst, hall⟩
+    · left
+      intro g U hg
+      simp only [List.mem_singleton, Prod.mk.injEq] at hg
+      obtain ⟨rfl, rfl⟩ := hg
+      obtain ⟨flds, l, c, oid, rfl, hf, hl, hag⟩ := hw g (X i) (List.mem_singleton_self _)
+      exact ⟨flds, l, c, oid, rfl, hf, hl, fun j hj W' u hu => (h i j hj W' u).mp (hag j hj W' u hu)⟩
+    · exact .inr ⟨hf, hst, fun j hj W' m => (h i j hj W' _).mp (hall j hj W' m)⟩
+  exact ⟨side X Y h, side Y X fun i j hj W' u => (h i j hj W' u).symm⟩
+
 theorem opt_congr_below {ι : Type} (X Y : ι → Fam) (a : List (OptionalField ι)) (n : Nat)
     (h : ∀ i, Agree (X i) (Y i) n) (W : WorldT n) (v : Val) :
     optT (a.map (·.map X)) n W v ↔ optT (a.map (·.map Y)) n W v := by

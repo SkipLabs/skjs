@@ -679,11 +679,22 @@ abbrev CoversFields (R : List ι → List ι → Prop)
     (source target : List (List (PropKey × List ι))) : Prop :=
   ∀ b ∈ target, ∀ q ∈ b, ∃ p ∈ source.flatten, p.1 = q.1 ∧ R p.2 q.2 ∧ R q.2 p.2
 
+/-- A type holding every number: one of its clauses is the number family. -/
+@[nospecialize] def numIn (G : NormalGraph ι) (T : List ι) : Bool :=
+  (expand G T).any fun c => match c with | .num => true | _ => false
+
+theorem numIn_sound {G : NormalGraph ι} {T : List ι} (h : numIn G T = true) (η : MixedAssignment ι)
+    {j : Nat} {W : WorldT j} (b : UInt64) : mixedValues G η T j W (.num b) := by
+  obtain ⟨c, hc, hs⟩ := List.any_eq_true.mp h
+  cases c <;> simp only [Bool.false_eq_true] at hs
+  exact mixed_expand_mpr ⟨.num, expand_sub hc, ⟨b, rfl⟩, realmInvariant_of_unrealmed rfl _ _ _⟩
+
 /-- A view field is covered by a source field of the same name whose contract
 implies it: an invariant field or a view, either way a sound upper bound. -/
-abbrev CoversViews (R : List ι → List ι → Prop)
+abbrev CoversViews (G : NormalGraph ι) (R : List ι → List ι → Prop)
     (source : List (List (PropKey × List ι))) (views target : List (PropKey × List ι)) : Prop :=
-  ∀ q ∈ target, ∃ p ∈ source.flatten ++ views, p.1 = q.1 ∧ R p.2 q.2
+  ∀ q ∈ target, (∃ p ∈ source.flatten ++ views, p.1 = q.1 ∧ R p.2 q.2) ∨
+    (q.1 = lengthKey ∧ ((source.flatten ++ views).any (·.1 == arrayStoreKey) && numIn G q.2) = true)
 
 /-- A key some bound excludes: no object under the bounds owns it. -/
 abbrev Excludes (bounds : List KeyBound) (k : PropKey) : Prop := ∃ K ∈ bounds, K.admits k = false
@@ -692,7 +703,8 @@ abbrev Excludes (bounds : List KeyBound) (k : PropKey) : Prop := ∃ K ∈ bound
 views, which are readonly, and optional fields with their own flag. -/
 @[nospecialize] def optionalSources (source : List (List (PropKey × List ι))) (views : List (PropKey × List ι))
     (optional : List (OptionalField (List ι))) : List (OptionalField (List ι)) :=
-  source.flatten.map (fun p => ⟨p.1, false, p.2⟩) ++ views.map (fun p => ⟨p.1, true, p.2⟩) ++ optional
+  source.flatten.map (fun p => ⟨p.1, false, p.2⟩) ++
+    (views.filter (·.1 != lengthKey)).map (fun p => ⟨p.1, true, p.2⟩) ++ optional
 
 /-- An optional field is covered by a source slot of the same key: an
 invariant field, a view or an optional field. Its type is within the target's;
@@ -964,7 +976,7 @@ by the host. -/
 /-- The field or view a type's one record clause holds under a key. -/
 @[nospecialize] def viewOf (G : NormalGraph ι) (P : List ι) (k : PropKey) : Option (List ι) :=
   match expand G P with
-  | [.refs a bs vs _ _ _] => (((a :: bs).flatten ++ vs).find? (·.1 == k)).map (·.2)
+  | [.refs a bs vs _ _ _] => (((a :: bs).flatten ++ vs.filter (·.1 != lengthKey)).find? (·.1 == k)).map (·.2)
   | _ => none
 
 /-- Whether a type's one record clause has an own-key bound excluding a key:
@@ -1281,24 +1293,24 @@ checks over the supplied subtype relation. -/
   | .symbolLit _, .symbol => True
   | .symbolLit a, .symbolLit b => a = b
   | .refs a bs vs os ms ks, .refs c ds ws ps ns ls => CoversFields R (a :: bs) (c :: ds) ∧
-      CoversViews R (a :: bs) vs ws ∧ CoversOptional R (a :: bs) vs os ks ps ∧
-      CoversMethods G sub R known self ((a :: bs).flatten ++ vs) ks ms ns ∧ CoversBounds ks ls
+      CoversViews G R (a :: bs) vs ws ∧ CoversOptional R (a :: bs) vs os ks ps ∧
+      CoversMethods G sub R known self ((a :: bs).flatten ++ vs.filter (·.1 != lengthKey)) ks ms ns ∧ CoversBounds ks ls
   -- A record whose own keys are bounded meets a dictionary's index contracts
   -- through the bound (`CoversKeys`), and its named members as a record's. It
   -- meets a writable index only at an uninhabited contract: a holder of one
   -- may add a key the bound says is absent.
   | .refs a bs vs os ms ks, .dict c ds ws iy ps ns ls cy =>
-      CoversKeys R (a :: bs).flatten vs ks iy cy ∧
-      CoversFields R (a :: bs) (c :: ds) ∧ CoversViews R (a :: bs) vs ws ∧
+      CoversKeys R (a :: bs).flatten (vs.filter (·.1 != lengthKey)) ks iy cy ∧
+      CoversFields R (a :: bs) (c :: ds) ∧ CoversViews G R (a :: bs) vs ws ∧
       CoversOptional R (a :: bs) vs os ks ps ∧
-      CoversMethods G sub R known self ((a :: bs).flatten ++ vs) ks ms ns ∧ CoversBounds ks ls ∧
+      CoversMethods G sub R known self ((a :: bs).flatten ++ vs.filter (·.1 != lengthKey)) ks ms ns ∧ CoversBounds ks ls ∧
       ∀ y ∈ cy, Uninhabited G y.2
   -- A dictionary meets a record's members as a record does; the record has
   -- no index, so the dictionary's index contracts are forgotten.
   | .dict a bs vs _ os ms ks _, .refs c ds ws ps ns ls =>
-      CoversFields R (a :: bs) (c :: ds) ∧ CoversViews R (a :: bs) vs ws ∧
+      CoversFields R (a :: bs) (c :: ds) ∧ CoversViews G R (a :: bs) vs ws ∧
       CoversOptional R (a :: bs) vs os ks ps ∧
-      CoversMethods G sub R known self ((a :: bs).flatten ++ vs) ks ms ns ∧ CoversBounds ks ls
+      CoversMethods G sub R known self ((a :: bs).flatten ++ vs.filter (·.1 != lengthKey)) ks ms ns ∧ CoversBounds ks ls
   -- A target index view is within some source index view over as many keys
   -- (`IndexKeys.within`); a writable target index needs a writable source
   -- index over as many keys of an equivalent contract, as an invariant field
@@ -1311,13 +1323,13 @@ checks over the supplied subtype relation. -/
   -- may say a key the holder can add is absent, unless no value meets the
   -- contract, so none is added.
   | .dict a bs vs ix os ms ks cx, .dict c ds ws iy ps ns ls cy =>
-      CoversFields R (a :: bs) (c :: ds) ∧ CoversViews R (a :: bs) vs ws ∧
+      CoversFields R (a :: bs) (c :: ds) ∧ CoversViews G R (a :: bs) vs ws ∧
       ((∀ y ∈ iy, ∃ x ∈ ix, y.1.within x.1 = true ∧ R x.2 y.2) ∧
         ∀ y ∈ cy, (∃ x ∈ cx, y.1.within x.1 = true ∧ R x.2 y.2 ∧ R y.2 x.2) ∧
           (∀ z ∈ ix, y.1.overlaps z.1 = true → R y.2 z.2) ∧
           ∀ o ∈ os, y.1.may o.key = true → R y.2 o.type) ∧
       CoversOptional R (a :: bs) vs os ks ps ∧
-      CoversMethods G sub R known self ((a :: bs).flatten ++ vs) ks ms ns ∧ CoversBounds ks ls ∧
+      CoversMethods G sub R known self ((a :: bs).flatten ++ vs.filter (·.1 != lengthKey)) ks ms ns ∧ CoversBounds ks ls ∧
       KeepsKeys G ks cy
   | .arrs L S, .arrs M T | .callable _ _ L S, .arrs M T =>
       arrows L S M ∧
@@ -1454,27 +1466,50 @@ whether the source states that location invariantly or as a view. -/
 theorem covers_views_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : List ι → List ι → Prop}
     {a : List (PropKey × List ι)} {bs : List (List (PropKey × List ι))}
     {vs ws : List (PropKey × List ι)}
-    (hc : CoversViews R (a :: bs) vs ws) (n : Nat)
+    (hc : CoversViews G R (a :: bs) vs ws) (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j)
     (W : WorldT n) (v : Val)
     (hv : refsT (famsOf (mixedValues G η) a) (bs.map (famsOf (mixedValues G η))) n W v ∧
-      viewT (famsOf (mixedValues G η) vs) n W v) :
-    viewT (famsOf (mixedValues G η) ws) n W v := by
-  intro f T hm
-  obtain ⟨y, hy, rfl⟩ := mem_famsOf.mp hm
-  obtain ⟨⟨pf, pl⟩, hp, hpf, hpy⟩ := hc (f, y) hy
-  simp only at hpf
-  subst hpf
-  rcases List.mem_append.mp hp with hp | hp
-  · obtain ⟨L, hL, hpL⟩ := List.mem_flatten.mp hp
+      viewsT (famsOf (mixedValues G η) vs) n W v) :
+    viewsT (famsOf (mixedValues G η) ws) n W v := by
+  -- The source's slot at a key: a field of an operand, or a view.
+  have field : ∀ p ∈ (a :: bs).flatten, ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr n) (oid : Nat),
+      v = .objAt flds .absent oid ∧ flds.lookup p.1 = some l ∧ lookup W l = some c ∧
+      ∀ (j : Nat) (hj : j < n) (W' : WorldT j) (u : Val), c j hj W' u → mixedValues G η p.2 j W' u := by
+    intro p hp
+    obtain ⟨L, hL, hpL⟩ := List.mem_flatten.mp hp
     have hsrc : recT (famsOf (mixedValues G η) L) n W v := by
       rcases List.mem_cons.mp hL with rfl | hL
       · exact hv.1.1
       · exact hv.1.2 _ (List.mem_map_of_mem hL)
-    obtain ⟨flds, l, c0, oid, he, hf, hl, hag⟩ := recT_at (mem_famsOf.mpr ⟨pl, hpL, rfl⟩) hsrc
-    exact ⟨flds, l, c0, oid, he, hf, hl, fun j hj W' u hu => hr j hj pl y hpy W' u ((hag j hj W' u).mp hu)⟩
-  · obtain ⟨flds, l, c0, oid, he, hf, hl, hag⟩ := viewT_at (mem_famsOf.mpr ⟨pl, hp, rfl⟩) hv.2
-    exact ⟨flds, l, c0, oid, he, hf, hl, fun j hj W' u hu => hr j hj pl y hpy W' u (hag j hj W' u hu)⟩
+    obtain ⟨flds, l, c0, oid, he, hf, hl, hag⟩ := recT_at (mem_famsOf.mpr ⟨p.2, hpL, rfl⟩) hsrc
+    exact ⟨flds, l, c0, oid, he, hf, hl, fun j hj W' u hu => (hag j hj W' u).mp hu⟩
+  intro f T hm
+  obtain ⟨y, hy, rfl⟩ := mem_famsOf.mp hm
+  rcases hc (f, y) hy with ⟨⟨pf, pl⟩, hp, hpf, hpy⟩ | ⟨hfl, hst⟩
+  · simp only at hpf
+    subst hpf
+    rcases List.mem_append.mp hp with hp | hp
+    · obtain ⟨flds, l, c0, oid, he, hf, hl, hag⟩ := field _ hp
+      exact .inl (viewT_single ⟨flds, l, c0, oid, he, hf, hl,
+        fun j hj W' u hu => hr j hj pl y hpy W' u (hag j hj W' u hu)⟩)
+    · rcases hv.2 pf _ (mem_famsOf.mpr ⟨pl, hp, rfl⟩) with hw | ⟨hl, hown, hall⟩
+      · obtain ⟨flds, l, c0, oid, he, hf, hl, hag⟩ := viewT_at (List.mem_singleton_self _) hw
+        exact .inl (viewT_single ⟨flds, l, c0, oid, he, hf, hl,
+          fun j hj W' u hu => hr j hj pl y hpy W' u (hag j hj W' u hu)⟩)
+      · exact .inr ⟨hl, hown, fun j hj W' m => hr j hj pl y hpy W' _ (hall j hj W' m)⟩
+  · simp only at hfl
+    simp only [Bool.and_eq_true, List.any_eq_true, beq_iff_eq] at hst
+    obtain ⟨⟨p, hp, hpσ⟩, hnum⟩ := hst
+    -- The object owns the store: a field or a view names it.
+    have hown : ∃ flds oid, v = .objAt flds .absent oid ∧ (flds.lookup arrayStoreKey).isSome = true := by
+      rcases List.mem_append.mp hp with hp | hp
+      · obtain ⟨flds, l, -, oid, he, hf, -⟩ := field p hp
+        exact ⟨flds, oid, he, by rw [← hpσ, hf]; rfl⟩
+      · obtain ⟨flds, l, -, oid, he, hf, -⟩ :=
+          viewsT_at (mem_famsOf.mpr ⟨p.2, hp, rfl⟩) (by rw [hpσ]; decide) hv.2
+        exact ⟨flds, oid, he, by rw [← hpσ, hf]; rfl⟩
+    exact .inr ⟨hfl, hown, fun j _ W' m => numIn_sound hnum η _⟩
 
 /-- A covered optional field. Where the key is present, the location is the
 one the source slot names, whose contract is within the target's type, and
@@ -1488,7 +1523,7 @@ theorem covers_optional_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R 
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j)
     (W : WorldT n) (v : Val)
     (hv : refsT (famsOf (mixedValues G η) a) (bs.map (famsOf (mixedValues G η))) n W v ∧
-      viewT (famsOf (mixedValues G η) vs) n W v ∧
+      viewsT (famsOf (mixedValues G η) vs) n W v ∧
       optT (os.map (·.map (mixedValues G η))) n W v)
     (hks : ∀ K ∈ ks, ownKeysT K n W v) :
     optT (ps.map (·.map (mixedValues G η))) n W v := by
@@ -1518,7 +1553,9 @@ theorem covers_optional_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R 
       rw [hl'] at hf
       cases hf
       exact ⟨c, hw, fun j hj W' u => ⟨(hag j hj W' u).mp, fun _ => (hag j hj W' u).mpr⟩⟩
-    · obtain ⟨flds', l, c, oid'', he', hf, hw, hag⟩ := viewT_at (mem_famsOf.mpr ⟨q.2, hq, rfl⟩) hv.2.1
+    · obtain ⟨hq, hql⟩ := List.mem_filter.mp hq
+      obtain ⟨flds', l, c, oid'', he', hf, hw, hag⟩ :=
+        viewsT_at (mem_famsOf.mpr ⟨q.2, hq, rfl⟩) (by simpa using hql) hv.2.1
       cases he'
       refine ⟨(fun hl => by simp [hl] at hf), fun l' hl' => ?_⟩
       rw [hl'] at hf
@@ -2418,8 +2455,8 @@ imply their operands' families. -/
 theorem fields_at {G : NormalGraph ι} {η : MixedAssignment ι} {a : List (PropKey × List ι)}
     {bs : List (List (PropKey × List ι))} {vs : List (PropKey × List ι)} {n : Nat} {W : WorldT n} {v : Val}
     (hr : refsT (famsOf (mixedValues G η) a) (bs.map (famsOf (mixedValues G η))) n W v)
-    (hw : viewT (famsOf (mixedValues G η) vs) n W v) :
-    ∀ f ∈ (a :: bs).flatten ++ vs, ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr n) (oid : Nat),
+    (hw : viewsT (famsOf (mixedValues G η) vs) n W v) :
+    ∀ f ∈ (a :: bs).flatten ++ vs.filter (·.1 != lengthKey), ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr n) (oid : Nat),
       v = .objAt flds .absent oid ∧ flds.lookup f.1 = some l ∧ lookup W l = some c ∧
       ∀ (j : Nat) (hj : j < n) (U : WorldT j) (u : Val), c j hj U u → mixedValues G η f.2 j U u := by
   intro f hf
@@ -2431,7 +2468,8 @@ theorem fields_at {G : NormalGraph ι} {η : MixedAssignment ι} {a : List (Prop
       · exact hr.2 _ (List.mem_map_of_mem hL)
     obtain ⟨flds, l, c, oid', he, hfl, hl, hag⟩ := recT_at (mem_famsOf.mpr ⟨f.2, hfL, rfl⟩) hrec
     exact ⟨flds, l, c, oid', he, hfl, hl, fun j hj U u hu => (hag j hj U u).mp hu⟩
-  · exact viewT_at (mem_famsOf.mpr ⟨f.2, hf, rfl⟩) hw
+  · obtain ⟨hf, hfl⟩ := List.mem_filter.mp hf
+    exact viewsT_at (mem_famsOf.mpr ⟨f.2, hf, rfl⟩) (by simpa using hfl) hw
 
 /-- A record's invariant field is at its location, whose contract agrees with
 the field's family. -/
@@ -2462,10 +2500,10 @@ contract implies, or for a writable index agrees with, the index. -/
 theorem covers_keys_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : List ι → List ι → Prop}
     {a : List (PropKey × List ι)} {bs : List (List (PropKey × List ι))} {vs : List (PropKey × List ι)}
     {ks : List KeyBound} {iy cy : List (IndexKeys × List ι)}
-    (hc : CoversKeys R (a :: bs).flatten vs ks iy cy) (n : Nat)
+    (hc : CoversKeys R (a :: bs).flatten (vs.filter (·.1 != lengthKey)) ks iy cy) (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j) (W : WorldT n) (v : Val)
     (hrefs : refsT (famsOf (mixedValues G η) a) (bs.map (famsOf (mixedValues G η))) n W v)
-    (hw : viewT (famsOf (mixedValues G η) vs) n W v) (hb : ∀ K ∈ ks, ownKeysT K n W v) :
+    (hw : viewsT (famsOf (mixedValues G η) vs) n W v) (hb : ∀ K ∈ ks, ownKeysT K n W v) :
     (∀ y ∈ iy, dictViewT y.1 (mixedValues G η y.2) n W v) ∧
       ∀ y ∈ cy, dictCellT y.1 (mixedValues G η y.2) n W v := by
   obtain ⟨K, hK, ha, hproto, hkeys⟩ := hc

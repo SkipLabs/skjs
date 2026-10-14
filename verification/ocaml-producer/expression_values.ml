@@ -138,17 +138,6 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
           | _ -> ())
        | None -> ());
       explain_record_at_index site env n expected;
-      (* An array used as a record naming `length`. *)
-      (match expected with
-       | Some x when List.exists (function
-             | Shape {elements=None;calls=[];fields;_} ->
-               List.exists (fun (f:Semantic.field) -> f.name = Name "length") fields
-             | _ -> false) (flat_atoms declarations x) ->
-         (match flat_atoms declarations (resolve env n) with
-          | [] -> ()
-          | atoms -> if List.for_all array_atom atoms then
-              S.explain site ("an array used as a record naming `length`: " ^ array_or_record_reason))
-       | _ -> ());
       (* A tuple expected at an iterable other than an array is read as the
          readonly array of its positions, whose prototype's iterator yields
          them: Lean checks the tuple within that view, and the view within

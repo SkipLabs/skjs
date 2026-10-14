@@ -447,7 +447,7 @@ function brief(detail: string): string {
 const GROUPS: [string, RegExp][] = [
   ["generic contracts requiring an unsupported exact representation", /generic contract (?:at|:)/],
   ["TypeScript refuses the code too (the pipeline follows TypeScript's types)", /TypeScript refuses this code too/],
-  ["arrays and open records: `Array.isArray` on `unknown`, `length` of an array read as a record's", /an array of the realm at a generic call|array used as a record naming `length`|`length` of a mutable tuple|past the positions of a mutable tuple/],
+  ["arrays and open records: an array of the realm at a generic call, a mutable tuple's `length`", /an array of the realm at a generic call|`length` of a mutable tuple|past the positions of a mutable tuple/],
   ["a non-null assertion on a read at a for...in key after code that may remove the key or change the object read", /non-null assertion on a read at a for\.\.\.in key/],
   ["generic methods: two declarations' instances related", /an instance of a declaration with generic methods at an instance of another/],
   ["implicit index signatures: a record at an index signature (`Closed<T>` read as `T` among them)", /a record at an index signature/],
@@ -635,8 +635,6 @@ const CLASSES: ClassEntry[] = [
     why: "sound: a function declaration of fixed arity discards the actuals past its parameters, so its code meets the padded signature (`restsT_of_graph`); its slot is its annotated signature, checked by its own unit, and needs to carry that promise too (the slot a claim its unit checks, as a closure's offered signatures are)" },
   { cls: "gap", label: "an array `Array.isArray` found, at a generic call's mutable `Array<A>`", re: /an array of the realm at a generic call's mutable array of a binder/,
     why: "the instance of `A` would be the contract of the array's own store, which no type names: needs opening the array's element contract as a hidden type (an existential) at the call" },
-  { cls: "gap", label: "an array at a record's `length`", re: /array used as a record naming `length`/,
-    why: "needs a readonly `length` view an array meets through its store, at a type admitting every array length, and a dispatch on `Array.isArray` at each such read (Next steps)" },
   { cls: "gap", label: "generic methods: `then` through a callback returning a promise, `catch`", re: /an instance of a declaration with generic methods at an instance of another|a call inferring a binder written beside|a call instantiating a binder its result accumulates/,
     why: "producer inference through an application (a callback returning a promise); an accumulating binder's family is truncated a level early under instantiation (Next steps)" },
   { cls: "gap", label: "a guard finding an object where a field or cell holds one beside a primitive", re: /holding a primitive beside an object|holding an object beside null/,

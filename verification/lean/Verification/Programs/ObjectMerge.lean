@@ -339,8 +339,8 @@ structure Obj (ι : Type) where
   plain : Bool
 
 def objOf : Clause (List ι) → Option (Obj ι)
-  | .refs a bs vs os _ ks => some ⟨(a :: bs).flatten ++ vs, os, [], ks, false⟩
-  | .dict a bs vs ds os _ ks cs => some ⟨(a :: bs).flatten ++ vs, os, ds ++ cs, ks, !(ds ++ cs).isEmpty⟩
+  | .refs a bs vs os _ ks => some ⟨(a :: bs).flatten ++ vs.filter (·.1 != lengthKey), os, [], ks, false⟩
+  | .dict a bs vs ds os _ ks cs => some ⟨(a :: bs).flatten ++ vs.filter (·.1 != lengthKey), os, ds ++ cs, ks, !(ds ++ cs).isEmpty⟩
   | _ => none
 
 /-- A clause whose values own no enumerable property: `null`, `undefined`,
@@ -1591,7 +1591,7 @@ theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
       ⟨_, hcr, ?_, realmInvariant_of_lookup hstore⟩
     rcases hshape with rfl | ⟨rfl, hne⟩
     · simp only [semWithArgs]
-      exact ⟨hrefs, hviews, hopt, MethodMembers.methodT_nil _ _ _, hbounds⟩
+      exact ⟨hrefs, viewsT_of_viewT hviews, hopt, MethodMembers.methodT_nil _ _ _, hbounds⟩
     · simp only [semWithArgs]
       -- What a location under a key an index class admits holds: exactly
       -- the type of a writable index admitting it, and within the index's
@@ -1643,7 +1643,7 @@ theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
         intro hm
         obtain ⟨v, hv⟩ := lookup_isSome hm
         rw [hnp hne] at hv; cases hv
-      refine ⟨hrefs, hviews, ⟨fun x hx => ⟨_, _, rfl, hnoproto, fun f l hl hxf => ?_⟩,
+      refine ⟨hrefs, viewsT_of_viewT hviews, ⟨fun x hx => ⟨_, _, rfl, hnoproto, fun f l hl hxf => ?_⟩,
         fun x hx => ⟨_, _, rfl, hnoproto, fun f l hl hxf => ?_⟩⟩, hopt, MethodMembers.methodT_nil _ _ _,
         hbounds⟩
       · obtain ⟨c, hU, -, himp⟩ := hkey x (List.mem_append_left _ hx) f l hl hxf

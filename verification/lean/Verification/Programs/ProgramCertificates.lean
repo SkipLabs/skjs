@@ -327,6 +327,8 @@ inductive Rule (ι : Type) where
   | merge
   /-- An allocation at a computed key: the key, then the initializer. -/
   | makeKey
+  /-- `length` through a view of the object in a slot (`lengthRead`). -/
+  | lenView (slot : Nat)
 
 inductive Evidence (ι : Type) where
   | node (claim : Sequent ι) (rule : Rule ι) (premises : List (Evidence ι))
@@ -427,7 +429,7 @@ code at the row whose receiver is `U`, the `undefined` type `new` passes. -/
 /-- The prototype type `P` has a field or view `f` at `A`. -/
 @[nospecialize] def ProtoMember (G : NormalGraph ι) (P : Ty ι) (f : PropKey) (A : Ty ι) : Prop :=
   match expand G P with
-  | [.refs gs [] ws _ _ _] => (f, A) ∈ gs ++ ws
+  | [.refs gs [] ws _ _ _] => (f, A) ∈ gs ++ ws.filter (·.1 != lengthKey)
   | _ => False
 
 instance [DecidableEq ι] (G : NormalGraph ι) (P : Ty ι) (f : PropKey) (A : Ty ι) :
@@ -889,7 +891,7 @@ declared bounds. -/
   | .readView =>
     match j.term, ps with
     | .readAt f a, [ja] =>
-      ja.context = j.context ∧ ja.term = a ∧
+      ja.context = j.context ∧ ja.term = a ∧ (f ≠ lengthKey ∨ lengthExcluded G j.type = true) ∧
       (match expand G ja.type with
        | [c] => (f, j.type) ∈ ((namedMembers c).map Prod.snd).getD []
        | _ => False)
@@ -1191,6 +1193,14 @@ declared bounds. -/
       jk.context = j.context ∧ jk.term = k ∧ ja.context = j.context ∧ ja.term = a ∧
       ComputedKey.KeyedOk G jk.type ja.type j.type = true
     | _, _ => False
+  | .lenView i =>
+    match ps, j.context[i]? with
+    | [], some R =>
+      j.term = lengthRead i ∧ PositiveRules.numIn G j.type = true ∧
+      (match expand G R with
+       | [c] => (lengthKey, j.type) ∈ ((namedMembers c).map Prod.snd).getD []
+       | _ => False)
+    | _, _ => False
 
 instance [DecidableEq ι] (G : NormalGraph ι) (images : PositiveCertificates.InstanceImageCheck G)
     (j : Sequent ι) (r : Rule ι) (ps)
@@ -1223,7 +1233,7 @@ retain the subtype outcome; other rule predicates are their declarative checks. 
     | .readOptional .. | .readProto .. | .arrLit | .elem | .setElem | .len | .lenStr | .elemStr ..
     | .elemOpt .. | .elemAny .. | .ifBool | .ifTrue | .ifFalse | .ifKnown .. | .ifBoolVar ..
     | .unionVar .. | .callCallable .. | .readCallable | .writeCallable | .arrCopy ..
-    | .callRest .. | .bindE | .bindRestE | .construct | .throw | .merge | .makeKey =>
+    | .callRest .. | .bindE | .bindRestE | .construct | .throw | .merge | .makeKey | .lenView .. =>
       CheckResult.ofBool (decide (LocalUsing G images j r ps codes))
 
 theorem localCheckUsing_accepted [DecidableEq ι] (G : NormalGraph ι)
@@ -1726,14 +1736,14 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
       | some m => simp only [hc, Option.map_some, Option.getD_some] at hr; exact .read ha he hc hr
     · contradiction
   · rename_i f a ja
-    rcases hl with ⟨hΓ, ht, hr⟩
+    rcases hl with ⟨hΓ, ht, hlen, hr⟩
     have ha := hp ja (by simp)
     rw [hΓ, ht] at ha
     split at hr
     · rename_i c he
       cases hc : namedMembers c with
       | none => simp [hc] at hr
-      | some m => simp only [hc, Option.map_some, Option.getD_some] at hr; exact .readView ha he hc hr
+      | some m => simp only [hc, Option.map_some, Option.getD_some] at hr; exact .readView ha he hc hr hlen
     · contradiction
   · rename_i P _ _ f a ja
     rcases hl with ⟨hΓ, ht, hr⟩
@@ -2116,6 +2126,16 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
     rw [hΓk, htk] at hk
     rw [hΓa, hta] at ha
     exact .makeKey hk ha hm
+  · rename_i i R hR
+    obtain ⟨rfl, hnum, hr⟩ := hl
+    split at hr
+    · rename_i c he
+      cases hc : namedMembers c with
+      | none => simp [hc] at hr
+      | some m =>
+        simp only [hc, Option.map_some, Option.getD_some] at hr
+        exact .lenView hR he hc hr hnum
+    · contradiction
 
 theorem checkTreeUsing_sound [DecidableEq ι] {G : NormalGraph ι}
     {images : PositiveCertificates.InstanceImageCheck G} (e : Evidence ι)
@@ -2499,10 +2519,17 @@ theorem checkTreeUsing_complete [DecidableEq ι] {G : NormalGraph ι}
     apply node_complete (G := G) (images := images) (j := ⟨Γ, .readAt f a, A⟩) (r := .read) (js := [⟨Γ,a,Ref⟩])
       ⟨rfl,rfl,by simp only [show expand G Ref = [c] from hr, hc]; exact hm⟩
     simpa using ih
-  | @readView Γ a Ref c fs vs f A ha hr hc hm ih =>
+  | @readView Γ a Ref c fs vs f A ha hr hc hm hlen ih =>
     apply node_complete (G := G) (images := images) (j := ⟨Γ, .readAt f a, A⟩) (r := .readView) (js := [⟨Γ,a,Ref⟩])
-      ⟨rfl,rfl,by simp only [show expand G Ref = [c] from hr, hc]; exact hm⟩
+      ⟨rfl,rfl,hlen,by simp only [show expand G Ref = [c] from hr, hc]; exact hm⟩
     simpa using ih
+  | @lenView Γ i Ref A c fs vs hi hr hc hm hnum =>
+    apply node_complete (G := G) (images := images) (j := ⟨Γ, lengthRead i, A⟩) (r := .lenView i) (js := [])
+    · unfold LocalUsing
+      simp only [hi, hnum, show expand G Ref = [c] from hr, hc, Option.map_some,
+        Option.getD_some, true_and]
+      exact hm
+    · simp
   | @readProto Γ a Ref P fs vs os ms ks K gs ws os' ms' ks' f A ha hr hK hf hpr hP hm ih =>
     apply node_complete (G := G) (images := images) (j := ⟨Γ, .readAt f a, A⟩) (r := .readProto P) (js := [⟨Γ,a,Ref⟩])
       ⟨rfl,rfl,by

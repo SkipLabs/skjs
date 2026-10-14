@@ -128,8 +128,13 @@ $c_j\equiv T_j$ when $r=\mathsf{w}$ and $c_j\subseteq T_j$ when $r=\mathsf{ro}$
 &\iff v=\ell\land\forall(\kappa{:}T).\;\exists l,c.\;
       \mathit{flds}(\kappa)=l\land W(l)=c\land c_j\equiv T_j,\\
 \mathsf{view}(\overline{\kappa{:}T})_n(W,v)
-&\iff v=\ell\land\forall(\kappa{:}T).\;\exists l,c.\;
-      \mathit{flds}(\kappa)=l\land W(l)=c\land c_j\subseteq T_j,\\
+&\iff\forall(\kappa{:}T).\;\mathsf{view}_1(\kappa{:}T)_n(W,v)\lor
+      \kappa=\mathtt{length}\land\mathsf{len}(T)_n(W,v),\\
+\mathsf{view}_1(\kappa{:}T)_n(W,v)
+&\iff v=\ell\land\exists l,c.\;\mathit{flds}(\kappa)=l\land W(l)=c\land c_j\subseteq T_j,\\
+\mathsf{len}(T)_n(W,v)
+&\iff v=\ell\land\sigma\in\mathrm{dom}(\mathit{flds})\land
+      \forall j<n.\;\forall b.\;\mathsf{num}(b)\in T_j,\\
 \mathsf{opt}(\overline{\kappa{:}^{r}T})_n(W,v)
 &\iff v=\ell\land\forall(\kappa{:}^{r}T).\;
       (\mathit{flds}(\kappa)=\varnothing\Rightarrow\mathit{flds}(\mathsf{proto})=\varnothing)\\
@@ -144,6 +149,12 @@ $c_j\equiv T_j$ when $r=\mathsf{w}$ and $c_j\subseteq T_j$ when $r=\mathsf{ro}$
   $\mathsf{Ref}\,\{\mathsf{value}{:}A\}$.
 - **Views** only read: the location's contract implies the view's type, so a
   view grants no write.
+- **`length`.** A view of `length` is also met by an object owning the array
+  store key $\sigma$, when every number is of its type: an array's
+  `length` is its store's length, which the store keeps, and `push` changes
+  it (`arrayLenT`, `viewsT`). Every other view, and every view a rule reads
+  as a location (an optional field's slot, a key's field, a merge's source),
+  is one of a key other than `length`.
 - **Optional fields** constrain a key only where the object has it: a
   writable one as an invariant field does, a readonly one (`readonly k?: T`)
   as a view does, so a readonly optional field is a view that may be absent.
@@ -258,7 +269,7 @@ of a type covering a writable index says a key of its class is absent
 ($b\ \mathsf{keeps}\ \theta$ below). Index contracts are guarded through the world, so a
 recursive graph can contain `JsonObject = { readonly [key: string]: Json | null }`.
 
-Lean: `viewT`, `OptionalField`, `optT`, `SlotContract`, `NumericKey`, `IndexKeys`, `dictViewT`, `dictCellT`, `KeyBound`, `ownKeysT` (`Types/Types.lean`), `methodT`,
+Lean: `viewT`, `viewsT`, `arrayLenT`, `lengthKey`, `OptionalField`, `optT`, `SlotContract`, `NumericKey`, `IndexKeys`, `dictViewT`, `dictCellT`, `KeyBound`, `ownKeysT` (`Types/Types.lean`), `methodT`,
 `memberT`, `along`, `holdsAt`, `onHost`, `boundTo`, `boundOn` (`Types/MethodMembers.lean`). The operands'
 meaning `refsT` and the heap facts behind invariant operands (`adm`, `congr_below`, `operands_agree`, `read_all`, `write_first`,
 `cyclic_inhabited`) are in `Types/ReferenceConjunctions.lean`: a read meets
@@ -687,7 +698,8 @@ operands, each target component is found in the source:
 ```math
 \frac{\begin{array}{c}
 \forall j,\,(\kappa{:}B)\in\varphi'_j.\;\exists(\kappa{:}A)\in\Phi.\;\Delta^{\pm}(A,B)\qquad
-\forall(\kappa{:}B)\in\psi'.\;\exists(\kappa{:}A)\in\Phi\,\psi.\;\Delta(A,B)\\
+\forall(\kappa{:}B)\in\psi'.\;\exists(\kappa{:}A)\in\Phi\,\psi.\;\Delta(A,B)\;\lor\;
+  \kappa=\mathtt{length}\land(\sigma{:}\_)\in\Phi\,\psi\land\mathbb N\subseteq B\\
 \forall(\kappa{:}^{r'}B)\in\omega'.\;\mathsf{opt}_\Delta(\Phi;\psi;\omega;\beta)(\kappa{:}^{r'}B)\qquad
 \Delta;S\vdash(\Phi\,\psi;\mu)\sqsubseteq_{\mathsf{meth}}\mu'\qquad
 \forall b'\in\beta'.\;\beta\vdash b'
@@ -696,7 +708,9 @@ operands, each target component is found in the source:
 ```
 
 An invariant field needs an equivalent invariant field. A view is met by any
-field whose type is within it. An optional field is met by a **slot** of the
+field whose type is within it, and a view of `length` whose type holds every
+number by a source naming the array store (`numIn`): its object's `length`
+is its store's. An optional field is met by a **slot** of the
 source of the same key, an invariant field (mode $\mathsf{w}$), a view (mode
 $\mathsf{ro}$) or an optional field (its own mode), whose type is within the
 target's; a writable target also needs a writable slot of an equivalent type,
@@ -975,7 +989,7 @@ E'=\varnothing\Rightarrow E=\varnothing\land|\vec R|+|\vec O|\le|\vec R'|+|\vec 
 So `[number, string]` is within `(number | string)[]` and `[number]` within
 `[number, string?]`, while `number[]` is within no bounded tuple.
 
-Lean: `CoversFields`, `CoversViews`, `optionalSources`, `Excludes`, `CoversOptional`, `CoversKeys`, `covers_keys_sound`, `KeyBound.keeps`, `KeepsKeys`, `Uninhabited`, `covers_writable_keeps`, `covers_writable_bounds_grow`, `ownKeysT_keeps`, `CoversMethods`, `CoversBound`, `CoversBounds`,
+Lean: `CoversFields`, `CoversViews`, `numIn`, `covers_views_sound`, `optionalSources`, `Excludes`, `CoversOptional`, `CoversKeys`, `covers_keys_sound`, `KeyBound.keeps`, `KeepsKeys`, `Uninhabited`, `covers_writable_keeps`, `covers_writable_bounds_grow`, `ownKeysT_keeps`, `CoversMethods`, `CoversBound`, `CoversBounds`,
 `CoversSig`, `CoversByFunction`, `CoversShape`, `CoversTuple`, `CoversPack`,
 `covers_readonly_sound`, `covers_tuple_sound`, `covers_arguments_sound`.
 

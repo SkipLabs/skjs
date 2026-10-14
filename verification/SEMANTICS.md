@@ -901,7 +901,9 @@ contract admits every store of `T[]` and whose numeric fields hold $`T`$
 meets it (`numericOwn_of_store`), so an input with `a[-1] = 1` at
 `number[]` is one. An allocation owning the store key
 owns no field at such a key (`allocRealm`). Every record, dictionary
-and `source` clause of a row means its members meeting it
+and `source` clause of a row means its members meeting it; in a graph
+stating no realm, its members owning $`\sigma`$ hold a list there
+(`storeListT`, an array's store being one in every realm)
 (`Clause.realmed`, `realmInvariant`, `rowSem`;
 [POSITIVE-TYPES](POSITIVE-TYPES.md#the-realms-array-invariant)), so the
 realm's `unknown` is

@@ -399,8 +399,11 @@ Mappings discard only the temporaries introduced by this expression. -/
       let test ← emitAt e.span (.var 0) (.tagBind .isArray (refined array) (refined other)) (B::Γ) B
         "tag-dispatch" (scope := receiver :: scope)
       return ← compileAtom recursive fc scope Γ a test
+    -- `length` through a view admits an array: the read tests the receiver
+    -- (`lenView`).
     let object := if fld == "length" && arraysOnly G B
-      then Tm.lenOf (.readAt SourceTypes.storeField (.var 0)) else .readAt fld (.var 0)
+      then Tm.lenOf (.readAt SourceTypes.storeField (.var 0))
+      else if fld == "length" && lengthViewed G B then lengthRead 0 else .readAt fld (.var 0)
     let arms ← primitiveArms (held ⟨"",some a.span⟩ :: scope) (B::Γ) B fld
     -- An array's store is read in a node of its own, a field read, and its
     -- length in the next, which reads no heap: what was known of the heap

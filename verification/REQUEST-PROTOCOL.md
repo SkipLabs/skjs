@@ -269,7 +269,7 @@ one subtype-evidence list per outgoing edge. A derivation node names the
 `var`, `nul`, `undef`, `tru`, `fls`, `truLit`, `flsLit`, `numLit`, `num`,
 `strLit`, `str`, `bigintLit`, `bigint`, `funGraph`, `ctorGraph`, `callableGraph`, `app`, `letE`, `alloc`,
 `read`, `readOptional`, `readDict`, `indexDict`, `write`, `ifBool`, `ifTrue`, `ifFalse`, `ifKnown`, `ifBoolVar`,
-`unionVar`, `callCallable`, `readCallable`, `writeCallable`, `readView`, `readProto`, `arith`, `test`,
+`unionVar`, `callCallable`, `readCallable`, `writeCallable`, `readView`, `lenView`, `readProto`, `arith`, `test`,
 `arrLit`, `elem`, `elemOpt`, `elemAny`, `setElem`, `len`, `lenStr`, `elemStr`,
 `callRest`, `arrCopy`, `bindE`, `bindRestE`, `bindMember`, `construct`, `sub`,
 `throw`, whose one premise types the thrown operand, `makeKey`, an allocation
@@ -293,7 +293,10 @@ location or a fresh one the store records; `len` reads the length as a number.
 numeric index or `undefined`, naming the result's string and `undefined`
 types, `{"elemStr": {"str": T, "undef": U}}`.
 `readView` reads a field named among a record's or a dictionary's views, at
-the bound the view states, as `read` reads either's invariant fields; no rule writes through a view. `readProto` reads a key one of
+the bound the view states, as `read` reads either's invariant fields; no rule writes through a view.
+`lenView` reads a view of `length` of the object in a context slot, by the
+term that tests it for an array, `{"lenView": {"slot": i}}`; `readView` reads
+any other view. `readProto` reads a key one of
 a record's own-key bounds does not admit from the prototype the record holds under the
 reserved key `[[proto]]`, at the prototype's field or view for the key; it
 names the prototype's type, `{"readProto": {"proto": P}}`.

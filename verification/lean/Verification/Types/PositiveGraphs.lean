@@ -616,6 +616,23 @@ theorem numericOwn_of_store {k : Nat} {W : WorldT k} {flds : List (PropKey × Na
   cases hc'
   exact (hag' j (Nat.lt_succ_self j) U u).1 (hag j (by omega) U u hu)
 
+/-- The values a store location holds: lists. -/
+def listValT : Fam := fun _ _ u => ∃ ls, u = .arr ls
+
+/-- **An array's store is a list**: an object owning the store key holds a
+list under it. Every array of a realm meets it (`realmStoreT` is of lists);
+without a realm, it is all the graph asks of an array. -/
+def storeListT : Fam := fun k W v =>
+  ∀ flds oid, v = .objAt flds .absent oid → (flds.lookup CallArguments.arrayStoreField).isSome = true →
+    viewT [(CallArguments.arrayStoreField, listValT)] k W v
+
+theorem storeListT_adm : Adm storeListT := by
+  constructor
+  · intro n W v h flds oid hv hs
+    exact (viewT_adm _).down n W v (h flds oid hv hs)
+  · intro n W W' hx v h flds oid hv hs
+    exact (viewT_adm _).mono n W W' hx v (h flds oid hv hs)
+
 /-- **The array invariant**, with `P` the prototype's type, `U` the realm's
 `unknown`, the type of an array's elements, and `N` the keys the prototype
 provides. -/
@@ -630,7 +647,7 @@ applies to (`Clause.realmed`: a record, a dictionary, `source`). -/
 def realmInvariant (G : NormalGraph ι) (X : List ι → Fam) (c : Clause (List ι)) : Fam :=
   match G.realm with
   | some r => if c.realmed then arrayInvariant (X r.proto) (X r.unknown) r.keys else fun _ _ _ => True
-  | none => fun _ _ _ => True
+  | none => if c.realmed then storeListT else fun _ _ _ => True
 
 /-- **The graph's exception family**: the values of the realm's `unknown`,
 JavaScript values meeting what the realm asks of a `source` clause, its
@@ -678,7 +695,10 @@ theorem realmInvariant_adm (G : NormalGraph ι) (X : List ι → Fam) (c : Claus
     Adm (realmInvariant G X c) := by
   unfold realmInvariant
   cases G.realm with
-  | none => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
+  | none =>
+    cases c.realmed
+    · exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
+    · exact storeListT_adm
   | some r =>
     cases c.realmed
     · exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
@@ -694,6 +714,31 @@ theorem realmInvariant_congr (G : NormalGraph ι) (X Y : List ι → Fam) (n : N
     cases c.realmed
     · exact Iff.rfl
     · exact arrayInvariant_congr _ (h _) (h _) W v
+
+/-- **An array's store is a list**, in every graph: a member of a clause the
+invariant applies to that owns the store key holds a list under it. -/
+theorem realmInvariant_store {G : NormalGraph ι} {X : List ι → Fam} {c : Clause (List ι)}
+    (hc : c.realmed = true) {n W flds oid} (h : realmInvariant G X c n W (.objAt flds .absent oid))
+    (hs : (flds.lookup CallArguments.arrayStoreField).isSome = true) :
+    ∃ (l : Nat) (c' : Ctr n), flds.lookup CallArguments.arrayStoreField = some l ∧ lookup W l = some c' ∧
+      ∀ (j : Nat) (hj : j < n) (W' : WorldT j) (u : Val), c' j hj W' u → ∃ ls, u = .arr ls := by
+  unfold realmInvariant at h
+  cases hr : G.realm with
+  | none =>
+    rw [hr] at h
+    simp only [hc, ite_true] at h
+    obtain ⟨flds', l, c', oid', he, hf, hl, hag⟩ := viewT_at (List.mem_singleton_self _) (h flds oid rfl hs)
+    cases he
+    exact ⟨l, c', hf, hl, hag⟩
+  | some r =>
+    rw [hr] at h
+    simp only [hc, ite_true] at h
+    obtain ⟨hview, -, -⟩ := h flds oid rfl hs
+    obtain ⟨flds', l, c', oid', he, hf, hl, hag⟩ := viewT_at (List.mem_cons_self) hview
+    cases he
+    exact ⟨l, c', hf, hl, fun j hj W' u hu => by
+      obtain ⟨ls, rfl, -⟩ := hag j hj W' u hu
+      exact ⟨ls, rfl⟩⟩
 
 /-- Two graphs of one realm whose prototype and `unknown` types mean the same
 have one exception family. -/
@@ -742,7 +787,7 @@ theorem realmInvariant_of_unrealmed {G : NormalGraph ι} {X : List ι → Fam} {
     (hc : c.realmed = false) (n W v) : realmInvariant G X c n W v := by
   unfold realmInvariant
   cases G.realm with
-  | none => trivial
+  | none => simp [hc]
   | some r => simp [hc]
 
 /-- Clauses none of which the invariant applies to mean in a row what they
@@ -758,13 +803,6 @@ theorem setSem_row_plain {G : NormalGraph ι} {A X : List ι → Fam} {P : List 
 theorem realmInvariant_iff_of_unrealmed {G : NormalGraph ι} {X : List ι → Fam}
     {c : Clause (List ι)} (hc : c.realmed = false) (n W v) : realmInvariant G X c n W v ↔ True :=
   iff_true_intro (realmInvariant_of_unrealmed hc n W v)
-
-/-- A graph without a realm asks nothing more. -/
-theorem realmInvariant_of_none {G : NormalGraph ι} {X : List ι → Fam} {c : Clause (List ι)}
-    (hr : G.realm = none) (n W v) : realmInvariant G X c n W v := by
-  unfold realmInvariant
-  rw [hr]
-  trivial
 
 /-- An object that does not own the store key meets the invariant. -/
 theorem arrayInvariant_of_lookup {P U : Fam} {N : List PropKey} {n W flds code}
@@ -786,7 +824,12 @@ theorem realmInvariant_of_lookup {G : NormalGraph ι} {X : List ι → Fam} {c :
     realmInvariant G X c n W (.objAt flds code oid) := by
   unfold realmInvariant
   cases G.realm with
-  | none => trivial
+  | none =>
+    cases c.realmed
+    · trivial
+    · intro flds' oid' he hs
+      cases he
+      simp [h] at hs
   | some r =>
     cases c.realmed
     · trivial
@@ -796,7 +839,10 @@ theorem realmInvariant_of_not_plain {G : NormalGraph ι} {X : List ι → Fam} {
     {n W v} (h : ∀ flds oid, v ≠ .objAt flds .absent oid) : realmInvariant G X c n W v := by
   unfold realmInvariant
   cases G.realm with
-  | none => trivial
+  | none =>
+    cases c.realmed
+    · trivial
+    · exact fun flds oid he _ => absurd he (h flds oid)
   | some r =>
     cases c.realmed
     · trivial
@@ -813,7 +859,7 @@ theorem realmInvariant_realmed {G : NormalGraph ι} {X : List ι → Fam} {c d :
     realmInvariant G X c n W v ↔ realmInvariant G X d n W v := by
   unfold realmInvariant
   cases G.realm with
-  | none => exact Iff.rfl
+  | none => simp [hc, hd]
   | some r => simp [hc, hd]
 
 /-- A member of a clause of a row meets what the realm asks of every clause

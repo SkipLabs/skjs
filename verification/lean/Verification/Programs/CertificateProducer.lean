@@ -726,20 +726,23 @@ came from a different context. No execution budget is inspected. -/
         -- bound does not admit at the prototype's field or view.
         let (B,r) ← (show Option (Ty ι × Rule ι) from match expand G R with
           | [.refs fs [] vs os _ ks] =>
-            (fs.lookup f).map (·,Rule.read) <|> (vs.lookup f).map (·,Rule.readView) <|>
+            (fs.lookup f).map (·,Rule.read) <|>
+              ((vs.lookup f).bind fun B => if f == lengthKey && !lengthExcluded G B then none else some (B, Rule.readView)) <|>
               (((os.find? (·.key == f)).map (·.type)).bind fun E => pool.findSome? fun U =>
                 if expand G U == [.undef] then some (E ++ U, Rule.readOptional E U) else none) <|>
               (if ks.any (fun K => !K.admits f) then
                 ((fs ++ vs).lookup CallArguments.protoField).bind fun P =>
                   match expand G P with
-                  | [.refs gs [] ws _ _ _] => ((gs ++ ws).lookup f).map (·, Rule.readProto P)
+                  | [.refs gs [] ws _ _ _] =>
+                    ((gs ++ ws.filter (·.1 != lengthKey)).lookup f).map (·, Rule.readProto P)
                   | _ => none
               else none)
           | [.callable fs _ _ _] => (fs.lookup f).map (·,Rule.readCallable)
           -- A dictionary's named field or view, else its index, which may miss.
           -- The index holds of every present field, an optional one included.
           | [.dict fs [] vs ix _ _ _ _] =>
-            (fs.lookup f).map (·,Rule.read) <|> (vs.lookup f).map (·,Rule.readView) <|>
+            (fs.lookup f).map (·,Rule.read) <|>
+            ((vs.lookup f).bind fun B => if f == lengthKey && !lengthExcluded G B then none else some (B, Rule.readView)) <|>
             (numericFirst ix).findSome? fun (K, B) => if !K.surely f then none else
               pool.findSome? fun U =>
                 if expand G U == [.undef] then some (B ++ U, Rule.readDict K B U) else none
@@ -904,6 +907,13 @@ came from a different context. No execution budget is inspected. -/
         some (ProgramCertificates.Evidence.node ⟨Γ,t,A⟩ .throw [ea])
     | .ite (.test tag (.var i)) u e =>
       let some B := Γ[i]? | return none
+      -- `length` through a view of the slot's object (`lenView`).
+      if decide (t = lengthRead i) then
+        if let [c] := expand G B then
+          if let some (_, vs) := namedMembers c then
+            if let some L := vs.lookup lengthKey then
+              if PositiveRules.numIn G L then
+                return coerce G images aliases (.node ⟨Γ,t,L⟩ (.lenView i) []) A
       if decide (Answers G B tag true) then
         return (recur Γ u A).map fun p => .node ⟨Γ,t,A⟩ .ifTrue [p]
       if decide (Answers G B tag false) then

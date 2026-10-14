@@ -106,7 +106,10 @@ set_option maxHeartbeats 1000000
     -- The proposed read type is checked at this read, with the live heap
     -- observations. Subsequent pattern operations receive its saved value.
     let R ← claimAt fc source
-    save source value R (.readAt field (.var i)) next
+    -- `length` through a view tests the object (`lenView`), as a member
+    -- access does.
+    let read := if field == lengthKey && lengthViewed G T then lengthRead i else .readAt field (.var i)
+    save source value R read next
   | .readPosition source array index value next =>
     let (i,T) ← LoweringExecution.executionSaved scope Γ array
     let R ← tryCatch (positionRead (SourceTypes.graph (← table)) T index) fun reason => do

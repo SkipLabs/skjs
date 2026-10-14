@@ -779,6 +779,60 @@ theorem viewT_append (A B : Fields) (k : Nat) (W : WorldT k) (v : Val) :
     viewT (A ++ B) k W v ↔ viewT A k W v ∧ viewT B k W v := by
   simp only [viewT, List.mem_append, or_imp, forall_and]
 
+/-- The key of an array's `length`, a property the model keeps in the array's
+store rather than at a location. -/
+def lengthKey : PropKey := .str "length"
+
+/-- **An array's `length`, read through a view.** An object owning the array
+store has its `length`, an own data property in JavaScript, in its store: a
+view of `length` at `T` admits it where every possible length is in `T`,
+read below the level, since `push` and `pop` change it. -/
+def arrayLenT (T : Fam) : Fam := fun k _ v =>
+  (∃ flds oid, v = .objAt flds .absent oid ∧ (flds.lookup arrayStoreKey).isSome = true) ∧
+    ∀ (j : Nat), j < k → ∀ (W' : WorldT j) (b : UInt64), T j W' (.num b)
+
+/-- **A record's read capabilities**: each a view (`viewT`), and a view of
+`length` met by an array as well (`arrayLenT`). -/
+def viewsT (fs : Fields) : Fam := fun k W v =>
+  ∀ (f : PropKey) (T : Fam), (f, T) ∈ fs → viewT [(f, T)] k W v ∨ (f = lengthKey ∧ arrayLenT T k W v)
+
+theorem viewT_single {f : PropKey} {A : Fam} {k} {W : WorldT k} {v}
+    (h : ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr k) (oid : Nat),
+      v = .objAt flds .absent oid ∧ flds.lookup f = some l ∧ lookup W l = some c ∧
+      ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u → A j W' u) :
+    viewT [(f, A)] k W v := fun g B hg => by
+  simp only [List.mem_singleton, Prod.mk.injEq] at hg
+  obtain ⟨rfl, rfl⟩ := hg
+  exact h
+
+theorem viewsT_of_viewT {fs : Fields} {k} {W : WorldT k} {v} (h : viewT fs k W v) : viewsT fs k W v :=
+  fun f T hm => .inl (viewT_single (h f T hm))
+
+/-- A view at a key other than `length` is at a location. -/
+theorem viewsT_at {fs : Fields} {f : PropKey} {A : Fam} (hm : (f, A) ∈ fs) (hf : f ≠ lengthKey)
+    {k} {W : WorldT k} {v} (h : viewsT fs k W v) :
+    ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr k) (oid : Nat),
+      v = .objAt flds .absent oid ∧ flds.lookup f = some l ∧ lookup W l = some c ∧
+      ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u → A j W' u := by
+  rcases h f A hm with h | ⟨rfl, -⟩
+  · exact viewT_at (List.mem_singleton_self _) h
+  · exact absurd rfl hf
+
+/-- A view of an object owning no array store is at a location. -/
+theorem viewsT_at_plain {fs : Fields} {f : PropKey} {A : Fam} (hm : (f, A) ∈ fs)
+    {k} {W : WorldT k} {flds : List (PropKey × Nat)} {oid : Nat}
+    (hs : flds.lookup arrayStoreKey = none) (h : viewsT fs k W (.objAt flds .absent oid)) :
+    ∃ (flds' : List (PropKey × Nat)) (l : Nat) (c : Ctr k) (oid' : Nat),
+      Tm.objAt flds .absent oid = .objAt flds' .absent oid' ∧ flds'.lookup f = some l ∧ lookup W l = some c ∧
+      ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u → A j W' u := by
+  rcases h f A hm with h | ⟨-, ⟨flds', oid', he, hst⟩, -⟩
+  · exact viewT_at (List.mem_singleton_self _) h
+  · cases he; rw [hs] at hst; cases hst
+
+theorem viewsT_append (A B : Fields) (k : Nat) (W : WorldT k) (v : Val) :
+    viewsT (A ++ B) k W v ↔ viewsT A k W v ∧ viewsT B k W v := by
+  simp only [viewsT, List.mem_append, or_imp, forall_and]
+
 /-- A tuple contract on an array store: the required positions' families, the
 optional positions', and what any further position must hold, if any may. -/
 inductive ArrayPresence where
@@ -1047,6 +1101,20 @@ theorem viewT_adm (fs : Fields) : Adm (viewT fs) := by
   · intro n W W' hx v h f T hm
     obtain ⟨flds, l, c, oid, rfl, hf, hl, hag⟩ := h f T hm
     exact ⟨flds, l, c, oid, rfl, hf, WExt_lookup hx hl, hag⟩
+
+theorem arrayLenT_adm (T : Fam) : Adm (arrayLenT T) :=
+  ⟨fun _ _ _ h => ⟨h.1, fun j hj W' n => h.2 j (by omega) W' n⟩, fun _ _ _ _ _ h => h⟩
+
+theorem viewsT_adm (fs : Fields) : Adm (viewsT fs) := by
+  refine ⟨?_, ?_⟩
+  · intro n W v h f T hm
+    rcases h f T hm with h | ⟨hf, h⟩
+    · exact .inl ((viewT_adm _).down n W v h)
+    · exact .inr ⟨hf, (arrayLenT_adm T).down n W v h⟩
+  · intro n W W' hx v h f T hm
+    rcases h f T hm with h | ⟨hf, h⟩
+    · exact .inl ((viewT_adm _).mono n W W' hx v h)
+    · exact .inr ⟨hf, (arrayLenT_adm T).mono n W W' hx v h⟩
 
 theorem optT_adm (fs : List (OptionalField Fam)) : Adm (optT fs) := by
   refine ⟨?_, ?_⟩

@@ -127,12 +127,12 @@ def semWithArgs (Ξ : Fam) (X : α → Fam) (P : α → ArgFam) : Clause α → 
   | .symbolLit i => fun _ _ v => v = .sym i
   | .symbol => symbolT
   | .refs a bs vs os ms ks => fun n W v =>
-      refsT (famsOf X a) (bs.map (famsOf X)) n W v ∧ viewT (famsOf X vs) n W v ∧
+      refsT (famsOf X a) (bs.map (famsOf X)) n W v ∧ viewsT (famsOf X vs) n W v ∧
         optT (os.map (·.map X)) n W v ∧ methodT Ξ (ms.map (Member.of X P)) n W v ∧
         ∀ K ∈ ks, ownKeysT K n W v
   | .dict a bs vs ds os ms ks cs => fun n W v =>
       refsT (famsOf X a) (bs.map (famsOf X)) n W v ∧
-      viewT (famsOf X vs) n W v ∧
+      viewsT (famsOf X vs) n W v ∧
         ((∀ d ∈ ds, dictViewT d.1 (X d.2) n W v) ∧ ∀ d ∈ cs, dictCellT d.1 (X d.2) n W v) ∧
         optT (os.map (·.map X)) n W v ∧ methodT Ξ (ms.map (Member.of X P)) n W v ∧
         ∀ K ∈ ks, ownKeysT K n W v
@@ -256,7 +256,7 @@ def Clause.realmed : Clause α → Bool
 
 /-- The keys an object clause says its object owns: its fields' and views'. -/
 def Clause.presentKeys : Clause α → List PropKey
-  | .refs a bs vs .. | .dict a bs vs .. => ((a :: bs).flatten ++ vs).map (·.1)
+  | .refs a bs vs .. | .dict a bs vs .. => ((a :: bs).flatten ++ vs.filter (·.1 != lengthKey)).map (·.1)
   | _ => []
 
 /-- An object clause's key bounds. -/
@@ -438,7 +438,7 @@ theorem meet_sound (X : α → Fam) (P : α → ArgFam) (a b : Clause α) (n : N
       all_goals intro hv; subst v; simp
     · simp only [singleton_sem, semWithArgs, List.map_append]
       rw [famsOf_append, flatten _ _ _ _ n W v]
-      simp only [famsOf_append, viewT_append, optT_append, methodT_append, interT,
+      simp only [famsOf_append, viewsT_append, optT_append, methodT_append, interT,
         List.mem_append, or_imp, forall_and]
       exact ⟨fun ⟨⟨r1, r2⟩, ⟨v1, v2⟩, ⟨o1, o2⟩, ⟨m1, m2⟩, ⟨k1, k2⟩⟩ =>
           ⟨⟨r1, v1, o1, m1, k1⟩, ⟨r2, v2, o2, m2, k2⟩⟩,
@@ -447,7 +447,7 @@ theorem meet_sound (X : α → Fam) (P : α → ArgFam) (a b : Clause α) (n : N
     · -- refs ∩ dictionary
       simp only [singleton_sem, semWithArgs, List.map_append]
       rw [famsOf_append, flatten _ _ _ _ n W v]
-      simp only [famsOf_append, viewT_append, optT_append, methodT_append, interT,
+      simp only [famsOf_append, viewsT_append, optT_append, methodT_append, interT,
         List.mem_append, or_imp, forall_and]
       exact ⟨fun ⟨⟨r1, r2⟩, ⟨v1, v2⟩, d2, ⟨o1, o2⟩, ⟨m1, m2⟩, ⟨k1, k2⟩⟩ =>
           ⟨⟨r1, v1, o1, m1, k1⟩, ⟨r2, v2, d2, o2, m2, k2⟩⟩,
@@ -456,7 +456,7 @@ theorem meet_sound (X : α → Fam) (P : α → ArgFam) (a b : Clause α) (n : N
     · -- dictionary ∩ refs
       simp only [singleton_sem, semWithArgs, List.map_append]
       rw [famsOf_append, flatten _ _ _ _ n W v]
-      simp only [famsOf_append, viewT_append, optT_append, methodT_append, interT,
+      simp only [famsOf_append, viewsT_append, optT_append, methodT_append, interT,
         List.mem_append, or_imp, forall_and]
       exact ⟨fun ⟨⟨r1, r2⟩, ⟨v1, v2⟩, d1, ⟨o1, o2⟩, ⟨m1, m2⟩, ⟨k1, k2⟩⟩ =>
           ⟨⟨r1, v1, d1, o1, m1, k1⟩, ⟨r2, v2, o2, m2, k2⟩⟩,
@@ -466,7 +466,7 @@ theorem meet_sound (X : α → Fam) (P : α → ArgFam) (a b : Clause α) (n : N
       simp only [singleton_sem, semWithArgs, List.map_append,
         List.mem_append, or_imp, forall_and]
       rw [famsOf_append, flatten _ _ _ _ n W v]
-      simp only [famsOf_append, viewT_append, optT_append, methodT_append, interT]
+      simp only [famsOf_append, viewsT_append, optT_append, methodT_append, interT]
       exact ⟨fun ⟨⟨r1, r2⟩, ⟨v1, v2⟩, ⟨⟨d1, d2⟩, ⟨c1, c2⟩⟩, ⟨o1, o2⟩, ⟨m1, m2⟩, ⟨k1, k2⟩⟩ =>
           ⟨⟨r1, v1, ⟨d1, c1⟩, o1, m1, k1⟩, ⟨r2, v2, ⟨d2, c2⟩, o2, m2, k2⟩⟩,
         fun ⟨⟨r1, v1, ⟨d1, c1⟩, o1, m1, k1⟩, ⟨r2, v2, ⟨d2, c2⟩, o2, m2, k2⟩⟩ =>
@@ -592,8 +592,8 @@ theorem semWithArgs_consistent {X : α → Fam} {P : α → ArgFam} {c : Clause 
   have present : ∀ (a : List (PropKey × α)) (bs : List (List (PropKey × α)))
       (vs : List (PropKey × α)) (ks : List KeyBound),
       ReferenceConjunctions.refsT (famsOf X a) (bs.map (famsOf X)) n W v →
-      viewT (famsOf X vs) n W v → (∀ K ∈ ks, ownKeysT K n W v) →
-      (((a :: bs).flatten ++ vs).map (·.1)).all (fun k => ks.all (·.admits k)) = true := by
+      viewsT (famsOf X vs) n W v → (∀ K ∈ ks, ownKeysT K n W v) →
+      (((a :: bs).flatten ++ vs.filter (·.1 != lengthKey)).map (·.1)).all (fun k => ks.all (·.admits k)) = true := by
     intro a bs vs ks hr hw hk
     simp only [List.all_eq_true, List.mem_map]
     rintro k ⟨p, hp, rfl⟩ K hK
@@ -607,7 +607,8 @@ theorem semWithArgs_consistent {X : α → Fam} {P : α → ArgFam} {c : Clause 
           · exact hr.2 _ (List.mem_map_of_mem hL)
         obtain ⟨flds, l, -, oid, he, hl, -⟩ := recT_at (mem_famsOf.mpr ⟨p.2, hpL, rfl⟩) hrec
         exact ⟨flds, l, oid, he, hl⟩
-      · obtain ⟨flds, l, -, oid, he, hl, -⟩ := viewT_at (mem_famsOf.mpr ⟨p.2, hp, rfl⟩) hw
+      · obtain ⟨hp, hpl⟩ := List.mem_filter.mp hp
+        obtain ⟨flds, l, -, oid, he, hl, -⟩ := viewsT_at (mem_famsOf.mpr ⟨p.2, hp, rfl⟩) (by simpa using hpl) hw
         exact ⟨flds, l, oid, he, hl⟩
     obtain ⟨flds, l, oid, rfl, hl⟩ := hat
     exact ownKeysT_admits (hk K hK) hl
@@ -623,7 +624,7 @@ theorem semWithArgs_owns {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n
   have present : ∀ (a : List (PropKey × α)) (bs : List (List (PropKey × α)))
       (vs : List (PropKey × α)),
       ReferenceConjunctions.refsT (famsOf X a) (bs.map (famsOf X)) n W v →
-      viewT (famsOf X vs) n W v → k ∈ ((a :: bs).flatten ++ vs).map (·.1) →
+      viewsT (famsOf X vs) n W v → k ∈ ((a :: bs).flatten ++ vs.filter (·.1 != lengthKey)).map (·.1) →
       ∃ (flds : List (PropKey × Nat)) (l : Nat) (oid : Nat), v = .objAt flds .absent oid ∧ flds.lookup k = some l := by
     intro a bs vs hr hw hk
     obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hk
@@ -635,7 +636,8 @@ theorem semWithArgs_owns {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n
         · exact hr.2 _ (List.mem_map_of_mem hL)
       obtain ⟨flds, l, -, oid, he, hl, -⟩ := recT_at (mem_famsOf.mpr ⟨p.2, hpL, rfl⟩) hrec
       exact ⟨flds, l, oid, he, hl⟩
-    · obtain ⟨flds, l, -, oid, he, hl, -⟩ := viewT_at (mem_famsOf.mpr ⟨p.2, hp, rfl⟩) hw
+    · obtain ⟨hp, hpl⟩ := List.mem_filter.mp hp
+      obtain ⟨flds, l, -, oid, he, hl, -⟩ := viewsT_at (mem_famsOf.mpr ⟨p.2, hp, rfl⟩) (by simpa using hpl) hw
       exact ⟨flds, l, oid, he, hl⟩
   cases c with
   | refs a bs vs os ms ks => exact present a bs vs h.1 h.2.1 hk
@@ -687,22 +689,22 @@ theorem semWithArgs_adm (X : α → Fam) (P : α → ArgFam) (c : Clause α) : A
   | boolLit b => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
   | num => exact numT_adm
   | numLit b => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
-  | refs a bs vs os ms ks => exact ⟨fun n W v h => ⟨(adm _ _).down n W v h.1, (viewT_adm _).down n W v h.2.1,
+  | refs a bs vs os ms ks => exact ⟨fun n W v h => ⟨(adm _ _).down n W v h.1, (viewsT_adm _).down n W v h.2.1,
         (optT_adm _).down n W v h.2.2.1, (methodT_adm _).down n W v h.2.2.2.1,
         fun K hK => (ownKeysT_adm K).down n W v (h.2.2.2.2 K hK)⟩,
-      fun n W U hx v h => ⟨(adm _ _).mono n W U hx v h.1, (viewT_adm _).mono n W U hx v h.2.1,
+      fun n W U hx v h => ⟨(adm _ _).mono n W U hx v h.1, (viewsT_adm _).mono n W U hx v h.2.1,
         (optT_adm _).mono n W U hx v h.2.2.1, (methodT_adm _).mono n W U hx v h.2.2.2.1,
         fun K hK => (ownKeysT_adm K).mono n W U hx v (h.2.2.2.2 K hK)⟩⟩
   | dict a bs vs ds os ms ks cs =>
     refine ⟨?_, ?_⟩
     · intro n W v h
-      exact ⟨(adm _ _).down n W v h.1, (viewT_adm _).down n W v h.2.1,
+      exact ⟨(adm _ _).down n W v h.1, (viewsT_adm _).down n W v h.2.1,
         ⟨fun d hd => (dictViewT_adm _ _).down n W v (h.2.2.1.1 d hd),
           fun d hd => (dictCellT_adm _ _).down n W v (h.2.2.1.2 d hd)⟩, (optT_adm _).down n W v h.2.2.2.1,
         (methodT_adm _).down n W v h.2.2.2.2.1,
         fun K hK => (ownKeysT_adm K).down n W v (h.2.2.2.2.2 K hK)⟩
     · intro n W U hx v h
-      exact ⟨(adm _ _).mono n W U hx v h.1, (viewT_adm _).mono n W U hx v h.2.1,
+      exact ⟨(adm _ _).mono n W U hx v h.1, (viewsT_adm _).mono n W U hx v h.2.1,
         ⟨fun d hd => (dictViewT_adm _ _).mono n W U hx v (h.2.2.1.1 d hd),
           fun d hd => (dictCellT_adm _ _).mono n W U hx v (h.2.2.1.2 d hd)⟩, (optT_adm _).mono n W U hx v h.2.2.2.1,
         (methodT_adm _).mono n W U hx v h.2.2.2.2.1,
@@ -841,12 +843,12 @@ theorem semWithArgs_congr {Ξ Ξ' : Fam} (X Y : α → Fam) (P Q : α → ArgFam
     exact and_congr (list_congr_below X Y a n h W v) (forall_congr' fun b => forall_congr' fun _ => list_congr_below X Y b n h W v)
   | refs a bs vs os ms ks =>
     exact and_congr (congr_below X Y a bs n h W v)
-      (and_congr (view_congr_below X Y vs n h W v)
+      (and_congr (views_congr_below X Y vs n h W v)
         (and_congr (opt_congr_below X Y os n h W v)
           (and_congr (methodT_congr X Y P Q n hexc h hP ms W v) Iff.rfl)))
   | dict a bs vs ds os ms ks cs =>
     exact and_congr (congr_below X Y a bs n h W v)
-      (and_congr (view_congr_below X Y vs n h W v)
+      (and_congr (views_congr_below X Y vs n h W v)
         (and_congr (and_congr (forall_congr' fun d => forall_congr' fun _ => dictViewT_congr (h d.2) W v)
             (forall_congr' fun d => forall_congr' fun _ => dictCellT_congr (h d.2) W v))
           (and_congr (opt_congr_below X Y os n h W v)

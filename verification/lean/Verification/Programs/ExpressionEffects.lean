@@ -24,7 +24,7 @@ values at every arbitrary, untyped location. -/
 def readable (G : NormalGraph ι) (Ref : Ty ι) (fld : PropKey) : Bool :=
   match expand G Ref with
   | [c] => match namedMembers c with
-    | some (fs, vs) => (fs ++ vs).any (fun p => p.1 == fld)
+    | some (fs, vs) => (fs ++ vs.filter (·.1 != lengthKey)).any (fun p => p.1 == fld)
     | none => false
   | _ => false
 
@@ -47,8 +47,9 @@ theorem readable_value {G : NormalGraph ι} {Ref fld n W h v}
         obtain ⟨u,hu,ht⟩ := hh.2 l ctr hlookup
         exact ⟨u,.readField hfield hu, meaning_valOnly G A 0 _ u
           ((hagree 0 (by omega) _ u).mp (ht 0 (by omega)))⟩
-      · obtain ⟨fields,l,ctr,oid',rfl,hfield,hlookup,hbound⟩ :=
-          viewT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A,hf,rfl⟩) hfields.2
+      · obtain ⟨hf, hfl⟩ := List.mem_filter.mp hf
+        obtain ⟨fields,l,ctr,oid',rfl,hfield,hlookup,hbound⟩ :=
+          viewsT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A,hf,rfl⟩) (by simpa using hfl) hfields.2
         obtain ⟨u,hu,ht⟩ := hh.2 l ctr hlookup
         exact ⟨u,.readField hfield hu, meaning_valOnly G A 0 _ u
           (hbound 0 (by omega) _ u (ht 0 (by omega)))⟩
