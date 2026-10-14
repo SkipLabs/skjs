@@ -105,9 +105,11 @@ let dictionary_spread_reason =
    dictionary only where every part says what it gives under the index's keys, by an index or its \
    exact keys"
 let relational_reason =
-  "`<` converts such an operand to a number or a string first (`undefined` to NaN, an object through its \
-   `valueOf` or `toString`), and the comparison the model states is of two numbers or two strings, the primitive \
-   order; an index read past the end is `undefined`, where TypeScript types it as the element"
+  "`<` converts a string compared with another kind by `StringToNumber`, which the model does not \
+   state; it states the comparison of two strings, and of two numbers, bigints, Booleans, `null` or \
+   `undefined` after `ToNumeric`"
+let relational_object_reason =
+  "`<` converts an object through its `valueOf` or `toString`: the host runs client code"
 let exact_optional_reason =
   "the pipeline reads `f?: T` exactly, as absent or a `T` (as `exactOptionalPropertyTypes` does), \
    where the default reading of TypeScript also admits a present `undefined`; `f?: T | undefined` states it"

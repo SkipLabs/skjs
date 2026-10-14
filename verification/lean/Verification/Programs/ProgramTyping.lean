@@ -969,6 +969,12 @@ def stringClause : Clause α → Bool
   | .str | .strLit _ => true
   | _ => false
 
+/-- Primitives `ToNumeric` converts to a number or a bigint without running
+code (`relNumeric`): numbers, bigints, Booleans, `null` and `undefined`. -/
+def numericClause : Clause α → Bool
+  | .num | .numLit _ | .bigint | .bigintLit _ | .bool | .boolLit _ | .nul | .undef => true
+  | _ => false
+
 /-- Primitives `ToString` converts without running code (`primString`):
 every primitive but a symbol. -/
 def printableClause : Clause α → Bool
@@ -1006,8 +1012,8 @@ def opResult (op : Arith) (c d : Clause α) : Option OpResult :=
     (if primitiveClause c || primitiveClause d || objectClause c || objectClause d
      then some .bool else none)
   else if op.relational then
-    if (numberClause c || bigintClause c) && (numberClause d || bigintClause d)
-      || stringClause c && stringClause d then some .bool else none
+    if numericClause c && numericClause d || stringClause c && stringClause d
+    then some .bool else none
   else if op == .add && (stringClause c && printableClause d || printableClause c && stringClause d)
   then some .str
   else if numberClause c && numberClause d then some .num
@@ -1059,6 +1065,31 @@ theorem primitiveClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause 
     | (split at hv <;> subst hv <;> rfl)
     | (simp only [nulT, undefT, boolT, numT, strT, bigintT, symbolT] at hv;
        first | (subst hv; rfl) | (rcases hv with rfl | rfl <;> rfl) | (obtain ⟨_, rfl⟩ := hv; rfl))
+
+/-- A member of a numeric clause converts by `ToNumeric` to a number or a bigint. -/
+theorem numericClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
+    (hc : numericClause c = true) (hv : semWithArgs Ξ X P c n W v) :
+    ∃ x, relNumeric v = some x ∧ ((∃ y, x = .num y) ∨ ∃ i, x = .bigint i) := by
+  cases c <;> simp [numericClause] at hc <;> simp only [semWithArgs] at hv
+  all_goals first
+    | (rcases hv with rfl | rfl <;> exact ⟨_, rfl, by simp⟩)
+    | (obtain ⟨_, rfl⟩ := hv; exact ⟨_, rfl, by simp⟩)
+    | (subst hv; exact ⟨_, rfl, by simp⟩)
+    | (split at hv <;> subst hv <;> exact ⟨_, rfl, by simp⟩)
+
+/-- Two operands `ToNumeric` converts compare to a Boolean. -/
+theorem relationalValue_numeric {op : Arith} {v w x y : Tm}
+    (hx : relNumeric v = some x) (hy : relNumeric w = some y)
+    (hxk : (∃ u, x = .num u) ∨ ∃ i, x = .bigint i) (hyk : (∃ u, y = .num u) ∨ ∃ i, y = .bigint i) :
+    ∃ q, relationalValue op v w = some (boolVal q) := by
+  have hnum : relationalValue op v w = numericRelation op x y := by
+    unfold relationalValue
+    split
+    · simp [relNumeric] at hx
+    · simp [hx, hy]
+  rw [hnum]
+  rcases hxk with ⟨a, rfl⟩ | ⟨a, rfl⟩ <;> rcases hyk with ⟨b, rfl⟩ | ⟨b, rfl⟩ <;>
+    exact ⟨_, rfl⟩
 
 theorem nullishClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
     (hc : nullishClause c = true) (hv : semWithArgs Ξ X P c n W v) : isNullish v = true := by
@@ -1115,13 +1146,6 @@ operator answers, with a value of the kind it names, or throws. -/
 theorem opResult_sound {X : α → Fam} {P : α → ArgFam} {op : Arith} {c d : Clause α} {r n W v w}
     (h : opResult op c d = some r) (hv : semWithArgs Ξ X P c n W v) (hw : semWithArgs Ξ X P d n W w) :
     (∃ z, binop op v w = some z ∧ r.holds z) ∨ binopThrows op v w = true := by
-  -- A numeric member is a number or a bigint.
-  have numeric : ∀ {e : Clause α} {u}, (numberClause e || bigintClause e) = true →
-      semWithArgs Ξ X P e n W u → (∃ x, u = .num x) ∨ ∃ i, u = .bigint i := by
-    intro e u he hu
-    rcases Bool.or_eq_true_iff.mp he with he | he
-    · exact .inl (numberClause_member he hu)
-    · exact .inr (bigintClause_member he hu)
   unfold opResult at h
   by_cases hloose : op = .looseEq
   · subst hloose
@@ -1171,18 +1195,15 @@ theorem opResult_sound {X : α → Fam} {P : α → ArgFam} {op : Arith} {c d : 
       cases h
       rcases Bool.or_eq_true_iff.mp hops with hops | hops
       · rcases Bool.and_eq_true_iff.mp hops with ⟨hc, hd⟩
-        rcases numeric hc hv with ⟨x, rfl⟩ | ⟨x, rfl⟩ <;>
-          rcases numeric hd hw with ⟨y, rfl⟩ | ⟨y, rfl⟩
-        · exact .inl ⟨boolVal (relationHolds op (doubleOrder x y)), by simp [binop, hloose, hrel, heq], boolVal_holds _⟩
-        · exact .inl ⟨boolVal (relationHolds op (doubleIntOrder x y)), by simp [binop, hloose, hrel, heq], boolVal_holds _⟩
-        · exact .inl ⟨boolVal (relationHolds op ((doubleIntOrder y x).map Ordering.swap)),
-            by simp [binop, hloose, hrel, heq], boolVal_holds _⟩
-        · exact .inl ⟨boolVal (relationHolds op (some (compare x y))), by simp [binop, hloose, hrel, heq], boolVal_holds _⟩
+        obtain ⟨x, hx, hxk⟩ := numericClause_member hc hv
+        obtain ⟨y, hy, hyk⟩ := numericClause_member hd hw
+        obtain ⟨q, hq⟩ := relationalValue_numeric (op := op) hx hy hxk hyk
+        exact .inl ⟨boolVal q, by simp [binop, hloose, hrel, heq, hq], boolVal_holds _⟩
       · rcases Bool.and_eq_true_iff.mp hops with ⟨hc, hd⟩
         obtain ⟨x, rfl⟩ := stringClause_member hc hv
         obtain ⟨y, rfl⟩ := stringClause_member hd hw
         exact .inl ⟨boolVal (relationHolds op (some (unitsOrder (utf16Units x) (utf16Units y)))),
-          by simp [binop, hloose, hrel, heq], boolVal_holds _⟩
+          by simp [binop, hloose, hrel, heq, relationalValue], boolVal_holds _⟩
     · cases h
   · simp only [hrel, Bool.false_eq_true, ↓reduceIte] at h
     split at h

@@ -1023,7 +1023,9 @@ classifies the operation, $`\mathrm{op}(op,c,d)`$ (`opResult`), where
 $`\mathsf{N}`$ is `num` or `numLit`, $`\mathsf{Z}`$ is `bigint` or `bigintLit`,
 $`\mathsf{S}`$ is `str` or `strLit`, and $`\mathsf{P}`$, the printable clauses
 (`printableClause`), is $`\mathsf N\cup\mathsf Z\cup\mathsf S`$ with `bool`,
-`boolLit`, `nul` and `undef`: every primitive but a symbol. $`\mathsf{Pr}`$
+`boolLit`, `nul` and `undef`: every primitive but a symbol. $`\mathsf{Nc}`$
+(`numericClause`), the clauses `ToNumeric` converts without code, is
+$`\mathsf N\cup\mathsf Z`$ with `bool`, `boolLit`, `nul` and `undef`. $`\mathsf{Pr}`$
 (`primitiveClause`) is $`\mathsf P`$ with `symbol`, $`\mathsf{O}`$
 (`objectClause`) the object clauses, `refs`, `dict`, `arrs`, `callable` and
 `ctors`, whose members are objects, compared by identity, and $`\mathsf{Nl}`$
@@ -1034,7 +1036,7 @@ and $`\approx`$ loose equality (`==`):
 \mathrm{op}(op,c,d)=\begin{cases}
 \mathsf{bool} & op={\equiv},\ c\in\mathsf{Pr}\cup\mathsf O\ \text{or}\ d\in\mathsf{Pr}\cup\mathsf O\\
 \mathsf{bool} & op={\approx},\ c,d\in\mathsf{Pr}\ \text{or}\ c\in\mathsf{Nl}\ \text{or}\ d\in\mathsf{Nl}\ \text{or}\ c,d\in\mathsf O\\
-\mathsf{bool} & op\ \text{relational},\ c,d\in\mathsf N\cup\mathsf Z\ \text{or}\ c,d\in\mathsf S\\
+\mathsf{bool} & op\ \text{relational},\ c,d\in\mathsf{Nc}\ \text{or}\ c,d\in\mathsf S\\
 \mathsf{str} & op={+},\ c\in\mathsf S,\ d\in\mathsf P\ \text{or}\ c\in\mathsf P,\ d\in\mathsf S\\
 \mathsf{num} & op\ \text{arithmetic},\ c,d\in\mathsf N\\
 \mathsf{bigint} & op\ \text{arithmetic},\ c,d\in\mathsf Z\\
@@ -1076,11 +1078,13 @@ proves the classification: on members of the two clauses $`\mathsf{binop}`$
 answers, with a value of the kind, or $`\mathsf{binopThrows}`$ holds, and the
 term steps to a throw (`arith_throw_safe`). So a number never meets a bigint in
 arithmetic (a `TypeError`), a string is relationally compared only with a string and
-concatenated only with a primitive whose `ToString` runs no code, and a
-Boolean or object operand of arithmetic or relational comparison, and an object or symbol
-concatenated, which JavaScript would convert through code or by throwing, has
-no rule, though TypeScript admits comparing two Booleans and concatenating an
-object. An operand whose clauses classify differently, a `string | number`
+concatenated only with a primitive whose `ToString` runs no code, a Boolean,
+`null` or `undefined` is relationally compared after `ToNumeric`, which runs no
+code (`undefined` is NaN, so the comparison is false), and a Boolean or object
+operand of arithmetic, an object operand of relational comparison, and an
+object or symbol concatenated, which JavaScript would convert through code or
+by throwing, have no rule, though TypeScript admits concatenating an object
+and comparing objects. An operand whose clauses classify differently, a `string | number`
 added to a number, has none either: its result is a string or a number by the
 value. The certificate premise
 (`ClauseOperatorTypes`) reads $`r`$ off the first clause pair and checks the rest.

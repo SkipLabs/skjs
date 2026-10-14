@@ -163,16 +163,25 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
     | Arith (op,l,r) ->
       let left = expr env l in let right = expr env r in
       if relational op then begin
-        (* Operands both numbers, both bigints or both strings are compared
-           without a conversion; any other may be converted. *)
-        let comparable t = match (try declared_head declarations [] t with Json.Error _ -> t) with
-          | Atoms atoms -> List.for_all (function
-              | Num | NumLit _ | Str | StrLit _ | Bigint | BigintLit _ -> true
-              | _ -> false) atoms
+        (* Two strings compare by code units; two operands among numbers,
+           bigints, Booleans, `null` and `undefined` by `ToNumeric`, which runs
+           no code. Any other pair may be converted through code. *)
+        let all_atoms ok t = match (try declared_head declarations [] t with Json.Error _ -> t) with
+          | Atoms atoms -> List.for_all ok atoms
           | Rigid _ | Union _ | Meet _ -> true in
-        if not (comparable left && comparable right) then
-          S.explain e.pos ("a relational comparison of operands that may not both be numbers or both \
-            strings: " ^ relational_reason);
+        let numeric = function
+          | Num | NumLit _ | Bigint | BigintLit _ | True | False | Nul | Undef -> true
+          | _ -> false in
+        let stringy = function Str | StrLit _ -> true | _ -> false in
+        let primitive = function
+          | Shape _ | Exact _ | Ctors _ | Callable | Top -> false
+          | _ -> true in
+        if not (all_atoms numeric left && all_atoms numeric right
+                || all_atoms stringy left && all_atoms stringy right) then
+          S.explain e.pos (if all_atoms primitive left && all_atoms primitive right
+            then "a relational comparison of operands that may not both be numeric primitives or \
+              both strings: " ^ relational_reason
+            else "a relational comparison with an operand that may be an object: " ^ relational_object_reason);
         bool
       end else operation_result declarations op left right
     | Comma (a,b) -> ignore (expr env a); expr ?expected env b

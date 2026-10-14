@@ -793,34 +793,55 @@ def looseEquals (a b : Tm) : Option Bool :=
     | .objAt .., .objAt .. => strictEquals a b
     | _, _ => none
 
+/-- `ToNumeric` of a primitive whose conversion runs no code and is a
+number or a bigint: a number and a bigint are themselves, `undefined` is NaN,
+`null` and `false` are `+0`, `true` is `1`. A string (`StringToNumber`), a
+symbol (a `TypeError`) and an object (its `valueOf` or `toString`) have none. -/
+def relNumeric : Tm → Option Tm
+  | .num x => some (.num x)
+  | .bigint i => some (.bigint i)
+  | .undef => some (.num (0.0 / 0.0 : Float).toBits)
+  | .nul | .fls => some (.num 0)
+  | .tru => some (.num (1.0 : Float).toBits)
+  | _ => none
+
+/-- A relational operator on two numeric values of either kind, exactly:
+`IsLessThan`'s numeric arm, undefined (false) where a number is NaN. -/
+def numericRelation (op : Arith) : Tm → Tm → Option Tm
+  | .num x, .num y => some (boolVal (relationHolds op (doubleOrder x y)))
+  | .bigint x, .bigint y => some (boolVal (relationHolds op (some (compare x y))))
+  | .num x, .bigint y => some (boolVal (relationHolds op (doubleIntOrder x y)))
+  | .bigint x, .num y => some (boolVal (relationHolds op ((doubleIntOrder y x).map Ordering.swap)))
+  | _, _ => none
+
+/-- `IsLessThan` on two primitives: two strings by their UTF-16 code units;
+otherwise both operands convert by `ToNumeric` (`relNumeric`) and compare as
+numbers or bigints. -/
+def relationalValue (op : Arith) (a b : Tm) : Option Tm :=
+  match a, b with
+  | .str s, .str t => some (boolVal (relationHolds op (some (unitsOrder (utf16Units s) (utf16Units t)))))
+  | _, _ => (relNumeric a).bind fun x => (relNumeric b).bind fun y => numericRelation op x y
+
 /-- **What a binary operator does on two values**, as JavaScript's does on
 them, where that is a value. Arithmetic combines two numbers or two bigints,
 never one of each (JavaScript throws a `TypeError`: `binopThrows`), and not a
 bigint division or remainder by zero or a negative bigint exponent (a
-`RangeError`). A relational operator
-compares two numeric values of either kind, exactly, or two strings by their
-UTF-16 code units. `+` with a string operand concatenates: the other operand,
-a primitive other than a symbol, converts by `ToString` (`primString`), which
-runs no code. Strict equality compares where one operand is a primitive
-(`strictEquals`). Every other pair converts its operands through code or
-coercions not modelled here, and has no answer: the term is stuck. -/
+`RangeError`). A relational operator compares two strings by their UTF-16
+code units, or two operands among numbers, bigints, Booleans, `null` and
+`undefined` after `ToNumeric` (`relationalValue`), exactly. `+` with a string
+operand concatenates: the other operand, a primitive other than a symbol,
+converts by `ToString` (`primString`), which runs no code. Strict equality
+compares where one operand is a primitive (`strictEquals`). Every other pair
+converts its operands through code or coercions not modelled here, and has
+no answer: the term is stuck. -/
 def binop (op : Arith) (a b : Tm) : Option Tm :=
   if op = .eq then (strictEquals a b).map boolVal else
   if op = .looseEq then (looseEquals a b).map boolVal else
+  if op.relational then relationalValue op a b else
   match a, b with
-  | .num x, .num y =>
-    some (if op.relational then boolVal (relationHolds op (doubleOrder x y)) else .num (arithBits op x y))
-  | .bigint x, .bigint y =>
-    if op.relational then some (boolVal (relationHolds op (some (compare x y))))
-    else (bigintArith op x y).map .bigint
-  | .num x, .bigint y =>
-    if op.relational then some (boolVal (relationHolds op (doubleIntOrder x y))) else none
-  | .bigint x, .num y =>
-    if op.relational then some (boolVal (relationHolds op ((doubleIntOrder y x).map Ordering.swap)))
-    else none
-  | .str s, .str t =>
-    if op.relational then some (boolVal (relationHolds op (some (unitsOrder (utf16Units s) (utf16Units t)))))
-    else if op == .add then some (.str (s ++ t)) else none
+  | .num x, .num y => some (.num (arithBits op x y))
+  | .bigint x, .bigint y => (bigintArith op x y).map .bigint
+  | .str s, .str t => if op == .add then some (.str (s ++ t)) else none
   | .str s, b => if op == .add then (primString b).map fun t => .str (s ++ t) else none
   | a, .str t => if op == .add then (primString a).map fun s => .str (s ++ t) else none
   | _, _ => none
@@ -1226,6 +1247,26 @@ number, a bigint or a string. -/
 theorem primString_val {a : Tm} {s : String} (h : primString a = some s) : isVal a = true := by
   cases a <;> simp [primString] at h <;> rfl
 
+theorem relNumeric_val {a x : Tm} (h : relNumeric a = some x) : isVal a = true := by
+  cases a <;> simp [relNumeric] at h <;> rfl
+
+theorem numericRelation_bool {op : Arith} {x y v : Tm} (h : numericRelation op x y = some v) :
+    v = .tru ∨ v = .fls := by
+  have hb : ∀ q, boolVal q = .tru ∨ boolVal q = .fls := fun q => by cases q <;> simp [boolVal]
+  unfold numericRelation at h
+  split at h <;> cases h <;> exact hb _
+
+/-- A relational comparison answers a Boolean, for two values. -/
+theorem relationalValue_result {op : Arith} {a b v : Tm} (h : relationalValue op a b = some v) :
+    isVal a = true ∧ isVal b = true ∧ (v = .tru ∨ v = .fls) := by
+  unfold relationalValue at h
+  split at h
+  · obtain rfl := Option.some.inj h
+    exact ⟨rfl, rfl, by cases relationHolds _ _ <;> simp [boolVal]⟩
+  · obtain ⟨x, hx, h⟩ := Option.bind_eq_some_iff.mp h
+    obtain ⟨y, hy, h⟩ := Option.bind_eq_some_iff.mp h
+    exact ⟨relNumeric_val hx, relNumeric_val hy, numericRelation_bool h⟩
+
 theorem binop_result {op : Arith} {a b v : Tm} (h : binop op a b = some v) :
     isVal a = true ∧ isVal b = true ∧
       (v = .tru ∨ v = .fls ∨ (∃ x, v = .num x) ∨ (∃ i, v = .bigint i) ∨ ∃ s, v = .str s) := by
@@ -1247,6 +1288,9 @@ theorem binop_result {op : Arith} {a b v : Tm} (h : binop op a b = some v) :
     · rename_i hv
       simp only [Bool.not_eq_true', Bool.and_eq_false_iff, not_or, Bool.not_eq_false] at hv
       exact ⟨hv.1, hv.2, by rcases hb q with h | h <;> rw [h] <;> simp⟩
+  split at h
+  · obtain ⟨ha, hb, hv⟩ := relationalValue_result h
+    exact ⟨ha, hb, by rcases hv with rfl | rfl <;> simp⟩
   repeat' split at h
   all_goals first
     | (simp at h; done)
@@ -1302,9 +1346,11 @@ theorem binop_not_throws {op : Arith} {a b v : Tm} (h : binop op a b = some v) :
   · simp only [Bool.or_eq_true, Bool.and_eq_true] at hc
     rcases hc with ⟨h1, h2⟩ | ⟨h1, h2⟩
     · cases a <;> simp only [isSym, Bool.false_eq_true] at h1
-      cases b <;> simp only [isPrim, Bool.false_eq_true] at h2 <;> simp_all [binop, primString]
+      cases b <;> simp only [isPrim, Bool.false_eq_true] at h2 <;>
+        simp_all [binop, primString, relationalValue, relNumeric]
     · cases b <;> simp only [isSym, Bool.false_eq_true] at h2
-      cases a <;> simp only [isPrim, Bool.false_eq_true] at h1 <;> simp_all [binop, primString]
+      cases a <;> simp only [isPrim, Bool.false_eq_true] at h1 <;>
+        simp_all [binop, primString, relationalValue, relNumeric]
 
 /-- `ToBoolean` of a number: false for the two zeros and NaN, which is the one
 double not equal to itself. -/

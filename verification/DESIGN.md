@@ -434,8 +434,9 @@ One line each; the reason is the one the design keeps.
 - **Wire formats carry no version and have one shape**; producers and
   consumers are typed against one declaration.
 - **Strings' lengths are not tracked**: `s[i]` is `string | undefined`.
-- **Relational comparison admits only operands compared in their primitive
-  order.**
+- **Relational comparison admits only operands whose conversion runs no
+  code**: two strings, or two numbers, bigints, Booleans, `null` or
+  `undefined` after `ToNumeric`.
 - **`Closed<T>` is read as `T`**: less than SKJS's meaning, and true of every
   closed value.
 - **A number is its double's bit pattern; a bigint its integer.** Distinct

@@ -766,14 +766,16 @@ came from a different context. No execution budget is inspected. -/
       return direct.orElse fun _ => splitReceiver a
     | .arith op a b =>
       -- Each operand at a pool type of the operand clauses the operator
-      -- takes (numbers and bigints; strings too for a comparison, every
-      -- printable primitive for `+`), or any pool type for an equality, the
+      -- takes (numbers and bigints; for a comparison also strings and the
+      -- other primitives `ToNumeric` converts, every printable primitive for
+      -- `+`), or any pool type for an equality, the
       -- right one only where the pair classifies or one operand decides the
       -- equality; the rule then checks every pair and the result, at the
       -- requested type when it holds the result's kind, else coerced.
       let equality := op == .eq || op == .looseEq
       let operands := pool.filter fun R => equality || G.plainTy R && !(expand G R).isEmpty &&
-        (expand G R).all fun c => numberClause c || bigintClause c || (op.relational && stringClause c)
+        (expand G R).all fun c => numberClause c || bigintClause c
+          || (op.relational && (stringClause c || numericClause c))
           || (op == .add && printableClause c)
       return operands.findCheck? fun R => do
         let ea ← recur Γ a R

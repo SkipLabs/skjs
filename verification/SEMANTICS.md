@@ -176,6 +176,7 @@ coercions the calculus does not have:
 | a number and a bigint | throws (a `TypeError`) | the exact order of the double's rational value and the integer; false when the number is NaN, an infinity beyond every integer |
 | two strings | $+$ concatenates; others none | lexicographic over UTF-16 code units, a proper prefix less |
 | a string and a number, bigint, Boolean, `null` or `undefined`, either order | $+$ concatenates the string with $\mathsf{str}$ of the other, in operand order; others none | none |
+| a Boolean, `null` or `undefined` and a number, bigint, Boolean, `null` or `undefined`, either order | none | the order of the two after `ToNumeric` (`relNumeric`): `undefined` is NaN, `null` and `false` are $+0$, `true` is $1$; so false where `undefined` is an operand |
 | a symbol and a primitive, either order | throws (a `TypeError`: `ToString` or `ToNumeric` of a symbol) | throws |
 | anything else | none | none |
 
