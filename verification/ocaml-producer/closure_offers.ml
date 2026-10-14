@@ -76,7 +76,9 @@ open S
         (* A variadic signature with an element rest: Lean checks the code
            at its fixed parameters, then each further position it binds at
            the element or `undefined`. *)
-        let variadic = s.variadic=None && s.rest_pack<>None && List.length s.params <= arity
+        let variadic = s.variadic=None && (match s.rest_pack with
+            | Some (Pack {required=[];optional_elements=[];rest=Some _;_}) -> true | _ -> false)
+          && List.length s.params <= arity
           && List.for_all2 plausible_subtype s.params (List.filteri (fun i _ -> i < List.length s.params) params) in
         if variadic then publish_request pos s
         else if widened <> [] || longer then
