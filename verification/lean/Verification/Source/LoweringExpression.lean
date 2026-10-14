@@ -377,7 +377,10 @@ slots are introduced only after the operand supplying their type is checked. -/
       (if post then DirectProof.var ([Labels.nul]::W) 3 contract else DirectProof.var ([Labels.nul]::W) 1 N)
     pure (DirectProof.letE Γ read (DirectProof.letE K c (DirectProof.letE H combine done)))
   | .update .. => throw "compound assignment of other than a local inside a closed expression is outside the fragment"
-  | .arrayLit _ elems => do
+  | .arrayLit _ elems spreads => do
+    -- Reading a spread operand's elements is an array operation, which a
+    -- closed expression does not have.
+    if !spreads.isEmpty then throw "an array literal spread inside a closed expression is outside the fragment"
     -- The elements, in order, fill a fresh store, and the array object holds
     -- it with the prototype from its slot, then reads as the claimed array.
     let some S := storeOf G A | throw "an array literal needs an array claim"

@@ -19,6 +19,16 @@ from the checked operand and callee contracts, independently of a source claim
 for the synthetic copy. -/
 @[nospecialize] private def executionSnapshotType (fc : SourceClaims.Function Tree)
     (value : SourceExecution.Saved) (call : Fragment.Expr) : Compiler (Ty Tree) := do
+  -- Into an array literal, a copy at the literal's element type, which every
+  -- element the literal holds meets.
+  if let .arrayLit .. := call then
+    let G := SourceTypes.graph (← table)
+    let some S := storeOf G (← exprType fc call) | throw "an array literal needs an array claim"
+    let [.list ⟨[], [], some E, _, _⟩ []] := PositiveRules.expand G S
+      | throw "an array literal with a spread needs an array claim of one element type"
+    let C ← lower (SourceTypes.use (.list ⟨[], [], some E, false, .dense⟩ []))
+    recordHints [C]
+    return [C]
   let callee ← match call with
     | .call _ callee _ _ _ | .invoke _ callee _ _ _ | .construct _ callee _ _ _ => pure callee
     | _ => throw "internal execution plan: a spread snapshot requires a call"

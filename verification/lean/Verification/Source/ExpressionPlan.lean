@@ -132,7 +132,11 @@ private partial def expression (root : Span) (e : Expr) : Builder Plan := do
         operand root key "key" fun key => do operand root rhs "value" fun rhs => do
           pure (atom (.elemWrite pos (readSaved receiver) (readSaved key) (readSaved rhs)))
     | .alloc pos names es => operands root es fun es => do pure (atom (.alloc pos names (es.map readSaved)))
-    | .arrayLit pos es => operands root es fun es => do pure (atom (.arrayLit pos (es.map readSaved)))
+    -- A spread followed by an element that runs code is copied where it is
+    -- written, as a call's is.
+    | .arrayLit pos es [] => operands root es fun es => do pure (atom (.arrayLit pos (es.map readSaved) []))
+    | .arrayLit pos es spreads => callArguments root e es spreads 0 fun es => do
+        pure (atom (.arrayLit pos (es.map readSaved) spreads))
     | .comma _ left right => operand root left "discard" fun _ => do
         operand root right "value" fun right => do pure (atom (.var e.span right.name))
     | .logical _ andOp left right =>

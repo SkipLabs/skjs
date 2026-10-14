@@ -50,6 +50,8 @@ const gap = (
 export const cases: Case[] = [
   positive("constructor-tuple-spread", "Constructor tuple spreads preserve callee-first evaluation and snapshot elements before later effects; readonly, empty and generic actuals"),
   negative("invalid-constructor-tuple-spread", "A spread element must meet its constructor parameter", /source expression obligation at \[218,234\): evidence search failed/),
+  positive("array-literal-spread", "Array literal spreads: a store of each part in order at the claim's element type, a spread before an element that runs code copied where it is written; readonly, host-iterable, generic and undefined-admitting elements"),
+  negative("invalid-array-literal-spread", "A spread's elements must meet the literal's element type", /no derivation of its node-typing claim/),
   positive("generic-prototype-instanceof", "Shared prototype methods quantify bounded class parameters across construction, ordinary, generic and deferred consumers"),
   positive("generic-prototype-record-bound", "Shared prototype methods preserve record bounds and named bounds across consumers"),
   positive("class-record-bound", "A class's record bound is preserved through construction and its method result"),

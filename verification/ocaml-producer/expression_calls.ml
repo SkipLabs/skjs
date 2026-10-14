@@ -338,7 +338,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
             | Some {bound=Some (ValueArgument (Atoms [Shape {elements=Some {rest=None;_};fields=[];
                 calls=[];indexes=[]}] as t));_} -> Some t
             | Some {bound=Some (ValueArgument t);_} ->
-              let length = match arg.node with ArrayLiteral es -> List.length es | _ -> -1 in
+              let length = match arg.node with ArrayLiteral (es,[]) -> List.length es | _ -> -1 in
               (match List.filter (function
                  | Shape {elements=Some {rest=None;required;optional_elements;_};fields=[];calls=[];indexes=[]} ->
                    List.length required <= length
@@ -406,7 +406,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
                      keys so Lean can check the bound independently. *)
                   let rec exact_literals (e:expr) = match e.node with
                     | Alloc fs -> mark_exact e; List.iter (fun (_,v) -> exact_literals v) fs
-                    | ArrayLiteral es -> List.iter exact_literals es
+                    | ArrayLiteral (es,_) -> List.iter exact_literals es
                     | _ -> () in
                   exact_literals arg;
                   expr env arg

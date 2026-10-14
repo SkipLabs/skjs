@@ -148,7 +148,7 @@ let transfer (expr:Analysis_state.expression_infer) =
          the use when that differs). A proposal: Lean checks the elements
          against it and every use against the binding. *)
       let committed = match mutable_,written,init.node with
-        | false,None,ArrayLiteral (_::_) ->
+        | false,None,ArrayLiteral (_::_,_) ->
           (match first_use env n (following_statements s.span) with
            | Some t -> (match (try declared_head declarations [] t with Json.Error _ -> t) with
              | Atoms atoms when atoms <> [] && List.for_all (function
@@ -163,7 +163,7 @@ let transfer (expr:Analysis_state.expression_infer) =
          checks at every write. *)
       clear_evolving_binding n;
       let committed = match written,init.node with
-        | None,ArrayLiteral [] ->
+        | None,ArrayLiteral ([],_) ->
           register_evolving_binding n init.pos true;
           Some (array {required=[];optional_elements=[];rest=Some (evolved init.pos);readonly=false;presence=Readable})
         | None,Literal (LNull | LUndefined) when mutable_ ->

@@ -1995,47 +1995,32 @@ theorem pack_call_safe {Rc : Fam} {Ps Us Qs : List Fam} {R : Fam} {P : ArgFam}
       (WExt_refl _) hX heap'' hhX rv hrv hrV args (ArgsT_values hAv hargsX) hacc
     exact Or.inr ⟨X, heap'', body, WExt_refl _, hX, hi.step heap'', hhX, hsafe⟩
 
-/-- **Copying a spread.** `[...s]` reads the store `s` evaluates to where it is
-written and allocates a fresh store of its elements, each at `E`. -/
-theorem copy_safe {S E : Fam} (presence : ArrayPresence) (hS : RestCalls.Spreads S E) (hE : Adm E) (hEv : ValOnly E)
-    {n : Nat} {W : WorldT n} {h : Heap} {s : Tm} (hw : WorldAdm W) (hh : HeapOk n W h)
-    (hs : Safe Ξ S n W h s) :
-    Safe Ξ (listT ⟨[], [], some E, false, presence⟩) n W h (.arrLit [.spread s]) := by
-  apply RestCalls.ctx_bind (fun t => .arrLit [.spread t])
-    (fun st => .arrArg (i := 0) rfl (by intro j hj; omega) (.spreadC st))
-    (fun hr => .arrArg (i := 0) rfl (by intro j hj; omega) (.spreadC hr)) n W h s hw hh hs
-  intro j hj U hx hu heap v hok _ hv
-  obtain ⟨ls, vs, rfl, hr, he⟩ := hS j U heap _ hok hv
-  cases j with
-  | zero => trivial
-  | succ p =>
-    let V := trunc p (Nat.le_succ p) U
-    have hvs : ∀ e ∈ vs, E p V e := fun e hm => he e hm p (by omega)
-    have hstep : Step heap (.arrLit [.spread (.arr ls)]) heap (.arrLit vs) := by
-      simpa using Step.arrSpread (inits := [Tm.spread (.arr ls)]) (pre := []) (post := [])
-        rfl (by simp) hr
-    refine Or.inr ⟨V, heap, .arrLit vs, WExt_refl _, WorldAdm_trunc _ hu,
-      hstep, HeapOk_trunc p U heap hok, ?_⟩
-    apply arr_alloc_rule (As := List.replicate vs.length E)
-      (by intro A hA; rw [List.eq_of_mem_replicate hA]; exact hE)
-      p V heap vs (by simp) (fun v hm => hEv p V v (hvs v hm)) (WorldAdm_trunc _ hu)
-      (HeapOk_trunc p U heap hok)
-      (by
-        intro q hq
-        rw [List.eq_of_mem_replicate (List.of_mem_zip hq).1]
-        exact hvs q.2 (List.of_mem_zip hq).2)
-    intro k hk X hy hl
-    have := listT_alloc (n := k) (W := X) (T := ⟨[], [], some E, false, presence⟩)
-      (As := List.replicate vs.length E) (base := heap.length)
-      (by simp) (by simp)
-      (by
-        intro i A hA
-        have := (List.getElem?_eq_some_iff.mp hA)
-        simp only [List.getElem_replicate] at this
-        rw [← this.2]
-        simp [positionFam])
-      hl
-    simpa using this
+/-- **A fresh store of values at `E`.** Allocated, the values meet the
+contract `E` at every position, under any readonly flag and presence mode:
+every position holds a location of its own. -/
+theorem fresh_store_safe {E : Fam} (ro : Bool) (presence : ArrayPresence) (hE : Adm E) (hEv : ValOnly E)
+    {n : Nat} {W : WorldT n} {h : Heap} {vs : List Tm} (hw : WorldAdm W) (hh : HeapOk n W h)
+    (hvs : ∀ e ∈ vs, E n W e) :
+    Safe Ξ (listT ⟨[], [], some E, ro, presence⟩) n W h (.arrLit vs) := by
+  apply arr_alloc_rule (As := List.replicate vs.length E)
+    (by intro A hA; rw [List.eq_of_mem_replicate hA]; exact hE)
+    n W h vs (by simp) (fun v hm => hEv n W v (hvs v hm)) hw hh
+    (by
+      intro q hq
+      rw [List.eq_of_mem_replicate (List.of_mem_zip hq).1]
+      exact hvs q.2 (List.of_mem_zip hq).2)
+  intro k hk X hy hl
+  have := listT_alloc (n := k) (W := X) (T := ⟨[], [], some E, ro, presence⟩)
+    (As := List.replicate vs.length E) (base := h.length)
+    (by simp) (by simp)
+    (by
+      intro i A hA
+      have := (List.getElem?_eq_some_iff.mp hA)
+      simp only [List.getElem_replicate] at this
+      rw [← this.2]
+      simp [positionFam])
+    hl
+  simpa using this
 
 /-- The pair of a signature and its rest-store type, by index. -/
 theorem zip_getElem_mem {α β : Type} {L : List α} {As : List β} {i : Nat} (hi : i < L.length)
@@ -2397,11 +2382,17 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
   must establish the same term and result, without changing other bindings. -/
   | unionVar : Γ[i]? = some C →
       (∀ a ∈ C, HasTyWith G images subtyping (Γ.set i [a]) t A) → HasTyWith G images subtyping Γ t A
-  /-- **A copy of a spread.** `[...s]` allocates a fresh store holding the
-  elements of the store `s` evaluates to, read where it is written. -/
-  | arrCopy {Γ : List (Ty ι)} {s : Tm} {S T E : Ty ι} {presence : ArrayPresence} :
-      HasTyWith G images subtyping Γ s S → SpreadsInto G S E → Represents G T (.list ⟨[], [], some E, false, presence⟩ []) →
-      HasTyWith G images subtyping Γ (.arrLit [.spread s]) T
+  /-- **A literal with spreads.** `[a, ...s, b]` allocates a fresh store of
+  its parts' values in order: each plain part at the element type `E`, each
+  spread the elements of the store it evaluates to, read where it is written,
+  which spread into `E`. The store's length is not known, so its contract is
+  `E` at every position. -/
+  | arrParts {Γ : List (Ty ι)} {T E : Ty ι} {ro : Bool} {presence : ArrayPresence}
+      {parts : List (Bool × Ty ι × Tm)} :
+      (∀ p ∈ parts, HasTyWith G images subtyping Γ p.2.2 p.2.1) →
+      (∀ p ∈ parts, if p.1 then SpreadsInto G p.2.1 E else p.2.1 = E) →
+      Represents G T (.list ⟨[], [], some E, ro, presence⟩ []) →
+      HasTyWith G images subtyping Γ (.arrLit (parts.map fun p => spreadTerm (p.1, p.2.2))) T
   /-- **A variadic call.** The fixed actuals meet the selected signature's
   parameters, less trailing ones `Us` the call omits, each admitting
   `undefined`, and a call that omits a fixed position writes nothing further.
@@ -2492,7 +2483,7 @@ abbrev HasTyUsing (G : NormalGraph ι) (images : PositiveCertificates.InstanceIm
   HasTyWith G images subtyping Γ t A
 
 namespace HasTyUsing
-export HasTyWith (var nul undef tru fls truLit flsLit numLit num bigintLit bigint strLit str funGraph funScheme ctorGraph callableGraph construct callCallable readCallable writeCallable app letE alloc allocDict read readView lenView readProto readOptional readDict indexDict write arith arrLit elem elemOpt elemAny setElem len lenStr elemStr test ifBool ifKnown ifBoolVar ifTag unionVar arrCopy callRest bindE bindRestE bindMember bindScheme throw merge makeKey sub)
+export HasTyWith (var nul undef tru fls truLit flsLit numLit num bigintLit bigint strLit str funGraph funScheme ctorGraph callableGraph construct callCallable readCallable writeCallable app letE alloc allocDict read readView lenView readProto readOptional readDict indexDict write arith arrLit elem elemOpt elemAny setElem len lenStr elemStr test ifBool ifKnown ifBoolVar ifTag unionVar arrParts callRest bindE bindRestE bindMember bindScheme throw merge makeKey sub)
 end HasTyUsing
 
 /-- Existing source requests choose the finite checker. The typing rules
@@ -3472,14 +3463,43 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     obtain ⟨a, ha, hv⟩ := henv.2 i C hi
     apply ih a ha n W h ρ (henv.refine hi ?_) hw hh
     exact ⟨a, by simp, hv⟩
-  | @arrCopy Γ s S T E presence hs hsp hr ih =>
+  | @arrParts Γ T E ro presence parts hp hparts hr ih =>
     intro n W h ρ he hw hh
-    simp only [instantiate, instantiateArgs_eq_map, List.map_cons, List.map_nil]
-    have := copy_safe presence (spreadsInto_sound hsp) (meaning_adm G E) (meaning_valOnly G E) hw hh
-      (ih n W h ρ he hw hh)
-    apply Safe_mono n _ W h _ this
-    intro k _ U v hv
-    exact (represents_back hr k U v) ⟨by simpa [tupleFams] using hv, by simp⟩
+    have hterm : instantiate 0 ρ (.arrLit (parts.map fun p => spreadTerm (p.1, p.2.2)))
+        = .arrLit ((parts.map fun p => ((if p.1 then some (meaning G p.2.1) else none),
+            instantiate 0 ρ p.2.2)).map RestCalls.partTerm) := by
+      simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def,
+        instantiate_spreadTerm]
+      congr 1
+      apply List.map_congr_left
+      intro p _
+      rcases p with ⟨_ | _, A, t⟩ <;> rfl
+    rw [hterm]
+    apply RestCalls.store_parts_safe (meaning_adm G E) (meaning_valOnly G E) _ n W h
+      (by
+        intro q hq S hS
+        obtain ⟨p, hp', rfl⟩ := List.mem_map.mp hq
+        rcases p with ⟨_ | _, A, t⟩
+        · simp at hS
+        · simp only [if_true, Option.some.injEq] at hS
+          subst hS
+          have := hparts _ hp'
+          simp only [if_true] at this
+          exact ⟨meaning_adm G A, spreadsInto_sound this⟩)
+      hw hh
+      (by
+        intro q hq j hj U hxU hu heap hok
+        obtain ⟨p, hp', rfl⟩ := List.mem_map.mp hq
+        rcases p with ⟨_ | _, A, t⟩
+        · have hA : A = E := by simpa using hparts _ hp'
+          subst hA
+          exact ih _ hp' j U heap ρ (he.transfer j hj U hxU) hu hok
+        · exact ih _ hp' j U heap ρ (he.transfer j hj U hxU) hu hok)
+    intro j _ U _ hu heap extra hok hex
+    apply Safe_mono j _ U heap _
+      (fresh_store_safe ro presence (meaning_adm G E) (meaning_valOnly G E) hu hok hex)
+    intro k _ V v hv
+    exact (represents_back hr k V v) ⟨by simpa [tupleFams] using hv, by simp⟩
   | @callRest effect Γ f r F Rt xs Us P B parts hf hmem hrt hx hu hshort hp hparts
       ihf ihrt ihx ihu ihp =>
     intro n W h ρ he hw hh

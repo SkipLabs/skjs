@@ -35,7 +35,7 @@ private partial def exprSitesCore (includeBodies : Bool) : Fragment.Expr → Sit
   -- An assignment is an expression site, and the name it assigns is not one:
   -- the producer claims the value written, not the location.
   | .index p _ a b | .arith p _ a b | .logicalAssign p _ a b | .elemAt p a b | .comma p a b | .inKeys p a b => joinSites ([],[p],[]) (joinSites (exprSitesCore includeBodies a) (exprSitesCore includeBodies b))
-  | .arrayLit p es => es.foldl (fun acc a => joinSites acc (exprSitesCore includeBodies a)) ([],[p],[])
+  | .arrayLit p es _ => es.foldl (fun acc a => joinSites acc (exprSitesCore includeBodies a)) ([],[p],[])
   | .objectAssign p t ss => ss.foldl (fun acc a => joinSites acc (exprSitesCore includeBodies a))
       (joinSites ([],[p],[]) (exprSitesCore includeBodies t))
   -- A field target is a site, where the value written is claimed, and so

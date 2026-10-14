@@ -449,17 +449,9 @@ elements replacing it in order, `undefined` at a hole
 
 Into a rest, a spread followed by an actual that runs code is copied where it
 is written, `[...s]`, a fresh store the call then spreads, so the later actual
-cannot change what it passes (`Step.arrSpread`, `copy_safe`, `arrCopy`); into
-fixed parameters the lowering admits no such actual (above):
-
-```math
-\frac{\Gamma\vdash_G s:S\quad\mathrm{Spreads}_G(S,E)}
-     {\Gamma\vdash_G [{\ldots}s]:\mathsf{List}_{\pi,\mathrm{writable}}([\,],[\,],E)}
-```
-
-Here $`\pi`$ is any presence mode chosen for the fresh store's lifetime contract.
-No existing location is retyped. A hole read from the source becomes a present
-`undefined` value in the copy.
+cannot change what it passes ([a literal with spreads](#a-literal-with-spreads),
+`arrParts`); into fixed parameters the lowering admits no such actual (above).
+A hole read from the source becomes a present `undefined` value in the copy.
 
 For a required tuple, source lowering instead reads its known positions in
 order into an ordinary array literal before evaluating later actuals. The
@@ -963,6 +955,31 @@ numeric key, which `Array<T>`'s `[n: number]: T` says holds a `T`, else
 `undefined`: `Array.prototype` and `Object.prototype` own no numeric key
 ([trust surface](DESIGN.md#trust-surface)). `elemAny` would read the store
 alone, which answers `undefined` where the array owns such a key.
+
+#### A literal with spreads
+
+A store literal evaluates its parts left to right, and a spread of a ready
+store is replaced by the store's elements once every earlier part is a value,
+`undefined` at a hole (`Step.arrSpread`); the store then takes one fresh
+location per value (`Step.arrAlloc`). Its length is known only at run time,
+so its contract is one element type $`E`$ at every position: each plain part
+is in $`E`$, each spread a store whose elements are:
+
+```math
+\frac{\forall p\in\vec p.\;\Gamma\vdash_G p:E\ \lor\ (p={\ldots}s\land\Gamma\vdash_G s:S\land\mathrm{Spreads}_G(S,E))
+      \qquad L\equiv_G\mathsf{list}([\,],[\,],E)_{\pi,\rho}}
+     {\Gamma\vdash_G \mathsf{arrLit}(\vec p):L}\ \textsf{arrParts}
+```
+
+$`\pi`$ is any presence mode and $`\rho`$ either readonly flag: every
+position holds a location of its own, so the fresh store meets each
+(`fresh_store_safe`). No existing location is retyped. The parts run in the
+same list context as a call's actuals, which `RestCalls.parts_safe` states
+once for both (`store_parts_safe`, `spread_parts_safe`). A source literal
+`[a, ...xs, b]` spreads the store of the array object `xs`, `xs.[]`; one whose
+spread is followed by an element that runs code copies the spread where it is
+written, `[...xs]`, the one-part instance of the rule, so the later element
+cannot change what the literal holds. A literal without a spread is `arrLit`.
 
 A string owns its `length` and its code units ([semantics](SEMANTICS.md#operational-language),
 "Strings"). `lenStr` reads the length of an operand whose every clause is a

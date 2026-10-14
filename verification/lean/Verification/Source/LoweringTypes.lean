@@ -465,7 +465,7 @@ negation. -/
           "a read at a key that may name a member every object inherits from `Object.prototype` (`toString`, `constructor`, `valueOf`, ...): the model's objects hold no prototype there, so a key the object may lack is read only where no member of it is under the key")
       return .index p none e key
     | .element => return .elemAt p e key
-  | .arrayLit p es => return .arrayLit p (← es.mapM (comparisonsExpr fc))
+  | .arrayLit p es spreads => return .arrayLit p (← es.mapM (comparisonsExpr fc)) spreads
   | .arrayAssign p targets rest rhs =>
     let targets ← targets.mapM fun q => do
       return { q with default_ := ← q.default_.mapM (comparisonsExpr fc) }

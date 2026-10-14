@@ -785,18 +785,21 @@ came from a different context. No execution budget is inspected. -/
           (A :: pool).findCheck? fun N =>
             let e := ProgramCertificates.Evidence.node ⟨Γ,t,N⟩ .arith [ea,eb]
             (checkTreeResult G images e).bind fun _ => coerce G images aliases e A
-    -- A copy of a spread: a store type of any length at some element type,
-    -- and a pool store type whose elements it admits.
-    | .arrLit [.spread src] =>
-      return (A :: pool).findCheck? fun L => do
-        let [.list ⟨[], [], some E, false, _⟩ []] := expand G L | none
-        pool.findCheck? fun S => do
-          if !decide (SpreadsInto G S E) then none else do
-          let es ← recur Γ src S
-          coerce G images aliases (.node ⟨Γ,t,L⟩ (.arrCopy E) [es]) A
+    -- A literal with spreads: a store type of any length at some element
+    -- type, each plain part at it, and for each spread a pool store type
+    -- whose elements it admits.
     | .arrLit inits =>
-      -- The claimed type, or a pool type, names the tuple; each initializer
-      -- is typed at its position's contract.
+      let flags := inits.map fun a => match a with | .spread _ => true | _ => false
+      if flags.any id then
+        return (A :: pool).findCheck? fun L => do
+          let [.list ⟨[], [], some E, _, _⟩ []] := expand G L | none
+          let es ← inits.mapM fun a => match a with
+            | .spread src => pool.findCheck? fun S =>
+                if decide (SpreadsInto G S E) then recur Γ src S else none
+            | a => recur Γ a E
+          coerce G images aliases (.node ⟨Γ,t,L⟩ (.arrParts E flags) es) A
+      -- Without a spread, the claimed type, or a pool type, names the tuple;
+      -- each initializer is typed at its position's contract.
       return (A :: pool).findCheck? fun L => do
         let [.list T []] := expand G L | none
         if inits.length < T.required.length then none else

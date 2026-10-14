@@ -513,8 +513,11 @@ inductive Expr where
   expression obligation must establish it. -/
   | index (pos : Span) (field : Option String) (e key : Expr)
   | indexWrite (pos : Span) (field : Option String) (receiver key rhs : Expr)
-  /-- An array literal: one element per initializer, in source order. -/
-  | arrayLit (pos : Span) (elems : List Expr)
+  /-- An array literal: one element per initializer, in source order.
+  `spreads` are the positions of the elements written with `...`, in
+  order: each stands for the elements of its operand's store, read where it
+  is written. -/
+  | arrayLit (pos : Span) (elems : List Expr) (spreads : List Nat)
   /-- `[a, b = d, ...r] = rhs`: the right side once, then, for each target
   in turn, its reference (a field's receiver, then its key), then its
   position of the store, or its default when that read is undefined, written
@@ -693,7 +696,7 @@ partial def Expr.freeNames : Expr → List String
       (fun n => !(ps.map Prod.fst).contains n && (receiver.isNone || n != "this"))
   | .shapeTest _ _ _ e | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .ctor _ e => e.freeNames
   | .construct _ f args _ _ => f.freeNames ++ args.flatMap Expr.freeNames
-  | .alloc _ _ es | .build _ _ es | .arrayLit _ es => es.flatMap Expr.freeNames
+  | .alloc _ _ es | .build _ _ es | .arrayLit _ es _ => es.flatMap Expr.freeNames
   | .logical _ _ a b | .coalesce _ a b | .equality _ _ a b
   | .singletonTest _ _ _ _ a b | .write _ _ a b | .index _ _ a b
   | .elemAt _ a b | .arith _ _ a b | .logicalAssign _ _ a b | .comma _ a b | .inKeys _ a b
@@ -726,7 +729,7 @@ partial def Expr.callees : Expr → List (Span × Span × String × List Json)
   | .shapeTest _ _ _ e | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .ctor _ e => e.callees
   | .construct p f args _ ts =>
     (match f with | .var q n => [(p, q, n, ts)] | _ => []) ++ f.callees ++ args.flatMap Expr.callees
-  | .alloc _ _ es | .build _ _ es | .arrayLit _ es => es.flatMap Expr.callees
+  | .alloc _ _ es | .build _ _ es | .arrayLit _ es _ => es.flatMap Expr.callees
   | .logical _ _ a b | .coalesce _ a b | .equality _ _ a b
   | .singletonTest _ _ _ _ a b | .write _ _ a b | .index _ _ a b
   | .elemAt _ a b | .arith _ _ a b | .logicalAssign _ _ a b | .comma _ a b | .inKeys _ a b
@@ -848,7 +851,7 @@ def Expr.span : Expr → Span
   | .ifBody p _ _ _ | .equality p _ _ _ | .singletonTest p _ _ _ _ _ | .coalesce p _ _ | .logical p _ _ _ => p
   | .index p _ _ _ | .indexWrite p _ _ _ _ | .arith p _ _ _ | .update p _ _ _ _ | .logicalAssign p _ _ _ => p
   | .comma p _ _ | .inKeys p _ _ | .optional p _ _ _ | .block p _ => p
-  | .arrayLit p _ | .elemAt p _ _ | .elemWrite p _ _ _ | .arrayAssign p _ _ _ => p
+  | .arrayLit p _ _ | .elemAt p _ _ | .elemWrite p _ _ _ | .arrayAssign p _ _ _ => p
   | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .unary p _ _ | .cast p _ _ | .alloc p _ _ | .build p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .objectAssign p _ _ | .lambda p _ _ _ _ _ _ _ | .call p _ _ _ _ | .invoke p _ _ _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ | .applyWithReceiver p _ _ _ | .ctor p _ | .construct p _ _ _ _ => p
 
 
@@ -972,15 +975,17 @@ private def decodeTypeArgs (j : Json) : Except String (List Json) := do
 private def typeArgsField (typeArgs : List Json) : List String :=
   if typeArgs.isEmpty then [] else ["typeArgs"]
 
-/-- A call's spread positions, and the exact fields of the call. -/
-private def decodeSpreads (j : Json) (arity : Nat) (optional : List String) :
+/-- A call's or an array literal's spread positions, and its exact fields:
+`fields`, then `spreads` when written, then the optional ones. -/
+private def decodeSpreads (j : Json) (arity : Nat) (optional : List String)
+    (fields : List String := ["k","pos","callee","args"]) :
     Except String (List Nat) := do
   match (j.getObjVal? "spreads").toOption with
   | none => do
-    fieldsExactly j (["k","pos","callee","args"] ++ optional)
+    fieldsExactly j (fields ++ optional)
     pure []
   | some marked => do
-    fieldsExactly j (["k","pos","callee","args","spreads"] ++ optional)
+    fieldsExactly j (fields ++ "spreads" :: optional)
     let spreads ← (← marked.getArr?).toList.mapM fun i => do
       let i ← i.getNat?
       if i ≥ arity then throw "a spread position names no argument"
@@ -1152,8 +1157,8 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     return .update p op (← decodeExpr (← jField j "target"))
       rhs (← (← jField j "post").getBool?)
   | "arrayLit" => do
-    fieldsExactly j ["k","pos","elems"]
-    return .arrayLit p (← (← jArr j "elems").mapM decodeExpr)
+    let elems ← (← jArr j "elems").mapM decodeExpr
+    return .arrayLit p elems (← decodeSpreads j elems.length [] ["k","pos","elems"])
   | "arrayAssign" => do
     fieldsExactly j ["k","pos","targets","rest","rhs"]
     let targets ← (← jArr j "targets").mapM (decodeArrayElem decodeExpr)

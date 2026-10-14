@@ -1161,6 +1161,31 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   assert.match(unguarded.detail, /unguarded alias cycle through Box: a recursive alias must reach itself through an object, array, tuple or function type/);
 }
 {
+  // An array literal's spread is copied before a later element that runs
+  // code, as JavaScript reads it there; a spread operand claimed at other
+  // than an array is refused where the elements are produced and checked.
+  const good = run("array-literal-spread");
+  assert.equal(runExample("array-literal-spread", "snapshot()"), 22);
+  const source = readFileSync(join(good, "source.ts"), "utf8");
+  const claims = readClaims(good);
+  const fn = must(claims.functions.find(f => f.name === "appended"), "appended function");
+  const start = source.indexOf("[...xs, x]") + "[...".length;
+  const operand = must(fn.expressions.find(e => e.pos[0] === start && e.pos[1] === start + 2), "spread operand claim");
+  const number = claims.types.findIndex(r => Array.isArray(r) && r.length === 1 && r[0] === "num");
+  assert(number >= 0);
+  operand.type = [number];
+  const forged = writeClaims(good, "array-spread-number", claims);
+  for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
+    const result = spawnSync(verifier, [mode, join(good, "fragment.json"), forged,
+      join(good, "source.ts"), join(good, mode === "--produce-source-claims"
+        ? "array-spread-forged-evidence.json" : "evidence.json"),
+      ...(mode === "--produce-source-claims" ? ["12"] : [])],
+      { encoding: "utf8", timeout: 30_000 });
+    assert.ifError(result.error);
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+  }
+}
+{
   const good = run("constructor-tuple-spread");
   assert.equal(runExample("constructor-tuple-spread", "snapshot()"), 12);
   const source = readFileSync(join(good, "source.ts"), "utf8");

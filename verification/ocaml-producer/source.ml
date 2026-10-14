@@ -475,7 +475,9 @@ and expr_node =
   (* An optional chain: the receiver once, `undefined` where it is nullish,
      else the body, which reads the receiver as `chain_name`. *)
   | Optional of expr * expr
-  | ArrayLiteral of expr list | Index of expr * expr | IndexWrite of expr * expr * expr
+  (* An array literal's elements, and the positions of those written with
+     `...`, each standing for its operand's elements. *)
+  | ArrayLiteral of expr list * int list | Index of expr * expr | IndexWrite of expr * expr * expr
   | Bind of expr * expr * expr list
   (* `Object.assign(target, ...sources)`, other than the callable form: the
      target, then each source copied onto it as it is evaluated. *)
@@ -574,7 +576,7 @@ let rec children e = match e.node with
   | Conditional (a,b,c) | IndexWrite (a,b,c) -> [a;b;c]
   | Alloc fs -> List.map snd fs
   | Build parts -> List.map snd parts
-  | ArrayLiteral es -> es
+  | ArrayLiteral (es,_) -> es
   | Lambda (_,_,_,defaults,_,_,body) -> List.map snd defaults @ [body]
   | Call (f,r,args,_,_) -> f :: Option.to_list r @ args
   | Invoke (f,args,_,_) | New (f,_,args,_) -> f :: args
@@ -635,7 +637,7 @@ let rec heap_preserving_expr ?(inline=false) ~readable ~callable values (e:expr)
   | Conditional (c,a,b) -> pure c && pure a && pure b
   | Read (a,key) -> not inline && pure a && readable a key
   | Alloc fields -> not inline && List.for_all (fun (_,e) -> pure e) fields
-  | ArrayLiteral es -> not inline && List.for_all pure es
+  | ArrayLiteral (es,spreads) -> not inline && spreads=[] && List.for_all pure es
   | Lambda _ -> not inline
   | Call (callee,receiver,args,spreads,_) -> not inline && spreads=[] &&
     pure callee && Option.fold ~none:true ~some:pure receiver &&
@@ -772,7 +774,11 @@ let rec expr binders j =
     Call (sub "callee",Some (sub "receiver"),List.map (expr binders) (items "args" j),[],[])
   | "coalesce" -> Coalesce (sub "left",sub "right")
   | "optional" -> Optional (sub "receiver",sub "body")
-  | "arrayLit" -> ArrayLiteral (List.map (expr binders) (items "elems" j))
+  | "arrayLit" ->
+    let spreads = match List.assoc_opt "spreads" (obj j) with
+      | None -> [] | Some s -> List.map (fun n -> int_of_string (match n with
+          | Json.Number n -> n | _ -> Json.fail "a spread position is a number")) (list s) in
+    ArrayLiteral (List.map (expr binders) (items "elems" j),spreads)
   | "index" -> Index (sub "e",sub "key")
   | "indexWrite" -> IndexWrite (sub "receiver",sub "key",sub "rhs")
   | "withValue" -> WithFields (sub "fn",sub "initial",source_type binders (field "functionType" j),source_type binders (field "bagType" j))

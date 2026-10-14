@@ -250,7 +250,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
       (* A literal's positions past the rest's index are the rest's: its
          tuple's positions or its array's element. *)
       let width = match rhs.node,rest with
-        | ArrayLiteral es,_ -> List.length es
+        | ArrayLiteral (es,[]),_ -> List.length es
         | _,Some (i,_,_,_) -> i
         | _,None -> 1 + List.fold_left (fun m (i,_,_) -> max m i) (-1) targets in
       let required = List.init width (fun i -> match List.find_opt (fun (j,_,_) -> j=i) targets,rest with

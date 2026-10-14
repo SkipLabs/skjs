@@ -1873,19 +1873,21 @@ class Gate {
         // yields, as an argument spread's operand is (`spreadOperand`).
         if (kind) return this.spreadOperand(only);
       }
-      if (
-        node.elements.some(
-          (e) => ts.isSpreadElement(e) || ts.isOmittedExpression(e),
-        )
-      )
-        this.fail(
-          node,
-          "array literal spreads and holes are outside the fragment",
-        );
+      if (node.elements.some((e) => ts.isOmittedExpression(e)))
+        this.fail(node, "array literal holes are outside the fragment");
+      // A spread among other elements stands for its operand's elements,
+      // read where it is written, as an argument spread's operand is.
+      const spreads: number[] = [];
+      const elems = node.elements.map((e, i) => {
+        if (!ts.isSpreadElement(e)) return this.expr(e);
+        spreads.push(i);
+        return this.spreadOperand(e);
+      });
       return {
         k: "arrayLit",
         pos: this.span(node),
-        elems: node.elements.map((e) => this.expr(e)),
+        elems,
+        ...(spreads.length ? { spreads } : {}),
       };
     }
 

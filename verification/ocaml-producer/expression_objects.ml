@@ -146,10 +146,13 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
         merge alts (source_alternatives declarations [] (expr env s)))
         (source_alternatives ~target:true declarations [] (expr env target)) sources in
       combine (List.map alternative_type alts)
-    | ArrayLiteral es ->
+    | ArrayLiteral (es,spreads) ->
       (* One array arm of the expected type is the literal's contract: an
          optional array parameter, `readonly T[] | undefined`, is its array;
-         a declaration's, such as a tuple alias at arguments, its equation's. *)
+         a declaration's, such as a tuple alias at arguments, its equation's.
+         A spread stands for its operand's elements: their union is what it
+         adds, and the expected element type is what its operand's array
+         holds. *)
       let arrays = match expected with
         | Some (Atoms atoms) -> List.concat_map (fun atom -> match atom with
           | Shape {elements=Some s;_} -> [s]
@@ -161,15 +164,27 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
         | _ -> [] in
       let contract = match expected,arrays with
         | _,[s] -> Some s
-        | _,_::_::_ when discriminated_array declarations arrays es <> None ->
+        | _,_::_::_ when spreads = [] && discriminated_array declarations arrays es <> None ->
           discriminated_array declarations arrays es
         | Some expected,_ ->
           Option.map (fun t -> {required=[];optional_elements=[];rest=Some t;readonly=true;presence=Readable})
             (iterated_hint declarations expected)
         | None,_ -> None in
+      let elements t = match (try declared_head declarations [] t with Json.Error _ -> t) with
+        | Atoms [Shape {elements=Some s;_}] ->
+          let held = combine (s.required @ s.optional_elements @ Option.to_list s.rest) in
+          Some (if s.presence = Sparse then union held (Atoms [Undef]) else held)
+        | t -> iterated_hint declarations t in
       let types = List.mapi (fun i e ->
         let expected = Option.bind contract (fun s -> match List.nth_opt (s.required @ s.optional_elements) i with
-          | Some t -> Some t | None -> s.rest) in expr ?expected env e) es in
+          | Some t -> Some t | None -> s.rest) in
+        if List.mem i spreads then
+          let expected = Option.map (fun t ->
+            array {required=[];optional_elements=[];rest=Some t;readonly=true;presence=Readable}) expected in
+          match elements (expr ?expected env e) with
+          | Some t -> t
+          | None -> Proposal_diagnostics.unsupported "an array literal spread needs an array operand"
+        else expr ?expected env e) es in
       (match contract with
         | Some s -> array s
         | None -> array {required=[];optional_elements=[];rest=Some (widen (combine types));readonly=false;presence=Readable})

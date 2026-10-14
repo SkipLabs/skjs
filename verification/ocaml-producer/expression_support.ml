@@ -28,7 +28,7 @@ open S
     | Literal l -> Some (literal_type l)
     | Id n -> Some (resolve env n)
     | Cast ("const",None,e) -> const_type expr ~nested env e
-    | ArrayLiteral es ->
+    | ArrayLiteral (es,[]) ->
       let elements = List.map (const_type expr ~nested:true env) es in
       if List.mem None elements then None
       else Some (array {required=List.filter_map Fun.id elements;optional_elements=[];rest=None;readonly=true;presence=Dense})

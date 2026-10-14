@@ -299,8 +299,8 @@ inductive Rule (ι : Type) where
   | unionVar (slot : Nat)
   | callCallable (effect : Effect)
   | readCallable | writeCallable
-  /-- A copy of a spread, at the element type its store holds. -/
-  | arrCopy (elem : Ty ι)
+  /-- A literal with spreads, at its element type: which parts are spreads. -/
+  | arrParts (elem : Ty ι) (spreads : List Bool)
   /-- How many actuals are fixed, which later ones are spreads, and the rest
   type the further ones fit. -/
   | callRest (effect : Effect) (fixed omitted : Nat) (spreads : List Bool) (rest : Ty ι)
@@ -1097,15 +1097,19 @@ declared bounds. -/
       | [.callable P _ _ _] => (f, jb.type) ∈ P
       | _ => False
     | _, _ => False
-  -- The one premise is the store the spread reads.
-  | .arrCopy E =>
-    match j.term, ps with
-    | .arrLit [.spread s], [js] =>
-      js.context = j.context ∧ js.term = s ∧ SpreadsInto G js.type E ∧
+  -- One premise per part: the entry itself, at the element type, or, for a
+  -- part flagged as a spread, the store it reads, whose elements that type
+  -- admits.
+  | .arrParts E flags =>
+    match j.term with
+    | .arrLit args =>
+      (∀ jp ∈ ps, jp.context = j.context) ∧ ps.length = flags.length ∧
+      args = (flags.zip ps).map (fun q => spreadTerm (q.1, q.2.term)) ∧
+      (∀ q ∈ flags.zip ps, if q.1 then SpreadsInto G q.2.type E else q.2.type = E) ∧
       match expand G j.type with
-      | [.list ⟨[], [], some E', false, _⟩ []] => E = E'
+      | [.list ⟨[], [], some E', _, _⟩ []] => E = E'
       | _ => False
-    | _, _ => False
+    | _ => False
   -- The callee, the receiver, the fixed actuals, one `undefined` premise per
   -- fixed position the call omits, then one premise per further part: the
   -- actual itself, or the store a spread reads. A call that omits a position
@@ -1233,7 +1237,7 @@ retain the subtype outcome; other rule predicates are their declarative checks. 
     | .letE | .alloc | .read | .readView | .write | .arith | .test | .readDict .. | .indexDict ..
     | .readOptional .. | .readProto .. | .arrLit | .elem | .setElem | .len | .lenStr | .elemStr ..
     | .elemOpt .. | .elemAny .. | .ifBool | .ifTrue | .ifFalse | .ifKnown .. | .ifBoolVar ..
-    | .unionVar .. | .callCallable .. | .readCallable | .writeCallable | .arrCopy ..
+    | .unionVar .. | .callCallable .. | .readCallable | .writeCallable | .arrParts ..
     | .callRest .. | .bindE | .bindRestE | .construct | .throw | .merge | .makeKey | .lenView .. =>
       CheckResult.ofBool (decide (LocalUsing G images j r ps codes))
 
@@ -1998,14 +2002,25 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
     · rename_i P Ps L he
       exact .writeCallable ha he hL hb hn
     · contradiction
-  · rename_i E _ _ s js
-    rcases hl with ⟨hΓ, ht, hsp, hr⟩
-    have h := hp js (by simp)
-    rw [hΓ, ht] at h
+  · rename_i E flags _ args
+    rcases hl with ⟨hctx, hlen, rfl, hparts, hr⟩
     split at hr
-    · rename_i E' presence hT
-      cases hr
-      exact .arrCopy h hsp hT
+    · rename_i ro presence hT
+      subst hr
+      have := HasTyUsing.arrParts (ro := ro) (presence := presence)
+        (parts := (flags.zip ps).map fun q => (q.1, q.2.type, q.2.term))
+        (by
+          intro p hm
+          obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hm
+          have h := hp q.2 (List.of_mem_zip hq).2
+          rw [hctx q.2 (List.of_mem_zip hq).2] at h
+          exact h)
+        (by
+          intro p hm
+          obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hm
+          exact hparts q hq)
+        hT
+      simpa [List.map_map, Function.comp_def] using this
     · contradiction
   · rename_i k u flags P _ _ f r args jf jr jas
     rcases hl with ⟨hΓf, htf, hΓr, htr, hctx, hlen, hshort, rfl, hundef, hparts, hL⟩
@@ -2693,11 +2708,23 @@ theorem checkTreeUsing_complete [DecidableEq ι] {G : NormalGraph ι}
     · intro j hj
       obtain ⟨a,ha,rfl⟩ := List.mem_map.mp hj
       exact ih a ha
-  | @arrCopy Γ s S T E presence hs hsp hr ih =>
-    apply node_complete (G := G) (images := images) (j := ⟨Γ, .arrLit [.spread s], T⟩) (r := .arrCopy E)
-      (js := [⟨Γ, s, S⟩]) ⟨rfl, rfl, hsp, by
-        simp only [show expand G T = [.list ⟨[], [], some E, false, presence⟩ []] from hr]⟩
-    simpa using ih
+  | @arrParts Γ T E ro presence parts hp hparts hr ih =>
+    have hzip : (parts.map Prod.fst).zip (parts.map (fun p => (⟨Γ,p.2.2,p.2.1⟩ : Sequent ι)))
+        = parts.map (fun p => (p.1, (⟨Γ,p.2.2,p.2.1⟩ : Sequent ι))) := List.zip_map'
+    apply node_complete (G := G) (images := images) (r := .arrParts E (parts.map Prod.fst))
+      (js := parts.map (fun p => ⟨Γ,p.2.2,p.2.1⟩))
+    · refine ⟨?_, by simp, ?_, ?_, ?_⟩
+      · intro jp hj
+        obtain ⟨p,_,rfl⟩ := List.mem_map.mp hj; rfl
+      · rw [hzip]; simp [List.map_map, Function.comp_def]
+      · rw [hzip]
+        intro q hq
+        obtain ⟨p, hp', rfl⟩ := List.mem_map.mp hq
+        exact hparts p hp'
+      · simp only [show expand G T = [.list ⟨[], [], some E, ro, presence⟩ []] from hr]
+    · intro j hj
+      obtain ⟨p,hp',rfl⟩ := List.mem_map.mp hj
+      exact ih p hp'
   | @callRest effect Γ f r F Rt xs Us P B parts hf hmem hrt hx hu hshort hp hparts
       ihf ihrt ihx ihu ihp =>
     apply node_complete (r := .callRest effect xs.length Us.length (parts.map Prod.fst) P)

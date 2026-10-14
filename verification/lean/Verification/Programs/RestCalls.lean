@@ -209,12 +209,22 @@ def partTerm (p : Option Fam × Tm) : Tm :=
   | none => p.2
   | some _ => .spread p.2
 
-/-- **Actuals after the fixed ones.** Each part is a plain actual at `E` or a
-spread of a store in a family that spreads into `E`; they run left to right,
-each spread read as soon as its store is ready, and the continuation receives
-every element and actual at `E`. -/
-theorem spread_parts_safe {E R : Fam} (hE : Adm E) (hEv : ValOnly E) {f r : Tm}
-    (hf : isVal f = true) (hrv : isVal r = true) :
+/-- **Parts in a list context.** In a context `C` over a list of terms that
+evaluates its entries left to right (`lift`, `raise`) and replaces a spread
+of a ready store by the store's elements once every earlier entry is a value
+(`spread`), as an argument list (`Step.callSpread`) and a store literal
+(`Step.arrSpread`) do: each part is a plain entry at `E` or a spread of a
+store in a family that spreads into `E`; they run left to right, each spread
+read as soon as its store is ready, and the continuation receives every
+element and entry at `E`. -/
+theorem parts_safe {E R : Fam} (hE : Adm E) (hEv : ValOnly E) (C : List Tm → Tm)
+    (lift : ∀ {h h' : Heap} {t t' : Tm} {pre rest : List Tm}, CallArguments.Values pre →
+      Step h t h' t' → Step h (C (pre ++ t :: rest)) h' (C (pre ++ t' :: rest)))
+    (raise : ∀ {t v : Tm} {pre rest : List Tm}, CallArguments.Values pre →
+      Raises t v → Raises (C (pre ++ t :: rest)) v)
+    (spread : ∀ {h : Heap} {pre rest : List Tm} {ls : List (Option Nat)} {vs : List Tm},
+      CallArguments.Values pre → readElems h ls = some vs →
+      Step h (C (pre ++ .spread (.arr ls) :: rest)) h (C (pre ++ vs ++ rest))) :
     ∀ (parts : List (Option Fam × Tm)) (n : Nat) (W : WorldT n) (heap : Heap) (pre : List Tm),
       (∀ p ∈ parts, ∀ S, p.1 = some S → Adm S ∧ Spreads S E) →
       WorldAdm W → HeapOk n W heap → CallArguments.Values pre →
@@ -222,16 +232,16 @@ theorem spread_parts_safe {E R : Fam} (hE : Adm E) (hEv : ValOnly E) {f r : Tm}
         ∀ heap, HeapOk j U heap → Safe Ξ (p.1.getD E) j U heap p.2) →
       (∀ j (hj : j ≤ n) U, WExt (trunc j hj W) U → WorldAdm U →
         ∀ heap extra, HeapOk j U heap → (∀ e ∈ extra, E j U e) →
-          Safe Ξ R j U heap (.invoke f r (pre ++ extra))) →
-      Safe Ξ R n W heap (.invoke f r (pre ++ parts.map partTerm))
+          Safe Ξ R j U heap (C (pre ++ extra))) →
+      Safe Ξ R n W heap (C (pre ++ parts.map partTerm))
   | [], n, W, heap, pre, _, hw, hh, _, _, hk => by
     simpa using hk n (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hw heap [] hh (by simp)
   | (none, a) :: parts, n, W, heap, pre, hS, hw, hh, hp, ht, hk => by
     have ha := ht (none, a) (by simp) n (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hw heap hh
-    apply ctx_bind (A := E) (fun t => .invoke f r (pre ++ t :: parts.map partTerm))
-      (fun s => call_lift hf hrv hp s) (fun s => call_raise hf hrv hp s) n W heap a hw hh ha
+    apply ctx_bind (A := E) (fun t => C (pre ++ t :: parts.map partTerm))
+      (fun s => lift hp s) (fun s => raise hp s) n W heap a hw hh ha
     intro j hj U hx hu heap' v hh' hv hEv'
-    have hrest := spread_parts_safe hE hEv hf hrv parts j U heap' (pre ++ [v])
+    have hrest := parts_safe hE hEv C lift raise spread parts j U heap' (pre ++ [v])
       (fun p hm => hS p (by simp [hm])) hu hh'
       (by intro x hx'; rcases List.mem_append.mp hx' with hx' | hx'
           · exact hp x hx'
@@ -256,9 +266,9 @@ theorem spread_parts_safe {E R : Fam} (hE : Adm E) (hEv : ValOnly E) {f r : Tm}
   | (some S, s) :: parts, n, W, heap, pre, hS, hw, hh, hp, ht, hk => by
     obtain ⟨hSa, hSs⟩ := hS (some S, s) (by simp) S rfl
     have hs := ht (some S, s) (by simp) n (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hw heap hh
-    show Safe Ξ R n W heap (.invoke f r (pre ++ .spread s :: parts.map partTerm))
-    apply ctx_bind (A := S) (fun t => .invoke f r (pre ++ .spread t :: parts.map partTerm))
-      (fun s => call_lift hf hrv hp (.spreadC s)) (fun s => call_raise hf hrv hp (.spreadC s))
+    show Safe Ξ R n W heap (C (pre ++ .spread s :: parts.map partTerm))
+    apply ctx_bind (A := S) (fun t => C (pre ++ .spread t :: parts.map partTerm))
+      (fun s => lift hp (.spreadC s)) (fun s => raise hp (.spreadC s))
       n W heap s hw hh hs
     intro j hj U hx hu heap' v hh' _ hv
     obtain ⟨ls, vs, rfl, hr, he⟩ := hSs j U heap' _ hh' hv
@@ -266,15 +276,15 @@ theorem spread_parts_safe {E R : Fam} (hE : Adm E) (hEv : ValOnly E) {f r : Tm}
     | zero => trivial
     | succ p =>
       have hvs : CallArguments.Values vs := fun e hm => hEv p _ e (he e hm p (by omega))
-      refine Or.inr ⟨trunc p (Nat.le_succ p) U, heap', .invoke f r (pre ++ vs ++ parts.map partTerm), WExt_refl _,
-        WorldAdm_trunc _ hu, .callSpread hf hrv rfl hp hr, HeapOk_trunc p U heap' hh', ?_⟩
+      refine Or.inr ⟨trunc p (Nat.le_succ p) U, heap', C (pre ++ vs ++ parts.map partTerm), WExt_refl _,
+        WorldAdm_trunc _ hu, spread hp hr, HeapOk_trunc p U heap' hh', ?_⟩
       have hUV : ∀ i (hi : i ≤ p) (X : WorldT i),
           WExt (trunc i hi (trunc p (Nat.le_succ p) U)) X → WExt (trunc i (by omega) W) X := by
         intro i hi X hy
         apply WExt_trans _ hy
         have := WExt_trunc (show i ≤ p + 1 by omega) hx
         simpa only [trunc_trunc] using this
-      have hrest := spread_parts_safe hE hEv hf hrv parts p _ heap' (pre ++ vs)
+      have hrest := parts_safe hE hEv C lift raise spread parts p _ heap' (pre ++ vs)
         (fun q hm => hS q (by simp [hm])) (WorldAdm_trunc _ hu) (HeapOk_trunc p U heap' hh')
         (by intro x hx'; rcases List.mem_append.mp hx' with hx' | hx'
             · exact hp x hx'
@@ -293,9 +303,45 @@ theorem spread_parts_safe {E R : Fam} (hE : Adm E) (hEv : ValOnly E) {f r : Tm}
           simpa using this)
       simpa using hrest
 
+/-- **Actuals after the fixed ones**: the parts in an argument list. -/
+theorem spread_parts_safe {E R : Fam} (hE : Adm E) (hEv : ValOnly E) {f r : Tm}
+    (hf : isVal f = true) (hrv : isVal r = true) :
+    ∀ (parts : List (Option Fam × Tm)) (n : Nat) (W : WorldT n) (heap : Heap) (pre : List Tm),
+      (∀ p ∈ parts, ∀ S, p.1 = some S → Adm S ∧ Spreads S E) →
+      WorldAdm W → HeapOk n W heap → CallArguments.Values pre →
+      (∀ p ∈ parts, ∀ j (hj : j ≤ n) U, WExt (trunc j hj W) U → WorldAdm U →
+        ∀ heap, HeapOk j U heap → Safe Ξ (p.1.getD E) j U heap p.2) →
+      (∀ j (hj : j ≤ n) U, WExt (trunc j hj W) U → WorldAdm U →
+        ∀ heap extra, HeapOk j U heap → (∀ e ∈ extra, E j U e) →
+          Safe Ξ R j U heap (.invoke f r (pre ++ extra))) →
+      Safe Ξ R n W heap (.invoke f r (pre ++ parts.map partTerm)) :=
+  parts_safe hE hEv (fun args => .invoke f r args) (fun hp s => call_lift hf hrv hp s)
+    (fun hp s => call_raise hf hrv hp s) (fun hp hr => .callSpread hf hrv rfl hp hr)
+
+/-- **The parts of a store literal**, evaluated as actuals are. -/
+theorem store_parts_safe {E R : Fam} (hE : Adm E) (hEv : ValOnly E) :
+    ∀ (parts : List (Option Fam × Tm)) (n : Nat) (W : WorldT n) (heap : Heap),
+      (∀ p ∈ parts, ∀ S, p.1 = some S → Adm S ∧ Spreads S E) →
+      WorldAdm W → HeapOk n W heap →
+      (∀ p ∈ parts, ∀ j (hj : j ≤ n) U, WExt (trunc j hj W) U → WorldAdm U →
+        ∀ heap, HeapOk j U heap → Safe Ξ (p.1.getD E) j U heap p.2) →
+      (∀ j (hj : j ≤ n) U, WExt (trunc j hj W) U → WorldAdm U →
+        ∀ heap extra, HeapOk j U heap → (∀ e ∈ extra, E j U e) →
+          Safe Ξ R j U heap (.arrLit extra)) →
+      Safe Ξ R n W heap (.arrLit (parts.map partTerm)) := by
+  intro parts n W heap hS hw hh ht hk
+  have := parts_safe (R := R) hE hEv Tm.arrLit
+    (fun hp s => CallArguments.Step.arrArgs (CallArguments.keep_prefix hp (.head s)))
+    (fun hp s => .arrArg (prefix_position hp).1 (prefix_position hp).2 s)
+    (fun hp hr => .arrSpread rfl hp hr) parts n W heap [] hS hw hh (by simp [CallArguments.Values]) ht
+    (by simpa using hk)
+  simpa using this
+
 #print axioms argument_alloc_safe
 #print axioms call_elim_rest
 #print axioms listT_spreads
+#print axioms parts_safe
 #print axioms spread_parts_safe
+#print axioms store_parts_safe
 
 end Verification.RestCalls

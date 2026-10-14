@@ -14,7 +14,7 @@ partial def expressionOccurrences (e : Expr) : List Expr :=
     | .var .. | .lit .. | .lambda .. | .ctor .. | .block .. => []
     | .shapeTest _ _ _ a | .not _ a | .unary _ _ a | .cast _ _ a | .read _ _ a
     | .assign _ _ _ a | .nullishAssign _ _ _ a => [a]
-    | .alloc _ _ es | .build _ _ es | .arrayLit _ es => es
+    | .alloc _ _ es | .build _ _ es | .arrayLit _ es _ => es
     | .logical _ _ a b | .coalesce _ a b | .equality _ _ a b
     | .singletonTest _ _ _ _ a b | .write _ _ a b | .index _ _ a b
     | .elemAt _ a b | .arith _ _ a b | .inKeys _ a b | .comma _ a b

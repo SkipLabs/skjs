@@ -345,7 +345,7 @@ meaning for an invalid serialized type reference. -/
       | .funGraph As | .callableGraph As => As.all (validTy ok)
       | .ctorGraph U => validTy ok U
       | .callRest _ _ _ _ E => validTy ok E
-      | .arrCopy E => validTy ok E
+      | .arrParts E _ => validTy ok E
       | .readProto P => validTy ok P
       | .elemOpt U | .elemAny U => validTy ok U
       | .elemStr T U => validTy ok T && validTy ok U

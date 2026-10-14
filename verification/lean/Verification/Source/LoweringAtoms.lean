@@ -623,7 +623,7 @@ Mappings discard only the temporaries introduced by this expression. -/
     compileAtom recursive fc scope Γ callee afterReceiver
   | .call _ callee args _ _ | .callWithReceiver _ callee _ args | .invoke _ callee args _ _ =>
     compileCall (compileAtom recursive fc) fc scope Γ e callee args A next
-  | .arrayLit _ elems =>
+  | .arrayLit _ elems spreads =>
     -- The elements, in order, then the store they fill, then the array
     -- object holding it: two nodes, so the allocation's slots are variables.
     let G := SourceTypes.graph (← table)
@@ -636,7 +636,6 @@ Mappings discard only the temporaries introduced by this expression. -/
     let makeScope := held ⟨"",some e.span⟩ :: temporaries ++ scope
     let proto ← prototypeSlot makeScope
     let O ← arrayObject S
-    let [.list T []] := PositiveRules.expand G S | throw "an array literal needs one tuple contract"
     -- Both nodes' derivations are known: the object holding the store and
     -- the prototype, and the store of the elements at their positions.
     let H := S :: As.reverse ++ Γ
@@ -644,12 +643,31 @@ Mappings discard only the temporaries introduced by this expression. -/
     let make ← emitPlanned e.span (DirectProof.node H (arrayTerm proto) O .alloc
         [DirectProof.var H 0 S, DirectProof.var H proto P]) (.bind drop) H A (scope := makeScope)
     let K := As.reverse ++ Γ
-    let casts ← (List.range n).mapM fun i => do
-      let some D := ProgramTyping.positionTy T i | throw "an array literal has more elements than its claim"
-      let some Ai := As[i]? | throw "internal element slot mismatch"
-      pure (DirectProof.cast K D (DirectProof.var K (n-1-i) Ai))
-    let store ← emitPlanned e.span (DirectProof.node K (.arrLit ((List.range n).map fun i => .var (n-1-i))) S
-        .arrLit casts) (.bind make) K S (scope := temporaries ++ scope)
+    let storePlan ← if spreads.isEmpty then do
+        let [.list T []] := PositiveRules.expand G S | throw "an array literal needs one tuple contract"
+        let casts ← (List.range n).mapM fun i => do
+          let some D := ProgramTyping.positionTy T i | throw "an array literal has more elements than its claim"
+          let some Ai := As[i]? | throw "internal element slot mismatch"
+          pure (DirectProof.cast K D (DirectProof.var K (n-1-i) Ai))
+        pure (DirectProof.node K (.arrLit ((List.range n).map fun i => .var (n-1-i))) S .arrLit casts)
+      else do
+        -- With a spread, the store's length is not known: every position is
+        -- at the claim's one element type, each plain element cast to it,
+        -- each spread the store its operand holds (or is, for a copy).
+        let [.list ⟨[], [], some E, _, _⟩ []] := PositiveRules.expand G S
+          | throw (locatedRefusal (← table) e.span .bindingAnnotation
+              "an array literal with a spread needs an array claim of one element type")
+        let parts ← (List.range n).mapM fun i => do
+          let some Ai := As[i]? | throw "internal element slot mismatch"
+          let v := DirectProof.var K (n-1-i) Ai
+          if spreads.contains i then
+            match PositiveRules.expand G Ai with
+            | [.list ..] => pure (true, v)
+            | _ => pure (true, ← readCell G K SourceTypes.storeField v)
+          else pure (false, DirectProof.cast K E v)
+        pure (DirectProof.node K (.arrLit (parts.map fun (s, p) => if s then .spread p.term else p.term)) S
+          (.arrParts E (parts.map (·.1))) (parts.map (·.2)))
+    let store ← emitPlanned e.span storePlan (.bind make) K S (scope := temporaries ++ scope)
     elems.attach.zipIdx.reverse.foldlM (fun next (⟨arg,_⟩,i) =>
       compileAtom recursive fc
         ((elems.take i |>.map fun a => held ⟨"",some a.span⟩).reverse ++ scope)

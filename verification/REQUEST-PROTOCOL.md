@@ -271,7 +271,7 @@ one subtype-evidence list per outgoing edge. A derivation node names the
 `read`, `readOptional`, `readDict`, `indexDict`, `write`, `ifBool`, `ifTrue`, `ifFalse`, `ifKnown`, `ifBoolVar`,
 `unionVar`, `callCallable`, `readCallable`, `writeCallable`, `readView`, `lenView`, `readProto`, `arith`, `test`,
 `arrLit`, `elem`, `elemOpt`, `elemAny`, `setElem`, `len`, `lenStr`, `elemStr`,
-`callRest`, `arrCopy`, `bindE`, `bindRestE`, `bindMember`, `construct`, `sub`,
+`callRest`, `arrParts`, `bindE`, `bindRestE`, `bindMember`, `construct`, `sub`,
 `throw`, whose one premise types the thrown operand, `makeKey`, an allocation
 at a key known only at run time, whose two premises type the key and the
 initializer, or `merge`, an allocation from parts, whose two premises type
@@ -428,9 +428,10 @@ instead be one of the method's quantified signatures, a scheme row
 callee premise, one premise per fixed actual, one `undefined` premise per fixed
 position the call omits, then one per further part: the actual at the element
 type the rule names, or, for a part the rule flags as a spread, the store the
-spread reads, at a type whose elements that element type admits. `arrCopy`
-types `[...s]` with one premise, the store `s`. Its result is fresh writable
-storage, with the element contract `E` and any chosen presence mode; the copied
+spread reads, at a type whose elements that element type admits. `arrParts`
+names the element type and flags the parts that are spreads, with one premise
+per part, as `callRest`'s further parts; its result is fresh storage with the
+element contract `E`, either readonly flag and any chosen presence mode; the
 values fill every position, including explicit `undefined` read from source holes.
 The result graph supplies the presence mode. Tuple contracts require `presence`
 with exactly `"dense"`, `"readable"` or `"sparse"`; there is no Boolean fallback.

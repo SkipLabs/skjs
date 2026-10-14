@@ -60,8 +60,11 @@ export type Expr =
   /* `e[key]`: evaluate the receiver, then the key. A string singleton names
      one field; a broad string reads through a dictionary view. */
   | { k: "index"; pos: Span; e: Expr; key: Expr }
-  /* An array literal: one element per initializer, in source order. */
-  | { k: "arrayLit"; pos: Span; elems: Expr[] }
+  /* An array literal: one element per initializer, in source order.
+     `spreads` are the indices of the elements written with `...`: each
+     stands for the elements of its operand's store, read where it is
+     written. */
+  | { k: "arrayLit"; pos: Span; elems: Expr[]; spreads?: number[] }
   /* `[a, o.f = d, ...r] = rhs`: the right side once, then each target, a
      mutable local or a field, in turn: its reference (receiver, then key),
      then its position of the store, or its default when that read is
