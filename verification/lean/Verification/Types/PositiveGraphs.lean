@@ -372,13 +372,13 @@ def SchemeDomain.ordinary : SchemeDomain ι k where
   ordinary_allowed _ _ h := h
   congr s t h _ As := by rw [h]
 
-/-- What the realm's arrays are, as a graph states it: the type of
+/-- What the built-in arrays are, as a graph states it: the type of
 `Array.prototype` (`ArrayProto`) and the keys that prototype provides, none
 of which an array owns. It is what the array invariant (`arrayInvariant`)
 reads. -/
-structure ArrayRealm (ι : Type) where
+structure ArrayBuiltins (ι : Type) where
   proto : List ι
-  /-- The realm's `unknown`: the type of an array's elements, and of a thrown value. -/
+  /-- The built-ins' `unknown`: the type of an array's elements, and of a thrown value. -/
   unknown : List ι
   keys : List PropKey
   deriving DecidableEq, Repr
@@ -398,10 +398,10 @@ structure NormalGraph (ι : Type) where
   env : MixedAssignment ι := ParameterAssignment.empty .mixed
   /-- The reviewed substitution universe is fixed across the graph's tower. -/
   domain : SchemeDomain ι .mixed := .ordinary
-  /-- The realm's arrays, where the graph states them: then every record and
+  /-- The built-in arrays, where the graph states them: then every record and
   dictionary type is of objects meeting the array invariant
-  (`realmInvariant`). A graph without arrays states none. -/
-  realm : Option (ArrayRealm ι) := none
+  (`builtinInvariant`). A graph without arrays states none. -/
+  builtins : Option (ArrayBuiltins ι) := none
 
 /-- Whether a row is a parameter is derived from its kind, never maintained
 separately. -/
@@ -480,23 +480,23 @@ def plainArguments (G : NormalGraph ι) (X : List ι → Fam) (S : List ι) : Ar
 
 /-! ## The array invariant
 
-An object owning the array store key is an array of the realm: its store may have holes, it holds `Array.prototype` under the prototype key, and it owns no key
+An object owning the array store key is a built-in array: its store may have holes, it holds `Array.prototype` under the prototype key, and it owns no key
 that prototype provides. Every array a program allocates is one; every object
 it receives at a record or dictionary type is assumed to be one (the
 environment premise, through `meaning`). The store key is a key no source
 spells and no step adds, so the invariant is a fact of the object's identity:
 it reads the world's contracts only, never the heap. -/
 
-/-- The store an array of the realm holds: possibly sparse, each element a
-value of `U`, the realm's `unknown`. -/
-def realmStoreT (U : Fam) : Fam := listT ⟨[], [], some U, true, .sparse⟩
+/-- The store a built-in array holds: possibly sparse, each element a
+value of `U`, the built-ins' `unknown`. -/
+def builtinStoreT (U : Fam) : Fam := listT ⟨[], [], some U, true, .sparse⟩
 
 /-- A store under a tuple contract whose positions are within `U` is a store
-of the realm. -/
-theorem listT_realmStore {U : Fam} {T : TupleF}
+of the built-ins. -/
+theorem listT_builtinStore {U : Fam} {T : TupleF}
     (hT : ∀ A, (A ∈ T.required ∨ A ∈ T.optional ∨ T.rest = some A) →
       ∀ j (W : WorldT j) u, A j W u → U j W u)
-    {k : Nat} {W : WorldT k} {v : Val} (h : listT T k W v) : realmStoreT U k W v := by
+    {k : Nat} {W : WorldT k} {v : Val} (h : listT T k W v) : builtinStoreT U k W v := by
   obtain ⟨ls, rfl, hd, hlen, hbound, hreq, hopt, hrest⟩ := h
   refine ⟨ls, rfl, (by simp [StorePresence]), by simp, by simp, by simp, by simp, ?_⟩
   intro i l _ hl
@@ -520,9 +520,9 @@ theorem listT_realmStore {U : Fam} {T : TupleF}
       exact ⟨c, hw, fun j hj W' u => ⟨fun hu => hT _ (.inr (.inr hE)) j W' u
         ((hag j hj W' u).1 hu), fun h => nomatch h⟩⟩
 
-/-- A store of the realm reads its element type below the level. -/
-theorem realmStoreT_congr {U U' : Fam} {n : Nat} (h : Agree U U' n) (W : WorldT n) (v : Val) :
-    realmStoreT U n W v → realmStoreT U' n W v := by
+/-- A store of the built-ins reads its element type below the level. -/
+theorem builtinStoreT_congr {U U' : Fam} {n : Nat} (h : Agree U U' n) (W : WorldT n) (v : Val) :
+    builtinStoreT U n W v → builtinStoreT U' n W v := by
   rintro ⟨ls, rfl, hd, hlen, hbound, hreq, hopt, hrest⟩
   refine ⟨ls, rfl, (by simp [StorePresence]), by simp, by simp, by simp, by simp, ?_⟩
   intro i l hi hl
@@ -543,7 +543,7 @@ def numericOwn (k : Nat) (W : WorldT k) (flds : List (PropKey × Nat)) : Prop :=
   ∃ (ls : Nat) (cs : Ctr k), flds.lookup CallArguments.arrayStoreField = some ls ∧ lookup W ls = some cs ∧
     ∀ key l, IndexKeys.numeric.Admits key → flds.lookup key = some l → ∃ c : Ctr k, lookup W l = some c ∧
       ∀ (j : Nat) (hj : j + 1 < k) (U : WorldT j) (u : Val), c j (by omega) U u →
-        ∀ A : Fam, (∀ (U' : WorldT (j + 1)) (s : Val), cs (j + 1) hj U' s → realmStoreT A (j + 1) U' s) →
+        ∀ A : Fam, (∀ (U' : WorldT (j + 1)) (s : Val), cs (j + 1) hj U' s → builtinStoreT A (j + 1) U' s) →
           A j U u
 
 theorem numericOwn_down {n : Nat} {W : WorldT (n + 1)} {flds : List (PropKey × Nat)}
@@ -620,8 +620,8 @@ theorem numericOwn_of_store {k : Nat} {W : WorldT k} {flds : List (PropKey × Na
 def listValT : Fam := fun _ _ u => ∃ ls, u = .arr ls
 
 /-- **An array's store is a list**: an object owning the store key holds a
-list under it. Every array of a realm meets it (`realmStoreT` is of lists);
-without a realm, it is all the graph asks of an array. -/
+list under it. Every array of a builtins meets it (`builtinStoreT` is of lists);
+without a builtins, it is all the graph asks of an array. -/
 def storeListT : Fam := fun k W v =>
   ∀ flds oid, v = .objAt flds .absent oid → (flds.lookup CallArguments.arrayStoreField).isSome = true →
     viewT [(CallArguments.arrayStoreField, listValT)] k W v
@@ -633,34 +633,34 @@ theorem storeListT_adm : Adm storeListT := by
   · intro n W W' hx v h flds oid hv hs
     exact (viewT_adm _).mono n W W' hx v (h flds oid hv hs)
 
-/-- **The array invariant**, with `P` the prototype's type, `U` the realm's
+/-- **The array invariant**, with `P` the prototype's type, `U` the built-ins'
 `unknown`, the type of an array's elements, and `N` the keys the prototype
 provides. -/
 def arrayInvariant (P U : Fam) (N : List PropKey) : Fam := fun k W v =>
   ∀ flds oid, v = .objAt flds .absent oid → (flds.lookup CallArguments.arrayStoreField).isSome = true →
-    viewT [(CallArguments.arrayStoreField, realmStoreT U), (CallArguments.protoField, P)] k W v ∧
+    viewT [(CallArguments.arrayStoreField, builtinStoreT U), (CallArguments.protoField, P)] k W v ∧
       ownKeysT ⟨false, N⟩ k W v ∧ numericOwn k W flds
 
 /-- What a row asks of the members of one of its clauses beyond the clause:
-the array invariant, where the graph states the realm and the clause is one it
-applies to (`Clause.realmed`: a record, a dictionary, `source`). -/
-def realmInvariant (G : NormalGraph ι) (X : List ι → Fam) (c : Clause (List ι)) : Fam :=
-  match G.realm with
-  | some r => if c.realmed then arrayInvariant (X r.proto) (X r.unknown) r.keys else fun _ _ _ => True
-  | none => if c.realmed then storeListT else fun _ _ _ => True
+the array invariant, where the graph states the built-ins and the clause is one it
+applies to (`Clause.carriesInvariant`: a record, a dictionary, `source`). -/
+def builtinInvariant (G : NormalGraph ι) (X : List ι → Fam) (c : Clause (List ι)) : Fam :=
+  match G.builtins with
+  | some r => if c.carriesInvariant then arrayInvariant (X r.proto) (X r.unknown) r.keys else fun _ _ _ => True
+  | none => if c.carriesInvariant then storeListT else fun _ _ _ => True
 
-/-- **The graph's exception family**: the values of the realm's `unknown`,
-JavaScript values meeting what the realm asks of a `source` clause, its
+/-- **The graph's exception family**: the values of the built-ins' `unknown`,
+JavaScript values meeting what the built-ins asks of a `source` clause, its
 prototype type read by `A`. A throw in the graph's code, and in every
 function a type of the graph promises, is one of them (`Safe`'s `Thrown`). -/
-def realmExc (G : NormalGraph ι) (A : List ι → Fam) : Fam :=
-  fun n W v => sourceT n W v ∧ realmInvariant G A .source n W v
+def builtinExc (G : NormalGraph ι) (A : List ι → Fam) : Fam :=
+  fun n W v => sourceT n W v ∧ builtinInvariant G A .source n W v
 
-/-- **A clause, read in a row**: its members that meet the realm's invariant.
-The operands are read by `X` and `P`; the realm's prototype type by `A`, at one
-fixed assignment (`ParameterInterpretation.realmAt`). -/
+/-- **A clause, read in a row**: its members that meet the built-ins' invariant.
+The operands are read by `X` and `P`; the built-in prototype type by `A`, at one
+fixed assignment (`ParameterInterpretation.builtinsAt`). -/
 def rowSem (G : NormalGraph ι) (A X : List ι → Fam) (P : List ι → ArgFam) (c : Clause (List ι)) : Fam :=
-  fun n W v => semWithArgs (realmExc G A) X P c n W v ∧ realmInvariant G A c n W v
+  fun n W v => semWithArgs (builtinExc G A) X P c n W v ∧ builtinInvariant G A c n W v
 
 theorem arrayInvariant_adm (P U : Fam) (N : List PropKey) : Adm (arrayInvariant P U N) := by
   constructor
@@ -683,47 +683,47 @@ theorem arrayInvariant_congr {P Q U U' : Fam} (N : List PropKey) {n : Nat} (h : 
     refine ⟨fun f T hm => ?_, h2, h3⟩
     simp only [List.mem_cons, Prod.mk.injEq, List.not_mem_nil, or_false] at hm
     rcases hm with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
-    · obtain ⟨flds', l, c, oid', he', hf, hl, hag⟩ := h1 CallArguments.arrayStoreField (realmStoreT U) (by simp)
+    · obtain ⟨flds', l, c, oid', he', hf, hl, hag⟩ := h1 CallArguments.arrayStoreField (builtinStoreT U) (by simp)
       exact ⟨flds', l, c, oid', he', hf, hl, fun j hj W' u hu' =>
-        realmStoreT_congr (fun m hm W'' w => hu m (by omega) W'' w) W' u (hag j hj W' u hu')⟩
+        builtinStoreT_congr (fun m hm W'' w => hu m (by omega) W'' w) W' u (hag j hj W' u hu')⟩
     · obtain ⟨flds', l, c, oid', he', hf, hl, hag⟩ := h1 CallArguments.protoField P (by simp)
       exact ⟨flds', l, c, oid', he', hf, hl, fun j hj W' u hu => (h j hj W' u).mp (hag j hj W' u hu)⟩
   exact ⟨side P Q U U' h hu, side Q P U' U (fun j hj W' u => (h j hj W' u).symm)
     (fun j hj W' u => (hu j hj W' u).symm)⟩
 
-theorem realmInvariant_adm (G : NormalGraph ι) (X : List ι → Fam) (c : Clause (List ι)) :
-    Adm (realmInvariant G X c) := by
-  unfold realmInvariant
-  cases G.realm with
+theorem builtinInvariant_adm (G : NormalGraph ι) (X : List ι → Fam) (c : Clause (List ι)) :
+    Adm (builtinInvariant G X c) := by
+  unfold builtinInvariant
+  cases G.builtins with
   | none =>
-    cases c.realmed
+    cases c.carriesInvariant
     · exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
     · exact storeListT_adm
   | some r =>
-    cases c.realmed
+    cases c.carriesInvariant
     · exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
     · exact arrayInvariant_adm _ _ _
 
-theorem realmInvariant_congr (G : NormalGraph ι) (X Y : List ι → Fam) (n : Nat)
+theorem builtinInvariant_congr (G : NormalGraph ι) (X Y : List ι → Fam) (n : Nat)
     (h : ∀ a, Agree (X a) (Y a) n) (c : Clause (List ι)) (W : WorldT n) (v : Val) :
-    realmInvariant G X c n W v ↔ realmInvariant G Y c n W v := by
-  unfold realmInvariant
-  cases G.realm with
+    builtinInvariant G X c n W v ↔ builtinInvariant G Y c n W v := by
+  unfold builtinInvariant
+  cases G.builtins with
   | none => exact Iff.rfl
   | some r =>
-    cases c.realmed
+    cases c.carriesInvariant
     · exact Iff.rfl
     · exact arrayInvariant_congr _ (h _) (h _) W v
 
 /-- **An array's store is a list**, in every graph: a member of a clause the
 invariant applies to that owns the store key holds a list under it. -/
-theorem realmInvariant_store {G : NormalGraph ι} {X : List ι → Fam} {c : Clause (List ι)}
-    (hc : c.realmed = true) {n W flds oid} (h : realmInvariant G X c n W (.objAt flds .absent oid))
+theorem builtinInvariant_store {G : NormalGraph ι} {X : List ι → Fam} {c : Clause (List ι)}
+    (hc : c.carriesInvariant = true) {n W flds oid} (h : builtinInvariant G X c n W (.objAt flds .absent oid))
     (hs : (flds.lookup CallArguments.arrayStoreField).isSome = true) :
     ∃ (l : Nat) (c' : Ctr n), flds.lookup CallArguments.arrayStoreField = some l ∧ lookup W l = some c' ∧
       ∀ (j : Nat) (hj : j < n) (W' : WorldT j) (u : Val), c' j hj W' u → ∃ ls, u = .arr ls := by
-  unfold realmInvariant at h
-  cases hr : G.realm with
+  unfold builtinInvariant at h
+  cases hr : G.builtins with
   | none =>
     rw [hr] at h
     simp only [hc, ite_true] at h
@@ -740,69 +740,69 @@ theorem realmInvariant_store {G : NormalGraph ι} {X : List ι → Fam} {c : Cla
       obtain ⟨ls, rfl, -⟩ := hag j hj W' u hu
       exact ⟨ls, rfl⟩⟩
 
-/-- Two graphs of one realm whose prototype and `unknown` types mean the same
+/-- Two graphs of one builtins whose prototype and `unknown` types mean the same
 have one exception family. -/
-theorem realmExc_eq {G H : NormalGraph ι} {A B : List ι → Fam} (hr : H.realm = G.realm)
-    (h : ∀ r, G.realm = some r → A r.proto = B r.proto ∧ A r.unknown = B r.unknown) :
-    realmExc H A = realmExc G B := by
+theorem builtinExc_eq {G H : NormalGraph ι} {A B : List ι → Fam} (hr : H.builtins = G.builtins)
+    (h : ∀ r, G.builtins = some r → A r.proto = B r.proto ∧ A r.unknown = B r.unknown) :
+    builtinExc H A = builtinExc G B := by
   funext n W v
-  unfold realmExc realmInvariant
+  unfold builtinExc builtinInvariant
   rw [hr]
-  cases hg : G.realm with
+  cases hg : G.builtins with
   | none => rfl
   | some r =>
     obtain ⟨h1, h2⟩ := h r hg
     simp only [h1, h2]
 
-theorem realmExc_adm (G : NormalGraph ι) (A : List ι → Fam) : Adm (realmExc G A) :=
-  interT_adm _ _ ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩ (realmInvariant_adm G A .source)
+theorem builtinExc_adm (G : NormalGraph ι) (A : List ι → Fam) : Adm (builtinExc G A) :=
+  interT_adm _ _ ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩ (builtinInvariant_adm G A .source)
 
 /-- The exception family reads its prototype type below the level. -/
-theorem realmExc_congr (G : NormalGraph ι) (A B : List ι → Fam) (n : Nat)
-    (h : ∀ a, Agree (A a) (B a) n) : Agree (realmExc G A) (realmExc G B) n :=
+theorem builtinExc_congr (G : NormalGraph ι) (A B : List ι → Fam) (n : Nat)
+    (h : ∀ a, Agree (A a) (B a) n) : Agree (builtinExc G A) (builtinExc G B) n :=
   fun m hm W v => and_congr Iff.rfl
-    (realmInvariant_congr G A B m (fun a k hk W' u => h a k (by omega) W' u) .source W v)
+    (builtinInvariant_congr G A B m (fun a k hk W' u => h a k (by omega) W' u) .source W v)
 
-/-- Without a realm, a row asks nothing of its prototype type. -/
-theorem rowSem_none {G : NormalGraph ι} (hR : G.realm = none) (A X : List ι → Fam)
+/-- Without a builtins, a row asks nothing of its prototype type. -/
+theorem rowSem_none {G : NormalGraph ι} (hR : G.builtins = none) (A X : List ι → Fam)
     (P : List ι → ArgFam) : rowSem G A X P = rowSem G (fun _ _ _ _ => True) X P := by
-  have he : realmExc G A = realmExc G (fun _ _ _ _ => True) := by
-    funext n W v; simp only [realmExc, realmInvariant, hR]
+  have he : builtinExc G A = builtinExc G (fun _ _ _ _ => True) := by
+    funext n W v; simp only [builtinExc, builtinInvariant, hR]
   funext c n W v
-  simp only [rowSem, realmInvariant, hR, he]
+  simp only [rowSem, builtinInvariant, hR, he]
 
 theorem rowSem_adm (G : NormalGraph ι) (A X : List ι → Fam) (P : List ι → ArgFam)
     (c : Clause (List ι)) : Adm (rowSem G A X P c) :=
-  interT_adm _ _ (semWithArgs_adm X P c) (realmInvariant_adm G A c)
+  interT_adm _ _ (semWithArgs_adm X P c) (builtinInvariant_adm G A c)
 
 theorem rowSem_congr (G : NormalGraph ι) (A B X Y : List ι → Fam) (P Q : List ι → ArgFam) (n : Nat)
     (hA : ∀ a, Agree (A a) (B a) n)
     (h : ∀ a, Agree (X a) (Y a) n) (hP : ∀ a, Agree (P a) (Q a) n) (c : Clause (List ι))
     (W : WorldT n) (v : Val) : rowSem G A X P c n W v ↔ rowSem G B Y Q c n W v :=
-  and_congr (semWithArgs_congr X Y P Q n (realmExc_congr G A B n hA) h hP c W v)
-    (realmInvariant_congr G A B n hA c W v)
+  and_congr (semWithArgs_congr X Y P Q n (builtinExc_congr G A B n hA) h hP c W v)
+    (builtinInvariant_congr G A B n hA c W v)
 
-/-- A clause the realm's invariant does not apply to asks nothing more in a row. -/
-theorem realmInvariant_of_unrealmed {G : NormalGraph ι} {X : List ι → Fam} {c : Clause (List ι)}
-    (hc : c.realmed = false) (n W v) : realmInvariant G X c n W v := by
-  unfold realmInvariant
-  cases G.realm with
+/-- A clause the built-ins' invariant does not apply to asks nothing more in a row. -/
+theorem builtinInvariant_of_withoutInvariant {G : NormalGraph ι} {X : List ι → Fam} {c : Clause (List ι)}
+    (hc : c.carriesInvariant = false) (n W v) : builtinInvariant G X c n W v := by
+  unfold builtinInvariant
+  cases G.builtins with
   | none => simp [hc]
   | some r => simp [hc]
 
 /-- Clauses none of which the invariant applies to mean in a row what they
 mean alone. -/
 theorem setSem_row_plain {G : NormalGraph ι} {A X : List ι → Fam} {P : List ι → ArgFam}
-    {cs : List (Clause (List ι))} (hc : ∀ c ∈ cs, c.realmed = false) (n W v) :
-    setSem (rowSem G A X P) cs n W v ↔ semList (realmExc G A) X P cs n W v := by
+    {cs : List (Clause (List ι))} (hc : ∀ c ∈ cs, c.carriesInvariant = false) (n W v) :
+    setSem (rowSem G A X P) cs n W v ↔ semList (builtinExc G A) X P cs n W v := by
   constructor
   · rintro ⟨c, hm, hv, -⟩; exact ⟨c, hm, hv⟩
-  · rintro ⟨c, hm, hv⟩; exact ⟨c, hm, hv, realmInvariant_of_unrealmed (hc c hm) n W v⟩
+  · rintro ⟨c, hm, hv⟩; exact ⟨c, hm, hv, builtinInvariant_of_withoutInvariant (hc c hm) n W v⟩
 
 /-- The same, as a rewrite. -/
-theorem realmInvariant_iff_of_unrealmed {G : NormalGraph ι} {X : List ι → Fam}
-    {c : Clause (List ι)} (hc : c.realmed = false) (n W v) : realmInvariant G X c n W v ↔ True :=
-  iff_true_intro (realmInvariant_of_unrealmed hc n W v)
+theorem builtinInvariant_iff_of_withoutInvariant {G : NormalGraph ι} {X : List ι → Fam}
+    {c : Clause (List ι)} (hc : c.carriesInvariant = false) (n W v) : builtinInvariant G X c n W v ↔ True :=
+  iff_true_intro (builtinInvariant_of_withoutInvariant hc n W v)
 
 /-- An object that does not own the store key meets the invariant. -/
 theorem arrayInvariant_of_lookup {P U : Fam} {N : List PropKey} {n W flds code}
@@ -819,71 +819,71 @@ theorem arrayInvariant_of_not_plain {P U : Fam} {N : List PropKey} {n W v}
 
 /-- A row's clause without the store key, or not a plain object, asks nothing
 it does not already have. -/
-theorem realmInvariant_of_lookup {G : NormalGraph ι} {X : List ι → Fam} {c : Clause (List ι)}
+theorem builtinInvariant_of_lookup {G : NormalGraph ι} {X : List ι → Fam} {c : Clause (List ι)}
     {n W flds code} (h : flds.lookup CallArguments.arrayStoreField = none) :
-    realmInvariant G X c n W (.objAt flds code oid) := by
-  unfold realmInvariant
-  cases G.realm with
+    builtinInvariant G X c n W (.objAt flds code oid) := by
+  unfold builtinInvariant
+  cases G.builtins with
   | none =>
-    cases c.realmed
+    cases c.carriesInvariant
     · trivial
     · intro flds' oid' he hs
       cases he
       simp [h] at hs
   | some r =>
-    cases c.realmed
+    cases c.carriesInvariant
     · trivial
     · exact arrayInvariant_of_lookup h
 
-theorem realmInvariant_of_not_plain {G : NormalGraph ι} {X : List ι → Fam} {c : Clause (List ι)}
-    {n W v} (h : ∀ flds oid, v ≠ .objAt flds .absent oid) : realmInvariant G X c n W v := by
-  unfold realmInvariant
-  cases G.realm with
+theorem builtinInvariant_of_not_plain {G : NormalGraph ι} {X : List ι → Fam} {c : Clause (List ι)}
+    {n W v} (h : ∀ flds oid, v ≠ .objAt flds .absent oid) : builtinInvariant G X c n W v := by
+  unfold builtinInvariant
+  cases G.builtins with
   | none =>
-    cases c.realmed
+    cases c.carriesInvariant
     · trivial
     · exact fun flds oid he _ => absurd he (h flds oid)
   | some r =>
-    cases c.realmed
+    cases c.carriesInvariant
     · trivial
     · exact arrayInvariant_of_not_plain h
 
 /-- The errors the host throws are of every graph's exception family: a
 fresh object owning no key. -/
-theorem realmExc_errors (G : NormalGraph ι) (A : List ι → Fam) : ErrorsIn (realmExc G A) :=
-  fun _ _ _ => ⟨⟨rfl, by simp [thrownError, Scoped]⟩, realmInvariant_of_lookup (by simp)⟩
+theorem builtinExc_errors (G : NormalGraph ι) (A : List ι → Fam) : ErrorsIn (builtinExc G A) :=
+  fun _ _ _ => ⟨⟨rfl, by simp [thrownError, Scoped]⟩, builtinInvariant_of_lookup (by simp)⟩
 
 /-- Two clauses the invariant applies to ask the same of their members. -/
-theorem realmInvariant_realmed {G : NormalGraph ι} {X : List ι → Fam} {c d : Clause (List ι)}
-    (hc : c.realmed = true) (hd : d.realmed = true) {n W v} :
-    realmInvariant G X c n W v ↔ realmInvariant G X d n W v := by
-  unfold realmInvariant
-  cases G.realm with
+theorem builtinInvariant_carriesInvariant {G : NormalGraph ι} {X : List ι → Fam} {c d : Clause (List ι)}
+    (hc : c.carriesInvariant = true) (hd : d.carriesInvariant = true) {n W v} :
+    builtinInvariant G X c n W v ↔ builtinInvariant G X d n W v := by
+  unfold builtinInvariant
+  cases G.builtins with
   | none => simp [hc, hd]
   | some r => simp [hc, hd]
 
-/-- A member of a clause of a row meets what the realm asks of every clause
+/-- A member of a clause of a row meets what the built-ins asks of every clause
 but top: the clause's own invariant where it is one the invariant applies to,
 nothing otherwise, its member being no plain object. -/
-theorem realmInvariant_of_member {G : NormalGraph ι} {Z X : List ι → Fam} {P : List ι → ArgFam}
+theorem builtinInvariant_of_member {G : NormalGraph ι} {Z X : List ι → Fam} {P : List ι → ArgFam}
     {c d : Clause (List ι)} {n W v} (hv : rowSem G Z X P c n W v) (hc : c ≠ .top)
-    (hd : d.realmed = true) : realmInvariant G Z d n W v := by
-  cases hcr : c.realmed
-  · exact realmInvariant_of_not_plain (semWithArgs_not_plain hc hcr hv.1)
-  · exact (realmInvariant_realmed hcr hd).mp hv.2
+    (hd : d.carriesInvariant = true) : builtinInvariant G Z d n W v := by
+  cases hcr : c.carriesInvariant
+  · exact builtinInvariant_of_not_plain (semWithArgs_not_plain hc hcr hv.1)
+  · exact (builtinInvariant_carriesInvariant hcr hd).mp hv.2
 
-/-- A JavaScript value meets the realm's `unknown` where it is a member of a
+/-- A JavaScript value meets the built-ins' `unknown` where it is a member of a
 row's clause other than top. -/
-theorem realmExc_of_member {G : NormalGraph ι} {Z X : List ι → Fam} {P : List ι → ArgFam}
+theorem builtinExc_of_member {G : NormalGraph ι} {Z X : List ι → Fam} {P : List ι → ArgFam}
     {c : Clause (List ι)} {n W v} (hv : rowSem G Z X P c n W v) (hc : sourceClause c = true) :
-    realmExc G Z n W v :=
-  ⟨sourceClause_sound hc hv.1, realmInvariant_of_member hv (by rintro rfl; cases hc) rfl⟩
+    builtinExc G Z n W v :=
+  ⟨sourceClause_sound hc hv.1, builtinInvariant_of_member hv (by rintro rfl; cases hc) rfl⟩
 
-/-- Renaming a clause's operands keeps what the realm asks of it. -/
-theorem realmInvariant_map (G : NormalGraph ι) (X : List ι → Fam) (f : List ι → List ι)
-    (c : Clause (List ι)) : realmInvariant G X (c.map f) = realmInvariant G X c := by
-  unfold realmInvariant
-  rw [Clause.realmed_map]
+/-- Renaming a clause's operands keeps what the built-ins asks of it. -/
+theorem builtinInvariant_map (G : NormalGraph ι) (X : List ι → Fam) (f : List ι → List ι)
+    (c : Clause (List ι)) : builtinInvariant G X (c.map f) = builtinInvariant G X c := by
+  unfold builtinInvariant
+  rw [Clause.carriesInvariant_map]
 
 /-- A meet of rows, read in a row, is the meet of what each asks. -/
 theorem meetLists_row (G : NormalGraph ι) (Z X : List ι → Fam) (P : List ι → ArgFam)
@@ -897,30 +897,30 @@ theorem meetLists_row (G : NormalGraph ι) (Z X : List ι → Fam) (P : List ι 
       obtain ⟨a, ha, b, hb, hm, -⟩ := hc
       exact ⟨a, ha, b, hb, hm⟩
     have hh := (meet_sound X P a b n W v).mp ⟨c, hm, hv⟩
-    -- What the realm asks of a realmed operand: the meet's clause is not top.
-    have side : ∀ d, d.realmed = true → (d = a ∨ d = b) → realmInvariant G Z d n W v := by
+    -- What the built-ins asks of a carriesInvariant operand: the meet's clause is not top.
+    have side : ∀ d, d.carriesInvariant = true → (d = a ∨ d = b) → builtinInvariant G Z d n W v := by
       intro d hd hdab
-      refine realmInvariant_of_member ⟨hv, hinv⟩ ?_ hd
+      refine builtinInvariant_of_member ⟨hv, hinv⟩ ?_ hd
       rintro rfl
       obtain ⟨rfl, rfl⟩ := top_of_meet hm
       rcases hdab with rfl | rfl <;> cases hd
     refine ⟨⟨a, ha, hh.1, ?_⟩, ⟨b, hb, hh.2, ?_⟩⟩
-    · cases har : a.realmed
-      · exact realmInvariant_of_unrealmed har n W v
+    · cases har : a.carriesInvariant
+      · exact builtinInvariant_of_withoutInvariant har n W v
       · exact side a har (.inl rfl)
-    · cases hbr : b.realmed
-      · exact realmInvariant_of_unrealmed hbr n W v
+    · cases hbr : b.carriesInvariant
+      · exact builtinInvariant_of_withoutInvariant hbr n W v
       · exact side b hbr (.inr rfl)
   · rintro ⟨⟨a, ha, hva, hia⟩, ⟨b, hb, hvb, hib⟩⟩
     obtain ⟨c, hc, hv⟩ := (meet_sound X P a b n W v).mpr ⟨hva, hvb⟩
     refine ⟨c, ?_, hv, ?_⟩
     · simp only [meetLists, List.mem_flatMap, List.mem_filter]
       exact ⟨a, ha, b, hb, hc, semWithArgs_consistent hv⟩
-    · cases hcr : c.realmed
-      · exact realmInvariant_of_unrealmed hcr n W v
-      · rcases realmed_of_meet hc hcr with har | hbr
-        · exact (realmInvariant_realmed har hcr).mp hia
-        · exact (realmInvariant_realmed hbr hcr).mp hib
+    · cases hcr : c.carriesInvariant
+      · exact builtinInvariant_of_withoutInvariant hcr n W v
+      · rcases carriesInvariant_of_meet hc hcr with har | hbr
+        · exact (builtinInvariant_carriesInvariant har hcr).mp hia
+        · exact (builtinInvariant_carriesInvariant hbr hcr).mp hib
 
 def normalLayer (G : NormalGraph ι) (X : ι → Fam) (i : ι) : Fam :=
   setSem (rowSem G (setSem X) (setSem X) (plainArguments G (setSem X))) (G i)
@@ -1203,12 +1203,12 @@ structure ParameterInterpretation (ι : Type) (k : ParameterSpace) where
   bound_adm : ∀ η X, (∀ S, Adm (X S)) → ∀ S, Adm (bound η X S)
   bound_congr : ∀ η θ X Y n, (∀ p, Agree (η.1 p) (θ.1 p) n) →
     (∀ S, Agree (X S) (Y S) n) → ∀ S, Agree (bound η X S) (bound θ Y S) n
-  /-- The assignment the realm's prototype type is read at (`realmInvariant`).
+  /-- The assignment the built-in prototype type is read at (`builtinInvariant`).
   That type is `ArrayProto`'s, a declaration without parameters whose generic
   methods bind their own, so it reads no parameter row and means the same at
   every assignment; reading it at one fixed assignment keeps a graph's meaning
   independent of its own assignment, as every check is (`Parametricity`). -/
-  realmAt : ParameterAssignment k ι
+  builtinsAt : ParameterAssignment k ι
 
 /-- Mixed bounds retain both components. Projecting only their value part would
 make a pack bound vacuous. Argument rows are derived, never unfolded again. -/
@@ -1246,7 +1246,7 @@ def mixedParameters (G : NormalGraph ι) : ParameterInterpretation ι .mixed whe
     cases x with
     | inl v => exact hX S j hj W v
     | inr vs => exact graphArguments_nonexp G η θ X Y n hη hX S j hj W vs
-  realmAt := ParameterAssignment.empty .mixed
+  builtinsAt := ParameterAssignment.empty .mixed
 
 /-- **A scheme row.** A callable meeting its signatures at every instantiation
 of its binders within their bounds: the same value, in the same world, at all
@@ -1263,8 +1263,8 @@ noncomputable def partSemWithArgs (G : NormalGraph ι) (I : ParameterInterpretat
     (X : ParameterAssignment k ι × ι → Fam) (η : ParameterAssignment k ι) (q : ι) : Fam :=
   if G.params q then I.value q (η.1 q) else
   match G.schemes q with
-  | some s => schemeSemWithArgs I (realmExc G (setSem fun l => X (I.realmAt, l))) (fun η' S => setSem (fun l => X (η', l)) S) η s
-  | none => setSem (rowSem G (setSem fun l => X (I.realmAt, l)) (setSem fun l => X (η, l))
+  | some s => schemeSemWithArgs I (builtinExc G (setSem fun l => X (I.builtinsAt, l))) (fun η' S => setSem (fun l => X (η', l)) S) η s
+  | none => setSem (rowSem G (setSem fun l => X (I.builtinsAt, l)) (setSem fun l => X (η, l))
       (I.arguments η (setSem fun l => X (η, l)))) (G q)
 
 /-- One step of the assignment-indexed denotation. -/
@@ -1272,16 +1272,16 @@ noncomputable def qLayerWithArgs (G : NormalGraph ι) (I : ParameterInterpretati
     ParameterAssignment k ι × ι → Fam := fun ηi =>
   if G.params ηi.2 then I.value ηi.2 (ηi.1.1 ηi.2) else
   match G.schemes ηi.2 with
-  | some s => schemeSemWithArgs I (realmExc G (setSem fun l => X (I.realmAt, l))) (fun η' S => setSem (fun l => X (η', l)) S) ηi.1 s
+  | some s => schemeSemWithArgs I (builtinExc G (setSem fun l => X (I.builtinsAt, l))) (fun η' S => setSem (fun l => X (η', l)) S) ηi.1 s
   | none =>
     match G.meets ηi.2 with
     -- A meet row: each part's values, within the clauses.
     | some (p, cs) => fun n W v =>
         (partSemWithArgs G I X ηi.1 p n W v ∧
           ∀ q ∈ G.meetParams ηi.2, partSemWithArgs G I X ηi.1 q n W v) ∧
-        setSem (rowSem G (setSem fun l => X (I.realmAt, l)) (setSem fun l => X (ηi.1, l))
+        setSem (rowSem G (setSem fun l => X (I.builtinsAt, l)) (setSem fun l => X (ηi.1, l))
           (I.arguments ηi.1 (setSem fun l => X (ηi.1, l)))) cs n W v
-    | none => setSem (rowSem G (setSem fun l => X (I.realmAt, l)) (setSem fun l => X (ηi.1, l))
+    | none => setSem (rowSem G (setSem fun l => X (I.builtinsAt, l)) (setSem fun l => X (ηi.1, l))
         (I.arguments ηi.1 (setSem fun l => X (ηi.1, l)))) (G ηi.2)
 
 /-- A parameter part is its assigned family, as in a meet row of parameters. -/
@@ -1340,7 +1340,7 @@ theorem partSem_congrWithArgs (G : NormalGraph ι) (I : ParameterInterpretation 
     cases hq : G.schemes i with
     | none =>
       have hS := fun S => setSem_congr n (fun l => h (η, l)) S
-      have hE := fun S => setSem_congr n (fun l => h (I.realmAt, l)) S
+      have hE := fun S => setSem_congr n (fun l => h (I.builtinsAt, l)) S
       constructor <;> rintro ⟨c, hc, hv⟩ <;> refine ⟨c, hc, ?_⟩
       · exact (rowSem_congr G _ _ _ _ _ _ n hE hS (I.arguments_nonexp η η _ _ n (fun _ _ _ _ _ => Iff.rfl) hS) c W v).mp hv
       · exact (rowSem_congr G _ _ _ _ _ _ n hE hS (I.arguments_nonexp η η _ _ n (fun _ _ _ _ _ => Iff.rfl) hS) c W v).mpr hv
@@ -1354,7 +1354,7 @@ theorem partSem_congrWithArgs (G : NormalGraph ι) (I : ParameterInterpretation 
         exact I.bound_congr _ _ _ _ n (fun _ _ _ _ _ => Iff.rfl)
           (fun S => setSem_congr n (fun l => h (_, l)) S) b.2 j (by omega) U u
       · exact instanceT_congrWithArgs I.arguments I.arguments_nonexp
-          (Agree.mono (realmExc_congr G _ _ n fun S => setSem_congr n (fun l => h (I.realmAt, l)) S) hq)
+          (Agree.mono (builtinExc_congr G _ _ n fun S => setSem_congr n (fun l => h (I.builtinsAt, l)) S) hq)
           (fun _ _ _ _ _ => Iff.rfl) (fun S => Agree.mono (setSem_congr n (fun l => h (_, l)) S) hq) (trunc q hq W) v
 
 theorem qLayer_congrWithArgs (G : NormalGraph ι) (I : ParameterInterpretation ι k)
@@ -1371,7 +1371,7 @@ theorem qLayer_congrWithArgs (G : NormalGraph ι) (I : ParameterInterpretation �
     unfold qLayerWithArgs
     simp only [hp, hq, hm, Bool.false_eq_true, ite_false]
     have hS := fun S => setSem_congr n (fun l => h (η, l)) S
-    have hE := fun S => setSem_congr n (fun l => h (I.realmAt, l)) S
+    have hE := fun S => setSem_congr n (fun l => h (I.builtinsAt, l)) S
     refine and_congr (and_congr (partSem_congrWithArgs G I h η p W v)
       (forall_congr' fun q => imp_congr_right fun _ => partSem_congrWithArgs G I h η q W v)) ?_
     constructor <;> rintro ⟨c, hc, hv⟩ <;> refine ⟨c, hc, ?_⟩
@@ -1456,8 +1456,8 @@ theorem partSem_invWithArgs (G : NormalGraph ι) (I : ParameterInterpretation ι
       cases hq : G.schemes i with
       | none =>
         have cl : ∀ cs : List (Clause (List ι)),
-            setSem (rowSem G (setSem fun l => X (I.realmAt, l)) (setSem fun l => X (η, l)) (I.arguments η (setSem fun l => X (η, l)))) cs k W v ↔
-              setSem (rowSem G (setSem fun l => X (I.realmAt, l)) (setSem fun l => X (η', l)) (I.arguments η' (setSem fun l => X (η', l)))) cs k W v := by
+            setSem (rowSem G (setSem fun l => X (I.builtinsAt, l)) (setSem fun l => X (η, l)) (I.arguments η (setSem fun l => X (η, l)))) cs k W v ↔
+              setSem (rowSem G (setSem fun l => X (I.builtinsAt, l)) (setSem fun l => X (η', l)) (I.arguments η' (setSem fun l => X (η', l)))) cs k W v := by
           intro cs
           constructor
           · rintro ⟨c, hc, hv⟩
@@ -1737,7 +1737,7 @@ private theorem approx_plain (G : NormalGraph ι) (hG : G.Plain) :
         (Tower.approx (qLayerWithArgs G (mixedParameters G)) k) (η, i) =
       normalLayer G (Tower.approx (normalLayer G) k) i
     simp only [qLayerWithArgs, hi.1, hi.2, Bool.false_eq_true, ite_false]
-    rw [show (mixedParameters G).realmAt = ParameterAssignment.empty .mixed from rfl, ih, ihE]
+    rw [show (mixedParameters G).builtinsAt = ParameterAssignment.empty .mixed from rfl, ih, ihE]
     unfold normalLayer
     rw [show (mixedParameters G).arguments = graphArguments G from rfl,
       graphArguments_plainGraph G hG]

@@ -100,11 +100,11 @@ theorem witness_clause (G : NormalGraph ι) (η : MixedAssignment ι)
     cases he
     exact admitted K hK p hp
 
-theorem witness_realm (G : NormalGraph ι) (X : List ι → Fam)
+theorem witness_builtins (G : NormalGraph ι) (X : List ι → Fam)
     (keys : List PropKey) (c : Clause (List ι))
     (ha : CallArguments.arrayStoreField ∉ keys) :
-    realmInvariant G X c 1 witnessWorld (witness keys) := by
-  exact realmInvariant_of_lookup (fields_absent keys _ ha)
+    builtinInvariant G X c 1 witnessWorld (witness keys) := by
+  exact builtinInvariant_of_lookup (fields_absent keys _ ha)
 
 /-- A stable clause excludes the witness by shape, by a required view key the
 witness lacks, or by an optional key it lacks while it has a prototype. -/
@@ -171,7 +171,7 @@ theorem Shape.separate {G : NormalGraph ι} {root : ι} {stable : List ι}
     obtain ⟨hp, hs, hm⟩ := NormalGraph.plain_iff.mp shape.plain
     simp only [qLayerWithArgs, hp, hs, hm, Bool.false_eq_true, if_false]
     exact ⟨_, shape.row, witness_clause G η shape.views shape.methods shape.bounds
-      shape.proto shape.admitted, witness_realm G _ _ _ shape.noArray⟩
+      shape.proto shape.admitted, witness_builtins G _ _ _ shape.noArray⟩
   obtain ⟨l, hl, hv⟩ := sub 1 witnessWorld _ input
   rw [qDenoteWithArgs_unfold] at hv
   obtain ⟨hp, hs, hm⟩ := NormalGraph.plain_iff.mp (List.all_eq_true.mp shape.stablePlain l hl)

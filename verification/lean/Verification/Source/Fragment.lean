@@ -343,11 +343,11 @@ def sourceKey (s : String) : Except String String :=
 
 /-- `key in o` looks the key up along `o`'s prototype chain; the model's test
 (`Tag.hasKey`) asks whether the object owns it. The two agree for a key none
-of the realm's prototypes an object of the fragment inherits from holds, and
-that no own key of the realm's making the model leaves out names: an array's
+of the built-in prototypes an object of the fragment inherits from holds, and
+that no own key of the built-in making the model leaves out names: an array's
 `length` and indices, a function's `length`, `name` and `prototype`. The
 names are node's (`Object.getOwnPropertyNames` of `Object.prototype`,
-`Array.prototype` and `Function.prototype`), a trusted list: a realm whose
+`Array.prototype` and `Function.prototype`), a trusted list: a builtins whose
 prototypes hold another string key would answer `true` where the model
 answers `false`. A key the model reserves for itself is refused too. -/
 def inKeyRefusal (key : String) : Option String :=

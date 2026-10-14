@@ -178,7 +178,7 @@ theorem keyed_values_safe [DecidableEq ι] {G : NormalGraph ι} {K A R : List ι
   have hstore := slots_lookup_none (base := h.length) (ns := [f]) (f := CallArguments.arrayStoreField)
     (by simp only [List.mem_singleton]; exact fun he => hns he.symm)
   refine (expand_sem G R (plain_of_mem_expand hdR) j U _).mpr
-    ⟨d, hdR, ?_, realmInvariant_of_lookup hstore⟩
+    ⟨d, hdR, ?_, builtinInvariant_of_lookup hstore⟩
   rcases hshape with rfl | ⟨K, rfl, hKf⟩
   · simp only [oneField, semWithArgs]
     refine ⟨⟨by simpa [ReferenceConjunctions.famsOf] using hrec, by simp⟩,

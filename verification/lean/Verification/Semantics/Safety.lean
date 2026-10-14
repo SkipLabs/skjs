@@ -30,8 +30,8 @@ through either position.
 namespace Verification
 
 /-- `t` throws a closed value of the exception family `Ξ`: the outcome that
-is neither a value nor a step. A graph's exception family is its realm's
-`unknown` (`PositiveGraphs.realmExc`), so a handler binds a thrown value
+is neither a value nor a step. A graph's exception family is its builtins's
+`unknown` (`PositiveGraphs.builtinExc`), so a handler binds a thrown value
 there. -/
 def Thrown (Ξ : Fam) (k : Nat) (W : WorldT k) (t : Tm) : Prop :=
   ∃ v, Raises t v ∧ Scoped 0 v ∧ Ξ k W v

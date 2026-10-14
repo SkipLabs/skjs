@@ -380,7 +380,7 @@ Language Specification* as of this writing). Sections relied on by name:
 - arrays and prototypes: [IsArray](https://tc39.es/ecma262/#sec-isarray)
   (`Array.isArray` holds of exactly the Array exotic objects),
   [ArrayCreate](https://tc39.es/ecma262/#sec-arraycreate) (an array's
-  prototype is the one its creator passes, `Array.prototype` for the realm's
+  prototype is the one its creator passes, `Array.prototype` for the built-ins'
   own constructors), [Object.create](https://tc39.es/ecma262/#sec-object.create),
   [Object.setPrototypeOf](https://tc39.es/ecma262/#sec-object.setprototypeof)
   and [Reflect.construct](https://tc39.es/ecma262/#sec-reflect.construct)
@@ -432,7 +432,7 @@ interpreter; an alternative, hand-written route to M, which predates promises.
 
 ## Promises and flattened types
 
-The nested-promise case: resolution adopts a thenable, so no realm promise is
+The nested-promise case: resolution adopts a thenable, so no built-in promise is
 fulfilled with one, and a generic signature is truthful at `Promise<T>` only
 for a non-thenable `T`. These issues discuss the same fact from the ReScript
 and TypeScript sides. It is used in

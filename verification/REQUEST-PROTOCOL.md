@@ -279,7 +279,7 @@ the accumulator and the source
 ([Allocation from parts](PROGRAM-TYPING.md#allocation-from-parts),
 [at a computed key](PROGRAM-TYPING.md#allocation-at-a-computed-key)).
 `alloc` at a record type is the typing rule `alloc`, whose fields, where one
-is the array store key, are an array of the graph's realm (`allocRealm`); at a
+is the array store key, are an array of the graph's built-ins (`allocBuiltins`); at a
 dictionary type, `allocDict`, a literal allocated at a dictionary with no
 own-key bound, naming neither the prototype key nor the store key.
 The array rules act on a store, the value an array object holds in its store

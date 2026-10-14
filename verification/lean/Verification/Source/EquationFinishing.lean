@@ -38,8 +38,8 @@ def rawHeads (drafts : Array Draft) (bodies : Array (GraphRow Tree (List Tree)))
       header := { parameters := d.kinds.length, binders := d.binders, kinds := d.kinds }
       body := bodies[h]! }
 
-def realmOf (E : Equations) (proto unknown : Option Nat) (excluded : List PropKey) :
-    Option (ArrayRealm (Label E.signature)) :=
+def builtinsOf (E : Equations) (proto unknown : Option Nat) (excluded : List PropKey) :
+    Option (ArrayBuiltins (Label E.signature)) :=
   proto.bind fun p => unknown.bind fun u => (Label.ofTree? (mkApp p [])).bind fun l =>
     (Label.ofTree? (mkApp u [])).map fun k => ⟨[l], [k], excluded⟩
 
@@ -93,16 +93,16 @@ def compact (s : State) : Except String Built := do
     | none => throw s!"{d.name}: its row was never lowered"
   return { state := s, rename := f, drafts, bodies }
 
-/-- Validated equations, with the realm. -/
+/-- Validated equations, with the built-ins. -/
 def Built.equations (b : Built) : Except String Equations := do
   let E ← Equations.ofRaw (rawHeads b.drafts b.bodies)
   let proto := b.state.proto.map b.rename
   let unknown := (b.state.keys.get? unknownKey).map b.rename
-  return { E with realm := if b.state.arrays then realmOf E proto unknown b.state.excluded else none }
+  return { E with builtins := if b.state.arrays then builtinsOf E proto unknown b.state.excluded else none }
 
 /-- The store the units grow, from the compacted heads: their rows, their
 keys (a key that spells a head index spelled again with the new one), the
-generic units' binders, the placeholders and the realm. -/
+generic units' binders, the placeholders and the built-ins. -/
 def Built.store (b : Built) : State :=
   let (s, f) := (b.state, b.rename)
   let drafts := (b.drafts.zip b.bodies).map fun (d, body) => { d with body := some body }

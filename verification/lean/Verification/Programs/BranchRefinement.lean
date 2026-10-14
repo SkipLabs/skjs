@@ -22,8 +22,8 @@ theorem booleanMember_sound [DecidableEq ι] {G : NormalGraph ι} {A q}
     (h : booleanMember G A q = true) (n W) :
     meaning G A n W (if q then .tru else .fls) := by
   obtain ⟨c,hc,h⟩ := List.any_eq_true.mp h
-  have hrec : c.realmed = false := by cases c <;> simp_all [Clause.realmed]
-  refine expand_sem_mpr ⟨c,expand_sub hc,?_,realmInvariant_of_unrealmed hrec _ _ _⟩
+  have hrec : c.carriesInvariant = false := by cases c <;> simp_all [Clause.carriesInvariant]
+  refine expand_sem_mpr ⟨c,expand_sub hc,?_,builtinInvariant_of_withoutInvariant hrec _ _ _⟩
   cases c <;> simp_all [semWithArgs, boolT]
 
 theorem onlyBoolean_sound {G : NormalGraph ι} {A n W v}
@@ -375,7 +375,7 @@ theorem promotes_sound [DecidableEq ι] {G : NormalGraph ι} {A B : Ty ι} {k : 
     obtain ⟨h1, h2⟩ := weaker_record hw
     exact ⟨h1, (promote_record k c).symm.trans h2⟩
   exact expand_sem_mpr ⟨d, expand_sub hd, weaker_sound hw (promote_sound hcv hk),
-    (realmInvariant_realmed (Clause.realmed_of_record hdr.2) (Clause.realmed_of_record hdr.1)).mp hinv⟩
+    (builtinInvariant_carriesInvariant (Clause.carriesInvariant_of_record hdr.2) (Clause.carriesInvariant_of_record hdr.1)).mp hinv⟩
 
 /-- A small, explicit vocabulary of observations established by execution. -/
 inductive Observation where
@@ -419,7 +419,7 @@ def familyMember (cs : List (Clause α)) : Tag → Bool → Bool
 none of them a record's. -/
 theorem familyMember_sound {X : α → Fam} {P : α → ArgFam} {cs : List (Clause α)} {t : Tag} {q : Bool}
     (hm : familyMember cs t q = true) {n W v} (hv : isVal v = true) (hs : Scoped 0 v)
-    (ht : tagHolds t v = q) : ∃ c ∈ cs, semWithArgs Ξ X P c n W v ∧ c.realmed = false := by
+    (ht : tagHolds t v = q) : ∃ c ∈ cs, semWithArgs Ξ X P c n W v ∧ c.carriesInvariant = false := by
   cases t <;> cases q <;> simp only [familyMember, Bool.false_eq_true] at hm
   case numEq.true b =>
     simp only [Bool.and_eq_true, bne_iff_ne, ne_eq] at hm
@@ -481,7 +481,7 @@ theorem tagMember_sound {G : NormalGraph ι} {B : Ty ι} {t : Tag} {q : Bool}
     (hm : tagMember G B t q = true) {n W v} (hv : isVal v = true) (hs : Scoped 0 v)
     (ht : tagHolds t v = q) : meaning G B n W v := by
   obtain ⟨c, hc, hcv, hrec⟩ := familyMember_sound hm hv hs ht
-  exact expand_sem_mpr ⟨c, expand_sub hc, hcv, realmInvariant_of_unrealmed hrec _ _ _⟩
+  exact expand_sem_mpr ⟨c, expand_sub hc, hcv, builtinInvariant_of_withoutInvariant hrec _ _ _⟩
 
 /-! ### A type parameter's value under a test
 
@@ -535,7 +535,7 @@ theorem meetSlice_sound [DecidableEq ι] {G : NormalGraph ι} {A B : Ty ι} {t :
     obtain ⟨d, hd, hdv, hrec⟩ := familyMember_sound (X := mixedValues G G.env) (P := mixedArgs G G.env)
       hfam (meaning_value hv).1 (meaning_value hv).2 hq
     obtain ⟨b, hb, hdb⟩ := List.mem_flatMap.mp hd
-    exact target b hb ⟨d, hdb, hdv, realmInvariant_of_unrealmed hrec n W v⟩
+    exact target b hb ⟨d, hdb, hdv, builtinInvariant_of_withoutInvariant hrec n W v⟩
 
 /-- A passed `hasKey` test finds its key present: `check` of the key. -/
 def presentKey (t : Tag) (q : Bool) (check : PropKey → Bool) : Bool :=
@@ -558,14 +558,14 @@ theorem presentKey_sound {t : Tag} {q : Bool} {check : PropKey → Bool}
   · simp only [protoFree, hl, Option.isSome_none, Bool.false_or] at hv
     simpa [Option.isSome_iff_ne_none] using hv
 
-/-! ### An array of the realm
+/-! ### A built-in array
 
 `Array.isArray` finds that an object owns the store key. A record or
-dictionary type is of objects meeting the realm's array invariant
-(`PositiveGraphs.realmInvariant`): one owning the store key holds a possibly sparse store
-and the realm's prototype and owns no key it provides. So where the test holds,
-a member of such a type is a member of the realm's `sparse ReadonlyArray<unknown>`, the
-array shape over a store of values (`realmArrayLabel`). -/
+dictionary type is of objects meeting the built-in array invariant
+(`PositiveGraphs.builtinInvariant`): one owning the store key holds a possibly sparse store
+and the built-in prototype and owns no key it provides. So where the test holds,
+a member of such a type is a member of the built-in `sparse ReadonlyArray<unknown>`, the
+array shape over a store of values (`builtinArrayLabel`). -/
 
 /-- A type every JavaScript value meets. -/
 def valuesTy [DecidableEq ι] (G : NormalGraph ι) (T : Ty ι) : Bool :=
@@ -577,7 +577,7 @@ theorem valuesTy_sound [DecidableEq ι] {G : NormalGraph ι} {T : Ty ι} (h : va
   simp only [Bool.and_eq_true, Bool.or_eq_true, List.contains_iff_mem] at hp
   refine ⟨t, ht, (unfold_plain hp.1 n W v).mpr ?_⟩
   rcases hp.2 with h | h
-  · exact ⟨.top, h, ⟨sourceVal_isVal hv.1.1, hv.1.2⟩, realmInvariant_of_unrealmed rfl n W v⟩
+  · exact ⟨.top, h, ⟨sourceVal_isVal hv.1.1, hv.1.2⟩, builtinInvariant_of_withoutInvariant rfl n W v⟩
   · exact ⟨.source, h, hv⟩
 
 /-- A type holding every possibly sparse store of values: a readonly array store at a
@@ -589,7 +589,7 @@ def storeOfValues [DecidableEq ι] (G : NormalGraph ι) (S : Ty ι) : Bool :=
 
 theorem storeOfValues_sound [DecidableEq ι] {G : NormalGraph ι} {S U : Ty ι}
     (h : storeOfValues G S = true) (hu : exactUnknown G U = true) {n W v}
-    (hv : realmStoreT (realmValues G U) n W v) : meaning G S n W v := by
+    (hv : builtinStoreT (builtinValues G U) n W v) : meaning G S n W v := by
   obtain ⟨s, hs, hp⟩ := List.any_eq_true.mp h
   simp only [Bool.and_eq_true, List.any_eq_true] at hp
   obtain ⟨hplain, c, hc, hcv⟩ := hp
@@ -606,29 +606,29 @@ theorem storeOfValues_sound [DecidableEq ι] {G : NormalGraph ι} {S U : Ty ι}
         valuesTy_sound hcv (exactUnknown_sound hu ((hag j hj W' u).1 hu')), fun h => nomatch h⟩⟩
     · cases hcv
   · split at hcv
-    · exact realmInvariant_of_unrealmed rfl n W v
+    · exact builtinInvariant_of_withoutInvariant rfl n W v
     · cases hcv
 
-/-- The realm's `readonly unknown[]`: a clause row holding the array shape
+/-- The built-in `readonly unknown[]`: a clause row holding the array shape
 over a store of values, `ArrayProto` read at a type without parameters, and
 the keys that prototype provides. -/
-def realmArrayLabel [DecidableEq ι] (G : NormalGraph ι) (L : ι) : Bool :=
-  match G.realm with
+def builtinArrayLabel [DecidableEq ι] (G : NormalGraph ι) (L : ι) : Bool :=
+  match G.builtins with
   | none => false
-  | some r => realmFree G r.proto && exactUnknown G r.unknown && G.plain L && match G L with
+  | some r => builtinsFree G r.proto && exactUnknown G r.unknown && G.plain L && match G L with
     | [.refs [] [] [(k, S), (p, P)] [] [] [K]] =>
       k == CallArguments.arrayStoreField && p == CallArguments.protoField && P == r.proto &&
         K == ⟨false, r.keys⟩ && storeOfValues G S
     | _ => false
 
-/-- **An array of the realm.** A member of a record or dictionary clause that
-owns the store key is a member of the realm's `sparse ReadonlyArray<unknown>`. -/
-theorem realmArray_of_record [DecidableEq ι] {G : NormalGraph ι} {L : ι}
-    (hL : realmArrayLabel G L = true) {c : Clause (Ty ι)} (hc : c.realmed = true) {n W v}
-    (hinv : realmInvariant G (realmValues G) c n W v) (ha : tagHolds .isArray v = true) :
+/-- **A built-in array.** A member of a record or dictionary clause that
+owns the store key is a member of the built-in `sparse ReadonlyArray<unknown>`. -/
+theorem builtinArray_of_record [DecidableEq ι] {G : NormalGraph ι} {L : ι}
+    (hL : builtinArrayLabel G L = true) {c : Clause (Ty ι)} (hc : c.carriesInvariant = true) {n W v}
+    (hinv : builtinInvariant G (builtinValues G) c n W v) (ha : tagHolds .isArray v = true) :
     meaning G [L] n W v := by
-  unfold realmArrayLabel at hL
-  cases hr : G.realm with
+  unfold builtinArrayLabel at hL
+  cases hr : G.builtins with
   | none => rw [hr] at hL; cases hL
   | some r =>
     rw [hr] at hL
@@ -647,7 +647,7 @@ theorem realmArray_of_record [DecidableEq ι] {G : NormalGraph ι} {L : ι}
           exact ⟨fs, oid, rfl, by simpa [CallArguments.arrayStoreField] using ha⟩
         | _ => simp [tagHolds] at ha
       have hinv' := hinv
-      unfold realmInvariant at hinv'
+      unfold builtinInvariant at hinv'
       rw [hr] at hinv'
       simp only [hc, ite_true] at hinv'
       obtain ⟨hview, hkeys, -⟩ := hinv' flds oid rfl hst
@@ -661,25 +661,25 @@ theorem realmArray_of_record [DecidableEq ι] {G : NormalGraph ι} {L : ι}
             Prod.mk.injEq, List.not_mem_nil, or_false] at hm
           rcases hm with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
           · obtain ⟨flds', l, c', oid', he, hl, hw, hag⟩ := hview CallArguments.arrayStoreField
-              (realmStoreT (realmValues G r.unknown)) (by simp)
+              (builtinStoreT (builtinValues G r.unknown)) (by simp)
             exact .inl (viewT_single ⟨flds', l, c', oid', he, hl, hw, fun j hj W' u hu =>
               storeOfValues_sound hS hunk (hag j hj W' u hu)⟩)
-          · obtain ⟨flds', l, c', oid', he, hl, hw, hag⟩ := hview CallArguments.protoField (realmValues G r.proto) (by simp)
+          · obtain ⟨flds', l, c', oid', he, hl, hw, hag⟩ := hview CallArguments.protoField (builtinValues G r.proto) (by simp)
             exact .inl (viewT_single ⟨flds', l, c', oid', he, hl, hw, fun j hj W' u hu =>
-              (realmFree_meaning hfree j W' u).mpr (hag j hj W' u hu)⟩)
+              (builtinsFree_meaning hfree j W' u).mpr (hag j hj W' u hu)⟩)
         · simp only [List.mem_singleton] at hK
           subst hK
           exact hkeys
-      · exact (realmInvariant_realmed hc rfl).mp hinv
+      · exact (builtinInvariant_carriesInvariant hc rfl).mp hinv
     · cases hrow
 
 /-- Where `Array.isArray` holds, every label of the tested type is kept in
 `B`, or is a clause row each clause of which is of no array or a record's,
-whose members that are arrays `B`'s realm array label holds. -/
+whose members that are arrays `B`'s builtins array label holds. -/
 def arraySlice [DecidableEq ι] (G : NormalGraph ι) (A B : Ty ι) : Bool :=
-  B.any (realmArrayLabel G) &&
+  B.any (builtinArrayLabel G) &&
     (tagSlice G A .isArray true).all fun a =>
-      B.contains a || (G.plain a && (G a).all fun c => tagClause .isArray c == some false || c.realmed)
+      B.contains a || (G.plain a && (G a).all fun c => tagClause .isArray c == some false || c.carriesInvariant)
 
 theorem arraySlice_sound [DecidableEq ι] {G : NormalGraph ι} {A B : Ty ι}
     (h : arraySlice G A B = true) {n W v} (hv : meaning G A n W v)
@@ -694,7 +694,7 @@ theorem arraySlice_sound [DecidableEq ι] {G : NormalGraph ι} {A B : Ty ι}
     rcases Bool.or_eq_true_iff.mp (hrow.2 c hc) with hno | hrec
     · have := tagClause_sound (beq_iff_eq.mp hno) hcv
       rw [ha] at this; cases this
-    · obtain ⟨l, hl, hvl⟩ := realmArray_of_record hL hrec hinv ha
+    · obtain ⟨l, hl, hvl⟩ := builtinArray_of_record hL hrec hinv ha
       cases List.mem_singleton.mp hl
       exact ⟨L, hLB, hvl⟩
 
@@ -1005,7 +1005,7 @@ theorem ObservedCovers.env [DecidableEq ι] {G : NormalGraph ι} {Γ Δ i o mapp
 #print axioms checkObservedSub_sound
 #print axioms checkObserved_sound
 #print axioms ObservedCovers.env
-#print axioms realmArray_of_record
+#print axioms builtinArray_of_record
 #print axioms arraySlice_sound
 #print axioms familyMember_sound
 #print axioms meetSlice_sound

@@ -54,7 +54,7 @@ result contract and throw only JavaScript values. A catch variable has type
 `unknown` and can be passed to an unconstrained generic function.
 
 Membership in $`J`$ supplies no field, call or array-layout guarantee.
-The calculus clause `source` denotes $`J`$ independently of the realm's
+The calculus clause `source` denotes $`J`$ independently of the built-ins'
 record invariants; calculus `top` also includes internal stores. The
 [clause semantics](POSITIVE-TYPES.md#types-and-clauses) owns this distinction.
 
@@ -193,9 +193,9 @@ own `__proto__`, which it would set through the prototype's setter.
 
 ### Arrays
 
-A **realm** is a JavaScript global environment with its associated built-in
-objects and prototypes. The array contracts below assume the standard
-prototypes of that realm.
+The **built-ins** are the objects and prototypes of the JavaScript global
+environment a program runs in. The array contracts below assume their
+standard prototypes.
 
 An array is one store of element locations under the reserved
 store key and one object holding `Array.prototype` under `[[proto]]`, read
@@ -217,7 +217,7 @@ in a closed expression alike. An array pattern's rest over a tuple of
 required positions is reads; any other is a slice, a call of the trusted
 `%RestFrom:k%` ([patterns](SOURCE-ELABORATION.md#patterns)).
 Every record and dictionary type, and `unknown`, is of values meeting the
-**array invariant**: an object owning the store key is an array of the realm,
+**array invariant**: an object owning the store key is a built-in array,
 a possibly sparse store of `unknown` values and `Array.prototype`, owning no
 key it provides. Allocation keeps it, since an allocation owning the store key
 is typed only as such an array and a merge copies no store; it is assumed of
@@ -323,13 +323,13 @@ the source type even when `U` admits holes. These are ordinary
 qualified callback types, including when the callback is returned or bound.
 
 **Ordinary array construction is part of the admitted semantics.** An array
-owns neither `constructor` nor `then`, and the realm's `Array.prototype.constructor`,
+owns neither `constructor` nor `then`, and the built-in `Array.prototype.constructor`,
 `Array[Symbol.species]` and relevant prototype links retain their standard
 behavior; `Array.prototype` and `Object.prototype` have no `then`. External code must preserve the same invariant for values it supplies
 and across calls. This is an explicit host assumption, like the restrictions on
 proxies and accessors; it is not a theorem about arbitrary JavaScript.
 
-The own-key part is stated in the existing array contract and realm invariant:
+The own-key part is stated in the existing array contract and the built-ins' invariant:
 `RequestJson.arrayExcludedKeys` adds `constructor` and `then` to the prototype's declared
 keys. Arrays cannot acquire it through an invariant-preserving allocation,
 structural alias or write. The fragment also refuses custom species definitions,
@@ -456,7 +456,7 @@ is refused ([call rules](SOURCE-CONTRACTS.md#reading-the-source)).
 ### Primitive members
 
 A member read on a primitive is read through the
-realm's wrapper prototype (`String.prototype`, `Number.prototype`,
+built-in wrapper prototype (`String.prototype`, `Number.prototype`,
 `BigInt.prototype`, `Boolean.prototype`) with the primitive as receiver; a
 string's `length` and indices are its own
 ([prototype contracts](SOURCE-CONTRACTS.md#prototype-contracts)).
@@ -519,7 +519,7 @@ with the reason where the model would answer otherwise
 `key in o` (`hasKey`, along the prototype chain the model holds), truthiness
 (`ToBoolean`), `== null`, strict equality against a singleton of any
 primitive kind, `Array.isArray` and `instanceof Array` (`isArray`: owns the
-store key; a record or dictionary arm is then the realm's `readonly
+store key; a record or dictionary arm is then the built-in `readonly
 unknown[]`, by the [array invariant](#arrays)), and `x instanceof C` for a
 class the file declares (`hasKey` of the key only `C`'s prototype owns; it
 narrows a union's arms, never `unknown`, since JavaScript gives any object

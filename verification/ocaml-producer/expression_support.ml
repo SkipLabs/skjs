@@ -77,10 +77,10 @@ open S
           else "fresh async resolution requires a stably non-thenable payload, also when adopting a native promise: "
             ^ thenable_reason ^ "; primitives, ordinary arrays and lifetime primitive `then` contracts establish this bound")
     | _ -> ()
-  (* An array `Array.isArray` found in `unknown` or a record, the realm's
+  (* An array `Array.isArray` found in `unknown` or a record, the built-ins'
      `readonly unknown[]`, passed where a call wants a mutable array of a
      binder: the binder's instance would be the array's own element contract. *)
-  let explain_realm_array site env n expected =
+  let explain_builtin_array site env n expected =
     match expected with
     | Some x ->
       let at_binder = function
@@ -88,7 +88,7 @@ open S
         | _ -> false in
       let actual = try resolve env n with Json.Error _ -> Atoms [] in
       if actual = Refinement.any_array && List.exists at_binder (flat_atoms declarations x) then
-        S.explain site ("an array of the realm at a generic call's mutable array of a binder: " ^ realm_array_reason)
+        S.explain site ("a built-in array at a generic call's mutable array of a binder: " ^ builtin_array_reason)
     | None -> ()
   (* A record at an index signature, which TypeScript admits through an
      implicit index signature. *)

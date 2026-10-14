@@ -241,16 +241,16 @@ def arrayClauseOf (store proto : α) (excluded : List PropKey) (readonly : Bool)
     [] [] [⟨false, excluded⟩]
 
 /-- A record or dictionary clause: the clauses the array invariant applies to
-(`PositiveGraphs.realmInvariant`). The source-value universe constrains only
+(`PositiveGraphs.builtinInvariant`). The source-value universe constrains only
 the outer value form and carries no record invariant. -/
 def Clause.record : Clause α → Bool
   | .refs .. | .dict .. => true
   | _ => false
 
-/-- The clauses the realm's array invariant applies to in a row
-(`PositiveGraphs.realmInvariant`): records, dictionaries and `source`, the
-realm's `unknown`. -/
-def Clause.realmed : Clause α → Bool
+/-- The clauses the built-in array invariant applies to in a row
+(`PositiveGraphs.builtinInvariant`): records, dictionaries and `source`, the
+builtins's `unknown`. -/
+def Clause.carriesInvariant : Clause α → Bool
   | .refs .. | .dict .. | .source => true
   | _ => false
 
@@ -932,19 +932,19 @@ theorem meet_record {a b d : Clause α} (h : d ∈ meet a b) : d.record = (a.rec
     (try split at h) <;> (try simp only [List.mem_singleton, List.not_mem_nil] at h) <;>
     (try subst h) <;> simp_all [Clause.record]
 
-theorem Clause.realmed_of_record {c : Clause α} (h : c.record = true) : c.realmed = true := by
-  cases c <;> simp_all [Clause.record, Clause.realmed]
+theorem Clause.carriesInvariant_of_record {c : Clause α} (h : c.record = true) : c.carriesInvariant = true := by
+  cases c <;> simp_all [Clause.record, Clause.carriesInvariant]
 
-@[simp] theorem Clause.realmed_map (f : α → β) (c : Clause α) : (c.map f).realmed = c.realmed := by
+@[simp] theorem Clause.carriesInvariant_map (f : α → β) (c : Clause α) : (c.map f).carriesInvariant = c.carriesInvariant := by
   cases c <;> rfl
 
-/-- A clause of a meet the realm's invariant applies to comes from an operand
+/-- A clause of a meet the built-ins' invariant applies to comes from an operand
 it applies to. -/
-theorem realmed_of_meet {a b d : Clause α} (h : d ∈ meet a b) (hd : d.realmed = true) :
-    a.realmed = true ∨ b.realmed = true := by
+theorem carriesInvariant_of_meet {a b d : Clause α} (h : d ∈ meet a b) (hd : d.carriesInvariant = true) :
+    a.carriesInvariant = true ∨ b.carriesInvariant = true := by
   cases a <;> cases b <;> unfold meet at h <;> simp only [List.mem_singleton, List.not_mem_nil] at h <;>
     (try split at h) <;> (try simp only [List.mem_singleton, List.not_mem_nil] at h) <;>
-    (try subst h) <;> simp_all [Clause.realmed]
+    (try subst h) <;> simp_all [Clause.carriesInvariant]
 
 /-- Only top meets top in top. -/
 theorem top_of_meet {a b : Clause α} (h : Clause.top ∈ meet a b) : a = .top ∧ b = .top := by
@@ -952,16 +952,16 @@ theorem top_of_meet {a b : Clause α} (h : Clause.top ∈ meet a b) : a = .top �
     (try split at h) <;> (try simp only [List.mem_singleton, List.not_mem_nil] at h) <;>
     simp_all
 
-/-- A member of a clause other than top that the realm's invariant does not
+/-- A member of a clause other than top that the built-ins' invariant does not
 apply to is no plain object: its shape is a primitive's, a store's or a
 callable's. -/
 theorem semWithArgs_not_plain {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
-    (hc : c ≠ .top) (hr : c.realmed = false) (h : semWithArgs Ξ X P c n W v) :
+    (hc : c ≠ .top) (hr : c.carriesInvariant = false) (h : semWithArgs Ξ X P c n W v) :
     ∀ flds oid, v ≠ .objAt flds .absent oid := by
   intro flds oid he
   subst he
   have hs := semWithArgs_shape hc (by rintro rfl; cases hr) h
-  cases c <;> simp_all [valueShape, shape, Clause.realmed]
+  cases c <;> simp_all [valueShape, shape, Clause.carriesInvariant]
 
 /-- Every operand of a clause. -/
 def Clause.operands : Clause α → List α

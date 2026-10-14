@@ -142,28 +142,28 @@ theorem checkMapped_reassign (Γ Δ : List (List ι)) (m : Mapping) (ps : EdgeEv
       checkMappedUsing G images Γ Δ m ps := by
   cases m <;> simp only [checkMappedUsing_eq, checkEdge_reassign, check_fun_reassign]
 
-/-- The realm checks read the graph's rows only. -/
-theorem realmFree_reassign (P : List ι) : realmFree (reassign G η) P = realmFree G P := by
-  simp only [realmFree, readsFrom_reassign, freeMapOf_reassign]
+/-- The built-ins checks read the graph's rows only. -/
+theorem builtinsFree_reassign (P : List ι) : builtinsFree (reassign G η) P = builtinsFree G P := by
+  simp only [builtinsFree, readsFrom_reassign, freeMapOf_reassign]
   rfl
 
-theorem allocRealm_reassign (parts : List (PropKey × List ι)) :
-    allocRealm (reassign G η) parts = allocRealm G parts := by
-  unfold allocRealm
-  simp only [realmFree_reassign]
+theorem allocBuiltins_reassign (parts : List (PropKey × List ι)) :
+    allocBuiltins (reassign G η) parts = allocBuiltins G parts := by
+  unfold allocBuiltins
+  simp only [builtinsFree_reassign]
   rfl
 
-theorem realmArrayLabel_reassign :
-    BranchRefinement.realmArrayLabel (reassign G η) = BranchRefinement.realmArrayLabel G := by
+theorem builtinArrayLabel_reassign :
+    BranchRefinement.builtinArrayLabel (reassign G η) = BranchRefinement.builtinArrayLabel G := by
   funext L
-  unfold BranchRefinement.realmArrayLabel
-  simp only [realmFree_reassign]
+  unfold BranchRefinement.builtinArrayLabel
+  simp only [builtinsFree_reassign]
   rfl
 
 theorem arraySlice_reassign (A B : List ι) :
     BranchRefinement.arraySlice (reassign G η) A B = BranchRefinement.arraySlice G A B := by
   unfold BranchRefinement.arraySlice
-  simp only [realmArrayLabel_reassign]
+  simp only [builtinArrayLabel_reassign]
   rfl
 
 theorem checkObservedSub_reassign (A B : List ι) (o : Observation) (p : SubtypeChoices ι) :
@@ -219,7 +219,7 @@ theorem Local_reassign (j : Sequent ι) (r : Rule ι) (ps : List (Sequent ι))
     LocalUsing (reassign G η) (images.reassign η) j r ps codes = LocalUsing G images j r ps codes := by
   unfold LocalUsing MemberProofsUsing
   simp (config := { iota := false }) only [check_fun_reassign, CallProofs_reassign, RestProofs_reassign, graphCodesChecked_reassign,
-    allocRealm_reassign]
+    allocBuiltins_reassign]
   rfl
 
 /-- A body's explicit subsumption procedure is held fixed while its
@@ -231,7 +231,7 @@ theorem LocalWith_reassign (j : Sequent ι) (r : Rule ι) (ps : List (Sequent ι
       LocalUsing G images j r ps codes subtype := by
   unfold LocalUsing MemberProofsUsing
   simp (config := { iota := false }) only [check_fun_reassign, CallProofs_reassign, RestProofs_reassign,
-    graphCodesChecked_reassign, allocRealm_reassign]
+    graphCodesChecked_reassign, allocBuiltins_reassign]
   rfl
 
 theorem checkTreeWith_reassign

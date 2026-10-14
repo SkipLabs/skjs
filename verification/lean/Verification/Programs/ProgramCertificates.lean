@@ -867,7 +867,7 @@ declared bounds. -/
       | [.refs fs [] [] [] [] ks] =>
         ns.Nodup ∧ ns.length = ps.length ∧ ps.map Sequent.term = inits ∧
         (∀ p ∈ ps, p.context = j.context) ∧ fs = ns.zip (ps.map Sequent.type) ∧
-        (∀ K ∈ ks, ∀ n ∈ ns, K.admits n = true) ∧ allocRealm G fs = true
+        (∀ K ∈ ks, ∀ n ∈ ns, K.admits n = true) ∧ allocBuiltins G fs = true
       -- A literal allocated directly at a dictionary: each field an index's
       -- class may admit at exactly that index's type, each optional field
       -- absent (`HasTyUsing.allocDict`).

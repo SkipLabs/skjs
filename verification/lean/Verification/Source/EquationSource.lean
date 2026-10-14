@@ -173,7 +173,7 @@ def lowerSource (ast claims : Json) : M (List (String × Union) × List (String 
   -- Every declaration: heads now, aliases where they are used.
   for i in [:ds.size] do
     if ds[i]!.isHead then let _ ← declHead i
-  -- The realm's array prototype.
+  -- The built-in array prototype.
   let proto ← protoLabel
   modify fun s => { s with proto := match proto with | .app h _ => some h | _ => none }
   drain

@@ -99,14 +99,14 @@ Coq alternative, for ECMAScript 5, before promises. M is related to calculus
 states by a relation R on values (primitives, including `numberToString`'s
 spelling of property keys), objects (own keys, `[[Prototype]]`, data
 properties), the calculus's reserved keys (the array store `[]`,
-`[[proto]]`, the class brand) and realm objects (`Array.prototype`,
+`[[proto]]`, the class brand) and built-in objects (`Array.prototype`,
 `Promise`, …).
 
 **Host lemmas.** For every intrinsic and overlay entry $`x : \tau`$ in the
 [trust surface](DESIGN.md#trust-surface), the corresponding M built-in
 $`b_x`$ is in the M-level meaning of $`\tau`$: $`b_x \in ⟦\tau⟧_M`$. The
 meaning $`⟦\cdot⟧_M`$ is the calculus's type meaning transported along R,
-with one extension: a `Promise<X>` is a realm promise whose fulfillment value
+with one extension: a `Promise<X>` is a built-in promise whose fulfillment value
 is in $`⟦X⟧_M`$. Every row of the trust surface that names ECMA behaviour,
 such as `%Await%`, `%Iterate%`, `%ForIn%`, `Array.prototype`'s members,
 `JSON`, `BigInt` and `Set`/`Map`/`Date`, becomes a proof obligation.
@@ -150,13 +150,13 @@ counterexample directly:
 - a promise's resolve function, called with a value that has a callable
   `then`, does not fulfill with it; it schedules `NewPromiseResolveThenableJob`
   and adopts it (ECMA-262, *Promise Resolve Functions*);
-- so no realm promise is ever fulfilled with a thenable;
-- `Await` of a realm promise yields its fulfillment value
+- so no built-in promise is ever fulfilled with a thenable;
+- `Await` of a built-in promise yields its fulfillment value
   (*Await*, *PromiseResolve*).
 
 Hence
 $`⟦\mathsf{Promise}\langle \mathsf{Promise}\langle \mathsf{number}\rangle\rangle⟧_M = \emptyset`$
-among realm promises, and the lemma cannot be proved.
+among built-in promises, and the lemma cannot be proved.
 
 The end-to-end statement shows the same error differently. The declaration
 `wrap<T>` enters it as a premise: `wrap` is in
@@ -171,14 +171,14 @@ instantiations.
 The pipeline states:
 
 - `%Await%` at $`\forall X:\mathsf{Awaitable}.\ (X) \Rightarrow X.\mathsf{Observed}`$, whose observation-qualified $`X`$ ranges over the inputs observed as stable, a native promise of any payload or a union of those ([implied bounds](SOURCE-CONTRACTS.md#implied-bounds));
-- the host assumption that a value of type `Promise<T>` is a realm promise,
+- the host assumption that a value of type `Promise<T>` is a built-in promise,
   with the source refused from building an object that has a `then` member;
 - a trusted generic signature's type parameters that occur under
   `Promise<…>` bounded by the non-thenable types
   $`N = P \mid \{\mathtt{readonly\ then?}: P\} \mid \mathsf{readonly\ unknown[]}`$.
 
 Under M, the qualified `%Await%` lemma is provable from the specification;
-"`Promise<T>` values are realm promises" becomes a lemma for every promise
+"`Promise<T>` values are built-in promises" becomes a lemma for every promise
 the program or the built-ins create; and the non-thenable bound is exactly
 the condition under which a trusted generic promise signature is
 satisfiable, so the external premises are not vacuous. The assumption left

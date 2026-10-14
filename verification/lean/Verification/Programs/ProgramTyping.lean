@@ -39,11 +39,11 @@ theorem represents_raw {G : NormalGraph ι} {A c} (hr : Represents G A c) (n W v
   fun h => ((represents_sem hr n W v).mp h).1
 
 /-- A member of a clause that is not a record's is a member of the type it
-represents: the realm asks nothing of it. -/
+represents: the built-ins asks nothing of it. -/
 theorem represents_back {G : NormalGraph ι} {A c} (hr : Represents G A c) (n W v)
-    (hc : c.realmed = false := by rfl) :
+    (hc : c.carriesInvariant = false := by rfl) :
     semWithArgs (excOf G) (meaning G) (argMeaning G) c n W v → meaning G A n W v :=
-  fun h => (represents_sem hr n W v).mpr ⟨h, realmInvariant_of_unrealmed hc n W v⟩
+  fun h => (represents_sem hr n W v).mpr ⟨h, builtinInvariant_of_withoutInvariant hc n W v⟩
 
 /-- A value of a class's key clause is a key the class admits, by the
 `ToPropertyKey` a computed key's step applies. -/
@@ -135,24 +135,24 @@ def offerRows (L : List (Arrow (Ty ι))) (S : List (RestArrow (Ty ι))) :
 
 export PositiveRules (readsFrom freeMapOf closureFuel)
 
-/-! ### The realm's prototype type
+/-! ### The built-in prototype type
 
 The array invariant reads `ArrayProto` at one fixed assignment
-(`ParameterInterpretation.realmAt`); a type reading no parameter row means the
+(`ParameterInterpretation.builtinsAt`); a type reading no parameter row means the
 same at every assignment, which a rule relating the invariant to a type checks
-of the realm's prototype type. -/
+of the built-in prototype type. -/
 
-/-- The realm's prototype type reads no parameter row: a checked free map of
+/-- The built-in prototype type reads no parameter row: a checked free map of
 the rows it reaches gives it none. -/
-def realmFree [DecidableEq ι] (G : NormalGraph ι) (P : Ty ι) : Bool :=
+def builtinsFree [DecidableEq ι] (G : NormalGraph ι) (P : Ty ι) : Bool :=
   let D := readsFrom G closureFuel P
   let V := freeMapOf G D closureFuel []
   FreeOk G D V && P.all fun l => D.contains l && (fv V l).isEmpty
 
 /-- Such a type means at the graph's assignment what the invariant reads. -/
-theorem realmFree_meaning [DecidableEq ι] {G : NormalGraph ι} {P : Ty ι}
-    (h : realmFree G P = true) (n W v) : meaning G P n W v ↔ realmValues G P n W v := by
-  simp only [realmFree, Bool.and_eq_true, List.all_eq_true, List.contains_iff_mem,
+theorem builtinsFree_meaning [DecidableEq ι] {G : NormalGraph ι} {P : Ty ι}
+    (h : builtinsFree G P = true) (n W v) : meaning G P n W v ↔ builtinValues G P n W v := by
+  simp only [builtinsFree, Bool.and_eq_true, List.all_eq_true, List.contains_iff_mem,
     List.isEmpty_iff] at h
   obtain ⟨hF, hP⟩ := h
   have heq : ∀ l ∈ P, normalDenote G l = qDenoteWithArgs G (mixedParameters G)
@@ -190,11 +190,11 @@ def storeTy (G : NormalGraph ι) (S : Ty ι) : Bool :=
     | .list a _ => a.operands.all (sourceTy G)
     | _ => false
 
-/-- A store type's members are stores of the realm, given a type `U` holding
-the realm's `unknown`. -/
+/-- A store type's members are stores of the built-ins, given a type `U` holding
+the built-ins' `unknown`. -/
 theorem storeTy_sound {G : NormalGraph ι} {S U : Ty ι} (h : storeTy G S = true)
     (hu : unknownTy G U = true) {η : MixedAssignment ι} {n W v}
-    (hv : meaning G S n W v) : realmStoreT (mixedValues G η U) n W v := by
+    (hv : meaning G S n W v) : builtinStoreT (mixedValues G η U) n W v := by
   simp only [storeTy, Bool.and_eq_true, List.all_eq_true] at h
   obtain ⟨c, hc, hv, -⟩ := (expand_sem G S h.1 n W v).mp hv
   have hl := h.2 c hc
@@ -202,7 +202,7 @@ theorem storeTy_sound {G : NormalGraph ι} {S U : Ty ι} (h : storeTy G S = true
   | list a bs =>
     have hj : ∀ B ∈ a.operands, SourceValues G B := by
       simpa only [List.all_eq_true, SourceValues] using hl
-    refine listT_realmStore (fun A hA j W' u hu' => ?_) hv.1
+    refine listT_builtinStore (fun A hA j W' u hu' => ?_) hv.1
     simp only [tupleFams] at hA
     rcases hA with hA | hA | hA
     · obtain ⟨B, hB, rfl⟩ := List.mem_map.mp hA
@@ -226,46 +226,46 @@ theorem listsOnly_sound [DecidableEq ι] {G : NormalGraph ι} {S : Ty ι} (h : l
   obtain ⟨ls, rfl, -⟩ := hv.1
   exact ⟨ls, rfl⟩
 
-/-- **An allocation meets the realm's invariant**: it owns no store, or it is
-an array of the realm, holding a store and the realm's prototype and owning
-no key that prototype provides; without a realm, an array whose store is a
+/-- **An allocation meets the built-ins' invariant**: it owns no store, or it is
+a built-in array, holding a store and the built-in prototype and owning
+no key that prototype provides; without a builtins, an array whose store is a
 list. -/
-def allocRealm [DecidableEq ι] (G : NormalGraph ι) (parts : List (PropKey × Ty ι)) : Bool :=
+def allocBuiltins [DecidableEq ι] (G : NormalGraph ι) (parts : List (PropKey × Ty ι)) : Bool :=
   !parts.any (·.1 == CallArguments.arrayStoreField) ||
-  match G.realm with
+  match G.builtins with
   | none => parts.any (fun p => p.1 == CallArguments.arrayStoreField && listsOnly G p.2)
-  | some r => realmFree G r.proto && unknownTy G r.unknown && parts.all (fun p => !r.keys.contains p.1) &&
+  | some r => builtinsFree G r.proto && unknownTy G r.unknown && parts.all (fun p => !r.keys.contains p.1) &&
       parts.all (fun p => !IndexKeys.numeric.may p.1) &&
       parts.any (fun p => p.1 == CallArguments.arrayStoreField && storeTy G p.2) &&
       parts.any (fun p => p.1 == CallArguments.protoField && p.2 == r.proto)
 
-theorem allocRealm_sound [DecidableEq ι] {G : NormalGraph ι} {parts : List (PropKey × Ty ι)}
-    (hok : allocRealm G parts = true) (_hnd : (parts.map Prod.fst).Nodup) (c : Clause (Ty ι))
+theorem allocBuiltins_sound [DecidableEq ι] {G : NormalGraph ι} {parts : List (PropKey × Ty ι)}
+    (hok : allocBuiltins G parts = true) (_hnd : (parts.map Prod.fst).Nodup) (c : Clause (Ty ι))
     {k : Nat} {V : WorldT k} {base : Nat}
     (hrec : recT ((parts.map Prod.fst).zip (parts.map fun p => meaning G p.2)) k V
       (.objAt (slots base (parts.map Prod.fst)) .absent oid)) :
-    realmInvariant G (realmValues G) c k V (.objAt (slots base (parts.map Prod.fst)) .absent oid) := by
+    builtinInvariant G (builtinValues G) c k V (.objAt (slots base (parts.map Prod.fst)) .absent oid) := by
   have hmem : ∀ p ∈ parts, (p.1, meaning G p.2) ∈ (parts.map Prod.fst).zip (parts.map fun p => meaning G p.2) := by
     intro p hp
     rw [List.zip_map']
     exact List.mem_map.mpr ⟨p, hp, rfl⟩
-  unfold allocRealm at hok
+  unfold allocBuiltins at hok
   cases hs : parts.any (·.1 == CallArguments.arrayStoreField)
-  · apply realmInvariant_of_lookup
+  · apply builtinInvariant_of_lookup
     apply ObjectMerge.lookup_slots_none
     intro hm
     obtain ⟨p, hp, hk⟩ := List.mem_map.mp hm
     have := List.any_eq_false.mp hs p hp
     simp [hk] at this
   · simp only [hs, Bool.not_true, Bool.false_or] at hok
-    cases hr : G.realm with
+    cases hr : G.builtins with
     | none =>
       rw [hr] at hok
       simp only [Bool.and_eq_true, List.any_eq_true, beq_iff_eq] at hok
       obtain ⟨ps, hps, hsk, hst⟩ := hok
-      unfold realmInvariant
+      unfold builtinInvariant
       rw [hr]
-      cases c.realmed
+      cases c.carriesInvariant
       · trivial
       · intro flds oid he _
         cases he
@@ -280,9 +280,9 @@ theorem allocRealm_sound [DecidableEq ι] {G : NormalGraph ι} {parts : List (Pr
       simp only [Bool.and_eq_true, List.all_eq_true, List.any_eq_true, Bool.not_eq_true',
         beq_iff_eq] at hok
       obtain ⟨⟨⟨⟨⟨hfree, hunk⟩, hkeys⟩, hnum⟩, ⟨ps, hps, hsk, hst⟩⟩, ⟨pp, hpp, hpk, hpr⟩⟩ := hok
-      unfold realmInvariant
+      unfold builtinInvariant
       rw [hr]
-      cases c.realmed
+      cases c.carriesInvariant
       · trivial
       · intro flds oid he _
         cases he
@@ -295,7 +295,7 @@ theorem allocRealm_sound [DecidableEq ι] {G : NormalGraph ι} {parts : List (Pr
           · obtain ⟨flds, l, c, oid', he, hl, hw, hag⟩ := recT_at (hmem pp hpp) hrec
             refine ⟨flds, l, c, oid', he, by rw [← hpk]; exact hl, hw, fun j hj W' u hu => ?_⟩
             rw [← hpr]
-            exact (realmFree_meaning (hpr ▸ hfree) j W' u).mp ((hag j hj W' u).mp hu)
+            exact (builtinsFree_meaning (hpr ▸ hfree) j W' u).mp ((hag j hj W' u).mp hu)
         · obtain ⟨p, hp, hq1⟩ := List.mem_map.mp (ObjectMerge.slots_fst_mem hq)
           simp only [KeyBound.admits, hq1 ▸ hkeys p hp]
           rfl
@@ -2020,9 +2020,9 @@ theorem namedMembers_sem {G : NormalGraph ι} {A : Ty ι} {c : Clause (Ty ι)}
   | .dict _ [] _ _ _ _ _ _, rfl => exact ⟨hs.1.1, hs.2.1⟩
 
 /-- A clause with named members is a record's or a dictionary's, which the
-realm's invariant applies to. -/
-theorem namedMembers_realmed {c : Clause α} {fs vs : List (PropKey × α)}
-    (hc : namedMembers c = some (fs, vs)) : c.realmed = true := by
+builtins's invariant applies to. -/
+theorem namedMembers_carriesInvariant {c : Clause α} {fs vs : List (PropKey × α)}
+    (hc : namedMembers c = some (fs, vs)) : c.carriesInvariant = true := by
   match c, hc with
   | .refs _ [] _ _ _ _, rfl => rfl
   | .dict _ [] _ _ _ _ _ _, rfl => rfl
@@ -2215,7 +2215,7 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
       (∀ p ∈ parts, HasTyWith G images subtyping Γ p.2.2 p.2.1) →
       Represents G Ref (.refs (parts.map fun p => (p.1, p.2.1)) [] [] [] [] ks) →
       (∀ K ∈ ks, ∀ p ∈ parts, K.admits p.1 = true) →
-      allocRealm G (parts.map fun p => (p.1, p.2.1)) = true →
+      allocBuiltins G (parts.map fun p => (p.1, p.2.1)) = true →
       HasTyWith G images subtyping Γ (.makeAt .absent (parts.map Prod.fst) (parts.map fun p => p.2.2)) Ref
   /-- **Allocation at a dictionary.** A literal allocated directly at a
   dictionary type: its fields are the clause's first operand, with no key the
@@ -2807,7 +2807,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         fun K hK => ownKeysT_slots fun n hn => by
           obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hn
           exact hbound K hK p hp⟩⟩, ?_⟩
-    have hinv := allocRealm_sound hreal (by simpa [List.map_map, Function.comp_def] using hnd)
+    have hinv := allocBuiltins_sound hreal (by simpa [List.map_map, Function.comp_def] using hnd)
       (.refs (parts.map fun p => (p.1, p.2.1)) [] [] [] [] ks) (base := heap.length) (k := k) (V := V)
       (by simpa [List.map_map, Function.comp_def] using hrec)
     simpa [List.map_map, Function.comp_def] using hinv
@@ -2873,7 +2873,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         rw [show (OptionalField.map (meaning G) o').key = o'.key from rfl,
           slots_lookup_none (habs o' ho')] at hl
         cases hl⟩, MethodMembers.methodT_nil _ _ _,
-      fun K hK => by simp at hK⟩, realmInvariant_of_lookup (slots_lookup_none hstore)⟩
+      fun K hK => by simp at hK⟩, builtinInvariant_of_lookup (slots_lookup_none hstore)⟩
   | @read Γ a Ref c fs vs f A ha hr hc hm ih =>
     intro n W h ρ he hw hh
     apply bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
@@ -2928,7 +2928,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
           have hst : (flds.lookup CallArguments.arrayStoreField).isSome = true := ht
           have hinv' := hinv
           rw [hρ] at hinv'
-          obtain ⟨l, c', hf, hl, hag⟩ := realmInvariant_store (namedMembers_realmed hc) hinv' hst
+          obtain ⟨l, c', hf, hl, hag⟩ := builtinInvariant_store (namedMembers_carriesInvariant hc) hinv' hst
           apply bind Tm.lenOf Step.lenC Raises.lenC k _ h _ hw' hh'
             (read_view_rule (A := fun _ _ u => ∃ ls, u = .arr ls) (fun _ _ _ ⟨ls, he⟩ => by subst he; rfl)
               k _ h l hw' hh' hf hl hag)
@@ -3262,8 +3262,8 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     | succ p =>
       apply Safe_mono (p+1) (fun m _ X v hv => ?_) U heap _ (test_value_safe k av hav p U heap hu hok)
       rcases hv with rfl | rfl
-      · exact expand_sem_mpr ⟨_, expand_sub ht, rfl, realmInvariant_of_unrealmed rfl _ _ _⟩
-      · exact expand_sem_mpr ⟨_, expand_sub hf, rfl, realmInvariant_of_unrealmed rfl _ _ _⟩
+      · exact expand_sem_mpr ⟨_, expand_sub ht, rfl, builtinInvariant_of_withoutInvariant rfl _ _ _⟩
+      · exact expand_sem_mpr ⟨_, expand_sub hf, rfl, builtinInvariant_of_withoutInvariant rfl _ _ _⟩
   | @merge Γ d a b A B R ha hb hm iha ihb =>
     intro n W h ρ he hw hh
     apply bind (fun a => .merge d a (instantiate 0 ρ b)) Step.mergeC1 Raises.mergeC1 n W h _ hw hh
@@ -3304,8 +3304,8 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       obtain ⟨z, hz, hr⟩ := hres
       refine arith_value_safe op av bv z hz k V heap' hv hok' (fun m U => ?_)
       rcases hr with rfl | rfl
-      · exact expand_sem_mpr ⟨_, expand_sub hn.1, rfl, realmInvariant_of_unrealmed rfl _ _ _⟩
-      · exact expand_sem_mpr ⟨_, expand_sub hn.2, rfl, realmInvariant_of_unrealmed rfl _ _ _⟩
+      · exact expand_sem_mpr ⟨_, expand_sub hn.1, rfl, builtinInvariant_of_withoutInvariant rfl _ _ _⟩
+      · exact expand_sem_mpr ⟨_, expand_sub hn.2, rfl, builtinInvariant_of_withoutInvariant rfl _ _ _⟩
     unfold ClauseOperatorTypes at hopt
     split at hopt
     case h_2 => exact hopt.elim
@@ -3314,7 +3314,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     obtain ⟨c, hc, hca, -⟩ := (expand_sem G A hops.1 k V av).mp ha''
     obtain ⟨d, hd, hdb, -⟩ := (expand_sem G B hops.2.1 k V bv).mp hb'
     rcases opResult_sound (hops.2.2 c hc d hd) hca hdb with ⟨z, hz, hr⟩ | hthrow
-    case inr => exact arith_throw_safe op av bv hthrow k V heap' hv hok' (realmExc_errors G _)
+    case inr => exact arith_throw_safe op av bv hthrow k V heap' hv hok' (builtinExc_errors G _)
     refine arith_value_safe op av bv z hz k V heap' hv hok' (fun m U => ?_)
     cases r with
     | num => obtain ⟨x, rfl⟩ := hr; exact (represents_back hn m U _) ⟨x, rfl⟩
@@ -3322,8 +3322,8 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     | str => obtain ⟨s, rfl⟩ := hr; exact (represents_back hn m U _) ⟨s, rfl⟩
     | bool =>
       rcases hr with rfl | rfl
-      · exact expand_sem_mpr ⟨_, expand_sub hn.1, rfl, realmInvariant_of_unrealmed rfl _ _ _⟩
-      · exact expand_sem_mpr ⟨_, expand_sub hn.2, rfl, realmInvariant_of_unrealmed rfl _ _ _⟩
+      · exact expand_sem_mpr ⟨_, expand_sub hn.1, rfl, builtinInvariant_of_withoutInvariant rfl _ _ _⟩
+      · exact expand_sem_mpr ⟨_, expand_sub hn.2, rfl, builtinInvariant_of_withoutInvariant rfl _ _ _⟩
   | @write Γ a Ref fs vs os ms ks f A b N ha hr hm hb hn iha ihb =>
     intro n W h ρ he hw hh
     apply bind (fun a => .writeAt f a (instantiate 0 ρ b)) Step.writeC1 Raises.writeC1 n W h _ hw hh
@@ -3762,8 +3762,8 @@ theorem HasTy.closed_safe {G : NormalGraph ι} {t A} (ht : HasTy G [] t A)
 #print axioms tagClause_sound
 #print axioms SourceValues.sound
 #print axioms opResult_sound
-#print axioms realmFree_meaning
+#print axioms builtinsFree_meaning
 #print axioms storeTy_sound
-#print axioms allocRealm_sound
+#print axioms allocBuiltins_sound
 
 end Verification.ProgramTyping

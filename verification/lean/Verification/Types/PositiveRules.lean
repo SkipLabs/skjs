@@ -114,23 +114,23 @@ noncomputable def mixedValues (G : NormalGraph ι) (η : MixedAssignment ι) (S 
 noncomputable abbrev mixedArgs (G : NormalGraph ι) (η : MixedAssignment ι) : List ι → ArgFam :=
   graphArguments G η (mixedValues G η)
 
-/-- The realm's prototype type as rows read it: at the fixed assignment
-`realmAt`. -/
-noncomputable abbrev realmValues (G : NormalGraph ι) : List ι → Fam :=
+/-- The built-in prototype type as rows read it: at the fixed assignment
+`builtinsAt`. -/
+noncomputable abbrev builtinValues (G : NormalGraph ι) : List ι → Fam :=
   mixedValues G (ParameterAssignment.empty .mixed)
 
-/-- The graph's exception family: its realm's `unknown`, its prototype type
-read at `realmAt` (`realmExc`). -/
-noncomputable abbrev excOf (G : NormalGraph ι) : Fam := realmExc G (realmValues G)
+/-- The graph's exception family: its builtins's `unknown`, its prototype type
+read at `builtinsAt` (`builtinExc`). -/
+noncomputable abbrev excOf (G : NormalGraph ι) : Fam := builtinExc G (builtinValues G)
 
 /-- A clause's value members, its operands read at `η`. -/
 noncomputable abbrev mixedSem (G : NormalGraph ι) (η : MixedAssignment ι) : Clause (List ι) → Fam :=
-  rowSem G (realmValues G) (mixedValues G η) (mixedArgs G η)
+  rowSem G (builtinValues G) (mixedValues G η) (mixedArgs G η)
 
 /-- An instance's contract is its scheme's body read at the instance's
 assignment. -/
 theorem instance_body (G : NormalGraph ι) (η : MixedAssignment ι) (s : SchemeRow ι) (As : List MixedFamily) :
-    instanceTWithArgs (realmExc G (setSem fun l => qDenoteWithArgs G (mixedParameters G) ((mixedParameters G).realmAt, l)))
+    instanceTWithArgs (builtinExc G (setSem fun l => qDenoteWithArgs G (mixedParameters G) ((mixedParameters G).builtinsAt, l)))
       (fun η' S => setSem (fun l => qDenoteWithArgs G (mixedParameters G) (η', l)) S) η s As
       (mixedParameters G).arguments =
     semWithArgs (excOf G) (mixedValues G (assign η s.binders As)) (mixedArgs G (assign η s.binders As)) s.body := by
@@ -145,7 +145,7 @@ noncomputable def meaning (G : NormalGraph ι) (S : List ι) : Fam := setSem (no
 
 /-- A clause's value members at the graph's own assignment. -/
 noncomputable abbrev clauseSem (G : NormalGraph ι) : Clause (List ι) → Fam :=
-  rowSem G (realmValues G) (meaning G) (argMeaning G)
+  rowSem G (builtinValues G) (meaning G) (argMeaning G)
 
 /-- A clause row means its clauses, at every assignment. -/
 theorem mixed_unfold_plain {G : NormalGraph ι} (η : MixedAssignment ι) {i : ι}
@@ -233,9 +233,9 @@ theorem splitClause_row (G : NormalGraph ι) (A X : List ι → Fam) (P : List �
   case bool =>
     simp only [splitClause, setSem, rowSem, List.mem_cons, List.not_mem_nil, or_false,
       exists_eq_or_imp, exists_eq_left]
-    simp only [realmInvariant_of_unrealmed (G := G) (X := A) (show (Clause.bool : Clause (List ι)).realmed = false from rfl),
-      realmInvariant_of_unrealmed (G := G) (X := A) (show (Clause.boolLit true : Clause (List ι)).realmed = false from rfl),
-      realmInvariant_of_unrealmed (G := G) (X := A) (show (Clause.boolLit false : Clause (List ι)).realmed = false from rfl),
+    simp only [builtinInvariant_of_withoutInvariant (G := G) (X := A) (show (Clause.bool : Clause (List ι)).carriesInvariant = false from rfl),
+      builtinInvariant_of_withoutInvariant (G := G) (X := A) (show (Clause.boolLit true : Clause (List ι)).carriesInvariant = false from rfl),
+      builtinInvariant_of_withoutInvariant (G := G) (X := A) (show (Clause.boolLit false : Clause (List ι)).carriesInvariant = false from rfl),
       and_true, semWithArgs, boolT]
     constructor
     · rintro (h | h) <;> simp [h]
@@ -687,7 +687,7 @@ theorem numIn_sound {G : NormalGraph ι} {T : List ι} (h : numIn G T = true) (�
     {j : Nat} {W : WorldT j} (b : UInt64) : mixedValues G η T j W (.num b) := by
   obtain ⟨c, hc, hs⟩ := List.any_eq_true.mp h
   cases c <;> simp only [Bool.false_eq_true] at hs
-  exact mixed_expand_mpr ⟨.num, expand_sub hc, ⟨b, rfl⟩, realmInvariant_of_unrealmed rfl _ _ _⟩
+  exact mixed_expand_mpr ⟨.num, expand_sub hc, ⟨b, rfl⟩, builtinInvariant_of_withoutInvariant rfl _ _ _⟩
 
 /-- A view field is covered by a source field of the same name whose contract
 implies it: an invariant field or a view, either way a sound upper bound. -/
@@ -1799,7 +1799,7 @@ theorem clauseArguments_congr_on [DecidableEq ι] {D : List ι} {c : Clause (Lis
     h l (by simpa using (List.mem_filter.mp hl).2) W v
 
 /-- Local operand agreement for a clause read in a row: its operands; the
-realm's prototype type is read by the same family on both sides. -/
+builtins's prototype type is read by the same family on both sides. -/
 theorem rowSem_congr_on [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {c : Clause (List ι)}
     (hops : ∀ S ∈ c.operands, ∀ l ∈ S, l ∈ D) (A : List ι → Fam)
     (X Y : ι → Fam) (P Q : List ι → ArgFam) (n : Nat)
@@ -2046,8 +2046,8 @@ theorem partSem_support [DecidableEq ι] {G : NormalGraph ι} {D : ι → Prop} 
         simp only [reads, hq]
         exact List.mem_flatMap.mpr ⟨c, hc, List.mem_flatten.mpr ⟨S, hS, hl⟩⟩
       have cl : ∀ cs, (∀ c ∈ cs, c ∈ G i ++ meetClauses G i) →
-          (setSem (rowSem G (setSem fun l => X (I.realmAt, l)) (setSem fun l => X (η, l)) (I.arguments η (setSem fun l => X (η, l)))) cs n W v ↔
-            setSem (rowSem G (setSem fun l => X (I.realmAt, l)) (setSem fun l => X (η', l)) (I.arguments η' (setSem fun l => X (η', l)))) cs n W v) := by
+          (setSem (rowSem G (setSem fun l => X (I.builtinsAt, l)) (setSem fun l => X (η, l)) (I.arguments η (setSem fun l => X (η, l)))) cs n W v ↔
+            setSem (rowSem G (setSem fun l => X (I.builtinsAt, l)) (setSem fun l => X (η', l)) (I.arguments η' (setSem fun l => X (η', l)))) cs n W v) := by
         intro cs hcs
         constructor
         · rintro ⟨c, hc, h⟩
@@ -2727,9 +2727,9 @@ theorem admitsUndefined_sound {G : NormalGraph ι} {η : MixedAssignment ι} {A 
   have he : c = .undef ∨ c = .top ∨ c = .source := by cases c <;> simp_all [shape]
   apply mixed_expand_mpr
   rcases he with rfl | rfl | rfl
-  · exact ⟨.undef, expand_sub hc, ⟨rfl, realmInvariant_of_unrealmed rfl _ _ _⟩⟩
-  · exact ⟨.top, expand_sub hc, ⟨⟨rfl, trivial⟩, realmInvariant_of_unrealmed rfl _ _ _⟩⟩
-  · exact ⟨.source, expand_sub hc, ⟨⟨rfl, trivial⟩, realmInvariant_of_not_plain (fun _ _ h => nomatch h)⟩⟩
+  · exact ⟨.undef, expand_sub hc, ⟨rfl, builtinInvariant_of_withoutInvariant rfl _ _ _⟩⟩
+  · exact ⟨.top, expand_sub hc, ⟨⟨rfl, trivial⟩, builtinInvariant_of_withoutInvariant rfl _ _ _⟩⟩
+  · exact ⟨.source, expand_sub hc, ⟨⟨rfl, trivial⟩, builtinInvariant_of_not_plain (fun _ _ h => nomatch h)⟩⟩
 
 theorem excludesUndefined_sound {G : NormalGraph ι} {η : MixedAssignment ι} {A : List ι}
     (h : ExcludesUndefined G A) (j : Nat) (U : WorldT j) : ¬ mixedValues G η A j U .undef := by
@@ -2997,12 +2997,12 @@ theorem CoversWith.record [DecidableEq ι] {G : NormalGraph ι} {sub : Option (R
     | (simp only at hc; done)
     | simp [Clause.record] at hb
 
-/-- A clause the realm's invariant applies to is covered by no top. -/
+/-- A clause the built-ins' invariant applies to is covered by no top. -/
 theorem CoversWith.not_top [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)} {R known arrows self} {a b : Clause (List ι)}
-    (hc : CoversWith G sub R known arrows self a b) (hb : b.realmed = true) : a ≠ .top := by
+    (hc : CoversWith G sub R known arrows self a b) (hb : b.carriesInvariant = true) : a ≠ .top := by
   rintro rfl
   unfold CoversWith at hc
-  cases b <;> simp_all [Clause.realmed, sourceClause]
+  cases b <;> simp_all [Clause.carriesInvariant, sourceClause]
 
 /-- **Construct signatures, soundly.** A class value meeting construct
 signatures meets every one they cover: each target signature's actual lists
@@ -3211,9 +3211,9 @@ theorem Covers.sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renami
     mixedSem G η a n W v → mixedSem G η b n W v := by
   rintro ⟨hv, hinv⟩
   refine ⟨Covers.sound_raw hc hknown n hr hpa hre W v hself hv, ?_⟩
-  cases hbr : b.realmed
-  · exact realmInvariant_of_unrealmed hbr n W v
-  · exact realmInvariant_of_member ⟨hv, hinv⟩ (CoversWith.not_top hc hbr) hbr
+  cases hbr : b.carriesInvariant
+  · exact builtinInvariant_of_withoutInvariant hbr n W v
+  · exact builtinInvariant_of_member ⟨hv, hinv⟩ (CoversWith.not_top hc hbr) hbr
 
 /-- A type's meaning is a family of closed values. -/
 theorem meaning_valueFam (G : NormalGraph ι) (S : List ι) : ValueFam (meaning G S) :=
@@ -3347,18 +3347,18 @@ theorem sourceTy_exc {G : NormalGraph ι} {A : List ι}
       rw [hs] at hv
       have hn := hv.1.not_plain
       obtain ⟨fs, code, oid, rfl, hscoped⟩ := hv.1.obj
-      exact ⟨⟨rfl, hscoped⟩, realmInvariant_of_not_plain hn⟩
+      exact ⟨⟨rfl, hscoped⟩, builtinInvariant_of_not_plain hn⟩
     | none =>
       simp only [hs, Option.isSome_none, Bool.false_eq_true, ite_false] at hc hv
       cases hm : G.meets i with
       | some p =>
         rw [hm] at hv hc
         obtain ⟨c, hc', hv⟩ := hv.2
-        exact realmExc_of_member hv (List.all_eq_true.mp hc c hc')
+        exact builtinExc_of_member hv (List.all_eq_true.mp hc c hc')
       | none =>
         rw [hm] at hv hc
         obtain ⟨c, hc', hv⟩ := hv
-        exact realmExc_of_member hv (List.all_eq_true.mp hc c hc')
+        exact builtinExc_of_member hv (List.all_eq_true.mp hc c hc')
 
 /-- A type of JavaScript values. -/
 theorem sourceTy_sound {G : NormalGraph ι} {A : List ι}
@@ -3468,9 +3468,9 @@ theorem meetBelow_sound [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssignm
         exact ⟨c, hsub c hc, hv⟩
       · obtain ⟨c, _, hv, _⟩ := hvc
         exact ⟨.top, List.mem_singleton_self _, semWithArgs_value hv,
-          realmInvariant_of_unrealmed rfl n W v⟩
+          builtinInvariant_of_withoutInvariant rfl n W v⟩
       · obtain ⟨c, hc, hv, hinv⟩ := hvc
-        exact ⟨.source, List.mem_singleton_self _, realmExc_of_member ⟨hv, hinv⟩ (hs c hc)⟩
+        exact ⟨.source, List.mem_singleton_self _, builtinExc_of_member ⟨hv, hinv⟩ (hs c hc)⟩
 
 /-- **A meet row means its parts and its clauses**, each read at the meet's
 own level. -/
@@ -3516,7 +3516,7 @@ theorem meet_target_value {G : NormalGraph ι} {η : MixedAssignment ι} {i j : 
   · rcases hcl with (h | ⟨h, hs⟩) | ⟨hi, h⟩
     · rw [h]
       exact ⟨.top, List.mem_singleton_self _, mixedDenote_value G η i hv,
-        realmInvariant_of_unrealmed rfl n W v⟩
+        builtinInvariant_of_withoutInvariant rfl n W v⟩
     · rw [h]
       have hsource : sourceTy G [i] = true := by simpa [sourceTy] using hs
       exact ⟨.source, List.mem_singleton_self _,
@@ -3797,7 +3797,7 @@ theorem clauseImg_value [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι)
     · simpa [r, hS, tyImg] using And.intro he hp
   exact semWithArgs_congr _ _ _ _ n (fun _ _ _ _ => Iff.rfl) (fun S => (h S).1) (fun S => (h S).2) c W v
 
-/-- A checked operand image transports a clause read in a row: the realm's
+/-- A checked operand image transports a clause read in a row: the built-ins'
 invariant is the same of a clause and of its image. -/
 theorem clauseImg_row [DecidableEq ι] {G : NormalGraph ι} (tbl : InstTable ι) (κ : Ctx ι)
     (c : Clause (List ι)) (A X Y : List ι → Fam) (P Q : List ι → ArgFam)
@@ -3808,7 +3808,7 @@ theorem clauseImg_row [DecidableEq ι] {G : NormalGraph ι} (tbl : InstTable ι)
     rowSem G A X P c n W v ↔ rowSem G A Y Q (clauseImg tbl κ c) n W v := by
   refine and_congr (clauseImg_value tbl κ c X Y P Q n W v himg he hp) ?_
   unfold clauseImg
-  rw [realmInvariant_map]
+  rw [builtinInvariant_map]
 
 /-- The list component of the same checked clause image uses element equality
 at this level. Requiring only agreement below it would lose object evidence. -/
@@ -4513,14 +4513,14 @@ theorem restBodyMatch_some [DecidableEq ι] {tbl : InstTable ι} {κ : Ctx ι}
 theorem top_row_mixed {G : NormalGraph ι} {η : MixedAssignment ι} {S : List ι}
     (h : expand G S = [.top]) {n W v} (hv : isVal v = true ∧ Scoped 0 v) :
     mixedValues G η S n W v :=
-  mixed_of_expand h ⟨hv, realmInvariant_of_unrealmed rfl n W v⟩
+  mixed_of_expand h ⟨hv, builtinInvariant_of_withoutInvariant rfl n W v⟩
 
-/-- A type holding the realm's `unknown`: one of its labels is a clause row
+/-- A type holding the built-ins' `unknown`: one of its labels is a clause row
 with a `source` clause. -/
 @[nospecialize] def unknownTy (G : NormalGraph ι) (T : List ι) : Bool :=
   T.any fun t => (G t).any fun c => match c with | .source => true | _ => false
 
-/-- A value of the realm's `unknown` is a member of a type holding it. -/
+/-- A value of the built-ins' `unknown` is a member of a type holding it. -/
 theorem unknownTy_sound {G : NormalGraph ι} {η : MixedAssignment ι} {T : List ι}
     (h : unknownTy G T = true) {n W v} (hv : excOf G n W v) : mixedValues G η T n W v := by
   obtain ⟨t, ht, hp⟩ := List.any_eq_true.mp h
@@ -4528,12 +4528,12 @@ theorem unknownTy_sound {G : NormalGraph ι} {η : MixedAssignment ι} {T : List
   cases c <;> simp only [Bool.false_eq_true] at hs
   exact mixed_expand_mpr ⟨.source, List.mem_flatMap.mpr ⟨t, ht, hc⟩, hv⟩
 
-/-- A type of the realm's `unknown` alone: each label a clause row of `source`
+/-- A type of the built-ins' `unknown` alone: each label a clause row of `source`
 clauses only. -/
 @[nospecialize] def exactUnknown (G : NormalGraph ι) (U : List ι) : Bool :=
   U.all fun u => G.plain u && (G u).all fun c => match c with | .source => true | _ => false
 
-/-- A member of a type of the realm's `unknown` alone is of the exception family. -/
+/-- A member of a type of the built-ins' `unknown` alone is of the exception family. -/
 theorem exactUnknown_sound {G : NormalGraph ι} {η : MixedAssignment ι} {U : List ι}
     (h : exactUnknown G U = true) {n W v} (hv : mixedValues G η U n W v) : excOf G n W v := by
   obtain ⟨u, hu, hv⟩ := hv
@@ -4717,7 +4717,7 @@ theorem meet_row_value [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable ι
       (setSem (mixedSem G ηR) Cs n W v ↔ setSem (mixedSem G ηR) Ds n W v) := fun h =>
     sameClauses_iff h (fun d => mixedSem G ηR d n W v) (fun c f hf hn => by
       simp only [rowSem, semWithArgs_members (fun S T h => sameLabels_values h)
-        (fun S T h => sameLabels_arguments h) hf hn, realmInvariant_map])
+        (fun S T h => sameLabels_arguments h) hf hn, builtinInvariant_map])
   rw [hL, hsingle]
   cases hmj : G.meets j with
   | some qd =>
@@ -5232,17 +5232,17 @@ theorem table_row_mixed [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable �
             simp only [NormalGraph.plain, Bool.and_eq_true, Bool.not_eq_true',
               Option.isNone_iff_eq_none] at hi hj
             simp only [qLayerWithArgs, hi.1, hj.1, hi.2, hj.2, Bool.false_eq_true, ite_false]
-            have key := sameClauses_iff hG (fun d => rowSem G (realmValues G) (mixedValues G ηR)
+            have key := sameClauses_iff hG (fun d => rowSem G (builtinValues G) (mixedValues G ηR)
                 (graphArguments G ηR (mixedValues G ηR)) d n W v)
               (fun c f hf hn => by
                 simp only [rowSem, semWithArgs_members (fun S T h => sameLabels_values h)
-                  (fun S T h => sameLabels_arguments h) hf hn, realmInvariant_map])
+                  (fun S T h => sameLabels_arguments h) hf hn, builtinInvariant_map])
             simp only [setSem]
             refine Iff.trans ?_ key.symm
             simp only [List.mem_map]
             have clause : ∀ c ∈ G i,
-                rowSem G (realmValues G) (mixedValues G ηL) (graphArguments G ηL (mixedValues G ηL)) c n W v ↔
-                  rowSem G (realmValues G) (mixedValues G ηR) (graphArguments G ηR (mixedValues G ηR))
+                rowSem G (builtinValues G) (mixedValues G ηL) (graphArguments G ηL (mixedValues G ηL)) c n W v ↔
+                  rowSem G (builtinValues G) (mixedValues G ηR) (graphArguments G ηR (mixedValues G ηR))
                     (clauseImg tbl κ c) n W v := by
               intro c hc
               apply clauseImg_row tbl κ c _ _ _ _ _ n W v
@@ -5871,14 +5871,14 @@ theorem pair_values_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (R
     · exact ⟨i, hB, hv⟩
     · rcases htop with htop | ⟨hsource, hparam, hscheme⟩
       · exact mixed_expand_mpr ⟨.top, htop, mixedDenote_value G η i hv,
-          realmInvariant_of_unrealmed rfl n W v⟩
+          builtinInvariant_of_withoutInvariant rfl n W v⟩
       · obtain ⟨s, hs⟩ := Option.isSome_iff_exists.mp hscheme
         rw [qDenoteWithArgs_unfold] at hv
         simp only [qLayerWithArgs, hparam, hs, Bool.false_eq_true, ite_false] at hv
         have hn := hv.1.not_plain
         obtain ⟨fs, code, oid, rfl, hscoped⟩ := hv.1.obj
         exact mixed_expand_mpr ⟨.source, hsource, ⟨rfl, hscoped⟩,
-          realmInvariant_of_not_plain hn⟩
+          builtinInvariant_of_not_plain hn⟩
     · rcases hmeet with ⟨hmeet, hsm | hsrc⟩ | ⟨j, hj, hjm, hparts, hcl⟩
       · by_cases hB : i ∈ B
         · exact ⟨i, hB, hv⟩
@@ -6561,7 +6561,7 @@ theorem InstArrs.mixed_sound [DecidableEq ι] {G : NormalGraph ι} {S L M} (h : 
   obtain ⟨i, s, tbl, θs, D, V, rfl, hp, hq, hcon, hlen, hal, hkinds, hbnd, hok, hL, hM⟩ := h
   intro η n W v hv
   exact ⟨inst_mixed_sound η hp hq hcon hlen (hal η) (fun b hb U hU => hbnd b hb U hU η) hkinds hok hL hM n W v hv,
-    realmInvariant_of_unrealmed rfl n W v⟩
+    builtinInvariant_of_withoutInvariant rfl n W v⟩
 
 #print axioms covers_presence_sound
 #print axioms covers_ctors_sound

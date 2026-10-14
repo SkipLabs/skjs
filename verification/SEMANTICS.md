@@ -270,7 +270,7 @@ where $\mathit{units}(s)$ is $s$'s UTF-16 code units (`utf16Units`) and
 $\mathit{codeUnitAt}(s,b)$ is the one-unit string at the array index $b$
 denotes (`indexOfBits`, so `-0` is index 0) below the length, and
 `undefined` at any other number: past the end, negative, fractional, NaN or
-infinite, JavaScript finds no own property and the realm's `String.prototype`
+infinite, JavaScript finds no own property and the built-in `String.prototype`
 and `Object.prototype` own no numeric key. A model string is a sequence of
 Unicode scalar values, as Lean's `String` is, so half of a surrogate pair has
 no string of its own: it reads as U+FFFD (`unitString`), where JavaScript
@@ -279,11 +279,11 @@ JavaScript's; the fragment computes on a string only by equality, order,
 length and these reads, and both are strings of one code unit.
 
 Every other member of a primitive is its wrapper prototype's: JavaScript's
-`ToObject` makes a wrapper whose `[[Prototype]]` is the realm's
+`ToObject` makes a wrapper whose `[[Prototype]]` is the built-ins'
 `String.prototype` (`Number.prototype`, `BigInt.prototype`,
 `Boolean.prototype`), and the read continues there. The calculus writes that
 wrapper as it is: a fresh object owning only `[[proto]]`,
-$\mathsf{makeAt}\;\mathsf{absent}\;[\mathsf{proto}]\;[P]$ with $P$ the realm's
+$\mathsf{makeAt}\;\mathsf{absent}\;[\mathsf{proto}]\;[P]$ with $P$ the built-ins'
 prototype, from which `readProto` reads the member. No step is added.
 
 `make_rule` proves heap and world extension once, with a result obligation for
@@ -667,7 +667,7 @@ arguments outside the signature, such as an object passed to a numeric callback
 whose arithmetic would then invoke JavaScript conversion hooks.
 
 A native method may use such a callback contract as a premise of its own
-specification. The admitted realm uses ordinary array construction: arrays own
+specification. The built-ins use ordinary array construction: arrays own
 no `constructor`, and the host preserves the standard constructor/species
 behavior, including across external calls. Under that premise, `map` on a dense
 array can use callback heap preservation to retain source presence throughout
@@ -798,13 +798,13 @@ carries:
 \exists W',h',t'.\ h,t\to h',t'\land\ldots\land\mathit{Safe}_{\Xi}(A)(n,W',h',t')
 ```
 
-A graph's exception family is its realm's `unknown`,
-$`\Xi_G=\mathsf{realmExc}_G`$ ([the array invariant](#the-array-invariant)),
+A graph's exception family is the built-ins' `unknown`,
+$`\Xi_G=\mathsf{builtinExc}_G`$ ([the array invariant](#the-array-invariant)),
 and every function type of the graph is read with it (`callsT`, `restsT`,
 `ctorsT`, `PromiseWith`, `methodT`, through `semWithArgs`): a function a type
 promises throws only values of `unknown`. An operator that throws
 (`binopThrows`) throws a fresh object owning no key, which every graph's
-exception family holds (`ErrorsIn`, `realmExc_errors`).
+exception family holds (`ErrorsIn`, `builtinExc_errors`).
 
 Every composition lemma takes, beside its context's step rule, the context's
 throw rule (`bind`, `bind_list` with `ArgRaises`, `ctx_bind`,
@@ -863,25 +863,25 @@ in [POSITIVE-TYPES.md](POSITIVE-TYPES.md).
 `Array.isArray` holds of an object owning the store key $\sigma$
 ([operational language](#operational-language)); what makes such an object an
 array of `Array.prototype` is an **invariant** of every object the program
-receives or allocates: it holds a possibly sparse store and the realm's prototype, and
+receives or allocates: it holds a possibly sparse store and the built-in prototype, and
 owns no key that prototype provides. The model states it in the meaning of
 types, not in the heap premise: the tested value is in a slot, not in the heap,
 and it came from an input, a read, a call's result or an allocation, each of
-which a type describes. With $\mathcal R$ the graph's realm (`ArrayRealm`: the
-row of `ArrayProto`, $P_{\mathcal R}$; the row of `unknown`, $U_{\mathcal R}$;
-and $N_{\mathcal R}$, `ArrayProto`'s declared keys plus `constructor` and
+which a type describes. With $\mathcal B$ the graph's built-ins (`ArrayBuiltins`: the
+row of `ArrayProto`, $P_{\mathcal B}$; the row of `unknown`, $U_{\mathcal B}$;
+and $N_{\mathcal B}$, `ArrayProto`'s declared keys plus `constructor` and
 `then`):
 
 ```math
-\mathsf{Arr}_{\mathcal R}{}_n(W,v)\iff\forall\mathit{flds}.\;
+\mathsf{Arr}_{\mathcal B}{}_n(W,v)\iff\forall\mathit{flds}.\;
 v=\mathsf{obj}(\mathit{flds},\mathsf{absent})\land\sigma\in\mathrm{dom}(\mathit{flds})\Rightarrow
-\mathsf{view}(\sigma{:}\mathsf{Store}(⟦U_{\mathcal R}⟧),\mathsf{proto}{:}⟦P_{\mathcal R}⟧)_n(W,v)
-\land\mathsf{own}(\mathsf{outside}\,N_{\mathcal R})_n(W,v)
+\mathsf{view}(\sigma{:}\mathsf{Store}(⟦U_{\mathcal B}⟧),\mathsf{proto}{:}⟦P_{\mathcal B}⟧)_n(W,v)
+\land\mathsf{own}(\mathsf{outside}\,N_{\mathcal B})_n(W,v)
 \land\mathsf{numericOwn}_n(W,\mathit{flds})
 ```
 
 with $`\mathsf{Store}(U)`$ the possibly sparse stores of values of $`U`$
-(`realmStoreT`; `PositiveGraphs.arrayInvariant`), and
+(`builtinStoreT`; `PositiveGraphs.arrayInvariant`), and
 $`\mathsf{numericOwn}`$ stating `Array<T>`'s declared `[n: number]: T` of
 every array type at once, with $`c_\sigma`$ the contract of the store's
 location and $`c_l`$ that of an own field's:
@@ -900,23 +900,23 @@ the world's level (`numericOwn`, `numeric_of_inv`). An array whose store's
 contract admits every store of `T[]` and whose numeric fields hold $`T`$
 meets it (`numericOwn_of_store`), so an input with `a[-1] = 1` at
 `number[]` is one. An allocation owning the store key
-owns no field at such a key (`allocRealm`). Every record, dictionary
+owns no field at such a key (`allocBuiltins`). Every record, dictionary
 and `source` clause of a row means its members meeting it; in a graph
-stating no realm, its members owning $`\sigma`$ hold a list there
-(`storeListT`, an array's store being one in every realm)
-(`Clause.realmed`, `realmInvariant`, `rowSem`;
-[POSITIVE-TYPES](POSITIVE-TYPES.md#the-realms-array-invariant)), so the
-realm's `unknown` is
+stating no built-ins, its members owning $`\sigma`$ hold a list there
+(`storeListT`, an array's store being one whatever the built-ins)
+(`Clause.carriesInvariant`, `builtinInvariant`, `rowSem`;
+[POSITIVE-TYPES](POSITIVE-TYPES.md#the-built-in-array-invariant)), so the
+built-ins' `unknown` is
 
 ```math
-\Xi_{\mathcal R}{}_n(W,v)\iff v\in J\land\mathsf{Arr}_{\mathcal R}{}_n(W,v)
+\Xi_{\mathcal B}{}_n(W,v)\iff v\in J\land\mathsf{Arr}_{\mathcal B}{}_n(W,v)
 ```
 
-(`realmExc`), the graph's exception family ([throws](#computations-and-recursive-types)).
+(`builtinExc`), the graph's exception family ([throws](#computations-and-recursive-types)).
 The invariant reads the world only: the contract of $\sigma$'s location
 implies a store of values of `unknown` in every world and heap to come, and
-the contract of $\mathsf{proto}$'s implies `ArrayProto`; $`U_{\mathcal R}`$
-and $`P_{\mathcal R}`$ are read below the level, through those contracts, so
+the contract of $\mathsf{proto}$'s implies `ArrayProto`; $`U_{\mathcal B}`$
+and $`P_{\mathcal B}`$ are read below the level, through those contracts, so
 the recursion through `unknown`'s own meaning is guarded. A world grows only
 by appending contracts and never replaces one, so the invariant is admissible
 (`arrayInvariant_adm`), and nothing a step does to the heap can falsify it.
@@ -926,12 +926,12 @@ fixed at its allocation, so only allocation creates a value the invariant is
 about:
 
 - an allocation from named fields (`HasTyUsing.alloc`) owning $\sigma$ is typed only
-  as an array of the realm: its store field at a store type whose positions
+  as a built-in array: its store field at a store type whose positions
   are of JavaScript values, each of which is a value of `unknown`
   (`sourceTy_exc`, `unknownTy_sound`), its prototype field at
-  $P_{\mathcal R}$, no name among $N_{\mathcal R}$ (`allocRealm`,
-  `allocRealm_sound`); every other allocation owns no $\sigma$
-  (`realmInvariant_of_lookup`);
+  $P_{\mathcal B}$, no name among $N_{\mathcal B}$ (`allocBuiltins`,
+  `allocBuiltins_sound`); every other allocation owns no $\sigma$
+  (`builtinInvariant_of_lookup`);
 - a literal allocated at a dictionary names neither $\sigma$ nor the prototype
   key (`HasTyUsing.allocDict`);
 - a merge, the copy a spread or a key-adding write is, allocates the
@@ -963,7 +963,7 @@ unchanged.
 **Type parameters and classes.** A type parameter's row asks what its
 assignment gives: an assignment within a bound of `unknown`, a record or a
 dictionary meets the invariant through the bound's meaning, and a qualified
-binder's descriptor families are within the realm's `unknown`
+binder's descriptor families are within the built-ins' `unknown`
 (`ResolutionDescriptors.Capabilities`). No invariant ties an object whose
 prototype chain holds a class's prototype to the class's fields: JavaScript
 gives any object any prototype (`Object.create`, `Object.setPrototypeOf`,

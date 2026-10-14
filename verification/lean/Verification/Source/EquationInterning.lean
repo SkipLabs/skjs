@@ -56,7 +56,7 @@ def ground (name : String) (cs : List (Clause (List Tree))) : M Tree := do
 
 def prim (name : String) (c : Clause (List Tree)) : M Tree := ground name [c]
 
-/-- The key of the realm's `unknown`: the nullary head of the `source` clause. -/
+/-- The key of the built-ins' `unknown`: the nullary head of the `source` clause. -/
 def unknownKey : String := s!"ground|{reprStr ([.source] : List (Clause (List Tree)))}"
 
 /-- The four primitive values' heads come first, as `LabelStore.Labels`
@@ -169,13 +169,13 @@ def occurrence (ctx : Ctx) (tag : String) (term : Json) (shadow : List String :=
     some (job h (liftedCtx ctx items h))
   return mkApp h args
 
-/-- The array heads and the realm's prototype. Without an `ArrayProto`
+/-- The array heads and the built-in prototype. Without an `ArrayProto`
 declaration in the document (a library bound naming an array, in a source
 with none), the prototype is an object of which nothing is known. -/
 def arrayHead (readonly : Bool) (proto : Tree) : M Nat := do
   let excluded := (← get).excluded
   modify fun s => { s with arrays := true }
-  -- The realm's `unknown`, the type of an array's elements.
+  -- The built-ins' `unknown`, the type of an array's elements.
   let _ ← ground "unknown" [.source]
   alloc s!"array|{readonly}"
     { name := if readonly then "ReadonlyArray" else "Array", kind := .array readonly, kinds := [.value],
@@ -371,7 +371,7 @@ def uniqueLabels (term : Json) : M Union := do
   let id ← (← field term "symbol").getNat?
   return [← prim s!"unique symbol {id}" (.symbolLit id)]
 
-/-- The source-value universe, independent of record realm invariants. -/
+/-- The source-value universe, independent of record builtins invariants. -/
 def sourceValueClauses : List (Clause (List Tree)) :=
   [.source]
 

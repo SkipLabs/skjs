@@ -58,7 +58,7 @@ let rec typeof_slice shape holds = function
   | Meet (t,_) when typeof_slice shape holds t = Atoms [] -> Atoms []
   | t -> t
 (* Where `Array.isArray` holds, an open record's arm and `unknown`'s are an
-   array of the realm: record types and `unknown` are of values meeting the
+   array of the built-ins: record types and `unknown` are of values meeting the
    array invariant, so one owning an array's store holds a possibly sparse
    store of `unknown` and `Array.prototype` (Lean's `arraySlice`). Such arms
    become `sparse ReadonlyArray<unknown>`; an array arm stays; a type

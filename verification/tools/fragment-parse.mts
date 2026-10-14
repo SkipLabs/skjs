@@ -59,10 +59,10 @@ import type {
 } from "./fragment.mts";
 import { CHAIN } from "./fragment.mts";
 
-/** A value typed `Promise<T>` is assumed to be a realm promise, which is
+/** A value typed `Promise<T>` is assumed to be a built-in promise, which is
  * never fulfilled with a thenable (PROGRAM-TYPING.md, "Async functions and await"):
  * so the source builds no object with a `then`, which could pass for one. */
-const FORGED_PROMISE = "an object the source builds with a `then` member could pass for a promise, and a value typed `Promise` is assumed to be a realm promise";
+const FORGED_PROMISE = "an object the source builds with a `then` member could pass for a promise, and a value typed `Promise` is assumed to be a built-in promise";
 import type { Span } from "./span.mts";
 // thrown.mts reads what the TypeScript API throws into the message the gate reports, without asserting its type.
 import { messageOf } from "./thrown.mts";
@@ -2514,7 +2514,7 @@ class Gate {
     return null;
   }
 
-  /** Whether a class member's computed key is the realm's well-known
+  /** Whether a class member's computed key is the built-in well-known
    * `Symbol.hasInstance`: TypeScript binds it to the standard library's
    * `unique symbol` property of that name (`symbolKeys`). */
   private staticHasInstance(name: ts.PropertyName): boolean {

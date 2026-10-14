@@ -322,15 +322,15 @@ private theorem mapped_sem_agree (G : NormalGraph ι) (η θ : MixedAssignment �
     (fun e m hm U us => h e m hm U (.inr us)) c W v
 
 /-- A clause reads its operand families below the current level. Mapping its
-operands changes neither its shape nor the fixed array-realm requirement. -/
+operands changes neither its shape nor the fixed built-in array requirement. -/
 private theorem mapped_clause_agree (G : NormalGraph ι) (η θ : MixedAssignment ι)
     (f g : α → List ι) (h : ∀ e, Agree (mixedMeaning G η (f e)) (mixedMeaning G θ (g e)) n)
     (c : Clause α) (W : WorldT n) (v : Val) :
     mixedSem G η (c.map f) n W v ↔ mixedSem G θ (c.map g) n W v := by
   apply and_congr
   · exact mapped_sem_agree G η θ f g h c W v
-  · unfold realmInvariant
-    simp only [Clause.realmed_map]
+  · unfold builtinInvariant
+    simp only [Clause.carriesInvariant_map]
 
 /-- The value half of the application-congruence induction for a clause head.
 All recursive operand reasoning is below the current step index. -/

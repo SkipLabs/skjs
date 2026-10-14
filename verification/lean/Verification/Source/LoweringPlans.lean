@@ -186,17 +186,17 @@ the nullish, `undefined` and truthiness tags. -/
   pure (DirectProof.node Γ term B (.unionVar slot) children)
 
 /-- Where `Array.isArray` holds, the labels `arraySlice` keeps of `A`, and the
-realm's `readonly unknown[]`, `R`, for the records and `unknown` it does not:
+builtins's `readonly unknown[]`, `R`, for the records and `unknown` it does not:
 the refinement the edge's observation establishes. -/
 @[nospecialize] def arrayRefine (G : PositiveGraphs.NormalGraph ι) (A R : Ty ι) : Ty ι :=
   let sliced := BranchRefinement.tagSlice G A .isArray true
   let kept := sliced.filter fun a => !(G.plain a && (G a).all fun c =>
-    ProgramTyping.tagClause .isArray c == some false || c.realmed)
+    ProgramTyping.tagClause .isArray c == some false || c.carriesInvariant)
   if kept.length == sliced.length then sliced else kept ++ R
 
-/-- The realm's `readonly unknown[]`: the array shape over a possibly sparse
+/-- The built-in `readonly unknown[]`: the array shape over a possibly sparse
 store of `unknown`. -/
-@[nospecialize] def realmArrayTy : Compiler (Ty Tree) := do
+@[nospecialize] def builtinArrayTy : Compiler (Ty Tree) := do
   let u ← lower (SourceTypes.use .source)
   let store ← lower (SourceTypes.use (.list ⟨[], [], some [u], true, .sparse⟩ []))
   return [← lower (SourceTypes.use (SourceTypes.arrayOf (← table) store true))]
@@ -205,7 +205,7 @@ store of `unknown`. -/
 `Array.isArray` holds, `arrayRefine`. -/
 @[nospecialize] def tagRefine (A : Ty Tree) (tag : Tag) (q : Bool) : Compiler (Ty Tree) := do
   let G := SourceTypes.graph (← table)
-  if tag == .isArray && q then return arrayRefine G A (← realmArrayTy)
+  if tag == .isArray && q then return arrayRefine G A (← builtinArrayTy)
   else return BranchRefinement.tagSlice G A tag q
 
 /-- Shared conditional proof construction for statement branches, ternaries and
@@ -479,7 +479,7 @@ inductive PrimitiveArm (ι : Type) where
 
 /-- The shapes a member read of `O` dispatches on: each primitive shape among
 `O`'s clauses, with the arm that reads it (`ToObject`'s wrapper, whose
-prototype is the realm's). An object shape needs none. -/
+prototype is the built-ins'). An object shape needs none. -/
 @[nospecialize] def primitiveArms (scope : List (ScopeBinding Tree)) (K : List (Ty Tree)) (O : Ty Tree)
     (fld : PropKey) : Compiler (List (Tag × (PrimitiveArm Tree))) := do
   let G := SourceTypes.graph (← table)

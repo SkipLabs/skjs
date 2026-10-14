@@ -1004,7 +1004,7 @@ lifetime contract even when its initial contents are physically dense.
 Native array results rely on the ordinary-construction invariant: an array owns
 neither `constructor` nor any key declared by `ArrayProto`; the host keeps the
 standard array constructor/species behavior. The same own-key exclusion is used
-in array lowering and the realm invariant (`RequestJson.arrayExcludedKeys`).
+in array lowering and the built-ins' invariant (`RequestJson.arrayExcludedKeys`).
 Thus `filter` and `slice` can promise ordinary arrays, and certified callback effects
 justify the dense `map` overload.
 
@@ -1016,7 +1016,7 @@ D=\mu X.\;P\;\cup\;\mathsf{ReadonlyArray}(X).
 ```
 
 This is the synthetic declaration `StringConvertible`, lowered by the ordinary
-recursive declaration mechanism. The array realm excludes own `toString`,
+recursive declaration mechanism. The built-in arrays exclude own `toString`,
 `join` and `Symbol.toPrimitive`; the prototype contract states an optional
 `Symbol.toPrimitive` field whose only possible value is `undefined`. Standard
 prototype behavior is required of external code too. Thus string conversion of
@@ -1246,7 +1246,7 @@ establishes membership in $`N`$. This includes ordinary arrays and records
 with a stable primitive-valued or absent `then`.
 
 **Native promise invariant.** `Promise<A>` denotes a native promise of the
-current realm, with the stable standard `Promise.prototype` and constructor.
+built-ins, with the stable standard `Promise.prototype` and constructor.
 Its declared members and `constructor` are inherited; it owns none of those
 keys. The constructor's species behavior is standard. These requirements
 apply to external values and code as well as the checked source. The
@@ -1429,7 +1429,7 @@ may own any `return`.
 
 The library's declarations are read by the rules of
 [library types](#library-types): `Iterable<T>` is the record of its one
-method under the realm's `Symbol.iterator` key, returning an `Iterator`, and
+method under the built-in `Symbol.iterator` key, returning an `Iterator`, and
 so no `Iterator`, whose `next` it lacks; `Iterator`'s
 `next(...[value]: [] | [TNext])` is the two signatures `next()` and
 `next(value: TNext)` (**rest-tuples**), and its `return?` and `throw?` are
@@ -1586,12 +1586,12 @@ its completion, to its argument, which no function type states:
 ```
 
 ```math
-\frac{\Gamma(x)=A\quad A\ \text{objects, no class value}\quad \kappa\notin\mathcal R\quad
+\frac{\Gamma(x)=A\quad A\ \text{objects, no class value}\quad \kappa\notin\mathcal B\quad
       \Gamma[x:T_{\mathsf{hasKey}(\kappa)}(A)]\vdash_R S_1\quad\Gamma[x:T_{\lnot\mathsf{hasKey}(\kappa)}(A)]\vdash_R S_2}
      {\Gamma\vdash_R\ \mathsf{if}\ (\texttt{"}\kappa\texttt{"}\ \mathtt{in}\ x)\ S_1\ \mathsf{else}\ S_2}\ \textsf{if-in}
 ```
 
-with $`\mathcal R`$ the refused keys (`inKeyRefusal`: `Object.prototype`'s,
+with $`\mathcal B`$ the refused keys (`inKeyRefusal`: `Object.prototype`'s,
 `Array.prototype`'s and `Function.prototype`'s own string keys, array
 indices, and the keys the model reserves). `in`'s answers are by keys the
 types state (`inAnswer`): a failed test drops an arm owning the key, a passed
@@ -1635,7 +1635,7 @@ level, is $`\mathsf{hasKey}(\kappa_C)`$ ([derived form](SOURCE-ELABORATION.md#de
 It does not narrow `unknown`: an object gets $`C`$'s prototype without $`C`$'s
 constructor running (`Object.create(C.prototype)`), so the key is no evidence
 of $`C`$'s fields. `Array.isArray(x)` narrows a record or dictionary arm of $`x`$
-to the realm's `sparse ReadonlyArray<unknown>` where it holds
+to the built-in `sparse ReadonlyArray<unknown>` where it holds
 ([**tag-array**](PROGRAM-TYPING.md#refinement-under-an-observed-outcome)), and keeps
 `unknown`, which the array invariant says nothing of:
 

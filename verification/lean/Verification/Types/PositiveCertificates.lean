@@ -1683,7 +1683,7 @@ theorem compareInstArrsState_sound_at [DecidableEq ι] {G : NormalGraph ι} {ima
           intro n W v hv
           refine ⟨inst_images_sound η hp hs hcon hlen (hadmission s c checked.2) ?_
             (images.sound s.binders c hlen hkinds himg η) hL hM n W v hv,
-            realmInvariant_of_unrealmed rfl n W v⟩
+            builtinInvariant_of_withoutInvariant rfl n W v⟩
           intro b hb U hU
           obtain ⟨prior, checked⟩ := ComparisonResult.collectState_sound _ _ _ h b hb
           unfold compareBoundState at checked

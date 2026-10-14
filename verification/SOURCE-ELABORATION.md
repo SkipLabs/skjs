@@ -357,7 +357,7 @@ as `instanceof` does (it throws only on its right operand). A tested
 immutable variable is refined as by every tag test ([guards](SOURCE-CONTRACTS.md#guards)).
 
 A class whose chain of bases, classes of the file, holds a static method
-keyed by the realm's `Symbol.hasInstance` (TypeScript binds the key to the
+keyed by the built-in `Symbol.hasInstance` (TypeScript binds the key to the
 standard library's `unique symbol` property) answers `instanceof` itself:
 ECMA-262's InstanceofOperator calls `C[Symbol.hasInstance]` with the
 operand and converts the result by `ToBoolean`, walking no chain. The
@@ -429,11 +429,11 @@ k\ \mathtt{in}\ o\;\equiv\;\mathsf{let}\ y=k\ \mathsf{in}\ \mathsf{let}\ x=o\ \m
 
 ```math
 \frac{\Gamma\vdash o:A\quad \forall\gamma\in\mathrm{expand}_G(A).\ \gamma\ \text{a record, dictionary, arrow or callable clause}
-      \quad \kappa_i\notin\mathcal R}
+      \quad \kappa_i\notin\mathcal B}
      {\Gamma\vdash k\ \mathtt{in}\ o:\mathsf{boolean}}
 ```
 
-where $`\mathcal R`$ is the keys the model does not answer as JavaScript does
+where $`\mathcal B`$ is the keys the model does not answer as JavaScript does
 (`inKeyRefusal`, [guards](SOURCE-CONTRACTS.md#guards)). The operand's clauses are
 objects because `in` throws on a primitive, where the test would answer
 `false`, and not a class value, whose static members are bound apart.
@@ -993,7 +993,7 @@ In particular, heap-preserving entails unrestricted, but the converse has no
 rule. Normalization and substitution must carry the effect per signature.
 No per-function global flag can justify a stronger effect on another overload.
 
-For native `map`, the realm's ordinary-construction invariant supplies the
+For native `map`, the built-in ordinary-construction invariant supplies the
 construction premise. A dense receiver and a heap-preserving callback produce
 no holes, so the qualified overload can promise the source-readable result
 `U[]` at every `U`. The allocation chooses that lifetime store contract; it does

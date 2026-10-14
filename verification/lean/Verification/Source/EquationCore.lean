@@ -58,7 +58,7 @@ partial def lowerRest (ctx : Ctx) (term : Json) : M Union := do
     | none => throw s!"{ctx.site}: a pack parameter outside its generic method"
   return [← occurrence ctx "pack" term (job := fun h c => .pack h c [] (some term))]
 
-/-- The realm's array prototype. -/
+/-- The built-in array prototype. -/
 partial def protoLabel : M Tree := do
   let ds := (← get).doc
   if ds[0]?.any (·.identity == arrayProtoIdentity) then

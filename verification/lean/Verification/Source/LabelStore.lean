@@ -92,7 +92,7 @@ class StoreView (σ : Type) (ι : outParam Type) [Labels ι] extends ToJson σ, 
   labels : σ → List ι
   /-- A bound on the rounds of a fixpoint over rows. -/
   bound : σ → Nat
-  /-- The realm's array prototype, `ArrayProto`: the prototype every array
+  /-- The built-in array prototype, `ArrayProto`: the prototype every array
   type names. -/
   arrayProto : σ → ι
   /-- The label of a union of clauses, when the store has one. -/

@@ -276,56 +276,56 @@ meaning `refsT` and the heap facts behind invariant operands (`adm`, `congr_belo
 every operand, and writing a value at the first operand preserves every
 alias's contract.
 
-#### The realm's array invariant
+#### The built-in array invariant
 
-A graph with arrays states its **realm** $\mathcal R$: the row of `ArrayProto`
-($P_{\mathcal R}$), the row of `unknown` ($U_{\mathcal R}$, the nullary
-`source` row) and the excluded keys ($N_{\mathcal R}$): `ArrayProto`'s
-declared keys plus `constructor` and `then` (`NormalGraph.realm`, set by
-`realmOf` where the store has an array type). In such a graph a label's
+A graph with arrays states its **built-ins** $\mathcal B$: the row of `ArrayProto`
+($P_{\mathcal B}$), the row of `unknown` ($U_{\mathcal B}$, the nullary
+`source` row) and the excluded keys ($N_{\mathcal B}$): `ArrayProto`'s
+declared keys plus `constructor` and `then` (`NormalGraph.builtins`, set by
+`builtinsOf` where the store has an array type). In such a graph a label's
 record, dictionary or `source` clause means its members that are also arrays
-of the realm where they own the store key $\sigma$
+of the built-ins where they own the store key $\sigma$
 ([SEMANTICS](SEMANTICS.md#the-array-invariant)):
 
 ```math
 ⟦c⟧^{\mathrm{row}}_n(W,v)\iff⟦c⟧_{\Xi}{}_n(W,v)\land
-\bigl(c\ \text{a record, a dictionary or}\ \mathsf{source}\Rightarrow\mathsf{Arr}_{\mathcal R}{}_n(W,v)\bigr)
+\bigl(c\ \text{a record, a dictionary or}\ \mathsf{source}\Rightarrow\mathsf{Arr}_{\mathcal B}{}_n(W,v)\bigr)
 ```
 
 ```math
-\mathsf{Arr}_{\mathcal R}{}_n(W,v)\iff\forall\mathit{flds}.\;v=\mathsf{obj}(\mathit{flds},\mathsf{absent})\land\sigma\in\mathrm{dom}(\mathit{flds})\Rightarrow
-\mathsf{view}(\sigma{:}\mathsf{Store}(⟦U_{\mathcal R}⟧),\mathsf{proto}{:}⟦P_{\mathcal R}⟧)_n(W,v)\land\mathsf{own}(\mathsf{outside}\,N_{\mathcal R})_n(W,v)
+\mathsf{Arr}_{\mathcal B}{}_n(W,v)\iff\forall\mathit{flds}.\;v=\mathsf{obj}(\mathit{flds},\mathsf{absent})\land\sigma\in\mathrm{dom}(\mathit{flds})\Rightarrow
+\mathsf{view}(\sigma{:}\mathsf{Store}(⟦U_{\mathcal B}⟧),\mathsf{proto}{:}⟦P_{\mathcal B}⟧)_n(W,v)\land\mathsf{own}(\mathsf{outside}\,N_{\mathcal B})_n(W,v)
 \land\mathsf{numericOwn}_n(W,\mathit{flds})
 ```
 
 ```math
-\Xi_n(W,v)\iff v\in J\land\mathsf{Arr}_{\mathcal R}{}_n(W,v)
+\Xi_n(W,v)\iff v\in J\land\mathsf{Arr}_{\mathcal B}{}_n(W,v)
 ```
 
 with $`\mathsf{Store}(U)`$ the possibly sparse stores of values of $`U`$
 ($`\mathsf{list}\langle;;U\rangle`$, readonly), $`\mathsf{numericOwn}`$ an
 array's own fields at canonical numeric keys within every family its store's
-contract stores ([SEMANTICS](SEMANTICS.md#the-array-invariant)), and $`\Xi`$, the realm's
+contract stores ([SEMANTICS](SEMANTICS.md#the-array-invariant)), and $`\Xi`$, the built-ins'
 `unknown`, the exception family the clause's function types are read with
-(`realmExc`; [throws](SEMANTICS.md#computations-and-recursive-types)). Only
+(`builtinExc`; [throws](SEMANTICS.md#computations-and-recursive-types)). Only
 the world is read, through the contracts of $\sigma$ and $\mathsf{proto}$, so
 the invariant is admissible and read below the level (`arrayInvariant_adm`,
-`arrayInvariant_congr`, `realmExc_congr`). $P_{\mathcal R}$ and
-$U_{\mathcal R}$ are read at one fixed assignment
-(`ParameterInterpretation.realmAt`), so a row's meaning stays independent of
+`arrayInvariant_congr`, `builtinExc_congr`). $P_{\mathcal B}$ and
+$U_{\mathcal B}$ are read at one fixed assignment
+(`ParameterInterpretation.builtinsAt`), so a row's meaning stays independent of
 the graph's own assignment; `ArrayProto` reads no parameter row, and a rule
-relating the invariant to a type checks that (`realmFree`), and that
-$U_{\mathcal R}$ holds the `source` clause (`unknownTy`) or only it
+relating the invariant to a type checks that (`builtinsFree`), and that
+$U_{\mathcal B}$ holds the `source` clause (`unknownTy`) or only it
 (`exactUnknown`). Every other clause (`top`, primitives, functions, classes,
 stores, packs) asks nothing more, its members being no plain objects but
-`top`'s (`semWithArgs_not_plain`), and a graph without a realm asks nothing.
+`top`'s (`semWithArgs_not_plain`), and a graph stating no built-ins asks nothing.
 Coverage keeps it (a record is covered by records only, `CoversWith.record`;
 `source` covers JavaScript values, none `top`, `CoversWith.not_top`,
-`realmInvariant_of_member`), and so do meets (`meetLists_row`), renamings
-(`realmInvariant_map`) and instance images (`clauseImg_row`).
+`builtinInvariant_of_member`), and so do meets (`meetLists_row`), renamings
+(`builtinInvariant_map`) and instance images (`clauseImg_row`).
 
-Lean: `ArrayRealm`, `realmStoreT`, `arrayInvariant`, `realmInvariant`,
-`realmExc`, `rowSem` (`Types/PositiveGraphs.lean`).
+Lean: `ArrayBuiltins`, `builtinStoreT`, `arrayInvariant`, `builtinInvariant`,
+`builtinExc`, `rowSem` (`Types/PositiveGraphs.lean`).
 
 ### Arrays
 

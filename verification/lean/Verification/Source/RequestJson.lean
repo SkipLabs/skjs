@@ -203,7 +203,7 @@ instance [FromJson ι] [FromJson α] : FromJson (GraphRow ι α) := ⟨fun j =>
     List (String × Json) :=
   ("types", toJson p.rows) :: (if p.names.isEmpty then [] else [("names", toJson p.names)])
 
-/-! ### The realm's arrays -/
+/-! ### The built-in arrays -/
 
 /-- A key a declaration may not name: one the model keeps for itself (the
 array store, the prototype, every other name in double brackets), or one its

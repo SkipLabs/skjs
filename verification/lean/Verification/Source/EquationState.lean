@@ -92,7 +92,7 @@ structure State where
   names : Array (String × ParameterKind) := #[]
   /-- The names of the fresh placeholders `EquationStore.binders` has made, by slot. -/
   fresh : Array String := #[]
-  /-- The realm's array prototype head, once lowered. -/
+  /-- The built-in array prototype head, once lowered. -/
   proto : Option Nat := none
   /-- The stable non-thenable family, the reviewed intrinsic `%Stable%`. -/
   nativeStable : Option Union := none

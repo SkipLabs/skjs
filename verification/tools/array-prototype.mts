@@ -1,4 +1,4 @@
-/** The contracts of the realm's prototypes a program reads members through:
+/** The contracts of the built-in prototypes a program reads members through:
  * `ArrayProto`, the contract of `Array.prototype`, and `StringProto`,
  * `NumberProto`, `BigIntProto` and `BooleanProto`, those of the prototypes a
  * primitive's members are read from (`"a".toUpperCase()`, `n.toString(16)`).
@@ -351,7 +351,7 @@ const wrapperName: Record<PrimitiveKind, string> =
   { string: "String", number: "Number", bigint: "BigInt", boolean: "Boolean" };
 
 /** The synthetic declaration of a primitive's prototype contract, and the
- * module value holding the realm's prototype at it, a name no source
+ * module value holding the built-in prototype at it, a name no source
  * identifier spells. */
 export const primitiveProtoIdentity = (kind: PrimitiveKind): DeclarationIdentity =>
   ({ module: `skjs/${kind}-prototype`, name: `${wrapperName[kind]}Proto`, span: [0, 0] });

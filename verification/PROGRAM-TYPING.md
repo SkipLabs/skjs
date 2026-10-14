@@ -331,7 +331,7 @@ tuple type, and the declaration's contract at the call reads
      {f:(\vec A,\ldots\mathsf{Pack}(\tau_X))\to R\ \text{at}\ T:=X}
 ```
 
-with $`\mathsf{Array}_\rho(\tau)`$ the realm's array over a store of contract
+with $`\mathsf{Array}_\rho(\tau)`$ the built-in array over a store of contract
 $`\tau`$, readonly or not. That is the contract's meaning at $`X`$: every
 argument list in $`\mathsf{Pack}(\tau_X)`$ collects into a fresh array of
 $`X`$, and these are the lists a call collects into one. An instance with
@@ -646,28 +646,28 @@ $`b`$ the type states must admit every name
 ([POSITIVE-TYPES.md](POSITIVE-TYPES.md#records)). An array is allocated this
 way, its store and prototype as the two fields, own keys among those two, then
 read as an array, owning none of `ArrayProto`'s keys, by subsumption. A record
-type is of objects meeting the realm's
+type is of objects meeting the built-ins'
 [array invariant](SEMANTICS.md#the-array-invariant), so an allocation owning
-the store key $`\sigma`$ must be an array of the realm
-($`\mathsf{realm}\vDash\overline{f{:}A}`$, `allocRealm`): its store field at a
+the store key $`\sigma`$ must be a built-in array
+($`\mathsf{builtins}\vDash\overline{f{:}A}`$, `allocBuiltins`): its store field at a
 store type (every clause a `list`, whose element types contain only JavaScript values,
-`storeTy_sound`), its prototype field at the realm's prototype type
-$`P_{\mathcal R}`$, which reads no parameter row (`realmFree`, so it means the
-same at the assignment the invariant reads it at, `realmFree_meaning`), and
-none of its names a key that prototype provides ($`N_{\mathcal R}`$). An
-allocation without $`\sigma`$, or in a graph stating no realm, meets it at once:
+`storeTy_sound`), its prototype field at the built-in prototype type
+$`P_{\mathcal B}`$, which reads no parameter row (`builtinsFree`, so it means the
+same at the assignment the invariant reads it at, `builtinsFree_meaning`), and
+none of its names a key that prototype provides ($`N_{\mathcal B}`$). An
+allocation without $`\sigma`$, or in a graph stating no built-ins, meets it at once:
 
 ```math
 \frac{\overline{f}\ \text{distinct}\qquad\forall i.\;\Gamma\vdash_G a_i:A_i
       \qquad\forall b\in\beta.\;\forall f\in\overline{f}.\;b\vDash f
-      \qquad\mathsf{realm}\vDash\overline{f{:}A}}
+      \qquad\mathsf{builtins}\vDash\overline{f{:}A}}
      {\Gamma\vdash_G\{\overline{f=a}\}:\mathsf{Ref}(\overline{f{:}A};\beta)}
 ```
 
 ```math
-\mathsf{realm}\vDash\overline{f{:}A}\iff
-\sigma\notin\overline{f}\ \lor\ \bigl(\overline{f}\cap N_{\mathcal R}=\varnothing\land
-  (\sigma{:}S)\in\overline{f{:}A}\ \text{with}\ S\ \text{a store type}\land(\mathsf{proto}{:}P_{\mathcal R})\in\overline{f{:}A}\bigr)
+\mathsf{builtins}\vDash\overline{f{:}A}\iff
+\sigma\notin\overline{f}\ \lor\ \bigl(\overline{f}\cap N_{\mathcal B}=\varnothing\land
+  (\sigma{:}S)\in\overline{f{:}A}\ \text{with}\ S\ \text{a store type}\land(\mathsf{proto}{:}P_{\mathcal B})\in\overline{f{:}A}\bigr)
 ```
 
 `read` and `write` name the field they act on and require it of the receiver's
@@ -762,7 +762,7 @@ that location, the number found
 among the first few the type's clauses reject (`numWitness`,
 `lengthExcluded`). Any other view of `length` may be an array's, whose
 `length` is its store's length, so its read tests the object in slot
-$`i`$: an array's store is a list, in every graph (the realm's invariant, or
+$`i`$: an array's store is a list, in every graph (the built-ins' invariant, or
 `storeListT` without one), whose length is a number, and any other object's
 `length` is at its own location. The term is
 $`\mathsf{len}_i=\mathsf{if}\ \mathsf{isArray}(x_i)\ \mathsf{then}\ |x_i.\sigma|\ \mathsf{else}\ x_i.\mathtt{length}`$
@@ -988,7 +988,7 @@ read last (`dispatchTerm`):
 r_s=\mathsf{readAt}\;k\;(\mathsf{makeAt}\;\mathsf{absent}\;[\mathsf{proto}]\;[P_s])
 ```
 
-with $`P_s`$ the slot holding the realm's prototype for shape $`s`$, and a
+with $`P_s`$ the slot holding the built-in prototype for shape $`s`$, and a
 string's `length` read by `lenStr`. Every arm is JavaScript's read for values
 of its shape, and a value of a shape no arm names reaches the object read,
 where a primitive is stuck: the lowering is faithful for every value,
@@ -1009,9 +1009,9 @@ $`\mathsf{isArray}`$, each edge binding $`x`$ refined:
 x:R\ \text{on the true edge},\quad x:\mathsf{tagSlice}_G(B,\mathsf{isArray},\mathsf{false})\ \text{on the false edge}
 ```
 
-with $`R`$ the realm's sparse `readonly unknown[]` and $`r`$ the read above at
+with $`R`$ the built-in sparse `readonly unknown[]` and $`r`$ the read above at
 the false edge's type. The true edge is `arraySlice`'s: an array label and a
-record or dictionary owning $`\sigma`$ are arrays of the realm
+record or dictionary owning $`\sigma`$ are built-in arrays
 ([array invariant](SEMANTICS.md#the-array-invariant)), whose store `len`
 reads; on the false edge `tagSlice` drops the array labels. The test reads
 no heap, and each arm is JavaScript's read for the values reaching it.
@@ -1599,13 +1599,13 @@ canonical numeric keys, an array whose store's elements are within $`V`$
 (`classWithinPlain`; `arrayRoute`):
 
 ```math
-\frac{K=\mathsf{numeric}\qquad \mathcal R\ \text{stated}\qquad (\sigma{:}S)\in\varphi_{c_b}\qquad
+\frac{K=\mathsf{numeric}\qquad \mathcal B\ \text{stated}\qquad (\sigma{:}S)\in\varphi_{c_b}\qquad
       \forall c\in S.\ c=\mathsf{list}\,\tau\ldots\land\ \mathrm{positions}(\tau)\subseteq V}
      {\mathrm{gives}_K(c_b,V)}\ \textsf{array-source}
 ```
 
 its elements are within $`V`$ (`storeData_typed`), and so are its own fields
-at those keys, by the realm invariant's $`\mathsf{numericOwn}`$
+at those keys, by the built-ins' invariant's $`\mathsf{numericOwn}`$
 ([the array invariant](SEMANTICS.md#the-array-invariant), `ObjFacts.numeric`,
 `numeric_of_inv`). An element sits one location further than its store, so
 the copied values are known one level below the merge's, which the
@@ -1710,7 +1710,7 @@ $`x`$'s claimed type lists its own keys, each a key the copy takes
 allocation, which no key of $`x`$'s overwrites, its key. A key of strings and
 symbols both is refused. JavaScript's write is `[[Set]]`, which on an
 ordinary object a literal made defines the property, as the copy does, but
-for `__proto__`, which the realm's `Object.prototype` holds as a setter: where
+for `__proto__`, which the built-in `Object.prototype` holds as a setter: where
 the object does not own the key, the setter makes an object or `null` value
 the prototype and does nothing with another. So a key whose claim may be
 `__proto__` (a string, or that singleton) is tested first:
@@ -2000,13 +2000,13 @@ Four implementations discharge the tested-slot obligation:
   (`observedSlice`); the producer claims them where the bound states the
   values (`narrow_rigid`), and keeps `T` where the bound is `unknown`, whose
   values other than null and undefined no clause row states.
-- **Array of the realm:** a passed `Array.isArray` finds an object owning
+- **Array of the built-ins:** a passed `Array.isArray` finds an object owning
   the store key. A member of a record, dictionary or `source` clause meets
-  the realm's [array invariant](SEMANTICS.md#the-array-invariant), so such a
-  member is a member of the realm's `sparse ReadonlyArray<unknown>`: a clause
+  the built-ins' [array invariant](SEMANTICS.md#the-array-invariant), so such a
+  member is a member of the built-in `sparse ReadonlyArray<unknown>`: a clause
   row $`L`$ holding the array shape over a store of `unknown`,
-  $`P_{\mathcal R}`$ and $`N_{\mathcal R}`$, the realm's `unknown` row holding
-  `source` only (`realmArrayLabel`, `exactUnknown`, `realmArray_of_record`).
+  $`P_{\mathcal B}`$ and $`N_{\mathcal B}`$, the built-ins' `unknown` row holding
+  `source` only (`builtinArrayLabel`, `exactUnknown`, `builtinArray_of_record`).
   Each label the tag slice keeps is kept in the destination, or is a clause
   row each clause of which answers `false` or is one the invariant applies
   to; and the destination holds $`L`$ (`arraySlice`, `arraySlice_sound`, with
@@ -2016,7 +2016,7 @@ Four implementations discharge the tested-slot obligation:
 ```math
 \frac{\forall a\in T_{\mathsf{isArray}}(A).\;a\in B\ \lor\ \forall c\in G(a).\;
          \mathsf{tag}(\mathsf{isArray},c)=\mathsf{false}\lor c\ \text{a record's, a dictionary's or}\ \mathsf{source}
-       \qquad L\in B\qquad G(L)=[\mathsf{Ref}(;\sigma{:}S,\mathsf{proto}{:}P_{\mathcal R};\langle\mathsf{outside}\,N_{\mathcal R}\rangle)]}
+       \qquad L\in B\qquad G(L)=[\mathsf{Ref}(;\sigma{:}S,\mathsf{proto}{:}P_{\mathcal B};\langle\mathsf{outside}\,N_{\mathcal B}\rangle)]}
       {A\preceq_{\mathsf{isArray}=\mathsf{true}}B}\ \textsf{tag-array}
 ```
 

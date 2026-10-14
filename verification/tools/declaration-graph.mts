@@ -12,7 +12,7 @@ import type { ClassDeclaration, ExportDeclaration, Identifier, ImportDeclaration
 // declaration-types.mts declares the declaration document this module writes, which the Fragment carries and Lean's EquationLowering reads.
 // type-term.mts is the one reading of TypeScript type syntax as a source type term, which every declaration body here is read with.
 // computed-types.mts states a type TypeScript computes (`typeof`, `keyof`, `T[K]`, template literals) as the equivalent source term, or refuses it.
-// array-prototype.mts holds the reviewed contracts of the realm's prototypes, the only members of `Array.prototype` and the primitive prototypes this reader admits.
+// array-prototype.mts holds the reviewed contracts of the built-in prototypes, the only members of `Array.prototype` and the primitive prototypes this reader admits.
 // intrinsics.mts declares the intrinsics this reader lists among the client's values: the trusted steps async functions, loops, spreads and patterns lower to.
 // library-globals.mts is the reviewed overlay of the standard library's globals, the only global values this reader admits, at the signatures it states.
 import type { Span } from "./span.mts";
@@ -404,7 +404,7 @@ export function collectDeclarations(file: string, options: {
    * that TypeScript types as a string, number, bigint or boolean, or a union
    * holding one, reads that primitive's members through its wrapper's
    * prototype, whose contract (`array-prototype.mts`) then joins the graph
-   * and whose realm value joins the values, located at the first such
+   * and whose built-in value joins the values, located at the first such
    * receiver. */
   memberReceivers?: readonly Span[];
   /** The client's computed types (`computedForm`) outside its type
@@ -1032,7 +1032,7 @@ export function collectDeclarations(file: string, options: {
       }
     }
     // A primitive's members are read through its wrapper's prototype: its
-    // contract joins the definitions, and the realm's prototype the values,
+    // contract joins the definitions, and the built-in prototype the values,
     // an assumption at that contract as an import is at its type.
     const primitiveProtos: TypeDefinition[] = [];
     const primitives = new Map<PrimitiveKind, Span>();
@@ -1625,7 +1625,7 @@ function promisedMethods(type: TypeTerm): TypeTerm {
   return type;
 }
 
-/** The specifier of a primitive wrapper's prototype: the realm's, which no
+/** The specifier of a primitive wrapper's prototype: the built-ins', which no
  * import names. */
 export const prototypeSpecifier = "prototype";
 /** The specifier of a global value's binding: no import names it. */
@@ -2225,7 +2225,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
     if (parts.some(part => ts.isInterfaceDeclaration(part) && part.name.text === "Promise" &&
         isLibraryModule(identityOf(part).module))) {
       if (parts.some(part => !isLibraryModule(identityOf(part).module)))
-        scope.fail(node, "a source augmentation of native Promise is outside the fragment: native factories must meet the realm's reviewed Promise contract");
+        scope.fail(node, "a source augmentation of native Promise is outside the fragment: native factories must meet the built-in reviewed Promise contract");
       if (expression.k !== "object" || expression.prototype || expression.stringIndex ||
           expression.numberIndex || expression.symbolIndex || expression.calls.length)
         throw Error("the native Promise declaration must be an ordinary interface");

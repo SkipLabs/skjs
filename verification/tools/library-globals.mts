@@ -153,7 +153,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // test. `Array` owns no `[Symbol.hasInstance]`, and `Function.prototype`'s
   // cannot be replaced, so the operator walks `e`'s prototype chain for
   // `Array.prototype`. That finds it exactly for the arrays, under two
-  // assumptions of the host: every array is of the program's realm, and no
+  // assumptions of the host: every array is made by the program's built-ins, and no
   // object inherits from `Array.prototype` but an array (the fragment makes
   // none: `class extends Array` and `Object.create` are refused, and it
   // cannot name `Array.prototype`).
@@ -177,7 +177,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
         result: { k: "object", fields: [], stringIndex: null, calls: [], span: at,
           prototype: { k: "object", fields: [{ name: "message", optional: false, readonly: true,
             type: atom("string"), span: at }], stringIndex: null, calls: [], span: at } } } })),
-  // PromiseResolve retains a native promise with the realm's standard
+  // PromiseResolve retains a native promise with the built-in standard
   // constructor, and freshly resolves stably non-thenable values. Without a
   // value, the promise settles to `undefined`, as an async completion does.
   { global: "Promise", member: "resolve", signature: "resolve<T>(value: T): Promise<Awaited<T>>;",

@@ -1007,7 +1007,7 @@ observation comes from graph dispatch, never from supplied point annotations. -/
             -- A passed `in` test: the key is present from then on.
             if BranchRefinement.presentKey t q (BranchRefinement.promotes G (BranchRefinement.tagSlice G A t q) B)
             then some {}
-            -- A passed `Array.isArray`: a record's member is an array of the realm.
+            -- A passed `Array.isArray`: a record's member is a built-in array.
             else if t == .isArray && q && BranchRefinement.arraySlice G A B then some {}
             -- A type parameter's value: its meet with what the test admits.
             else if BranchRefinement.meetSlice G A B t q then some {}

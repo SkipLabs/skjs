@@ -134,7 +134,7 @@ let method_member declarations t key =
          | None -> List.exists (fun (f:Semantic.field) -> f.name = Name proto_key && go (depth+1) f.read) fields)
       | _ -> false) (try flat_atoms declarations t with Json.Error _ -> []) in
   go 0 t
-let realm_array_reason =
+let builtin_array_reason =
   "`Array.isArray` finds a `readonly unknown[]` in `unknown` or a record, which may be a tuple: its \
    positions hold different types, so no instance of the binder is its store's contract, and a callee \
    rearranging its `Array<A>` breaks the tuple's type"

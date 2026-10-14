@@ -53,7 +53,7 @@
  *   literal) is `%ElementAt%(xs, k)`: the property the number names, an
  *   element where it is an index below the length, an own property of
  *   another numeric key, which `Array<T>`'s declared `[n: number]: T` says
- *   holds a `T`, else `undefined`, since the realm's `Array.prototype` and
+ *   holds a `T`, else `undefined`, since the built-in `Array.prototype` and
  *   `Object.prototype` own no numeric key. The read runs no code (no
  *   accessor or proxy, DESIGN.md "Trust surface").
  *

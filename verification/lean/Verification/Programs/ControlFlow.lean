@@ -188,7 +188,7 @@ theorem admitsAll_sound {G : NormalGraph ι} {T : Ty ι} (h : admitsAll G T = tr
   obtain ⟨c, hc, ht⟩ := List.any_eq_true.mp h
   apply (expand_sem G T (plain_of_mem_expand hc) n W v).mpr
   cases c <;> simp only [Bool.false_eq_true] at ht
-  · exact ⟨.top, hc, ⟨sourceVal_isVal hv, hs⟩, realmInvariant_of_unrealmed rfl n W v⟩
+  · exact ⟨.top, hc, ⟨sourceVal_isVal hv, hs⟩, builtinInvariant_of_withoutInvariant rfl n W v⟩
   · exact ⟨.source, hc, ⟨hv, hs⟩, hinv⟩
 
 /-- The facts that hold wherever a node's expression throws: only what its
@@ -527,12 +527,12 @@ theorem state_progress [DecidableEq ι] {G : NormalGraph ι} {images : InstanceI
       cases x with
       | none =>
         exact Or.inr ⟨U, h, .raised v, WExt_refl _, hw', .raise hr, hh',
-          ⟨hsc.1, (realmExc_adm G _).down n W v hsc.2⟩⟩
+          ⟨hsc.1, (builtinExc_adm G _).down n W v hsc.2⟩⟩
       | some l =>
         obtain ⟨T, facts, hT, htarget, hfacts⟩ := hx
         exact Or.inr ⟨U, h, _, WExt_refl _, hw', .handle hr, hh',
           (target_state htarget
-            (he'.push (admitsAll_sound hT ((realmExc_adm G _).down n W v hsc.2))) (hfacts v h))⟩
+            (he'.push (admitsAll_sound hT ((builtinExc_adm G _).down n W v hsc.2))) (hfacts v h))⟩
     · exact Or.inr ⟨V, h', .eval t' ρ k x, hx', hu, .expr step, hok,
         ⟨Γ,A,out,he.transfer n (Nat.le_succ n) V hx',hsafe,hk,hx⟩⟩
 

@@ -92,7 +92,7 @@ theorem setSem_meetAll (G : NormalGraph ι) (Z X : List ι → Fam) (P : List ι
       cases List.mem_singleton.mp hc
       exact hv
     · intro hv
-      exact ⟨.top, List.mem_singleton_self _, hv, realmInvariant_of_unrealmed rfl n W v⟩
+      exact ⟨.top, List.mem_singleton_self _, hv, builtinInvariant_of_withoutInvariant rfl n W v⟩
   | cons C rest ih =>
     rw [meetAll, meetLists_row, ih, List.forall_mem_cons]
     constructor
@@ -163,7 +163,7 @@ theorem Equations.meet_denote (equations : Equations)
     have hcl : meetClauses equations.graph ⟨.meet ps, valid⟩ = meetAll ((meetClauseLists rows).eraseDups) := by
       simp [meetClauses, Equations.graph, NormalGraph.ofRowMap, hrow']
     rw [hparts', hcl]
-    have hs := setSem_meetAll equations.graph (realmValues equations.graph)
+    have hs := setSem_meetAll equations.graph (builtinValues equations.graph)
       (mixedValues equations.graph η) (mixedArgs equations.graph η) ((meetClauseLists rows).eraseDups) n W v
     change _ ∧ setSem (mixedSem equations.graph η) _ n W v ↔ _
     rw [hs]

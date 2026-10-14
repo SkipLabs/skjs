@@ -372,7 +372,7 @@ Mappings discard only the temporaries introduced by this expression. -/
     -- member is read by its shape (`dispatchTerm`).
     let G := SourceTypes.graph (← table)
     -- `length` of a value that may be an array or something else:
-    -- `Array.isArray` selects the realm's `readonly unknown[]`, whose length
+    -- `Array.isArray` selects the built-in `readonly unknown[]`, whose length
     -- is its store's, and every other value reads `length` as it reads it.
     -- The test binds the value refined on each edge (`arraySlice`,
     -- `tagSlice`).
@@ -907,9 +907,9 @@ traverses its operands once instead of evaluating it and then replaying it. -/
         compileAtom recursive fc scope Γ e start
   | .logical _ andOp left right =>
     let _ ← LoweringExpression.closureExpr recursive fc scope Γ cond
-    -- Where `Array.isArray` holds, a record or `unknown` arm is the realm's
+    -- Where `Array.isArray` holds, a record or `unknown` arm is the built-ins'
     -- `readonly unknown[]` (`arraySlice`).
-    let arrays ← if arrayTested left then some <$> realmArrayTy else pure none
+    let arrays ← if arrayTested left then some <$> builtinArrayTy else pure none
     let H := conditionContext (SourceTypes.graph (← table)) scope Γ left andOp arrays
     let rhs ← compileConditionAtom recursive fc scope H right yes no
     compileConditionAtom recursive fc scope Γ left (if andOp then rhs else yes) (if andOp then no else rhs)

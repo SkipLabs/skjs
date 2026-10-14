@@ -290,14 +290,14 @@ def storeIn (G : NormalGraph ι) (S T : List ι) : Bool :=
 
 /-- A store of such a type is a possibly sparse store of `T`. -/
 theorem storeIn_sound {G : NormalGraph ι} {S T : List ι} (h : storeIn G S T = true)
-    {m : Nat} {U : WorldT m} {s : Val} (hs : meaning G S m U s) : realmStoreT (meaning G T) m U s := by
+    {m : Nat} {U : WorldT m} {s : Val} (hs : meaning G S m U s) : builtinStoreT (meaning G T) m U s := by
   simp only [storeIn, Bool.and_eq_true, List.all_eq_true] at h
   obtain ⟨c, hc, hv, -⟩ := (expand_sem G S h.1 m U s).mp hs
   have hl := h.2 c hc
   cases c with
   | list a bs =>
     have hin : ∀ B ∈ a.operands, inLabels B T = true := by simpa only [List.all_eq_true] using hl
-    refine listT_realmStore (fun A hA j W' u hu => ?_) hv.1
+    refine listT_builtinStore (fun A hA j W' u hu => ?_) hv.1
     simp only [tupleFams] at hA
     rcases hA with hA | hA | hA
     · obtain ⟨B, hB, rfl⟩ := List.mem_map.mp hA
@@ -362,26 +362,26 @@ structure ObjFacts (G : NormalGraph ι) (o : Obj ι) (n : Nat) (W : WorldT n)
   bounds : ∀ K ∈ o.bounds, ∀ oid, ownKeysT K n W (.objAt fs .absent oid)
   plain : o.plain = true → fs.lookup CallArguments.protoField = none
   /-- An array's own fields at canonical numeric keys hold what its store's
-  elements do (the realm's `numericOwn`). -/
+  elements do (the built-in `numericOwn`). -/
   numeric : ∀ S T, (CallArguments.arrayStoreField, S) ∈ o.named → storeIn G S T = true →
-    G.realm.isSome = true → ∀ key l, IndexKeys.numeric.Admits key → fs.lookup key = some l →
+    G.builtins.isSome = true → ∀ key l, IndexKeys.numeric.Admits key → fs.lookup key = some l →
     ∃ c : Ctr n, lookup W l = some c ∧
       ∀ (j : Nat) (hj : j + 1 < n) (U : WorldT j) (u : Val), c j (by omega) U u → meaning G T j U u
 
-/-- An array of a realm-checked clause holds, at its own canonical numeric
+/-- An array of a builtins-checked clause holds, at its own canonical numeric
 keys, what its store's elements hold. -/
-theorem numeric_of_inv {G : NormalGraph ι} {c : Clause (List ι)} (hc : c.realmed = true)
+theorem numeric_of_inv {G : NormalGraph ι} {c : Clause (List ι)} (hc : c.carriesInvariant = true)
     {n : Nat} {W : WorldT n} {fs : List (PropKey × Nat)} {oid : Nat}
-    (hinv : realmInvariant G (realmValues G) c n W (.objAt fs .absent oid)) {S T : List ι}
+    (hinv : builtinInvariant G (builtinValues G) c n W (.objAt fs .absent oid)) {S T : List ι}
     (hσ : ∃ (l : Nat) (c' : Ctr n), fs.lookup CallArguments.arrayStoreField = some l ∧ lookup W l = some c' ∧
       ∀ (j : Nat) (hj : j < n) (U : WorldT j) (u : Val), c' j hj U u → meaning G S j U u)
-    (hst : storeIn G S T = true) (hr : G.realm.isSome = true) :
+    (hst : storeIn G S T = true) (hr : G.builtins.isSome = true) :
     ∀ key l, IndexKeys.numeric.Admits key → fs.lookup key = some l →
       ∃ c : Ctr n, lookup W l = some c ∧
         ∀ (j : Nat) (hj : j + 1 < n) (U : WorldT j) (u : Val), c j (by omega) U u → meaning G T j U u := by
   intro key l hkey hl
   obtain ⟨r, hr'⟩ := Option.isSome_iff_exists.mp hr
-  unfold realmInvariant at hinv
+  unfold builtinInvariant at hinv
   rw [hr'] at hinv
   simp only [hc, ite_true] at hinv
   obtain ⟨lσ, cσ, hlσ, hcσ, hagσ⟩ := hσ
@@ -591,7 +591,7 @@ theorem strIn_sound {G : NormalGraph ι} {T : List ι} (h : strIn G T = true) (n
     (u : String) : meaning G T n W (.str u) := by
   obtain ⟨c, hc, hs⟩ := List.any_eq_true.mp h
   cases c <;> simp at hs
-  exact expand_sem_mpr ⟨.str, expand_sub hc, ⟨u, rfl⟩, realmInvariant_of_unrealmed rfl _ _ _⟩
+  exact expand_sem_mpr ⟨.str, expand_sub hc, ⟨u, rfl⟩, builtinInvariant_of_withoutInvariant rfl _ _ _⟩
 
 /-- A type none of whose members is an array's store: every clause is a
 primitive's or a plain object's. A string index at such a type rules out the
@@ -657,10 +657,10 @@ def Src.classWithinPlain (G : NormalGraph ι) : Src ι → List PropKey → Inde
        !K.may x || d.contains x || !copiedKey x || o.named.any (·.1 == x) || o.optional.any (·.key == x))
 
 /-- An array source under the canonical numeric keys: its store's elements
-are within `T`, and so, by the realm's invariant (`numericOwn`), are its own
+are within `T`, and so, by the built-ins' invariant (`numericOwn`), are its own
 fields there. -/
 def Src.arrayRoute (G : NormalGraph ι) : Src ι → IndexKeys → List ι → Bool
-  | .obj o, K, T => K == .numeric && G.realm.isSome &&
+  | .obj o, K, T => K == .numeric && G.builtins.isSome &&
       o.named.any fun p => p.1 == CallArguments.arrayStoreField && storeIn G p.2 T
   | _, _, _ => false
 
@@ -1023,7 +1023,7 @@ theorem src_class {G : NormalGraph ι} {o : Obj ι} {p : Nat} {W : WorldT (p + 1
     ∀ (j : Nat) (hj : j + 1 < p), meaning G T j (trunc j (by omega) (below W)) v := by
   rcases Bool.or_eq_true_iff.mp hc with hr | hc
   · simp only [Src.arrayRoute, Bool.and_eq_true, beq_iff_eq, List.any_eq_true] at hr
-    obtain ⟨⟨rfl, hrealm⟩, ⟨σ', S⟩, hS, hσ, hst⟩ := hr
+    obtain ⟨⟨rfl, hbuiltins⟩, ⟨σ', S⟩, hS, hσ, hst⟩ := hr
     simp only at hσ
     subst hσ
     obtain ⟨lσ, cσ, hlσ, hcσ, hagσ⟩ := hf.named _ hS
@@ -1039,7 +1039,7 @@ theorem src_class {G : NormalGraph ι} {o : Obj ι} {p : Nat} {W : WorldT (p + 1
         split at hown
         · exact hown
         · cases hown
-      obtain ⟨c, hcw, hag⟩ := hf.numeric S T hS hst hrealm k l hk hl
+      obtain ⟨c, hcw, hag⟩ := hf.numeric S T hS hst hbuiltins k l hk hl
       obtain ⟨u, hu, hmem⟩ := hok.2 l c hcw
       intro j hj
       have hT := hag j (by omega) _ u (hmem j (by omega))
@@ -1588,7 +1588,7 @@ theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
       obtain ⟨e, he, hk⟩ := List.mem_map.mp hm
       exact mergeParts_store hparts e he hk
     refine (expand_sem G R (plain_of_mem_expand hcr) j U _).mpr
-      ⟨_, hcr, ?_, realmInvariant_of_lookup hstore⟩
+      ⟨_, hcr, ?_, builtinInvariant_of_lookup hstore⟩
     rcases hshape with rfl | ⟨rfl, hne⟩
     · simp only [semWithArgs]
       exact ⟨hrefs, viewsT_of_viewT hviews, hopt, MethodMembers.methodT_nil _ _ _, hbounds⟩

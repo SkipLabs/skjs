@@ -661,7 +661,7 @@ There is no depth, colour or unfolding budget in the graph definition. -/
 structure Equations where
   signature : Signature
   body : (head : Fin signature.length) → Template signature head
-  realm : Option (ArrayRealm (Label signature)) := none
+  builtins : Option (ArrayBuiltins (Label signature)) := none
   domain : SchemeDomain (Label signature) .mixed := .ordinary
 
 /-- The row of a label that is not a meet. -/
@@ -735,7 +735,7 @@ def Equations.row (equations : Equations) (label : Label equations.signature) :
   | _ => equations.baseRow label
 
 def Equations.graph (equations : Equations) : NormalGraph (Label equations.signature) :=
-  NormalGraph.ofRowMap equations.row equations.realm equations.domain
+  NormalGraph.ofRowMap equations.row equations.builtins equations.domain
 
 /-- Unfolding an application substitutes into its one finite template. -/
 @[simp] theorem Equations.row_application (equations : Equations) (scope : Scope equations.signature) :

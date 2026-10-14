@@ -369,13 +369,13 @@ structure OrdinaryRegion (E : Equations) where
   heads : List Nat
   closed : E.ClosedHeads (· ∈ heads)
   ordinary : ∀ h : Fin E.signature.length, h.val ∈ heads → E.ordinaryTemplate h = true
-  realm : ∀ r ∈ E.realm.toList, ∀ l ∈ r.proto ++ r.unknown, l.withinHeads (· ∈ heads)
+  builtins : ∀ r ∈ E.builtins.toList, ∀ l ∈ r.proto ++ r.unknown, l.withinHeads (· ∈ heads)
 
 /-- Dependency discovery proposes a finite set. The final checks establish
-closure, ordinary quantification, the realm, and inclusion of every root. -/
+closure, ordinary quantification, the built-ins, and inclusion of every root. -/
 def Equations.checkOrdinaryRegion (E : Equations) (roots : List Nat) :
     Option { R : OrdinaryRegion E // ∀ h ∈ roots, h ∈ R.heads } := Id.run do
-  let mut heads := (roots ++ E.realm.toList.flatMap
+  let mut heads := (roots ++ E.builtins.toList.flatMap
     (fun r => (r.proto ++ r.unknown).flatMap fun l => l.1.dependencyHeads)).eraseDups
   for _ in [:E.signature.length + 1] do
     let more := (List.finRange E.signature.length).filter (fun h => heads.contains h.val)
@@ -385,7 +385,7 @@ def Equations.checkOrdinaryRegion (E : Equations) (roots : List Nat) :
     heads := next
   if checked : E.ClosedHeads (· ∈ heads) ∧
       (∀ h : Fin E.signature.length, h.val ∈ heads → E.ordinaryTemplate h = true) ∧
-      (∀ r ∈ E.realm.toList, ∀ l ∈ r.proto ++ r.unknown, l.withinHeads (· ∈ heads)) ∧
+      (∀ r ∈ E.builtins.toList, ∀ l ∈ r.proto ++ r.unknown, l.withinHeads (· ∈ heads)) ∧
       (∀ h ∈ roots, h ∈ heads) then
     return some ⟨⟨heads,checked.1,checked.2.1,checked.2.2.1⟩,checked.2.2.2⟩
   else return none
@@ -397,11 +397,11 @@ theorem OrdinaryRegion.domainRegion (R : OrdinaryRegion E)
     DomainRegion E.graph domain (Label.withinHeads (· ∈ R.heads)) where
   reads i hi := (E.dependencies_within _ R.closed i hi).1
   parts i hi := (E.dependencies_within _ R.closed i hi).2
-  realm r hr j hj := R.realm r (by
-    have hr' : E.realm = some r := hr
+  builtins r hr j hj := R.builtins r (by
+    have hr' : E.builtins = some r := hr
     simp [hr']) j (List.mem_append_left _ hj)
-  unknown r hr j hj := R.realm r (by
-    have hr' : E.realm = some r := hr
+  unknown r hr j hj := R.builtins r (by
+    have hr' : E.builtins = some r := hr
     simp [hr']) j (List.mem_append_right _ hj)
   allowed i hi s hs As :=
     let ordinary := E.scheme_ordinary _ R.ordinary i hi s hs

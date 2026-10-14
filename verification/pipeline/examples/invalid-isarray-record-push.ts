@@ -1,4 +1,4 @@
-// Where `Array.isArray` holds, a record arm is an array of the realm, but of
+// Where `Array.isArray` holds, a record arm is a built-in array, but of
 // unknown elements and read only: the mutable view the array arm allows
 // would let a value be pushed onto an array whose elements have another
 // contract.

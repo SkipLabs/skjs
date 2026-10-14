@@ -50,9 +50,9 @@ def GraphRow.operands : GraphRow ι → List (List ι)
 finite protocol and equation graphs: no representation gets its own choices
 about parameters, quantification or dependent intersections. -/
 def NormalGraph.ofRowMap (row : ι → GraphRow ι)
-    (realm : Option (ArrayRealm ι) := none)
+    (builtins : Option (ArrayBuiltins ι) := none)
     (domain : SchemeDomain ι .mixed := .ordinary) : NormalGraph ι :=
-  { realm, domain
+  { builtins, domain
     rows i := (row i).union
     schemes i := match row i with
       | .scheme bs sigs bounds rests resolution construct =>

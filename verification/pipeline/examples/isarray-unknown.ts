@@ -1,5 +1,5 @@
-// `Array.isArray`, and `instanceof Array`, on `unknown` find an array of the
-// realm: `unknown` carries the array invariant, so a value owning an array's
+// `Array.isArray`, and `instanceof Array`, on `unknown` find a built-in
+// array: `unknown` carries the array invariant, so a value owning an array's
 // store holds a possibly sparse store of `unknown` values and
 // `Array.prototype`. A thrown value is of `unknown` as well.
 export function elements(x: unknown): readonly unknown[] {

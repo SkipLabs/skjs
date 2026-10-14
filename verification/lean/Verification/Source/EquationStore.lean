@@ -68,13 +68,13 @@ partial def closedArgs (s : State) (args : Args) : Bool :=
   args.toList.all fun ts => ts.toList.all (closedTree s)
 end
 
-/-- The realm's arrays, where the heads state any: `ArrayProto` and the keys
+/-- The built-in arrays, where the heads state any: `ArrayProto` and the keys
 it provides. -/
-def realm (s : State) : Option (ArrayRealm Tree) :=
+def builtins (s : State) : Option (ArrayBuiltins Tree) :=
   if s.arrays then s.proto.bind fun p => (s.keys.get? unknownKey).map fun u =>
     ⟨[mkApp p []], [mkApp u []], s.excluded⟩ else none
 
-def graph (s : State) : NormalGraph Tree := NormalGraph.ofRowMap (rowOf s) (realm s)
+def graph (s : State) : NormalGraph Tree := NormalGraph.ofRowMap (rowOf s) (builtins s)
 
 /-! ### Growing the store -/
 
@@ -197,7 +197,7 @@ instance : ToJson State where
       | none => .null)]))
 
 /-- The equations' own spelling (§9.2): each head's name, parameters, binders
-and template. The realm is what the templates state: the prototype an
+and template. The built-ins is what the templates state: the prototype an
 array's clause views, and the keys that prototype's row provides. -/
 instance : FromJson State where
   fromJson? j := do
@@ -241,7 +241,7 @@ instance : FromJson State where
           | _ => []
         pure (true, some p, arrayExcludedKeysOf cs)
       | _ => throw "every array views one prototype, a nullary head's application"
-    -- The realm's `unknown`, the type of an array's elements, where arrays are.
+    -- The built-ins' `unknown`, the type of an array's elements, where arrays are.
     let unknown : Draft := { name := "unknown", kind := .primitive, kinds := [], body := some (.clauses [.source]) }
     let (heads, keys) := if arrays && !keys.contains unknownKey then
         (heads.push unknown, keys.insert unknownKey heads.size)
@@ -537,7 +537,7 @@ def withDomain (p : NativePromise E) (domain : SchemeDomain (Label E.signature) 
   kinds := p.kinds
   region := ⟨p.region.heads, p.region.closed,
     fun h hh => by simpa only [Equations.ordinaryTemplate_domain] using p.region.ordinary h hh,
-    p.region.realm⟩
+    p.region.builtins⟩
   head_mem := p.head_mem
 
 theorem applyFamily_domain (p : NativePromise E)
@@ -703,13 +703,13 @@ theorem stableFamily_domain (c : ResolutionContext E)
   · have he := c.promise.region.denote D (ParameterAssignment.empty .mixed) l (c.within l hl)
     simpa only [Equations.graph_domain, he] using hv
 
-/-- The realm's `unknown` means the same in either domain: its rows and its
+/-- The built-ins' `unknown` means the same in either domain: its rows and its
 prototype's are in the native promise's ordinary region. -/
 theorem excOf_domain (c : ResolutionContext E)
     (D : SchemeDomain (Label E.signature) .mixed) :
     excOf ({ E with domain := D } : Equations).graph = excOf E.graph := by
   have hv : ∀ S, (∀ l ∈ S, l.withinHeads (· ∈ c.promise.region.heads)) →
-      realmValues ({ E with domain := D } : Equations).graph S = realmValues E.graph S := by
+      builtinValues ({ E with domain := D } : Equations).graph S = builtinValues E.graph S := by
     intro S hS
     funext n W v
     change (∃ l ∈ S, qDenoteWithArgs _ _ (_,l) n W v) =
@@ -720,12 +720,12 @@ theorem excOf_domain (c : ResolutionContext E)
       simpa only [Equations.graph_domain, he] using hv
     · have he := c.promise.region.denote D (ParameterAssignment.empty .mixed) l (hS l hl)
       simpa only [Equations.graph_domain, he] using hv
-  refine realmExc_eq (by rw [Equations.graph_domain]) fun r hr => ?_
-  have hin : r ∈ E.realm.toList := by
-    have hr' : E.realm = some r := hr
+  refine builtinExc_eq (by rw [Equations.graph_domain]) fun r hr => ?_
+  have hin : r ∈ E.builtins.toList := by
+    have hr' : E.builtins = some r := hr
     simp [hr']
-  exact ⟨hv r.proto (fun l hl => c.promise.region.realm r hin l (List.mem_append_left _ hl)),
-    hv r.unknown (fun l hl => c.promise.region.realm r hin l (List.mem_append_right _ hl))⟩
+  exact ⟨hv r.proto (fun l hl => c.promise.region.builtins r hin l (List.mem_append_left _ hl)),
+    hv r.unknown (fun l hl => c.promise.region.builtins r hin l (List.mem_append_right _ hl))⟩
 
 theorem domain_fixed (c : ResolutionContext E)
     (D : SchemeDomain (Label E.signature) .mixed) :
@@ -815,7 +815,7 @@ instance : StoreView (Checked E p) (CheckedLabel E p) where
   wellFormed _ := true
   labels _ := (List.range E.signature.length).filterMap fun h => Checked.label? (mkApp h [])
   bound _ := CertificateProducer.searchLimit
-  arrayProto _ := ((E.realm.bind (·.proto.head?)) : Option (Label E.signature)).getD
+  arrayProto _ := ((E.builtins.bind (·.proto.head?)) : Option (Label E.signature)).getD
     (Labels.nul : CheckedLabel E p)
   lookup c cs := (lookup c.heads (cs.map (Clause.map (·.map Subtype.val)))).bind Checked.label?
   project c mentioned depth :=
@@ -858,7 +858,7 @@ def freeze (s : State) : Except String Frozen := do
     | some b => pure b
     | none => throw s!"{d.name}: its row was never lowered"
   let E ← Equations.ofRaw (rawHeads s.heads bodies)
-  let E := { E with realm := if s.arrays then realmOf E s.proto (s.keys.get? unknownKey) s.excluded else none }
+  let E := { E with builtins := if s.arrays then builtinsOf E s.proto (s.keys.get? unknownKey) s.excluded else none }
   let E := E.memo
   let ⟨p⟩ ← primitive E
   let promise ← nativePromise s E

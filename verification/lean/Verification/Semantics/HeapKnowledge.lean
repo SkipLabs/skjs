@@ -361,9 +361,9 @@ theorem primitive_sem {G : NormalGraph ι} {cs R} (hc : primitive cs = some R) (
         simp [semWithArgs,nulT,undefT,boolT,numT,strT,Atom.holds,apply_ite,or_assoc]
         all_goals try (split <;> simp_all [Atom.holds])
 
-/-- The realm asks nothing of primitive clauses. -/
+/-- The built-ins asks nothing of primitive clauses. -/
 theorem primitive_plain : ∀ {cs : List (Clause (Ty ι))} {R}, primitive cs = some R →
-    ∀ c ∈ cs, c.realmed = false
+    ∀ c ∈ cs, c.carriesInvariant = false
   | [], _, _ => by simp
   | c :: cs, R, hc => by
     intro d hd

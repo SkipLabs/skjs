@@ -23,18 +23,18 @@ abbrev reservedKey : PropKey → Bool := RequestJson.reservedKey
 
 /-- The module value holding `Array.prototype`: a name no source identifier
 spells, at `ArrayProto`. Every array a unit allocates takes its prototype from
-it, as JavaScript takes the realm's. -/
+it, as JavaScript takes the built-ins'. -/
 def arrayPrototypeName : String := "[[Array.prototype]]"
 
 /-- The module values holding the primitive wrappers' prototypes, each at its
 contract (`StringProto`, `NumberProto`, `BigIntProto`, `BooleanProto`), named
 as `[[Array.prototype]]` is: a member of a primitive of the tag's shape is read
-from it, as JavaScript's `ToObject` reads it from the realm's. -/
+from it, as JavaScript's `ToObject` reads it from the built-ins'. -/
 def primitivePrototypes : List (Tag × String) :=
   [(.isStr, "[[String.prototype]]"), (.isNum, "[[Number.prototype]]"),
    (.isBigint, "[[BigInt.prototype]]"), (.isBool, "[[Boolean.prototype]]")]
 
-/-- Every realm prototype a unit may read through, whether or not it names it. -/
+/-- Every builtins prototype a unit may read through, whether or not it names it. -/
 def prototypeNames : List String := arrayPrototypeName :: primitivePrototypes.map (·.2)
 
 /-- An array type: its store at `store`, invariant or, for a readonly array, a

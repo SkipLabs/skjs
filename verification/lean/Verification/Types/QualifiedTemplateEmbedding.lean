@@ -3,10 +3,10 @@ import Verification.Types.PositiveRules
 
 /- A syntax-preserving import of a closed normal graph. The correspondence is
    proved from mapped production rows, including quantified callable rows and
-   the array realm; no denotation equality is a hypothesis.
+   the array builtins; no denotation equality is a hypothesis.
 
    A native kernel must include the reviewed Promise/PromiseLike equations,
-   stable-value bounds and the realm's ArrayProto closure. Payloads enter by
+   stable-value bounds and the built-in ArrayProto closure. Payloads enter by
    semantic assignment. This file does not construct that reviewed kernel,
    validate an EquationLowering head map, or identify a source application
    Promise<User> with such a semantic application. -/
@@ -23,11 +23,11 @@ def mapScheme (e : ι → κ) (s : SchemeRow ι) : SchemeRow κ where
   resolution := s.resolution
   construct := s.construct
 
-def mapRealm (e : ι → κ) (r : ArrayRealm ι) : ArrayRealm κ :=
+def mapBuiltins (e : ι → κ) (r : ArrayBuiltins ι) : ArrayBuiltins κ :=
   ⟨r.proto.map e, r.unknown.map e, r.keys⟩
 
 /-- Row-preserving imports retain every dependency of the template, including
-   realm dependencies. Extra source rows are unrestricted. -/
+   builtins dependencies. Extra source rows are unrestricted. -/
 structure Embedding (G : NormalGraph ι) (H : NormalGraph κ) where
   node : ι → κ
   injective : Function.Injective node
@@ -37,7 +37,7 @@ structure Embedding (G : NormalGraph ι) (H : NormalGraph κ) where
   meets : ∀ i, H.meets (node i) = (G.meets i).map
     (fun q => (node q.1, q.2.map (Clause.map (List.map node))))
   meetParams : ∀ i, H.meetParams (node i) = (G.meetParams i).map node
-  realm : H.realm = G.realm.map (mapRealm node)
+  builtins : H.builtins = G.builtins.map (mapBuiltins node)
   /-- Domain membership is retained at each mapped callable row. -/
   domains : ∀ i s, G.schemes i = some s → ∀ As,
     H.domain.allowed (mapScheme node s) As ↔ G.domain.allowed s As
@@ -110,19 +110,19 @@ theorem Embedding.arguments {G : NormalGraph ι} {H : NormalGraph κ}
   · simp [hk, pull]
   · simp only [hk, ite_false, E.clauses, exists_map, clauseArguments_map]
 
-theorem Embedding.realm_sem {G : NormalGraph ι} {H : NormalGraph κ}
+theorem Embedding.builtins_sem {G : NormalGraph ι} {H : NormalGraph κ}
     (E : Embedding G H) (X : List κ → Fam) (c : Clause (List ι)) :
-    realmInvariant H X (c.map (List.map E.node)) =
-      realmInvariant G (fun S => X (S.map E.node)) c := by
-  simp only [realmInvariant, E.realm, Clause.realmed_map]
-  cases G.realm <;> rfl
+    builtinInvariant H X (c.map (List.map E.node)) =
+      builtinInvariant G (fun S => X (S.map E.node)) c := by
+  simp only [builtinInvariant, E.builtins, Clause.carriesInvariant_map]
+  cases G.builtins <;> rfl
 
 theorem Embedding.exc {G : NormalGraph ι} {H : NormalGraph κ}
     (E : Embedding G H) (X : List κ → Fam) :
-    realmExc H X = realmExc G (fun S => X (S.map E.node)) := by
+    builtinExc H X = builtinExc G (fun S => X (S.map E.node)) := by
   funext n W v
-  simp only [realmExc]
-  rw [show (Clause.source : Clause (List κ)) = Clause.map (List.map E.node) .source from rfl, E.realm_sem]
+  simp only [builtinExc]
+  rw [show (Clause.source : Clause (List κ)) = Clause.map (List.map E.node) .source from rfl, E.builtins_sem]
 
 theorem Embedding.row_sem {G : NormalGraph ι} {H : NormalGraph κ}
     (E : Embedding G H) (Z X : List κ → Fam) (η : MixedAssignment κ)
@@ -131,7 +131,7 @@ theorem Embedding.row_sem {G : NormalGraph ι} {H : NormalGraph κ}
       rowSem G (fun S => Z (S.map E.node)) (fun S => X (S.map E.node))
         (graphArguments G (pull E.node η) (fun S => X (S.map E.node))) c := by
   unfold rowSem
-  rw [semWithArgs_map, E.realm_sem, E.exc]
+  rw [semWithArgs_map, E.builtins_sem, E.exc]
   simp only [E.arguments]
 
 theorem Embedding.values {G : NormalGraph ι} {H : NormalGraph κ}
@@ -247,8 +247,8 @@ theorem Embedding.exc_values {G : NormalGraph ι} {H : NormalGraph κ}
     (E : Embedding G H) {X : MixedAssignment ι × ι → Fam}
     {Y : MixedAssignment κ × κ → Fam}
     (h : ∀ η i, Y (η,E.node i) = X (pull E.node η,i)) :
-    realmExc H (setSem fun i => Y (ParameterAssignment.empty .mixed,i)) =
-      realmExc G (setSem fun i => X (ParameterAssignment.empty .mixed,i)) := by
+    builtinExc H (setSem fun i => Y (ParameterAssignment.empty .mixed,i)) =
+      builtinExc G (setSem fun i => X (ParameterAssignment.empty .mixed,i)) := by
   rw [E.exc]
   have hz := funext (E.values h (ParameterAssignment.empty .mixed))
   simp only [pull_empty] at hz
@@ -385,7 +385,7 @@ def extend (G : NormalGraph ι) (U : NormalGraph (ι ⊕ υ)) : NormalGraph (ι 
   meetParams := fun i => match i with
     | .inl i => (G.meetParams i).map Sum.inl
     | .inr i => U.meetParams (.inr i)
-  realm := G.realm.map (mapRealm Sum.inl)
+  builtins := G.builtins.map (mapBuiltins Sum.inl)
   domain := U.domain
 
 section DomainChange
@@ -398,8 +398,8 @@ structure DomainRegion (G : NormalGraph ι) (domain : SchemeDomain ι .mixed)
     (D : ι → Prop) : Prop where
   reads : ∀ i, D i → ∀ j ∈ PositiveRules.reads G i, D j
   parts : ∀ i, D i → ∀ j ∈ meetParts G i, D j
-  realm : ∀ r, G.realm = some r → ∀ j ∈ r.proto, D j
-  unknown : ∀ r, G.realm = some r → ∀ j ∈ r.unknown, D j
+  builtins : ∀ r, G.builtins = some r → ∀ j ∈ r.proto, D j
+  unknown : ∀ r, G.builtins = some r → ∀ j ∈ r.unknown, D j
   allowed : ∀ i, D i → ∀ s, G.schemes i = some s → ∀ As,
     domain.allowed s As ↔ G.domain.allowed s As
 
@@ -437,19 +437,19 @@ private theorem DomainRegion.arguments {G : NormalGraph ι}
     · rw [h η j (R.reads i (hs i hi) j hj)]
 
 omit [DecidableEq ι] in
-private theorem DomainRegion.realm_eq {G : NormalGraph ι}
+private theorem DomainRegion.builtins_eq {G : NormalGraph ι}
     {domain : SchemeDomain ι .mixed} {D : ι → Prop}
     (R : DomainRegion G domain D) {X Y : MixedAssignment ι × ι → Fam}
     (h : ∀ η i, D i → Y (η,i) = X (η,i)) (c : Clause (List ι)) :
-    realmInvariant { G with domain := domain }
+    builtinInvariant { G with domain := domain }
       (setSem fun j => Y (ParameterAssignment.empty .mixed,j)) c =
-      realmInvariant G (setSem fun j => X (ParameterAssignment.empty .mixed,j)) c := by
-  simp only [realmInvariant]
-  cases hr : G.realm with
+      builtinInvariant G (setSem fun j => X (ParameterAssignment.empty .mixed,j)) c := by
+  simp only [builtinInvariant]
+  cases hr : G.builtins with
   | none => rfl
   | some r =>
     dsimp only
-    rw [region_set h (ParameterAssignment.empty .mixed) r.proto (R.realm r hr),
+    rw [region_set h (ParameterAssignment.empty .mixed) r.proto (R.builtins r hr),
       region_set h (ParameterAssignment.empty .mixed) r.unknown (R.unknown r hr)]
 
 omit [DecidableEq ι] in
@@ -457,11 +457,11 @@ private theorem DomainRegion.exc {G : NormalGraph ι}
     {domain : SchemeDomain ι .mixed} {D : ι → Prop}
     (R : DomainRegion G domain D) {X Y : MixedAssignment ι × ι → Fam}
     (h : ∀ η i, D i → Y (η,i) = X (η,i)) :
-    realmExc { G with domain := domain }
+    builtinExc { G with domain := domain }
       (setSem fun j => Y (ParameterAssignment.empty .mixed,j)) =
-      realmExc G (setSem fun j => X (ParameterAssignment.empty .mixed,j)) := by
-  unfold realmExc
-  rw [R.realm_eq h .source]
+      builtinExc G (setSem fun j => X (ParameterAssignment.empty .mixed,j)) := by
+  unfold builtinExc
+  rw [R.builtins_eq h .source]
 
 private theorem DomainRegion.row {G : NormalGraph ι}
     {domain : SchemeDomain ι .mixed} {D : ι → Prop}
@@ -478,7 +478,7 @@ private theorem DomainRegion.row {G : NormalGraph ι}
   funext n W v
   apply propext
   unfold rowSem
-  rw [R.realm_eq h c, R.exc h]
+  rw [R.builtins_eq h c, R.exc h]
   apply and_congr _ Iff.rfl
   apply semWithArgs_congr_on hc _ _ _ _ n
     (fun j hj => ?_) (fun S hS => ?_) W v
@@ -587,7 +587,7 @@ private theorem DomainRegion.part {G : NormalGraph ι}
   · rfl
   · cases hs : G.schemes i with
     | some s =>
-      show schemeSemWithArgs _ (realmExc _ (setSem fun l => Y (ParameterAssignment.empty .mixed, l))) _ η s = _
+      show schemeSemWithArgs _ (builtinExc _ (setSem fun l => Y (ParameterAssignment.empty .mixed, l))) _ η s = _
       rw [R.exc h]
       exact R.scheme h η i hi s hs
     | none =>
