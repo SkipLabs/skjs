@@ -1638,7 +1638,7 @@ discharge every bound. Successful bound comparisons retain their proposal data. 
   | [i] =>
     match G.schemes i with
     | some s =>
-      if !G.params i && c.instances.length == s.binders.length &&
+      if !G.params i && !s.construct && c.instances.length == s.binders.length &&
           instKinds G s.binders c.instances &&
           (L.all fun q => s.signatures.any fun p => instSig G c.table (s.binders.zip c.instances) p q) &&
           (M.all fun q => s.variadic.any fun p => instRest G c.table (s.binders.zip c.instances) p q) then
@@ -1675,13 +1675,13 @@ theorem compareInstArrsState_sound_at [DecidableEq ι] {G : NormalGraph ι} {ima
         · rename_i image imagesOk
           simp only [Bool.and_eq_true, Bool.not_eq_true', List.all_eq_true, List.any_eq_true,
             beq_iff_eq] at shape
-          obtain ⟨⟨⟨⟨hp, hlen⟩, hkinds⟩, hL⟩, hM⟩ := shape
+          obtain ⟨⟨⟨⟨⟨hp, hcon⟩, hlen⟩, hkinds⟩, hL⟩, hM⟩ := shape
           have checked : ((images.compare s.binders c).andThen
               (fun _ => admission s c)).accepted = true := by rw [imagesOk]; rfl
           simp only [ComparisonResult.accepted_andThen, Bool.and_eq_true] at checked
           have himg := checked.1
           intro n W v hv
-          refine ⟨inst_images_sound η hp hs hlen (hadmission s c checked.2) ?_
+          refine ⟨inst_images_sound η hp hs hcon hlen (hadmission s c checked.2) ?_
             (images.sound s.binders c hlen hkinds himg η) hL hM n W v hv,
             realmInvariant_of_not_record rfl n W v⟩
           intro b hb U hU
@@ -1724,7 +1724,7 @@ theorem compareInstArrsState_source [DecidableEq ι] {G : NormalGraph ι} {image
       · rename_i shape
         exact ⟨i, s, rfl, hs, by
           simp only [Bool.and_eq_true, Bool.not_eq_true'] at shape
-          exact shape.1.1.1.1⟩
+          exact shape.1.1.1.1.1⟩
       · cases h
     · cases h
   · cases h

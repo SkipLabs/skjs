@@ -145,7 +145,7 @@ def named : Tree → Bool
 def rowLabels (r : GraphRow Tree) : List Tree :=
   match r with
   | .clauses cs => cs.flatMap fun c => c.operands.flatten
-  | .scheme bs sigs bounds rests _ =>
+  | .scheme bs sigs bounds rests _ _ =>
     bs ++ sigs.flatMap (fun a => a.operands.flatten) ++ bounds.flatMap (fun (b, U) => b :: U) ++
       rests.flatMap fun a => a.operands.flatten
   | .param l _ _ => [l]
@@ -254,10 +254,11 @@ def binders (s : State) (names : List String) : State × List Tree :=
   names.foldl (fun (s, ls) n => let (s, l) := grow s (freshBinder n); (s, ls ++ [l])) (s, [])
 
 /-- A scheme over binders from `binders`: its signatures, its binders' bounds
-and its variadic signatures. -/
+and its variadic signatures, call signatures or, for a construct scheme,
+construct signatures. -/
 def scheme (s : State) (bs : List Tree) (sigs : List (Arrow (List Tree))) (bounds : List (Tree × List Tree))
-    (rests : List (RestArrow (List Tree))) : State × Tree :=
-  grow s (schemeOver bs sigs bounds rests)
+    (rests : List (RestArrow (List Tree))) (construct : Bool := false) : State × Tree :=
+  grow s (schemeOver bs sigs bounds rests construct)
 
 /-- A label with the labels `σ` names read as the labels it pairs them with:
 a scheme's fresh binders read as its own (`scheme`). The union a label

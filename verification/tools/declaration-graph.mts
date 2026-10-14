@@ -2241,7 +2241,8 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
         if (field.name !== "catch" && field.name !== "finally") return field;
         const type = field.type;
         const binders = type.k === "scheme" ? type.binders : [];
-        const signatures = type.k === "scheme" ? type.signatures : type.k === "function" ? [type] : [];
+        const signatures = (type.k === "scheme" ? type.signatures : type.k === "function" ? [type] : [])
+          .filter((signature): signature is Extract<TypeTerm, { k: "function" }> => signature.k === "function");
         if (!signatures.length || parameters.length !== 1)
           throw Error(`the native Promise.${field.name} declaration has an unsupported signature`);
         const receiver = promiseAt(payload);
@@ -2274,7 +2275,8 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       // chain. Keep their host-relative contracts on the receiver; the
       // prototype slots state presence and prohibit own replacements.
       const isMethod = (type: TypeTerm): boolean =>
-        (type.k === "scheme" && type.signatures.every(signature => signature.receiver?.k === "self")) ||
+        (type.k === "scheme" && type.signatures.every(signature =>
+          signature.k === "function" && signature.receiver?.k === "self")) ||
         (type.k === "function" && type.receiver?.k === "self") ||
         (type.k === "intersection" && type.parts.every(isMethod));
       const methods = nativeFields.filter(field => isMethod(field.type));

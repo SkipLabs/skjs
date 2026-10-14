@@ -238,9 +238,9 @@ def extractPlans (ast claims : Json) (fileKey : String)
           | .error (.exhausted failure limit rounds visited, T) =>
             throw (directFailure T failure (.exhausted limit rounds visited))
           | .error (.refusal pos role reason, _) => throw (sourceRefusal d.types pos role reason)
-        -- A generic function the unit reads only as a value: its slot is its
-        -- scheme.
-        else if !classNames.contains g.name && (Fragment.stmtsFreeNames f.body).contains g.name then
+        -- A generic function or class the unit reads only as a value: its slot
+        -- is its scheme.
+        else if (Fragment.stmtsFreeNames f.body).contains g.name then
           match Scheme.moduleScheme d.types g with
           | .ok (T, slot) =>
             d := { d with types := T }

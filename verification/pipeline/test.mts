@@ -553,7 +553,8 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     const entry = arrayOverlay.find(e => e.name === keyText(field.name));
     // The member's own binders lead; the element binder `T` is last.
     assert(field.readonly && field.type.k === "scheme" && field.type.binders.at(-1)?.name === "T");
-    const receiver = field.type.signatures[0]?.receiver;
+    const first = field.type.signatures[0];
+    const receiver = first?.k === "function" ? first.receiver : null;
     assert(receiver?.k === "array" && receiver.element.k === "binder");
     assert.equal(receiver.readonly, entry?.from === "ReadonlyArray", `${String(field.name)} receiver`);
   }
@@ -881,10 +882,11 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     // A generic function type in an annotation: a value of it is used at an
     // instance; another scheme, a narrower bound or a constant result gives a
     // value outside it there.
-    ["generic-function-type-annotation", "[local(), bounded()].join()", "a,abc"],
+    ["generic-function-type-annotation", "[local(), bounded(), impredicative()].join()", "a,abc,1"],
     ["invalid-generic-function-type-annotation", "typeof wrong()", "string"],
     ["invalid-generic-function-type-bound", "typeof unbounded()", "number"],
     ["invalid-generic-closure-field", "typeof wrong()", "number"],
+    ["invalid-generic-constructor-type", "typeof wrong()", "string"],
   ] as const)
     assert.equal(runExample(file, expression), expected, file);
   // A class has no plain call: calling it throws.

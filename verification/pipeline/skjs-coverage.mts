@@ -607,8 +607,8 @@ const CLASSES: ClassEntry[] = [
   // --------------------------------------------------------------- gap
   // Model and representation limits: sound JavaScript TypeScript accepts,
   // needing no assumption the project declines, which the model cannot state.
-  { cls: "gap", label: "a quantified construct signature, or a resolution-qualified scheme as a value's type", re: /generic constructor types are outside the fragment|qualified callable requires descriptor scheme checking|read as a value is a resolution-qualified scheme/,
-    why: "a representation limit: a scheme row states call signatures over value binders; a construct signature quantified over its binders, and a scheme whose binders carry resolution descriptors, have no scheme row a value's type can name (SOURCE-FRAGMENT, Model limits)" },
+  { cls: "gap", label: "a resolution-qualified scheme as a value's type", re: /qualified callable requires descriptor scheme checking|read as a value is a resolution-qualified scheme|resolution-qualified construct scheme/,
+    why: "a representation limit: a scheme whose binders carry resolution descriptors has no scheme row a value's type can name (SOURCE-FRAGMENT, Model limits)" },
   { cls: "gap", label: "a computed type over a function's own type parameter", re: /over a type parameter, .* is computed only at an instance|the indexed access .* over a type parameter is computed only at an instance/,
     why: "a model limit: `keyof T` and `T[K]` are functions of the type an instance names (its declared keys, optional and readonly members), and a parameter row denotes a value set, which does not determine a type's key set: no row states them" },
   { cls: "gap", label: "relational comparison of operands not both numbers or both strings", re: /relational comparison (converts|of operands)/,

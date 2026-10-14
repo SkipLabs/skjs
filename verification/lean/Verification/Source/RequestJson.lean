@@ -155,11 +155,12 @@ its bounds, variadic signatures and resolution groups left out when empty, a par
 row as `{"meet": binder, "clauses": [...]}`, whatever the labels are. -/
 instance [ToJson ι] [ToJson α] : ToJson (GraphRow ι α) := ⟨fun
   | .clauses cs => toJson cs
-  | .scheme bs sigs bounds rests resolution => Json.mkObj [("scheme",
+  | .scheme bs sigs bounds rests resolution construct => Json.mkObj [("scheme",
       Json.mkObj ([("binders", toJson bs), ("signatures", toJson sigs)] ++
         (if bounds.isEmpty then [] else [("bounds", toJson bounds)]) ++
         (if rests.isEmpty then [] else [("variadic", toJson rests)]) ++
-        (if resolution.isEmpty then [] else [("resolution", toJson resolution)])))]
+        (if resolution.isEmpty then [] else [("resolution", toJson resolution)]) ++
+        (if construct then [("construct", toJson true)] else [])))]
   | .param l n k => Json.mkObj [("param", toJson l), ("name", toJson n), ("kind", toJson k)]
   | .meet p cs ps => Json.mkObj ([("meet", toJson p), ("clauses", toJson cs)] ++
       (if ps.isEmpty then [] else [("also", toJson ps)]))⟩
@@ -175,7 +176,7 @@ instance [FromJson ι] [FromJson α] : FromJson (GraphRow ι α) := ⟨fun j =>
           | .error _ => pure [])
     | .ok b, .error _, .error _ => do
       fieldsExactly j ["scheme"]
-      let optional := ["bounds", "variadic", "resolution"].filter (fun k => (b.getObjVal? k).isOk)
+      let optional := ["bounds", "variadic", "resolution", "construct"].filter (fun k => (b.getObjVal? k).isOk)
       fieldsExactly b (["binders", "signatures"] ++ optional)
       return .scheme (← fromJson? (← b.getObjVal? "binders"))
         (← fromJson? (← b.getObjVal? "signatures"))
@@ -188,6 +189,10 @@ instance [FromJson ι] [FromJson α] : FromJson (GraphRow ι α) := ⟨fun j =>
         (← match b.getObjVal? "resolution" with
           | .ok v => fromJson? v
           | .error _ => pure [])
+        (← match b.getObjVal? "construct" with
+          | .ok (.bool true) => pure true
+          | .ok _ => throw "a scheme's construct field, when present, is true"
+          | .error _ => pure false)
     | .error _, .ok l, .error _ => do
       return .param (← fromJson? l) (← fromJson? (← j.getObjVal? "name"))
         (← fromJson? (← j.getObjVal? "kind"))

@@ -316,7 +316,7 @@ theorem Equations.dependencies_within (E : Equations) (H : Nat → Prop)
 /-- Only templates in the dependency closure must have ordinary quantifiers. -/
 def Equations.ordinaryTemplate (E : Equations) (h : Fin E.signature.length) : Bool :=
   match (E.body h).1 with
-  | .scheme _ _ _ _ resolution => resolution.isEmpty
+  | .scheme _ _ _ _ resolution _ => resolution.isEmpty
   | _ => true
 
 theorem Equations.scheme_ordinary (E : Equations) (H : Nat → Prop)

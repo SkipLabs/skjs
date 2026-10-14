@@ -299,7 +299,7 @@ def clausePolar : Clause α → List (Variance × α)
 /-- A template's operands with their polarities; a scheme's bounds are `inv`. -/
 def rowPolar : GraphRow Tree (List Tree) → List (Variance × List Tree)
   | .clauses cs => cs.flatMap clausePolar
-  | .scheme _ sigs bounds rests _ =>
+  | .scheme _ sigs bounds rests _ _ =>
     sigs.flatMap arrowPolar ++ bounds.map (fun b => (.inv, b.2)) ++ rests.flatMap restPolar
   | _ => []
 

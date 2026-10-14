@@ -397,8 +397,8 @@ theorem Equations.scheme_step (equations : Equations) (apps : equations.Applicat
     (bounds : List (Reference equations.signature equations.signature[head] ×
       List (Expression equations.signature equations.signature[head])))
     (rests : List (RestArrow (List (Expression equations.signature equations.signature[head]))))
-    (resolution : List ResolutionSlots)
-    (body : (equations.body head).1 = .scheme bs sigs bounds rests resolution) (W : WorldT n) (v : Val) :
+    (resolution : List ResolutionSlots) (construct : Bool)
+    (body : (equations.body head).1 = .scheme bs sigs bounds rests resolution construct) (W : WorldT n) (v : Val) :
     qDenoteWithArgs equations.graph (mixedParameters equations.graph)
       (η, (Scope.mk head A ha).label) n W v ↔
     qDenoteWithArgs equations.graph (mixedParameters equations.graph)
@@ -410,7 +410,8 @@ theorem Equations.scheme_step (equations : Equations) (apps : equations.Applicat
     let scope : Scope equations.signature := ⟨head, C, hc⟩
     let inst := fun es => es.flatMap (Expression.instantiate scope)
     ⟨scope.binders, sigs.map (Arrow.map inst),
-      bounds.map (fun p => (p.1.instantiate scope, inst p.2)), rests.map (RestArrow.map inst), resolution⟩
+      bounds.map (fun p => (p.1.instantiate scope, inst p.2)), rests.map (RestArrow.map inst), resolution,
+      construct⟩
   have valid := (equations.body head).2
   simp only [body, RowTemplate.wellBound, Bool.and_eq_true_iff, decide_eq_true_eq] at valid
   have row (C) (hc : C.length = equations.signature[head].parameters) :
@@ -535,9 +536,18 @@ theorem Equations.scheme_step (equations : Equations) (apps : equations.Applicat
       apply mixed_flatMap_agree
       intro e _
       exact equations.signature_expression_agree apps a b rfl η θ args As hlen e.1 e.2.1 e.2.1 e.2.2
-    have h := mapped_sem_agree equations.graph (assign η a.binders As) (assign θ b.binders As)
-      _ _ (fun es => Agree.mono (exprs es) hq) (.arrs sigs rests) (trunc q hq W) v
-    exact h
+    let tc : Clause (List (Expression equations.signature equations.signature[head])) :=
+      if construct then .ctors (sigs.map ctorOf) (rests.map ctorRestOf) else .arrs sigs rests
+    have hbody : ∀ C hc, (make C hc).body =
+        tc.map (fun es => es.flatMap (Expression.instantiate (Scope.mk head C hc))) := by
+      intro C hc
+      cases construct
+      · rfl
+      · simp only [tc, make, SchemeRow.body, if_true, Clause.map, List.map_map]
+        rfl
+    rw [instance_body, instance_body, hbody A ha, hbody B hb]
+    exact mapped_sem_agree equations.graph (assign η a.binders As) (assign θ b.binders As)
+      _ _ (fun es => Agree.mono (exprs es) hq) tc (trunc q hq W) v
 
 /-- Every admissible equation head preserves value meaning at the current
 level when its arguments agree below that level. -/
@@ -554,8 +564,8 @@ theorem Equations.values_step (equations : Equations) (apps : equations.Applicat
   simp only [mixedValues, Tower.setSem, List.mem_singleton, exists_eq_left]
   cases body : (equations.body ha).1 with
   | clauses cs => exact equations.clauses_step apps ha A B va vb η θ args cs body W v
-  | scheme bs sigs bounds rests resolution =>
-    exact equations.scheme_step apps ha A B va vb η θ args bs sigs bounds rests resolution body W v
+  | scheme bs sigs bounds rests resolution construct =>
+    exact equations.scheme_step apps ha A B va vb η θ args bs sigs bounds rests resolution construct body W v
   | param label name kind =>
     have h := (equations.body ha).2
     simp [body, RowTemplate.wellBound] at h

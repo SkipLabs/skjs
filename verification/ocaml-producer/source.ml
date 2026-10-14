@@ -172,9 +172,17 @@ let rec source_type ctx j =
           | _ when pack -> None
           | t -> Some (source_type inner t))})
         (List.combine identities resolutions) binders in
-      let calls = List.map (fun f -> match source_type inner f with
+      (* Call signatures, or construct signatures of a generic constructor
+         type, `new <T>(x: T) => C<T>`. *)
+      let parsed = List.map (source_type inner) signatures in
+      if parsed <> [] && List.for_all (function Atoms [Ctors [_]] -> true | _ -> false) parsed then
+        Atoms [Ctors (List.map (function
+          | Atoms [Ctors [s]] -> {s with quantified}
+          | _ -> unsupported "generic construct signature") parsed)]
+      else
+      let calls = List.map (function
         | Atoms [Shape {fields=[];indexes=[];calls=[s];elements=None}] -> {s with quantified}
-        | _ -> unsupported "generic method signature") signatures in
+        | _ -> unsupported "generic method signature") parsed in
       Atoms [Shape {fields=[];indexes=[];calls;elements=None}]
     end
   | "constructor" ->

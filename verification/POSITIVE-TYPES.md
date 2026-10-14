@@ -446,9 +446,13 @@ A label is one of four kinds of **row**:
 - a **parameter row** means what the graph's assignment `env` gives it. The
   assignment is a mixed family over values and argument lists; a row's kind
   selects the component: values for a value binder, lists for a pack binder;
-- a **scheme row** $(\vec p;\Sigma;\beta;\Sigma_\ldots)$ means one function
+- a **scheme row** $(\vec p;\Sigma;\beta;\Sigma_\ldots)_\kappa$ means one function
   meeting its signatures at every reassignment of its binders $\vec p$, which
-  are parameter rows, within their bounds $\beta$;
+  are parameter rows, within their bounds $\beta$. Its kind $\kappa$ says
+  whether the signatures are call signatures ($\kappa=\mathsf{call}$) or
+  construct signatures ($\kappa=\mathsf{new}$, a generic constructor type,
+  each signature an arrow's arguments and result), whose members are class
+  values;
 - a **meet row** $p\sqcap\vec q\sqcap\vec c$ means the values the assignment
   gives the value parameter row $p$, and each of the value parameter rows
   $\vec q$ (none, usually), that are also in the clauses $\vec c$: the
@@ -469,9 +473,9 @@ denotation is the guarded fixed point of
 ⟦i⟧^\eta=
 \begin{cases}
 \eta(i) & i\ \text{a parameter row},\\[2pt]
-\bigl\{\,v\;\bigm|\;\mathsf{Invocable}(v)\land\forall j\le n.\;\forall\vec X\in\mathcal D_s.\;
+\bigl\{\,v\;\bigm|\;\mathsf{Callee}_\kappa(v)\land\forall j\le n.\;\forall\vec X\in\mathcal D_s.\;
   \mathsf{Bounded}_j(\vec X)\Rightarrow
-  v\in_j\mathsf{Calls}(\Sigma^{\eta'})\cap\mathsf{Rests}(\Sigma_\ldots^{\eta'}),\
+  v\in_j⟦\mathsf{body}_\kappa(\Sigma;\Sigma_\ldots)⟧^{\eta'},\
   \eta'=\eta[\vec p\mapsto\vec X]\,\bigr\}
   & i\ \text{a scheme row},\\[2pt]
 \eta(p)\cap\textstyle\bigcap_{q\in\vec q}\eta(q)\cap\bigcup_{c\in\vec c}⟦c⟧^\eta & i\ \text{the meet row}\ p\sqcap\vec q\sqcap\vec c,\\[2pt]
@@ -479,7 +483,13 @@ denotation is the guarded fixed point of
 \end{cases}
 ```
 
-where $\Sigma^{\eta'}$ reads each signature's types at $\eta'$, and $n$ is
+where the body is the call clause
+$`\mathsf{body}_{\mathsf{call}}(\Sigma;\Sigma_\ldots)=\mathsf{arrs}(\Sigma;\Sigma_\ldots)`$ or the
+construct clause
+$`\mathsf{body}_{\mathsf{new}}(\Sigma;\Sigma_\ldots)=\mathsf{ctors}(\Sigma;\Sigma_\ldots)`$, each
+signature read as its arguments and result (`SchemeRow.body`), read at
+$`\eta'`$; $`\mathsf{Callee}_{\mathsf{call}}=\mathsf{Invocable}`$ (call code) and
+$`\mathsf{Callee}_{\mathsf{new}}=\mathsf{Constructible}`$ (construct-only code); and $n$ is
 the approximation level: $`v\in_j F`$ says $`v`$ is in $`F`$ at level $`j`$, in
 the world truncated to $`j`$. $\vec X$ ranges over the assignments
 $`\mathcal D_s`$ the graph's substitution domain admits for the scheme
@@ -1117,16 +1127,16 @@ $\mathsf{bool}\le\mathsf{true}\lor\mathsf{false}$ and
 $\mathsf{bool}\le\mathsf{bool}$ are derivable, and
 $\mathsf{bool}\le\mathsf{true}$ is not.
 
-**Quantified signatures.** A scheme row $i=(\vec p;\Sigma;\beta;\Sigma_\ldots)$ of
-$A$ is covered by a scheme row $j=(\vec p;\Sigma';\beta';\Sigma'_\ldots)$ of $B$
-binding the same parameter rows, each source bound among the target's, whose
-signatures, the binders opaque, the source's cover as an arrow clause's
-(`SchemeCoversWith`):
+**Quantified signatures.** A scheme row $i=(\vec p;\Sigma;\beta;\Sigma_\ldots)_\kappa$ of
+$A$ is covered by a scheme row $j=(\vec p;\Sigma';\beta';\Sigma'_\ldots)_\kappa$ of $B$
+of the same kind (`sameShape`), binding the same parameter rows, each source
+bound among the target's, whose body, the binders opaque, the source's covers
+as a call or construct clause's (`SchemeCoversWith`):
 
 ```math
-\frac{i=(\vec p;\Sigma;\beta;\Sigma_\ldots)\quad j=(\vec p;\Sigma';\beta';\Sigma'_\ldots)\quad
+\frac{i=(\vec p;\Sigma;\beta;\Sigma_\ldots)_\kappa\quad j=(\vec p;\Sigma';\beta';\Sigma'_\ldots)_\kappa\quad
       \beta\subseteq\beta'\quad
-      \Delta\vdash\mathsf{arrs}(\Sigma;\Sigma_\ldots)\sqsubseteq\mathsf{arrs}(\Sigma';\Sigma'_\ldots)}
+      \Delta\vdash\mathsf{body}_\kappa(\Sigma;\Sigma_\ldots)\sqsubseteq\mathsf{body}_\kappa(\Sigma';\Sigma'_\ldots)}
      {\Delta\vdash i\sqsubseteq_{\forall}j}\ \textsf{quantified}
 ```
 
@@ -1136,8 +1146,10 @@ binders are taken rigidly and the source's instantiated at them, which the
 same rows make the identity, and no bound is compared but by inclusion of the
 lists, so the check stays decidable. A member of $i$ meets, at every instance
 $\vec X$ within $\beta'$, which is within $\beta$, $\Sigma$ read at
-$\eta[\vec p\mapsto\vec X]$; the arrow coverage, whose premises are table
-entries, gives $\Sigma'$ there (`scheme_covers_sound`). The premises are read
+$\eta[\vec p\mapsto\vec X]$; the body's coverage, call or construct, whose
+premises are table entries, gives $\Sigma'$ there (`covers_body_sound`, from
+`covers_arrs_sound` and `covers_ctors_sound`; `scheme_covers_sound`). The
+same holds up to renaming the binders (`renames_sound`). The premises are read
 at the instance's assignment, not the table's own, so the table's induction
 is over every assignment at once (`family_sound`): every derivation holds
 at every assignment, since none reads it. So `Promise<number>` is below
@@ -1476,21 +1488,26 @@ alone:
 \land\mathsf{Bounded}_n(\eta_0,S,\vec A),\\
 ⟦S⟧^{\mathsf{scheme}}_{G,\eta_0}(n,W,v)
 \;\overset{\mathrm{def}}{\Longleftrightarrow}\;&
-\mathsf{Invocable}(v)\land\forall\eta.\;
+\mathsf{Callee}_{S.\kappa}(v)\land\forall\eta.\;
 \mathsf{Instance}_{G}(\eta_0,S,\eta)
 \Rightarrow
-\mathsf{Calls}(\mathsf{Sig}_\eta(S))\land\mathsf{Rests}(\mathsf{RestSig}_\eta(S)),
+v\in⟦\mathsf{body}_{S.\kappa}(\mathsf{Sig}_\eta(S);\mathsf{RestSig}_\eta(S))⟧,
 \end{aligned}
 ```
 
-a bound read at $\eta_0$, outside the binders. The quantifier is inside
+a bound read at $\eta_0$, outside the binders; the body is the instance's
+call clause, $`\mathsf{Calls}\cap\mathsf{Rests}`$, or for a construct scheme its
+construct clause (`instanceTWithArgs`, `sigsT`). The quantifier is inside
 membership of one $v$ at one $n,W$, so it cannot be witnessed by a different
 closure per call, and every row outside the binders, those the captures' types
 use included, means the same at every instance. A
 generic closure is graph code at a scheme row (`funScheme`): its code is
 checked once at the row's signatures, over the binders' parameter rows, and a
 code table entry holds at every assignment of them (`CodesSound`), so at every
-instance. A bound naming another binder, `U extends T`, is no scheme bound,
+instance; it is a call scheme, as instance elimination's (`inst`, `InstArrs`)
+and a method's received scheme (`CoversByScheme`) are. A generic class's
+value is read at a construct scheme ([generic function and constructor
+types](SOURCE-CONTRACTS.md#generic-function-and-constructor-types)). A bound naming another binder, `U extends T`, is no scheme bound,
 since it reads a binder: the binder is read as the meet of the two parameter
 rows (`dependentMeet`), which an instance maps to the meet of their type
 arguments (`meetOk`).

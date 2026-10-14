@@ -141,7 +141,9 @@ export type Row<L = number> = Clause<L>[];
 export type ParamRow = { kind: "value" | "arguments"; name: string; param: number };
 export type SchemeRow<L = number> = { scheme: { binders: L[]; signatures: Arrow<L>[];
   bounds?: [binder: L, bound: Labels<L>][]; variadic?: RestArrow<L>[];
-  resolution?: { input: number; observation: number; result: number | null }[] } };
+  resolution?: { input: number; observation: number; result: number | null }[];
+  /** A construct scheme: its signatures are construct signatures. */
+  construct?: true } };
 export type MeetRow = { meet: number; clauses: Row };
 export type GraphRow = Row | ParamRow | SchemeRow | MeetRow;
 export type TypeGraph = GraphRow[];
@@ -453,7 +455,8 @@ export function decodeGraph(value: unknown): TypeGraph {
     }
     if (isRecord(row) && "scheme" in row) {
       const r = objOptional(obj(row, ["scheme"]).scheme, ["binders", "signatures"],
-        ["bounds", "variadic", "resolution"]);
+        ["bounds", "variadic", "resolution", "construct"]);
+      if ("construct" in r && r.construct !== true) throw Error("a scheme's construct field, when present, is true");
       array(r.binders).forEach((b) => labels([b]));
       arrows(r.signatures);
       if ("bounds" in r)

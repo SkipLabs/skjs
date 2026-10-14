@@ -269,10 +269,13 @@ def moduleInstances (T : EquationStore.State) (g : Instantiable)
     calls.map (·.2.1), calls.map (·.1))
 
 /-- A generic module value read as a value, not called: its slot is the scheme
-its declaration states, `∀p⃗ ≤ β. Σ`, with its binders fresh parameter rows.
-A generic module function is certified at every assignment of its binders,
-and an imported one is assumed at its declared type, so the value meets its
-signatures at every instance within the bounds, which is scheme membership.
+its declaration states, `∀p⃗ ≤ β. Σ`, with its binders fresh parameter rows,
+of call signatures for a function and of construct signatures for a class.
+A generic module function is certified at every assignment of its binders, a
+generic class's construct code by the initialization unit at every assignment
+of the class's binders, and an imported one is assumed at its declared type,
+so the value meets its signatures at every instance within the bounds, which
+is scheme membership.
 A bound reading another binder, a resolution-qualified binder and a binder
 typing a rest are refused: the scheme row states none of them. Returns the
 grown table and the slot's type in claim form. -/
@@ -313,10 +316,14 @@ def moduleScheme (T : EquationStore.State) (g : Instantiable) :
     else reads := reads ++ [p]
   let ((callable, _), grown) ← g.instantiate (at_ reads) T
   let (A, grown) ← (Fragment.translate callable).run grown
-  let (L, S) ← match PositiveRules.expand (SourceTypes.graph grown) A with
-    | [.arrs L S] => pure (L, S)
-    | _ => throw s!"'{g.name}' read as a value is not one callable"
-  let (grown, label) := EquationStore.scheme grown ps L rows S
+  -- A generic function's call signatures, or a generic class's construct
+  -- signatures, each an arrow's arguments and result.
+  let (L, S, construct) ← match PositiveRules.expand (SourceTypes.graph grown) A with
+    | [.arrs L S] => pure (L, S, false)
+    | [.ctors L S] => pure (L.map (fun (ps, r) => ⟨[], ps, r, .unrestricted⟩),
+        S.map (fun (ps, rest, r) => ⟨[], (ps, rest), r, .unrestricted⟩), true)
+    | _ => throw s!"'{g.name}' read as a value is not one callable or one class value"
+  let (grown, label) := EquationStore.scheme grown ps L rows S construct
   return (grown, graph [label])
 
 /-- A claim with a generic unit's binders read as their parameter rows, in

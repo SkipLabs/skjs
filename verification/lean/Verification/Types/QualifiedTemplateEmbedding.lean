@@ -21,6 +21,7 @@ def mapScheme (e : ι → κ) (s : SchemeRow ι) : SchemeRow κ where
   bounds := s.bounds.map fun b => (e b.1, b.2.map e)
   variadic := s.variadic.map (RestArrow.map (List.map e))
   resolution := s.resolution
+  construct := s.construct
 
 def mapRealm (e : ι → κ) (r : ArrayRealm ι) : ArrayRealm κ :=
   ⟨r.proto.map e, r.keys⟩
@@ -164,7 +165,7 @@ theorem Embedding.instance {G : NormalGraph ι} {H : NormalGraph κ}
     exact hv S
   unfold instanceTWithArgs instanceSigs instanceRestsWithArgs
   simp only [mapScheme, List.map_map]
-  congr 2
+  congr 1
   · congr 1
     funext a
     simp only [Function.comp_apply, Arrow.map, Contract.map, hv]
@@ -529,8 +530,7 @@ private theorem DomainRegion.scheme {G : NormalGraph ι}
   refine and_congr Iff.rfl (forall_congr' fun q => forall_congr' fun hq => forall_congr' fun As => imp_congr_right fun _ => ?_)
   refine imp_congr (R.allowed i hi s hs As) (imp_congr (hbound As q) ?_)
   simp only [instanceTWithArgs, instanceSigs, instanceRestsWithArgs]
-  change interT (CallEffects.callsT _) (CallEffects.restsT _) q (trunc q hq W) v ↔
-    interT (CallEffects.callsT _) (CallEffects.restsT _) q (trunc q hq W) v
+  change sigsT s.construct _ _ q (trunc q hq W) v ↔ sigsT s.construct _ _ q (trunc q hq W) v
   dsimp only [mixedParameters]
   have sameArgs : graphArguments { G with domain := domain } = graphArguments G := rfl
   rw [sameArgs, sigs, rests]

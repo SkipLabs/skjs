@@ -406,7 +406,7 @@ entry is checked at every assignment of the parameter rows
     (arity : Nat) (E : List Tm) (K : List (ControlFlow.Continuation × Option ControlFlow.Target))
     (start : Nat) (Cs : List (Ty ι)) (rest : Bool) (As : List (Ty ι)) : Bool :=
   match schemeOf G A with
-  | some (_, s) => capturesFree G s Cs &&
+  | some (_, s) => !s.construct && capturesFree G s Cs &&
       offersChecked G codes arity E K start Cs rest s.signatures s.variadic As
   | none =>
     match expand G A with
@@ -1393,7 +1393,7 @@ theorem funScheme_of_checked [DecidableEq ι] {G : NormalGraph ι}
     {arity start : Nat} {E : List Tm}
     {K : List (ControlFlow.Continuation × Option ControlFlow.Target)}
     {caps : List (Ty ι × Nat)} {rest : Bool} {stores : List (Ty ι)}
-    (hp : G.params j = false) (hs : G.schemes j = some s)
+    (hp : G.params j = false) (hs : G.schemes j = some s) (hcon : s.construct = false)
     (hc : offersChecked G codes arity E K start (caps.map Prod.fst) rest
       s.signatures s.variadic stores = true)
     (hfree : capturesFree G s (caps.map Prod.fst) = true)
@@ -1401,7 +1401,7 @@ theorem funScheme_of_checked [DecidableEq ι] {G : NormalGraph ι}
     (hcap : ∀ c ∈ caps, HasTyUsing G images (subtyping := subtyping) Γ (.var c.2) c.1) :
     HasTyUsing G images (subtyping := subtyping) Γ
       (.makeFn (.graph arity E K start (caps.map fun c => .var c.2) .call rest) .nul) [j] :=
-  .funScheme hp hs (schemeOffersChecked_sound hcodes hc) (offersChecked_shape hc) hfree hlt hcap
+  .funScheme hp hs hcon (schemeOffersChecked_sound hcodes hc) (offersChecked_shape hc) hfree hlt hcap
 
 #print axioms schemeOffersChecked_sound
 #print axioms funScheme_of_checked
@@ -1496,8 +1496,8 @@ theorem funGraph_of_local [DecidableEq ι] {G : NormalGraph ι}
         obtain ⟨s', hq, he⟩ := Option.map_eq_some_iff.mp hs
         cases he
         exact funScheme_of_checked (caps := caps) (E := E) (K := K) (start := start) (arity := arity)
-          (hcodes.scheme s) (by simpa using hpar) hq
-          (by rw [hfst]; exact hok.2) (by rw [hfst]; exact hok.1) hlt hcap
+          (hcodes.scheme s) (by simpa using hpar) hq (by simpa using hok.1.1)
+          (by rw [hfst]; exact hok.2) (by rw [hfst]; exact hok.1.2) hlt hcap
     · cases hs
   · split at hok
     · rename_i L S hL
@@ -2255,7 +2255,7 @@ theorem checkTreeUsing_complete [DecidableEq ι] {G : NormalGraph ι}
     · intro j hj
       obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hj
       exact ih c hc
-  | @funScheme Γ i s arity start E K caps rest As hp hq _hspec hshape hcf hlt hcap ih =>
+  | @funScheme Γ i s arity start E K caps rest As hp hq hcon _hspec hshape hcf hlt hcap ih =>
     apply node_complete (r := .funGraph As)
       (j := ⟨Γ, .makeFn (.graph arity E K start (caps.map fun c => .var c.2) .call rest) .nul, [i]⟩)
       (js := caps.map fun c => ⟨Γ, .var c.2, c.1⟩)
@@ -2265,8 +2265,8 @@ theorem checkTreeUsing_complete [DecidableEq ι] {G : NormalGraph ι}
         rfl
       · have hmap : (caps.map fun c => (⟨Γ, .var c.2, c.1⟩ : Sequent ι)).map Sequent.type =
             caps.map Prod.fst := by simp
-        simp only [graphCodesChecked, schemeOf, hp, hq, hmap, hcf, Bool.false_eq_true,
-          if_false, Option.map_some, Bool.true_and]
+        simp only [graphCodesChecked, schemeOf, hp, hq, hmap, hcf, hcon, Bool.false_eq_true,
+          if_false, Option.map_some, Bool.true_and, Bool.not_false]
         cases rest with
         | false => simp [offersChecked]
         | true =>

@@ -491,13 +491,20 @@ function readTypeTerm(scope: TermScope, node: TypeNode | undefined, at: Node | n
  * receiver, and its rest, if any, is a function's. */
 function constructorForms(scope: TermScope, node: ts.ConstructorTypeNode | ts.ConstructSignatureDeclaration,
     span: Span): TypeTerm[] {
-  if (node.typeParameters?.length) scope.fail(node, "generic constructor types are outside the fragment");
   if (ts.isConstructorTypeNode(node) && node.modifiers?.length)
     scope.fail(node, "an abstract constructor type is outside the fragment");
-  return signatures(scope, node.parameters, node.type, node, span).map((f): TypeTerm => {
+  if (!node.type) scope.fail(node, "a constructor type needs its result type");
+  const construct = (f: FunctionTerm): Extract<TypeTerm, { k: "constructor" }> => {
     if (f.receiver) scope.fail(node, "a constructor type has no receiver");
     return { k: "constructor", params: f.params, rest: f.rest, result: f.result, span };
-  });
+  };
+  // A generic construct signature, `new <A>(x: A) => C<A>`, is a scheme of
+  // construct signatures: a class value meeting each at every instance.
+  if (node.typeParameters?.length) {
+    const { binders, forms } = quantified(scope, node.typeParameters, node.parameters, node.type, node, span);
+    return [{ k: "scheme", binders, signatures: forms.map(construct), span }];
+  }
+  return signatures(scope, node.parameters, node.type, node, span).map(construct);
 }
 
 /** A mapped type `{ [P in K]: V }` whose value does not name its key `P`:
@@ -596,7 +603,8 @@ export function substitute(term: TypeTerm, args: readonly TypeTerm[]): TypeTerm 
       result: go(term.result) };
     case "pack": return { ...term, of: go(term.of) };
     case "scheme": return { ...term, binders: term.binders.map(b => ({ ...b, bound: b.bound && go(b.bound),
-      default: b.default && go(b.default) })), signatures: term.signatures.map(fn) };
+      default: b.default && go(b.default) })), signatures: term.signatures.map(f => f.k === "function" ? fn(f)
+        : { ...f, params: f.params.map(go), rest: f.rest && go(f.rest), result: go(f.result) }) };
     case "reference": return { ...term, args: term.args.map(go) };
   }
 }

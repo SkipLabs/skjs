@@ -40,7 +40,7 @@ neither runs nothing and states no claim; it is refused, so an acceptance
 always checked some code. A class's methods are closures its initialization
 allocates, so they are checked in that unit. A module function's slot is its
 annotated signature, a generic one's read as a value its
-[scheme](#generic-function-types); a module constant is read at its annotation or at the
+[scheme](#generic-function-and-constructor-types); a module constant is read at its annotation or at the
 initialization unit's claim for its initializer
 ([module constants](SOURCE-ELABORATION.md#mutable-bindings-and-module-constants)). The
 initialization unit refuses a call, direct or through module functions, that
@@ -236,7 +236,7 @@ generic unit's binders are the owned parameters of its head
 claim states (`Scheme.schemeRowOf`), and each annotation and claim inside
 reads the name as that parameter (`EquationStore.rebind`).
 
-### Generic function types
+### Generic function and constructor types
 
 A generic function type `<p₁ extends β₁, …>(x⃗: A⃗) => R`, in a declaration
 or in an annotation, is the scheme row
@@ -276,28 +276,48 @@ resolution-qualified binder and a binder typing a rest are refused there,
 since the scheme row states none of them. A generic module value that is
 called is read at the instances its calls name (`Scheme.moduleInstances`).
 
-Schemes relate by quantified coverage up to renaming
+A generic constructor type `new <p⃗ extends β⃗>(x⃗: A⃗) => R` is the construct
+scheme $`S=(\vec p;\ \vec A\to R;\ \vec\beta)_{\mathsf{new}}`$: a value of it is a
+class value constructing an $`R`$ from $`\vec A`$ at every instance
+([scheme rows](POSITIVE-TYPES.md#parameter-and-scheme-rows)). A generic class
+read as a value meets its own construct scheme, by **module-scheme** with its
+construct signatures: its construct code is checked by the initialization
+unit at every assignment of the class's binders.
+
+```math
+\frac{C\ \text{a generic class}\quad \mathsf{ctor}(C)=\forall\vec p\le\vec\beta.\ \mathsf{new}\ \vec A\to C\langle\vec p\rangle\quad C\ \text{read, not constructed}}
+     {C:(\vec p;\ \vec A\to C\langle\vec p\rangle;\ \vec\beta)_{\mathsf{new}}}\ \textsf{class-scheme}
+```
+
+Schemes of one kind relate by quantified coverage up to renaming
 ([RECURSIVE-EQUATIONS §4.1](RECURSIVE-EQUATIONS.md#41-quantified-signatures));
+a call scheme and a construct scheme are never related;
 a union of schemes is met by a member of either arm. So `identity<T>` meets
 `(<T>(x: T) => T) | (<T>(x: T) => string)` at its first arm, and a function
 returning a string at every type argument meets only the second.
 
 **Admitted instantiations.** A call of a scheme-typed value is typed at one
-instance, $`\vec p\mapsto\vec\theta`$ with ground types $`\vec\theta`$, each
-within its bound, checked by the instance rule
-([instances](POSITIVE-TYPES.md#instances-of-a-scheme-row)); a comparison
+instance $`\vec p\mapsto\vec\theta`$ the claims name, each $`\theta_p`$ a type
+of the graph of its binder's kind and within its bound, checked by the
+instance rule ([instances](POSITIVE-TYPES.md#instances-of-a-scheme-row),
+[claims](SOURCE-CLAIMS.md#quantified-callables-and-their-eliminations)): a
+ground type, an enclosing generic unit's binder as its parameter row, or a
+scheme type itself, as in `f(identity)` with `f` and `identity` both at
+`<T>(x: T) => T`, whose instance is `T := <T>(x: T) => T`. A comparison
 instantiates the source scheme's binders at the target's, which it takes
-rigidly. No type argument is itself a scheme row or a free binder
-([claims](SOURCE-CLAIMS.md#quantified-callables-and-their-eliminations)).
-The meaning quantifies over every admissible family $`\vec X\in\mathcal D_S`$,
-a semantic family closed downward in the level, not over the types the
-checker can write, so no instance is defined by the scheme being defined:
-the denotation is the guarded fixed point of the row equations, the
-signature's operands read below the level, and it exists whatever the
-families range over (`QInv`, admissibility of `schemeSemWithArgs`). An
-instance at any type the checker writes is one of those families, so the
-restriction to ground type arguments is one of decidability, not of
-soundness.
+rigidly. This is sound in the step-indexed model for every such instance,
+impredicative ones included: the meaning quantifies over every admissible
+family $`\vec X\in\mathcal D_S`$, a semantic family closed downward in the
+level, not over the types the checker can write, so no instance is defined
+by the scheme being defined. The denotation is the guarded fixed point of the
+row equations, the body's operands read below the level, and it exists
+whatever the families range over (`QInv`, admissibility of
+`schemeSemWithArgs`); every type's meaning, a scheme row's included, is such a
+family (`mixedMeaning_valid`), so it is an instance. Decidability comes from
+the checker comparing the instance a claim names, never searching instances
+over schemes. A construct scheme has no instance rule: a value of a generic
+constructor type is stored and compared, not constructed
+([model limits](SOURCE-FRAGMENT.md#model-limits)).
 
 ### Binders met with ground types
 

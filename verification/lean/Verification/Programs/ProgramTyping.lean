@@ -2025,7 +2025,7 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
   | funScheme {Γ : List (Ty ι)} {j : ι} {s : SchemeRow ι} {arity start : Nat} {E : List Tm}
       {K : List (ControlFlow.Continuation × Option ControlFlow.Target)}
       {caps : List (Ty ι × Nat)} {rest : Bool} {As : List (Ty ι)} :
-      G.params j = false → G.schemes j = some s →
+      G.params j = false → G.schemes j = some s → s.construct = false →
       (∀ η Bs, Bs.length = s.binders.length → G.domain.allowed s Bs →
         CodeOffers (reassign G (assign η s.binders Bs)) arity E K start
           (caps.map Prod.fst) rest s.signatures s.variadic As) →
@@ -2424,7 +2424,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hv
       exact (meaning_value (hcapv c hc)).1)
     exact (represents_back hr j V _) ⟨ho.1, ho.2⟩
-  | @funScheme Γ i s arity start E K caps rest Ss hp hq hspec _hshape hcf hlt hcap ih =>
+  | @funScheme Γ i s arity start E K caps rest Ss hp hq hcon hspec _hshape hcf hlt hcap ih =>
     obtain ⟨hF, hfree⟩ := capturesFree_sound hcf
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map]
@@ -2456,13 +2456,15 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       intro v hv
       obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hv
       exact (meaning_value (hcapv c hc)).1)
+      simp only [instanceTWithArgs, sigsT, hcon, Bool.false_eq_true, if_false]
       exact ⟨ho.1, ho.2⟩
     refine ⟨i, List.mem_singleton_self i, ?_⟩
     change qDenoteWithArgs G (mixedParameters G) (G.env, i) j U _
     rw [qDenoteWithArgs_unfold]
     simp only [qLayerWithArgs, hp, hq, Bool.false_eq_true, if_false]
-    exact ⟨⟨_, _, _, rfl, rfl, by simpa [Scoped, vs, instantiate] using hsc⟩,
-      fun q hq As hlen hal _ => (instanceTWithArgs_adm _ _ _ _ _).down_le j q hq U _ (hsig As hlen hal)⟩
+    refine ⟨?_, fun q hq As hlen hal _ => (instanceTWithArgs_adm _ _ _ _ _).down_le j q hq U _ (hsig As hlen hal)⟩
+    simp only [Callee, hcon, Bool.false_eq_true, if_false]
+    exact ⟨_, _, _, rfl, rfl, by simpa [Scoped, vs, instantiate] using hsc⟩
   | @ctorGraph Γ F U L arity start E K caps hr hu hspec hlt hcap ih =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map]

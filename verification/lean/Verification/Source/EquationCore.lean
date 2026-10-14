@@ -377,16 +377,29 @@ partial def schemeRow (ctx : Ctx) (term : Json) : M (GraphRow Tree (List Tree)) 
   let inner := { inner with binders, bounds := ctx.bounds ++ bounds ++ views }
   let mut fixed : List (Arrow (List Tree)) := []
   let mut rests : List (RestArrow (List Tree)) := []
-  for f in ← arr term "signatures" do
-    fieldsExactly f ["k", "receiver", "params", "rest", "result", "effect", "span"]
-    let recv ← lowerType inner (← field f "receiver")
+  -- Call signatures, or construct signatures (`new <T>(…) => R`), each an
+  -- arrow's arguments and result: a construct signature has no receiver and
+  -- no effect, read as none and as unrestricted.
+  let sigs ← arr term "signatures"
+  let construct := sigs.toList.any (kindOf · == some "constructor")
+  if construct && !sigs.toList.all (kindOf · == some "constructor") then
+    throw s!"{ctx.site}: a scheme of call and construct signatures together is outside the fragment"
+  if construct && !resolution.isEmpty then
+    throw s!"{ctx.site}: a resolution-qualified construct scheme is outside the fragment"
+  for f in sigs do
+    let recv ← if construct then do
+        fieldsExactly f ["k", "params", "rest", "result", "span"]
+        pure []
+      else do
+        fieldsExactly f ["k", "receiver", "params", "rest", "result", "effect", "span"]
+        lowerType inner (← field f "receiver")
     let ps ← (← arr f "params").toList.mapM (lowerType inner)
     let restTerm ← field f "rest"
     let res ← lowerType inner (← field f "result")
-    let effect : CallEffects.Effect ← fromJson? (← field f "effect")
+    let effect : CallEffects.Effect ← if construct then pure .unrestricted else fromJson? (← field f "effect")
     if restTerm == .null then fixed := fixed ++ [⟨recv, ps, res, effect⟩]
     else rests := rests ++ [⟨recv, (ps, ← lowerRest inner restTerm), res, effect⟩]
-  return .scheme ((List.range names.length).map Tree.local) fixed bounds rests resolution
+  return .scheme ((List.range names.length).map Tree.local) fixed bounds rests resolution construct
 
 /-- A declaration's row: the source meet of its own members with its bases'
 rows (§8.1, heritage). -/
@@ -467,7 +480,7 @@ partial def rowBody (n : Nat) : M (GraphRow Tree (List Tree)) := do
   -- carry binding structure, so their enumeration is not a union spelling.
   let operands : List (List Json) := match row with
     | .clauses cs => cs.flatMap Clause.operands
-    | .scheme _ sigs bounds rests _ =>
+    | .scheme _ sigs bounds rests _ _ =>
       sigs.flatMap Arrow.operands ++ bounds.map (·.2) ++ rests.flatMap RestArrow.operands
     | .param .. | .meet .. => [] -- producerRows refuses these row kinds.
   let lowered ← operands.mapM fun A => do return (A, ← claimUnion scope (.arr A.toArray))

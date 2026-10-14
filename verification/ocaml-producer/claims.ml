@@ -101,6 +101,32 @@ let encode (proposal : Proposal_types.t) =
     | SymbolLit id -> [Row (intern (Array [Object ["symbolLit",Object ["id",Number (string_of_int id)]]]))]
     | Top -> [Row (intern (Array [String "source"]))]
     | Callable -> [Row (intern (Array [Object ["arrs",Object ["arrows",Array []]]]))]
+    (* A quantified construct signature, `new <T>(x: T) => C<T>`: a construct
+       scheme row, its binders the names the source spells, each construct
+       signature an arrow's arguments and result (no receiver). *)
+    | Ctors [s] when s.quantified <> [] ->
+      let binders = List.map (fun (q:Semantic.rigid) -> label_json (Binder q.spelling))
+        (List.concat_map quantifier_identities s.quantified) in
+      if List.exists (fun (q:Semantic.quantifier) -> q.resolution <> None) s.quantified then
+        unsupported "a resolution-qualified construct scheme";
+      let within_bounds = List.filter_map (fun (q:Semantic.quantifier) ->
+        match Option.value q.bound ~default:(ValueArgument top) with
+        | ValueArgument bound -> Some (q.identity, ValueArgument (Meet (Rigid q.identity,[bound])))
+        | _ -> None) s.quantified in
+      let body = Inference.substitute_signature within_bounds {s with quantified=[]} in
+      let signature,variadic = match body.rest_pack with
+        | None -> [call_contract Unrestricted (Array []) (Array (List.map labels body.params)) (labels body.result)],[]
+        | Some r -> [],[call_contract Unrestricted (Array [])
+            (Array [Array (List.map labels body.params);pack_labels r]) (labels body.result)] in
+      let bounds = List.map (fun (q:Semantic.quantifier) ->
+        let bound = Option.value q.bound ~default:(ValueArgument top) in
+        Array [label_json (Binder q.identity.spelling);
+          (match bound with ValueArgument t -> labels t | PackArgument p -> pack_labels p
+           | ResolutionArgument _ -> unsupported "a resolution descriptor is not a construct binder bound")]) s.quantified in
+      [Row (intern (Object ["scheme",Object (["binders",Array binders;"signatures",Array signature]
+        @ (if bounds = [] then [] else ["bounds",Array bounds])
+        @ (if variadic = [] then [] else ["variadic",Array variadic])
+        @ ["construct",Bool true])]))]
     | Ctors signatures ->
       List.iter (fun (s:Semantic.signature) ->
         if s.quantified <> [] then unsupported "quantified construct signature claim encoding") signatures;

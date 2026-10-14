@@ -48,9 +48,10 @@ one another without expanding them into trees. The first four rows are
 `[{"boolLit":{"value":false}}]`, and `["undef"]`, in that order.
 The [source-value universe](SOURCE-MODEL.md#source-value-boundary) is the
 `source` clause, shared by value claims and declaration arguments.
-The table also accepts scheme rows for classes' quantified methods, whose
-binders use binder labels; their native graph fields are specified with the
-clause fields below.
+The table also accepts scheme rows for quantified signatures inside a type
+(classes' quantified methods, fields and constructor values of generic
+function and constructor types), whose binders use binder labels; their native
+graph fields are specified with the clause fields below.
 Scheme binders are an ordered binding list. Each bound is a pair of its binder
 and a label list; canonical union order applies to that label list, as it does
 to signature operands. Decoding retains the bound separately from its binder.
@@ -218,8 +219,9 @@ consumer checks the certificate against the entry's complete input type: a
 union's arms against its parts in any order, `promise` against a native
 promise of any payload, which it observes and gives no result, and `binder`
 against the named enclosing parameter or its observation
-([implied bounds](SOURCE-CONTRACTS.md#implied-bounds)). Type arguments must be ground:
-unresolved rigid parameters and nested quantified schemes are refused. The
+([implied bounds](SOURCE-CONTRACTS.md#implied-bounds)). A type argument is a
+type of the graph once claims are grounded: a quantified scheme is its scheme
+row, and a rigid parameter no enclosing unit or closure binds is refused. The
 consumer checks bounds, substitution, the instantiated signature, and the
 source call. A body is certified at its quantified signature, not solely at
 the instances observed at calls. Generic rests, defaults and receivers retain

@@ -490,7 +490,7 @@ rows are not declaration heads: parameters come from a scope; intersections
 require normalization rather than pretending an arbitrary argument is rigid. -/
 def RowTemplate.wellBound (head : Fin sig.length) : RowTemplate sig head → Bool
   | .clauses _ => sig[head].binders.isEmpty
-  | .scheme bs _ bounds _ _ =>
+  | .scheme bs _ bounds _ _ _ =>
     decide (bs.map (fun b => b.1.1) = (List.range sig[head].binders.length).map Tree.local) &&
       bounds.all (fun (b, T) => (bs.any fun p => decide (p = b)) &&
         T.all (fun t => t.1.lexical false))

@@ -83,12 +83,14 @@ export type TypeTerm =
    * past the fixed ones are, as one argument list, at `P`, a pack parameter.
    * Only a signature's `rest` holds one; any other rest is its element. */
   | { k: "pack"; of: TypeTerm; span: Span }
-  /** A generic method, `m<U>(f: (x: T) => U): Box<U>`: its binders, which its
-   * signatures name as `binder` terms by spelling, and its signatures, each
-   * with the containing declaration as receiver. A bound or default is stated
+  /** A generic method, `m<U>(f: (x: T) => U): Box<U>`, or a generic function
+   * or constructor type: its binders, which its signatures name as `binder`
+   * terms by spelling, and its signatures, call signatures (a method's with
+   * the containing declaration as receiver) or construct signatures. A bound or default is stated
    * as written; which bounds are admitted is the reader's decision. */
   | { k: "scheme"; binders: (SourceTypeParameter<TypeTerm> & { default: TypeTerm | null;
-      span: Span })[]; signatures: Extract<TypeTerm, { k: "function" }>[]; span: Span }
+      span: Span })[]; signatures: Extract<TypeTerm, { k: "function" | "constructor" }>[];
+      span: Span }
   /** A value with call or construct code, of which no signature is known:
    * the meaning of the standard library's `Function` (PROGRAM-TYPING.md,
    * "Library types"). Nothing may be called or constructed through it. */

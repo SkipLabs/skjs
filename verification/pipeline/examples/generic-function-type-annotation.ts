@@ -29,6 +29,13 @@ export function union(): void {
   const b: Either = label;
 }
 
+// An impredicative instance: `T := <T>(x: T) => T`.
+export function impredicative(): number {
+  const f: <T>(x: T) => T = identity;
+  const g: <U>(y: U) => U = f(identity);
+  return g(1);
+}
+
 export function bounded(): string {
   const k = keep;
   return k("abc");

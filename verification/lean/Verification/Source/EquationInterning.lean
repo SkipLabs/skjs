@@ -264,7 +264,7 @@ binders as its locals, and every other rigid subtree lifted. The label is the
 head applied to what was lifted; its binders are the head's owned
 parameters, which the caller reads from the label's row. -/
 def schemeOver (binders : List Tree) (sigs : List (Arrow (List Tree))) (bounds : List (Tree × List Tree))
-    (rests : List (RestArrow (List Tree))) : M Tree := do
+    (rests : List (RestArrow (List Tree))) (construct : Bool := false) : M Tree := do
   let loc (t : Tree) : Option Union := (binders.idxOf? t).map fun j => [.local j]
   let local_ (U : Union) : Union := U.flatMap (treeReplace loc)
   let sigs := sigs.map (Arrow.map local_)
@@ -295,7 +295,7 @@ def schemeOver (binders : List Tree) (sigs : List (Arrow (List Tree))) (bounds :
     | .var _ _ k => k
     | _ => .value⟩
   let row : GraphRow Tree (List Tree) :=
-    .scheme ((List.range binders.length).map Tree.local) sigs bounds rests
+    .scheme ((List.range binders.length).map Tree.local) sigs bounds rests [] construct
   let key := s!"schemeOver|{reprStr kinds}|{reprStr bs}|{reprStr row}"
   let h ← alloc key { name := "scheme", kind := .scheme, kinds, binders := bs, body := some row }
     fun _ => none

@@ -185,6 +185,9 @@ structure SchemeRow (ι : Type) where
   variadic : List (RestArrow (List ι)) := []
   /-- Associated slots are part of the generic contract. -/
   resolution : List ResolutionSlots := []
+  /-- A construct scheme: its signatures are construct signatures, each an
+  arrow's arguments and result (`ctorOf`), and its members class values. -/
+  construct : Bool := false
   deriving DecidableEq, Repr
 
 /-- Associated observation and result slots have no independent bounds.
@@ -201,6 +204,7 @@ def SchemeRow.map (binding : ι → κ) (operand : List ι → List κ)
   bounds := s.bounds.map (fun b => (binding b.1, operand b.2))
   variadic := s.variadic.map (RestArrow.map operand)
   resolution := s.resolution
+  construct := s.construct
 
 /-- The finite graph boundary checks position identity and all protected
 bounds separately from semantic instance membership. -/
@@ -850,17 +854,69 @@ noncomputable def instanceRestsWithArgs (D : ParameterAssignment k ι → List �
   let η' := assign η s.binders As
   s.variadic.map (RestArrow.mapWith (D η') (P η' (D η')))
 
-/-- One instance's contract: its fixed and its variadic signatures, as a call
+/-- A construct signature as an arrow states it: its arguments and its
+result. A construct signature has no receiver and no effect. -/
+def ctorOf (a : CallEffects.Contract α β γ) : β × γ := (a.arguments, a.result)
+
+/-- A variadic construct signature as a variadic arrow states it: its fixed
+parameters, its rest and its result. -/
+def ctorRestOf (r : CallEffects.Contract α (List β × δ) γ) : List β × δ × γ :=
+  (r.arguments.1, r.arguments.2, r.result)
+
+/-- What a scheme's instances meet, as a clause: its call signatures, or its
+construct signatures for a construct scheme. -/
+def SchemeRow.body (s : SchemeRow ι) : Clause (List ι) :=
+  if s.construct then .ctors (s.signatures.map ctorOf) (s.variadic.map ctorRestOf)
+  else .arrs s.signatures s.variadic
+
+/-- The signatures `L` and variadic signatures `S` of one value: call
+signatures, as a call clause's are, or construct signatures, as a construct
 clause's are. -/
+noncomputable def sigsT (construct : Bool) (L : List (Arrow Fam))
+    (S : List CallEffects.RestSignature) : Fam :=
+  if construct then interT (ctorsT (L.map ctorOf)) (ctorRestsT (S.map ctorRestOf))
+  else interT (CallEffects.callsT L) (CallEffects.restsT S)
+
+theorem sigsT_adm (construct : Bool) (L : List (Arrow Fam)) (S : List CallEffects.RestSignature) :
+    Adm (sigsT construct L S) := by
+  unfold sigsT
+  split
+  · exact interT_adm _ _ (ctorsT_adm _) (ctorRestsT_adm _)
+  · exact interT_adm _ _ (CallEffects.callsT_adm _) (CallEffects.restsT_adm _)
+
+/-- Signatures whose operands agree below `n` give contracts agreeing there,
+call and construct signatures alike. -/
+theorem sigsT_congr (construct : Bool) {α β : Type} (l : List α) (f g : α → Arrow Fam)
+    (r : List β) (f' g' : β → CallEffects.RestSignature) {n : Nat}
+    (he : ∀ x ∈ l, (f x).effect = (g x).effect)
+    (h : ∀ x ∈ l, Agree (f x).receiver (g x).receiver n ∧
+      ArgsAgree n (f x).arguments (g x).arguments ∧ Agree (f x).result (g x).result n)
+    (he' : ∀ x ∈ r, (f' x).effect = (g' x).effect)
+    (h' : ∀ x ∈ r, Agree (f' x).receiver (g' x).receiver n ∧
+      ArgsAgree n (f' x).arguments.1 (g' x).arguments.1 ∧
+      Agree (f' x).arguments.2 (g' x).arguments.2 n ∧ Agree (f' x).result (g' x).result n)
+    (W : WorldT n) (v : Val) :
+    sigsT construct (l.map f) (r.map f') n W v ↔ sigsT construct (l.map g) (r.map g') n W v := by
+  unfold sigsT
+  split
+  · simp only [interT, List.map_map]
+    exact and_congr
+      (ctorsT_congr l (ctorOf ∘ f) (ctorOf ∘ g) (fun x hx => ⟨(h x hx).2.1, (h x hx).2.2⟩) W v)
+      (ctorRestsT_congr r (ctorRestOf ∘ f') (ctorRestOf ∘ g')
+        (fun x hx => ⟨(h' x hx).2.1, (h' x hx).2.2.1, (h' x hx).2.2.2⟩) W v)
+  · exact and_congr (CallEffects.callsT_congr l f g he h W v) (CallEffects.restsT_congr r f' g' he' h' W v)
+
+/-- One instance's contract: its fixed and its variadic signatures, as a call
+clause's are, or as a construct clause's are for a construct scheme. -/
 noncomputable def instanceTWithArgs (D : ParameterAssignment k ι → List ι → Fam) (η : ParameterAssignment k ι)
     (s : SchemeRow ι) (As : List (ParameterFamily k))
     (P : ArgumentInterpreter ι k) : Fam :=
-  interT (CallEffects.callsT (instanceSigs D η s As)) (CallEffects.restsT (instanceRestsWithArgs D η s As (P := P)))
+  sigsT s.construct (instanceSigs D η s As) (instanceRestsWithArgs D η s As (P := P))
 
 theorem instanceTWithArgs_adm (D : ParameterAssignment k ι → List ι → Fam) (η : ParameterAssignment k ι) (s : SchemeRow ι)
     (As : List (ParameterFamily k)) (P : ArgumentInterpreter ι k) :
     Adm (instanceTWithArgs D η s As (P := P)) :=
-  interT_adm _ _ (CallEffects.callsT_adm _) (CallEffects.restsT_adm _)
+  sigsT_adm _ _ _
 
 private theorem argsAgree_of {X Y : List ι → Fam} {m : Nat} (h : ∀ S, Agree (X S) (Y S) m) :
     ∀ Ss : List (List ι), ArgsAgree m (Ss.map X) (Ss.map Y)
@@ -874,16 +930,33 @@ theorem instanceT_congrWithArgs (P : ArgumentInterpreter ι k) (hP : ArgumentNon
     (h : ∀ S, Agree (D (assign η s.binders As) S) (D' (assign η' s.binders As') S) m)
     (W : WorldT m) (v : Val) :
     instanceTWithArgs D η s As (P := P) m W v ↔ instanceTWithArgs D' η' s As' (P := P) m W v := by
-  unfold instanceTWithArgs instanceSigs instanceRestsWithArgs interT
-  exact and_congr
-    (CallEffects.callsT_congr s.signatures
+  unfold instanceTWithArgs instanceSigs instanceRestsWithArgs
+  exact sigsT_congr s.construct s.signatures
       (Arrow.map (D (assign η s.binders As))) (Arrow.map (D' (assign η' s.binders As')))
-      (fun _ _ => rfl) (fun p _ => ⟨h p.receiver, argsAgree_of h p.arguments, h p.result⟩) W v)
-    (CallEffects.restsT_congr s.variadic
+      s.variadic
       (RestArrow.mapWith (D (assign η s.binders As)) (P (assign η s.binders As) (D (assign η s.binders As))))
       (RestArrow.mapWith (D' (assign η' s.binders As')) (P (assign η' s.binders As') (D' (assign η' s.binders As'))))
+      (fun _ _ => rfl) (fun p _ => ⟨h p.receiver, argsAgree_of h p.arguments, h p.result⟩)
       (fun _ _ => rfl)
-      (fun p _ => ⟨h p.receiver, argsAgree_of h p.arguments.1, hP _ _ _ _ m hη h p.arguments.2, h p.result⟩) W v)
+      (fun p _ => ⟨h p.receiver, argsAgree_of h p.arguments.1, hP _ _ _ _ m hη h p.arguments.2, h p.result⟩) W v
+
+/-- A scheme's members: values with call code, or class values for a construct
+scheme. -/
+def Callee (construct : Bool) (v : Val) : Prop :=
+  if construct then Constructible v else Invocable v
+
+theorem Callee.obj {c : Bool} {v : Val} (h : Callee c v) :
+    ∃ fs code oid, v = .objAt fs code oid ∧ Scoped 0 v := by
+  unfold Callee at h
+  split at h
+  · obtain ⟨fs, n, E, K, s, caps, rest, oid, rfl, hs⟩ := h; exact ⟨_, _, _, rfl, hs⟩
+  · obtain ⟨fs, code, oid, rfl, -, hs⟩ := h; exact ⟨_, _, _, rfl, hs⟩
+
+theorem Callee.val {c : Bool} {v : Val} (h : Callee c v) : isVal v = true ∧ Scoped 0 v := by
+  unfold Callee at h
+  split at h
+  · obtain ⟨fs, n, E, K, s, caps, rest, oid, rfl, hs⟩ := h; exact ⟨rfl, hs⟩
+  · exact ⟨h.val, h.scoped⟩
 
 /-- Universal quantification has one implementation for both semantic sorts.
 The body still denotes a runtime callable; its parameters may denote lists. -/
@@ -892,7 +965,7 @@ noncomputable def boundedSem
     (η : ParameterAssignment k ι) (s : SchemeRow ι)
     (body : List (ParameterFamily k) → Fam)
     (domain : SchemeDomain ι k := .ordinary) : Fam := fun n W v =>
-  Invocable v ∧ ∀ j (hj : j ≤ n) As, As.length = s.binders.length →
+  Callee s.construct v ∧ ∀ j (hj : j ≤ n) As, As.length = s.binders.length →
     domain.allowed s As → Bounded D η s As j → body As j (trunc j hj W) v
 
 /-- The assignment carrier is independent of recursive value outputs. A domain
@@ -1269,7 +1342,7 @@ theorem mixedDenote_value (G : NormalGraph ι) (η : MixedAssignment ι) (i : ι
   split at h
   · exact (η.2 i).2 n W (.inl v) h.2
   · cases hs : G.schemes i with
-    | some s => simp only [hs] at h; exact ⟨h.1.val, h.1.scoped⟩
+    | some s => simp only [hs] at h; exact h.1.val
     | none =>
       simp only [hs] at h
       cases hm : G.meets i with

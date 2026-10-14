@@ -119,7 +119,10 @@ bounded (the bound is read outside the binders; left out when none), and
 signatures, whose rest may be a binder, a pack parameter (left out when none), and
 `"resolution": [{"input": i, "observation": o, "result": r}, ...]` when binders
 form resolution descriptors, each naming three positions among the binders,
-or two with `r` `null` for an observation (left out when none);
+or two with `r` `null` for an observation (left out when none), and
+`"construct": true` for a construct scheme, a generic constructor type, whose
+signatures are construct signatures, each a contract's arguments and result,
+its receiver `[]` and its effect `"unrestricted"` (left out for a call scheme);
 a **parameter row** `{"param": i, "name": n, "kind": "value" | "arguments"}`, which
 names its own label $i$ and, in `n`, the binder it stands for (the name has no meaning). Its kind is mandatory and is preserved by instantiation and binder renaming;
 or a **meet row** `{"meet": p, "clauses": [...], "also": [...]}`, the value
