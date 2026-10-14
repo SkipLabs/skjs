@@ -73,10 +73,11 @@ either arm), and a loop's parts twice, so that a write in one iteration is
 seen after a closure the iteration before created. Both facts it tracks only
 ever change one way, so a second pass reaches their fixpoint.
 
-A write in a conditional part of an expression (an arm of `&&`, `||`, `??`,
-`?:` or `?.`, a logical assignment's write, a pattern's default) also keeps
-the binding in a cell: the lowering joins such arms within the statement at
-one frame, which a slot rebound on one arm only would not fit. -/
+A write other than a statement's own (a declaration's initialization, or the
+assignment or update an expression statement is) also keeps the binding in
+a cell: the lowering types the rest of a statement, and joins the arms of an
+expression, at the frame the statement entered with, which a slot rebound
+within the statement would not fit. -/
 
 /-- One binding's walk: whether a closure mentioning it has been created, and
 whether it is still a slot. -/
@@ -84,39 +85,39 @@ structure Capture where
   captured : Bool := false
   slot : Bool := true
 
-/-- A write, in a conditional part of an expression or not. -/
-private def Capture.write (w : Capture) (conditional : Bool) : Capture :=
-  if w.captured || conditional then { w with slot := false } else w
+/-- A write, nested in an expression or the statement's own. -/
+private def Capture.write (w : Capture) (nested : Bool) : Capture :=
+  if w.captured || nested then { w with slot := false } else w
 
 mutual
 private partial def captureExpr (x : String) (c : Bool) (e : Fragment.Expr) (w : Capture) : Capture :=
-  let all := fun (es : List Fragment.Expr) (w : Capture) => es.foldl (fun w e => captureExpr x c e w) w
-  let arms := fun (es : List Fragment.Expr) (w : Capture) => es.foldl (fun w e => captureExpr x true e w) w
+  let all := fun (es : List Fragment.Expr) (w : Capture) => es.foldl (fun w e => captureExpr x true e w) w
+  let arms := all
   let written := fun (n : String) (c : Bool) (w : Capture) => if n == x then w.write c else w
   match e with
   | .lambda .. | .ctor .. =>
     if e.freeNames.contains x then { captured := true, slot := w.slot && !assignsExpr x e } else w
   | .var .. | .lit .. => w
-  | .assign _ n _ rhs => written n c (captureExpr x c rhs w)
+  | .assign _ n _ rhs => written n c (captureExpr x true rhs w)
   | .nullishAssign _ n _ rhs => written n true (arms [rhs] w)
   | .update _ _ target rhs _ =>
     let w := all (target :: rhs.toList) w
     match target with | .var _ n => written n c w | _ => w
   | .logicalAssign _ _ target rhs =>
-    let w := arms [rhs] (captureExpr x c target w)
+    let w := arms [rhs] (captureExpr x true target w)
     match target with | .var _ n => written n true w | _ => w
   | .arrayAssign _ targets rest rhs =>
     -- The right side, then each target in turn: its reference's parts, its
     -- default, then its write.
     let target := fun (q : Fragment.ArrayElem Fragment.Expr) (w : Capture) =>
-      let w := q.target.referenceParts.foldl (fun w e => captureExpr x c e w) w
+      let w := q.target.referenceParts.foldl (fun w e => captureExpr x true e w) w
       let w := arms q.default_.toList w
       match q.target.targetLocal with | some n => written n c w | none => w
-    let w := targets.foldl (fun w q => target q w) (captureExpr x c rhs w)
+    let w := targets.foldl (fun w q => target q w) (captureExpr x true rhs w)
     rest.toList.foldl (fun w (_, _, q) => target q w) w
-  | .logical _ _ a b | .coalesce _ a b | .optional _ _ a b => arms [b] (captureExpr x c a w)
-  | .ifBody _ a b d => arms [b, d] (captureExpr x c a w)
-  | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .shapeTest _ _ _ e => captureExpr x c e w
+  | .logical _ _ a b | .coalesce _ a b | .optional _ _ a b => all [a, b] w
+  | .ifBody _ a b d => all [a, b, d] w
+  | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .shapeTest _ _ _ e => captureExpr x true e w
   | .equality _ _ a b | .singletonTest _ _ _ _ a b
   | .write _ _ a b | .index _ _ a b | .arith _ _ a b | .elemAt _ a b | .comma _ a b
   | .inKeys _ a b | .withValue _ a b _ _ => all [a, b] w
@@ -133,9 +134,10 @@ private partial def captureStmts (x : String) (ss : List Fragment.Stmt) (w : Cap
 
 private partial def captureStmt (x : String) (s : Fragment.Stmt) (w : Capture) : Capture :=
   let twice := fun (f : Capture → Capture) w => f (f w)
-  let expr := fun e w => captureExpr x false e w
+  let expr := fun e w => captureExpr x true e w
   match s with
-  | .ret _ e | .effect _ e | .throw _ e => expr e w
+  | .effect _ e => captureExpr x false e w
+  | .ret _ e | .throw _ e => expr e w
   | .constants _ bs => bs.foldl (fun w b => expr b.init w) w
   | .mutables _ bs => bs.foldl (fun w b =>
       let w := expr b.init w

@@ -784,12 +784,12 @@ for the order of the activation's evaluation. Then
 \mathrm{slot}(x)\iff
 \neg\,\mathrm{closureWrites}(x)\;\land\;
 \bigl(\forall c\in\mathrm{creates}(x),\ w\in\mathrm{writes}(x).\ w\prec c\bigr)
-\;\land\;\neg\,\mathrm{armWrite}(x)
+\;\land\;\neg\,\mathrm{nestedWrite}(x)
 ```
 
-where $`\mathrm{armWrite}(x)`$ holds when a write of $`x`$ lies in a conditional
-part of an expression (an arm of `&&`, `||`, `??`, `?:` or `?.`, a logical
-assignment's write, a pattern's default). Under the first two conjuncts every
+where $`\mathrm{nestedWrite}(x)`$ holds when a write of $`x`$ is not its
+statement's own: a statement's own write is a declaration's initialization,
+or the assignment or update an expression statement is. Under the first two conjuncts every
 closure that mentions $`x`$ finds, whenever it runs, the value $`x`$ held when
 the closure was created, since no write follows that creation: the closure
 may capture that value, and the activation alone reads and writes the
@@ -803,8 +803,9 @@ written value into it, and a read of $`x`$ is the slot:
 \rho \vdash x\ \leadsto\ \rho(x).
 ```
 
-The third conjunct is a limit of the lowering, which joins an expression's
-arms at one frame within a statement: such a binding stays a cell.
+The third conjunct is a limit of the lowering, which types the rest of a
+statement, and joins the arms of an expression, at the frame the statement
+entered with: such a binding stays a cell.
 `cellLocals` decides the conjuncts by one walk in evaluation order: the parts
 of an expression left to right, statements in order, every part of a choice
 (a superset of either arm), and a loop's parts twice, so that a write in one

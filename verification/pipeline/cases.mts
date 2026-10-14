@@ -569,6 +569,7 @@ export const cases: Case[] = [
   positive("relational-conversion", "`<` on an operand that may be `undefined` converts it by `ToNumeric` to NaN, which compares false; a number compared with a bigint"),
   negative("invalid-relational-object", "an object operand of `<` converts through its own `valueOf`, which runs code",
     /^reject: a relational comparison with an operand that may be an object: `<` converts an object through its `valueOf` or `toString`: the host runs client code[\s\S]*evidence search failed/),
+  positive("slot-nested-write", "a write nested in a larger expression keeps the binding in a cell, whose read sees what the write stored"),
   positive("slot-declared-join", "a `let` held in a slot holds a written object at its declared type's arms, as TypeScript narrows on assignment: after a join, and after a rewrite, its optional field reads at the declared field"),
   positive("slot-object-guard", "a guard narrows an assigned parameter held in a slot, holding an object beside `null`, to the object"),
   gap("cell-object-guard-refused", "Model limits row `a test of a written let held in a cell holding a union of objects`, for an assigned parameter a closure created before its writes mentions, holding an object beside `null`: the read through the cell is refused", "unsupported", "proposal",
