@@ -1161,6 +1161,15 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   assert.match(unguarded.detail, /unguarded alias cycle through Box: a recursive alias must reach itself through an object, array, tuple or function type/);
 }
 {
+  // `new` at a variadic construct signature reads a spread where it is
+  // written, its copy taken before a later actual runs; a class whose code
+  // binds positions the rest may leave out is refused at the signature, as
+  // Node shows it throwing there.
+  assert.equal(runExample("constructor-rest-spread", "order"), 218);
+  assert.equal(runExample("constructor-rest-spread", "run"), 14);
+  assert.throws(() => runExample("invalid-constructor-rest-class", "made"), /reading 'toFixed'/);
+}
+{
   // An array literal's spread is copied before a later element that runs
   // code, as JavaScript reads it there; a spread operand claimed at other
   // than an array is refused where the elements are produced and checked.

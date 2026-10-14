@@ -271,7 +271,7 @@ one subtype-evidence list per outgoing edge. A derivation node names the
 `read`, `readOptional`, `readDict`, `indexDict`, `write`, `ifBool`, `ifTrue`, `ifFalse`, `ifKnown`, `ifBoolVar`,
 `unionVar`, `callCallable`, `readCallable`, `writeCallable`, `readView`, `lenView`, `readProto`, `arith`, `test`,
 `arrLit`, `elem`, `elemOpt`, `elemAny`, `setElem`, `len`, `lenStr`, `elemStr`,
-`callRest`, `arrParts`, `bindE`, `bindRestE`, `bindMember`, `construct`, `sub`,
+`callRest`, `arrParts`, `bindE`, `bindRestE`, `bindMember`, `construct`, `constructRest`, `sub`,
 `throw`, whose one premise types the thrown operand, `makeKey`, an allocation
 at a key known only at run time, whose two premises type the key and the
 initializer, or `merge`, an allocation from parts, whose two premises type
@@ -433,6 +433,9 @@ names the element type and flags the parts that are spreads, with one premise
 per part, as `callRest`'s further parts; its result is fresh storage with the
 element contract `E`, either readonly flag and any chosen presence mode; the
 values fill every position, including explicit `undefined` read from source holes.
+`constructRest` names how many actuals are fixed, the spread flags of the
+further parts and the rest type, with the constructor's premise, one per fixed
+actual and one per part, as `callRest` without a receiver.
 The result graph supplies the presence mode. Tuple contracts require `presence`
 with exactly `"dense"`, `"readable"` or `"sparse"`; there is no Boolean fallback.
 For argument packs it has no semantic effect; producers use the canonical

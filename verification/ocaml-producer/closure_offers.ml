@@ -73,7 +73,13 @@ open S
         let arity = List.length params in
         let longer = s.variadic=None && s.rest_pack=None && List.length s.params > arity
           && List.for_all2 plausible_subtype (List.filteri (fun i _ -> i < arity) s.params) params in
-        if widened <> [] || longer then
+        (* A variadic signature with an element rest: Lean checks the code
+           at its fixed parameters, then each further position it binds at
+           the element or `undefined`. *)
+        let variadic = s.variadic=None && s.rest_pack<>None && List.length s.params <= arity
+          && List.for_all2 plausible_subtype s.params (List.filteri (fun i _ -> i < List.length s.params) params) in
+        if variadic then publish_request pos s
+        else if widened <> [] || longer then
           publish_request pos {call_effect=s.call_effect;quantified=[];receiver=top;params=if longer then s.params else params;
                             variadic=None;rest_pack=None;result=s.result})
         (List.filter (fun (s:Semantic.signature) -> s.quantified=[]) signatures)

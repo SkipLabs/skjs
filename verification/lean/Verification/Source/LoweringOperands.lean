@@ -40,6 +40,13 @@ for the synthetic copy. -/
     if let some S := storeOf G original then
       if let [.list T []] := PositiveRules.expand G S then
         if T.optional.isEmpty && T.rest.isNone then return S
+    -- Into a variadic construct signature's element rest, a copy at that
+    -- element type.
+    if let [.ctors _ ((_, P, _) :: _)] := PositiveRules.expand G B then
+      if let some E := PositiveRules.restElem G P then
+        let C ← lower (SourceTypes.use (.list ⟨[], [], some E, false, .dense⟩ []))
+        recordHints [C]
+        return [C]
     throw "a constructor spread needs a tuple contract of required positions"
   if signatures.isEmpty then
     throw (locatedRefusal (← table) call.span .bindingAnnotation

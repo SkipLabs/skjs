@@ -38,6 +38,26 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
     | Ctor _ -> Proposal_diagnostics.unsupported "a class value is a constructor lambda with plain parameters"
     | New (callee,types,args,spreads) ->
       let constructor = declared_head declarations [] (expr env callee) in
+      (* A spread of an array of no fixed length goes to a variadic construct
+         signature taking at most the actuals before it as fixed parameters:
+         `new` reads the array's elements as a call's spread into a rest. *)
+      let first_spread = List.fold_left min (List.length args) spreads in
+      let variadic = match constructor with
+        | Atoms [Ctors signatures] when List.exists (fun i ->
+            Semantic.tuple_positions ~readonly:true
+              (declared_head declarations [] (expr env (List.nth args i))) = None) spreads
+            || (spreads = [] && not (List.exists (fun (s:Semantic.signature) -> s.rest_pack = None
+              && List.length s.params >= List.length args) signatures)) ->
+          List.find_opt (fun (s:Semantic.signature) -> s.quantified = [] && s.rest_pack <> None
+            && List.length s.params <= first_spread) signatures
+        | _ -> None in
+      (match variadic with
+      | Some s ->
+        List.iteri (fun i a ->
+          if i < List.length s.params then ignore (expr ~expected:(List.nth s.params i) env a)
+          else ignore (expr env a)) args;
+        s.result
+      | None ->
       (* A spread's tuple annotation supplies its element contracts. Ordinary
          calls retain contextual inference for their written arguments. Lean
          checks every expanded actual against the chosen signature. *)
@@ -91,7 +111,7 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
             contextual_actuals (written s);
             s.result
           | [] -> Proposal_diagnostics.unsupported "no construct signature takes this many arguments")
-       | _ -> Proposal_diagnostics.unsupported "`new` needs a value with construct signatures")
+       | _ -> Proposal_diagnostics.unsupported "`new` needs a value with construct signatures"))
     | Lambda (receiver,quantified,ps,defaults,rest,written,body) ->
       (* An ordinary function binds its own `this`, replacing an enclosing
          one; an arrow keeps the enclosing binding, as a capture. *)

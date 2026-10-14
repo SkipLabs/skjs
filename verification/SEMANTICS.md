@@ -693,7 +693,8 @@ ordered arguments separate from invocation.
 left to right.
 `Step.callArg` requires earlier arguments to be values. A `spread` is not a
 value: `Step.callSpread` consumes its ready store before any later argument
-can step, replacing holes with `undefined`. Splicing can change list length;
+can step, replacing holes with `undefined`; `new` reads one alike
+(`Step.constructSpread`), and a store literal (`Step.arrSpread`). Splicing can change list length;
 `CallArguments.length_preserved` applies to an individual operand reduction, not to
 all preparation. `prepare_deterministic` and `call_step_iff` connect preparation
 and invocation to the deterministic term machine. A frame whose operands are

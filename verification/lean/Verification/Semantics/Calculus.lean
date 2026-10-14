@@ -1872,6 +1872,11 @@ inductive Step : Heap → Tm → Heap → Tm → Prop where
       isVal f = true → isVal r = true → args = pre ++ .spread (.arr ls) :: post →
       (∀ v ∈ pre, isVal v = true) →
       readElems h ls = some vs → Step h (.invoke f r args) h (.invoke f r (pre ++ vs ++ post))
+  /-- `new` reads a spread actual as a call does. -/
+  | constructSpread {args pre post : List Tm} {ls : List (Option Nat)} {vs : List Tm} :
+      isVal f = true → args = pre ++ .spread (.arr ls) :: post →
+      (∀ v ∈ pre, isVal v = true) →
+      readElems h ls = some vs → Step h (.construct f args) h (.construct f (pre ++ vs ++ post))
   /-- Initializers are evaluated left to right, like actual arguments. -/
   | makeArg {c : CallCode} {ns : List PropKey} {inits : List Tm} {i : Nat}
       {h h' : Heap} {a a' : Tm} : inits[i]? = some a →
@@ -2261,6 +2266,7 @@ theorem raises_no_step {t v : Tm} (hr : Raises t v) : ∀ {h h' t'}, ¬ Step h t
     | constructL s => exact ih s
     | constructArg hv _ _ _ => rw [raises_not_val hf] at hv; contradiction
     | constructGraph => cases hf
+    | constructSpread hv _ _ _ => rw [raises_not_val hf] at hv; contradiction
   | constructArg hfv hg hb hr ih =>
     intro _ _ _ s
     cases s with
@@ -2269,6 +2275,7 @@ theorem raises_no_step {t v : Tm} (hr : Raises t v) : ∀ {h h' t'}, ¬ Step h t
       obtain ⟨rfl, rfl⟩ := first_nonval_unique hg hg' hb hb' (raises_not_val hr) (not_val_of_step s)
       exact ih s
     | constructGraph hvs => have := hvs _ (List.mem_of_getElem? hg); rw [raises_not_val hr] at this; contradiction
+    | constructSpread _ he hpre _ => exact spread_blocks_raise he hpre hg hb hr
   | letC hr ih =>
     intro _ _ _ s
     cases s with
@@ -2551,6 +2558,7 @@ theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
     | constructL s' => exact (ih s').imp id (congrArg (Tm.construct · _))
     | constructArg hv _ _ _ => exact False.elim (value_no_step hv s)
     | constructGraph => exact False.elim (obj_no_step s)
+    | constructSpread hv _ _ _ => exact False.elim (value_no_step hv s)
   | @constructArg f args i a h h1 a1 hv hg hb s ih =>
     cases s2 with
     | constructL s' => exact False.elim (value_no_step hv s')
@@ -2568,11 +2576,23 @@ theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
       obtain ⟨rfl, rfl⟩ := ih s'
       exact ⟨rfl, rfl⟩
     | constructGraph hvs => exact False.elim (value_no_step (hvs a (List.mem_of_getElem? hg)) s)
+    | constructSpread _ he hpre _ => exact False.elim (spread_blocks_arg he hpre hg hb s)
   | constructGraph hvs =>
     cases s2 with
     | constructL s' => exact False.elim (obj_no_step s')
     | constructArg _ hg _ s' => exact False.elim (value_no_step (hvs _ (List.mem_of_getElem? hg)) s')
     | constructGraph _ => exact ⟨rfl, rfl⟩
+    | constructSpread _ he _ _ => exact False.elim (spread_not_values he hvs)
+  | constructSpread hf he hpre hre =>
+    cases s2 with
+    | constructL s' => exact False.elim (value_no_step hf s')
+    | constructArg _ hg hb s' => exact False.elim (spread_blocks_arg he hpre hg hb s')
+    | constructGraph hvs => exact False.elim (spread_not_values he hvs)
+    | constructSpread _ he' hpre' hre' =>
+      obtain ⟨rfl, hx, rfl⟩ := split_unique (he.symm.trans he') hpre hpre' rfl rfl
+      cases hx
+      cases Option.some.inj (hre.symm.trans hre')
+      exact ⟨rfl, rfl⟩
   | callL s ih =>
     cases s2 with
     | callL s' => exact (ih s').imp id (congrArg (Tm.invoke · _ _))

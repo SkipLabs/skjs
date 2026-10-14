@@ -588,15 +588,41 @@ came from a different context. No execution budget is inspected. -/
     -- least as many parameters as there are actuals; each omitted position
     -- proves `undefined`, as a call's does.
     | .construct f args =>
-      return pool.findCheck? fun F => do
-        let [.ctors L] := expand G F | none
-        L.findCheck? fun p => do
+      let own := match f with | .var i => (Γ[i]?).toList | _ => []
+      return (own ++ pool).eraseDups.findCheck? fun F => do
+        let [.ctors L S] := expand G F | none
+        let flags := args.map fun a => match a with | .spread _ => true | _ => false
+        let candidates : List ((List (Ty ι) × Ty ι) ⊕ (List (Ty ι) × Ty ι × Ty ι)) :=
+          (if flags.any id then [] else L.map .inl) ++ S.map .inr
+        candidates.findCheck? fun c => match c with
+        | .inl p => do
           if args.length > p.1.length then none else do
           let _ ← subtypeUsing G images p.2 A
           let ef ← recur Γ f F
           let eas ← (args.zip p.1).mapM fun (a,D) => recur Γ a D
           let eus ← (p.1.drop args.length).mapM fun D => recur Γ .undef D
           coerce G images aliases (.node ⟨Γ,t,p.2⟩ .construct (ef :: eas ++ eus)) A
+        -- A variadic construct signature: the fixed actuals at its
+        -- parameters, then the further parts as a variadic call's.
+        | .inr ⟨Ps, P, B⟩ => do
+          let k := Ps.length
+          if args.length < k || (flags.take k).any id then none else do
+          let _ ← subtypeUsing G images B A
+          let ef ← recur Γ f F
+          let eas ← (args.zip Ps).mapM fun (a,D) => recur Γ a D
+          let parts := args.drop k
+          let partFlags := flags.drop k
+          let eps ← if partFlags.any id then do
+              let E ← restElem G P
+              parts.mapM fun a => match a with
+                | .spread s => pool.findCheck? fun S =>
+                    if decide (SpreadsInto G S E) then recur Γ s S else none
+                | a => recur Γ a E
+            else do
+              let [.pack T []] := expand G P | none
+              parts.zipIdx.mapM fun (a, i) => do recur Γ a (← positionTy T i)
+          let e := ProgramCertificates.Evidence.node ⟨Γ,t,B⟩ (.constructRest k partFlags P) (ef :: eas ++ eps)
+          (checkTreeResult G images e).bind fun _ => coerce G images aliases e A
     -- `.bind`'s forwarding descriptor: a leaf whose checker reads the saved
     -- slots from the context; the claimed type, or a pool type, is its result.
     | .makeAt (.bound (.var _) (.var _) _) [] [] =>

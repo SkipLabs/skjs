@@ -52,6 +52,8 @@ export const cases: Case[] = [
   negative("invalid-constructor-tuple-spread", "A spread element must meet its constructor parameter", /source expression obligation at \[218,234\): evidence search failed/),
   positive("array-literal-spread", "Array literal spreads: a store of each part in order at the claim's element type, a spread before an element that runs code copied where it is written; readonly, host-iterable, generic and undefined-admitting elements"),
   negative("invalid-array-literal-spread", "A spread's elements must meet the literal's element type", /no derivation of its node-typing claim/),
+  positive("constructor-rest-spread", "`new` at a variadic construct signature: spreads of arrays and plain actuals past the fixed parameters, a spread copied before a later actual that runs code; a class value offered the signature, its code checked binding each further position at the element or `undefined`"),
+  negative("invalid-constructor-rest-class", "A class binding a required position a variadic construct signature may leave out is refused at that signature, though TypeScript accepts it", /construct signature claim is outside the source annotation/),
   positive("generic-prototype-instanceof", "Shared prototype methods quantify bounded class parameters across construction, ordinary, generic and deferred consumers"),
   positive("generic-prototype-record-bound", "Shared prototype methods preserve record bounds and named bounds across consumers"),
   positive("class-record-bound", "A class's record bound is preserved through construction and its method result"),

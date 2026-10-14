@@ -1827,6 +1827,74 @@ theorem ctorsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {U : Ty
   exact HeapObservations.erase (graph_invoke (row := ⟨U, p.1, p.2, .unrestricted⟩) (hs p hp) hvs hvalues hj hx hv hh
     ((represents_back hu j V _) rfl) (ArgsShort_of_exact ha))
 
+/-- The row a class's graph code is checked at for a variadic construct
+signature with fixed parameters `Qs` and element rest `El`: the fixed
+parameters, then each further position the code binds at `El` or `undefined`,
+which construction binds where the list is shorter. -/
+def ctorRestParams (arity : Nat) (Qs : List (Ty ι)) (El U : Ty ι) : List (Ty ι) :=
+  Qs ++ List.replicate (arity - Qs.length) (El ++ U)
+
+/-- A list of members of `D`, cut to `r` positions, is admitted by `r`
+positions at `D` when `D` admits `undefined`. -/
+theorem ArgsShort_replicate {D : Fam} {j : Nat} {W : WorldT j} {r : Nat} {xs : List Tm}
+    (hx : ∀ x ∈ xs, D j W x) (hu : D j W .undef) :
+    ArgsShort (List.replicate r D) j W (xs.take r) := by
+  refine ⟨by simp; omega, ?_, ?_⟩
+  · apply ArgsT_of_getElem? (by simp)
+    intro i A a hA ha
+    simp only [List.take_replicate, List.getElem?_replicate] at hA
+    split at hA
+    · cases hA; exact hx a (List.mem_of_mem_take (List.mem_of_getElem? ha))
+    · cases hA
+  · intro A hA
+    rw [List.drop_replicate] at hA
+    rw [List.eq_of_mem_replicate hA]; exact hu
+
+/-- Graph code of a class meets a variadic construct signature with an
+element rest when it meets the row `ctorRestParams` gives: construction binds
+the fixed actuals, then further ones up to its arity, padding with `undefined`,
+and discards the rest. -/
+theorem ctorRestsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {U : Ty ι}
+    {S : List (List (Ty ι) × Ty ι × Ty ι)} (fs : List (PropKey × Nat))
+    (hs : ∀ s ∈ S, ∃ El, restElem G s.2.1 = some El ∧
+      GraphCodeSpec G arity E K start Cs ⟨U, ctorRestParams arity s.1 El U, s.2.2, .unrestricted⟩)
+    (hu : Represents G U .undef)
+    (hvs : EnvOk G Cs (envOf vs .nul) n W) (hsc : ∀ v ∈ vs, Scoped 0 v) (hvalues : CallArguments.Values vs) :
+    ctorRestsT (excOf G) (S.map fun s => (s.1.map (meaning G), argMeaning G s.2.1, meaning G s.2.2)) n W
+      (.objAt fs (.graph arity E K start vs .construct) oid) := by
+  refine ⟨⟨fs, _, _, _, _, _, _, _, rfl, by simpa [Scoped] using hsc⟩, ?_⟩
+  intro q hq j hj V hx hv heap hh args _ ha
+  obtain ⟨s, hsm, rfl⟩ := List.mem_map.mp hq
+  obtain ⟨El, hel, hspec⟩ := hs s hsm
+  obtain ⟨hlen, hfix, hext⟩ := ha
+  have hlenQ : (s.1.map (meaning G)).length = s.1.length := by simp
+  rw [hlenQ] at hlen hfix hext
+  have hel' := (restElem_args hel).mp hext
+  let D : Ty ι := El ++ U
+  have hD : ∀ x ∈ args.drop s.1.length, meaning G D j V x :=
+    fun x hx => (meaning_append G El U j V x).mpr (Or.inl (hel' x hx))
+  have hDu : meaning G D j V .undef :=
+    (meaning_append G El U j V _).mpr (Or.inr ((represents_back hu j V _) rfl))
+  have hshort := ArgsShort_prefix hfix
+    (ArgsShort_replicate (r := arity - s.1.length) hD hDu)
+  have hle : arity ≤ (ctorRestParams arity s.1 El U).length := hspec.1
+  have hm : (ctorRestParams arity s.1 El U).length = s.1.length + (arity - s.1.length) := by
+    simp [ctorRestParams]
+  have hargs' : args.take s.1.length ++ (args.drop s.1.length).take (arity - s.1.length) =
+      args.take (s.1.length + (arity - s.1.length)) := by
+    rw [List.take_add]
+  rw [hargs'] at hshort
+  have hsafe := graph_invoke (row := ⟨U, ctorRestParams arity s.1 El U, s.2.2, .unrestricted⟩) hspec hvs
+    hvalues hj hx hv hh ((represents_back hu j V _) rfl)
+    (args := args.take (s.1.length + (arity - s.1.length)))
+    (by simpa [ctorRestParams, List.map_append, List.map_replicate] using hshort)
+  have hp : CallArguments.parameters arity (args.take (s.1.length + (arity - s.1.length))) =
+      CallArguments.parameters arity args := by
+    rw [← CallArguments.parameters_take arity (args.take _), List.take_take,
+      Nat.min_eq_left (by omega), CallArguments.parameters_take]
+  rw [hp] at hsafe
+  exact ⟨_, ⟨fs, _, _, _, rfl, rfl, rfl⟩, HeapObservations.erase hsafe⟩
+
 /-- The parts a variadic call writes past its fixed actuals fit its rest. With
 a spread among them, the rest is an element rest, each plain part at its
 element and each spread spreading into it. Without one, the rest is a pack of
@@ -1994,6 +2062,99 @@ theorem pack_call_safe {Rc : Fam} {Ps Us Qs : List Fam} {R : Fam} {P : ArgFam}
     obtain ⟨body, hi, hsafe⟩ := hfV.2 (Rc, Ps ++ Us, P, R) (by simp) k (Nat.lt_succ_self k) X
       (WExt_refl _) hX heap'' hhX rv hrv hrV args (ArgsT_values hAv hargsX) hacc
     exact Or.inr ⟨X, heap'', body, WExt_refl _, hX, hi.step heap'', hhX, hsafe⟩
+
+/-- **Eliminating a variadic construct signature.** A ready construction whose
+fixed actuals meet the parameters and whose further ones form a pack of the
+rest takes one step to the class's body, safe at the result. -/
+theorem ctor_elim_rest {Ps : List Fam} {P : ArgFam} {R : Fam}
+    (hA : ∀ A ∈ Ps, Adm A) (hP : Adm P)
+    {n W v args extra heap} (hf : ctorRestsT Ξ [(Ps, P, R)] n W v)
+    (ha : ArgsT Ps n W args) (he : P n W extra) (hvals : CallArguments.Values (args ++ extra))
+    (hw : WorldAdm W) (hh : HeapOk n W heap) :
+    Safe Ξ R n W heap (.construct v (args ++ extra)) := by
+  cases n with
+  | zero => trivial
+  | succ k =>
+    have hl := ArgsT_length ha
+    have hrest : CtorRest Ps P k (trunc k (Nat.le_succ k) W) (args ++ extra) := by
+      refine ⟨by simp; omega, ?_, ?_⟩
+      · rw [List.take_left' hl]
+        exact ArgsT_transfer hA ha k (Nat.le_succ k) _ (WExt_refl _)
+      · rw [List.drop_left' hl]
+        exact hP.down k W extra he
+    obtain ⟨result, ⟨fs, c, enter, oid, rfl, hc', rfl⟩, hsafe⟩ :=
+      hf.2 _ (List.mem_singleton_self _) k (Nat.lt_succ_self k) (trunc k (Nat.le_succ k) W)
+        (WExt_refl _) (WorldAdm_trunc _ hw) heap (HeapOk_trunc k W heap hh) _ hvals hrest
+    exact Or.inr ⟨trunc k (Nat.le_succ k) W, heap, _, WExt_refl _, WorldAdm_trunc _ hw,
+      CallArguments.construction_step hc' hvals heap, HeapOk_trunc k W heap hh, hsafe⟩
+
+/-- **A variadic construction with a spread.** The constructor, the fixed
+actuals, then the further parts run left to right, each spread read where it
+is written; each further actual is at the element contract `E`, and actuals at
+`E` form a pack of the rest `P`. -/
+theorem construct_rest_safe {Ps : List Fam} {E R : Fam} {P : ArgFam}
+    (hA : ∀ A ∈ Ps, Adm A) (hAv : ∀ A ∈ Ps, ValOnly A) (hE : Adm E) (hEv : ValOnly E)
+    (hP : Adm P) (hEP : ∀ k W xs, (∀ e ∈ xs, E k W e) → P k W xs)
+    (xs : List (Fam × Tm)) (hxs : xs.map Prod.fst = Ps) (parts : List (Option Fam × Tm))
+    (hS : ∀ p ∈ parts, ∀ S, p.1 = some S → Adm S ∧ RestCalls.Spreads S E)
+    {n W heap f} (hw : WorldAdm W) (hh : HeapOk n W heap)
+    (hf : Safe Ξ (ctorRestsT Ξ [(Ps, P, R)]) n W heap f)
+    (hx : ∀ p ∈ xs, FutureSafe Ξ p.1 n W p.2) (hp : ∀ p ∈ parts, FutureSafe Ξ (p.1.getD E) n W p.2) :
+    Safe Ξ R n W heap (.construct f (xs.map Prod.snd ++ parts.map RestCalls.partTerm)) := by
+  apply bind (fun f => .construct f (xs.map Prod.snd ++ parts.map RestCalls.partTerm))
+    Step.constructL Raises.constructL n W heap f hw hh hf
+  intro j hj U hxU hu heap' v hok hv hfun
+  apply bind_list xs (by intro p hm; exact hA p.1 (hxs ▸ List.mem_map_of_mem hm))
+    (fun args => .construct v (args ++ parts.map RestCalls.partTerm))
+    (fun hs => CallArguments.Step.constructArgs hv (ArgStep_append _ hs))
+    (fun hr => (hr.append _).construct hv) hu hok
+    (fun p hm => (hx p hm).transfer hj hxU)
+  intro k hk V hy hv' heap'' args hok' hargs
+  rw [hxs] at hargs
+  apply RestCalls.parts_safe hE hEv (Tm.construct v)
+    (fun hp s => CallArguments.Step.constructArgs hv (CallArguments.keep_prefix hp (.head s)))
+    (fun hp s => .constructArg hv (prefix_position hp).1 (prefix_position hp).2 s)
+    (fun hp hr => .constructSpread hv rfl hp hr)
+    parts k V heap'' args hS hv' hok' (ArgsT_values hAv hargs)
+    (fun p hm => ((hp p hm).transfer hj hxU).transfer hk hy)
+  intro i hi X hz hX heap3 extra hh3 hext
+  have hUX : WExt (trunc i (Nat.le_trans hi hk) U) X := by
+    apply WExt_trans _ hz
+    simpa only [trunc_trunc] using WExt_trunc hi hy
+  have hfX := (ctorRestsT_adm _).mono i _ X hUX v
+    ((ctorRestsT_adm _).down_le j i (Nat.le_trans hi hk) U v hfun)
+  exact ctor_elim_rest hA hP hfX (ArgsT_transfer hA hargs i hi X hz) (hEP i X extra hext)
+    (by
+      intro a ha
+      rcases List.mem_append.mp ha with ha | ha
+      · exact ArgsT_values hAv hargs a ha
+      · exact hEv i X a (hext a ha)) hX hh3
+
+/-- **A variadic construction writing no spread.** The constructor and every
+actual run left to right; the fixed ones meet the signature's parameters and
+the further ones, at `Qs`, form a pack of the rest `P`. -/
+theorem construct_pack_safe {Ps Qs : List Fam} {R : Fam} {P : ArgFam}
+    (hA : ∀ A ∈ Ps ++ Qs, Adm A) (hAv : ∀ A ∈ Ps ++ Qs, ValOnly A) (hP : Adm P)
+    (hpack : ∀ k W extra, ArgsT Qs k W extra → P k W extra)
+    (xs : List (Fam × Tm)) (hxs : xs.map Prod.fst = Ps ++ Qs)
+    {n W heap f} (hw : WorldAdm W) (hh : HeapOk n W heap)
+    (hf : Safe Ξ (ctorRestsT Ξ [(Ps, P, R)]) n W heap f)
+    (hx : ∀ p ∈ xs, FutureSafe Ξ p.1 n W p.2) :
+    Safe Ξ R n W heap (.construct f (xs.map Prod.snd)) := by
+  apply bind (fun f => .construct f (xs.map Prod.snd)) Step.constructL Raises.constructL n W heap f hw hh hf
+  intro j hj U hxU hu heap' v hok hv hfun
+  apply bind_list xs (by intro p hm; exact hA p.1 (hxs ▸ List.mem_map_of_mem hm))
+    (Tm.construct v) (fun hs => CallArguments.Step.constructArgs hv hs) (fun hr => hr.construct hv) hu hok
+    (fun p hm => (hx p hm).transfer hj hxU)
+  intro k hk V hy hv' heap'' args hok' hargs
+  rw [hxs] at hargs
+  obtain ⟨h1, h2⟩ := ArgsT_take_drop Ps.length hargs
+  simp only [List.take_append_of_le_length (Nat.le_refl _), List.take_length,
+    List.drop_append_of_le_length (Nat.le_refl _), List.drop_length, List.nil_append] at h1 h2
+  have hfV := (ctorRestsT_adm _).mono k _ V hy v ((ctorRestsT_adm _).down_le j k hk U v hfun)
+  have := ctor_elim_rest (fun A h => hA A (List.mem_append_left _ h)) hP hfV h1 (hpack k V _ h2)
+    (by rw [List.take_append_drop]; exact ArgsT_values hAv hargs) hv' hok'
+  rwa [List.take_append_drop] at this
 
 /-- **A fresh store of values at `E`.** Allocated, the values meet the
 contract `E` at every position, under any readonly flag and presence mode:
@@ -2180,12 +2341,17 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
       (∀ c ∈ caps, HasTyWith G images subtyping Γ (.var c.2) c.1) →
       HasTyWith G images subtyping Γ (.makeFn (.graph arity E K start (caps.map fun c => .var c.2) .call rest) .nul) [j]
   /-- **A class value.** Construct-only graph code, checked at each construct
-  signature from the frame with `undefined` for the receiver `new` passes. -/
-  | ctorGraph {Γ : List (Ty ι)} {F U : Ty ι} {L : List (List (Ty ι) × Ty ι)} {arity start : Nat}
+  signature from the frame with `undefined` for the receiver `new` passes, and
+  at each variadic one with an element rest `El` at the row `ctorRestParams`
+  gives: the further positions it binds at `El` or `undefined`. -/
+  | ctorGraph {Γ : List (Ty ι)} {F U : Ty ι} {L : List (List (Ty ι) × Ty ι)}
+      {S : List (List (Ty ι) × Ty ι × Ty ι)} {arity start : Nat}
       {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)}
       {caps : List (Ty ι × Nat)} :
-      Represents G F (.ctors L) → Represents G U .undef →
+      Represents G F (.ctors L S) → Represents G U .undef →
       (∀ p ∈ L, GraphCodeSpec G arity E K start (caps.map Prod.fst) ⟨U, p.1, p.2, .unrestricted⟩) →
+      (∀ s ∈ S, ∃ El, restElem G s.2.1 = some El ∧ GraphCodeSpec G arity E K start (caps.map Prod.fst)
+        ⟨U, ctorRestParams arity s.1 El U, s.2.2, .unrestricted⟩) →
       (∀ c ∈ caps, c.2 < Γ.length) →
       (∀ c ∈ caps, HasTyWith G images subtyping Γ (.var c.2) c.1) →
       HasTyWith G images subtyping Γ (.makeFn (.graph arity E K start (caps.map fun c => .var c.2) .construct) .nul) F
@@ -2209,10 +2375,20 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
   parameter. As a call may, `new` may omit trailing positions whose contracts
   admit `undefined`, the value the machine binds there. -/
   | construct {Γ : List (Ty ι)} {f : Tm} {F B : Ty ι} {L : List (List (Ty ι) × Ty ι)}
-      {xs : List (Ty ι × Tm)} {Us : List (Ty ι)} :
-      HasTyWith G images subtyping Γ f F → Represents G F (.ctors L) → (xs.map Prod.fst ++ Us, B) ∈ L →
+      {S : List (List (Ty ι) × Ty ι × Ty ι)} {xs : List (Ty ι × Tm)} {Us : List (Ty ι)} :
+      HasTyWith G images subtyping Γ f F → Represents G F (.ctors L S) → (xs.map Prod.fst ++ Us, B) ∈ L →
       (∀ p ∈ xs, HasTyWith G images subtyping Γ p.2 p.1) → (∀ A ∈ Us, HasTyWith G images subtyping Γ .undef A) →
       HasTyWith G images subtyping Γ (.construct f (xs.map Prod.snd)) B
+  /-- **A variadic construction.** `new f(args)` at a variadic construct
+  signature: the fixed actuals at its parameters, then parts that fit its
+  rest (`RestParts`), as a variadic call's do. -/
+  | constructRest {Γ : List (Ty ι)} {f : Tm} {F P B : Ty ι} {L : List (List (Ty ι) × Ty ι)}
+      {S : List (List (Ty ι) × Ty ι × Ty ι)} {xs : List (Ty ι × Tm)} {parts : List (Bool × Ty ι × Tm)} :
+      HasTyWith G images subtyping Γ f F → Represents G F (.ctors L S) → (xs.map Prod.fst, P, B) ∈ S →
+      (∀ p ∈ xs, HasTyWith G images subtyping Γ p.2 p.1) →
+      (∀ p ∈ parts, HasTyWith G images subtyping Γ p.2.2 p.2.1) →
+      RestParts G P (parts.map fun p => (p.1, p.2.1)) →
+      HasTyWith G images subtyping Γ (.construct f (xs.map Prod.snd ++ parts.map fun p => spreadTerm (p.1, p.2.2))) B
   /-- A call writes the actuals it writes, and passes the receiver `r`, typed
   at the selected signature's receiver. `Us` are the trailing positions the
   signature declares and this call omits; each admits `undefined`, which is
@@ -2483,7 +2659,7 @@ abbrev HasTyUsing (G : NormalGraph ι) (images : PositiveCertificates.InstanceIm
   HasTyWith G images subtyping Γ t A
 
 namespace HasTyUsing
-export HasTyWith (var nul undef tru fls truLit flsLit numLit num bigintLit bigint strLit str funGraph funScheme ctorGraph callableGraph construct callCallable readCallable writeCallable app letE alloc allocDict read readView lenView readProto readOptional readDict indexDict write arith arrLit elem elemOpt elemAny setElem len lenStr elemStr test ifBool ifKnown ifBoolVar ifTag unionVar arrParts callRest bindE bindRestE bindMember bindScheme throw merge makeKey sub)
+export HasTyWith (var nul undef tru fls truLit flsLit numLit num bigintLit bigint strLit str funGraph funScheme ctorGraph callableGraph construct constructRest callCallable readCallable writeCallable app letE alloc allocDict read readView lenView readProto readOptional readDict indexDict write arith arrLit elem elemOpt elemAny setElem len lenStr elemStr test ifBool ifKnown ifBoolVar ifTag unionVar arrParts callRest bindE bindRestE bindMember bindScheme throw merge makeKey sub)
 end HasTyUsing
 
 /-- Existing source requests choose the finite checker. The typing rules
@@ -2635,18 +2811,20 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     refine ⟨?_, fun q hq As hlen hal _ => (instanceTWithArgs_adm _ _ _ _ _).down_le j q hq U _ (hsig As hlen hal)⟩
     simp only [Callee, hcon, Bool.false_eq_true, if_false]
     exact ⟨_, _, _, rfl, rfl, by simpa [Scoped, vs, instantiate] using hsc⟩
-  | @ctorGraph Γ F U L arity start E K caps hr hu hspec hlt hcap ih =>
+  | @ctorGraph Γ F U L S arity start E K caps hr hu hspec hrest hlt hcap ih =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map]
     apply makeFn_rule nulT_adm n W h _ .nul rfl hw hh rfl
     intro j hj V hx
     obtain ⟨hsc, henv, hcapv⟩ := captures_sem he hlt
       (fun c hc => by simpa [instantiate] using ih c hc n W h ρ he hw hh) hj hx
-    have hc := ctorsT_of_graph (oid := h.length + 1) [(codeField, h.length)] hspec hu henv hsc (by
+    have hvals : CallArguments.Values (caps.map fun c => ρ c.2) := by
       intro v hv
       obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hv
-      exact (meaning_value (hcapv c hc)).1)
-    exact (represents_back hr j V _) ⟨hc, ctorRestsT_nil hc.1⟩
+      exact (meaning_value (hcapv c hc)).1
+    have hc := ctorsT_of_graph (oid := h.length + 1) [(codeField, h.length)] hspec hu henv hsc hvals
+    have hcr := ctorRestsT_of_graph (oid := h.length + 1) [(codeField, h.length)] hrest hu henv hsc hvals
+    exact (represents_back hr j V _) ⟨hc, hcr⟩
   | @callableGraph Γ F L S arity start E K caps rest As parts hr hnd hp hspec hlt hcap ih ihc =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
@@ -2692,7 +2870,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       simp [ReferenceConjunctions.famsOf, List.map_map, Function.comp_def, List.zip_map']
     exact (represents_back hr k' V _)
       ⟨⟨⟨⟨_, _, _, rfl, rfl, by rw [hfam]; exact hrec⟩, by simp⟩, ho.1⟩, ho.2⟩
-  | @construct Γ f F B L xs Us hf hr hp hx hu ihf ihx ihu =>
+  | @construct Γ f F B L S xs Us hf hr hp hx hu ihf ihx ihu =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
     have hs := construct_safe (Ξ := excOf G) (B := meaning G B)
@@ -2716,6 +2894,113 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hA
       intro j hj U hx hu' heap hok
       exact ihu q hq j U heap ρ (he.transfer j hj U hx) hu' hok
+  | @constructRest Γ f F P B L S xs parts hf hr hmem hx hp hparts ihf ihx ihp =>
+    intro n W h ρ he hw hh
+    have hfF : Safe (excOf G) (ctorRestsT (excOf G) [(xs.map fun p => meaning G p.1, argMeaning G P, meaning G B)])
+        n W h (instantiate 0 ρ f) := by
+      apply Safe_mono n _ W h _ (ihf n W h ρ he hw hh)
+      intro k _ U v hv
+      have hc := ((represents_raw hr k U v) hv).2
+      refine ⟨hc.1, fun q hq => ?_⟩
+      rw [List.mem_singleton] at hq
+      subst hq
+      exact hc.2 _ (List.mem_map.mpr ⟨(xs.map Prod.fst, P, B), hmem,
+        by simp [List.map_map, Function.comp_def]⟩)
+    unfold RestParts at hparts
+    split at hparts
+    · -- A spread: the rest is an element rest.
+      rename_i hany
+      split at hparts
+      · rename_i E hel
+        have hterm : instantiate 0 ρ (.construct f
+              (xs.map Prod.snd ++ parts.map fun p => spreadTerm (p.1, p.2.2)))
+            = .construct (instantiate 0 ρ f)
+              ((xs.map fun p => (meaning G p.1, instantiate 0 ρ p.2)).map Prod.snd ++
+              (parts.map fun p => ((if p.1 then some (meaning G p.2.1) else none),
+                instantiate 0 ρ p.2.2)).map RestCalls.partTerm) := by
+          simp only [instantiate, instantiateArgs_eq_map, List.map_append, List.map_map,
+            Function.comp_def, instantiate_spreadTerm]
+          congr 2
+          apply List.map_congr_left
+          intro p _
+          rcases p with ⟨_ | _, A, t⟩ <;> rfl
+        have hpart : ∀ p ∈ parts, if p.1 then SpreadsInto G p.2.1 E else p.2.1 = E :=
+          fun p hp' => hparts (p.1, p.2.1) (List.mem_map_of_mem hp')
+        rw [hterm]
+        apply construct_rest_safe (Ps := xs.map fun p => meaning G p.1)
+          (E := meaning G E) (P := argMeaning G P) (R := meaning G B)
+          (by intro A hA; obtain ⟨q, _, rfl⟩ := List.mem_map.mp hA; exact meaning_adm G q.1)
+          (by intro A hA; obtain ⟨q, _, rfl⟩ := List.mem_map.mp hA; exact meaning_valOnly G q.1)
+          (meaning_adm G E) (meaning_valOnly G E) (argMeaning_adm G P)
+          (fun k W xs hxs => (restElem_args hel).mpr hxs)
+          _ (by simp [List.map_map, Function.comp_def]) _
+          (by
+            intro q hq S hS
+            obtain ⟨p, hp', rfl⟩ := List.mem_map.mp hq
+            rcases p with ⟨_ | _, A, t⟩
+            · simp at hS
+            · simp only [if_true, Option.some.injEq] at hS
+              subst hS
+              have := hpart _ hp'
+              simp only [if_true] at this
+              exact ⟨meaning_adm G A, spreadsInto_sound this⟩)
+          hw hh hfF
+        · intro q hq j hj U hxU hu heap hok
+          obtain ⟨p, hp', rfl⟩ := List.mem_map.mp hq
+          exact ihx p hp' j U heap ρ (he.transfer j hj U hxU) hu hok
+        · intro q hq j hj U hxU hu heap hok
+          obtain ⟨p, hp', rfl⟩ := List.mem_map.mp hq
+          rcases p with ⟨_ | _, A, t⟩
+          · have hA : A = E := by simpa using hpart _ hp'
+            subst hA
+            exact ihp _ hp' j U heap ρ (he.transfer j hj U hxU) hu hok
+          · exact ihp _ hp' j U heap ρ (he.transfer j hj U hxU) hu hok
+      · exact hparts.elim
+    · -- No spread: the parts are at the positions of the rest's tuple contract.
+      rename_i hany
+      split at hparts
+      · rename_i T hPT
+        obtain ⟨hreq, hbound, hpos⟩ := hparts
+        simp only [List.any_map, List.any_eq_true, not_exists, not_and, Function.comp_def,
+          Bool.not_eq_true] at hany
+        have hterm : instantiate 0 ρ (.construct f
+              (xs.map Prod.snd ++ parts.map fun p => spreadTerm (p.1, p.2.2)))
+            = .construct (instantiate 0 ρ f)
+              ((xs.map (fun p => (meaning G p.1, instantiate 0 ρ p.2)) ++
+                parts.map (fun p => (meaning G p.2.1, instantiate 0 ρ p.2.2))).map Prod.snd) := by
+          simp only [instantiate, instantiateArgs_eq_map, List.map_append, List.map_map,
+            Function.comp_def, instantiate_spreadTerm]
+          congr 2
+          apply List.map_congr_left
+          intro p hp'
+          simp [spreadTerm, hany p hp']
+        rw [hterm]
+        apply construct_pack_safe (Ps := xs.map fun p => meaning G p.1)
+          (Qs := parts.map fun p => meaning G p.2.1)
+          (P := argMeaning G P) (R := meaning G B)
+          (by
+            intro A hA
+            rcases List.mem_append.mp hA with hA | hA <;>
+              obtain ⟨q, _, rfl⟩ := List.mem_map.mp hA <;> exact meaning_adm G _)
+          (by
+            intro A hA
+            rcases List.mem_append.mp hA with hA | hA <;>
+              obtain ⟨q, _, rfl⟩ := List.mem_map.mp hA <;> exact meaning_valOnly G _)
+          (argMeaning_adm G P)
+          (fun k W extra ha => restParts_pack hPT (Qs := parts.map (·.2.1))
+            (by simpa using hreq) (by simpa using hbound)
+            (by
+              intro i hi
+              have := hpos i (by simpa using hi)
+              simpa [List.getElem?_map, Option.map_map, Function.comp_def] using this)
+            (by simpa [List.map_map, Function.comp_def] using ha))
+          _ (by simp [List.map_map, Function.comp_def])
+          hw hh hfF
+        · intro q hq j hj U hxU hu heap hok
+          rcases List.mem_append.mp hq with hq | hq <;> obtain ⟨p, hp', rfl⟩ := List.mem_map.mp hq
+          · exact ihx p hp' j U heap ρ (he.transfer j hj U hxU) hu hok
+          · exact ihp p hp' j U heap ρ (he.transfer j hj U hxU) hu hok
+      · exact hparts.elim
   | @callCallable effect Γ f r F Rt B P Ps L S xs Us hf hr hp hrt ha hu ihf ihrt iha ihu =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]

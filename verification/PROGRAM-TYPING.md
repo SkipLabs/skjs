@@ -630,6 +630,39 @@ refused, as JavaScript throws. A construct signature is covered by one taking
 as many parameters, each at least as wide, with a result at most as wide:
 `new (params: Specific) => R` is a `new (params: never) => R`.
 
+#### Variadic construct signatures
+
+A variadic construct signature $`\mathsf{new}(\vec Q,\ {\ldots}P)\Rightarrow B`$
+admits the lists whose first $`|\vec Q|`$ actuals are at $`\vec Q`$ and whose
+further ones form a pack of $`P`$ (`CtorRest`, `ctorRestsT`). `new` reads a
+spread actual as a call does, its store's elements replacing it once every
+earlier actual is a value (`Step.constructSpread`), and the parts past the
+fixed actuals fit the rest as a variadic call's do ($`\mathrm{Parts}_G`$
+above; `constructRest`, `construct_rest_safe`, `construct_pack_safe`,
+`ctor_elim_rest`):
+
+```math
+\frac{\Gamma\vdash_G f:L\quad L\equiv_G\mathsf{Ctors}(\ldots;\ldots,(\vec Q,P,B),\ldots)\quad
+      \forall i.\;\Gamma\vdash_G a_i:Q_i\quad\mathrm{Parts}_G(P,\vec p)}
+     {\Gamma\vdash_G \mathsf{new}\ f(\vec a,\vec p):B}\ \textsf{constructRest}
+```
+
+A class meets one with an element rest $`\mathrm{elem}_G(P)=E`$ when its code
+of arity $`k`$ is safe from the row binding the fixed parameters, then each
+further position up to $`k`$ at $`E`$ or `undefined`: construction binds the
+first $`k`$ actuals, `undefined` where the list is shorter, and discards the
+rest (`ctorRestParams`, `ctorRestsT_of_graph`):
+
+```math
+\frac{\vec C\vdash_G\kappa^{\mathsf{new}}:\bigl(U;\ \vec Q\,(E\mid\mathsf{undefined})^{k-|\vec Q|}\to B\bigr)}
+     {\kappa^{\mathsf{new}}[\vec x]\ \text{meets}\ \mathsf{new}(\vec Q,\ {\ldots}P)\Rightarrow B}
+```
+
+This is the variadic premise of `ctorGraph`. A class value whose code binds
+a position the rest may leave out at a type without `undefined` is refused
+there, though TypeScript accepts it (`invalid-constructor-rest-class`, run
+under Node).
+
 An object is a finite map from field names to heap locations, fixed at
 allocation. Let $`\varphi`$ range over field maps $`\overline{f{:}A}`$ with distinct
 names, and write $`\mathsf{Ref}(\varphi)`$ for the record clause carrying those

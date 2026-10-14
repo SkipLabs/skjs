@@ -320,6 +320,9 @@ inductive Rule (ι : Type) where
       (receivers : List (PositiveCertificates.SubtypeChoices ι))
   /-- `new`: the constructor, then the actuals in order. -/
   | construct
+  /-- `new` at a variadic construct signature: how many actuals are fixed,
+  which later ones are spreads, and the rest type the further ones fit. -/
+  | constructRest (fixed : Nat) (spreads : List Bool) (rest : Ty ι)
   | sub (proof : PositiveCertificates.SubtypeChoices ι)
   /-- `throw`: its operand at a type of its own. -/
   | throw
@@ -418,12 +421,16 @@ entry is checked at every assignment of the parameter rows
     | _ => false
 
 /-- A class value's construct signatures, each a checked entry of its graph
-code at the row whose receiver is `U`, the `undefined` type `new` passes. -/
+code at the row whose receiver is `U`, the `undefined` type `new` passes; a
+variadic one with an element rest at the row `ctorRestParams` gives. -/
 @[nospecialize] def ctorCodesChecked [DecidableEq ι] (G : NormalGraph ι) (A U : Ty ι) (codes : CodeEntry ι → Bool)
     (arity : Nat) (E : List Tm) (K : List (ControlFlow.Continuation × Option ControlFlow.Target))
     (start : Nat) (Cs : List (Ty ι)) : Bool :=
   match expand G A with
-  | [.ctors L] => L.all fun p => codes ⟨arity, E, K, start, Cs, ⟨U, p.1, p.2, .unrestricted⟩, none⟩
+  | [.ctors L S] => (L.all fun p => codes ⟨arity, E, K, start, Cs, ⟨U, p.1, p.2, .unrestricted⟩, none⟩) &&
+      S.all fun s => match restElem G s.2.1 with
+        | some El => codes ⟨arity, E, K, start, Cs, ⟨U, ctorRestParams arity s.1 El U, s.2.2, .unrestricted⟩, none⟩
+        | none => false
   | _ => false
 
 /-- The prototype type `P` has a field or view `f` at `A`. -/
@@ -1173,7 +1180,21 @@ declared bounds. -/
       (∀ ja ∈ jas.drop args.length, ja.term = .undef) ∧
       (∀ ja ∈ jas, ja.context = j.context) ∧
       match expand G jf.type with
-      | [.ctors L] => (jas.map Sequent.type, j.type) ∈ L
+      | [.ctors L _] => (jas.map Sequent.type, j.type) ∈ L
+      | _ => False
+    | _, _ => False
+  -- The constructor, the fixed actuals, then one premise per further part:
+  -- the actual itself, or the store a spread reads.
+  | .constructRest k flags P =>
+    match j.term, ps with
+    | .construct f args, jf :: jas =>
+      jf.context = j.context ∧ jf.term = f ∧ (∀ ja ∈ jas, ja.context = j.context) ∧
+      jas.length = k + flags.length ∧
+      args = (jas.take k).map Sequent.term ++
+        (flags.zip (jas.drop k)).map (fun q => spreadTerm (q.1, q.2.term)) ∧
+      RestParts G P ((flags.zip (jas.drop k)).map fun q => (q.1, q.2.type)) ∧
+      match expand G jf.type with
+      | [.ctors _ S] => ((jas.take k).map Sequent.type, P, j.type) ∈ S
       | _ => False
     | _, _ => False
   | .sub proof =>
@@ -1238,7 +1259,8 @@ retain the subtype outcome; other rule predicates are their declarative checks. 
     | .readOptional .. | .readProto .. | .arrLit | .elem | .setElem | .len | .lenStr | .elemStr ..
     | .elemOpt .. | .elemAny .. | .ifBool | .ifTrue | .ifFalse | .ifKnown .. | .ifBoolVar ..
     | .unionVar .. | .callCallable .. | .readCallable | .writeCallable | .arrParts ..
-    | .callRest .. | .bindE | .bindRestE | .construct | .throw | .merge | .makeKey | .lenView .. =>
+    | .callRest .. | .bindE | .bindRestE | .construct | .constructRest .. | .throw | .merge | .makeKey
+    | .lenView .. =>
       CheckResult.ofBool (decide (LocalUsing G images j r ps codes))
 
 theorem localCheckUsing_accepted [DecidableEq ι] (G : NormalGraph ι)
@@ -1559,10 +1581,15 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
     rw [← hvar]
     unfold ctorCodesChecked at hok
     split at hok
-    · rename_i L hL
-      simp only [List.all_eq_true] at hok
-      exact HasTyUsing.ctorGraph hL hu (fun p hp' => by rw [hfst]; exact hcodes _ (hok p hp') G.env)
-        hlt hcap
+    · rename_i L S hL
+      simp only [Bool.and_eq_true, List.all_eq_true] at hok
+      refine HasTyUsing.ctorGraph hL hu (fun p hp' => by rw [hfst]; exact hcodes _ (hok.1 p hp') G.env)
+        (fun s hs => ?_) hlt hcap
+      have h := hok.2 s hs
+      split at h
+      · rename_i El hel
+        exact ⟨El, hel, by rw [hfst]; exact hcodes _ h G.env⟩
+      · contradiction
     · contradiction
   · split at hl
     · rename_i _ As ps _ _ arity E K start caps kind rest ns inits _ P L S hF
@@ -2095,7 +2122,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
     have hf := hp jf (by simp)
     rw [hΓf, htf] at hf
     split at hL
-    · rename_i L he
+    · rename_i L _ he
       have hxs : ∀ p ∈ (jas.take args.length).map (fun ja => (ja.type, ja.term)),
           HasTyUsing G images (subtyping := subtyping) Γ p.2 p.1 := by
         intro p hp'
@@ -2117,6 +2144,31 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
         (Us := (jas.drop args.length).map Sequent.type) hf he
         (by rw [hsplit]; exact hL) hxs hu
       simpa only [List.map_map, Function.comp_def, hterms] using hc
+    · contradiction
+  · rename_i k flags P _ _ f args jf jas
+    rcases hl with ⟨hΓf, htf, hctx, hlen, rfl, hparts, hL⟩
+    have hf := hp jf (by simp)
+    rw [hΓf, htf] at hf
+    split at hL
+    · rename_i L S he
+      have := HasTyUsing.constructRest (xs := (jas.take k).map fun ja => (ja.type, ja.term)) (P := P)
+        (parts := (flags.zip (jas.drop k)).map fun q => (q.1, q.2.type, q.2.term)) hf he
+        (by simpa [List.map_map, Function.comp_def] using hL)
+        (by
+          intro p hm
+          obtain ⟨ja, hja, rfl⟩ := List.mem_map.mp hm
+          have h := hp ja (List.mem_cons_of_mem _ (List.mem_of_mem_take hja))
+          rw [hctx ja (List.mem_of_mem_take hja)] at h
+          exact h)
+        (by
+          intro p hm
+          obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hm
+          have hja := List.mem_of_mem_drop (List.of_mem_zip hq).2
+          have h := hp q.2 (List.mem_cons_of_mem _ hja)
+          rw [hctx q.2 hja] at h
+          exact h)
+        (by simpa [List.map_map, Function.comp_def] using hparts)
+      simpa [List.map_map, Function.comp_def] using this
     · contradiction
   · rename_i proof _ t jt
     rcases hl with ⟨hΓ, ht, hc⟩
@@ -2328,7 +2380,7 @@ theorem checkTreeUsing_complete [DecidableEq ι] {G : NormalGraph ι}
     · intro j hj
       obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hj
       exact ih c hc
-  | @ctorGraph Γ F U L arity start E K caps hr hu hspec hlt hcap ih =>
+  | @ctorGraph Γ F U L S arity start E K caps hr hu hspec hrest hlt hcap ih =>
     apply node_complete (r := .ctorGraph U)
       (j := ⟨Γ, .makeFn (.graph arity E K start (caps.map fun c => .var c.2) .construct) .nul, F⟩)
       (js := caps.map fun c => ⟨Γ, .var c.2, c.1⟩)
@@ -2336,7 +2388,11 @@ theorem checkTreeUsing_complete [DecidableEq ι] {G : NormalGraph ι}
       · intro q hq
         obtain ⟨c, _, rfl⟩ := List.mem_map.mp hq
         rfl
-      · simp [ctorCodesChecked, show expand G F = [.ctors L] from hr]
+      · simp only [ctorCodesChecked, show expand G F = [.ctors L S] from hr, Bool.and_eq_true,
+          List.all_eq_true]
+        refine ⟨fun _ _ => trivial, fun s hs => ?_⟩
+        obtain ⟨El, hel, _⟩ := hrest s hs
+        simp [hel]
     · intro j hj
       obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hj
       exact ih c hc
@@ -2424,7 +2480,7 @@ theorem checkTreeUsing_complete [DecidableEq ι] {G : NormalGraph ι}
       rcases hj with rfl | rfl
       · exact iha
       · exact ihb
-  | @construct Γ f F B L xs Us hf hr hp hx hu ihf ihx ihu =>
+  | @construct Γ f F B L S xs Us hf hr hp hx hu ihf ihx ihu =>
     apply node_complete (r := .construct)
       (js := ⟨Γ,f,F⟩ :: (xs.map (fun p => ⟨Γ,p.2,p.1⟩) ++ Us.map (fun A => ⟨Γ,.undef,A⟩)))
     · have hlenx : (xs.map (fun p => (⟨Γ,p.2,p.1⟩ : Sequent ι))).length
@@ -2447,7 +2503,7 @@ theorem checkTreeUsing_complete [DecidableEq ι] {G : NormalGraph ι}
             = xs.map Prod.fst ++ Us := by
           rw [List.map_append, List.map_map, List.map_map]
           simp [Function.comp_def]
-        rw [show expand G F = [.ctors L] from hr, heq]
+        rw [show expand G F = [.ctors L S] from hr, heq]
         exact hp
     · intro j hj
       rcases List.mem_cons.mp hj with rfl | hj
@@ -2457,6 +2513,35 @@ theorem checkTreeUsing_complete [DecidableEq ι] {G : NormalGraph ι}
           exact ihx p hp
         · obtain ⟨A, hA, rfl⟩ := List.mem_map.mp hj
           exact ihu A hA
+  | @constructRest Γ f F P B L S xs parts hf hr hmem hx hp hparts ihf ihx ihp =>
+    apply node_complete (r := .constructRest xs.length (parts.map Prod.fst) P)
+      (js := ⟨Γ,f,F⟩ :: (xs.map (fun p => ⟨Γ,p.2,p.1⟩) ++ parts.map (fun p => ⟨Γ,p.2.2,p.2.1⟩)))
+    · have hlenx : (xs.map (fun p => (⟨Γ,p.2,p.1⟩ : Sequent ι))).length = xs.length := by simp
+      have hzip : (parts.map Prod.fst).zip (parts.map (fun p => (⟨Γ,p.2.2,p.2.1⟩ : Sequent ι)))
+          = parts.map (fun p => (p.1, (⟨Γ,p.2.2,p.2.1⟩ : Sequent ι))) := List.zip_map'
+      have htk : (xs.map (fun p => (⟨Γ,p.2,p.1⟩ : Sequent ι)) ++
+          parts.map (fun p => (⟨Γ,p.2.2,p.2.1⟩ : Sequent ι))).take xs.length =
+          xs.map (fun p => (⟨Γ,p.2,p.1⟩ : Sequent ι)) := List.take_left' hlenx
+      have hdk : (xs.map (fun p => (⟨Γ,p.2,p.1⟩ : Sequent ι)) ++
+          parts.map (fun p => (⟨Γ,p.2.2,p.2.1⟩ : Sequent ι))).drop xs.length =
+          parts.map (fun p => (⟨Γ,p.2.2,p.2.1⟩ : Sequent ι)) := List.drop_left' hlenx
+      refine ⟨rfl, rfl, ?_, by simp, ?_, ?_, ?_⟩
+      · intro ja hj
+        simp only [List.mem_append, List.mem_map] at hj
+        rcases hj with ⟨p,_,rfl⟩ | ⟨p,_,rfl⟩ <;> rfl
+      · rw [htk, hdk, hzip]
+        simp [List.map_map, Function.comp_def]
+      · rw [hdk, hzip]
+        simpa [List.map_map, Function.comp_def] using hparts
+      · rw [show expand G F = [.ctors L S] from hr, htk]
+        simpa [List.map_map, Function.comp_def] using hmem
+    · intro j hj
+      rcases List.mem_cons.mp hj with rfl | hj
+      · exact ihf
+      · simp only [List.mem_append, List.mem_map] at hj
+        rcases hj with ⟨p,hp',rfl⟩ | ⟨p,hp',rfl⟩
+        · exact ihx p hp'
+        · exact ihp p hp'
   | @app effect Γ f r F Rt B L S xs Us hf hr hp hrt ha hu ihf ihrt iha ihu =>
     apply node_complete (r := .app effect)
       (js := ⟨Γ,f,F⟩ :: ⟨Γ,r,Rt⟩ :: (xs.map (fun p => ⟨Γ,p.2,p.1⟩) ++ Us.map (fun A => ⟨Γ,.undef,A⟩)))

@@ -744,6 +744,26 @@ theorem step_preserves {h t h' t'} (step : Step h t h' t') :
         · exact ht.2 v (by simp [hv])
         · exact (hvs v hv).2.2
       · exact ht.2 v (by simp [hv])
+  | constructSpread hf he hp hr =>
+    intro D hh ht
+    subst he
+    simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht ⊢
+    have hvs : ∀ v ∈ _, isVal v = true ∧ TermOk D v := fun v hv =>
+      (readElems_mem hr v hv).elim (fun he => he ▸ ⟨rfl, trivial, trivial⟩)
+        (fun ⟨_, hl⟩ => hh.lookup hl)
+    refine ⟨D,.refl D,hh,⟨ht.1.1,?_⟩,ht.2.1,?_⟩
+    · intro v hv
+      rcases List.mem_append.mp hv with hv | hv
+      · rcases List.mem_append.mp hv with hv | hv
+        · exact ht.1.2 v (by simp [hv])
+        · exact (hvs v hv).2.1
+      · exact ht.1.2 v (by simp [hv])
+    · intro v hv
+      rcases List.mem_append.mp hv with hv | hv
+      · rcases List.mem_append.mp hv with hv | hv
+        · exact ht.2.2 v (by simp [hv])
+        · exact (hvs v hv).2.2
+      · exact ht.2.2 v (by simp [hv])
   | callSpread hf hrv he hp hr =>
     intro D hh ht
     subst he

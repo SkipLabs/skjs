@@ -477,6 +477,37 @@ Mappings discard only the temporaries introduced by this expression. -/
     let operands := callee :: args
     let As ← operands.mapM (exprType fc)
     let G := SourceTypes.graph (← table)
+    -- A spread of other than a tuple of required positions goes to a variadic
+    -- construct signature: `new` reads its store where it is written, as a
+    -- call's spread into a rest is read (`constructRest`).
+    let rawStore := fun (A : Ty Tree) => match PositiveRules.expand G A with
+      | [.list ..] => true
+      | _ => false
+    let fixedTuple := fun (A : Ty Tree) =>
+      let S := if rawStore A then some A else storeOf G A
+      match S.map (PositiveRules.expand G) with
+      | some [.list T []] => T.optional.isEmpty && T.rest.isNone
+      | _ => false
+    let variadicCtor := match PositiveRules.expand G (As.headD []) with
+      | [.ctors _ (_ :: _)] => true
+      | _ => false
+    if variadicCtor && spreads.any (fun i => !fixedTuple (As[i+1]?.getD [])) then
+      let n := As.length
+      let temporaries := (operands.map fun a => held ⟨"",some a.span⟩).reverse
+      let actuals := (List.range args.length).map fun i =>
+        let v := Tm.var (n-2-i)
+        if spreads.contains i then
+          if rawStore (As[i+1]?.getD []) then Tm.spread v else .spread (.readAt SourceTypes.storeField v)
+        else v
+      let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
+        (fun i => if i == 0 then 0 else i+n))⟩
+      recordHints (As.flatMap fun A => (storeOf G A).getD [])
+      let construct ← emitAt e.span (.construct (.var (n-1)) actuals)
+        (.bind drop) (As.reverse ++ Γ) A (scope := temporaries ++ scope)
+      return ← operands.attach.zipIdx.reverse.foldlM (fun next (⟨arg,_⟩,i) =>
+        compileAtom recursive fc
+          ((operands.take i |>.map fun a => held ⟨"",some a.span⟩).reverse ++ scope)
+          ((As.take i).reverse ++ Γ) arg next) construct
     let spreadElements ← spreads.mapM fun i => do
       let some A := As[i+1]? | throw "a constructor spread names no operand"
       let S := match PositiveRules.expand G A with
