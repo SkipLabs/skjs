@@ -272,9 +272,12 @@ one subtype-evidence list per outgoing edge. A derivation node names the
 `unionVar`, `callCallable`, `readCallable`, `writeCallable`, `readView`, `readProto`, `arith`, `test`,
 `arrLit`, `elem`, `elemOpt`, `elemAny`, `setElem`, `len`, `lenStr`, `elemStr`,
 `callRest`, `arrCopy`, `bindE`, `bindRestE`, `bindMember`, `construct`, `sub`,
-`throw`, whose one premise types the thrown operand, or `merge`, an allocation
-from parts, whose two premises type the accumulator and the source
-([Allocation from parts](PROGRAM-TYPING.md#allocation-from-parts)).
+`throw`, whose one premise types the thrown operand, `makeKey`, an allocation
+at a key known only at run time, whose two premises type the key and the
+initializer, or `merge`, an allocation from parts, whose two premises type
+the accumulator and the source
+([Allocation from parts](PROGRAM-TYPING.md#allocation-from-parts),
+[at a computed key](PROGRAM-TYPING.md#allocation-at-a-computed-key)).
 `alloc` at a record type is the typing rule `alloc`, whose fields, where one
 is the array store key, are an array of the graph's realm (`allocRealm`); at a
 dictionary type, `allocDict`, a literal allocated at a dictionary with no

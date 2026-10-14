@@ -54,6 +54,7 @@ HasTyWith  (Programs/ProgramTyping.lean)
   bindScheme {Γ : List (Ty ι)} {F O : Ty ι} {i : Nat} {k : PropKey} {m : MethodMembers.Sig (Ty ι)} : Γ[i]? = some O → memberOf G O k = some m → F ∈ m.schemes → expand G F = [] → HasTyWith G images subtyping Γ (.letE (.readAt k (.var i)) (.makeAt (.bound (.var 0) (.var (i + 1)) []) [] [])) F
   throw : SourceValues G A → HasTyWith G images subtyping Γ a A → HasTyWith G images subtyping Γ (.throw a) B
   merge {d : List PropKey} {a b : Tm} {A B R : Ty ι} : HasTyWith G images subtyping Γ a A → HasTyWith G images subtyping Γ b B → ObjectMerge.MergeOk G d A B R = true → HasTyWith G images subtyping Γ (.merge d a b) R
+  makeKey {k a : Tm} {K A R : Ty ι} : HasTyWith G images subtyping Γ k K → HasTyWith G images subtyping Γ a A → ComputedKey.KeyedOk G K A R = true → HasTyWith G images subtyping Γ (.makeKey k a) R
   sub : HasTyWith G images subtyping Γ t A → subtyping.check A B cert = true → HasTyWith G images subtyping Γ t B
 
 Rule  (Programs/ProgramCertificates.lean)
@@ -111,6 +112,7 @@ Rule  (Programs/ProgramCertificates.lean)
   sub (proof : PositiveCertificates.SubtypeChoices ι)
   throw
   merge
+  makeKey
 
 ArrowCert  (Types/PositiveCertificates.lean)
   empty
