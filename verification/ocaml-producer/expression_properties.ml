@@ -42,10 +42,6 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
       let receiver = expr env e in
       if not (List.mem site (observations ()).Analysis_capabilities.method_callees) && method_member declarations receiver n then
         S.explain site ("a method '" ^ key_text n ^ "' read off its object is not a function value: " ^ extraction_reason);
-      (match e.node,n with
-       | Id o,Name k when List.mem (o,k) (observations ()).Analysis_capabilities.dictionary_keys && expected <> None ->
-         S.explain site ("a read of a key `in` found in a dictionary: " ^ dictionary_presence_reason)
-       | _ -> ());
       (match expected with
        | Some x when n = Name "length"
            && List.exists (function

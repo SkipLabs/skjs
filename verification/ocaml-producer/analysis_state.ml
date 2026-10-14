@@ -163,7 +163,6 @@ module Access (S : sig val state : t end) = struct
     for_in_keys= !(state.diagnostics.Proposal_diagnostics.for_in_keys);
     method_callees= !(state.diagnostics.Proposal_diagnostics.method_callees);
     shape_tests= !(state.diagnostics.Proposal_diagnostics.shape_tests);
-    dictionary_keys= !(state.diagnostics.Proposal_diagnostics.dictionary_keys);
     open_array_tests= !(state.diagnostics.Proposal_diagnostics.open_array_tests);
     unknown_instance_tests= !(state.diagnostics.Proposal_diagnostics.unknown_instance_tests) }
   let explain = Proposal_diagnostics.explain state.diagnostics

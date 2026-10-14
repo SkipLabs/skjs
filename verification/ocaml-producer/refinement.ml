@@ -79,12 +79,20 @@ let array_slice declarations t =
    literal's keys are exactly its fields', and a primitive owns none. *)
 (* A plain record whose optional key was found present: the key is a field
    of it from then on, since an object's keys are fixed at its allocation.
-   Lean checks the promoted record against the tested one (`promote`). *)
+   A dictionary holds no prototype, so a key found on it is its own, a view
+   at the index type. Lean checks the promoted record against the tested one
+   (`promote`). *)
 let present key =
   let promote = List.map (fun (f:Semantic.field) ->
     if f.name = Name key && f.optional then {f with optional=false} else f) in
   function
   | Shape ({calls=[];elements=None;indexes=[];_} as s) -> Shape {s with fields=promote s.fields}
+  | Shape ({calls=[];elements=None;indexes=_::_;fields} as s)
+    when not (List.exists (fun (f:Semantic.field) -> f.name = Name key) fields) ->
+    (match index_for s (Name key) with
+     | Some i -> Shape {s with fields=fields @ [{name=Name key;optional=false;read=i.value;write=None;
+         host=false;receivers=[]}]}
+     | None -> Shape s)
   | Exact fields -> Exact (promote fields)
   | a -> a
 let key_slice key holds = function
@@ -195,12 +203,6 @@ let rec branch_with state ?(modules = fun _ -> None) ?(claimed = fun _ -> None) 
       | _ -> ());
     env
   | HasKey ({node=Literal (LString key);_},{node=Id name;_}) ->
-    (if truth then match List.assoc_opt name env with
-      | Some b when List.exists (function
-          | Shape {indexes=_::_;fields;_} -> not (List.exists (fun (f:Semantic.field) -> f.name = Name key) fields)
-          | _ -> false) (flat_atoms declarations (binding_type b)) ->
-        state.dictionary_keys := (name,key) :: !(state.dictionary_keys)
-      | _ -> ());
     refine_value env name (key_slice key truth)
   (* `x instanceof C` is the same test of the class's key: primitives and
      fresh literals lack it; any other arm may have it or not. *)

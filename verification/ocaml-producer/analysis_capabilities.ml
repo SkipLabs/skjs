@@ -10,7 +10,6 @@ type observations = {
   for_in_keys: string list;
   method_callees: Json.t list;
   shape_tests: (string * string) list;
-  dictionary_keys: (string * string) list;
   open_array_tests: string list;
   unknown_instance_tests: string list;
 }

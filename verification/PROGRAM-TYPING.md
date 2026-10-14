@@ -1910,10 +1910,14 @@ Four implementations discharge the tested-slot obligation:
   allocation: each record clause $`c`$ of the tested type holds with its
   optional key $`k`$ taken as present, $`c^{+k}`$ (`promote`: a writable optional
   key becomes an invariant field, a readonly one a view, as `optT` states of a
-  present key). The destination needs a clause asking
-  no more than that, $`d\sqsubseteq c^{+k}`$ (`weaker`: each operand of $`d`$ is
-  one of $`c^{+k}`$'s; every part of a record clause's meaning is a statement
-  about each operand) (`promotes_sound`, with the marker `subset`):
+  present key). An object of a dictionary clause holds no prototype either
+  (`dictViewT`), so a key $`k`$ found on it is its own, at a contract implying
+  the type $`D`$ of each index $`\theta{:}D`$ whose class surely admits $`k`$:
+  $`c^{+k}`$ adds the view $`k{:}D`$ for each (`presentViews`). The destination
+  needs a clause asking no more than that, $`d\sqsubseteq c^{+k}`$ (`weaker`:
+  both records or both dictionaries, each operand of $`d`$ one of
+  $`c^{+k}`$'s; every part of their meaning is a statement about each
+  operand) (`promotes_sound`, with the marker `subset`):
 
 ```math
 \frac{\mathsf{tagHolds}(t,v)=\mathsf{true}\ \Rightarrow\ v\in⟦F_t⟧\quad F_t\subseteq\mathrm{expand}_G(B)}
@@ -1929,6 +1933,11 @@ Four implementations discharge the tested-slot obligation:
       \forall c\in\mathrm{expand}_G(F_{\mathsf{hasKey}(k),\mathsf{true}}(A)).\
       \exists d\in\mathrm{expand}_G(B).\ d\sqsubseteq c^{+k}}
      {A\preceq_{\mathsf{hasKey}(k)=\mathsf{true}}B}\ \textsf{present-key}
+```
+
+```math
+\mathsf{Dict}(\varphi;\psi;\iota;\omega;\beta;\chi)^{+k}=
+  \mathsf{Dict}\bigl(\varphi;\ \psi\cup\{k{:}D\mid(\theta{:}D)\in\iota,\ \theta\ \text{surely admits}\ k\};\ \iota;\ \omega;\ \beta;\ \chi\bigr)
 ```
 
 For the current primitive profile, null filtering gives:

@@ -186,8 +186,16 @@ present. An optional field of a record clause is, on an object that has the
 key, a field of the clause proper: invariant where the key is writable, a view
 where it is readonly (`optT`, `SlotContract`). -/
 
-/-- The record clause `c` with its optional key `k` taken as present. Other
-clauses, and a record without that optional key, are unchanged. -/
+/-- The index views of a dictionary whose class surely admits `k`, each as a
+view of `k`: an object of the dictionary holds no prototype, so where it has
+`k` it owns it, at a contract implying the index's type. -/
+def presentViews (k : PropKey) (ds : List (IndexKeys × α)) : List (PropKey × α) :=
+  (ds.filter fun d => d.1.surely k).map fun d => (k, d.2)
+
+/-- The record clause `c` with its optional key `k` taken as present, and
+the dictionary clause with `k` a view at each index type whose class surely
+admits it. Other clauses, and a record without that optional key, are
+unchanged. -/
 def promote (k : PropKey) : Clause α → Clause α
   | .refs a bs vs os ms ks =>
     match os.find? (fun o => decide (o.key = k)) with
@@ -195,6 +203,7 @@ def promote (k : PropKey) : Clause α → Clause α
       if o.readonly then .refs a bs (vs ++ [(k, o.type)]) os ms ks
       else .refs (a ++ [(k, o.type)]) bs vs os ms ks
     | none => .refs a bs vs os ms ks
+  | .dict a bs vs ds os ms ks cs => .dict a bs (vs ++ presentViews k ds) ds os ms ks cs
   | c => c
 
 /-- What a test or a read says of an object and a key: where it lacks the
@@ -248,6 +257,26 @@ theorem promote_sound {X : α → Fam} {P : α → ArgFam} {k : PropKey} {c : Cl
         · cases hm
           exact ⟨flds, l, c', oid, rfl, hl, hw, fun j hj W' u hu => (hsc j hj W' u).1 hu⟩
     · exact hc
+  | dict a bs vs ds os ms ks cs =>
+    obtain ⟨hr, hview, ⟨hd, hcs⟩, hopt, hmeth, hkeys⟩ := hc
+    refine ⟨hr, fun f T hm => ?_, ⟨hd, hcs⟩, hopt, hmeth, hkeys⟩
+    obtain ⟨i, hi, rfl⟩ := ReferenceConjunctions.mem_famsOf.mp hm
+    rcases List.mem_append.mp hi with hi | hi
+    · exact hview f _ (ReferenceConjunctions.mem_famsOf.mpr ⟨i, hi, rfl⟩)
+    · obtain ⟨x, hx, he⟩ := List.mem_map.mp hi
+      simp only [Prod.mk.injEq] at he
+      obtain ⟨rfl, rfl⟩ := he
+      obtain ⟨hxd, hs⟩ := List.mem_filter.mp hx
+      obtain ⟨flds, oid, rfl, hnp, -⟩ := hd x hxd
+      obtain ⟨l, hl⟩ : ∃ l, flds.lookup k = some l := by
+        cases hlk : flds.lookup k with
+        | some l => exact ⟨l, rfl⟩
+        | none =>
+          have hp := hk flds .absent oid rfl hlk
+          rw [hnp] at hp
+          cases hp
+      obtain ⟨c, hw, hag⟩ := dictViewT_present (hd x hxd) (IndexKeys.surely_admits hs) hl
+      exact ⟨flds, l, c, oid, rfl, hl, hw, hag⟩
   | _ => exact hc
 
 /-- Whether every member of `xs` is one of `ys`. -/
@@ -262,6 +291,9 @@ each of its operands, so asking fewer is weaker. -/
 def weaker [DecidableEq α] : Clause α → Clause α → Bool
   | .refs a bs vs os ms ks, .refs a' bs' vs' os' ms' ks' =>
     within a a' && within bs bs' && within vs vs' && within os os' && within ms ms' && within ks ks'
+  | .dict a bs vs ds os ms ks cs, .dict a' bs' vs' ds' os' ms' ks' cs' =>
+    within a a' && within bs bs' && within vs vs' && within ds ds' && within os os' &&
+      within ms ms' && within ks ks' && within cs cs'
   | _, _ => false
 
 theorem weaker_sound [DecidableEq α] {X : α → Fam} {P : α → ArgFam} {d c : Clause α} {n W v}
@@ -290,7 +322,39 @@ theorem weaker_sound [DecidableEq α] {X : α → Fam} {P : α → ArgFam} {d c 
       · obtain ⟨m', hm'', rfl⟩ := List.mem_map.mp hm'
         exact hmeth _ (List.mem_map.mpr ⟨m', within_mem hm hm'', rfl⟩)
     | _ => simp [weaker] at hw
+  | dict a bs vs ds os ms ks cs =>
+    cases c with
+    | dict a' bs' vs' ds' os' ms' ks' cs' =>
+      simp only [weaker, Bool.and_eq_true] at hw
+      obtain ⟨⟨⟨⟨⟨⟨⟨ha, hb⟩, hv⟩, hds⟩, ho⟩, hm⟩, hk⟩, hcs⟩ := hw
+      obtain ⟨⟨⟨flds, oid, hvf, hrec⟩, hbs⟩, hview, ⟨hd, hc⟩, hopt, hmeth, hkeys⟩ := hc
+      refine ⟨⟨⟨flds, oid, hvf, fun f T hmem => ?_⟩, fun B hB => ?_⟩, fun f T hmem => ?_,
+        ⟨fun x hx => hd x (within_mem hds hx), fun x hx => hc x (within_mem hcs hx)⟩, ?_,
+        fun m hm' => ?_, fun K hK => hkeys K (within_mem hk hK)⟩
+      · obtain ⟨i, hi, rfl⟩ := ReferenceConjunctions.mem_famsOf.mp hmem
+        exact hrec f _ (ReferenceConjunctions.mem_famsOf.mpr ⟨i, within_mem ha hi, rfl⟩)
+      · obtain ⟨B', hB', rfl⟩ := List.mem_map.mp hB
+        exact hbs _ (List.mem_map.mpr ⟨B', within_mem hb hB', rfl⟩)
+      · obtain ⟨i, hi, rfl⟩ := ReferenceConjunctions.mem_famsOf.mp hmem
+        exact hview f _ (ReferenceConjunctions.mem_famsOf.mpr ⟨i, within_mem hv hi, rfl⟩)
+      · obtain ⟨flds', oid', hv', hp, hf⟩ := hopt
+        refine ⟨flds', oid', hv', fun o hmo => ?_, fun o hmo => ?_⟩
+        · obtain ⟨o', ho', rfl⟩ := List.mem_map.mp hmo
+          exact hp _ (List.mem_map.mpr ⟨o', within_mem ho ho', rfl⟩)
+        · obtain ⟨o', ho', rfl⟩ := List.mem_map.mp hmo
+          exact hf _ (List.mem_map.mpr ⟨o', within_mem ho ho', rfl⟩)
+      · obtain ⟨m', hm'', rfl⟩ := List.mem_map.mp hm'
+        exact hmeth _ (List.mem_map.mpr ⟨m', within_mem hm hm'', rfl⟩)
+    | _ => simp [weaker] at hw
   | _ => simp [weaker] at hw
+
+theorem weaker_record [DecidableEq α] {d c : Clause α} (h : weaker d c = true) :
+    d.record = true ∧ c.record = true := by
+  unfold weaker at h
+  split at h <;> first | exact ⟨rfl, rfl⟩ | simp at h
+
+theorem promote_record (k : PropKey) (c : Clause α) : (promote k c).record = c.record := by
+  cases c <;> simp only [promote] <;> (try split) <;> (try split) <;> rfl
 
 /-- Every value of `A` that has the key `k` is one of `B`: each clause of `A`,
 with `k` taken as present, asks at least what one clause of `B` does. -/
@@ -303,11 +367,11 @@ theorem promotes_sound [DecidableEq ι] {G : NormalGraph ι} {A B : Ty ι} {k : 
   simp only [promotes, Bool.and_eq_true, List.all_eq_true, List.any_eq_true] at hp
   obtain ⟨c, hc, hcv, hinv⟩ := (expand_sem G A hp.1 n W v).mp hv
   obtain ⟨d, hd, hw⟩ := hp.2 c hc
-  -- `weaker` holds of two reference clauses only, and `promote` keeps every
-  -- other clause as it is.
+  -- `weaker` holds of two record clauses only, and `promote` keeps a
+  -- clause's kind.
   have hdr : d.record = true ∧ c.record = true := by
-    cases d <;> try exact (Bool.false_ne_true hw).elim
-    cases c <;> first | exact ⟨rfl, rfl⟩ | exact (Bool.false_ne_true hw).elim
+    obtain ⟨h1, h2⟩ := weaker_record hw
+    exact ⟨h1, (promote_record k c).symm.trans h2⟩
   exact expand_sem_mpr ⟨d, expand_sub hd, weaker_sound hw (promote_sound hcv hk),
     (realmInvariant_record hdr.2 hdr.1).mp hinv⟩
 
