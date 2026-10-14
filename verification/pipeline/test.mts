@@ -644,6 +644,8 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   // A non-null assertion on a read the object lacks the key of.
   assert.equal(runExample("invalid-non-null-index", "wrong({}, 0)"), undefined,
     "invalid-non-null-index: the read is undefined despite the assertion");
+  // A callee generic over `Array<A>` reverses a tuple found in `unknown`.
+  assert.throws(() => runExample("invalid-open-array-generic-call", "caller()"), /toFixed is not a function/);
   // An array's `length` is not one of its own enumerable properties.
   assert.equal(runExample("invalid-array-spread-length", "count([1, 2])"), undefined,
     "invalid-array-spread-length: the copy has no length despite its number contract");

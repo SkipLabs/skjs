@@ -135,8 +135,9 @@ let method_member declarations t key =
       | _ -> false) (try flat_atoms declarations t with Json.Error _ -> []) in
   go 0 t
 let realm_array_reason =
-  "`Array.isArray` finds a `readonly unknown[]` in `unknown` or a record, an array whose store holds \
-   elements of a contract no type of the program names, which the binder's instance would have to be"
+  "`Array.isArray` finds a `readonly unknown[]` in `unknown` or a record, which may be a tuple: its \
+   positions hold different types, so no instance of the binder is its store's contract, and a callee \
+   rearranging its `Array<A>` breaks the tuple's type"
 let mutable_tuple_length_reason =
   "the length of a mutable tuple is not fixed by its type, since `push` is allowed on it (an unsoundness \
    of TypeScript), so its `length` is a number"
