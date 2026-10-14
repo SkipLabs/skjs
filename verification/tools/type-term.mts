@@ -365,9 +365,10 @@ function readTypeTerm(scope: TermScope, node: TypeNode | undefined, at: Node | n
     return scope.fail(node, "readonly applies to an array or tuple type");
   }
   // `unique symbol`, which TypeScript admits only on a constant or a readonly
-  // static, is the type of that one symbol: the value is a symbol. Which
-  // symbol it is, a key types name, is the declaration's identity
-  // (`symbols` of the declaration document), not a type of the value.
+  // static, is the type of that one symbol: read here, as an annotation, it
+  // is a symbol. Which symbol it is, a key types name, is the declaration's
+  // identity (`symbols` of the declaration document); an imported constant's
+  // value is that singleton (`valueOf` in `declaration-graph.mts`).
   if (ts.isTypeOperatorNode(node) && node.operator === ts.SyntaxKind.UniqueKeyword &&
       unwrap(node.type).kind === ts.SyntaxKind.SymbolKeyword)
     return atom("symbol");

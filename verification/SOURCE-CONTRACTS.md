@@ -125,6 +125,16 @@ are ground once the binders are fixed is the graph's meet of those operands
 (`meetRow`); one still over a binder at a non-record operand is refused. A
 class is read at its construct signature, which `new` meets.
 
+A constant declared `unique symbol` whose symbol is known
+([symbol keys](#library-globals), $`\mathrm{sym}(k)`$) holds that symbol, the
+value of `typeof` it ([unique-symbol](#computed-types)); one whose symbol is
+not known is a symbol:
+
+```math
+\frac{x\ \text{imported, declared}\ \mathtt{const}\ x\colon\mathtt{unique\ symbol}\quad \mathrm{sym}(x)\ \text{known}}
+     {\Gamma(x)=\mathsf{symbolLit}(\mathrm{sym}(x))}\ \textsf{import-unique}
+```
+
 A function declared with overloads $`S_1,\ldots,S_n`$ ($`n>1`$) is callable at
 exactly those; an implementation's own signature is not callable from outside:
 

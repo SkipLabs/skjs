@@ -818,8 +818,17 @@ export function collectDeclarations(file: string, options: {
         if (!ts.isVariableDeclarationList(list) || !(list.flags & ts.NodeFlags.Const) || !node.type)
           throw Error(`a declared value must be an annotated constant, function or class: ${what}`);
         clean(node, `${idOf(source)}#${node.name.text}`);
+        // A `unique symbol` constant holds the symbol its declaration names,
+        // the one `typeof` it denotes (`symbolOf`): its value is that
+        // singleton. One whose symbol is not known (made otherwise) is a
+        // symbol.
+        const type = node.type;
+        const unique = ts.isTypeOperatorNode(type) && type.operator === ts.SyntaxKind.UniqueKeyword &&
+          type.type.kind === ts.SyntaxKind.SymbolKeyword;
+        const symbol = unique ? (() => { try { return symbolOf(node.name); } catch { return null; } })() : null;
         return { declaration: { module: idOf(source), name: node.name.text, span }, construct: false,
-          typeParams: [], type: typeTerm(valueScope(node, what), node.type, node) };
+          typeParams: [], type: symbol === null ? typeTerm(valueScope(node, what), type, node)
+            : { k: "unique", symbol, span: [type.getStart(source), type.end] } };
       }
       if (ts.isClassDeclaration(node) && node.name) {
         clean(node, `${idOf(source)}#${node.name.text}`);

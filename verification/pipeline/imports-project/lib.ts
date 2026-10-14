@@ -42,6 +42,10 @@ export class Named extends Tagged {
 // key and not the other's.
 export const brand: unique symbol = Symbol("brand");
 export const other: unique symbol = Symbol("other");
+// Two constants made by `Symbol.for` of one string: the registry gives both
+// the same symbol, though TypeScript types each a distinct unique symbol.
+export const sharedLeft: unique symbol = Symbol.for("fixture.shared");
+export const sharedRight: unique symbol = Symbol.for("fixture.shared");
 export type Branded = { [brand]: true; n: number };
 export type Marked = { [other]: true; n: number };
 export function wrap(n: number): Branded {

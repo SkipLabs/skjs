@@ -46,6 +46,24 @@ function must<T>(value: T | null | undefined, message: string): T {
 const runExample = (file: string, expression: string): unknown =>
   vm.runInNewContext(`${stripTypes(readFileSync(join(here, "examples", `${file}.ts`), "utf8"))
     .replace(/^export /gm, "")}\n${expression}`, {}, { timeout: 1000 });
+/** Run a value-import example as Node runs its ES modules, then print
+ * `expression`: the example and the modules of `imports-project` it imports
+ * are stripped of types, `@fixture/NAME` resolved to `NAME`'s module. */
+const runImporting = (file: string, expression: string): unknown => {
+  const out = mkdtempSync(join(tmpdir(), "imports-"));
+  const project = join(here, "imports-project");
+  const relink = (text: string): string => stripTypes(text).replace(/from "@fixture\/([\w-]+)"/g, 'from "./$1.mjs"');
+  for (const name of ["lib", "relay"])
+    writeFileSync(join(out, `${name}.mjs`), relink(readFileSync(join(project, `${name}.ts`), "utf8")));
+  writeFileSync(join(out, "main.mjs"), `${relink(readFileSync(join(here, "examples", `${file}.ts`), "utf8"))}
+console.log(JSON.stringify(${expression}));
+`);
+  const run = spawnSync(process.execPath, [join(out, "main.mjs")], { encoding: "utf8", timeout: 30_000 });
+  assert.ifError(run.error);
+  assert.equal(run.status, 0, run.stderr);
+  const printed: unknown = JSON.parse(run.stdout);
+  return printed;
+};
 /** Run an example as TypeScript's own emit compiles it, then `expression`:
  * an enum, which type stripping does not erase, and whose member reads a
  * transforming stripper may replace by their values. TypeScript emits the
@@ -983,6 +1001,12 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     ["invalid-generic-constructor-type", "typeof wrong()", "string"],
   ] as const)
     assert.equal(runExample(file, expression), expected, file);
+  // Imported unique symbols as Node's modules give them: a re-export is the
+  // symbol it re-exports, and two constants made by `Symbol.for` of one
+  // string hold one symbol; `Symbol()` makes another.
+  assert.equal(runImporting("unique-symbol-reexport-value-import", "same()"), true);
+  assert.equal(runImporting("unique-symbol-registry-value-import", "same()"), true);
+  assert.equal(runImporting("invalid-unique-symbol-value-import", "held === brand"), false);
   // A class has no plain call: calling it throws.
   assert.throws(() => runExample("invalid-class-as-function", "go()"), /cannot be invoked without 'new'/);
   // A generic method's contract read as `unknown` admits 42, which no call

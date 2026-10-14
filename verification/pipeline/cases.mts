@@ -4,7 +4,8 @@
 //
 // The value-import cases name `imports-project` as their project:
 // imports-project/lib.ts is the library they import, assumed at its declared types;
-// imports-project/tsconfig.json resolves `@fixture/lib` to it through `paths`;
+// imports-project/relay.ts re-exports one of its values under another name;
+// imports-project/tsconfig.json resolves `@fixture/lib` and `@fixture/relay` to them through `paths`;
 // imports-project/package.json makes it an ES module, as that project's Node16 resolution requires.
 import type { Outcome, Phase } from "./verify-source.mts";
 export interface Case {
@@ -291,6 +292,15 @@ export const cases: Case[] = [
     project: "verification/pipeline/skip-runtime-snapshot" },
   positive("class-value-generic-method", "A class value passed to a generic pack method returning its own interface at the inferred binder: the call's constructor parameter another spelling of the instance's"),
   negative("invalid-class-value-generic-method", "A mapper class of the wrong input type is not the method's construct signature"),
+  { ...positive("unique-symbol-value-import", "an imported `unique symbol` constant holds the symbol its declaration names, the value of `typeof` it"),
+    project: "verification/pipeline/imports-project" },
+  { ...positive("unique-symbol-reexport-value-import", "a unique symbol re-exported under another name is the symbol it re-exports, a value of `typeof` the original"),
+    project: "verification/pipeline/imports-project" },
+  { ...positive("unique-symbol-registry-value-import", "two imported constants made by `Symbol.for` of one string hold one symbol, the registry's: one is a value of `typeof` the other"),
+    project: "verification/pipeline/imports-project" },
+  { ...negative("invalid-unique-symbol-value-import", "another imported unique symbol is no value of `typeof brand`",
+    /source expression obligation at \[160,165\): evidence search failed: no derivation of its binding-annotation claim/),
+    project: "verification/pipeline/imports-project" },
   { ...positive("generic-method-value-import", "a library interface's generic methods, at the instances their calls name"),
     project: "verification/pipeline/imports-project" },
   { ...negative("invalid-generic-method-value-import", "a generic method's instance returns its instantiated type"),
