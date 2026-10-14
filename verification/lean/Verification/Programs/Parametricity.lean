@@ -382,7 +382,7 @@ theorem accepted_at {G : NormalGraph ι} {images : InstanceImageCheck G} {R P cl
     (η : MixedAssignment ι) (n W h ρ)
     (he : EnvOk (reassign G η) inputs ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h)
     (hcodes : CodesSound (reassign G η) codes := by exact Verification.ProgramCertificates.codesSound_none _) :
-    SafeGraph P (meaning (reassign G η) R) n W h (.at start ρ) :=
+    SafeGraph (excOf (reassign G η)) P (meaning (reassign G η) R) n W h (.at start ρ) :=
   CertificateProducer.accepted_from_inputs
     ((accept_reassign G η images R P claims C start inputs codes).trans hc) n W h ρ he hw hh hcodes
 

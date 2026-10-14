@@ -106,7 +106,7 @@ theorem unreserved_sym (i : Nat) : Unreserved (.sym i) := by
 /-- Where a value of the key's clause converts to, and that the keyed object
 owns it: the one field, or a key the class admits. -/
 theorem keyed_key {G : NormalGraph ι} {c d : Clause (List ι)} {A : List ι}
-    (hk : keyedClause c A = some d) {n W v} (hv : semWithArgs (meaning G) (argMeaning G) c n W v) :
+    (hk : keyedClause c A = some d) {n W v} (hv : semWithArgs (excOf G) (meaning G) (argMeaning G) c n W v) :
     ∃ f, propertyKey v = some f ∧ Unreserved f ∧
       (d = oneField f A ∨ ∃ K, d = classDict K A ∧ K.Admits f) := by
   match c, hk with
@@ -143,7 +143,7 @@ gives. -/
 theorem keyed_values_safe [DecidableEq ι] {G : NormalGraph ι} {K A R : List ι}
     (hk : KeyedOk G K A R = true) {n : Nat} {W : WorldT n} {h : Heap} {kv av : Val}
     (hadm : WorldAdm W) (hok : HeapOk n W h) (hkv : meaning G K n W kv) (hav : meaning G A n W av) :
-    Safe (meaning G R) n W h (.makeKey kv av) := by
+    Safe (excOf G) (meaning G R) n W h (.makeKey kv av) := by
   cases n with
   | zero => trivial
   | succ p =>

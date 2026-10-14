@@ -201,7 +201,7 @@ theorem bind_claim [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImage
     (ha : HasTyUsing G images Γ a A) (hc : checkEdgeUsing G images (A :: Γ) Δ ps = true)
     (hb : HasTyUsing G images Δ b B) (n W h ρ) (he : EnvOk G Γ ρ n W)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
-    Safe (meaning G B) n W h (.letE (instantiate 0 ρ a) (instantiate 1 ρ b)) := by
+    Safe (excOf G) (meaning G B) n W h (.letE (instantiate 0 ρ a) (instantiate 1 ρ b)) := by
   apply ProgramTyping.bind (fun a => .letE a (instantiate 1 ρ b)) Step.letC Raises.letC n W h _ hw hh
     (ha.sound n W h ρ he hw hh)
   intro j hj U hx hu heap v hok hv hav
@@ -223,7 +223,7 @@ theorem checked_bind_claim [DecidableEq ι] {G : NormalGraph ι} {images : Insta
     (hjb : ProgramCertificates.claim eb = ⟨Δ,b,B⟩)
     (hb : ProgramCertificates.checkTreeUsing G images eb = true)
     (n W h ρ) (he : EnvOk G Γ ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
-    Safe (meaning G B) n W h (.letE (instantiate 0 ρ a) (instantiate 1 ρ b)) := by
+    Safe (excOf G) (meaning G B) n W h (.letE (instantiate 0 ρ a) (instantiate 1 ρ b)) := by
   apply bind_claim (G := G) (images := images) (Γ := Γ) (Δ := Δ) (A := A) _ hc _ n W h ρ he hw hh
   · simpa only [hja] using ProgramCertificates.checkTreeUsing_sound ea ha
   · simpa only [hjb] using ProgramCertificates.checkTreeUsing_sound eb hb

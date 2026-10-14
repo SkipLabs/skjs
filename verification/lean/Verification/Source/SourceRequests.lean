@@ -258,7 +258,7 @@ This does not assert semantic preservation of the source compiler. -/
 theorem checkRequests_safe {rs : List (SourceRequest σ ι)} {b : (Bundle ι)}
     (h : checkRequests rs b = true) {r c} (hm : (r,c) ∈ rs.zip b.functions) (n W heap ρ)
     (he : EnvOk (RequestJson.graph r.toRequest) r.inputs ρ n W) (hw : WorldAdm W) (hh : HeapOk n W heap) :
-    SafeGraph r.program (meaning (RequestJson.graph r.toRequest) r.result) n W heap (.at r.start ρ) := by
+    SafeGraph (excOf (RequestJson.graph r.toRequest)) r.program (meaning (RequestJson.graph r.toRequest) r.result) n W heap (.at r.start ρ) := by
   obtain ⟨es, _, hunit⟩ := checkRequests_pair h hm
   exact verify_safe ((checkRequestResult_accepted_iff _ _ _).mp hunit).1 n W heap ρ he hw hh
 
@@ -268,7 +268,7 @@ theorem checkRequests_safe_at {rs : List (SourceRequest σ ι)} {b : (Bundle ι)
     (η : PositiveGraphs.MixedAssignment ι) (admitted : r.Admits η) (n W heap ρ)
     (he : EnvOk (reassign (RequestJson.graph r.toRequest) η) r.inputs ρ n W) (hw : WorldAdm W)
     (hh : HeapOk n W heap) :
-    SafeGraph r.program (meaning (reassign (RequestJson.graph r.toRequest) η) r.result) n W heap
+    SafeGraph (excOf (reassign (RequestJson.graph r.toRequest) η)) r.program (meaning (reassign (RequestJson.graph r.toRequest) η) r.result) n W heap
       (.at r.start ρ) := by
   obtain ⟨es, _, hunit⟩ := checkRequests_pair h hm
   have checked := ((checkRequestResult_accepted_iff _ _ _).mp hunit).1

@@ -37,15 +37,15 @@ budget, termination establishes both the value type and a fact about that heap.
 A throw, as in `Safe`, is an outcome with no postcondition: the facts `Q`
 describe the heap a value is produced in, and a thrown value is not one.
 Divergence remains permitted; this is safety with partial correctness. -/
-def SafePost (T : Fam) (Q : Post) : (n : Nat) → WorldT n → Heap → Tm → Prop
+def SafePost (Ξ : Fam) (T : Fam) (Q : Post) : (n : Nat) → WorldT n → Heap → Tm → Prop
   | 0, _, _, _ => True
   | n + 1, W, h, t =>
-      ((isVal t = true ∧ T (n + 1) W t ∧ Q h t) ∨ Thrown t) ∨
+      ((isVal t = true ∧ T (n + 1) W t ∧ Q h t) ∨ Thrown Ξ (n + 1) W t) ∨
       (∃ (U : WorldT n) (h' : Heap) (t' : Tm),
         WExt (trunc n (Nat.le_succ n) W) U ∧ WorldAdm U ∧ Step h t h' t' ∧
-          HeapOk n U h' ∧ SafePost T Q n U h' t')
+          HeapOk n U h' ∧ SafePost Ξ T Q n U h' t')
 
-theorem erase {T Q} : ∀ {n W h t}, SafePost T Q n W h t → Safe T n W h t := by
+theorem erase {T Q} : ∀ {n W h t}, SafePost Ξ T Q n W h t → Safe Ξ T n W h t := by
   intro n; induction n with
   | zero => intros; trivial
   | succ n ih =>
@@ -62,8 +62,8 @@ postconditions concern the shared heap, not either world's interpretation.
 Result compatibility alone cannot manufacture a postcondition. -/
 theorem cross_upto {B C D : Fam} {Q R : Post} : ∀ (n : Nat), CrossCompatUpTo n B C D →
     ∀ (W W' : WorldT n) (h : Heap) (t : Tm), HeapOk n W h → HeapOk n W' h →
-      SafePost B Q n W h t → SafePost C R n W' h t →
-        SafePost D (fun heap value => Q heap value ∧ R heap value) n W h t := by
+      SafePost Ξ B Q n W h t → SafePost Ξ C R n W' h t →
+        SafePost Ξ D (fun heap value => Q heap value ∧ R heap value) n W h t := by
   intro n
   induction n with
   | zero => intros; trivial
@@ -92,7 +92,7 @@ inductive Steps : Nat → Heap → Tm → Heap → Tm → Prop where
 /-- Adequacy of the postcondition for actual terminating executions. One level
 beyond the executed steps is needed to observe the final value. -/
 theorem postcondition {T Q k h t h' v} (run : Steps k h t h' v) (hv : isVal v = true) :
-    ∀ (W : WorldT (k+1)), SafePost T Q (k+1) W h t → Q h' v := by
+    ∀ (W : WorldT (k+1)), SafePost Ξ T Q (k+1) W h t → Q h' v := by
   induction run with
   | refl =>
     intro W hs
@@ -110,7 +110,7 @@ theorem postcondition {T Q k h t h' v} (run : Steps k h t h' v) (hv : isVal v = 
 
 /-- An ordinary arrow supplies no heap postcondition. Forgetting observations
 lets its existing safety theorem be used without strengthening its meaning. -/
-theorem forget {T} : ∀ {n W h t}, Safe T n W h t → SafePost T (fun _ _ => True) n W h t := by
+theorem forget {T} : ∀ {n W h t}, Safe Ξ T n W h t → SafePost Ξ T (fun _ _ => True) n W h t := by
   intro n; induction n with
   | zero => intros; trivial
   | succ n ih =>
@@ -123,7 +123,7 @@ theorem forget {T} : ∀ {n W h t}, Safe T n W h t → SafePost T (fun _ _ => Tr
 /-- Add a postcondition entailed by the final value's type. This preserves the
 same operational behavior and does not assume that the initial heap survives. -/
 theorem of_value_property {T Q} (hq : ∀ n W h v, T n W v → Q h v) :
-    ∀ {n W h t}, Safe T n W h t → SafePost T Q n W h t := by
+    ∀ {n W h t}, Safe Ξ T n W h t → SafePost Ξ T Q n W h t := by
   intro n; induction n with
   | zero => intros; trivial
   | succ n ih =>
@@ -136,39 +136,45 @@ theorem of_value_property {T Q} (hq : ∀ n W h v, T n W v → Q h v) :
 /-- Consequence at the budgets an execution can reach. This bounded form is
 what recursive call contracts need: their operands agree only below the
 caller's current approximation level. -/
-theorem consequence_below {T U : Fam} {Q R : Post} : ∀ {n},
+theorem consequence_below' {Ξ Ξ' T U : Fam} {Q R : Post} : ∀ {n},
+    (∀ j, j ≤ n → ∀ W v, Ξ j W v → Ξ' j W v) →
     (∀ j, j ≤ n → ∀ W v, T j W v → U j W v) →
     (∀ h v, Q h v → R h v) →
-    ∀ {W h t}, SafePost T Q n W h t → SafePost U R n W h t := by
+    ∀ {W h t}, SafePost Ξ T Q n W h t → SafePost Ξ' U R n W h t := by
   intro n
   induction n with
   | zero => intros; trivial
   | succ n ih =>
-    intro hsub hpost W h t hs
+    intro hexc hsub hpost W h t hs
     rcases hs with (⟨hv, ht, hq⟩ | hth) | ⟨U, h', t', hx, hu, step, hh, hs⟩
     · exact .inl (.inl ⟨hv, hsub _ (Nat.le_refl _) _ _ ht, hpost _ _ hq⟩)
-    · exact .inl (.inr hth)
+    · exact .inl (.inr (hth.mono (hexc _ (Nat.le_refl _) _)))
     · exact .inr ⟨U, h', t', hx, hu, step, hh,
-        ih (fun j hj => hsub j (by omega)) hpost hs⟩
+        ih (fun j hj => hexc j (by omega)) (fun j hj => hsub j (by omega)) hpost hs⟩
+
+theorem consequence_below {Ξ T U : Fam} {Q R : Post} {n}
+    (hsub : ∀ j, j ≤ n → ∀ W v, T j W v → U j W v)
+    (hpost : ∀ h v, Q h v → R h v) {W h t} (hs : SafePost Ξ T Q n W h t) : SafePost Ξ U R n W h t :=
+  consequence_below' (fun _ _ _ _ h => h) hsub hpost hs
 
 theorem consequence {T U : Fam} {Q R : Post}
     (hsub : ∀ n W v, T n W v → U n W v) (hr : ∀ h v, Q h v → R h v) :
-    ∀ {n W h t}, SafePost T Q n W h t → SafePost U R n W h t := by
+    ∀ {n W h t}, SafePost Ξ T Q n W h t → SafePost Ξ U R n W h t := by
   intro n W h t hs
   exact consequence_below (fun j _ => hsub j) hr hs
 
 theorem weaken {T Q R} (hr : ∀ h v, Q h v → R h v)
-    {n W h t} (hs : SafePost T Q n W h t) : SafePost T R n W h t :=
+    {n W h t} (hs : SafePost Ξ T Q n W h t) : SafePost Ξ T R n W h t :=
   consequence (fun _ _ _ ht => ht) hr hs
 
 theorem value {T Q n W h v} (hv : isVal v = true) (ht : T n W v) (hq : Q h v) :
-    SafePost T Q n W h v := by
+    SafePost Ξ T Q n W h v := by
   cases n with
   | zero => trivial
   | succ n => exact Or.inl (Or.inl ⟨hv,ht,hq⟩)
 
 theorem refine_value {T Q n W h v} (hv : isVal v = true) (hq : Q h v)
-    (hs : Safe T n W h v) : SafePost T Q n W h v := by
+    (hs : Safe Ξ T n W h v) : SafePost Ξ T Q n W h v := by
   cases n with
   | zero => trivial
   | succ n =>
@@ -180,8 +186,8 @@ theorem refine_value {T Q n W h v} (hv : isVal v = true) (hq : Q h v)
 /-- Enrich an existing one-step safety rule with its actual post-state, using
 operational determinism. This reuses storage preservation rather than reproving it. -/
 theorem one_step {T Q n W h t h' v} (ht : isVal t = false) (hv : isVal v = true)
-    (step : Step h t h' v) (hq : Q h' v) (hs : Safe T n W h t) :
-    SafePost T Q n W h t := by
+    (step : Step h t h' v) (hq : Q h' v) (hs : Safe Ξ T n W h t) :
+    SafePost Ξ T Q n W h t := by
   cases n with
   | zero => trivial
   | succ n =>
@@ -196,10 +202,10 @@ not facts about the initial heap. Works for every existing evaluation context. -
 theorem bind {A B : Fam} {Q R : Post} (C : Tm → Tm)
     (lift : ∀ {h t h' t'}, Step h t h' t' → Step h (C t) h' (C t'))
     (raise : ∀ {t v}, Raises t v → Raises (C t) v) :
-    ∀ n W h t, WorldAdm W → HeapOk n W h → SafePost A Q n W h t →
+    ∀ n W h t, WorldAdm W → HeapOk n W h → SafePost Ξ A Q n W h t →
     (∀ j (hj : j ≤ n) U, WExt (trunc j hj W) U → WorldAdm U →
       ∀ h' v, HeapOk j U h' → isVal v = true → A j U v → Q h' v →
-        SafePost B R j U h' (C v)) → SafePost B R n W h (C t) := by
+        SafePost Ξ B R j U h' (C v)) → SafePost Ξ B R n W h (C t) := by
   intro n; induction n with
   | zero => intros; trivial
   | succ p ih =>
@@ -216,8 +222,8 @@ theorem bind {A B : Fam} {Q R : Post} (C : Tm → Tm)
 
 theorem bind_value {T Q n} {W : WorldT (n+1)} {h b a}
     (hv : isVal a = true) (hw : WorldAdm W) (hh : HeapOk (n+1) W h)
-    (hs : SafePost T Q n (trunc n (Nat.le_succ n) W) h (subst 0 a b)) :
-    SafePost T Q (n+1) W h (.letE a b) :=
+    (hs : SafePost Ξ T Q n (trunc n (Nat.le_succ n) W) h (subst 0 a b)) :
+    SafePost Ξ T Q (n+1) W h (.letE a b) :=
   Or.inr ⟨_,h,_,WExt_refl _,WorldAdm_trunc _ hw,.letV hv,HeapOk_trunc n W h hh,hs⟩
 
 /-- Observations supply read precision without narrowing the location's world
@@ -225,7 +231,7 @@ contract. Reading preserves the whole heap, so all current observations remain. 
 theorem read_observed {n W h l v} {c : CallCode} {flds : List (PropKey × Nat)} {f : PropKey}
     (hw : WorldAdm W) (hh : HeapOk n W h) (hf : flds.lookup f = some l)
     (hv : isVal v = true) (ho : Observes h l v) :
-    SafePost (exact v) (fun h' u => h' = h ∧ u = v) n W h (.readAt f (.objAt flds c oid)) := by
+    SafePost Ξ (exact v) (fun h' u => h' = h ∧ u = v) n W h (.readAt f (.objAt flds c oid)) := by
   cases n with
   | zero => trivial
   | succ p =>
@@ -236,7 +242,7 @@ theorem read_observed {n W h l v} {c : CallCode} {flds : List (PropKey × Nat)} 
 theorem read_contents {n W h l P} {c : CallCode} {flds : List (PropKey × Nat)} {f : PropKey}
     (hw : WorldAdm W) (hh : HeapOk n W h) (hf : flds.lookup f = some l)
     (hval : ∀ v, P v → isVal v = true) (ho : Contents h l P) :
-    SafePost (fun _ _ v => P v) (fun h' u => h' = h ∧ Observes h' l u) n W h
+    SafePost Ξ (fun _ _ v => P v) (fun h' u => h' = h ∧ Observes h' l u) n W h
       (.readAt f (.objAt flds c oid)) := by
   obtain ⟨v,hread,hp⟩ := ho
   apply consequence _ _ (read_observed hw hh hf (hval v hp) hread)
@@ -251,7 +257,7 @@ theorem write_observed {A : Fam} (ha : Adm A) {n W h l v}
     (hw : WorldAdm W) (hh : HeapOk n W h)
     (hr : recT [(f, A)] n W (.objAt flds .absent oid)) (hf : flds.lookup f = some l)
     (hv : isVal v = true) (ht : A n W v) :
-    SafePost nulT (fun h' u => h' = h.set l v ∧ u = .nul) n W h
+    SafePost Ξ nulT (fun h' u => h' = h.set l v ∧ u = .nul) n W h
       (.writeAt f (.objAt flds .absent oid) v) := by
   obtain ⟨flds',l',c,oid',he,hf',hl,hc⟩ := recT_single.mp hr
   cases he
@@ -264,7 +270,7 @@ theorem write_observed {A : Fam} (ha : Adm A) {n W h l v}
 
 theorem alloc_observed {A : Fam} (ha : Adm A) {n W h v}
     (hw : WorldAdm W) (hh : HeapOk n W h) (hv : isVal v = true) (ht : A n W v) :
-    SafePost (refT A) (fun h' u => h' = h ++ [v] ++ [.nul] ∧ u = .obj h.length .absent) n W h (.alloc v) :=
+    SafePost Ξ (refT A) (fun h' u => h' = h ++ [v] ++ [.nul] ∧ u = .obj h.length .absent) n W h (.alloc v) :=
   one_step rfl rfl (.makeV hv) ⟨rfl,rfl⟩ (alloc_rule ha n W h v hv hw hh ht)
 
 /-- A same-location alias shares the observation; variable names do not matter. -/
@@ -298,7 +304,7 @@ uses to type the next read exactly. No original-content premise is needed. -/
 theorem write_then_read {A : Fam} (ha : Adm A) {n W h l v}
     (hw : WorldAdm W) (hh : HeapOk n W h) (hr : refT A n W (.obj l .absent))
     (hv : isVal v = true) (ht : A n W v) :
-    SafePost (exact v) (fun h' u => Observes h' l v ∧ u = v) n W h
+    SafePost Ξ (exact v) (fun h' u => Observes h' l v ∧ u = v) n W h
       (.letE (.write (.obj l .absent) v) (.read (.obj l .absent))) := by
   have hlt : l < h.length := by
     obtain ⟨flds,l',c,oid,he,hf,hl,_⟩ := refT_iff.mp hr
@@ -315,7 +321,7 @@ theorem write_then_read {A : Fam} (ha : Adm A) {n W h l v}
   | zero => trivial
   | succ p =>
     apply bind_value hval hu hh'
-    change SafePost _ _ p _ h' (.read (.obj l .absent))
+    change SafePost Ξ _ _ p _ h' (.read (.obj l .absent))
     apply weaken _ (read_observed (WorldAdm_trunc _ hu) (HeapOk_trunc p U h' hh') (lookup_value l) hv ho)
     intro h'' result hp
     exact ⟨by rw [hp.1]; exact ho,hp.2⟩

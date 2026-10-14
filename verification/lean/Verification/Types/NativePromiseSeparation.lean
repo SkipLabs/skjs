@@ -62,7 +62,7 @@ def viewKeys (vs : List (PropKey × List ι)) : List PropKey := vs.map (·.1)
 /-- A member is found at the witness's own location for its key, or one
 prototype up; both locations hold the empty contract. -/
 theorem witness_member (keys : List PropKey) (proto : CallArguments.protoField ∈ keys)
-    (m : Member) : memberT m 1 witnessWorld (witness keys) := by
+    (m : Member) : memberT Ξ m 1 witnessWorld (witness keys) := by
   cases hk : (fields keys).lookup m.key with
   | none =>
     refine ⟨1, fields keys, 1, rfl, hk, ?_⟩
@@ -77,7 +77,7 @@ theorem witness_clause (G : NormalGraph ι) (η : MixedAssignment ι)
     (vs : List (PropKey × List ι)) (ms : List (Sig (List ι))) (ks : List KeyBound)
     (proto : CallArguments.protoField ∈ viewKeys vs)
     (admitted : ∀ K ∈ ks, ∀ p ∈ vs, K.admits p.1 = true) :
-    semWithArgs (mixedValues G η) (mixedArgs G η)
+    semWithArgs Ξ (mixedValues G η) (mixedArgs G η)
       (.refs [] [] vs [] ms ks) 1 witnessWorld (witness (viewKeys vs)) := by
   refine ⟨⟨⟨fields (viewKeys vs), 1, rfl, ?_⟩, ?_⟩, ?_, ?_, ?_, ?_⟩
   · simp [famsOf]
@@ -131,7 +131,7 @@ instance [DecidableEq ι] (keys : List PropKey) (c : Clause (List ι)) :
 theorem reject_clause (G : NormalGraph ι) (η : MixedAssignment ι)
     (keys : List PropKey) (proto : CallArguments.protoField ∈ keys)
     (c : Clause (List ι)) (hc : RejectClause keys c) :
-    ¬ semWithArgs (mixedValues G η) (mixedArgs G η) c 1 witnessWorld (witness keys) := by
+    ¬ semWithArgs Ξ (mixedValues G η) (mixedArgs G η) c 1 witnessWorld (witness keys) := by
   intro hv
   rcases hc with shape | field
   · have ht : c ≠ .top := by intro h; subst c; exact shape.2 rfl

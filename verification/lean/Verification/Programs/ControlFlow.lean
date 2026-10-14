@@ -72,12 +72,12 @@ inductive Transition (P : Program) : Heap → State → Heap → State → Prop 
 
 /-- The graph machine is safe: it returns a value of the result type, ends by
 a throw of a closed value, or takes a transition. -/
-def SafeGraph (P : Program) (T : Fam) : (n : Nat) → WorldT n → Heap → State → Prop
+def SafeGraph (Ξ : Fam) (P : Program) (T : Fam) : (n : Nat) → WorldT n → Heap → State → Prop
   | 0, _, _, _ => True
   | n+1, W, h, s =>
-    ((∃ v, s = .done v ∧ isVal v = true ∧ T (n+1) W v) ∨ (∃ v, s = .raised v ∧ Scoped 0 v)) ∨
+    ((∃ v, s = .done v ∧ isVal v = true ∧ T (n+1) W v) ∨ (∃ v, s = .raised v ∧ Scoped 0 v ∧ Ξ (n+1) W v)) ∨
     ∃ U : WorldT n, ∃ h' s', WExt (trunc n (Nat.le_succ n) W) U ∧
-      WorldAdm U ∧ Transition P h s h' s' ∧ HeapOk n U h' ∧ SafeGraph P T n U h' s'
+      WorldAdm U ∧ Transition P h s h' s' ∧ HeapOk n U h' ∧ SafeGraph Ξ P T n U h' s'
 
 /-- Target existence is checked against both the actual graph and its claims. -/
 @[nospecialize] def checkTargetResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (P : Program) (C : Certificate ι)
@@ -183,12 +183,13 @@ def admitsAll (G : NormalGraph ι) (T : Ty ι) : Bool :=
   (expand G T).any fun c => match c with | .top | .source => true | _ => false
 
 theorem admitsAll_sound {G : NormalGraph ι} {T : Ty ι} (h : admitsAll G T = true)
-    {n W v} (hv : isSourceVal v = true) (hs : Scoped 0 v) : meaning G T n W v := by
+    {n W v} (hx : excOf G n W v) : meaning G T n W v := by
+  obtain ⟨⟨hv, hs⟩, hinv⟩ := hx
   obtain ⟨c, hc, ht⟩ := List.any_eq_true.mp h
   apply (expand_sem G T (plain_of_mem_expand hc) n W v).mpr
   cases c <;> simp only [Bool.false_eq_true] at ht
   · exact ⟨.top, hc, ⟨sourceVal_isVal hv, hs⟩, realmInvariant_of_not_record rfl n W v⟩
-  · exact ⟨.source, hc, ⟨hv, hs⟩, realmInvariant_of_not_record rfl n W v⟩
+  · exact ⟨.source, hc, ⟨hv, hs⟩, hinv⟩
 
 /-- The facts that hold wherever a node's expression throws: only what its
 entry knowledge says without the heap (immutable values, alias and distinct
@@ -375,7 +376,7 @@ theorem branch_target_sound [DecidableEq ι] {G : NormalGraph ι} {images : Inst
 
 def ExpressionOk [DecidableEq ι] (G : NormalGraph ι) (c : NodeEvidence ι) (t : Tm) : Prop :=
   ∀ n W h ρ, EnvOk G (entry c) ρ n W → HeapKnowledge.Holds c.knowledge ρ h →
-    WorldAdm W → HeapOk n W h → HeapObservations.SafePost (meaning G (result c))
+    WorldAdm W → HeapOk n W h → HeapObservations.SafePost (excOf G) (meaning G (result c))
       (fun h' v => HeapKnowledge.Holds c.output (push v ρ) h') n W h (instantiate 0 ρ t)
 
 theorem handler_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {P C node c}
@@ -437,10 +438,10 @@ def StateOk [DecidableEq ι] (G : NormalGraph ι) (Rty : Ty ι) (C : Certificate
     (n : Nat) (W : WorldT n) (h : Heap) : State → Prop
   | .at l ρ => ∃ c, C[l]? = some c ∧ EnvOk G (entry c) ρ n W ∧ HeapKnowledge.Holds c.knowledge ρ h
   | .eval t ρ k x => ∃ Γ A out, EnvOk G Γ ρ n W ∧
-      HeapObservations.SafePost (meaning G A) (fun h' v => HeapKnowledge.Holds out (push v ρ) h') n W h t ∧
+      HeapObservations.SafePost (excOf G) (meaning G A) (fun h' v => HeapKnowledge.Holds out (push v ρ) h') n W h t ∧
       ContinuationOk G Rty C Γ A out k ∧ HandlerOk G C Γ ρ x
   | .done v => isVal v = true ∧ meaning G Rty n W v
-  | .raised v => Scoped 0 v
+  | .raised v => Scoped 0 v ∧ excOf G n W v
 
 theorem target_state [DecidableEq ι] {G : NormalGraph ι} {Rty C Γ l ρ n W h facts}
     (ht : TargetOk G C Γ l facts) (he : EnvOk G Γ ρ n W) (hf : HeapKnowledge.Holds facts ρ h) : StateOk G Rty C n W h (.at l.label (mapEnv l.mapping ρ)) := by
@@ -466,7 +467,7 @@ theorem state_progress [DecidableEq ι] {G : NormalGraph ι} {images : InstanceI
     {n W h s} (hw : WorldAdm W) (hh : HeapOk (n+1) W h)
     (hs : StateOk G Rty C (n+1) W h s) :
     ((∃ v, s = .done v ∧ isVal v = true ∧ meaning G Rty (n+1) W v) ∨
-      (∃ v, s = .raised v ∧ Scoped 0 v)) ∨
+      (∃ v, s = .raised v ∧ Scoped 0 v ∧ excOf G (n+1) W v)) ∨
     ∃ U : WorldT n, ∃ h' s', WExt (trunc n (Nat.le_succ n) W) U ∧
       WorldAdm U ∧ Transition P h s h' s' ∧ HeapOk n U h' ∧ StateOk G Rty C n U h' s' := by
   have hw' := WorldAdm_trunc (Nat.le_succ n) hw
@@ -526,12 +527,12 @@ theorem state_progress [DecidableEq ι] {G : NormalGraph ι} {images : InstanceI
       cases x with
       | none =>
         exact Or.inr ⟨U, h, .raised v, WExt_refl _, hw', .raise hr, hh',
-          hsc⟩
+          ⟨hsc.1, (realmExc_adm G _).down n W v hsc.2⟩⟩
       | some l =>
         obtain ⟨T, facts, hT, htarget, hfacts⟩ := hx
         exact Or.inr ⟨U, h, _, WExt_refl _, hw', .handle hr, hh',
           (target_state htarget
-            (he'.push (admitsAll_sound hT (raises_sourceVal hr) hsc)) (hfacts v h))⟩
+            (he'.push (admitsAll_sound hT ((realmExc_adm G _).down n W v hsc.2))) (hfacts v h))⟩
     · exact Or.inr ⟨V, h', .eval t' ρ k x, hx', hu, .expr step, hok,
         ⟨Γ,A,out,he.transfer n (Nat.le_succ n) V hx',hsafe,hk,hx⟩⟩
 
@@ -542,7 +543,7 @@ theorem state_safe [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImage
     {codes : CodeEntry ι → Bool} (hg : checkGraphUsing (checker := checker) G images Rty P C codes = true)
     (hcodes : CodesSound G codes) :
     ∀ n W h s, WorldAdm W → HeapOk n W h → StateOk G Rty C n W h s →
-      SafeGraph P (meaning G Rty) n W h s := by
+      SafeGraph (excOf G) P (meaning G Rty) n W h s := by
   intro n
   induction n with
   | zero => intros; trivial
@@ -558,7 +559,7 @@ theorem accepted_entry_safe [DecidableEq ι] {G : NormalGraph ι} {images : Inst
     {codes : CodeEntry ι → Bool} (hg : checkGraphUsing (checker := checker) G images Rty P C codes = true)
     (hcodes : CodesSound G codes) (hc : C[l]? = some c)
     (n W h ρ) (he : EnvOk G (entry c) ρ n W) (hf : HeapKnowledge.Holds c.knowledge ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
-    SafeGraph P (meaning G Rty) n W h (.at l ρ) :=
+    SafeGraph (excOf G) P (meaning G Rty) n W h (.at l ρ) :=
   state_safe hg hcodes n W h _ hw hh ⟨c,hc,he,hf⟩
 
 /-- The external input contract is independent of the supplied point claims. -/
@@ -595,7 +596,7 @@ theorem accepted_inputs_safe [DecidableEq ι] {G : NormalGraph ι} {images : Ins
     {codes : CodeEntry ι → Bool} (hc : checkEntryUsing (checker := checker) G images Rty P C start inputs codes = true) (n W h ρ)
     (he : EnvOk G inputs ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h)
     (hcodes : CodesSound G codes := by exact Verification.ProgramCertificates.codesSound_none _) :
-    SafeGraph P (meaning G Rty) n W h (.at start ρ) := by
+    SafeGraph (excOf G) P (meaning G Rty) n W h (.at start ρ) := by
   simp only [checkEntryUsing_eq, Bool.and_eq_true] at hc
   have hg := hc.1
   have hx := hc.2
@@ -625,7 +626,7 @@ abbrev checkClosed [DecidableEq ι] (G : NormalGraph ι) := @checkClosedUsing _ 
 
 theorem accepted_closed_safe [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {Rty P C start}
     (hc : checkClosedUsing G images Rty P C start = true) (n : Nat) :
-    SafeGraph P (meaning G Rty) n (ofList []) [] (.at start (fun _ => .nul)) := by
+    SafeGraph (excOf G) P (meaning G Rty) n (ofList []) [] (.at start (fun _ => .nul)) := by
   exact accepted_inputs_safe hc n _ [] _ ⟨fun _ => trivial, by simp⟩ WorldAdm_nil (emptyHeapOk n)
 
 theorem Transition.det {P h s h₁ s₁ h₂ s₂}
@@ -728,8 +729,8 @@ theorem Transition.det {P h s h₁ s₁ h₂ s₂}
 
 /-- Safety follows the actual operational successor, not just a chosen run. -/
 theorem SafeGraph.successor {P T n W h s h' s'}
-    (hs : SafeGraph P T (n+1) W h s) (step : Transition P h s h' s') :
-    ∃ U : WorldT n, WorldAdm U ∧ HeapOk n U h' ∧ SafeGraph P T n U h' s' := by
+    (hs : SafeGraph Ξ P T (n+1) W h s) (step : Transition P h s h' s') :
+    ∃ U : WorldT n, WorldAdm U ∧ HeapOk n U h' ∧ SafeGraph Ξ P T n U h' s' := by
   rcases hs with (⟨v,rfl,_⟩ | ⟨v,rfl,_⟩) | ⟨U,h'',s'',hx,hu,st,hh,ht⟩
   · cases step
   · cases step
@@ -744,9 +745,9 @@ inductive Execution (P : Program) : Nat → Heap → State → Heap → State �
 theorem execution_safe {P T k h s h' s'} (run : Execution P k h s h' s')
     (remaining : Nat) (W : WorldT ((remaining+1) + k))
     (hw : WorldAdm W) (hh : HeapOk ((remaining+1) + k) W h)
-    (hs : SafeGraph P T ((remaining+1) + k) W h s) :
+    (hs : SafeGraph Ξ P T ((remaining+1) + k) W h s) :
     ∃ U : WorldT (remaining+1), WorldAdm U ∧ HeapOk (remaining+1) U h' ∧
-      SafeGraph P T (remaining+1) U h' s' := by
+      SafeGraph Ξ P T (remaining+1) U h' s' := by
   induction run with
   | refl => exact ⟨W,hw,hh,hs⟩
   | next st run ih =>
@@ -761,13 +762,13 @@ theorem accepted_no_stuck [DecidableEq ι] {G : NormalGraph ι} {images : Instan
     (hc : checkClosedUsing G images Rty P C start = true)
     (run : Execution P k [] (.at start (fun _ => .nul)) h s) :
     (∃ U : WorldT 1, ∃ v, s = .done v ∧ isVal v = true ∧ meaning G Rty 1 U v) ∨
-    (∃ v, s = .raised v ∧ Scoped 0 v) ∨
+    (∃ U : WorldT 1, ∃ v, s = .raised v ∧ Scoped 0 v ∧ excOf G 1 U v) ∨
     (∃ h' s', Transition P h s h' s') := by
   obtain ⟨U,hu,hh,hs⟩ := execution_safe run 0 (ofList []) WorldAdm_nil (emptyHeapOk (1+k))
     (accepted_closed_safe hc (1+k))
   rcases hs with (⟨v,hv,hval,ht⟩ | hr) | ⟨V,h',s',hx,hv,step,hh,hs⟩
   · exact Or.inl ⟨U,v,hv,hval,ht⟩
-  · exact Or.inr (Or.inl hr)
+  · exact Or.inr (Or.inl ⟨U, hr⟩)
   · exact Or.inr (Or.inr ⟨h',s',step⟩)
 
 /-- Returned values satisfy the declared result at every positive remaining

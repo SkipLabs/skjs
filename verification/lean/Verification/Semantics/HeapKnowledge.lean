@@ -259,7 +259,7 @@ theorem observeAtom_holds {tag : Tag} {q : Bool} {a : Atom} {v : Tm}
   simp only [Bool.false_or, Bool.false_eq_true, ↓reduceIte]
   split
   · rename_i hbad
-    have hanswer := tagClause_sound (S := fun (_ : Ty Nat) => nulT) (P := fun _ _ _ _ => False)
+    have hanswer := tagClause_sound (Ξ := topF) (S := fun (_ : Ty Nat) => nulT) (P := fun _ _ _ _ => False)
       (n := 0) (W := ofList []) (beq_iff_eq.mp hbad) ((Atom.sem hd hn hb).mpr hv)
     rw [hq] at hanswer
     cases q <;> contradiction
@@ -343,7 +343,7 @@ def atoms (G : NormalGraph ι) (A : Ty ι) : Option (List Atom) :=
   if G.plainTy A then primitive (expand G A) else none
 
 theorem primitive_sem {G : NormalGraph ι} {cs R} (hc : primitive cs = some R) (n W v) :
-    semList (meaning G) (argMeaning G) cs n W v ↔ ∃ a ∈ R, a.holds v := by
+    semList (excOf G) (meaning G) (argMeaning G) cs n W v ↔ ∃ a ∈ R, a.holds v := by
   induction cs generalizing R with
   | nil => simp [primitive] at hc; subst R; simp [semList,setSem]
   | cons c cs ih =>

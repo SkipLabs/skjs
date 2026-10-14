@@ -85,7 +85,7 @@ theorem field_value {G : NormalGraph ι} {c : Clause (Ty ι)} {f : PropKey} {K :
     (hK : match c with
       | .refs a _ vs _ _ _ => (f, K) ∈ a ++ vs
       | _ => False)
-    (hv : semWithArgs (meaning G) (argMeaning G) c (n+1) W v) (hh : HeapOk (n+1) W h)
+    (hv : semWithArgs (excOf G) (meaning G) (argMeaning G) c (n+1) W v) (hh : HeapOk (n+1) W h)
     (hl : v = .objAt flds code oid) (hf : flds.lookup f = some l) (hu : h[l]? = some u) :
     meaning G K n (trunc n (Nat.le_succ n) W) u := by
   cases c with
@@ -214,8 +214,8 @@ def KeyFound (k : PropKey) (v : Tm) : Prop :=
     (flds.lookup CallArguments.protoField).isSome = true
 
 theorem promote_sound {X : α → Fam} {P : α → ArgFam} {k : PropKey} {c : Clause α} {n W v}
-    (hc : semWithArgs X P c n W v) (hk : KeyFound k v) :
-    semWithArgs X P (promote k c) n W v := by
+    (hc : semWithArgs Ξ X P c n W v) (hk : KeyFound k v) :
+    semWithArgs Ξ X P (promote k c) n W v := by
   cases c with
   | refs a bs vs os ms ks =>
     simp only [promote]
@@ -297,7 +297,7 @@ def weaker [DecidableEq α] : Clause α → Clause α → Bool
   | _, _ => false
 
 theorem weaker_sound [DecidableEq α] {X : α → Fam} {P : α → ArgFam} {d c : Clause α} {n W v}
-    (hw : weaker d c = true) (hc : semWithArgs X P c n W v) : semWithArgs X P d n W v := by
+    (hw : weaker d c = true) (hc : semWithArgs Ξ X P c n W v) : semWithArgs Ξ X P d n W v := by
   cases d with
   | refs a bs vs os ms ks =>
     cases c with
@@ -417,7 +417,7 @@ def familyMember (cs : List (Clause α)) : Tag → Bool → Bool
 none of them a record's. -/
 theorem familyMember_sound {X : α → Fam} {P : α → ArgFam} {cs : List (Clause α)} {t : Tag} {q : Bool}
     (hm : familyMember cs t q = true) {n W v} (hv : isVal v = true) (hs : Scoped 0 v)
-    (ht : tagHolds t v = q) : ∃ c ∈ cs, semWithArgs X P c n W v ∧ c.record = false := by
+    (ht : tagHolds t v = q) : ∃ c ∈ cs, semWithArgs Ξ X P c n W v ∧ c.record = false := by
   cases t <;> cases q <;> simp only [familyMember, Bool.false_eq_true] at hm
   case numEq.true b =>
     simp only [Bool.and_eq_true, bne_iff_ne, ne_eq] at hm

@@ -89,7 +89,7 @@ theorem sim_step {E K ts s h h' s'} (hs : Sim E K ts s)
 
 /-- **The term running graph code is as safe as the graph.** -/
 theorem safe_of_sim {E K T} : ∀ (n : Nat) (W : WorldT n) (h : Heap) {ts s},
-    Sim E K ts s → SafeGraph (program E K) T n W h s → Safe T n W h ts := by
+    Sim E K ts s → SafeGraph Ξ (program E K) T n W h s → Safe Ξ T n W h ts := by
   intro n
   induction n with
   | zero => intros; trivial
@@ -109,7 +109,7 @@ theorem goto_safe {G : NormalGraph ι} [DecidableEq ι] {images : InstanceImageC
     (hcodes : ProgramCertificates.CodesSound G codes)
     (n W h L d) (he : EnvOk G inputs (envOf L d) n W) (hw : WorldAdm W)
     (hh : HeapOk n W h) :
-    Safe (meaning G Rty) n W h (.goto E K start L d) :=
+    Safe (excOf G) (meaning G Rty) n W h (.goto E K start L d) :=
   safe_of_sim n W h .goto (accepted_inputs_safe hc n W h (envOf L d) he hw hh hcodes)
 
 /-- A normal-return postcondition up to the current budget, independent of the
@@ -118,7 +118,7 @@ def ReturnsPost (Q : HeapObservations.Post) (n : Nat) (h : Heap) (t : Tm) : Prop
   ∀ k h' v, k < n → HeapObservations.Steps k h t h' v → isVal v = true → Q h' v
 
 theorem returnsPost_of_safePost {T Q} : ∀ {n W h t},
-    HeapObservations.SafePost T Q n W h t → ReturnsPost Q n h t := by
+    HeapObservations.SafePost Ξ T Q n W h t → ReturnsPost Q n h t := by
   intro n
   induction n with
   | zero => intro W h t hs k h' v hk; omega
@@ -150,7 +150,7 @@ point context and knowledge that ordinary graph checking established. -/
 def NodePreserves [DecidableEq ι] (G : NormalGraph ι) (c : NodeEvidence ι) (t : Tm) : Prop :=
   ∀ n W h ρ, EnvOk G (entry c) ρ n W → HeapKnowledge.Holds c.knowledge ρ h →
     WorldAdm W → HeapOk n W h →
-    HeapObservations.SafePost (meaning G (result c))
+    HeapObservations.SafePost (excOf G) (meaning G (result c))
       (CallEffects.Effect.preservesInputHeap.post h) n W h (instantiate 0 ρ t)
 
 /-- While a call is running its entry heap need not be preserved yet. Only the
@@ -192,7 +192,7 @@ theorem preserving_safe_of_sim [DecidableEq ι] {G : NormalGraph ι} {images : I
       node.handler = none ∧ NodePreserves G c node.expression) :
     ∀ n W h ts s initial, Sim E K ts s → WorldAdm W → HeapOk n W h →
       StateOk G Rty C n W h s → PreservingState initial n h s →
-      HeapObservations.SafePost (meaning G Rty)
+      HeapObservations.SafePost (excOf G) (meaning G Rty)
         (CallEffects.Effect.preservesInputHeap.post initial) n W h ts := by
   intro n
   induction n with
@@ -218,7 +218,7 @@ theorem goto_preserving [DecidableEq ι] {G : NormalGraph ι} {images : Instance
       node.handler = none ∧ NodePreserves G c node.expression)
     (n W h L d) (he : EnvOk G inputs (envOf L d) n W) (hw : WorldAdm W)
     (hh : HeapOk n W h) :
-    HeapObservations.SafePost (meaning G Rty)
+    HeapObservations.SafePost (excOf G) (meaning G Rty)
       (CallEffects.Effect.preservesInputHeap.post h) n W h (.goto E K start L d) := by
   simp only [checkEntryUsing_eq, Bool.and_eq_true] at hc
   have hx := hc.2

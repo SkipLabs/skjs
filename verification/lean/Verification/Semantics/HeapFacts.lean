@@ -42,7 +42,7 @@ def Atom.clause (a : Atom) : PositiveNormalization.Clause α :=
 
 /-- A primitive atom is exactly its clause. -/
 theorem Atom.sem {a : Atom} {S : α → Fam} {P : α → ArgFam} {n W v} (hd : a ≠ .defined) (hn : a ≠ .nonNull) (hb : a ≠ .nonNullish) :
-    PositiveNormalization.semWithArgs S P a.clause n W v ↔ a.holds v := by
+    PositiveNormalization.semWithArgs Ξ S P a.clause n W v ↔ a.holds v := by
   cases a <;> first | rfl | exact absurd rfl hd | exact absurd rfl hn | exact absurd rfl hb
 
 /-- The nullish tests a predicate guarantees false. -/
@@ -173,7 +173,7 @@ theorem shift_holds {facts ρ h v} (hf : Holds facts ρ h) :
 theorem ReadGave.observed {flds field h v c oid n W}
     (hr : ReadGave flds field h v) (hv : isVal v = true)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
-    SafePost (exact v) (fun h' u => h' = h ∧ u = v) n W h
+    SafePost Ξ (exact v) (fun h' u => h' = h ∧ u = v) n W h
       (.readAt field (.objAt flds c oid)) := by
   cases n with
   | zero => trivial
@@ -186,7 +186,7 @@ theorem ReadGave.observed {flds field h v c oid n W}
 theorem read {facts ρ h i fld R n W}
     (hf : Holds facts ρ h) (hm : Fact.mk i R fld ∈ facts)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
-    SafePost (fun _ _ v => ∃ a ∈ R, a.holds v)
+    SafePost Ξ (fun _ _ v => ∃ a ∈ R, a.holds v)
       (fun h' _ => Holds facts ρ h') n W h (.readAt fld (ρ i)) := by
   obtain ⟨flds,c,oid,v,hl,hr,a,ha,hav⟩ := hf _ hm
   rw [hl]
@@ -199,7 +199,7 @@ Only the fact about the written location is established. -/
 theorem write {A : Fam} (ha : Adm A) {ρ h i a v n W}
     (hw : WorldAdm W) (hh : HeapOk n W h) (hr : refT A n W (ρ i))
     (hv : a.holds v) (ht : A n W v) :
-    SafePost nulT (fun h' _ => Holds [⟨i,[a],valueField⟩] ρ h') n W h
+    SafePost Ξ nulT (fun h' _ => Holds [⟨i,[a],valueField⟩] ρ h') n W h
       (.write (ρ i) v) := by
   obtain ⟨flds,l,c,oid,he,hfd,hl,hc⟩ := refT_iff.mp hr
   have hrec : recT [(valueField, A)] n W (.objAt flds .absent oid) :=
@@ -220,7 +220,7 @@ result slot. This relies on actual heap extension, not on non-aliasing names. -/
 theorem alloc {A : Fam} (ha : Adm A) {facts ρ h a v n W}
     (hf : Holds facts ρ h) (hw : WorldAdm W) (hh : HeapOk n W h)
     (hv : a.holds v) (ht : A n W v) :
-    SafePost (refT A)
+    SafePost Ξ (refT A)
       (fun h' v => Holds (⟨0,[a],valueField⟩ :: shift facts) (push v ρ) h') n W h
       (.alloc v) := by
   apply weaken _ (alloc_observed ha hw hh (Atom.isValue hv) ht)

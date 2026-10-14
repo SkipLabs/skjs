@@ -532,11 +532,18 @@ def realmInvariant (G : NormalGraph ι) (X : List ι → Fam) (c : Clause (List 
   | some r => if c.record then arrayInvariant (X r.proto) r.keys else fun _ _ _ => True
   | none => fun _ _ _ => True
 
+/-- **The graph's exception family**: the values of the realm's `unknown`,
+JavaScript values meeting what the realm asks of a `source` clause, its
+prototype type read by `A`. A throw in the graph's code, and in every
+function a type of the graph promises, is one of them (`Safe`'s `Thrown`). -/
+def realmExc (G : NormalGraph ι) (A : List ι → Fam) : Fam :=
+  fun n W v => sourceT n W v ∧ realmInvariant G A .source n W v
+
 /-- **A clause, read in a row**: its members that meet the realm's invariant.
 The operands are read by `X` and `P`; the realm's prototype type by `A`, at one
 fixed assignment (`ParameterInterpretation.realmAt`). -/
 def rowSem (G : NormalGraph ι) (A X : List ι → Fam) (P : List ι → ArgFam) (c : Clause (List ι)) : Fam :=
-  fun n W v => semWithArgs X P c n W v ∧ realmInvariant G A c n W v
+  fun n W v => semWithArgs (realmExc G A) X P c n W v ∧ realmInvariant G A c n W v
 
 theorem arrayInvariant_adm (P : Fam) (N : List PropKey) : Adm (arrayInvariant P N) := by
   constructor
@@ -583,11 +590,22 @@ theorem realmInvariant_congr (G : NormalGraph ι) (X Y : List ι → Fam) (n : N
     · exact Iff.rfl
     · exact arrayInvariant_congr _ (h _) W v
 
+theorem realmExc_adm (G : NormalGraph ι) (A : List ι → Fam) : Adm (realmExc G A) :=
+  interT_adm _ _ ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩ (realmInvariant_adm G A .source)
+
+/-- The exception family reads its prototype type below the level. -/
+theorem realmExc_congr (G : NormalGraph ι) (A B : List ι → Fam) (n : Nat)
+    (h : ∀ a, Agree (A a) (B a) n) : Agree (realmExc G A) (realmExc G B) n :=
+  fun m hm W v => and_congr Iff.rfl
+    (realmInvariant_congr G A B m (fun a k hk W' u => h a k (by omega) W' u) .source W v)
+
 /-- Without a realm, a row asks nothing of its prototype type. -/
 theorem rowSem_none {G : NormalGraph ι} (hR : G.realm = none) (A X : List ι → Fam)
     (P : List ι → ArgFam) : rowSem G A X P = rowSem G (fun _ _ _ _ => True) X P := by
+  have he : realmExc G A = realmExc G (fun _ _ _ _ => True) := by
+    funext n W v; simp only [realmExc, realmInvariant, hR]
   funext c n W v
-  simp only [rowSem, realmInvariant, hR]
+  simp only [rowSem, realmInvariant, hR, he]
 
 theorem rowSem_adm (G : NormalGraph ι) (A X : List ι → Fam) (P : List ι → ArgFam)
     (c : Clause (List ι)) : Adm (rowSem G A X P c) :=
@@ -597,7 +615,8 @@ theorem rowSem_congr (G : NormalGraph ι) (A B X Y : List ι → Fam) (P Q : Lis
     (hA : ∀ a, Agree (A a) (B a) n)
     (h : ∀ a, Agree (X a) (Y a) n) (hP : ∀ a, Agree (P a) (Q a) n) (c : Clause (List ι))
     (W : WorldT n) (v : Val) : rowSem G A X P c n W v ↔ rowSem G B Y Q c n W v :=
-  and_congr (semWithArgs_congr X Y P Q n h hP c W v) (realmInvariant_congr G A B n hA c W v)
+  and_congr (semWithArgs_congr X Y P Q n (realmExc_congr G A B n hA) h hP c W v)
+    (realmInvariant_congr G A B n hA c W v)
 
 /-- A clause that is not a record's asks nothing more in a row. -/
 theorem realmInvariant_of_not_record {G : NormalGraph ι} {X : List ι → Fam} {c : Clause (List ι)}
@@ -610,7 +629,7 @@ theorem realmInvariant_of_not_record {G : NormalGraph ι} {X : List ι → Fam} 
 /-- Clauses none of which is a record's mean in a row what they mean alone. -/
 theorem setSem_row_plain {G : NormalGraph ι} {A X : List ι → Fam} {P : List ι → ArgFam}
     {cs : List (Clause (List ι))} (hc : ∀ c ∈ cs, c.record = false) (n W v) :
-    setSem (rowSem G A X P) cs n W v ↔ semList X P cs n W v := by
+    setSem (rowSem G A X P) cs n W v ↔ semList (realmExc G A) X P cs n W v := by
   constructor
   · rintro ⟨c, hm, hv, -⟩; exact ⟨c, hm, hv⟩
   · rintro ⟨c, hm, hv⟩; exact ⟨c, hm, hv, realmInvariant_of_not_record (hc c hm) n W v⟩
@@ -662,6 +681,11 @@ theorem realmInvariant_of_not_plain {G : NormalGraph ι} {X : List ι → Fam} {
     cases c.record
     · trivial
     · exact arrayInvariant_of_not_plain h
+
+/-- The errors the host throws are of every graph's exception family: a
+fresh object owning no key. -/
+theorem realmExc_errors (G : NormalGraph ι) (A : List ι → Fam) : ErrorsIn (realmExc G A) :=
+  fun _ _ _ => ⟨⟨rfl, by simp [thrownError, Scoped]⟩, realmInvariant_of_lookup (by simp)⟩
 
 /-- Two record clauses of one graph ask the same of their members. -/
 theorem realmInvariant_record {G : NormalGraph ι} {X : List ι → Fam} {c d : Clause (List ι)}
@@ -872,13 +896,13 @@ def SchemeRow.body (s : SchemeRow ι) : Clause (List ι) :=
 /-- The signatures `L` and variadic signatures `S` of one value: call
 signatures, as a call clause's are, or construct signatures, as a construct
 clause's are. -/
-noncomputable def sigsT (construct : Bool) (L : List (Arrow Fam))
+noncomputable def sigsT (Ξ : Fam) (construct : Bool) (L : List (Arrow Fam))
     (S : List CallEffects.RestSignature) : Fam :=
-  if construct then interT (ctorsT (L.map ctorOf)) (ctorRestsT (S.map ctorRestOf))
-  else interT (CallEffects.callsT L) (CallEffects.restsT S)
+  if construct then interT (ctorsT Ξ (L.map ctorOf)) (ctorRestsT Ξ (S.map ctorRestOf))
+  else interT (CallEffects.callsT Ξ L) (CallEffects.restsT Ξ S)
 
 theorem sigsT_adm (construct : Bool) (L : List (Arrow Fam)) (S : List CallEffects.RestSignature) :
-    Adm (sigsT construct L S) := by
+    Adm (sigsT Ξ construct L S) := by
   unfold sigsT
   split
   · exact interT_adm _ _ (ctorsT_adm _) (ctorRestsT_adm _)
@@ -886,8 +910,9 @@ theorem sigsT_adm (construct : Bool) (L : List (Arrow Fam)) (S : List CallEffect
 
 /-- Signatures whose operands agree below `n` give contracts agreeing there,
 call and construct signatures alike. -/
-theorem sigsT_congr (construct : Bool) {α β : Type} (l : List α) (f g : α → Arrow Fam)
+theorem sigsT_congr {Ξ Ξ' : Fam} (construct : Bool) {α β : Type} (l : List α) (f g : α → Arrow Fam)
     (r : List β) (f' g' : β → CallEffects.RestSignature) {n : Nat}
+    (hexc : Agree Ξ Ξ' n)
     (he : ∀ x ∈ l, (f x).effect = (g x).effect)
     (h : ∀ x ∈ l, Agree (f x).receiver (g x).receiver n ∧
       ArgsAgree n (f x).arguments (g x).arguments ∧ Agree (f x).result (g x).result n)
@@ -896,26 +921,26 @@ theorem sigsT_congr (construct : Bool) {α β : Type} (l : List α) (f g : α �
       ArgsAgree n (f' x).arguments.1 (g' x).arguments.1 ∧
       Agree (f' x).arguments.2 (g' x).arguments.2 n ∧ Agree (f' x).result (g' x).result n)
     (W : WorldT n) (v : Val) :
-    sigsT construct (l.map f) (r.map f') n W v ↔ sigsT construct (l.map g) (r.map g') n W v := by
+    sigsT Ξ construct (l.map f) (r.map f') n W v ↔ sigsT Ξ' construct (l.map g) (r.map g') n W v := by
   unfold sigsT
   split
   · simp only [interT, List.map_map]
     exact and_congr
-      (ctorsT_congr l (ctorOf ∘ f) (ctorOf ∘ g) (fun x hx => ⟨(h x hx).2.1, (h x hx).2.2⟩) W v)
-      (ctorRestsT_congr r (ctorRestOf ∘ f') (ctorRestOf ∘ g')
+      (ctorsT_congr l (ctorOf ∘ f) (ctorOf ∘ g) hexc (fun x hx => ⟨(h x hx).2.1, (h x hx).2.2⟩) W v)
+      (ctorRestsT_congr r (ctorRestOf ∘ f') (ctorRestOf ∘ g') hexc
         (fun x hx => ⟨(h' x hx).2.1, (h' x hx).2.2.1, (h' x hx).2.2.2⟩) W v)
-  · exact and_congr (CallEffects.callsT_congr l f g he h W v) (CallEffects.restsT_congr r f' g' he' h' W v)
+  · exact and_congr (CallEffects.callsT_congr l f g hexc he h W v) (CallEffects.restsT_congr r f' g' hexc he' h' W v)
 
 /-- One instance's contract: its fixed and its variadic signatures, as a call
 clause's are, or as a construct clause's are for a construct scheme. -/
-noncomputable def instanceTWithArgs (D : ParameterAssignment k ι → List ι → Fam) (η : ParameterAssignment k ι)
+noncomputable def instanceTWithArgs (Ξ : Fam) (D : ParameterAssignment k ι → List ι → Fam) (η : ParameterAssignment k ι)
     (s : SchemeRow ι) (As : List (ParameterFamily k))
     (P : ArgumentInterpreter ι k) : Fam :=
-  sigsT s.construct (instanceSigs D η s As) (instanceRestsWithArgs D η s As (P := P))
+  sigsT Ξ s.construct (instanceSigs D η s As) (instanceRestsWithArgs D η s As (P := P))
 
 theorem instanceTWithArgs_adm (D : ParameterAssignment k ι → List ι → Fam) (η : ParameterAssignment k ι) (s : SchemeRow ι)
     (As : List (ParameterFamily k)) (P : ArgumentInterpreter ι k) :
-    Adm (instanceTWithArgs D η s As (P := P)) :=
+    Adm (instanceTWithArgs Ξ D η s As (P := P)) :=
   sigsT_adm _ _ _
 
 private theorem argsAgree_of {X Y : List ι → Fam} {m : Nat} (h : ∀ S, Agree (X S) (Y S) m) :
@@ -924,18 +949,20 @@ private theorem argsAgree_of {X Y : List ι → Fam} {m : Nat} (h : ∀ S, Agree
   | S :: Ss => .cons (h S) (argsAgree_of h Ss)
 
 /-- Instances whose rows agree below `m` have contracts agreeing there. -/
-theorem instanceT_congrWithArgs (P : ArgumentInterpreter ι k) (hP : ArgumentNonExp P) {D D' : ParameterAssignment k ι → List ι → Fam} {η η' : ParameterAssignment k ι}
+theorem instanceT_congrWithArgs {Ξ Ξ' : Fam} (P : ArgumentInterpreter ι k) (hP : ArgumentNonExp P) {D D' : ParameterAssignment k ι → List ι → Fam} {η η' : ParameterAssignment k ι}
     {s : SchemeRow ι} {As As' : List (ParameterFamily k)} {m : Nat}
+    (hexc : Agree Ξ Ξ' m)
     (hη : ∀ p, Agree ((assign η s.binders As).1 p) ((assign η' s.binders As').1 p) m)
     (h : ∀ S, Agree (D (assign η s.binders As) S) (D' (assign η' s.binders As') S) m)
     (W : WorldT m) (v : Val) :
-    instanceTWithArgs D η s As (P := P) m W v ↔ instanceTWithArgs D' η' s As' (P := P) m W v := by
+    instanceTWithArgs Ξ D η s As (P := P) m W v ↔ instanceTWithArgs Ξ' D' η' s As' (P := P) m W v := by
   unfold instanceTWithArgs instanceSigs instanceRestsWithArgs
   exact sigsT_congr s.construct s.signatures
       (Arrow.map (D (assign η s.binders As))) (Arrow.map (D' (assign η' s.binders As')))
       s.variadic
       (RestArrow.mapWith (D (assign η s.binders As)) (P (assign η s.binders As) (D (assign η s.binders As))))
       (RestArrow.mapWith (D' (assign η' s.binders As')) (P (assign η' s.binders As') (D' (assign η' s.binders As'))))
+      hexc
       (fun _ _ => rfl) (fun p _ => ⟨h p.receiver, argsAgree_of h p.arguments, h p.result⟩)
       (fun _ _ => rfl)
       (fun p _ => ⟨h p.receiver, argsAgree_of h p.arguments.1, hP _ _ _ _ m hη h p.arguments.2, h p.result⟩) W v
@@ -1032,9 +1059,9 @@ def mixedParameters (G : NormalGraph ι) : ParameterInterpretation ι .mixed whe
 /-- **A scheme row.** A callable meeting its signatures at every instantiation
 of its binders within their bounds: the same value, in the same world, at all
 of them. -/
-noncomputable def schemeSemWithArgs (I : ParameterInterpretation ι k) (D : ParameterAssignment k ι → List ι → Fam) (η : ParameterAssignment k ι)
+noncomputable def schemeSemWithArgs (I : ParameterInterpretation ι k) (Ξ : Fam) (D : ParameterAssignment k ι → List ι → Fam) (η : ParameterAssignment k ι)
     (s : SchemeRow ι) : Fam :=
-  boundedSem (fun θ S => I.bound θ (D θ) S) η s (fun As => instanceTWithArgs D η s As I.arguments) I.domain
+  boundedSem (fun θ S => I.bound θ (D θ) S) η s (fun As => instanceTWithArgs Ξ D η s As I.arguments) I.domain
 
 /-- A meet row's part, read at the meet's own level (RECURSIVE-EQUATIONS §3.3):
 a parameter's family, a scheme row's instances, or a clause row's clauses. It
@@ -1044,7 +1071,7 @@ noncomputable def partSemWithArgs (G : NormalGraph ι) (I : ParameterInterpretat
     (X : ParameterAssignment k ι × ι → Fam) (η : ParameterAssignment k ι) (q : ι) : Fam :=
   if G.params q then I.value q (η.1 q) else
   match G.schemes q with
-  | some s => schemeSemWithArgs I (fun η' S => setSem (fun l => X (η', l)) S) η s
+  | some s => schemeSemWithArgs I (realmExc G (setSem fun l => X (I.realmAt, l))) (fun η' S => setSem (fun l => X (η', l)) S) η s
   | none => setSem (rowSem G (setSem fun l => X (I.realmAt, l)) (setSem fun l => X (η, l))
       (I.arguments η (setSem fun l => X (η, l)))) (G q)
 
@@ -1053,7 +1080,7 @@ noncomputable def qLayerWithArgs (G : NormalGraph ι) (I : ParameterInterpretati
     ParameterAssignment k ι × ι → Fam := fun ηi =>
   if G.params ηi.2 then I.value ηi.2 (ηi.1.1 ηi.2) else
   match G.schemes ηi.2 with
-  | some s => schemeSemWithArgs I (fun η' S => setSem (fun l => X (η', l)) S) ηi.1 s
+  | some s => schemeSemWithArgs I (realmExc G (setSem fun l => X (I.realmAt, l))) (fun η' S => setSem (fun l => X (η', l)) S) ηi.1 s
   | none =>
     match G.meets ηi.2 with
     -- A meet row: each part's values, within the clauses.
@@ -1134,7 +1161,9 @@ theorem partSem_congrWithArgs (G : NormalGraph ι) (I : ParameterInterpretation 
           forall_congr' fun u => imp_congr Iff.rfl ?_
         exact I.bound_congr _ _ _ _ n (fun _ _ _ _ _ => Iff.rfl)
           (fun S => setSem_congr n (fun l => h (_, l)) S) b.2 j (by omega) U u
-      · exact instanceT_congrWithArgs I.arguments I.arguments_nonexp (fun _ _ _ _ _ => Iff.rfl) (fun S => Agree.mono (setSem_congr n (fun l => h (_, l)) S) hq) (trunc q hq W) v
+      · exact instanceT_congrWithArgs I.arguments I.arguments_nonexp
+          (Agree.mono (realmExc_congr G _ _ n fun S => setSem_congr n (fun l => h (I.realmAt, l)) S) hq)
+          (fun _ _ _ _ _ => Iff.rfl) (fun S => Agree.mono (setSem_congr n (fun l => h (_, l)) S) hq) (trunc q hq W) v
 
 theorem qLayer_congrWithArgs (G : NormalGraph ι) (I : ParameterInterpretation ι k)
     : LayerCongr (fun X => qLayerWithArgs G I X) := by
@@ -1225,7 +1254,7 @@ theorem partSem_invWithArgs (G : NormalGraph ι) (I : ParameterInterpretation ι
       | some s =>
         exact boundedSem_adm _ η s _ (I.bound_adm η _ (hD η))
           (fun As => instanceTWithArgs_adm _ η s As I.arguments)
-          (fun As Bs m h W v => instanceT_congrWithArgs I.arguments I.arguments_nonexp h (fun S => sets _ _ m h S) W v) I.domain
+          (fun As Bs m h W v => instanceT_congrWithArgs I.arguments I.arguments_nonexp (fun _ _ _ _ => Iff.rfl) h (fun S => sets _ _ m h S) W v) I.domain
   · -- non-expansive
     intro k hk W v
     unfold partSemWithArgs
@@ -1257,7 +1286,7 @@ theorem partSem_invWithArgs (G : NormalGraph ι) (I : ParameterInterpretation ι
             forall_congr' fun j => forall_congr' fun hj => forall_congr' fun U =>
             forall_congr' fun u => imp_congr (hre b.1 j (by omega) U u)
               (I.bound_congr η η' _ _ m h (sets η η' m h) b.2 j (by omega) U u)
-        · exact instanceT_congrWithArgs I.arguments I.arguments_nonexp (fun p => Agree.mono (hre p) (by omega)) (fun S => Agree.mono (sets _ _ m hre S) (by omega)) (trunc q hq W) v
+        · exact instanceT_congrWithArgs I.arguments I.arguments_nonexp (fun _ _ _ _ => Iff.rfl) (fun p => Agree.mono (hre p) (by omega)) (fun S => Agree.mono (sets _ _ m hre S) (by omega)) (trunc q hq W) v
 
 theorem qLayer_invWithArgs (G : NormalGraph ι) (I : ParameterInterpretation ι k)
     (X : ParameterAssignment k ι × ι → Fam) (hX : QInv X) :

@@ -17,8 +17,8 @@ theorem call_elim_short {L : List (Fam × List Fam × Fam)} {p : Fam × List Fam
     (hR : Adm p.1) (hA : ∀ A ∈ p.2.1, Adm A) (hAv : ∀ A ∈ p.2.1, ValOnly A)
     {n : Nat} {W : WorldT n} {f r : Tm} {args pad : List Tm} {heap : Heap}
     (hpad : ∀ a ∈ pad, a = .undef) (hrv : isVal r = true)
-    (hf : callsT L n W f) (hp : p ∈ L) (hr : p.1 n W r) (ha : ArgsT p.2.1 n W (args ++ pad))
-    (hw : WorldAdm W) (hh : HeapOk n W heap) : Safe p.2.2 n W heap (.invoke f r args) := by
+    (hf : callsT Ξ L n W f) (hp : p ∈ L) (hr : p.1 n W r) (ha : ArgsT p.2.1 n W (args ++ pad))
+    (hw : WorldAdm W) (hh : HeapOk n W heap) : Safe Ξ p.2.2 n W heap (.invoke f r args) := by
   exact ArgumentContracts.call_safe
     (P := ArgsShort p.2.1)
     (Adm.of_transfer (fun ha j hj U hx => ArgsShort_transfer hA ha j hj U hx)) hR
@@ -29,8 +29,8 @@ theorem call_elim_short {L : List (Fam × List Fam × Fam)} {p : Fam × List Fam
 /-- A binding consumes one step after its initializer has become a value. -/
 theorem let_rule {B : Fam} (b a : Tm) (hval : isVal a = true) (p : Nat) (W : WorldT (p + 1))
     (h : Heap) (hadm : WorldAdm W) (hok : HeapOk (p + 1) W h)
-    (hb : Safe B p (trunc p (Nat.le_succ p) W) h (subst 0 a b)) :
-    Safe B (p + 1) W h (.letE a b) :=
+    (hb : Safe Ξ B p (trunc p (Nat.le_succ p) W) h (subst 0 a b)) :
+    Safe Ξ B (p + 1) W h (.letE a b) :=
   Or.inr ⟨_, h, _, WExt_refl _, WorldAdm_trunc _ hadm, .letV hval,
     HeapOk_trunc p W h hok, hb⟩
 
@@ -43,7 +43,7 @@ theorem read_rule {code : CallCode} {flds : List (PropKey × Nat)} {f : PropKey}
     (hadm : WorldAdm W) (hok : HeapOk n W h) (hf : flds.lookup f = some l)
     {c : Ctr n} (hl : lookup W l = some c)
     (hag : ∀ (j : Nat) (hj : j < n) (U : WorldT j) (u : Val), c j hj U u ↔ A j U u) :
-    Safe A n W h (.readAt f (.objAt flds code oid)) := by
+    Safe Ξ A n W h (.readAt f (.objAt flds code oid)) := by
   cases n with
   | zero => trivial
   | succ p =>
@@ -62,7 +62,7 @@ theorem read_view_rule {code : CallCode} {flds : List (PropKey × Nat)} {f : Pro
     (hadm : WorldAdm W) (hok : HeapOk n W h) (hf : flds.lookup f = some l)
     {c : Ctr n} (hl : lookup W l = some c)
     (hag : ∀ (j : Nat) (hj : j < n) (U : WorldT j) (u : Val), c j hj U u → A j U u) :
-    Safe A n W h (.readAt f (.objAt flds code oid)) := by
+    Safe Ξ A n W h (.readAt f (.objAt flds code oid)) := by
   cases n with
   | zero => trivial
   | succ p =>
@@ -82,7 +82,7 @@ theorem read_view_rule_ext {code : CallCode} {flds : List (PropKey × Nat)} {f :
     {c : Ctr n} (hl : lookup W l = some c)
     (hag : ∀ (j : Nat) (hj : j < n) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
       ∀ (u : Val), c j hj U u → A j U u) :
-    Safe A n W h (.readAt f (.objAt flds code oid)) := by
+    Safe Ξ A n W h (.readAt f (.objAt flds code oid)) := by
   cases n with
   | zero => trivial
   | succ p =>
@@ -106,8 +106,8 @@ theorem read_proto_rule {code : CallCode} {flds : List (PropKey × Nat)} {f : Pr
     {c : Ctr n} (hl : lookup W l = some c)
     (hag : ∀ (j : Nat) (hj : j < n) (U : WorldT j) (u : Val), c j hj U u → P j U u)
     (hP : ∀ j (U : WorldT j) (h' : Heap), WorldAdm U → HeapOk j U h' →
-      ∀ u, P j U u → Safe A j U h' (.readAt f u)) :
-    Safe A n W h (.readAt f (.objAt flds code oid)) := by
+      ∀ u, P j U u → Safe Ξ A j U h' (.readAt f u)) :
+    Safe Ξ A n W h (.readAt f (.objAt flds code oid)) := by
   cases n with
   | zero => trivial
   | succ p =>
@@ -126,7 +126,7 @@ theorem read_dict_rule {flds : List (PropKey × Nat)} {f : PropKey} {K : IndexKe
     (hA : ValOnly A) (n : Nat) (W : WorldT n) (h : Heap)
     (hadm : WorldAdm W) (hok : HeapOk n W h) (hk : K.Admits f)
     (hd : dictViewT K A n W (.objAt flds .absent oid)) :
-    Safe (unionT A undefT) n W h (.readAt f (.objAt flds .absent oid)) := by
+    Safe Ξ (unionT A undefT) n W h (.readAt f (.objAt flds .absent oid)) := by
   cases hlook : flds.lookup f with
   | some l =>
     obtain ⟨c, hc, hag⟩ := dictViewT_present hd hk hlook
@@ -153,7 +153,7 @@ theorem read_optional_rule {flds : List (PropKey × Nat)} {f : PropKey} {A : Fam
     (hp : flds.lookup f = none → flds.lookup CallArguments.protoField = none)
     (ho : ∀ l, flds.lookup f = some l → ∃ c : Ctr n, lookup W l = some c ∧
       ∀ (j : Nat) (hj : j < n) (U : WorldT j) (u : Val), c j hj U u → A j U u) :
-    Safe (unionT A undefT) n W h (.readAt f (.objAt flds .absent oid)) := by
+    Safe Ξ (unionT A undefT) n W h (.readAt f (.objAt flds .absent oid)) := by
   cases hlook : flds.lookup f with
   | some l =>
     obtain ⟨c, hc, hag⟩ := ho l hlook
@@ -176,7 +176,7 @@ theorem index_dict_rule {flds : List (PropKey × Nat)} {key : Tm} {f : PropKey} 
     {A : Fam} (hA : ValOnly A) (n : Nat) (W : WorldT n) (h : Heap)
     (hadm : WorldAdm W) (hok : HeapOk n W h) (hkey : propertyKey key = some f) (hk : K.Admits f)
     (hd : dictViewT K A n W (.objAt flds .absent oid)) :
-    Safe (unionT A undefT) n W h (.indexAt (.objAt flds .absent oid) key) := by
+    Safe Ξ (unionT A undefT) n W h (.indexAt (.objAt flds .absent oid) key) := by
   cases hlook : flds.lookup f with
   | some l =>
     obtain ⟨c, hc, hag⟩ := dictViewT_present hd hk hlook
@@ -210,7 +210,7 @@ theorem write_rule {code : CallCode} {flds : List (PropKey × Nat)} {f : PropKey
     {c : Ctr n} (hl : lookup W l = some c)
     (hag : ∀ (j : Nat) (hj : j < n) (U : WorldT j) (u : Val), c j hj U u ↔ A j U u)
     (hv : A n W v) :
-    Safe nulT n W h (.writeAt f (.objAt flds code oid) v) := by
+    Safe Ξ nulT n W h (.writeAt f (.objAt flds code oid) v) := by
   cases n with
   | zero => trivial
   | succ p =>
@@ -242,7 +242,7 @@ theorem make_fields_rule {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A)
       WExt (trunc j (Nat.le_of_lt hj) W) U →
       recT (ns.zip As) j U (.objAt (slots h.length ns) .absent (h.length + vs.length)) →
       Q j U (.objAt (slots h.length ns) code (h.length + vs.length))) :
-    Safe Q n W h (.makeAt code ns vs) :=
+    Safe Ξ Q n W h (.makeAt code ns vs) :=
   OperationWorlds.erase n W h (.makeAt code ns vs)
     (AllocationWorlds.allocation_safe hA n W h code ns vs hnd hns hAs hvals hadm hok hv result)
 
@@ -250,7 +250,7 @@ theorem make_fields_rule {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A)
 result meets `Q` at whatever identity the allocation gives it. -/
 theorem make_empty_rule {Q : Fam} (hQ : Adm Q) (n : Nat) (W : WorldT n) (h : Heap)
     (code : CallCode) (hadm : WorldAdm W) (hok : HeapOk n W h)
-    (hv : ∀ oid, Q n W (.objAt [] code oid)) : Safe Q n W h (.makeAt code [] []) :=
+    (hv : ∀ oid, Q n W (.objAt [] code oid)) : Safe Ξ Q n W h (.makeAt code [] []) :=
   make_fields_rule (As := []) (fun _ h => by simp at h) n W h code [] [] List.nodup_nil rfl rfl
     (by simp) hadm hok (by simp) fun j hj U hx _ =>
       hQ.mono j _ U hx _ (hQ.down_le n j (Nat.le_of_lt hj) W _ (hv _))
@@ -263,7 +263,7 @@ theorem make_rule {A Q : Fam} (hA : Adm A) (n : Nat) (W : WorldT n) (h : Heap) (
     (result : ∀ j (hj : j < n) (U : WorldT j),
       WExt (trunc j (Nat.le_of_lt hj) W) U →
       refT A j U (.obj h.length .absent) → Q j U (.obj h.length code)) :
-    Safe Q n W h (.make code v) :=
+    Safe Ξ Q n W h (.make code v) :=
   make_fields_rule (As := [A]) (by intro B hB; rw [List.mem_singleton.mp hB]; exact hA) n W h code
     [valueField] [v] (by simp) rfl rfl
     (by simpa using hval) hadm hok (by simpa using hv)
@@ -276,7 +276,7 @@ theorem makeFn_rule {A Q : Fam} (hA : Adm A) (n : Nat) (W : WorldT n) (h : Heap)
     (hval : isVal v = true) (hadm : WorldAdm W) (hok : HeapOk n W h) (hv : A n W v)
     (result : ∀ j (hj : j < n) (U : WorldT j),
       WExt (trunc j (Nat.le_of_lt hj) W) U → Q j U (.fnObj h.length code)) :
-    Safe Q n W h (.makeFn code v) :=
+    Safe Ξ Q n W h (.makeFn code v) :=
   make_fields_rule (As := [A]) (by intro B hB; rw [List.mem_singleton.mp hB]; exact hA) n W h code
     [codeField] [v] (by simp) rfl rfl
     (by intro u hu; rw [List.mem_singleton.mp hu]; exact hval) hadm hok
@@ -297,7 +297,7 @@ theorem arr_alloc_rule_below {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A
       WExt (trunc j (Nat.le_of_lt hj) W) U →
       (∀ (i : Nat) (hi : i < As.length), lookup U (h.length + i) = some (res (As[i]'hi))) →
       Q j U (.arr (elemSlots h.length vs.length))) :
-    Safe Q n W h (.arrLit vs) := by
+    Safe Ξ Q n W h (.arrLit vs) := by
   cases n with
   | zero => trivial
   | succ p =>
@@ -343,7 +343,7 @@ theorem arr_alloc_rule {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A)
       WExt (trunc j (Nat.le_of_lt hj) W) U →
       (∀ (i : Nat) (hi : i < As.length), lookup U (h.length + i) = some (res (As[i]'hi))) →
       Q j U (.arr (elemSlots h.length vs.length))) :
-    Safe Q n W h (.arrLit vs) :=
+    Safe Ξ Q n W h (.arrLit vs) :=
   arr_alloc_rule_below hA n W h vs hAs hvals hadm hok
     (fun p hp j hj => (hA p.1 (List.of_mem_zip hp).1).down_le n j (Nat.le_of_lt hj) W p.2 (hv p hp))
     result
@@ -355,7 +355,7 @@ theorem elem_read_rule {ls : List (Option Nat)} {b : UInt64} {A : Fam}
     (hadm : WorldAdm W) (hok : HeapOk n W h) (hl : elemLoc ls b = some l)
     {c : Ctr n} (hc : lookup W l = some c)
     (hag : ∀ (j : Nat) (hj : j < n) (U : WorldT j) (u : Val), c j hj U u → A j U u) :
-    Safe A n W h (.elemAt (.arr ls) (.num b)) := by
+    Safe Ξ A n W h (.elemAt (.arr ls) (.num b)) := by
   cases n with
   | zero => trivial
   | succ p =>
@@ -371,7 +371,7 @@ theorem elem_read_rule {ls : List (Option Nat)} {b : UInt64} {A : Fam}
 theorem elem_absent_rule {ls : List (Option Nat)} {b : UInt64} {Q : Fam}
     (n : Nat) (W : WorldT n) (h : Heap) (hadm : WorldAdm W) (hok : HeapOk n W h)
     (hn : elemLoc ls b = none) (hq : ∀ m (U : WorldT m), Q m U .undef) :
-    Safe Q n W h (.elemAt (.arr ls) (.num b)) := by
+    Safe Ξ Q n W h (.elemAt (.arr ls) (.num b)) := by
   cases n with
   | zero => trivial
   | succ p =>
@@ -387,7 +387,7 @@ theorem set_present_rule {ls : List (Option Nat)} {b : UInt64} {A Q : Fam}
     (hl : elemLoc ls b = some l) {c : Ctr n} (hc : lookup W l = some c)
     (hag : ∀ (j : Nat) (hj : j < n) (U : WorldT j) (u : Val), c j hj U u ↔ A j U u)
     (hv : A n W v) (hq : ∀ j (hj : j < n) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U → Q j U (.arr ls)) :
-    Safe Q n W h (.setElem (.arr ls) (.num b) v) := by
+    Safe Ξ Q n W h (.setElem (.arr ls) (.num b) v) := by
   cases n with
   | zero => trivial
   | succ p =>
@@ -414,7 +414,7 @@ theorem set_grow_rule {ls : List (Option Nat)} {b : UInt64} {k : Nat} {A Q : Fam
     (hk : indexOfBits b = some k) (hn : elemLoc ls b = none) (hv : A n W v)
     (hq : ∀ j (hj : j < n) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
       lookup U h.length = some (res A) → Q j U (.arr (placeAt ls k h.length))) :
-    Safe Q n W h (.setElem (.arr ls) (.num b) v) := by
+    Safe Ξ Q n W h (.setElem (.arr ls) (.num b) v) := by
   cases n with
   | zero => trivial
   | succ p =>
@@ -450,7 +450,7 @@ theorem set_grow_rule {ls : List (Option Nat)} {b : UInt64} {k : Nat} {A Q : Fam
 theorem len_rule {ls : List (Option Nat)} {Q : Fam}
     (n : Nat) (W : WorldT n) (h : Heap) (hadm : WorldAdm W) (hok : HeapOk n W h)
     (hq : ∀ m (U : WorldT m), Q m U (.num (bitsOfNat ls.length))) :
-    Safe Q n W h (.lenOf (.arr ls)) := by
+    Safe Ξ Q n W h (.lenOf (.arr ls)) := by
   cases n with
   | zero => trivial
   | succ p =>
@@ -462,7 +462,7 @@ theorem len_rule {ls : List (Option Nat)} {Q : Fam}
 theorem len_str_rule {s : String} {Q : Fam}
     (n : Nat) (W : WorldT n) (h : Heap) (hadm : WorldAdm W) (hok : HeapOk n W h)
     (hq : ∀ m (U : WorldT m), Q m U (.num (bitsOfNat (utf16Units s).length))) :
-    Safe Q n W h (.lenOf (.str s)) := by
+    Safe Ξ Q n W h (.lenOf (.str s)) := by
   cases n with
   | zero => trivial
   | succ p =>
@@ -474,7 +474,7 @@ theorem len_str_rule {s : String} {Q : Fam}
 theorem elem_str_rule {s : String} {b : UInt64} {Q : Fam}
     (n : Nat) (W : WorldT n) (h : Heap) (hadm : WorldAdm W) (hok : HeapOk n W h)
     (hstr : ∀ m (U : WorldT m) (t : String), Q m U (.str t)) (hundef : ∀ m (U : WorldT m), Q m U .undef) :
-    Safe Q n W h (.elemAt (.str s) (.num b)) := by
+    Safe Ξ Q n W h (.elemAt (.str s) (.num b)) := by
   cases n with
   | zero => trivial
   | succ p =>
@@ -488,7 +488,7 @@ theorem elem_str_rule {s : String} {b : UInt64} {Q : Fam}
 /-- Plain references specialize the common allocation rule to an absent descriptor. -/
 theorem alloc_rule {A : Fam} (hA : Adm A) (n : Nat) (W : WorldT n) (h : Heap) (v : Tm)
     (hval : isVal v = true) (hadm : WorldAdm W) (hok : HeapOk n W h) (hv : A n W v) :
-    Safe (refT A) n W h (.alloc v) :=
+    Safe Ξ (refT A) n W h (.alloc v) :=
   make_rule hA n W h .absent v hval hadm hok hv (fun _ _ _ _ hr => hr)
 
 #print axioms make_rule
@@ -504,7 +504,7 @@ budget its branches are checked at. -/
 /-- **A shape test answers.** -/
 theorem test_value_safe (k : Tag) (v : Val) (hv : isVal v = true) (p : Nat)
     (W : WorldT (p + 1)) (h : Heap) (hadm : WorldAdm W) (hok : HeapOk (p + 1) W h) :
-    Safe boolT (p + 1) W h (.test k v) := by
+    Safe Ξ boolT (p + 1) W h (.test k v) := by
   refine Or.inr ⟨trunc p (Nat.le_succ p) W, h, _, WExt_refl _, WorldAdm_trunc _ hadm,
     .testV hv, HeapOk_trunc p W h hok, ?_⟩
   cases p with
@@ -517,7 +517,7 @@ result, the term takes one step to it, a value of whatever family `S` names. -/
 theorem arith_value_safe {S : Fam} (op : Arith) (a b v : Tm) (hv : binop op a b = some v)
     (n : Nat) (W : WorldT n) (h : Heap) (hadm : WorldAdm W) (hok : HeapOk n W h)
     (hr : ∀ m (U : WorldT m), S m U v) :
-    Safe S n W h (.arith op a b) := by
+    Safe Ξ S n W h (.arith op a b) := by
   cases n with
   | zero => trivial
   | succ p =>
@@ -529,8 +529,8 @@ theorem arith_value_safe {S : Fam} (op : Arith) (a b v : Tm) (hv : binop op a b 
 operands, the term takes one step to throwing a fresh error object, which is
 an outcome at every type. -/
 theorem arith_throw_safe {S : Fam} (op : Arith) (a b : Tm) (ht : binopThrows op a b = true)
-    (n : Nat) (W : WorldT n) (h : Heap) (hadm : WorldAdm W) (hok : HeapOk n W h) :
-    Safe S n W h (.arith op a b) := by
+    (n : Nat) (W : WorldT n) (h : Heap) (hadm : WorldAdm W) (hok : HeapOk n W h)
+    (hΞ : ErrorsIn Ξ) : Safe Ξ S n W h (.arith op a b) := by
   cases n with
   | zero => trivial
   | succ p =>
@@ -539,7 +539,7 @@ theorem arith_throw_safe {S : Fam} (op : Arith) (a b : Tm) (ht : binopThrows op 
       WExt_appendW _ _, WorldAdm_append (WorldAdm_trunc _ hadm) hcadm, .arithThrow ht,
       heap_alloc p _ h (res nulT) .nul (HeapOk_trunc p W h hok) (WorldAdm_trunc _ hadm)
         (fun _ _ => rfl), ?_⟩
-    exact thrown_safe _ _ _ _ ⟨thrownError h.length, .throwV rfl rfl, by simp [thrownError, Scoped]⟩
+    exact thrown_safe _ _ _ _ ⟨thrownError h.length, .throwV rfl rfl, by simp [thrownError, Scoped], hΞ _ _ _⟩
 
 /-- **Branching on a shape test.** The two branches are checked under the answer
 they run in, which is what makes this narrowing rather than a plain conditional:
@@ -547,9 +547,9 @@ the `then` branch may assume the test succeeded. -/
 theorem ite_test_rule {B : Fam} (k : Tag) (a : Val) (hv : isVal a = true) (u e : Tm)
     (p : Nat) (W : WorldT (p + 2)) (h : Heap) (hadm : WorldAdm W)
     (hok : HeapOk (p + 2) W h)
-    (hthen : tagHoldsIn h k a = true → Safe B p (trunc p (by omega) W) h u)
-    (helse : tagHoldsIn h k a = false → Safe B p (trunc p (by omega) W) h e) :
-    Safe B (p + 2) W h (.ite (.test k a) u e) := by
+    (hthen : tagHoldsIn h k a = true → Safe Ξ B p (trunc p (by omega) W) h u)
+    (helse : tagHoldsIn h k a = false → Safe Ξ B p (trunc p (by omega) W) h e) :
+    Safe Ξ B (p + 2) W h (.ite (.test k a) u e) := by
   refine Or.inr ⟨trunc (p + 1) (Nat.le_succ _) W, h, _, WExt_refl _,
     WorldAdm_trunc _ hadm, .iteC (.testV hv), HeapOk_trunc (p + 1) W h hok, ?_⟩
   have hadm' : WorldAdm (trunc (p + 1) (Nat.le_succ _) W) := WorldAdm_trunc _ hadm

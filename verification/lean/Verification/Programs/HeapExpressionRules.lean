@@ -182,7 +182,7 @@ theorem read_sound {G : NormalGraph ι} {Γ k i fld R A ρ n W h}
     (hm : Fact.mk i R fld ∈ k.cells) (hc : includes G A R = true)
     (_he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
-    SafePost (meaning G A)
+    SafePost (excOf G) (meaning G A)
       (fun h' v => HeapKnowledge.Holds (readOutput k i fld R) (push v ρ) h') n W h
       (.readAt fld (ρ i)) := by
   obtain ⟨flds,c,oid,v,hl,hrd,a,ha,hav⟩ := hk.1 _ hm
@@ -280,7 +280,7 @@ theorem typedRead_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
     (hr : fieldOperand (expand G Ref) fld = true)
     (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
-    SafePost (meaning G A)
+    SafePost (excOf G) (meaning G A)
       (fun h' v => HeapKnowledge.Holds (readFrame k i fld) (push v ρ) h') n W h
       (.readAt fld (ρ i)) := by
   cases n with
@@ -293,7 +293,7 @@ theorem typedRead_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
     cases hproj
     obtain ⟨v,hv,hmm⟩ := hh.2 l c hlookup
     have hval := meaning_valOnly G El 0 _ v ((hagree 0 (by omega) _ v).mp (hmm 0 (by omega)))
-    have hs : Safe (meaning G A) (n+1) W h (.readAt fld (ρ i)) := by
+    have hs : Safe (excOf G) (meaning G A) (n+1) W h (.readAt fld (ρ i)) := by
       simpa [instantiate] using ht.sound (n+1) W h ρ he hw hh
     rw [hl] at hs ⊢
     apply one_step rfl hval (.readField hfd hv) _ hs
@@ -308,8 +308,8 @@ theorem typedRead_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
 /-- A completed read whose value answers a tag false belongs to the
 negative slice of its type, at every step count. -/
 theorem slice_value {G : NormalGraph ι} {C : Ty ι} {Q : Post} {n W h v tag}
-    (hs : SafePost (meaning G C) Q n W h v) (hv : isVal v = true) (hq : tagHolds tag v = false) :
-    SafePost (meaning G (BranchRefinement.tagSlice G C tag false)) Q n W h v := by
+    (hs : SafePost (excOf G) (meaning G C) Q n W h v) (hv : isVal v = true) (hq : tagHolds tag v = false) :
+    SafePost (excOf G) (meaning G (BranchRefinement.tagSlice G C tag false)) Q n W h v := by
   cases n with
   | zero => trivial
   | succ n =>
@@ -328,7 +328,7 @@ theorem slicedRead_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instanc
     (hm : Fact.mk i R fld ∈ k.cells) (hR : R.all (·.excludes tag) = true)
     (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
-    SafePost (meaning G (BranchRefinement.tagSlice G C tag false))
+    SafePost (excOf G) (meaning G (BranchRefinement.tagSlice G C tag false))
       (fun h' v => HeapKnowledge.Holds (readFrame k i fld) (push v ρ) h') n W h
       (.readAt fld (ρ i)) := by
   have base := typedRead_sound ht hi hr he hk hw hh
@@ -400,14 +400,14 @@ theorem optionalRead_sound [DecidableEq ι] {G : NormalGraph ι} {images : Insta
     (hr : optionalOperand (expand G Ref) fld = true)
     (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
-    SafePost (meaning G A)
+    SafePost (excOf G) (meaning G A)
       (fun h' v => HeapKnowledge.Holds (readFrame k i fld true) (push v ρ) h') n W h
       (.readAt fld (ρ i)) := by
   cases n with
   | zero => trivial
   | succ n =>
     obtain ⟨flds, oid, hl, hpres, habs⟩ := optionalOperand_sound hr (he.2 i Ref hi)
-    have hs : Safe (meaning G A) (n+1) W h (.readAt fld (ρ i)) := by
+    have hs : Safe (excOf G) (meaning G A) (n+1) W h (.readAt fld (ρ i)) := by
       simpa [instantiate] using ht.sound (n+1) W h ρ he hw hh
     rw [hl] at hs ⊢
     have out : ∀ u, HeapLinks.ReadGave flds fld h u →
@@ -435,7 +435,7 @@ theorem optionalRead_sound [DecidableEq ι] {G : NormalGraph ι} {images : Insta
 theorem value_sound {G : NormalGraph ι} {Γ k i R A ρ n W h}
     (hr : valuesAt G Γ k i = some R) (hc : includes G A R = true)
     (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h) :
-    SafePost (meaning G A)
+    SafePost (excOf G) (meaning G A)
       (fun h' v => HeapKnowledge.Holds (withResult (copy k i) R) (push v ρ) h') n W h (ρ i) := by
   have hv := valuesAt_sound hr he hk
   have hval : isVal (ρ i) = true := by
@@ -450,7 +450,7 @@ def ordinaryOutput (k : Knowledge) : Knowledge := ⟨[],HeapFacts.shift k.values
 theorem ordinary_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {subtyping : BodySubtyping G} {Γ k t A ρ n W h}
     (ht : HasTyUsing G images (subtyping := subtyping) Γ t A) (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
-    SafePost (meaning G A)
+    SafePost (excOf G) (meaning G A)
       (fun h' v => HeapKnowledge.Holds (ordinaryOutput k) (push v ρ) h') n W h (instantiate 0 ρ t) := by
   apply of_value_property _ (ht.sound n W h ρ he hw hh)
   intro _ _ heap v _
@@ -547,9 +547,9 @@ theorem alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W h} {cod
     (hnd : (parts.map Prod.fst).Nodup)
     (hin : ∀ p ∈ parts, p.2 < Γ.length)
     (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h) (hh : HeapOk n W h)
-    (hs : Safe (meaning G A) n W h
+    (hs : Safe (excOf G) (meaning G A) n W h
       (.makeAt code (parts.map Prod.fst) (parts.map fun p => ρ p.2))) :
-    SafePost (meaning G A)
+    SafePost (excOf G) (meaning G A)
       (fun h' v => HeapKnowledge.Holds
         (allocOutput k (allocationFacts G Γ k parts) (contractFields G Γ) (parts.map Prod.fst))
         (push v ρ) h')
@@ -670,8 +670,8 @@ theorem merge_alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W h
     {d : List PropKey} {a b : Tm} (fields : List PropKey)
     (hva : isVal a = true) (hvb : isVal b = true)
     (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h) (hh : HeapOk n W h)
-    (hs : Safe (meaning G A) n W h (.merge d a b)) :
-    SafePost (meaning G A)
+    (hs : Safe (excOf G) (meaning G A) n W h (.merge d a b)) :
+    SafePost (excOf G) (meaning G A)
       (fun h' v => HeapKnowledge.Holds (allocOutput k [] (contractFields G Γ) fields) (push v ρ) h')
       n W h (.merge d a b) := by
   cases n with
@@ -704,8 +704,8 @@ theorem makeKey_alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W
     {a b : Tm} (fields : List PropKey)
     (hva : isVal a = true) (hvb : isVal b = true)
     (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h) (hh : HeapOk n W h)
-    (hs : Safe (meaning G A) n W h (.makeKey a b)) :
-    SafePost (meaning G A)
+    (hs : Safe (excOf G) (meaning G A) n W h (.makeKey a b)) :
+    SafePost (excOf G) (meaning G A)
       (fun h' v => HeapKnowledge.Holds (allocOutput k [] (contractFields G Γ) fields) (push v ρ) h')
       n W h (.makeKey a b) := by
   cases n with
@@ -752,13 +752,13 @@ theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImag
     (hr : valuesAt G Γ k j = R)
     (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
-    SafePost (meaning G A)
+    SafePost (excOf G) (meaning G A)
       (fun h' v => HeapKnowledge.Holds (writeOutput k i fld R) (push v ρ) h')
       n W h (.writeAt fld (ρ i) (ρ j)) := by
   have hvv : isVal (ρ j) = true :=
     (meaning_value (he.2 j Γ[j] (List.getElem?_eq_some_iff.mpr ⟨hj,rfl⟩))).1
   have hiv := (meaning_value (he.2 i Γ[i] (List.getElem?_eq_some_iff.mpr ⟨hi,rfl⟩))).1
-  have hs : Safe (meaning G A) n W h (.writeAt fld (ρ i) (ρ j)) := by
+  have hs : Safe (excOf G) (meaning G A) n W h (.writeAt fld (ρ i) (ρ j)) := by
     simpa [instantiate] using ht.sound n W h ρ he hw hh
   cases n with
   | zero => trivial
@@ -816,8 +816,8 @@ theorem pure_instantiate {G : NormalGraph ι} {Γ t ρ n W} {d : Nat}
 
 /-- Any heap predicate that survives heap extension can be framed across a
 checked pure computation. -/
-theorem pure_frame {T Q} : ∀ {n W h t}, Safe T n W h t → pureTerm t = true →
-    (∀ h', h.IsPrefix h' → ∀ v, Q h' v) → SafePost T Q n W h t := by
+theorem pure_frame {T Q} : ∀ {n W h t}, Safe Ξ T n W h t → pureTerm t = true →
+    (∀ h', h.IsPrefix h' → ∀ v, Q h' v) → SafePost Ξ T Q n W h t := by
   intro n; induction n with
   | zero => intros; trivial
   | succ n ih =>
@@ -857,7 +857,7 @@ theorem pure_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImage
     (hc : checkScope Γ.length t = true)
     (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
-    SafePost (meaning G A)
+    SafePost (excOf G) (meaning G A)
       (fun h' v => HeapKnowledge.Holds (pureOutput G Γ k t) (push v ρ) h')
       n W h (instantiate 0 ρ t) := by
   have hs := ht.sound n W h ρ he hw hh
@@ -867,7 +867,7 @@ theorem pure_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImage
     have hi : i < Γ.length := by simpa [checkScope] using hc
     have hv := meaning_value (he.2 i Γ[i] (List.getElem?_eq_some_iff.mpr ⟨hi,rfl⟩))
     simpa [instantiate,pureOutput] using
-      refine_value hv.1 (copyValue_holds he hk) (show Safe (meaning G A) n W h (ρ i) by simpa [instantiate] using hs)
+      refine_value hv.1 (copyValue_holds he hk) (show Safe (excOf G) (meaning G A) n W h (ρ i) by simpa [instantiate] using hs)
   all_goals first
     | exact pure_frame hs hpClosed (fun _ hpre _ => by
         obtain ⟨vs, rfl⟩ := hpre
@@ -885,7 +885,7 @@ theorem graphCreation_sound [DecidableEq ι] {G : NormalGraph ι} {images : Inst
     {Γ k arity E K start caps kind rest A ρ n W h}
     (ht : HasTyUsing G images Γ (.makeFn (.graph arity E K start caps kind rest) .nul) A) (he : EnvOk G Γ ρ n W)
     (hk : HeapKnowledge.Holds k ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
-    SafePost (meaning G A)
+    SafePost (excOf G) (meaning G A)
       (fun h' v => HeapKnowledge.Holds (HeapKnowledge.shift k) (push v ρ) h')
       n W h (instantiate 0 ρ (.makeFn (.graph arity E K start caps kind rest) .nul)) := by
   have hs := ht.sound n W h ρ he hw hh
@@ -971,8 +971,8 @@ end: every fact about the old heap, and every link, still holds. -/
 theorem store_alloc_sound [DecidableEq ι] {G : NormalGraph ι} {k A ρ n W h}
     {vs : List Tm} (hvals : ∀ v ∈ vs, isVal v = true)
     (hk : HeapKnowledge.Holds k ρ h)
-    (hs : Safe (meaning G A) n W h (.arrLit vs)) :
-    SafePost (meaning G A)
+    (hs : Safe (excOf G) (meaning G A) n W h (.arrLit vs)) :
+    SafePost (excOf G) (meaning G A)
       (fun h' v => HeapKnowledge.Holds (HeapKnowledge.shift k) (push v ρ) h')
       n W h (.arrLit vs) :=
   one_step rfl rfl (.arrAlloc hvals)
@@ -1183,7 +1183,7 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
     {ρ n W h}
     (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ρ h)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
-    SafePost (meaning G j.type)
+    SafePost (excOf G) (meaning G j.type)
       (fun h' v => HeapKnowledge.Holds out (push v ρ) h')
       n W h (instantiate 0 ρ j.term) := by
   cases e with
@@ -1404,7 +1404,7 @@ structure Checker [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageC
     CodesSound G codes → ∀ {ρ n W h},
     EnvOk G j.context ρ n W → HeapKnowledge.Holds k ρ h →
     WorldAdm W → HeapOk n W h →
-    SafePost (meaning G j.type)
+    SafePost (excOf G) (meaning G j.type)
       (fun h' v => HeapKnowledge.Holds out (push v ρ) h')
       n W h (instantiate 0 ρ j.term)
 

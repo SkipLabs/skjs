@@ -119,6 +119,10 @@ noncomputable abbrev mixedArgs (G : NormalGraph ι) (η : MixedAssignment ι) : 
 noncomputable abbrev realmValues (G : NormalGraph ι) : List ι → Fam :=
   mixedValues G (ParameterAssignment.empty .mixed)
 
+/-- The graph's exception family: its realm's `unknown`, its prototype type
+read at `realmAt` (`realmExc`). -/
+noncomputable abbrev excOf (G : NormalGraph ι) : Fam := realmExc G (realmValues G)
+
 /-- A clause's value members, its operands read at `η`. -/
 noncomputable abbrev mixedSem (G : NormalGraph ι) (η : MixedAssignment ι) : Clause (List ι) → Fam :=
   rowSem G (realmValues G) (mixedValues G η) (mixedArgs G η)
@@ -126,9 +130,10 @@ noncomputable abbrev mixedSem (G : NormalGraph ι) (η : MixedAssignment ι) : C
 /-- An instance's contract is its scheme's body read at the instance's
 assignment. -/
 theorem instance_body (G : NormalGraph ι) (η : MixedAssignment ι) (s : SchemeRow ι) (As : List MixedFamily) :
-    instanceTWithArgs (fun η' S => setSem (fun l => qDenoteWithArgs G (mixedParameters G) (η', l)) S) η s As
+    instanceTWithArgs (realmExc G (setSem fun l => qDenoteWithArgs G (mixedParameters G) ((mixedParameters G).realmAt, l)))
+      (fun η' S => setSem (fun l => qDenoteWithArgs G (mixedParameters G) (η', l)) S) η s As
       (mixedParameters G).arguments =
-    semWithArgs (mixedValues G (assign η s.binders As)) (mixedArgs G (assign η s.binders As)) s.body := by
+    semWithArgs (excOf G) (mixedValues G (assign η s.binders As)) (mixedArgs G (assign η s.binders As)) s.body := by
   unfold instanceTWithArgs sigsT SchemeRow.body instanceSigs instanceRestsWithArgs
   cases s.construct
   · rfl
@@ -213,7 +218,7 @@ theorem expand_sem (G : NormalGraph ι) (S : List ι) (hS : G.plainTy S = true) 
 /-- The split is meaning preserving, in the same style as `meet_sound` and
 `normalize_sound`: the union of the parts denotes exactly the original clause. -/
 theorem splitClause_sem (X : α → Fam) (P : α → ArgFam) (c : Clause α) (n W v) :
-    semList X P (splitClause c) n W v ↔ semWithArgs X P c n W v := by
+    semList Ξ X P (splitClause c) n W v ↔ semWithArgs Ξ X P c n W v := by
   by_cases hb : c = .bool
   · subst hb; simp [splitClause, semList, setSem, semWithArgs, boolT]
   · have hs : splitClause c = [c] := by cases c <;> first | exact absurd rfl hb | rfl
@@ -252,8 +257,8 @@ theorem source_sem (G : NormalGraph ι) (S : List ι) (hS : G.plainTy S = true) 
 clauses' operands mean. -/
 theorem compatible_of_clauses {G : NormalGraph ι} {i k : ι} {a b : Clause (List ι)}
     {X Y : List ι → Fam} {P Q : List ι → ArgFam} {n m W U v}
-    (ha : a ∈ G i) (hb : b ∈ G k) (hva : semWithArgs X P a n W v)
-    (hvb : semWithArgs Y Q b m U v) : compatible G i k = true := by
+    (ha : a ∈ G i) (hb : b ∈ G k) (hva : semWithArgs Ξ X P a n W v)
+    (hvb : semWithArgs Ξ Y Q b m U v) : compatible G i k = true := by
   simp only [compatible, NormalGraph.plain_of_clauses ha, NormalGraph.plain_of_clauses hb,
     Bool.not_true, Bool.false_or, List.any_eq_true]
   refine ⟨a, ha, b, hb, ?_⟩
@@ -606,9 +611,9 @@ theorem CallArrow.sound {G : NormalGraph ι} {η : MixedAssignment ι} {R L S q}
     (hc : CallArrow (compatible G) (restElem G) R L S q) (n : Nat)
     (hr : ∀ j, j < n → ∀ a b, R a b → FamLeAt G η a b j)
     (W : WorldT n) (v : Val)
-    (hv : CallEffects.callsT (L.map (Arrow.map (mixedValues G η))) n W v ∧
-      CallEffects.restsT (S.map (RestArrow.mapWith (mixedValues G η) (mixedArgs G η))) n W v) :
-    PromiseWith q.effect (ArgsShort (q.arguments.map (mixedValues G η)))
+    (hv : CallEffects.callsT Ξ (L.map (Arrow.map (mixedValues G η))) n W v ∧
+      CallEffects.restsT Ξ (S.map (RestArrow.mapWith (mixedValues G η) (mixedArgs G η))) n W v) :
+    PromiseWith Ξ q.effect (ArgsShort (q.arguments.map (mixedValues G η)))
       (mixedValues G η q.receiver) (mixedValues G η q.result) n W v := by
   induction hc with
   | emptyRecv he =>
@@ -657,9 +662,9 @@ theorem rest_covers_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : Li
     {p q : RestArrow (List ι)} (hc : RestCovers (restElem G) R p q) (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j) (hpa : ArgsLeBelow G η R n)
     (W : WorldT n) (v : Val)
-    (hv : PromiseWith p.effect (ArgsRest (p.arguments.1.map (mixedValues G η)) (mixedArgs G η p.arguments.2))
+    (hv : PromiseWith Ξ p.effect (ArgsRest (p.arguments.1.map (mixedValues G η)) (mixedArgs G η p.arguments.2))
       (mixedValues G η p.receiver) (mixedValues G η p.result) n W v) :
-    PromiseWith q.effect (ArgsRest (q.arguments.1.map (mixedValues G η)) (mixedArgs G η q.arguments.2))
+    PromiseWith Ξ q.effect (ArgsRest (q.arguments.1.map (mixedValues G η)) (mixedArgs G η q.arguments.2))
       (mixedValues G η q.receiver) (mixedValues G η q.result) n W v := by
   obtain ⟨hrecv, hd, hel, he, hres, heffect⟩ := hc
   exact hv.weaken (Effect.covers_sound heffect) (fun j hj U r hrm => hr j hj _ _ hrecv U r hrm)
@@ -1142,8 +1147,8 @@ theorem fixed_calls_pack_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R
     (hc : FixedCallsPack G R p t) (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j) (W : WorldT n) (v : Val)
     (hinv : Invocable v)
-    (hv : PromiseWith p.effect (ArgsShort (p.arguments.map (mixedValues G η))) (mixedValues G η p.receiver) (mixedValues G η p.result) n W v) :
-    PromiseWith t.effect (ArgsRest (t.arguments.1.map (mixedValues G η)) (mixedArgs G η t.arguments.2)) (mixedValues G η t.receiver)
+    (hv : PromiseWith Ξ p.effect (ArgsShort (p.arguments.map (mixedValues G η))) (mixedValues G η p.receiver) (mixedValues G η p.result) n W v) :
+    PromiseWith Ξ t.effect (ArgsRest (t.arguments.1.map (mixedValues G η)) (mixedArgs G η t.arguments.2)) (mixedValues G η t.receiver)
       (mixedValues G η t.result) n W v := by
   unfold FixedCallsPack at hc
   split at hc
@@ -1544,8 +1549,8 @@ theorem covers_sig_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : Lis
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j) (hpa : ArgsLeBelow G η R n)
     (hrn : ∀ S T, R S T → FamLeAt G η S T n)
     (W : WorldT n) (v u : Val)
-    (h : MethodMembers.onHost v (MethodMembers.Member.of (mixedValues G η) (mixedArgs G η) p) n W u) :
-    MethodMembers.onHost v (MethodMembers.Member.of (mixedValues G η) (mixedArgs G η) q) n W u := by
+    (h : MethodMembers.onHost Ξ v (MethodMembers.Member.of (mixedValues G η) (mixedArgs G η) p) n W u) :
+    MethodMembers.onHost Ξ v (MethodMembers.Member.of (mixedValues G η) (mixedArgs G η) q) n W u := by
   obtain ⟨hcalls, hrests, hschemes, hrecv⟩ := hc
   obtain ⟨⟨hinv, hL⟩, ⟨_, hS⟩, hB⟩ := h
   -- The host, in each type the target's host must meet, is in each the
@@ -1605,8 +1610,8 @@ the same. -/
 theorem semWithArgs_map_meaning [DecidableEq ι] {G : NormalGraph ι} {η θ : MixedAssignment ι}
     {f : List ι → List ι} {c : Clause (List ι)}
     (h : ∀ S, S ∈ c.operands ∨ S = [] → mixedMeaning G η (f S) = mixedMeaning G θ S) :
-    semWithArgs (mixedValues G η) (mixedArgs G η) (c.map f) =
-      semWithArgs (mixedValues G θ) (mixedArgs G θ) c := by
+    semWithArgs Ξ (mixedValues G η) (mixedArgs G η) (c.map f) =
+      semWithArgs Ξ (mixedValues G θ) (mixedArgs G θ) c := by
   let r : List ι → List ι := fun S => if S ∈ c.operands then S else []
   have hcr : c.map r = c := map_of_operands fun S hS => by simp [r, hS]
   rw [semWithArgs_map, ← hcr, semWithArgs_map, semWithArgs_map]
@@ -1733,14 +1738,14 @@ theorem semWithArgs_congr_on [DecidableEq ι] {D : List ι} {c : Clause (List ι
     (P Q : List ι → ArgFam) (n : Nat)
     (h : ∀ l ∈ D, Agree (X l) (Y l) n)
     (ha : ∀ S, (∀ l ∈ S, l ∈ D) → Agree (P S) (Q S) n) (W : WorldT n) (v : Val) :
-    semWithArgs (setSem X) P c n W v ↔ semWithArgs (setSem Y) Q c n W v := by
+    semWithArgs Ξ (setSem X) P c n W v ↔ semWithArgs Ξ (setSem Y) Q c n W v := by
   let r : List ι → List ι := fun S => S.filter fun l => decide (l ∈ D)
   have hcr : c.map r = c := map_of_operands fun S hS =>
     List.filter_eq_self.mpr fun l hl => by simpa using hops S hS l hl
   rw [← hcr, semWithArgs_map, semWithArgs_map]
   have hin : ∀ S l, l ∈ r S → l ∈ D := fun S l hl => by
     simpa using (List.mem_filter.mp hl).2
-  apply semWithArgs_congr _ _ _ _ n (fun S m hm U u => ?_) (fun S => ha _ (hin S)) c W v
+  apply semWithArgs_congr _ _ _ _ n (fun _ _ _ _ => Iff.rfl) (fun S m hm U u => ?_) (fun S => ha _ (hin S)) c W v
   exact exists_congr fun l => and_congr_right fun hl => h l (hin S l hl) m hm U u
 
 /-- Local agreement for argument rows is at the current level. -/
@@ -1964,7 +1969,7 @@ theorem partSem_support [DecidableEq ι] {G : NormalGraph ι} {D : ι → Prop} 
           exact .cons (hrow S (hSs S List.mem_cons_self))
             (ihs fun T hT => hSs T (List.mem_cons_of_mem _ hT))
       simp only [instanceTWithArgs, instanceSigs, instanceRestsWithArgs]
-      refine sigsT_congr s.construct s.signatures (Arrow.map (setSem fun l => X (assign η s.binders As, l))) (Arrow.map (setSem fun l => X (assign η' s.binders As, l))) s.variadic (RestArrow.mapWith (setSem fun l => X (assign η s.binders As, l)) (I.arguments (assign η s.binders As) (setSem fun l => X (assign η s.binders As, l)))) (RestArrow.mapWith (setSem fun l => X (assign η' s.binders As, l)) (I.arguments (assign η' s.binders As) (setSem fun l => X (assign η' s.binders As, l)))) (fun _ _ => rfl) (fun p hps => by
+      refine sigsT_congr s.construct s.signatures (Arrow.map (setSem fun l => X (assign η s.binders As, l))) (Arrow.map (setSem fun l => X (assign η' s.binders As, l))) s.variadic (RestArrow.mapWith (setSem fun l => X (assign η s.binders As, l)) (I.arguments (assign η s.binders As) (setSem fun l => X (assign η s.binders As, l)))) (RestArrow.mapWith (setSem fun l => X (assign η' s.binders As, l)) (I.arguments (assign η' s.binders As) (setSem fun l => X (assign η' s.binders As, l)))) (fun _ _ _ _ => Iff.rfl) (fun _ _ => rfl) (fun p hps => by
         have hin : ∀ l ∈ p.receiver ++ p.arguments.flatten ++ p.result, l ∈ reads G i := fun l hl => by
           simp only [reads, hq]
           exact List.mem_append_left _ (List.mem_append_left _ (List.mem_flatMap.mpr ⟨p, hps, by simpa [Arrow.operands, RestArrow.operands, List.append_assoc] using hl⟩))
@@ -2117,7 +2122,7 @@ theorem covers_arrows_sound {G : NormalGraph ι} {η : MixedAssignment ι}
       mixedValues G η self j U v)
     {j : Nat} (hj : j < n) {U : WorldT j} (hU : WExt (trunc j (Nat.le_of_lt hj) W) U) {u : Val}
     (hsem : mixedSem G η (.arrs L S) j U u) :
-    MethodMembers.onHost v (MethodMembers.Member.of (mixedValues G η) (mixedArgs G η) q) j U u := by
+    MethodMembers.onHost (excOf G) v (MethodMembers.Member.of (mixedValues G η) (mixedArgs G η) q) j U u := by
   obtain ⟨hnone, hcalls, hrests⟩ := hby
   -- The host is in `self`, and in each type the target's host must meet;
   -- so in the function's receiver, below `j`.
@@ -2204,11 +2209,11 @@ theorem bound_sigs_sound [DecidableEq ι] {G : NormalGraph ι} {θ : MixedAssign
     (hsig : BoundSigsCover G R s L M) {j : Nat}
     (hr : ∀ k, k < j → ∀ S T, R S T → FamLeAt G θ S T k) (hpa : ArgsLeBelow G θ R j)
     {U : WorldT j} {u v : Val}
-    (hi : semWithArgs (mixedValues G θ) (mixedArgs G θ) (.arrs s.signatures s.variadic) j U u)
+    (hi : semWithArgs Ξ (mixedValues G θ) (mixedArgs G θ) (.arrs s.signatures s.variadic) j U u)
     (hval : isVal v = true ∧ Scoped 0 v)
     (hrv : ∀ r ∈ s.signatures.map (·.receiver) ++ s.variadic.map (·.receiver), mixedValues G θ r j U v)
     (hinvB : Invocable (.objAt [] (.bound u v []) oid)) :
-    semWithArgs (mixedValues G θ) (mixedArgs G θ) (.arrs L M) j U (.objAt [] (.bound u v []) oid) := by
+    semWithArgs Ξ (mixedValues G θ) (mixedArgs G θ) (.arrs L M) j U (.objAt [] (.bound u v []) oid) := by
   have hadm : ∀ (S : List ι), Adm (mixedValues G θ S) :=
     fun S => setSem_adm (fun i => qDenoteWithArgs_adm G (mixedParameters G) (θ, i)) S
   have hargsAdm : ∀ (S : List ι), Adm (mixedArgs G θ S) :=
@@ -2248,7 +2253,7 @@ theorem bound_sigs_sound [DecidableEq ι] {G : NormalGraph ι} {θ : MixedAssign
     refine ⟨hbd.1, fun y hy => ?_⟩
     cases List.mem_singleton.mp hy
     exact ((by simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using hbd.2 _ (List.mem_singleton_self _)) :
-      PromiseWith p.effect (ArgsRest (p.arguments.1.map (mixedValues G θ))
+      PromiseWith Ξ p.effect (ArgsRest (p.arguments.1.map (mixedValues G θ))
         (mixedArgs G θ p.arguments.2))
         (mixedValues G θ t.receiver)
         (mixedValues G θ p.result) j U _).weaken (Effect.covers_sound heff) (fun _ _ _ r h => h)
@@ -2277,7 +2282,7 @@ theorem covers_by_scheme_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Opti
       mixedValues G η self j U v)
     {j : Nat} (hj : j < n) {U : WorldT j} (hU : WExt (trunc j (Nat.le_of_lt hj) W) U) {u : Val}
     (hu : mixedValues G η F j U u) :
-    MethodMembers.onHost v (MethodMembers.Member.of (mixedValues G η) (mixedArgs G η) q) j U u := by
+    MethodMembers.onHost (excOf G) v (MethodMembers.Member.of (mixedValues G η) (mixedArgs G η) q) j U u := by
   unfold CoversByScheme at hby
   split at hby
   · rename_i i
@@ -2319,7 +2324,7 @@ theorem covers_by_scheme_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Opti
           G.domain.allowed s As → Bounded (fun θ S => (mixedParameters G).bound θ
             (setSem (fun l => qDenoteWithArgs G (mixedParameters G) (θ, l))) S) η s As qlevel →
           ∀ L M, BoundSigsCover G R s L M →
-          semWithArgs (mixedValues G (assign η s.binders As)) (mixedArgs G (assign η s.binders As))
+          semWithArgs (excOf G) (mixedValues G (assign η s.binders As)) (mixedArgs G (assign η s.binders As))
             (.arrs L M) qlevel (trunc qlevel hlevel U) (.objAt [] (.bound u v []) oid) := by
         intro qlevel hlevel oid As hl hal hb' L M hc
         exact bound_sigs_sound hc (fun k hk => (hre i s As hs).1 k (by omega))
@@ -2344,7 +2349,7 @@ theorem covers_by_scheme_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Opti
             Bool.false_eq_true, if_false]
           refine ⟨hinvB oid, fun qlevel hlevel As hl _hal hbd => ?_⟩
           have hal := (sameShape_allowed G.domain hord As).mpr _hal
-          show semWithArgs (mixedValues G (assign η s'.binders As)) (mixedArgs G (assign η s'.binders As))
+          show semWithArgs (excOf G) (mixedValues G (assign η s'.binders As)) (mixedArgs G (assign η s'.binders As))
               (.arrs s'.signatures s'.variadic) qlevel (trunc qlevel hlevel U) (.objAt [] (.bound u v []) oid)
           rcases hcase with ⟨hbs, hbnd, hcov⟩ | hren
           · have hb' : Bounded (fun θ S => (mixedParameters G).bound θ
@@ -2397,7 +2402,7 @@ theorem covers_by_function_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Op
       mixedValues G η self j U v)
     {j : Nat} (hj : j < n) {U : WorldT j} (hU : WExt (trunc j (Nat.le_of_lt hj) W) U) {u : Val}
     (hu : mixedValues G η F j U u) :
-    MethodMembers.onHost v (MethodMembers.Member.of (mixedValues G η) (mixedArgs G η) q) j U u := by
+    MethodMembers.onHost (excOf G) v (MethodMembers.Member.of (mixedValues G η) (mixedArgs G η) q) j U u := by
   unfold CoversByFunction at hby
   split at hby
   · rename_i L S hE
@@ -2539,14 +2544,14 @@ theorem protoHolds_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Re
       ∀ j (hj : j < n) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
         ∀ p, mixedValues G η P j U p →
           MethodMembers.along q.key
-            (MethodMembers.onHost v (MethodMembers.Member.of (mixedValues G η) (mixedArgs G η) q)) e j U p := by
+            (MethodMembers.onHost (excOf G) v (MethodMembers.Member.of (mixedValues G η) (mixedArgs G η) q)) e j U p := by
   -- Found on the prototype itself: its field or view of the key holds a
   -- function covering the signature, as an own one would.
   have found : ∀ P, FoundOn G sub R known self q P →
       ∀ j (hj : j < n) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
         ∀ p, mixedValues G η P j U p →
           MethodMembers.along q.key
-            (MethodMembers.onHost v (MethodMembers.Member.of (mixedValues G η) (mixedArgs G η) q)) 0 j U p := by
+            (MethodMembers.onHost (excOf G) v (MethodMembers.Member.of (mixedValues G η) (mixedArgs G η) q)) 0 j U p := by
     intro P hview j hj U hU p hp
     have hx : ∀ i (hi : i < j) (U' : WorldT i), WExt (trunc i (Nat.le_of_lt hi) U) U' →
         WExt (trunc i (Nat.le_of_lt (Nat.lt_trans hi hj)) W) U' := by
@@ -2603,8 +2608,8 @@ theorem covers_methods_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option
       v = .objAt flds .absent oid ∧ flds.lookup f.1 = some l ∧ lookup W l = some c ∧
       ∀ (j : Nat) (hj : j < n) (U : WorldT j) (u : Val), c j hj U u → mixedValues G η f.2 j U u)
     (hbounds : ∀ K ∈ bounds, ownKeysT K n W v)
-    (hv : MethodMembers.methodT (ms.map (MethodMembers.Member.of (mixedValues G η) (mixedArgs G η))) n W v) :
-    MethodMembers.methodT (ns.map (MethodMembers.Member.of (mixedValues G η) (mixedArgs G η))) n W v := by
+    (hv : MethodMembers.methodT (excOf G) (ms.map (MethodMembers.Member.of (mixedValues G η) (mixedArgs G η))) n W v) :
+    MethodMembers.methodT (excOf G) (ns.map (MethodMembers.Member.of (mixedValues G η) (mixedArgs G η))) n W v := by
   intro mq hmq
   obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hmq
   rcases hc q hq with ⟨p, hp, hkey, hpq⟩ | ⟨f, hf, hkey, hby⟩ | ⟨⟨K, hK, hnot⟩, f, hf, hpk, hview⟩
@@ -2964,8 +2969,8 @@ theorem covers_ctors_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (
     (hc : CoversWith G sub R known arrows self (.ctors L S) (.ctors M T)) (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j) (hpa : ArgsLeBelow G η R n)
     (W : WorldT n) (v : Val) :
-    semWithArgs (mixedValues G η) (mixedArgs G η) (.ctors L S) n W v →
-      semWithArgs (mixedValues G η) (mixedArgs G η) (.ctors M T) n W v := by
+    semWithArgs Ξ (mixedValues G η) (mixedArgs G η) (.ctors L S) n W v →
+      semWithArgs Ξ (mixedValues G η) (mixedArgs G η) (.ctors M T) n W v := by
   unfold CoversWith at hc
   rintro ⟨hv, hw⟩
   refine ⟨⟨hv.1, fun q hq => ?_⟩, ⟨hv.1, fun t ht => ?_⟩⟩
@@ -3017,8 +3022,8 @@ theorem Covers.sound_raw [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Re
     (W : WorldT n) (v : Val)
     (hself : ∀ j (hj : j < n) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
       mixedValues G η self j U v) :
-    semWithArgs (mixedValues G η) (mixedArgs G η) a n W v →
-      semWithArgs (mixedValues G η) (mixedArgs G η) b n W v := by
+    semWithArgs (excOf G) (mixedValues G η) (mixedArgs G η) a n W v →
+      semWithArgs (excOf G) (mixedValues G η) (mixedArgs G η) b n W v := by
   by_cases hb : b = .top
   · subst hb; exact fun hv => semWithArgs_value hv
   by_cases hjs : b = .source
@@ -3563,8 +3568,8 @@ theorem covers_arrs_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (R
     (hc : Covers G sub R known self (.arrs L S) (.arrs M T)) (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j) (hpa : ArgsLeBelow G η R n)
     (W : WorldT n) (v : Val) :
-    semWithArgs (mixedValues G η) (mixedArgs G η) (.arrs L S) n W v →
-      semWithArgs (mixedValues G η) (mixedArgs G η) (.arrs M T) n W v := by
+    semWithArgs Ξ (mixedValues G η) (mixedArgs G η) (.arrs L S) n W v →
+      semWithArgs Ξ (mixedValues G η) (mixedArgs G η) (.arrs M T) n W v := by
   unfold Covers CoversWith at hc
   simp only at hc
   intro hv
@@ -3585,8 +3590,8 @@ theorem covers_body_sound [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssig
     (hd : if s.construct then (∃ M T, d = .ctors M T) else (∃ M T, d = .arrs M T)) (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j) (hpa : ArgsLeBelow G η R n)
     (W : WorldT n) (v : Val) :
-    semWithArgs (mixedValues G η) (mixedArgs G η) s.body n W v →
-      semWithArgs (mixedValues G η) (mixedArgs G η) d n W v := by
+    semWithArgs Ξ (mixedValues G η) (mixedArgs G η) s.body n W v →
+      semWithArgs Ξ (mixedValues G η) (mixedArgs G η) d n W v := by
   unfold SchemeRow.body at hc ⊢
   cases h : s.construct
   · simp only [h, Bool.false_eq_true, if_false] at hc hd ⊢
@@ -3728,7 +3733,7 @@ theorem clauseImg_value [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι)
     (himg : ∀ S ∈ c.operands, ∃ T, tyImg tbl κ S = some T ∧
       Agree (X S) (Y T) n ∧ Agree (P S) (Q T) n)
     (he : Agree (X []) (Y []) n) (hp : Agree (P []) (Q []) n) :
-    semWithArgs X P c n W v ↔ semWithArgs Y Q (clauseImg tbl κ c) n W v := by
+    semWithArgs Ξ X P c n W v ↔ semWithArgs Ξ Y Q (clauseImg tbl κ c) n W v := by
   let r : List ι → List ι := fun S => if S ∈ c.operands then S else []
   have hcr : c.map r = c := map_of_operands fun S hS => by simp [r, hS]
   unfold clauseImg
@@ -3740,7 +3745,7 @@ theorem clauseImg_value [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι)
     · obtain ⟨T, hT, hx, ha⟩ := himg S hS
       simpa [r, hS, hT] using And.intro hx ha
     · simpa [r, hS, tyImg] using And.intro he hp
-  exact semWithArgs_congr _ _ _ _ n (fun S => (h S).1) (fun S => (h S).2) c W v
+  exact semWithArgs_congr _ _ _ _ n (fun _ _ _ _ => Iff.rfl) (fun S => (h S).1) (fun S => (h S).2) c W v
 
 /-- A checked operand image transports a clause read in a row: the realm's
 invariant is the same of a clause and of its image. -/
@@ -3793,7 +3798,7 @@ theorem semWithArgs_members [DecidableEq ι] {X : List ι → Fam} {P : List ι 
     (hX : ∀ S T, sameLabels S T = true → X S = X T) (hP : ∀ S T, sameLabels S T = true → P S = P T)
     {f : List ι → List ι} {c : Clause (List ι)}
     (hf : ∀ S ∈ c.operands, sameLabels (f S) S = true) (hnil : sameLabels (f []) [] = true) :
-    semWithArgs X P (c.map f) = semWithArgs X P c := by
+    semWithArgs Ξ X P (c.map f) = semWithArgs Ξ X P c := by
   let r : List ι → List ι := fun S => if S ∈ c.operands then S else []
   have hcr : c.map r = c := map_of_operands fun S hS => by simp [r, hS]
   rw [semWithArgs_map, ← hcr, semWithArgs_map, semWithArgs_map]
@@ -5026,7 +5031,7 @@ theorem table_row_mixed [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable �
             dsimp only [mixedParameters]
             rw [hmap, hmap']
             simp only [List.map_map]
-            refine sigsT_congr s.construct s.signatures _ _ s.variadic _ _ (by
+            refine sigsT_congr s.construct s.signatures _ _ s.variadic _ _ (fun _ _ _ _ => Iff.rfl) (by
               intro p hps
               obtain ⟨_, hsome⟩ := mapM_some hsigs
               obtain ⟨q, hq⟩ := Option.isSome_iff_exists.mp (hsome p hps)
@@ -5347,7 +5352,7 @@ theorem inst_images_sound [DecidableEq ι] {G : NormalGraph ι} (η : MixedAssig
     (hL : ∀ q ∈ L, ∃ p ∈ s.signatures, instSig G tbl (s.binders.zip θs) p q = true)
     (hM : ∀ q ∈ M, ∃ p ∈ s.variadic, instRest G tbl (s.binders.zip θs) p q = true)
     : FamLe (mixedValues G η [i])
-      (semWithArgs (mixedValues G η) (graphArguments G η (mixedValues G η)) (.arrs L M)) := by
+      (semWithArgs (excOf G) (mixedValues G η) (graphArguments G η (mixedValues G η)) (.arrs L M)) := by
   intro n W v hv
   obtain ⟨_, hm, hv⟩ := hv
   cases List.mem_singleton.mp hm
@@ -5358,10 +5363,10 @@ theorem inst_images_sound [DecidableEq ι] {G : NormalGraph ι} (η : MixedAssig
   let As : List MixedFamily := θs.map F
   have hc := bounded_substitution_elim η F
     (fun η' S => mixedMeaning G η' S) s θs
-    (fun As => instanceTWithArgs
+    (fun As => instanceTWithArgs (excOf G)
       (fun η' S => setSem (fun l => qDenoteWithArgs G (mixedParameters G) (η', l)) S) η s As (graphArguments G)) G.domain
     hlen hal hbnd n W v hs
-  change instanceTWithArgs
+  change instanceTWithArgs (excOf G)
     (fun η' S => setSem (fun l => qDenoteWithArgs G (mixedParameters G) (η', l)) S) η s As (graphArguments G) n W v at hc
   simp only [instanceTWithArgs, sigsT, hcon, Bool.false_eq_true, if_false] at hc
   have himg : ∀ S S', tyImg tbl (s.binders.zip θs) S = some S' →
@@ -5409,7 +5414,7 @@ theorem inst_images_sound [DecidableEq ι] {G : NormalGraph ι} (η : MixedAssig
   · obtain ⟨q, hqL, rfl⟩ := List.mem_map.mp hq'
     obtain ⟨p, hps, hsig⟩ := hL q hqL
     have hpr := hc.1.2 _ (List.mem_map_of_mem hps)
-    change PromiseWith p.effect (ArgsShort (p.arguments.map (mixedValues G (assign η s.binders As))))
+    change PromiseWith (excOf G) p.effect (ArgsShort (p.arguments.map (mixedValues G (assign η s.binders As))))
       (mixedValues G (assign η s.binders As) p.receiver)
       (mixedValues G (assign η s.binders As) p.result) n W v at hpr
     obtain ⟨hsig, heffect⟩ := Bool.and_eq_true_iff.mp hsig
@@ -5433,9 +5438,9 @@ theorem inst_images_sound [DecidableEq ι] {G : NormalGraph ι} (η : MixedAssig
   · obtain ⟨q, hqM, rfl⟩ := List.mem_map.mp hr'
     obtain ⟨p, hps, hsig⟩ := hM q hqM
     have hpr := hc.2.2 _ (List.mem_map_of_mem hps)
-    change PromiseWith p.effect (ArgsRest _ (graphArguments G (assign η s.binders As)
+    change PromiseWith (excOf G) p.effect (ArgsRest _ (graphArguments G (assign η s.binders As)
       (mixedValues G (assign η s.binders As)) p.arguments.2)) _ _ n W v at hpr
-    change PromiseWith p.effect (ArgsRest (p.arguments.1.map (mixedValues G (assign η s.binders As)))
+    change PromiseWith (excOf G) p.effect (ArgsRest (p.arguments.1.map (mixedValues G (assign η s.binders As)))
       (graphArguments G (assign η s.binders As) (mixedValues G (assign η s.binders As)) p.arguments.2))
       (mixedValues G (assign η s.binders As) p.receiver) (mixedValues G (assign η s.binders As) p.result) n W v at hpr
     obtain ⟨hsig, heffect⟩ := Bool.and_eq_true_iff.mp hsig
@@ -5475,7 +5480,7 @@ theorem inst_mixed_sound [DecidableEq ι] {G : NormalGraph ι} (η : MixedAssign
     (hL : ∀ q ∈ L, ∃ p ∈ s.signatures, instSig G tbl (s.binders.zip θs) p q = true)
     (hM : ∀ q ∈ M, ∃ p ∈ s.variadic, instRest G tbl (s.binders.zip θs) p q = true)
     : FamLe (mixedValues G η [i])
-      (semWithArgs (mixedValues G η) (graphArguments G η (mixedValues G η)) (.arrs L M)) := by
+      (semWithArgs (excOf G) (mixedValues G η) (graphArguments G η (mixedValues G η)) (.arrs L M)) := by
   exact inst_images_sound η hp hq hcon hlen hal hbnd
     (table_instanceImages η hlen hkinds hok) hL hM
 
@@ -5667,12 +5672,12 @@ theorem renames_sound [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssignmen
       cases u with
       | inl w => exact hr k hk _ _ hR U w hu'
       | inr ws => exact hpa k hk _ _ hR U ws hu'
-    have hi : semWithArgs (mixedValues G (assign η s.binders As)) (mixedArgs G (assign η s.binders As))
+    have hi : semWithArgs (excOf G) (mixedValues G (assign η s.binders As)) (mixedArgs G (assign η s.binders As))
         s.body n W v := (instance_body G η s As) ▸ hall As (by rw [hlen]; exact hl) hal hb'
     have hcovered := covers_body_sound hcov (by
       unfold SchemeRow.body; rw [sameShape_construct hord]
       cases s'.construct <;> simp [Clause.map]) n (hre i s As hs).1 (hre i s As hs).2 W v hi
-    show instanceTWithArgs _ η s' As _ n W v
+    show instanceTWithArgs _ _ η s' As _ n W v
     rw [instance_body]
     rw [← semWithArgs_map_meaning (η := assign η s.binders As)
       (f := r.substitute (s'.binders.zip (s.binders.map fun p => [p]))) fun S hS => ?_]
@@ -5713,9 +5718,9 @@ theorem scheme_covers_sound [DecidableEq ι] {G : NormalGraph ι} {η : MixedAss
       intro b hbm hbin j hj U u hu
       rw [hbs] at hbin hu
       exact hb b (hbnd b hbm) hbin j hj U u hu
-    have hi : semWithArgs (mixedValues G (assign η s.binders As)) (mixedArgs G (assign η s.binders As))
+    have hi : semWithArgs (excOf G) (mixedValues G (assign η s.binders As)) (mixedArgs G (assign η s.binders As))
         s.body n W v := (instance_body G η s As) ▸ hall As (by rw [hbs]; exact hl) hal hb'
-    show instanceTWithArgs _ η s' As _ n W v
+    show instanceTWithArgs _ _ η s' As _ n W v
     rw [instance_body, ← hbs]
     exact covers_body_sound hcov (by
       unfold SchemeRow.body; rw [sameShape_construct hord]

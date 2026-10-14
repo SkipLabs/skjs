@@ -89,7 +89,7 @@ theorem accept_claims [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIm
 
 theorem accepted_safe [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {R P claims C start}
     (hc : acceptUsing G images R P claims C start = true) (n : Nat) :
-    SafeGraph P (meaning G R) n (ofList []) [] (.at start (fun _ => .nul)) :=
+    SafeGraph (excOf G) P (meaning G R) n (ofList []) [] (.at start (fun _ => .nul)) :=
   by
     simp only [acceptUsing_eq, Bool.and_eq_true] at hc
     exact accepted_closed_safe hc.2 n
@@ -99,7 +99,7 @@ theorem accepted_from_inputs [DecidableEq ι] {G : NormalGraph ι} {images : Ins
     {codes : CodeEntry ι → Bool} (hc : acceptUsing (checker := checker) G images R P claims C start inputs codes = true) (n W h ρ)
     (he : EnvOk G inputs ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h)
     (hcodes : ProgramCertificates.CodesSound G codes := by exact Verification.ProgramCertificates.codesSound_none _) :
-    SafeGraph P (meaning G R) n W h (.at start ρ) := by
+    SafeGraph (excOf G) P (meaning G R) n W h (.at start ρ) := by
   simp only [acceptUsing_eq, Bool.and_eq_true] at hc
   exact ControlFlow.accepted_inputs_safe hc.2 n W h ρ he hw hh hcodes
 

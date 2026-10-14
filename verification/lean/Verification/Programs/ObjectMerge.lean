@@ -1307,7 +1307,7 @@ theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
       (∀ x ∈ ds, x.1.Admits q.1 → inLabels q.2 x.2 = true))
     (hod : ∀ q ∈ os, (∀ x ∈ cs, x.1.Admits q.key → q.type = x.2) ∧
       (∀ x ∈ ds, x.1.Admits q.key → inLabels q.type x.2 = true)) :
-    Safe (meaning G R) (p + 1) W h (.merge d va vb) := by
+    Safe (excOf G) (meaning G R) (p + 1) W h (.merge d va vb) := by
   have hnodup := mergeData_nodup hpn hqn
   obtain ⟨hF, hO, hP, hK⟩ := result_facts hs hfs hos hpr hks
   have hfn : (fs.map Prod.fst).Nodup := hnd.sublist (List.sublist_append_left _ _)
@@ -1591,7 +1591,7 @@ theorem merge_sides {G : NormalGraph ι} {d : List PropKey} {ca cb : Clause (Lis
 theorem merge_values_safe {G : NormalGraph ι} {d : List PropKey} {A B R : List ι}
     (hm : MergeOk G d A B R = true) {n : Nat} {W : WorldT n} {h : Heap} {va vb : Val}
     (hadm : WorldAdm W) (hok : HeapOk n W h) (ha : meaning G A n W va) (hb : meaning G B n W vb) :
-    Safe (meaning G R) n W h (.merge d va vb) := by
+    Safe (excOf G) (meaning G R) n W h (.merge d va vb) := by
   cases n with
   | zero => trivial
   | succ p =>

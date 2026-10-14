@@ -88,14 +88,14 @@ theorem fits_bound {T : TupleF} {E : Fam}
 abbrev Admissible := @Adm (List Val)
 
 /-- One operational call promise for every argument-list presentation. -/
-def callable (P : Family) (Rc R : Fam) : Fam := fun n W v =>
-  Invocable v ∧ Promise P Rc R n W v
+def callable (Ξ : Fam) (P : Family) (Rc R : Fam) : Fam := fun n W v =>
+  Invocable v ∧ Promise Ξ P Rc R n W v
 
 /-- Elimination uses the existing operational step and establishes `Safe`. -/
 theorem call_safe {P : Family} {Rc R : Fam} (hP : Admissible P) (hRc : Adm Rc)
-    {n W heap f r vs} (hf : callable P Rc R n W f) (hr : Rc n W r)
+    {n W heap f r vs} (hf : callable Ξ P Rc R n W f) (hr : Rc n W r)
     (hrv : isVal r = true) (hv : CallArguments.Values vs) (ha : P n W vs)
-    (hw : WorldAdm W) (hh : HeapOk n W heap) : Safe R n W heap (.invoke f r vs) := by
+    (hw : WorldAdm W) (hh : HeapOk n W heap) : Safe Ξ R n W heap (.invoke f r vs) := by
   cases n with
   | zero => trivial
   | succ n =>

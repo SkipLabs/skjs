@@ -30,7 +30,7 @@ theorem allocation_safe {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A)
       WExt (trunc j (Nat.le_of_lt hj) W) U →
       recT (ns.zip As) j U (.objAt (slots h.length ns) .absent (h.length + vs.length)) →
       Q j U (.objAt (slots h.length ns) code (h.length + vs.length))) :
-    SafeWith (policy As) Q n W h (.makeAt code ns vs) := by
+    SafeWith Ξ (policy As) Q n W h (.makeAt code ns vs) := by
   cases n with
   | zero => trivial
   | succ p =>

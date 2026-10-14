@@ -14,17 +14,17 @@ inductive Follows (p : Policy) : Config → Config → Prop where
   | refl : Follows p c c
   | snoc : Follows p c d → Edge d e → p.allows d e → Follows p c e
 
-def SafeWith (p : Policy) (B : Fam) : (n : Nat) → WorldT n → Heap → Tm → Prop
+def SafeWith (Ξ : Fam) (p : Policy) (B : Fam) : (n : Nat) → WorldT n → Heap → Tm → Prop
   | 0, _, _, _ => True
   | n+1, W, h, t =>
-      ((isVal t = true ∧ B (n+1) W t) ∨ Thrown t) ∨
+      ((isVal t = true ∧ B (n+1) W t) ∨ Thrown Ξ (n+1) W t) ∨
       ∃ U : WorldT n, ∃ h' t',
         WExt (trunc n (Nat.le_succ n) W) U ∧ WorldAdm U ∧
         Step h t h' t' ∧ HeapOk n U h' ∧
-        p.allows ⟨n+1,W,h,t⟩ ⟨n,U,h',t'⟩ ∧ SafeWith p B n U h' t'
+        p.allows ⟨n+1,W,h,t⟩ ⟨n,U,h',t'⟩ ∧ SafeWith Ξ p B n U h' t'
 
 theorem erase {p B} : ∀ n (W : WorldT n) h t,
-    SafeWith p B n W h t → Safe B n W h t := by
+    SafeWith Ξ p B n W h t → Safe Ξ B n W h t := by
   intro n; induction n with
   | zero => intros; trivial
   | succ n ih =>
@@ -35,8 +35,8 @@ theorem erase {p B} : ∀ n (W : WorldT n) h t,
     · exact .inr ⟨U,h',t',he,hu,st,hh,ih U h' t' rest⟩
 
 theorem Follows.safe {p c d B} (path : Follows p c d)
-    (hs : SafeWith p B c.level c.world c.heap c.term) :
-    SafeWith p B d.level d.world d.heap d.term := by
+    (hs : SafeWith Ξ p B c.level c.world c.heap c.term) :
+    SafeWith Ξ p B d.level d.world d.heap d.term := by
   induction path with
   | refl => exact hs
   | snoc path edge allowed ih =>
@@ -63,7 +63,7 @@ theorem result_adm (p : Policy) (op : Val → Tm) (A : Fam) : Adm (result p op A
 world chosen by the fixed policy. No world-independence premise is needed. -/
 theorem result_le_of_safe {p op A B} (hb : Adm B)
     (safe : ∀ n (W : WorldT n) h x, WorldAdm W → HeapOk n W h → A n W x →
-      SafeWith p B n W h (op x)) : FamLe (result p op A) B := by
+      SafeWith Ξ p B n W h (op x)) : FamLe (result p op A) B := by
   apply closure_le hb
   rintro n W v ⟨⟨hn,hv,_⟩,k,U,h,x,h',hu,hh,hx,path⟩
   have hs := path.safe (safe k U h x hu hh hx)
@@ -79,7 +79,7 @@ theorem safe_result_from {p op A} {k} {U : WorldT k} {h x}
     (hu : WorldAdm U) (hh : HeapOk k U h) (hx : A k U x) :
     ∀ n (W : WorldT n) heap t,
       Follows p ⟨k,U,h,op x⟩ ⟨n,W,heap,t⟩ →
-      SafeWith p values n W heap t → SafeWith p (result p op A) n W heap t := by
+      SafeWith Ξ p values n W heap t → SafeWith Ξ p (result p op A) n W heap t := by
   intro n; induction n with
   | zero => intros; trivial
   | succ n ih =>
@@ -93,8 +93,8 @@ theorem safe_result_from {p op A} {k} {U : WorldT k} {h x}
 
 theorem safe_result {p op A n W heap x}
     (hw : WorldAdm W) (hh : HeapOk n W heap) (hx : A n W x)
-    (hs : SafeWith p values n W heap (op x)) :
-    Safe (result p op A) n W heap (op x) :=
+    (hs : SafeWith Ξ p values n W heap (op x)) :
+    Safe Ξ (result p op A) n W heap (op x) :=
   erase n W heap (op x) (safe_result_from hw hh hx n W heap (op x) .refl hs)
 
 #print axioms result_le_of_safe

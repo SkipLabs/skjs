@@ -85,7 +85,7 @@ theorem checkJson_safe {ast claims evidence : Json} {fileKey : String}
       (∀ r c, (r,c) ∈ (CertifiedPlan.requests certified).zip b.functions →
         ∀ η, r.Admits η → ∀ n W heap ρ, EnvOk (reassign F.equations.graph η) r.inputs ρ n W →
           WorldAdm W → HeapOk n W heap →
-          SafeGraph r.program (meaning (reassign F.equations.graph η) r.result)
+          SafeGraph (excOf (reassign F.equations.graph η)) r.program (meaning (reassign F.equations.graph η) r.result)
             n W heap (.at r.start ρ)) := by
   unfold checkJson at h
   cases he : extractPlans ast claims fileKey only budget with

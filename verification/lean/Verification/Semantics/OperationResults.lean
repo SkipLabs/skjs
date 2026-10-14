@@ -23,8 +23,8 @@ inductive Path : Config → Config → Prop where
 /-- A second world-annotated execution has the same concrete steps. Its
 result world need not coincide with the world chosen by the safety proof. -/
 theorem Path.safe_exists {c d : Config} (path : Path c d) (B : Fam) :
-    ∀ V : WorldT c.level, Safe B c.level V c.heap c.term →
-      ∃ U : WorldT d.level, Safe B d.level U d.heap d.term := by
+    ∀ V : WorldT c.level, Safe Ξ B c.level V c.heap c.term →
+      ∃ U : WorldT d.level, Safe Ξ B d.level U d.heap d.term := by
   induction path with
   | refl => intro V h; exact ⟨V, h⟩
   | snoc path edge ih =>
@@ -85,7 +85,7 @@ theorem safe_result_from {op A} {k} {U : WorldT k} {h x}
     (hu : WorldAdm U) (hh : HeapOk k U h) (hx : A k U x) :
     ∀ n (W : WorldT n) heap t,
       Path ⟨k, U, h, op x⟩ ⟨n, W, heap, t⟩ →
-      Safe values n W heap t → Safe (result op A) n W heap t := by
+      Safe Ξ values n W heap t → Safe Ξ (result op A) n W heap t := by
   intro n
   induction n with
   | zero => intros; trivial
@@ -100,8 +100,8 @@ theorem safe_result_from {op A} {k} {U : WorldT k} {h x}
 
 theorem safe_result {op A n W heap x}
     (hw : WorldAdm W) (hh : HeapOk n W heap) (hx : A n W x)
-    (hs : Safe values n W heap (op x)) :
-    Safe (result op A) n W heap (op x) :=
+    (hs : Safe Ξ values n W heap (op x)) :
+    Safe Ξ (result op A) n W heap (op x) :=
   safe_result_from hw hh hx n W heap (op x) .refl hs
 
 theorem result_valid (op : Val → Tm) (A : Fam) : (Adm (result op A) ∧ ∀ n W v, result op A n W v → isVal v = true ∧ Scoped 0 v) :=
@@ -157,7 +157,7 @@ theorem result_le_of_safe {op A B}
     (hb : Adm B)
     (independent : ∀ n (U V : WorldT n) v, B n U v → B n V v)
     (safe : ∀ n (W : WorldT n) heap x, WorldAdm W → HeapOk n W heap →
-      A n W x → Safe B n W heap (op x)) :
+      A n W x → Safe Ξ B n W heap (op x)) :
     FamLe (result op A) B := by
   apply closure_le hb
   rintro n W v ⟨⟨hn, hv, _⟩, k, U, h, x, h', hu, hh, hx, path⟩

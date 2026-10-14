@@ -66,8 +66,8 @@ def check (G : NormalGraph ι) (Γ : List (Ty ι)) (t : Tm) : Bool :=
 /-- A single allocation changes only freshly appended locations. -/
 theorem make_preserves {T n W h code fields xs}
     (hv : ∀ v ∈ xs, isVal v = true)
-    (hs : Safe T n W h (.makeAt code fields xs)) :
-    SafePost T (CallEffects.Effect.preservesInputHeap.post h) n W h (.makeAt code fields xs) := by
+    (hs : Safe Ξ T n W h (.makeAt code fields xs)) :
+    SafePost Ξ T (CallEffects.Effect.preservesInputHeap.post h) n W h (.makeAt code fields xs) := by
   cases n with
   | zero => trivial
   | succ n =>
@@ -85,15 +85,15 @@ theorem make_preserves {T n W h code fields xs}
 
 theorem array_preserves {T n W h xs}
     (hv : ∀ v ∈ xs, isVal v = true)
-    (hs : Safe T n W h (.arrLit xs)) :
-    SafePost T (CallEffects.Effect.preservesInputHeap.post h) n W h (.arrLit xs) := by
+    (hs : Safe Ξ T n W h (.arrLit xs)) :
+    SafePost Ξ T (CallEffects.Effect.preservesInputHeap.post h) n W h (.arrLit xs) := by
   apply one_step rfl rfl (.arrAlloc hv) ⟨xs,rfl⟩ hs
 
 theorem sound {G : NormalGraph ι} {Γ t A ρ n W h}
     (hc : check G Γ t = true) (hscope : checkScope Γ.length t = true)
     (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
-    (hs : Safe (meaning G A) n W h (instantiate 0 ρ t)) :
-    SafePost (meaning G A) (CallEffects.Effect.preservesInputHeap.post h)
+    (hs : Safe (excOf G) (meaning G A) n W h (instantiate 0 ρ t)) :
+    SafePost (excOf G) (meaning G A) (CallEffects.Effect.preservesInputHeap.post h)
       n W h (instantiate 0 ρ t) := by
   simp only [check, Bool.or_eq_true] at hc
   rcases hc with hp | hc
@@ -156,7 +156,7 @@ private theorem call_local_sound [DecidableEq ι] {G : NormalGraph ι}
     (ht : ∀ p ∈ ps, HasTyUsing G images p.context p.term p.type)
     (hv : ∀ p ∈ ps, valueTerm p.term = true ∧ checkScope p.context.length p.term = true)
     {ρ n W h} (he : EnvOk G j.context ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
-    SafePost (meaning G j.type) (CallEffects.Effect.preservesInputHeap.post h)
+    SafePost (excOf G) (meaning G j.type) (CallEffects.Effect.preservesInputHeap.post h)
       n W h (instantiate 0 ρ j.term) := by
   rcases j with ⟨Γ,t,A⟩
   -- The rule admits only a call with a callee and a receiver premise.
@@ -227,7 +227,7 @@ theorem selectedCall_sound [DecidableEq ι] {G : NormalGraph ι}
     (hp : selectedCallPreserves e = true) (hcodes : CodesSound G codes)
     {ρ n W h} (he : EnvOk G (claim e).context ρ n W)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
-    SafePost (meaning G (claim e).type) (CallEffects.Effect.preservesInputHeap.post h)
+    SafePost (excOf G) (meaning G (claim e).type) (CallEffects.Effect.preservesInputHeap.post h)
       n W h (instantiate 0 ρ (claim e).term) := by
   cases e with
   | node j r ps =>

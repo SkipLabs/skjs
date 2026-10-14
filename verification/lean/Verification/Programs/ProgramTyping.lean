@@ -35,20 +35,20 @@ theorem represents_sem {G : NormalGraph ι} {A c} (hr : Represents G A c) (n W v
 
 /-- A member of a represented type is a member of its clause. -/
 theorem represents_raw {G : NormalGraph ι} {A c} (hr : Represents G A c) (n W v) :
-    meaning G A n W v → semWithArgs (meaning G) (argMeaning G) c n W v :=
+    meaning G A n W v → semWithArgs (excOf G) (meaning G) (argMeaning G) c n W v :=
   fun h => ((represents_sem hr n W v).mp h).1
 
 /-- A member of a clause that is not a record's is a member of the type it
 represents: the realm asks nothing of it. -/
 theorem represents_back {G : NormalGraph ι} {A c} (hr : Represents G A c) (n W v)
     (hc : c.record = false := by rfl) :
-    semWithArgs (meaning G) (argMeaning G) c n W v → meaning G A n W v :=
+    semWithArgs (excOf G) (meaning G) (argMeaning G) c n W v → meaning G A n W v :=
   fun h => (represents_sem hr n W v).mpr ⟨h, realmInvariant_of_not_record hc n W v⟩
 
 /-- A value of a class's key clause is a key the class admits, by the
 `ToPropertyKey` a computed key's step applies. -/
 theorem keyClause_admits {G : NormalGraph ι} {K : IndexKeys} {n W v}
-    (h : semWithArgs (meaning G) (argMeaning G) (keyClause K) n W v) :
+    (h : semWithArgs (excOf G) (meaning G) (argMeaning G) (keyClause K) n W v) :
     ∃ f, propertyKey v = some f ∧ K.Admits f := by
   cases K
   · obtain ⟨s, rfl⟩ := h; exact ⟨_, rfl, trivial⟩
@@ -179,6 +179,11 @@ theorem SourceValues.sound {G : NormalGraph ι} {A : Ty ι} (h : SourceValues G 
     {n W v} (hv : meaning G A n W v) : isSourceVal v = true :=
   (sourceTy_sound h G.env n W v hv).1
 
+/-- A value of a type of JavaScript values is of the graph's exception family. -/
+theorem SourceValues.exc {G : NormalGraph ι} {A : Ty ι} (h : SourceValues G A)
+    {n W v} (hv : meaning G A n W v) : excOf G n W v :=
+  ⟨sourceTy_sound h G.env n W v hv, realmInvariant_of_not_record rfl n W v⟩
+
 /-- A type whose every clause is a store's. -/
 def storeTy (G : NormalGraph ι) (S : Ty ι) : Bool :=
   G.plainTy S && (expand G S).all fun c => match c with
@@ -305,7 +310,7 @@ def GraphCodeSpec (G : NormalGraph ι) (arity : Nat) (E : List Tm)
   arity ≤ row.arguments.length ∧
   ∀ n W h L, EnvOk G (codeFrame arity row Cs store) (envOf L .nul) n W → WorldAdm W →
     HeapOk n W h → CallArguments.Values L →
-      SafePost (meaning G row.result) (row.effect.post h) n W h (.goto E K start L .nul)
+      SafePost (excOf G) (meaning G row.result) (row.effect.post h) n W h (.goto E K start L .nul)
 
 /-- A graph code the certificate of a unit has checked at one signature: the
 code, its captures' types, the signature, and, for code collecting a rest, the
@@ -391,7 +396,7 @@ theorem graph_invoke {G : NormalGraph ι} {arity E K start Cs row vs n W}
     {j : Nat} (hj : j < n) {U : WorldT j} (hx : WExt (trunc j (Nat.le_of_lt hj) W) U)
     (hu : WorldAdm U) {heap : Heap} (hh : HeapOk j U heap) {r : Tm} (hr : meaning G row.receiver j U r)
     {args : List Tm} (ha : ArgsShort (row.arguments.map (meaning G)) j U args) :
-    SafePost (meaning G row.result) (row.effect.post heap) j U heap
+    SafePost (excOf G) (meaning G row.result) (row.effect.post heap) j U heap
       (.goto E K start (r :: CallArguments.parameters arity args ++ vs) .nul) :=
   hs.2 j U heap _ (frame_envOk hs.1 hvs (Nat.le_of_lt hj) hx hr ha) hu hh (by
     intro v hv
@@ -407,7 +412,7 @@ theorem callsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W}
     {L : List (Arrow (Ty ι))} (fs : List (PropKey × Nat))
     (hs : ∀ p ∈ L, GraphCodeSpec G arity E K start Cs p) (hvs : EnvOk G Cs (envOf vs .nul) n W)
     (hsc : ∀ v ∈ vs, Scoped 0 v) (hvalues : CallArguments.Values vs) :
-    CallEffects.callsT (L.map (Arrow.map (meaning G))) n W
+    CallEffects.callsT (excOf G) (L.map (Arrow.map (meaning G))) n W
       (.objAt fs (.graph arity E K start vs) oid) := by
   refine ⟨⟨fs, _, _, rfl, rfl, by simpa [Scoped] using hsc⟩, ?_⟩
   intro q hq j hj U hx hu heap hh r hrv hr args hvals ha
@@ -421,7 +426,7 @@ theorem restsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W}
     {S : List (RestArrow (Ty ι))} (fs : List (PropKey × Nat))
     (hs : ∀ s ∈ S, GraphCodeSpec G arity E K start Cs s.fixed)
     (hvs : EnvOk G Cs (envOf vs .nul) n W) (hsc : ∀ v ∈ vs, Scoped 0 v) (hvalues : CallArguments.Values vs) :
-    CallEffects.restsT (S.map (RestArrow.mapWith (meaning G) (argMeaning G))) n W (.objAt fs (.graph arity E K start vs) oid) := by
+    CallEffects.restsT (excOf G) (S.map (RestArrow.mapWith (meaning G) (argMeaning G))) n W (.objAt fs (.graph arity E K start vs) oid) := by
   refine ⟨⟨fs, _, _, rfl, rfl, by simpa [Scoped] using hsc⟩, ?_⟩
   intro q hq j hj U hx hu heap hh r hrv hr args hvals ha
   obtain ⟨s, hsm, rfl⟩ := List.mem_map.mp hq
@@ -457,10 +462,10 @@ ordinary small-step congruence rule. -/
 theorem bind {A B : Fam} (C : Tm → Tm)
     (lift : ∀ {h t h' t'}, Step h t h' t' → Step h (C t) h' (C t'))
     (raise : ∀ {t v}, Raises t v → Raises (C t) v) :
-    ∀ n W h t, WorldAdm W → HeapOk n W h → Safe A n W h t →
+    ∀ n W h t, WorldAdm W → HeapOk n W h → Safe Ξ A n W h t →
     (∀ j (hj : j ≤ n) U, WExt (trunc j hj W) U → WorldAdm U →
-      ∀ h' v, HeapOk j U h' → isVal v = true → A j U v → Safe B j U h' (C v)) →
-    Safe B n W h (C t) := by
+      ∀ h' v, HeapOk j U h' → isVal v = true → A j U v → Safe Ξ B j U h' (C v)) →
+    Safe Ξ B n W h (C t) := by
   intro n
   induction n with
   | zero => intros; trivial
@@ -476,13 +481,13 @@ theorem bind {A B : Fam} (C : Tm → Tm)
       simpa only [trunc_trunc] using WExt_trunc hj hx
 
 /-- An operand remains safe after earlier operands spend budget or change the heap. -/
-def FutureSafe (A : Fam) (n : Nat) (W : WorldT n) (t : Tm) : Prop :=
+def FutureSafe (Ξ : Fam) (A : Fam) (n : Nat) (W : WorldT n) (t : Tm) : Prop :=
   ∀ j (hj : j ≤ n) U, WExt (trunc j hj W) U → WorldAdm U →
-    ∀ heap, HeapOk j U heap → Safe A j U heap t
+    ∀ heap, HeapOk j U heap → Safe Ξ A j U heap t
 
-theorem FutureSafe.transfer {A n W t} (h : FutureSafe A n W t)
+theorem FutureSafe.transfer {A n W t} (h : FutureSafe Ξ A n W t)
     {j : Nat} (hj : j ≤ n) {U : WorldT j} (hx : WExt (trunc j hj W) U) :
-    FutureSafe A j U t := by
+    FutureSafe Ξ A j U t := by
   intro k hk V hy hv heap hh
   apply h k (by omega) V _ hv heap hh
   apply WExt_trans _ hy
@@ -495,10 +500,10 @@ theorem bind_list {B : Fam} (xs : List (Fam × Tm))
     (lift : ∀ {h args h' args'}, CallArguments.ArgStep h args h' args' → Step h (C args) h' (C args'))
     (raise : ∀ {args v}, CallArguments.ArgRaises args v → Raises (C args) v)
     {n W heap} (hw : WorldAdm W) (hh : HeapOk n W heap)
-    (ht : ∀ p ∈ xs, FutureSafe p.1 n W p.2)
+    (ht : ∀ p ∈ xs, FutureSafe Ξ p.1 n W p.2)
     (hk : ∀ j (hj : j ≤ n) U, WExt (trunc j hj W) U → WorldAdm U →
-      ∀ heap args, HeapOk j U heap → ArgsT (xs.map Prod.fst) j U args → Safe B j U heap (C args)) :
-    Safe B n W heap (C (xs.map Prod.snd)) := by
+      ∀ heap args, HeapOk j U heap → ArgsT (xs.map Prod.fst) j U args → Safe Ξ B j U heap (C args)) :
+    Safe Ξ B n W heap (C (xs.map Prod.snd)) := by
   induction xs generalizing n C heap with
   | nil =>
     exact hk n (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hw heap [] hh trivial
@@ -532,10 +537,10 @@ theorem construct_safe {B : Fam} (xs : List (Fam × Tm)) (Us : List Fam)
     (hA : ∀ p ∈ xs, Adm p.1) (hAv : ∀ p ∈ xs, ValOnly p.1)
     (hUA : ∀ A ∈ Us, Adm A)
     {n W heap f} (hw : WorldAdm W) (hh : HeapOk n W heap)
-    (hf : Safe (ctorsT [(xs.map Prod.fst ++ Us, B)]) n W heap f)
-    (ha : ∀ p ∈ xs, FutureSafe p.1 n W p.2)
-    (hu : ∀ A ∈ Us, FutureSafe A n W .undef) :
-    Safe B n W heap (.construct f (xs.map Prod.snd)) := by
+    (hf : Safe Ξ (ctorsT Ξ [(xs.map Prod.fst ++ Us, B)]) n W heap f)
+    (ha : ∀ p ∈ xs, FutureSafe Ξ p.1 n W p.2)
+    (hu : ∀ A ∈ Us, FutureSafe Ξ A n W .undef) :
+    Safe Ξ B n W heap (.construct f (xs.map Prod.snd)) := by
   apply bind (fun f => .construct f (xs.map Prod.snd)) Step.constructL Raises.constructL n W heap f hw hh hf
   intro j hj U hx hw' heap' v hok hv hctor
   apply bind_list xs hA (Tm.construct v) (fun hs => CallArguments.Step.constructArgs hv hs)
@@ -585,11 +590,11 @@ theorem call_safe_short {Rc B : Fam} (xs : List (Fam × Tm)) (Us : List Fam)
     (hA : ∀ p ∈ xs, Adm p.1) (hAv : ∀ p ∈ xs, ValOnly p.1)
     (hUA : ∀ A ∈ Us, Adm A) (hUAv : ∀ A ∈ Us, ValOnly A)
     {n W heap f r} (hw : WorldAdm W) (hh : HeapOk n W heap)
-    (hf : Safe (callsT [(Rc, xs.map Prod.fst ++ Us, B)]) n W heap f)
-    (hr : FutureSafe Rc n W r)
-    (ha : ∀ p ∈ xs, FutureSafe p.1 n W p.2)
-    (hu : ∀ A ∈ Us, FutureSafe A n W .undef) :
-    Safe B n W heap (.invoke f r (xs.map Prod.snd)) := by
+    (hf : Safe Ξ (callsT Ξ [(Rc, xs.map Prod.fst ++ Us, B)]) n W heap f)
+    (hr : FutureSafe Ξ Rc n W r)
+    (ha : ∀ p ∈ xs, FutureSafe Ξ p.1 n W p.2)
+    (hu : ∀ A ∈ Us, FutureSafe Ξ A n W .undef) :
+    Safe Ξ B n W heap (.invoke f r (xs.map Prod.snd)) := by
   apply bind (fun f => .invoke f r (xs.map Prod.snd)) Step.callL Raises.callL n W heap f hw hh hf
   intro j hj U hx hw' heap' v hok hv hfun
   apply bind (fun r => .invoke v r (xs.map Prod.snd)) (Step.callRecv hv) (Raises.callRecv hv) j U heap' r hw' hok
@@ -631,10 +636,10 @@ have become values. -/
 theorem call_safe {Rc B : Fam} (xs : List (Fam × Tm)) (hRc : Adm Rc) (hRcv : ValOnly Rc)
     (hA : ∀ p ∈ xs, Adm p.1) (hAv : ∀ p ∈ xs, ValOnly p.1)
     {n W heap f r} (hw : WorldAdm W) (hh : HeapOk n W heap)
-    (hf : Safe (callsT [(Rc, xs.map Prod.fst, B)]) n W heap f)
-    (hr : FutureSafe Rc n W r)
-    (ha : ∀ p ∈ xs, FutureSafe p.1 n W p.2) :
-    Safe B n W heap (.invoke f r (xs.map Prod.snd)) :=
+    (hf : Safe Ξ (callsT Ξ [(Rc, xs.map Prod.fst, B)]) n W heap f)
+    (hr : FutureSafe Ξ Rc n W r)
+    (ha : ∀ p ∈ xs, FutureSafe Ξ p.1 n W p.2) :
+    Safe Ξ B n W heap (.invoke f r (xs.map Prod.snd)) :=
   call_safe_short xs [] hRc hRcv hA hAv (by simp) (by simp) hw hh (by simpa using hf) hr ha (by simp)
 
 /-- A shape-only test has a fixed answer. Numeric equality needs the
@@ -719,7 +724,7 @@ def tagClause (tag : Tag) (c : Clause α) : Option Bool :=
 /-- An object clause's answer for a key is its members': each is a plain
 object, owning the key exactly as the answer says. -/
 theorem keyAnswer_sound {S : α → Fam} {P : α → ArgFam} {c : Clause α} {k : PropKey} {q n W v}
-    (hq : keyAnswer k c = some q) (hv : semWithArgs S P c n W v) :
+    (hq : keyAnswer k c = some q) (hv : semWithArgs Ξ S P c n W v) :
     ∃ flds oid, v = .objAt flds .absent oid ∧ (flds.lookup k).isSome = q := by
   unfold keyAnswer at hq
   by_cases hp : c.presentKeys.contains k = true
@@ -740,7 +745,7 @@ theorem keyAnswer_sound {S : α → Fam} {P : α → ArgFam} {c : Clause α} {k 
 
 /-- An object clause's `Array.isArray` answer is its members'. -/
 theorem arrayAnswer_sound {S : α → Fam} {P : α → ArgFam} {c : Clause α} {q n W v}
-    (hq : arrayAnswer c = some q) (hv : semWithArgs S P c n W v) : tagHolds .isArray v = q := by
+    (hq : arrayAnswer c = some q) (hv : semWithArgs Ξ S P c n W v) : tagHolds .isArray v = q := by
   obtain ⟨flds, oid, rfl, h⟩ := keyAnswer_sound hq hv
   simpa [tagHolds, CallArguments.arrayStoreField] using h
 
@@ -778,7 +783,7 @@ private theorem tagShape_sound {tag : Tag} {v : Val} {q : Bool} (h7 : valueShape
         | (rename_i kind _; cases kind <;> (cases hq <;> rfl)))
 
 theorem tagClause_sound {S : α → Fam} {P : α → ArgFam} {c tag q n W v}
-    (hq : tagClause tag c = some q) (hv : semWithArgs S P c n W v) : tagHolds tag v = q := by
+    (hq : tagClause tag c = some q) (hv : semWithArgs Ξ S P c n W v) : tagHolds tag v = q := by
   by_cases hc : c = .top
   · subst hc; cases tag <;> simp [tagClause] at hq
   by_cases hj : c = .source
@@ -826,7 +831,7 @@ theorem answers_sound {G : NormalGraph ι} {A tag q n W v}
   exact tagClause_sound (hq.2 c hc) hv
 
 theorem inAnswer_protoFree {S : α → Fam} {P : α → ArgFam} {c : Clause α} {k : PropKey} {q n W v}
-    (hin : inAnswer k c = some q) (hv : semWithArgs S P c n W v) : protoFree (.hasKey k) v = true := by
+    (hin : inAnswer k c = some q) (hv : semWithArgs Ξ S P c n W v) : protoFree (.hasKey k) v = true := by
   unfold inAnswer at hin
   by_cases hp : c.presentKeys.contains k = true
   · obtain ⟨flds, l, oid, rfl, hl⟩ := semWithArgs_owns hv (List.contains_iff_mem.mp hp)
@@ -845,7 +850,7 @@ theorem inAnswer_protoFree {S : α → Fam} {P : α → ArgFam} {c : Clause α} 
 /-- A clause that answers `key in o` reads no prototype: its members own the
 key, or have no prototype. -/
 theorem tagClause_protoFree {S : α → Fam} {P : α → ArgFam} {c tag q n W v}
-    (hq : tagClause tag c = some q) (hv : semWithArgs S P c n W v) : protoFree tag v = true := by
+    (hq : tagClause tag c = some q) (hv : semWithArgs Ξ S P c n W v) : protoFree tag v = true := by
   cases tag
   case hasKey k =>
     cases c
@@ -975,26 +980,26 @@ def OpResult.holds : OpResult → Val → Prop
   | .str, v => ∃ s, v = .str s
 
 theorem numberClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
-    (hc : numberClause c = true) (hv : semWithArgs X P c n W v) : ∃ x, v = .num x := by
+    (hc : numberClause c = true) (hv : semWithArgs Ξ X P c n W v) : ∃ x, v = .num x := by
   cases c <;> simp [numberClause] at hc
   · exact hv
   · exact ⟨_, hv⟩
 
 theorem bigintClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
-    (hc : bigintClause c = true) (hv : semWithArgs X P c n W v) : ∃ i, v = .bigint i := by
+    (hc : bigintClause c = true) (hv : semWithArgs Ξ X P c n W v) : ∃ i, v = .bigint i := by
   cases c <;> simp [bigintClause] at hc
   · exact hv
   · exact ⟨_, hv⟩
 
 theorem stringClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
-    (hc : stringClause c = true) (hv : semWithArgs X P c n W v) : ∃ s, v = .str s := by
+    (hc : stringClause c = true) (hv : semWithArgs Ξ X P c n W v) : ∃ s, v = .str s := by
   cases c <;> simp [stringClause] at hc
   · exact hv
   · exact ⟨_, hv⟩
 
 /-- A member of a printable clause converts by `ToString`. -/
 theorem printableClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
-    (hc : printableClause c = true) (hv : semWithArgs X P c n W v) : ∃ t, primString v = some t := by
+    (hc : printableClause c = true) (hv : semWithArgs Ξ X P c n W v) : ∃ t, primString v = some t := by
   cases c <;> simp [printableClause] at hc <;> simp only [semWithArgs] at hv
   all_goals first
     | (rcases hv with rfl | rfl <;> exact ⟨_, rfl⟩)
@@ -1003,7 +1008,7 @@ theorem printableClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause 
     | (split at hv <;> subst hv <;> exact ⟨_, rfl⟩)
 
 theorem primitiveClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
-    (hc : primitiveClause c = true) (hv : semWithArgs X P c n W v) : isPrim v = true := by
+    (hc : primitiveClause c = true) (hv : semWithArgs Ξ X P c n W v) : isPrim v = true := by
   cases c <;> simp [primitiveClause] at hc <;> simp only [semWithArgs] at hv
   all_goals first
     | (rcases hv with rfl | rfl <;> rfl)
@@ -1014,7 +1019,7 @@ theorem primitiveClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause 
        first | (subst hv; rfl) | (rcases hv with rfl | rfl <;> rfl) | (obtain ⟨_, rfl⟩ := hv; rfl))
 
 theorem nullishClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
-    (hc : nullishClause c = true) (hv : semWithArgs X P c n W v) : isNullish v = true := by
+    (hc : nullishClause c = true) (hv : semWithArgs Ξ X P c n W v) : isNullish v = true := by
   cases c <;> simp [nullishClause] at hc <;> simp only [semWithArgs] at hv
   all_goals subst hv; rfl
 
@@ -1029,7 +1034,7 @@ theorem looseEquals_some {v w : Tm} (hv : isVal v = true) (hw : isVal w = true)
     exact ⟨false, by simp [hp, hn]⟩
 
 theorem objectClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
-    (hc : objectClause c = true) (hv : semWithArgs X P c n W v) :
+    (hc : objectClause c = true) (hv : semWithArgs Ξ X P c n W v) :
     ∃ fs code oid, v = .objAt fs code oid := by
   cases c with
   | refs | dict => obtain ⟨fs, oid, h, _⟩ := hv.1.1; exact ⟨fs, .absent, oid, h⟩
@@ -1066,11 +1071,11 @@ theorem boolVal_holds (q : Bool) : OpResult.holds .bool (boolVal q) := by
 /-- **The classification is sound**: on members of the two clauses the
 operator answers, with a value of the kind it names, or throws. -/
 theorem opResult_sound {X : α → Fam} {P : α → ArgFam} {op : Arith} {c d : Clause α} {r n W v w}
-    (h : opResult op c d = some r) (hv : semWithArgs X P c n W v) (hw : semWithArgs X P d n W w) :
+    (h : opResult op c d = some r) (hv : semWithArgs Ξ X P c n W v) (hw : semWithArgs Ξ X P d n W w) :
     (∃ z, binop op v w = some z ∧ r.holds z) ∨ binopThrows op v w = true := by
   -- A numeric member is a number or a bigint.
   have numeric : ∀ {e : Clause α} {u}, (numberClause e || bigintClause e) = true →
-      semWithArgs X P e n W u → (∃ x, u = .num x) ∨ ∃ i, u = .bigint i := by
+      semWithArgs Ξ X P e n W u → (∃ x, u = .num x) ∨ ∃ i, u = .bigint i := by
     intro e u he hu
     rcases Bool.or_eq_true_iff.mp he with he | he
     · exact .inl (numberClause_member he hu)
@@ -1227,7 +1232,7 @@ instance [DecidableEq ι] (G : NormalGraph ι) (op : Arith) (X : Ty ι) :
 /-- A member of a deciding clause compared with any value, in either order,
 gives a Boolean. -/
 theorem decidingClause_sound {X : α → Fam} {P : α → ArgFam} {op : Arith} {c : Clause α} {n W v w}
-    (hc : decidingClause op c = true) (hv : semWithArgs X P c n W v) (hw : isVal w = true) :
+    (hc : decidingClause op c = true) (hv : semWithArgs Ξ X P c n W v) (hw : isVal w = true) :
     (∃ z, binop op v w = some z ∧ OpResult.bool.holds z) ∧
       (∃ z, binop op w v = some z ∧ OpResult.bool.holds z) := by
   have hval := (semWithArgs_value hv).1
@@ -1280,7 +1285,7 @@ def restSigs (G : NormalGraph ι) (F : Ty ι) : List (RestArrow (Ty ι)) :=
 
 theorem restsT_of_restSigs {G : NormalGraph ι} {F : Ty ι} {s} (hs : s ∈ restSigs G F) {n W v}
     (hv : meaning G F n W v) :
-    CallEffects.restsT [s.mapWith (meaning G) (argMeaning G)] n W v := by
+    CallEffects.restsT (excOf G) [s.mapWith (meaning G) (argMeaning G)] n W v := by
   unfold restSigs at hs
   split at hs
   · rename_i L S hF
@@ -1367,7 +1372,7 @@ theorem ArgsRest_mono {Qs Ps : List Fam} {E E' : ArgFam} {j : Nat} {W : WorldT j
 contract implies the member's signatures invoked on that host. -/
 theorem memberOf_at {G : NormalGraph ι} {O : Ty ι} {k : PropKey} {m : MethodMembers.Sig (Ty ι)}
     (hm : memberOf G O k = some m) {n W v} (hv : meaning G O n W v) :
-    m.key = k ∧ MethodMembers.memberT (MethodMembers.Member.of (meaning G) (argMeaning G) m) n W v := by
+    m.key = k ∧ MethodMembers.memberT (excOf G) (MethodMembers.Member.of (meaning G) (argMeaning G) m) n W v := by
   unfold memberOf at hm
   split at hm
   all_goals try contradiction
@@ -1384,7 +1389,7 @@ delegation steps, each one level down, then from its location, whose contract
 implies `A`. -/
 theorem along_read_safe {A : Fam} (hval : ValOnly A) (key : PropKey) :
     ∀ (d : Nat) {n : Nat} {W : WorldT n} {h : Heap} {v : Val}, WorldAdm W → HeapOk n W h →
-      MethodMembers.along key A d n W v → Safe A n W h (.readAt key v)
+      MethodMembers.along key A d n W v → Safe Ξ A n W h (.readAt key v)
   | 0, n, W, h, _, hw, hh, ⟨flds, l, c, oid, rfl, hf, hl, hag⟩ => read_view_rule_ext hval n W h l hw hh hf hl hag
   | d + 1, n, W, h, _, hw, hh, ⟨flds, oid, rfl, hmiss, hp⟩ => by
     obtain ⟨pf, lp, cp, oid', hρ, hpf, hlp, hpag⟩ := hp
@@ -1403,9 +1408,9 @@ theorem along_read_safe {A : Fam} (hval : ValOnly A) (key : PropKey) :
 later, on an object along the host's prototype chain; either way the value
 read meets the member's signatures invoked on the host. -/
 theorem member_read_safe {m : MethodMembers.Member} {n : Nat} {W : WorldT n} {h : Heap} {v : Val}
-    (hw : WorldAdm W) (hh : HeapOk n W h) (hm : MethodMembers.memberT m n W v) :
-    Safe (MethodMembers.onHost v m) n W h (.readAt m.key v) := by
-  have hval : ValOnly (MethodMembers.onHost v m) := fun _ _ _ hv => hv.1.1.val
+    (hw : WorldAdm W) (hh : HeapOk n W h) (hm : MethodMembers.memberT Ξ m n W v) :
+    Safe Ξ (MethodMembers.onHost Ξ v m) n W h (.readAt m.key v) := by
+  have hval : ValOnly (MethodMembers.onHost Ξ v m) := fun _ _ _ hv => hv.1.1.val
   obtain ⟨d, hd⟩ := hm
   exact along_read_safe hval m.key d hw hh hd
 
@@ -1418,7 +1423,7 @@ def callSigs (G : NormalGraph ι) (F : Ty ι) : List (Arrow (Ty ι)) :=
 
 theorem callsT_of_callSigs {G : NormalGraph ι} {F : Ty ι} {p} (hp : p ∈ callSigs G F) {n W v}
     (hv : meaning G F n W v) :
-    CallEffects.callsT [p.map (meaning G)] n W v := by
+    CallEffects.callsT (excOf G) [p.map (meaning G)] n W v := by
   unfold callSigs at hp
   split at hp
   · rename_i L S hF
@@ -1544,7 +1549,7 @@ meets a rest-store type when the actuals as one pack meet the rest type. -/
 theorem restStore_safe {G : NormalGraph ι} {S P : Ty ι} (hS : RestStore G S P)
     {n : Nat} {W : WorldT n} {h : Heap} {extra : List Tm} (hw : WorldAdm W) (hh : HeapOk n W h)
     (he : argMeaning G P n W extra) (hvals : CallArguments.Values extra) :
-    Safe (meaning G S) n W h (.arrLit extra) := by
+    Safe (excOf G) (meaning G S) n W h (.arrLit extra) := by
   unfold RestStore at hS
   split at hS
   · rename_i T U hP hR
@@ -1556,7 +1561,7 @@ theorem restStore_safe {G : NormalGraph ι} {S P : Ty ι} (hS : RestStore G S P)
       exact meaning_adm G b
     have hfit : ArgumentContracts.Fits (tupleFams (meaning G) T') n W extra := by
       exact (mixed_pack_args hP).mp he
-    have := RestCalls.argument_alloc_safe hpos hw hh hfit hvals
+    have := RestCalls.argument_alloc_safe (Ξ := excOf G) hpos hw hh hfit hvals
     apply Safe_mono n _ W h _ this
     intro k _ V v hv
     apply (represents_back hR k V v)
@@ -1576,7 +1581,7 @@ theorem packRest_store_safe {G : NormalGraph ι} {S B X : Ty ι} (hS : RestStore
     (hX : FamLe (mixedMeaning G G.env X) (mixedMeaning G G.env B))
     {n : Nat} {W : WorldT n} {h : Heap} {extra : List Tm} (hw : WorldAdm W) (hh : HeapOk n W h)
     (he : argMeaning G X n W extra) (hvals : CallArguments.Values extra) :
-    Safe (meaning G S) n W h (.arrLit extra) :=
+    Safe (excOf G) (meaning G S) n W h (.arrLit extra) :=
   restStore_safe hS hw hh (hX n W (.inr extra) he) hvals
 
 #print axioms packRest_store_safe
@@ -1594,7 +1599,7 @@ theorem graphRest_invoke {G : NormalGraph ι} {arity E K start Cs A vs n W}
     (hu : WorldAdm U) {heap : Heap} (hh : HeapOk j U heap) {r : Tm} (hr : meaning G s.receiver j U r)
     {args : List Tm} (hvals : CallArguments.Values args)
     (ha : ArgsRest (s.arguments.1.map (meaning G)) (argMeaning G s.arguments.2) j U args) :
-    SafePost (meaning G s.result) (s.effect.post heap) j U heap (CallArguments.graphEntry arity E K start vs true r args) := by
+    SafePost (excOf G) (meaning G s.result) (s.effect.post heap) j U heap (CallArguments.graphEntry arity E K start vs true r args) := by
   obtain ⟨hshort, hpack⟩ := ha
   simp only [List.length_map, hk] at hshort hpack
   have hle : arity ≤ s.fixed.arguments.length := by simp [RestArrow.fixed, hk]
@@ -1609,7 +1614,7 @@ theorem graphRest_invoke {G : NormalGraph ι} {arity E K start Cs A vs n W}
     rw [List.getD_eq_getElem?_getD, hi] at this
     exact this
   unfold CallArguments.graphEntry
-  have hstore : SafePost (meaning G A) (fun heap' _ => heap.IsPrefix heap')
+  have hstore : SafePost (excOf G) (meaning G A) (fun heap' _ => heap.IsPrefix heap')
       j U heap (.arrLit (args.drop arity)) := by
     apply HeapObservations.one_step rfl rfl (.arrAlloc (fun a hm => hvals a (List.mem_of_mem_drop hm)))
       ⟨args.drop arity, rfl⟩ (restStore_safe harr hu hh hpack (fun a hm => hvals a (List.mem_of_mem_drop hm)))
@@ -1659,7 +1664,7 @@ theorem restsT_of_graphRest {G : NormalGraph ι} {arity E K start Cs vs n W}
       GraphCodeSpec G arity E K start Cs q.1.fixed (some q.2))
     (hlen : S.length = As.length)
     (hvs : EnvOk G Cs (envOf vs .nul) n W) (hsc : ∀ v ∈ vs, Scoped 0 v) (hvalues : CallArguments.Values vs) :
-    CallEffects.restsT (S.map (RestArrow.mapWith (meaning G) (argMeaning G))) n W (.objAt fs (.graph arity E K start vs .call true) oid) := by
+    CallEffects.restsT (excOf G) (S.map (RestArrow.mapWith (meaning G) (argMeaning G))) n W (.objAt fs (.graph arity E K start vs .call true) oid) := by
   refine ⟨⟨fs, _, _, rfl, rfl, by simpa [Scoped] using hsc⟩, ?_⟩
   intro q hq j hj U hx hu heap hh r hrv hr args hvals ha
   obtain ⟨s, hsm, rfl⟩ := List.mem_map.mp hq
@@ -1708,9 +1713,9 @@ theorem offers_sem {G : NormalGraph ι} {arity E K start Cs rest vs n W}
     {As : List (Ty ι)} (fs : List (PropKey × Nat))
     (ho : CodeOffers G arity E K start Cs rest L S As)
     (hvs : EnvOk G Cs (envOf vs .nul) n W) (hsc : ∀ v ∈ vs, Scoped 0 v) (hvalues : CallArguments.Values vs) :
-    CallEffects.callsT (L.map (Arrow.map (meaning G))) n W
+    CallEffects.callsT (excOf G) (L.map (Arrow.map (meaning G))) n W
         (.objAt fs (.graph arity E K start vs .call rest) oid) ∧
-      CallEffects.restsT (S.map (RestArrow.mapWith (meaning G) (argMeaning G))) n W (.objAt fs (.graph arity E K start vs .call rest) oid) := by
+      CallEffects.restsT (excOf G) (S.map (RestArrow.mapWith (meaning G) (argMeaning G))) n W (.objAt fs (.graph arity E K start vs .call rest) oid) := by
   cases rest with
   | false =>
     exact ⟨callsT_of_graph _ (fun p hp => ho p (List.mem_append_left _ hp)) hvs hsc hvalues,
@@ -1728,7 +1733,7 @@ theorem ctorsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {U : Ty
     (hs : ∀ p ∈ L, GraphCodeSpec G arity E K start Cs ⟨U, p.1, p.2, .unrestricted⟩)
     (hu : Represents G U .undef)
     (hvs : EnvOk G Cs (envOf vs .nul) n W) (hsc : ∀ v ∈ vs, Scoped 0 v) (hvalues : CallArguments.Values vs) :
-    ctorsT (L.map fun p => (p.1.map (meaning G), meaning G p.2)) n W
+    ctorsT (excOf G) (L.map fun p => (p.1.map (meaning G), meaning G p.2)) n W
       (.objAt fs (.graph arity E K start vs .construct) oid) := by
   refine ⟨⟨fs, _, _, _, _, _, _, _, rfl, by simpa [Scoped] using hsc⟩, ?_⟩
   intro q hq j hj V hx hv heap hh args _ ha
@@ -1799,10 +1804,10 @@ theorem rest_call_safe {Rc : Fam} {Ps : List Fam} {E R : Fam} {P : ArgFam}
     (xs : List (Fam × Tm)) (hxs : xs.map Prod.fst = Ps) (parts : List (Option Fam × Tm))
     (hS : ∀ p ∈ parts, ∀ S, p.1 = some S → Adm S ∧ RestCalls.Spreads S E)
     {n W heap f r} (hw : WorldAdm W) (hh : HeapOk n W heap)
-    (hf : Safe (restsT [(Rc, Ps, P, R)]) n W heap f)
-    (hr : FutureSafe Rc n W r)
-    (hx : ∀ p ∈ xs, FutureSafe p.1 n W p.2) (hp : ∀ p ∈ parts, FutureSafe (p.1.getD E) n W p.2) :
-    Safe R n W heap (.invoke f r (xs.map Prod.snd ++ parts.map RestCalls.partTerm)) := by
+    (hf : Safe Ξ (restsT Ξ [(Rc, Ps, P, R)]) n W heap f)
+    (hr : FutureSafe Ξ Rc n W r)
+    (hx : ∀ p ∈ xs, FutureSafe Ξ p.1 n W p.2) (hp : ∀ p ∈ parts, FutureSafe Ξ (p.1.getD E) n W p.2) :
+    Safe Ξ R n W heap (.invoke f r (xs.map Prod.snd ++ parts.map RestCalls.partTerm)) := by
   apply bind (fun f => .invoke f r (xs.map Prod.snd ++ parts.map RestCalls.partTerm)) Step.callL Raises.callL
     n W heap f hw hh hf
   intro j0 hj0 U0 hx0 hu0 heap0 v hok0 hv hfun0
@@ -1847,10 +1852,10 @@ theorem pack_call_safe {Rc : Fam} {Ps Us Qs : List Fam} {R : Fam} {P : ArgFam}
     (hpack : ∀ k W extra, ArgsT Qs k W extra → P k W extra)
     (xs : List (Fam × Tm)) (hxs : xs.map Prod.fst = Ps ++ Qs) (hshort : Us = [] ∨ Qs = [])
     {n W heap f r} (hw : WorldAdm W) (hh : HeapOk n W heap)
-    (hf : Safe (restsT [(Rc, Ps ++ Us, P, R)]) n W heap f)
-    (hr : FutureSafe Rc n W r) (hx : ∀ p ∈ xs, FutureSafe p.1 n W p.2)
-    (hu : ∀ A ∈ Us, FutureSafe A n W .undef) :
-    Safe R n W heap (.invoke f r (xs.map Prod.snd)) := by
+    (hf : Safe Ξ (restsT Ξ [(Rc, Ps ++ Us, P, R)]) n W heap f)
+    (hr : FutureSafe Ξ Rc n W r) (hx : ∀ p ∈ xs, FutureSafe Ξ p.1 n W p.2)
+    (hu : ∀ A ∈ Us, FutureSafe Ξ A n W .undef) :
+    Safe Ξ R n W heap (.invoke f r (xs.map Prod.snd)) := by
   apply bind (fun f => .invoke f r (xs.map Prod.snd)) Step.callL Raises.callL n W heap f hw hh hf
   intro j0 hj0 U0 hx0 hu0 heap0 v hok0 hv hfun0
   apply bind (fun r => .invoke v r (xs.map Prod.snd)) (Step.callRecv hv) (Raises.callRecv hv) j0 U0 heap0 r hu0 hok0
@@ -1909,8 +1914,8 @@ theorem pack_call_safe {Rc : Fam} {Ps Us Qs : List Fam} {R : Fam} {P : ArgFam}
 written and allocates a fresh store of its elements, each at `E`. -/
 theorem copy_safe {S E : Fam} (presence : ArrayPresence) (hS : RestCalls.Spreads S E) (hE : Adm E) (hEv : ValOnly E)
     {n : Nat} {W : WorldT n} {h : Heap} {s : Tm} (hw : WorldAdm W) (hh : HeapOk n W h)
-    (hs : Safe S n W h s) :
-    Safe (listT ⟨[], [], some E, false, presence⟩) n W h (.arrLit [.spread s]) := by
+    (hs : Safe Ξ S n W h s) :
+    Safe Ξ (listT ⟨[], [], some E, false, presence⟩) n W h (.arrLit [.spread s]) := by
   apply RestCalls.ctx_bind (fun t => .arrLit [.spread t])
     (fun st => .arrArg (i := 0) rfl (by intro j hj; omega) (.spreadC st))
     (fun hr => .arrArg (i := 0) rfl (by intro j hj; omega) (.spreadC hr)) n W h s hw hh hs
@@ -2350,7 +2355,7 @@ later world: what graph code captures when it is created. -/
 theorem captures_sem {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ : Env} {n : Nat} {W : WorldT n}
     {h : Heap} {caps : List (Ty ι × Nat)} (he : EnvOk G Γ ρ n W)
     (hlt : ∀ c ∈ caps, c.2 < Γ.length)
-    (ih : ∀ c ∈ caps, Safe (meaning G c.1) n W h (ρ c.2))
+    (ih : ∀ c ∈ caps, Safe (excOf G) (meaning G c.1) n W h (ρ c.2))
     {j : Nat} (hj : j < n) {V : WorldT j} (hx : WExt (trunc j (Nat.le_of_lt hj) W) V) :
     (∀ v ∈ caps.map (fun c => ρ c.2), Scoped 0 v) ∧
       EnvOk G (caps.map Prod.fst) (envOf (caps.map fun c => ρ c.2) .nul) j V ∧
@@ -2386,7 +2391,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     {subtyping : BodySubtyping G} {Γ t A}
     (ht : HasTyUsing G images (subtyping := subtyping) Γ t A) :
     ∀ n W h ρ, EnvOk G Γ ρ n W → WorldAdm W → HeapOk n W h →
-      Safe (meaning G A) n W h (instantiate 0 ρ t) := by
+      Safe (excOf G) (meaning G A) n W h (instantiate 0 ρ t) := by
   induction ht with
   | var hi =>
     intro n W h ρ he hw hh
@@ -2457,7 +2462,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       exact meaning_assign_free hF (hfree c.1 (List.mem_map_of_mem (List.mem_of_getElem? hc))) As
         (hcapv c (List.mem_of_getElem? hc))
     have hsig : ∀ As : List MixedFamily, As.length = s.binders.length →
-        G.domain.allowed s As → instanceTWithArgs (fun η S => mixedValues G η S) G.env s As (graphArguments G) j U
+        G.domain.allowed s As → instanceTWithArgs (excOf G) (fun η S => mixedValues G η S) G.env s As (graphArguments G) j U
           (Tm.fnObj h.length (.graph arity E K start vs .call rest)) := by
       intro As hlen hal
       have ho := offers_sem (G := reassign G (assign G.env s.binders As)) (oid := h.length + 1)
@@ -2535,7 +2540,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
   | @construct Γ f F B L xs Us hf hr hp hx hu ihf ihx ihu =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
-    have hs := construct_safe (B := meaning G B)
+    have hs := construct_safe (Ξ := excOf G) (B := meaning G B)
       (xs.map fun p => (meaning G p.1, instantiate 0 ρ p.2)) (Us.map (meaning G))
       (by intro p hp; obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hp; exact meaning_adm G q.1)
       (by intro p hp; obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hp; exact meaning_valOnly G q.1)
@@ -2559,7 +2564,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
   | @callCallable effect Γ f r F Rt B P Ps L S xs Us hf hr hp hrt ha hu ihf ihrt iha ihu =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
-    have hs := call_safe_short (Rc := meaning G Rt) (B := meaning G B) (f := instantiate 0 ρ f)
+    have hs := call_safe_short (Ξ := excOf G) (Rc := meaning G Rt) (B := meaning G B) (f := instantiate 0 ρ f)
       (r := instantiate 0 ρ r)
       (xs.map fun p => (meaning G p.1,instantiate 0 ρ p.2)) (Us.map (meaning G))
       (meaning_adm G Rt) (meaning_valOnly G Rt)
@@ -2604,7 +2609,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
   | @app effect Γ f r F Rt B L S xs Us hf hr hp hrt ha hu ihf ihrt iha ihu =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
-    have hs := call_safe_short (Rc := meaning G Rt) (B := meaning G B) (f := instantiate 0 ρ f)
+    have hs := call_safe_short (Ξ := excOf G) (Rc := meaning G Rt) (B := meaning G B) (f := instantiate 0 ρ f)
       (r := instantiate 0 ρ r)
       (xs.map fun p => (meaning G p.1,instantiate 0 ρ p.2)) (Us.map (meaning G))
       (meaning_adm G Rt) (meaning_valOnly G Rt)
@@ -3127,7 +3132,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     obtain ⟨c, hc, hca, -⟩ := (expand_sem G A hops.1 k V av).mp ha''
     obtain ⟨d, hd, hdb, -⟩ := (expand_sem G B hops.2.1 k V bv).mp hb'
     rcases opResult_sound (hops.2.2 c hc d hd) hca hdb with ⟨z, hz, hr⟩ | hthrow
-    case inr => exact arith_throw_safe op av bv hthrow k V heap' hv hok'
+    case inr => exact arith_throw_safe op av bv hthrow k V heap' hv hok' (realmExc_errors G _)
     refine arith_value_safe op av bv z hz k V heap' hv hok' (fun m U => ?_)
     cases r with
     | num => obtain ⟨x, rfl⟩ := hr; exact (represents_back hn m U _) ⟨x, rfl⟩
@@ -3253,7 +3258,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
   | @callRest effect Γ f r F Rt xs Us P B parts hf hmem hrt hx hu hshort hp hparts
       ihf ihrt ihx ihu ihp =>
     intro n W h ρ he hw hh
-    have hfF : Safe (restsT [(meaning G Rt, (xs.map Prod.fst ++ Us).map (meaning G), argMeaning G P,
+    have hfF : Safe (excOf G) (restsT (excOf G) [(meaning G Rt, (xs.map Prod.fst ++ Us).map (meaning G), argMeaning G P,
         meaning G B)]) n W h (instantiate 0 ρ f) :=
       Safe_mono n (fun m _ U v hv => CallEffects.restsT_erase (restsT_of_restSigs hmem hv)) W h _ (ihf n W h ρ he hw hh)
     unfold RestParts at hparts
@@ -3429,7 +3434,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         .letE (.readAt k (ρ i)) (.makeAt (.bound (.var 0) (ρ i) []) [] []) := by
       simp [instantiate, instantiateArgs_eq_map]
     rw [hterm]
-    have hread : Safe (MethodMembers.onHost (ρ i) (MethodMembers.Member.of (meaning G) (argMeaning G) m))
+    have hread : Safe (excOf G) (MethodMembers.onHost (excOf G) (ρ i) (MethodMembers.Member.of (meaning G) (argMeaning G) m))
         n W h (.readAt k (ρ i)) := by
       have := member_read_safe hw hh hmem
       rwa [show (MethodMembers.Member.of (meaning G) (argMeaning G) m).key = k from hkey] at this
@@ -3464,14 +3469,14 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         refine (meaning_adm G F).down_le (q + 2) (q + 1) (by omega) U _ ?_
         have hinv : Invocable (.objAt [] (.bound u (ρ i) []) oid) :=
           ⟨[], _, _, rfl, rfl, by simp only [Scoped, scopedArgs_iff]; exact ⟨hon.1.1.scoped, hscope, by simp⟩⟩
-        have hcalls : CallEffects.callsT (L.map (Arrow.map (meaning G)))
+        have hcalls : CallEffects.callsT (excOf G) (L.map (Arrow.map (meaning G)))
             (q + 2) U (.objAt [] (.bound u (ρ i) []) oid) := by
           refine CallEffects.callsT_of_signatures hinv fun x hx => ?_
           obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hx
           obtain ⟨c, hc, hlen, hps, ⟨pr, hpr⟩, heff⟩ := hL y hy
           have hc' := CallEffects.callsT_select hon.1 (List.mem_map_of_mem (List.mem_map_of_mem hc))
           have hle := CoveredCallUsing.params hlen hps
-          have ht : CallEffects.callsT [⟨MethodMembers.hostIn (ρ i) (m.receivers.map (meaning G)), y.arguments.map (meaning G), meaning G y.result, y.effect⟩]
+          have ht : CallEffects.callsT (excOf G) [⟨MethodMembers.hostIn (ρ i) (m.receivers.map (meaning G)), y.arguments.map (meaning G), meaning G y.result, y.effect⟩]
               (q + 2) U u :=
             ⟨hc'.1, fun p hp => by
               cases List.mem_singleton.mp hp
@@ -3481,13 +3486,13 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
           exact CallEffects.callsT_bound (Ps := []) (oid := oid) hRadm (by simp)
             (fun A hA => by obtain ⟨b, -, rfl⟩ := List.mem_map.mp hA; exact meaning_adm G b)
             ht hvalρ hscope hhost trivial (by simp [CallArguments.Values]) (by simp)
-        have hrests : CallEffects.restsT (S.map (RestArrow.mapWith (meaning G) (argMeaning G))) (q + 2) U (.objAt [] (.bound u (ρ i) []) oid) := by
+        have hrests : CallEffects.restsT (excOf G) (S.map (RestArrow.mapWith (meaning G) (argMeaning G))) (q + 2) U (.objAt [] (.bound u (ρ i) []) oid) := by
           refine CallEffects.restsT_of_signatures hinv fun x hx => ?_
           obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hx
           obtain ⟨c, hc, hlen, hps, ⟨pe, hpe⟩, ⟨pr, hpr⟩, heff⟩ := hS y hy
           have hc' := CallEffects.restsT_select hon.2.1 (List.mem_map_of_mem (List.mem_map_of_mem hc))
           have hle := CoveredCallUsing.params hlen hps
-          have ht : CallEffects.restsT [⟨MethodMembers.hostIn (ρ i) (m.receivers.map (meaning G)), (y.arguments.1.map (meaning G), argMeaning G y.arguments.2),
+          have ht : CallEffects.restsT (excOf G) [⟨MethodMembers.hostIn (ρ i) (m.receivers.map (meaning G)), (y.arguments.1.map (meaning G), argMeaning G y.arguments.2),
               meaning G y.result, y.effect⟩] (q + 2) U u :=
             ⟨hc'.1, fun p hp => by
               cases List.mem_singleton.mp hp
@@ -3498,7 +3503,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
             hRadm
             (fun A hA => by obtain ⟨b, -, rfl⟩ := List.mem_map.mp hA; exact meaning_adm G b)
             (argMeaning_adm G _)
-            (show CallEffects.restsT [⟨MethodMembers.hostIn (ρ i) (m.receivers.map (meaning G)), (y.arguments.1.map (meaning G), argMeaning G y.arguments.2),
+            (show CallEffects.restsT (excOf G) [⟨MethodMembers.hostIn (ρ i) (m.receivers.map (meaning G)), (y.arguments.1.map (meaning G), argMeaning G y.arguments.2),
               meaning G y.result, y.effect⟩] (q + 2) U u from ht)
             hvalρ hscope hhost (by simp only [List.take_nil, List.take_zero, List.length_nil]; exact trivial)
             (fun _ _ _ _ ys hys => by simpa using hys)
@@ -3514,7 +3519,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         .letE (.readAt k (ρ i)) (.makeAt (.bound (.var 0) (ρ i) []) [] []) := by
       simp [instantiate, instantiateArgs_eq_map]
     rw [hterm]
-    have hread : Safe (MethodMembers.onHost (ρ i) (MethodMembers.Member.of (meaning G) (argMeaning G) m))
+    have hread : Safe (excOf G) (MethodMembers.onHost (excOf G) (ρ i) (MethodMembers.Member.of (meaning G) (argMeaning G) m))
         n W h (.readAt k (ρ i)) := by
       have := member_read_safe hw hh hmem
       rwa [show (MethodMembers.Member.of (meaning G) (argMeaning G) m).key = k from hkey] at this
@@ -3542,7 +3547,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     intro n W h ρ he hw hh
     apply bind Tm.throw Step.throwC Raises.throwC n W h _ hw hh (iha n W h ρ he hw hh)
     intro j hj U hx hu heap v hok hv ha'
-    exact thrown_safe _ _ _ _ ⟨v, .throwV hv (hA.sound ha'), (meaning_value ha').2⟩
+    exact thrown_safe _ _ _ _ ⟨v, .throwV hv (hA.sound ha'), (meaning_value ha').2, hA.exc ha'⟩
   | sub ht hc ih =>
     intro n W h ρ he hw hh
     exact Safe_mono n (fun k _ V v hv => subtyping.sound hc k V v hv)
@@ -3552,17 +3557,17 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
 variables cannot be silently filled by the total semantic environment. -/
 theorem HasTyUsing.closed_safe {G : NormalGraph ι} {images : PositiveCertificates.InstanceImageCheck G} {t A} (ht : HasTyUsing G images [] t A)
     (hc : Scoped 0 t) (n W h) (hw : WorldAdm W) (hh : HeapOk n W h) :
-    Safe (meaning G A) n W h t := by
+    Safe (excOf G) (meaning G A) n W h t := by
   have he : EnvOk G [] (fun _ => .nul) n W := ⟨fun _ => trivial, by simp⟩
   simpa only [instantiate_above hc] using ht.sound n W h _ he hw hh
 
 theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     ∀ n W h ρ, EnvOk G Γ ρ n W → WorldAdm W → HeapOk n W h →
-      Safe (meaning G A) n W h (instantiate 0 ρ t) := HasTyUsing.sound ht
+      Safe (excOf G) (meaning G A) n W h (instantiate 0 ρ t) := HasTyUsing.sound ht
 
 theorem HasTy.closed_safe {G : NormalGraph ι} {t A} (ht : HasTy G [] t A)
     (hc : Scoped 0 t) (n W h) (hw : WorldAdm W) (hh : HeapOk n W h) :
-    Safe (meaning G A) n W h t := HasTyUsing.closed_safe ht hc n W h hw hh
+    Safe (excOf G) (meaning G A) n W h t := HasTyUsing.closed_safe ht hc n W h hw hh
 
 #print axioms bind_list
 #print axioms call_safe

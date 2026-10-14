@@ -796,7 +796,7 @@ part of the certified request. -/
 theorem verify_safe {r : Request σ ι} {c : Response ι}
     {checker : HeapExpressionRules.Checker (graph r) (StoreView.images r.types)} (hc : verify r c (checker := checker) = true) (n W h ρ)
     (he : EnvOk (graph r) r.inputs ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
-    SafeGraph r.program (meaning (graph r) r.result) n W h (.at r.start ρ) := by
+    SafeGraph (excOf (graph r)) r.program (meaning (graph r) r.result) n W h (.at r.start ρ) := by
   simp only [verify_eq, Bool.and_eq_true] at hc
   have hx := hc.2
   split at hx
@@ -813,7 +813,7 @@ every instantiation of them. At the graph's own assignment this is
 theorem verify_safe_at {r : Request σ ι} {c : Response ι} (hc : verify r c = true)
     (η : MixedAssignment ι) (n W h ρ)
     (he : EnvOk (reassign (graph r) η) r.inputs ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
-    SafeGraph r.program (meaning (reassign (graph r) η) r.result) n W h (.at r.start ρ) := by
+    SafeGraph (excOf (reassign (graph r) η)) r.program (meaning (reassign (graph r) η) r.result) n W h (.at r.start ρ) := by
   simp only [verify_eq, Bool.and_eq_true] at hc
   have hx := hc.2
   split at hx
@@ -841,7 +841,7 @@ theorem verify_qualified_safe_at {r : Request σ ι} {c : Response ι}
     (n W h ρ)
     (he : EnvOk (reassign (graph r) (assign η source.binders As)) r.inputs ρ n W)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
-    SafeGraph r.program (meaning (reassign (graph r) (assign η source.binders As)) r.result)
+    SafeGraph (excOf (reassign (graph r) (assign η source.binders As))) r.program (meaning (reassign (graph r) (assign η source.binders As)) r.result)
       n W h (.at r.start ρ) := by
   simp only [verify_eq, Bool.and_eq_true] at checked
   have accepted := checked.2
@@ -864,7 +864,7 @@ theorem verify_qualified_safe_at {r : Request σ ι} {c : Response ι}
 /-- Empty input contracts retain the closed-invocation corollary. -/
 theorem verify_closed_safe {r : Request σ ι} {c : Response ι}
     (hc : verify r c = true) (hi : r.inputs = []) (n : Nat) :
-    SafeGraph r.program (meaning (graph r) r.result) n (ofList []) []
+    SafeGraph (excOf (graph r)) r.program (meaning (graph r) r.result) n (ofList []) []
       (.at r.start (fun _ => .nul)) := by
   apply verify_safe hc n _ [] _ _ WorldAdm_nil (emptyHeapOk n)
   rw [hi]
@@ -885,7 +885,7 @@ theorem verifyJson_safe {request evidence : Json}
     ∃ r c, decodeRequest σ request = .ok r ∧ decodeResponse r evidence = .ok c ∧
       c.certificate.map signature = r.claims ∧
       ∀ n W h ρ, EnvOk (graph r) r.inputs ρ n W → WorldAdm W → HeapOk n W h →
-        SafeGraph r.program (meaning (graph r) r.result) n W h (.at r.start ρ) := by
+        SafeGraph (excOf (graph r)) r.program (meaning (graph r) r.result) n W h (.at r.start ρ) := by
   obtain ⟨r,c,hr,hc,hv⟩ := verifyJson_checked h
   exact ⟨r,c,hr,hc,verify_claims hv,verify_safe hv⟩
 

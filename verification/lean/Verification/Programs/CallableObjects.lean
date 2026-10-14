@@ -40,7 +40,7 @@ theorem recT_bag {P : Fields} {n W v} (h : recT P n W v) : bagT P n W v := by
 theorem bag_read {fs : Fields} {f : PropKey} {P : Fam} (hP : ValOnly P)
     (hm : (f, P) ∈ fs) {n W h v}
     (hv : bagT fs n W v) (hw : WorldAdm W) (hh : HeapOk n W h) :
-    Safe P n W h (.readAt f v) := by
+    Safe Ξ P n W h (.readAt f v) := by
   obtain ⟨flds, code, oid, rfl, _, hr⟩ := hv
   obtain ⟨flds', l, c, oid', he, hf, hl, hc⟩ := recT_at hm hr
   cases he
@@ -50,7 +50,7 @@ theorem bag_write {fs : Fields} {f : PropKey} {P : Fam} (hP : Adm P)
     (hm : (f, P) ∈ fs) {n W h v a}
     (hv : bagT fs n W v) (ha : P n W a) (hval : isVal a = true)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
-    Safe nulT n W h (.writeAt f v a) := by
+    Safe Ξ nulT n W h (.writeAt f v a) := by
   obtain ⟨flds, code, oid, rfl, _, hr⟩ := hv
   obtain ⟨flds', l, c, oid', he, hf, hl, hc⟩ := recT_at hm hr
   cases he

@@ -29,43 +29,57 @@ through either position.
 -/
 namespace Verification
 
-/-- `t` throws a closed value: the outcome that is neither a value nor a step.
-What is thrown is any value at all, so a handler binds it at `unknown`. -/
-def Thrown (t : Tm) : Prop := ∃ v, Raises t v ∧ Scoped 0 v
+/-- `t` throws a closed value of the exception family `Ξ`: the outcome that
+is neither a value nor a step. A graph's exception family is its realm's
+`unknown` (`PositiveGraphs.realmExc`), so a handler binds a thrown value
+there. -/
+def Thrown (Ξ : Fam) (k : Nat) (W : WorldT k) (t : Tm) : Prop :=
+  ∃ v, Raises t v ∧ Scoped 0 v ∧ Ξ k W v
 
-theorem Thrown.no_step {t : Tm} (h : Thrown t) {hp hp' t'} : ¬ Step hp t hp' t' := by
+theorem Thrown.no_step {Ξ : Fam} {k W} {t : Tm} (h : Thrown Ξ k W t) {hp hp' t'} :
+    ¬ Step hp t hp' t' := by
   obtain ⟨_, hr, _⟩ := h; exact raises_no_step hr
 
-theorem Thrown.not_val {t : Tm} (h : Thrown t) : isVal t = false := by
+theorem Thrown.not_val {Ξ : Fam} {k W} {t : Tm} (h : Thrown Ξ k W t) : isVal t = false := by
   obtain ⟨_, hr, _⟩ := h; exact raises_not_val hr
 
 /-- A throw leaves every evaluation context it is in. -/
-theorem Thrown.lift {t : Tm} {C : Tm → Tm} (lift : ∀ {v}, Raises t v → Raises (C t) v)
-    (h : Thrown t) : Thrown (C t) := by
+theorem Thrown.lift {Ξ : Fam} {k W} {t : Tm} {C : Tm → Tm}
+    (lift : ∀ {v}, Raises t v → Raises (C t) v) (h : Thrown Ξ k W t) : Thrown Ξ k W (C t) := by
   obtain ⟨v, hr, hs⟩ := h; exact ⟨v, lift hr, hs⟩
 
-theorem val_not_thrown {t : Tm} (hv : isVal t = true) : ¬ Thrown t := by
+/-- A throw is one of every wider exception family. -/
+theorem Thrown.mono {Ξ Ξ' : Fam} {k W} {t : Tm} (hΞ : ∀ v, Ξ k W v → Ξ' k W v)
+    (h : Thrown Ξ k W t) : Thrown Ξ' k W t := by
+  obtain ⟨v, hr, hs, he⟩ := h; exact ⟨v, hr, hs, hΞ v he⟩
+
+/-- An exception family holds the errors the host throws: an operator that
+throws (`binopThrows`) throws a fresh object owning no key. -/
+def ErrorsIn (Ξ : Fam) : Prop := ∀ (k : Nat) (W : WorldT k) (oid : Nat), Ξ k W (thrownError oid)
+
+theorem val_not_thrown {Ξ : Fam} {k W} {t : Tm} (hv : isVal t = true) : ¬ Thrown Ξ k W t := by
   intro h; rw [h.not_val] at hv; contradiction
 
 /-- Running `t` for `n` steps never gets stuck: it is a value in `T`, it
-throws, or it steps. Each step spends a level, and the world drops with it. -/
-def Safe (T : Fam) : (n : Nat) → WorldT n → Heap → Tm → Prop
+throws a value of `Ξ`, or it steps. Each step spends a level, and the world
+drops with it. -/
+def Safe (Ξ T : Fam) : (n : Nat) → WorldT n → Heap → Tm → Prop
   | 0, _, _, _ => True
   | n + 1, W, h, t =>
-      ((isVal t = true ∧ T (n + 1) W t) ∨ Thrown t) ∨
+      ((isVal t = true ∧ T (n + 1) W t) ∨ Thrown Ξ (n + 1) W t) ∨
       (∃ (W' : WorldT n) (h' : Heap) (t' : Tm),
         WExt (trunc n (Nat.le_succ n) W) W' ∧ WorldAdm W' ∧ Step h t h' t' ∧
-          HeapOk n W' h' ∧ Safe T n W' h' t')
+          HeapOk n W' h' ∧ Safe Ξ T n W' h' t')
 
-theorem Safe_nul : ∀ (n : Nat) (W : WorldT n) (h : Heap), Safe nulT n W h .nul
+theorem Safe_nul {Ξ : Fam} : ∀ (n : Nat) (W : WorldT n) (h : Heap), Safe Ξ nulT n W h .nul
   | 0, _, _ => trivial
   | _ + 1, _, _ => Or.inl (Or.inl ⟨rfl, rfl⟩)
 
-/-- Safety depends on the type only through its behaviour at the budgets it can
-still reach. -/
-theorem Safe_congr {B C : Fam} (n : Nat) (hag : Agree B C n) :
+/-- Safety depends on the exception family and the type only through their
+behaviour at the budgets it can still reach. -/
+theorem Safe_congr' {Ξ Ξ' B C : Fam} (n : Nat) (hΞ : Agree Ξ Ξ' n) (hag : Agree B C n) :
     ∀ (j : Nat), j < n → ∀ (W : WorldT j) (h : Heap) (t : Tm),
-      Safe B j W h t ↔ Safe C j W h t := by
+      Safe Ξ B j W h t ↔ Safe Ξ' C j W h t := by
   intro j
   induction j with
   | zero => intro _ _ _ _; exact Iff.rfl
@@ -74,26 +88,41 @@ theorem Safe_congr {B C : Fam} (n : Nat) (hag : Agree B C n) :
     simp only [Safe]
     constructor <;> rintro ((⟨hv, hB⟩ | hr) | ⟨W', h', t', hx, ha, hs, hok, hsafe⟩)
     · exact Or.inl (Or.inl ⟨hv, (hag (p + 1) hj W t).mp hB⟩)
-    · exact Or.inl (Or.inr hr)
+    · exact Or.inl (Or.inr (hr.mono fun v => (hΞ (p + 1) hj W v).mp))
     · exact Or.inr ⟨W', h', t', hx, ha, hs, hok, (ih (by omega) W' h' t').mp hsafe⟩
     · exact Or.inl (Or.inl ⟨hv, (hag (p + 1) hj W t).mpr hB⟩)
-    · exact Or.inl (Or.inr hr)
+    · exact Or.inl (Or.inr (hr.mono fun v => (hΞ (p + 1) hj W v).mpr))
     · exact Or.inr ⟨W', h', t', hx, ha, hs, hok, (ih (by omega) W' h' t').mpr hsafe⟩
 
-/-- Safety is monotone in the type, at every budget it can still reach. -/
-theorem Safe_mono {B C : Fam} : ∀ (j : Nat),
+/-- Safety depends on the type only through its behaviour at the budgets it can
+still reach. -/
+theorem Safe_congr {Ξ B C : Fam} (n : Nat) (hag : Agree B C n) :
+    ∀ (j : Nat), j < n → ∀ (W : WorldT j) (h : Heap) (t : Tm),
+      Safe Ξ B j W h t ↔ Safe Ξ C j W h t :=
+  Safe_congr' n (fun _ _ _ _ => Iff.rfl) hag
+
+/-- Safety is monotone in the exception family and the type, at every budget
+it can still reach. -/
+theorem Safe_mono' {Ξ Ξ' B C : Fam} : ∀ (j : Nat),
+    (∀ m, m ≤ j → ∀ (W : WorldT m) (v : Val), Ξ m W v → Ξ' m W v) →
     (∀ m, m ≤ j → ∀ (W : WorldT m) (v : Val), B m W v → C m W v) →
-    ∀ (W : WorldT j) (h : Heap) (t : Tm), Safe B j W h t → Safe C j W h t := by
+    ∀ (W : WorldT j) (h : Heap) (t : Tm), Safe Ξ B j W h t → Safe Ξ' C j W h t := by
   intro j
   induction j with
-  | zero => intro _ _ _ _ _; trivial
+  | zero => intro _ _ _ _ _ _; trivial
   | succ p ih =>
-    intro hbc W h t hs
+    intro hΞ hbc W h t hs
     rcases hs with (⟨hv, hB⟩ | hr) | ⟨W', h', t', hx, ha, hst, hok, hsafe⟩
     · exact Or.inl (Or.inl ⟨hv, hbc (p + 1) (Nat.le_refl _) W t hB⟩)
-    · exact Or.inl (Or.inr hr)
+    · exact Or.inl (Or.inr (hr.mono (hΞ (p + 1) (Nat.le_refl _) W)))
     · exact Or.inr ⟨W', h', t', hx, ha, hst, hok,
-        ih (fun m hm => hbc m (by omega)) W' h' t' hsafe⟩
+        ih (fun m hm => hΞ m (by omega)) (fun m hm => hbc m (by omega)) W' h' t' hsafe⟩
+
+/-- Safety is monotone in the type, at every budget it can still reach. -/
+theorem Safe_mono {Ξ B C : Fam} (j : Nat)
+    (hbc : ∀ m, m ≤ j → ∀ (W : WorldT m) (v : Val), B m W v → C m W v)
+    (W : WorldT j) (h : Heap) (t : Tm) (hs : Safe Ξ B j W h t) : Safe Ξ C j W h t :=
+  Safe_mono' j (fun _ _ _ _ h => h) hbc W h t hs
 
 /-! ## Comparing two runs of one program
 
@@ -268,20 +297,20 @@ theorem ArgsT_congr {As Bs : List Fam} {n : Nat}
 #print axioms ArgsT_mono
 
 theorem value_safe (B : Fam) (n : Nat) (U : WorldT n) (h : Heap) (v : Val)
-    (hv : isVal v = true) (hb : B n U v) : Safe B n U h v := by
+    (hv : isVal v = true) (hb : B n U v) : Safe Ξ B n U h v := by
   cases n with
   | zero => trivial
   | succ n => exact Or.inl (Or.inl ⟨hv, hb⟩)
 
 /-- A term that throws a closed value is safe at every type. -/
 theorem thrown_safe (B : Fam) (n : Nat) (U : WorldT n) (h : Heap) {t : Tm}
-    (ht : Thrown t) : Safe B n U h t := by
+    (ht : Thrown Ξ n U t) : Safe Ξ B n U h t := by
   cases n with
   | zero => trivial
   | succ n => exact Or.inl (Or.inr ht)
 
 theorem safe_value_mem {B : Fam} {n : Nat} {U : WorldT (n+1)} {h : Heap} {v : Val}
-    (hv : isVal v = true) (hs : Safe B (n+1) U h v) : B (n+1) U v := by
+    (hv : isVal v = true) (hs : Safe Ξ B (n+1) U h v) : B (n+1) U v := by
   rcases hs with (⟨_, hb⟩ | hr) | ⟨_, _, _, _, _, hs, _, _⟩
   · exact hb
   · rw [hr.not_val] at hv; contradiction
@@ -334,33 +363,33 @@ def ArgsRest (Ps : List Fam) (E : ArgFam) (j : Nat) (W : WorldT j) (args : List 
 /-- A promise: every receiver value at `Rc` with every admitted list of values
 invokes the value, at every future world and satisfying heap below the budget,
 safely at `R`. The receiver is not an actual: `Acc` never sees it. -/
-def Promise (Acc : (j : Nat) → WorldT j → List Tm → Prop) (Rc R : Fam)
+def Promise (Ξ : Fam) (Acc : (j : Nat) → WorldT j → List Tm → Prop) (Rc R : Fam)
     (k : Nat) (W : WorldT k) (v : Val) : Prop :=
   ∀ (j : Nat) (hj : j < k) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
     WorldAdm U → ∀ (heap : Heap), HeapOk j U heap → ∀ r, isVal r = true → Rc j U r →
       ∀ args, CallArguments.Values args →
-      Acc j U args → ∃ result, CallArguments.Invoke ⟨v, r, args⟩ result ∧ Safe R j U heap result
+      Acc j U args → ∃ result, CallArguments.Invoke ⟨v, r, args⟩ result ∧ Safe Ξ R j U heap result
 
-theorem Promise.down {Acc Rc R n W v} (h : Promise Acc Rc R (n + 1) W v) :
-    Promise Acc Rc R n (trunc n (Nat.le_succ n) W) v := by
+theorem Promise.down {Acc Rc R n W v} (h : Promise Ξ Acc Rc R (n + 1) W v) :
+    Promise Ξ Acc Rc R n (trunc n (Nat.le_succ n) W) v := by
   intro j hj U hx hu heap hh r hrv hr args hv ha
   exact h j (by omega) U (by rwa [trunc_trunc] at hx) hu heap hh r hrv hr args hv ha
 
-theorem Promise.mono {Acc Rc R n W W' v} (hx : WExt W W') (h : Promise Acc Rc R n W v) :
-    Promise Acc Rc R n W' v := by
+theorem Promise.mono {Acc Rc R n W W' v} (hx : WExt W W') (h : Promise Ξ Acc Rc R n W v) :
+    Promise Ξ Acc Rc R n W' v := by
   intro j hj U hy hu heap hh r hrv hr args hv ha
   exact h j hj U (WExt_trans (WExt_trunc (Nat.le_of_lt hj) hx) hy) hu heap hh r hrv hr args hv ha
 
 /-- Values meeting every fixed signature `(receiver, parameters, result)`:
 each receiver at its contract with each admitted actual list, including one
 omitting trailing positions that admit `undefined`. -/
-def callsT (L : List (Fam × List Fam × Fam)) : Fam := fun k W v =>
-  Invocable v ∧ ∀ p ∈ L, Promise (ArgsShort p.2.1) p.1 p.2.2 k W v
+def callsT (Ξ : Fam) (L : List (Fam × List Fam × Fam)) : Fam := fun k W v =>
+  Invocable v ∧ ∀ p ∈ L, Promise Ξ (ArgsShort p.2.1) p.1 p.2.2 k W v
 
 /-- Values meeting every variadic signature `(receiver, fixed parameters,
 element, result)`: the contract of each further actual is the element's. -/
-def restsT (S : List (Fam × List Fam × ArgFam × Fam)) : Fam := fun k W v =>
-  Invocable v ∧ ∀ s ∈ S, Promise (ArgsRest s.2.1 s.2.2.1) s.1 s.2.2.2 k W v
+def restsT (Ξ : Fam) (S : List (Fam × List Fam × ArgFam × Fam)) : Fam := fun k W v =>
+  Invocable v ∧ ∀ s ∈ S, Promise Ξ (ArgsRest s.2.1 s.2.2.1) s.1 s.2.2.2 k W v
 
 /-! ### Construct signatures -/
 
@@ -377,11 +406,11 @@ def ConstructsTo (v : Val) (args : List Tm) (result : Tm) : Prop :=
   ∃ fs c enter oid, v = .objAt fs c oid ∧ CallArguments.construction c = some enter ∧ result = enter args
 
 /-- The common constructor promise, independent of argument-list syntax. -/
-def ConstructPromise (P : ArgFam) (R : Fam) (k : Nat) (W : WorldT k) (v : Val) : Prop :=
+def ConstructPromise (Ξ : Fam) (P : ArgFam) (R : Fam) (k : Nat) (W : WorldT k) (v : Val) : Prop :=
   ∀ (j : Nat) (hj : j < k) (U : WorldT j),
     WExt (trunc j (Nat.le_of_lt hj) W) U → WorldAdm U → ∀ (heap : Heap), HeapOk j U heap →
       ∀ args, CallArguments.Values args → P j U args →
-        ∃ result, ConstructsTo v args result ∧ Safe R j U heap result
+        ∃ result, ConstructsTo v args result ∧ Safe Ξ R j U heap result
 
 /-- **Construct signatures.** Values meeting every signature `(parameters,
 result)` under `new`: constructing the value, in any strictly future world,
@@ -390,10 +419,10 @@ construct-only, so a plain call cannot run it, and no code without
 `[[Construct]]` is one. As for call signatures, the promise is about the term
 after the step, which is what lets the signature's variance be used only
 below the current level. -/
-def ctorsT (L : List (List Fam × Fam)) : Fam := fun k W v =>
-  Constructible v ∧ ∀ p ∈ L, ConstructPromise (ArgsT p.1) p.2 k W v
+def ctorsT (Ξ : Fam) (L : List (List Fam × Fam)) : Fam := fun k W v =>
+  Constructible v ∧ ∀ p ∈ L, ConstructPromise Ξ (ArgsT p.1) p.2 k W v
 
-theorem ctorsT_adm (L : List (List Fam × Fam)) : Adm (ctorsT L) :=
+theorem ctorsT_adm (L : List (List Fam × Fam)) : Adm (ctorsT Ξ L) :=
   ⟨fun _ _ _ h => ⟨h.1, fun p hp j hj U hx hu heap hh args hv ha =>
       h.2 p hp j (by omega) U (by rwa [trunc_trunc] at hx) hu heap hh args hv ha⟩,
    fun _ _ _ hx _ h => ⟨h.1, fun p hp j hj U hy hu heap hh args hv ha =>
@@ -407,17 +436,17 @@ def CtorRest (Ps : List Fam) (P : ArgFam) (j : Nat) (W : WorldT j) (args : List 
 
 /-- **Variadic construct signatures** `(parameters, rest, result)`: as
 `ctorsT`, for the lists `CtorRest` admits. -/
-def ctorRestsT (S : List (List Fam × ArgFam × Fam)) : Fam := fun k W v =>
-  Constructible v ∧ ∀ s ∈ S, ConstructPromise (CtorRest s.1 s.2.1) s.2.2 k W v
+def ctorRestsT (Ξ : Fam) (S : List (List Fam × ArgFam × Fam)) : Fam := fun k W v =>
+  Constructible v ∧ ∀ s ∈ S, ConstructPromise Ξ (CtorRest s.1 s.2.1) s.2.2 k W v
 
-theorem ctorRestsT_adm (S : List (List Fam × ArgFam × Fam)) : Adm (ctorRestsT S) :=
+theorem ctorRestsT_adm (S : List (List Fam × ArgFam × Fam)) : Adm (ctorRestsT Ξ S) :=
   ⟨fun _ _ _ h => ⟨h.1, fun p hp j hj U hx hu heap hh args hv ha =>
       h.2 p hp j (by omega) U (by rwa [trunc_trunc] at hx) hu heap hh args hv ha⟩,
    fun _ _ _ hx _ h => ⟨h.1, fun p hp j hj U hy hu heap hh args hv ha =>
       h.2 p hp j hj U (WExt_trans (WExt_trunc (Nat.le_of_lt hj) hx) hy) hu heap hh args hv ha⟩⟩
 
 theorem ctorRestsT_append (S T : List (List Fam × ArgFam × Fam)) (k : Nat) (W : WorldT k) (v : Val) :
-    ctorRestsT (S ++ T) k W v ↔ ctorRestsT S k W v ∧ ctorRestsT T k W v := by
+    ctorRestsT Ξ (S ++ T) k W v ↔ ctorRestsT Ξ S k W v ∧ ctorRestsT Ξ T k W v := by
   simp only [ctorRestsT, List.mem_append, or_imp, forall_and]
   constructor
   · rintro ⟨hc, hl, hm⟩; exact ⟨⟨hc, hl⟩, hc, hm⟩
@@ -425,14 +454,14 @@ theorem ctorRestsT_append (S T : List (List Fam × ArgFam × Fam)) (k : Nat) (W 
 
 /-- A class value with no variadic construct signature meets the empty list of
 them. -/
-theorem ctorRestsT_nil {k W v} (h : Constructible v) : ctorRestsT [] k W v :=
+theorem ctorRestsT_nil {k W v} (h : Constructible v) : ctorRestsT Ξ [] k W v :=
   ⟨h, fun _ hs => by cases hs⟩
 
-theorem ctorsT_select {L n W v p} (hf : ctorsT L n W v) (hp : p ∈ L) : ctorsT [p] n W v :=
+theorem ctorsT_select {L n W v p} (hf : ctorsT Ξ L n W v) (hp : p ∈ L) : ctorsT Ξ [p] n W v :=
   ⟨hf.1, fun q hq => by cases List.mem_singleton.mp hq; exact hf.2 p hp⟩
 
 theorem ctorsT_append (L M : List (List Fam × Fam)) (k : Nat) (W : WorldT k) (v : Val) :
-    ctorsT (L ++ M) k W v ↔ ctorsT L k W v ∧ ctorsT M k W v := by
+    ctorsT Ξ (L ++ M) k W v ↔ ctorsT Ξ L k W v ∧ ctorsT Ξ M k W v := by
   simp only [ctorsT, List.mem_append, or_imp, forall_and]
   constructor
   · rintro ⟨hc, hl, hm⟩; exact ⟨⟨hc, hl⟩, hc, hm⟩
@@ -471,11 +500,11 @@ theorem TupleFits.congr {P Q : Fam → Val → Prop} {T T' : TupleF} {vs}
     | none => rw [(hpos i).1.mpr hB] at hA; cases hA
     | some B => exact ((hpos i).2 A B hA hB u).mpr (h i u B hu hB)
 
-theorem callsT_adm (L : List (Fam × List Fam × Fam)) : Adm (callsT L) :=
+theorem callsT_adm (L : List (Fam × List Fam × Fam)) : Adm (callsT Ξ L) :=
   ⟨fun _ _ _ h => ⟨h.1, fun p hp => (h.2 p hp).down⟩,
    fun _ _ _ hx _ h => ⟨h.1, fun p hp => (h.2 p hp).mono hx⟩⟩
 
-theorem restsT_adm (S : List (Fam × List Fam × ArgFam × Fam)) : Adm (restsT S) :=
+theorem restsT_adm (S : List (Fam × List Fam × ArgFam × Fam)) : Adm (restsT Ξ S) :=
   ⟨fun _ _ _ h => ⟨h.1, fun p hp => (h.2 p hp).down⟩,
    fun _ _ _ hx _ h => ⟨h.1, fun p hp => (h.2 p hp).mono hx⟩⟩
 
@@ -643,24 +672,26 @@ theorem ArgsRest_of_exact_extra {Ps : List Fam} {E : ArgFam} {j W args extra}
   · rw [← hl, List.take_left]; exact ArgsShort_of_exact ha
   · rw [← hl, List.drop_left]; exact he
 
-theorem ctorsT_congr {α : Type} (l : List α) (f g : α → List Fam × Fam) {n : Nat}
+theorem ctorsT_congr {Ξ Ξ' : Fam} {α : Type} (l : List α) (f g : α → List Fam × Fam) {n : Nat}
+    (hΞ : Agree Ξ Ξ' n)
     (h : ∀ x ∈ l, ArgsAgree n (f x).1 (g x).1 ∧ Agree (f x).2 (g x).2 n)
-    (W : WorldT n) (v : Val) : ctorsT (l.map f) n W v ↔ ctorsT (l.map g) n W v := by
+    (W : WorldT n) (v : Val) : ctorsT Ξ (l.map f) n W v ↔ ctorsT Ξ' (l.map g) n W v := by
   unfold ctorsT
   refine and_congr Iff.rfl ⟨fun hs p hp => ?_, fun hs p hp => ?_⟩ <;>
     obtain ⟨x, hm, rfl⟩ := List.mem_map.mp hp <;>
     intro j hj U hx hu heap hh args hv ha
   · obtain ⟨result, hc, hsafe⟩ := hs (f x) (List.mem_map_of_mem hm) j hj U hx hu heap hh args hv
       ((ArgsT_congr (h x hm).1 hj U args).mpr ha)
-    exact ⟨result, hc, (Safe_congr n (h x hm).2 j hj U heap _).mp hsafe⟩
+    exact ⟨result, hc, (Safe_congr' n hΞ (h x hm).2 j hj U heap _).mp hsafe⟩
   · obtain ⟨result, hc, hsafe⟩ := hs (g x) (List.mem_map_of_mem hm) j hj U hx hu heap hh args hv
       ((ArgsT_congr (h x hm).1 hj U args).mp ha)
-    exact ⟨result, hc, (Safe_congr n (h x hm).2 j hj U heap _).mpr hsafe⟩
+    exact ⟨result, hc, (Safe_congr' n hΞ (h x hm).2 j hj U heap _).mpr hsafe⟩
 
-theorem ctorRestsT_congr {α : Type} (l : List α) (f g : α → List Fam × ArgFam × Fam) {n : Nat}
+theorem ctorRestsT_congr {Ξ Ξ' : Fam} {α : Type} (l : List α) (f g : α → List Fam × ArgFam × Fam) {n : Nat}
+    (hΞ : Agree Ξ Ξ' n)
     (h : ∀ x ∈ l, ArgsAgree n (f x).1 (g x).1 ∧ Agree (f x).2.1 (g x).2.1 n ∧
       Agree (f x).2.2 (g x).2.2 n)
-    (W : WorldT n) (v : Val) : ctorRestsT (l.map f) n W v ↔ ctorRestsT (l.map g) n W v := by
+    (W : WorldT n) (v : Val) : ctorRestsT Ξ (l.map f) n W v ↔ ctorRestsT Ξ' (l.map g) n W v := by
   unfold ctorRestsT
   refine and_congr Iff.rfl ⟨fun hs p hp => ?_, fun hs p hp => ?_⟩ <;>
     obtain ⟨x, hm, rfl⟩ := List.mem_map.mp hp <;>
@@ -672,7 +703,7 @@ theorem ctorRestsT_congr {α : Type} (l : List α) (f g : α → List Fam × Arg
         refine ⟨by rw [hl]; exact hlen, ?_, ?_⟩
         · rw [hl]; exact (ArgsT_congr (h x hm).1 hj U _).mpr hfix
         · rw [hl]; exact ((h x hm).2.1 j hj U _).mpr hpack)
-    exact ⟨result, hc, (Safe_congr n (h x hm).2.2 j hj U heap _).mp hsafe⟩
+    exact ⟨result, hc, (Safe_congr' n hΞ (h x hm).2.2 j hj U heap _).mp hsafe⟩
   · have hl := ArgsAgree_length (h x hm).1
     obtain ⟨result, hc, hsafe⟩ := hs (g x) (List.mem_map_of_mem hm) j hj U hx hu heap hh args hv
       (by
@@ -680,7 +711,7 @@ theorem ctorRestsT_congr {α : Type} (l : List α) (f g : α → List Fam × Arg
         refine ⟨by rw [← hl]; exact hlen, ?_, ?_⟩
         · rw [← hl]; exact (ArgsT_congr (h x hm).1 hj U _).mp hfix
         · rw [← hl]; exact ((h x hm).2.1 j hj U _).mp hpack)
-    exact ⟨result, hc, (Safe_congr n (h x hm).2.2 j hj U heap _).mpr hsafe⟩
+    exact ⟨result, hc, (Safe_congr' n hΞ (h x hm).2.2 j hj U heap _).mpr hsafe⟩
 
 /-! ### Bound functions
 

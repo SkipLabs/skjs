@@ -315,10 +315,10 @@ private theorem mixed_flatMap_agree (G : NormalGraph ι) (η θ : MixedAssignmen
 private theorem mapped_sem_agree (G : NormalGraph ι) (η θ : MixedAssignment ι)
     (f g : α → List ι) (h : ∀ e, Agree (mixedMeaning G η (f e)) (mixedMeaning G θ (g e)) n)
     (c : Clause α) (W : WorldT n) (v : Val) :
-    semWithArgs (mixedValues G η) (mixedArgs G η) (c.map f) n W v ↔
-      semWithArgs (mixedValues G θ) (mixedArgs G θ) (c.map g) n W v := by
+    semWithArgs Ξ (mixedValues G η) (mixedArgs G η) (c.map f) n W v ↔
+      semWithArgs Ξ (mixedValues G θ) (mixedArgs G θ) (c.map g) n W v := by
   rw [semWithArgs_map, semWithArgs_map]
-  exact semWithArgs_congr _ _ _ _ n (fun e m hm U u => h e m hm U (.inl u))
+  exact semWithArgs_congr _ _ _ _ n (fun _ _ _ _ => Iff.rfl) (fun e m hm U u => h e m hm U (.inl u))
     (fun e m hm U us => h e m hm U (.inr us)) c W v
 
 /-- A clause reads its operand families below the current level. Mapping its

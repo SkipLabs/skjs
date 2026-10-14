@@ -193,33 +193,33 @@ theorem domain_congr {ι : Type} {P P' : Fam → Fam} {N N' : Fam}
 /-- The modeled operation is safe at every admissible world and satisfying
 heap. Unlike an outcome-only relation, this also constrains executions that
 throw or do not return. -/
-def OperationContract (op : Val → Tm) (A B : Fam) : Prop :=
+def OperationContract (Ξ : Fam) (op : Val → Tm) (A B : Fam) : Prop :=
   ∀ n (W : WorldT n) heap v, WorldAdm W → HeapOk n W heap →
-    A n W v → Safe B n W heap (op v)
+    A n W v → Safe Ξ B n W heap (op v)
 
 namespace OperationContract
 
-theorem narrow {op A A' B} (h : OperationContract op A B)
-    (ha : FamLe A' A) : OperationContract op A' B :=
+theorem narrow {op A A' B} (h : OperationContract Ξ op A B)
+    (ha : FamLe A' A) : OperationContract Ξ op A' B :=
   fun n W heap v hw hh hv => h n W heap v hw hh (ha n W v hv)
 
-theorem widen {op A B B'} (h : OperationContract op A B)
-    (hb : FamLe B B') : OperationContract op A B' := by
+theorem widen {op A B B'} (h : OperationContract Ξ op A B)
+    (hb : FamLe B B') : OperationContract Ξ op A B' := by
   intro n W heap v hw hh hv
   exact Safe_mono n (fun m _ U u hu => hb m U u hu) W heap (op v)
     (h n W heap v hw hh hv)
 
-theorem union {op A B R S} (ha : OperationContract op A R)
-    (hb : OperationContract op B S) :
-    OperationContract op (unionT A B) (unionT R S) := by
+theorem union {op A B R S} (ha : OperationContract Ξ op A R)
+    (hb : OperationContract Ξ op B S) :
+    OperationContract Ξ op (unionT A B) (unionT R S) := by
   intro n W heap v hw hh hv
   rcases hv with hv | hv
   · exact ha.widen (fun _ _ _ h => Or.inl h) n W heap v hw hh hv
   · exact hb.widen (fun _ _ _ h => Or.inr h) n W heap v hw hh hv
 
 theorem union_input {op A B R} :
-    OperationContract op (unionT A B) R ↔
-      OperationContract op A R ∧ OperationContract op B R := by
+    OperationContract Ξ op (unionT A B) R ↔
+      OperationContract Ξ op A R ∧ OperationContract Ξ op B R := by
   constructor
   · intro h
     exact ⟨h.narrow (fun _ _ _ h => Or.inl h), h.narrow (fun _ _ _ h => Or.inr h)⟩
@@ -233,29 +233,29 @@ on a stable input it produces `F` of the input, on a native promise `F` of
 its payload. `await` is such an operation with `F` the identity, and
 `Promise.resolve`, which returns a native promise itself and wraps a stable
 value in a fresh one, with `F` the native constructor. -/
-structure ObservationContract (P : Fam → Fam) (N : Fam) (op : Val → Tm) (F : Fam → Fam) : Prop where
+structure ObservationContract (Ξ : Fam) (P : Fam → Fam) (N : Fam) (op : Val → Tm) (F : Fam → Fam) : Prop where
   mono : ∀ {A B}, FamLe A B → FamLe (F A) (F B)
-  stable : ∀ {A}, ValueFam A → FamLe A N → OperationContract op A (F A)
-  native : ∀ A, FamLe A sourceT → OperationContract op (P A) (F A)
+  stable : ∀ {A}, ValueFam A → FamLe A N → OperationContract Ξ op A (F A)
+  native : ∀ A, FamLe A sourceT → OperationContract Ξ op (P A) (F A)
 
 /-- Reviewed host contracts expressed in the verifier's own world and safety
 model. `observe` returns a native promise's delivered value, `identity` is
 `Promise.resolve`, and `fresh` returns a fresh native promise resolved with
 its input. These are explicit premises, not consequences of structural
 Promise methods. -/
-structure NativeOperationContracts (P : Fam → Fam) (N : Fam)
+structure NativeOperationContracts (Ξ : Fam) (P : Fam → Fam) (N : Fam)
     (observe identity fresh : Val → Tm) : Prop where
   promise_mono : ∀ {A B}, FamLe A B → FamLe (P A) (P B)
-  observes : ObservationContract P N observe id
-  identifies : ObservationContract P N identity P
-  fresh_stable : ∀ {A}, ValueFam A → FamLe A N → OperationContract fresh A (P A)
-  fresh_native : ∀ {A R}, OperationContract fresh A (P R) →
-    OperationContract fresh (P A) (P R)
+  observes : ObservationContract Ξ P N observe id
+  identifies : ObservationContract Ξ P N identity P
+  fresh_stable : ∀ {A}, ValueFam A → FamLe A N → OperationContract Ξ fresh A (P A)
+  fresh_native : ∀ {A R}, OperationContract Ξ fresh A (P R) →
+    OperationContract Ξ fresh (P A) (P R)
 
 /-- Every finite observation derivation supplies the actual safety contract of
 an observing operation: `F` of the observation. -/
-theorem Observes.safe {P N op F} (host : ObservationContract P N op F)
-    {A O} (h : Observes P N A O) : OperationContract op A (F O) := by
+theorem Observes.safe {P N op F} (host : ObservationContract Ξ P N op F)
+    {A O} (h : Observes P N A O) : OperationContract Ξ op A (F O) := by
   induction h with
   | stable hv hn => exact host.stable hv hn
   | native _ hs => exact host.native _ hs
@@ -266,22 +266,22 @@ theorem Observes.safe {P N op F} (host : ObservationContract P N op F)
 
 /-- `await` of an awaitable input yields its observation. -/
 theorem Observes.await_safe {P N observe identity fresh}
-    (host : NativeOperationContracts P N observe identity fresh)
-    {A O} (h : Observes P N A O) : OperationContract observe A O :=
+    (host : NativeOperationContracts Ξ P N observe identity fresh)
+    {A O} (h : Observes P N A O) : OperationContract Ξ observe A O :=
   h.safe host.observes
 
 /-- `Promise.resolve` of an awaitable input is a native promise of its
 observation. -/
 theorem Observes.resolve_safe {P N observe identity fresh}
-    (host : NativeOperationContracts P N observe identity fresh)
-    {A O} (h : Observes P N A O) : OperationContract identity A (P O) :=
+    (host : NativeOperationContracts Ξ P N observe identity fresh)
+    {A O} (h : Observes P N A O) : OperationContract Ξ identity A (P O) :=
   h.safe host.identifies
 
 /-- Resolution derivations produce the declared native result; safety includes
 world evolution and every intermediate computation admitted by Safe. -/
 theorem Resolves.safe {P N observe identity fresh}
-    (host : NativeOperationContracts P N observe identity fresh)
-    {A R} (h : Resolves P N A R) : OperationContract fresh A (P R) := by
+    (host : NativeOperationContracts Ξ P N observe identity fresh)
+    {A R} (h : Resolves P N A R) : OperationContract Ξ fresh A (P R) := by
   induction h with
   | stable hv hn => exact host.fresh_stable hv hn
   | native _ ih => exact host.fresh_native ih

@@ -117,6 +117,13 @@ theorem Embedding.realm_sem {G : NormalGraph ι} {H : NormalGraph κ}
   simp only [realmInvariant, E.realm, Clause.record_map]
   cases G.realm <;> rfl
 
+theorem Embedding.exc {G : NormalGraph ι} {H : NormalGraph κ}
+    (E : Embedding G H) (X : List κ → Fam) :
+    realmExc H X = realmExc G (fun S => X (S.map E.node)) := by
+  funext n W v
+  simp only [realmExc]
+  rw [show (Clause.source : Clause (List κ)) = Clause.map (List.map E.node) .source from rfl, E.realm_sem]
+
 theorem Embedding.row_sem {G : NormalGraph ι} {H : NormalGraph κ}
     (E : Embedding G H) (Z X : List κ → Fam) (η : MixedAssignment κ)
     (c : Clause (List ι)) :
@@ -124,7 +131,7 @@ theorem Embedding.row_sem {G : NormalGraph ι} {H : NormalGraph κ}
       rowSem G (fun S => Z (S.map E.node)) (fun S => X (S.map E.node))
         (graphArguments G (pull E.node η) (fun S => X (S.map E.node))) c := by
   unfold rowSem
-  rw [semWithArgs_map, E.realm_sem]
+  rw [semWithArgs_map, E.realm_sem, E.exc]
   simp only [E.arguments]
 
 theorem Embedding.values {G : NormalGraph ι} {H : NormalGraph κ}
@@ -144,9 +151,9 @@ theorem Embedding.instance {G : NormalGraph ι} {H : NormalGraph κ}
     {Y : MixedAssignment κ × κ → Fam}
     (h : ∀ η i, Y (η,E.node i) = X (pull E.node η,i))
     (η : MixedAssignment κ) (s : SchemeRow ι) (As : List MixedFamily) :
-    instanceTWithArgs (fun θ S => setSem (fun i => Y (θ,i)) S)
+    instanceTWithArgs Ξ (fun θ S => setSem (fun i => Y (θ,i)) S)
       η (mapScheme E.node s) As (graphArguments H) =
-    instanceTWithArgs (fun θ S => setSem (fun i => X (θ,i)) S)
+    instanceTWithArgs Ξ (fun θ S => setSem (fun i => X (θ,i)) S)
       (pull E.node η) s As (graphArguments G) := by
   have hv : ∀ S,
       setSem (fun i => Y (assign η (s.binders.map E.node) As,i)) (S.map E.node) =
@@ -224,9 +231,9 @@ theorem Embedding.scheme_sem {G : NormalGraph ι} {H : NormalGraph κ}
     {Y : MixedAssignment κ × κ → Fam}
     (h : ∀ η i, Y (η,E.node i) = X (pull E.node η,i))
     (η : MixedAssignment κ) (s : SchemeRow ι) (hs : ∃ i, G.schemes i = some s) :
-    schemeSemWithArgs (mixedParameters H) (fun θ S => setSem (fun i => Y (θ,i)) S)
+    schemeSemWithArgs (mixedParameters H) Ξ (fun θ S => setSem (fun i => Y (θ,i)) S)
       η (mapScheme E.node s) =
-    schemeSemWithArgs (mixedParameters G) (fun θ S => setSem (fun i => X (θ,i)) S)
+    schemeSemWithArgs (mixedParameters G) Ξ (fun θ S => setSem (fun i => X (θ,i)) S)
       (pull E.node η) s := by
   obtain ⟨i, hs⟩ := hs
   funext n W v
@@ -235,6 +242,17 @@ theorem Embedding.scheme_sem {G : NormalGraph ι} {H : NormalGraph κ}
   refine and_congr Iff.rfl (forall_congr' fun q => forall_congr' fun hq => forall_congr' fun As => imp_congr_right fun _ => ?_)
   exact imp_congr (E.domains i s hs As) (imp_congr (E.bounded h η s As q)
     (iff_of_eq (congrFun (congrFun (congrFun (E.instance h η s As) q) (trunc q hq W)) v)))
+
+theorem Embedding.exc_values {G : NormalGraph ι} {H : NormalGraph κ}
+    (E : Embedding G H) {X : MixedAssignment ι × ι → Fam}
+    {Y : MixedAssignment κ × κ → Fam}
+    (h : ∀ η i, Y (η,E.node i) = X (pull E.node η,i)) :
+    realmExc H (setSem fun i => Y (ParameterAssignment.empty .mixed,i)) =
+      realmExc G (setSem fun i => X (ParameterAssignment.empty .mixed,i)) := by
+  rw [E.exc]
+  have hz := funext (E.values h (ParameterAssignment.empty .mixed))
+  simp only [pull_empty] at hz
+  rw [hz]
 
 theorem Embedding.row_values {G : NormalGraph ι} {H : NormalGraph κ}
     (E : Embedding G H) {X : MixedAssignment ι × ι → Fam}
@@ -283,7 +301,8 @@ theorem Embedding.part {G : NormalGraph ι} {H : NormalGraph κ}
     cases hs : G.schemes i with
     | some s =>
       simp only [Option.map_some]
-      exact E.scheme_sem h η s ⟨i, hs⟩
+      exact (congrArg (fun Ξ => schemeSemWithArgs (mixedParameters H) Ξ _ η (mapScheme E.node s))
+        (E.exc_values h)).trans (E.scheme_sem h η s ⟨i, hs⟩)
     | none =>
       simp only [Option.map_none, E.clauses]
       exact E.row_set h η (G i)
@@ -304,7 +323,8 @@ theorem Embedding.layer {G : NormalGraph ι} {H : NormalGraph κ}
     cases hs : G.schemes i with
     | some s =>
       simp only [Option.map_some]
-      exact E.scheme_sem h η s ⟨i, hs⟩
+      exact (congrArg (fun Ξ => schemeSemWithArgs (mixedParameters H) Ξ _ η (mapScheme E.node s))
+        (E.exc_values h)).trans (E.scheme_sem h η s ⟨i, hs⟩)
     | none =>
       simp only [Option.map_none, E.meets]
       cases hm : G.meets i with
@@ -454,9 +474,9 @@ private theorem DomainRegion.scheme {G : NormalGraph ι}
     (h : ∀ η i, D i → Y (η,i) = X (η,i))
     (η : MixedAssignment ι) (i : ι) (hi : D i)
     (s : SchemeRow ι) (hs : G.schemes i = some s) :
-    schemeSemWithArgs (mixedParameters { G with domain := domain })
+    schemeSemWithArgs (mixedParameters { G with domain := domain }) Ξ
       (fun θ S => setSem (fun j => Y (θ,j)) S) η s =
-    schemeSemWithArgs (mixedParameters G)
+    schemeSemWithArgs (mixedParameters G) Ξ
       (fun θ S => setSem (fun j => X (θ,j)) S) η s := by
   have hv : ∀ θ S, (∀ j ∈ S, j ∈ PositiveRules.reads G i) →
       setSem (fun j => Y (θ,j)) S = setSem (fun j => X (θ,j)) S :=
@@ -530,7 +550,7 @@ private theorem DomainRegion.scheme {G : NormalGraph ι}
   refine and_congr Iff.rfl (forall_congr' fun q => forall_congr' fun hq => forall_congr' fun As => imp_congr_right fun _ => ?_)
   refine imp_congr (R.allowed i hi s hs As) (imp_congr (hbound As q) ?_)
   simp only [instanceTWithArgs, instanceSigs, instanceRestsWithArgs]
-  change sigsT s.construct _ _ q (trunc q hq W) v ↔ sigsT s.construct _ _ q (trunc q hq W) v
+  change sigsT _ s.construct _ _ q (trunc q hq W) v ↔ sigsT _ s.construct _ _ q (trunc q hq W) v
   dsimp only [mixedParameters]
   have sameArgs : graphArguments { G with domain := domain } = graphArguments G := rfl
   rw [sameArgs, sigs, rests]

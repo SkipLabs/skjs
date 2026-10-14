@@ -2177,7 +2177,7 @@ theorem acceptedUsing_safe [DecidableEq ι] {G : NormalGraph ι}
     {images : PositiveCertificates.InstanceImageCheck G} {t A e} {codes : CodeEntry ι → Bool}
     (he : checkUsing G images t A e codes = true) (n W h) (hw : WorldAdm W) (hh : HeapOk n W h)
     (hcodes : CodesSound G codes := by exact Verification.ProgramCertificates.codesSound_none _) :
-    Safe (meaning G A) n W h t :=
+    Safe (excOf G) (meaning G A) n W h t :=
   (checkUsing_sound he hcodes).2.closed_safe (checkUsing_sound he hcodes).1 n W h hw hh
 
 /-- Every offer graph code meets is checked when every entry is admitted. -/
@@ -2864,7 +2864,7 @@ theorem check_sound [DecidableEq ι] {G : NormalGraph ι} {t A e} {codes : CodeE
 theorem accepted_safe [DecidableEq ι] {G : NormalGraph ι} {t A e} {codes : CodeEntry ι → Bool}
     (he : check G t A e codes = true) (n W h) (hw : WorldAdm W) (hh : HeapOk n W h)
     (hcodes : CodesSound G codes := by exact Verification.ProgramCertificates.codesSound_none _) :
-    Safe (meaning G A) n W h t := acceptedUsing_safe he n W h hw hh hcodes
+    Safe (excOf G) (meaning G A) n W h t := acceptedUsing_safe he n W h hw hh hcodes
 
 theorem derivable_iff_checked [DecidableEq ι] (G : NormalGraph ι) (t : Tm) (A : Ty ι) :
     ((Scoped 0 t ∧ HasTy G [] t A) → ∃ e, check G t A e (fun _ => true) = true) ∧

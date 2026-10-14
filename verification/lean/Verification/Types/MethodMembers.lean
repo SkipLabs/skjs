@@ -63,12 +63,12 @@ theorem boundOn_adm (v : Val) {Fs : List Fam} (h : ∀ F ∈ Fs, Adm F) : Adm (b
 /-- What a member promises of a value read from host `v`: its signatures, each
 with receiver `v` when `v` is in each of the member's receivers, and its
 quantified ones, met bound to `v`. -/
-def onHost (v : Val) (m : Member) : Fam :=
-  interT (CallEffects.callsT (m.calls.map (Contract.withReceiver (hostIn v m.receivers))))
-    (interT (CallEffects.restsT (m.rests.map (Contract.withReceiver (hostIn v m.receivers))))
+def onHost (Ξ : Fam) (v : Val) (m : Member) : Fam :=
+  interT (CallEffects.callsT Ξ (m.calls.map (Contract.withReceiver (hostIn v m.receivers))))
+    (interT (CallEffects.restsT Ξ (m.rests.map (Contract.withReceiver (hostIn v m.receivers))))
       (boundOn v m.schemes))
 
-theorem onHost_adm (v : Val) (m : Member) (h : ∀ F ∈ m.schemes, Adm F) : Adm (onHost v m) :=
+theorem onHost_adm (v : Val) (m : Member) (h : ∀ F ∈ m.schemes, Adm F) : Adm (onHost Ξ v m) :=
   interT_adm _ _ (CallEffects.callsT_adm _) (interT_adm _ _ (CallEffects.restsT_adm _) (boundOn_adm v h))
 
 /-- `v` holds `key` at a location whose contract implies `A` below the level,
@@ -134,9 +134,9 @@ there implies, in every world extending the current one, the member's
 signatures invoked on `v`. The implication is not claimed in unrelated
 worlds: there the object's own locations need not hold their contracts, and a
 method reading them could not be safe. -/
-def memberT (m : Member) : Fam := fun k W v => ∃ d, along m.key (onHost v m) d k W v
+def memberT (Ξ : Fam) (m : Member) : Fam := fun k W v => ∃ d, along m.key (onHost Ξ v m) d k W v
 
-theorem memberT_adm (m : Member) : Adm (memberT m) := by
+theorem memberT_adm (m : Member) : Adm (memberT Ξ m) := by
   refine ⟨?_, ?_⟩
   · rintro n W v ⟨d, h⟩
     exact ⟨d, (along_adm _ _ d).down n W v h⟩
@@ -145,29 +145,29 @@ theorem memberT_adm (m : Member) : Adm (memberT m) := by
 
 /-- A member whose signatures imply another's below the level, found by the
 same key, is that member. -/
-theorem memberT_mono {m m' : Member} (hkey : m.key = m'.key) {k : Nat}
-    (h : ∀ v, ∀ j, j < k → ∀ (U : WorldT j) u, onHost v m j U u → onHost v m' j U u)
-    {W : WorldT k} {v : Val} (hv : memberT m k W v) : memberT m' k W v := by
+theorem memberT_mono {Ξ Ξ' : Fam} {m m' : Member} (hkey : m.key = m'.key) {k : Nat}
+    (h : ∀ v, ∀ j, j < k → ∀ (U : WorldT j) u, onHost Ξ v m j U u → onHost Ξ' v m' j U u)
+    {W : WorldT k} {v : Val} (hv : memberT Ξ m k W v) : memberT Ξ' m' k W v := by
   obtain ⟨d, hv⟩ := hv
   exact ⟨d, hkey ▸ along_mono d (h v) hv⟩
 
-def methodT (ms : List Member) : Fam := fun k W v => ∀ m ∈ ms, memberT m k W v
+def methodT (Ξ : Fam) (ms : List Member) : Fam := fun k W v => ∀ m ∈ ms, memberT Ξ m k W v
 
-theorem methodT_adm (ms : List Member) : Adm (methodT ms) :=
+theorem methodT_adm (ms : List Member) : Adm (methodT Ξ ms) :=
   ⟨fun n W v h m hm => (memberT_adm m).down n W v (h m hm),
     fun n W W' hx v h m hm => (memberT_adm m).mono n W W' hx v (h m hm)⟩
 
-theorem methodT_nil (k : Nat) (W : WorldT k) (v : Val) : methodT [] k W v := by
+theorem methodT_nil (k : Nat) (W : WorldT k) (v : Val) : methodT Ξ [] k W v := by
   intro m hm
   simp at hm
 
 theorem methodT_append (ms ns : List Member) (k : Nat) (W : WorldT k) (v : Val) :
-    methodT (ms ++ ns) k W v ↔ methodT ms k W v ∧ methodT ns k W v := by
+    methodT Ξ (ms ++ ns) k W v ↔ methodT Ξ ms k W v ∧ methodT Ξ ns k W v := by
   simp only [methodT, List.mem_append, or_imp, forall_and]
 
 /-- A member of the object, read from it. -/
 theorem methodT_at {ms : List Member} {m : Member} (hm : m ∈ ms) {k} {W : WorldT k} {v}
-    (h : methodT ms k W v) : memberT m k W v :=
+    (h : methodT Ξ ms k W v) : memberT Ξ m k W v :=
   h m hm
 
 /-- A member's syntax: its key, fixed signatures `(parameters, result)` and
@@ -194,12 +194,14 @@ private theorem argsAgree_map {α : Type} {X Y : α → Fam} {n : Nat}
 
 /-- A member's host-relative family depends on its operands only below the
 budget, as a call clause's does. -/
-theorem onHost_congr {α : Type} (X Y : α → Fam) (P Q : α → ArgFam) (n : Nat)
+theorem onHost_congr {Ξ Ξ' : Fam} {α : Type} (X Y : α → Fam) (P Q : α → ArgFam) (n : Nat)
+    (hexc : Agree Ξ Ξ' n)
     (h : ∀ a, Agree (X a) (Y a) n) (hP : ∀ a, Agree (P a) (Q a) n) (m : Sig α) (v : Val) :
-    Agree (onHost v (Member.of X P m)) (onHost v (Member.of Y Q m)) n := by
+    Agree (onHost Ξ v (Member.of X P m)) (onHost Ξ' v (Member.of Y Q m)) n := by
   intro j hj W u
   have hX : ∀ a, Agree (X a) (Y a) j := fun a k hk W v => h a k (by omega) W v
   have hQ : ∀ a, Agree (P a) (Q a) j := fun a k hk W v => hP a k (by omega) W v
+  have hE : Agree Ξ Ξ' j := fun k hk W v => hexc k (by omega) W v
   simp only [onHost, Member.of, List.map_map, interT, Function.comp_def]
   have hR : Agree (hostIn v (m.receivers.map X)) (hostIn v (m.receivers.map Y)) j := by
     intro k hk W r
@@ -208,12 +210,12 @@ theorem onHost_congr {α : Type} (X Y : α → Fam) (P Q : α → ArgFam) (n : N
   exact and_congr
     (CallEffects.callsT_congr m.calls
       (fun p => Contract.withReceiver (hostIn v (m.receivers.map X)) (MethodArrow.map X p))
-      (fun p => Contract.withReceiver (hostIn v (m.receivers.map Y)) (MethodArrow.map Y p)) (fun _ _ => rfl)
+      (fun p => Contract.withReceiver (hostIn v (m.receivers.map Y)) (MethodArrow.map Y p)) hE (fun _ _ => rfl)
       (fun p _ => ⟨hR, argsAgree_map hX p.arguments, hX p.result⟩) W u)
     (and_congr
       (CallEffects.restsT_congr m.rests
         (fun p => Contract.withReceiver (hostIn v (m.receivers.map X)) (MethodRestArrow.mapWith X P p))
-        (fun p => Contract.withReceiver (hostIn v (m.receivers.map Y)) (MethodRestArrow.mapWith Y Q p)) (fun _ _ => rfl)
+        (fun p => Contract.withReceiver (hostIn v (m.receivers.map Y)) (MethodRestArrow.mapWith Y Q p)) hE (fun _ _ => rfl)
         (fun s _ => ⟨hR, argsAgree_map hX s.arguments.1,
           hQ s.arguments.2, hX s.result⟩) W u)
       (by simp only [boundOn, List.mem_map, forall_exists_index, and_imp,
@@ -222,20 +224,21 @@ theorem onHost_congr {α : Type} (X Y : α → Fam) (P Q : α → ArgFam) (n : N
 
 /-- Members agreeing below the budget, read at their hosts, are the same
 members. -/
-theorem methodT_congr {α : Type} (X Y : α → Fam) (P Q : α → ArgFam) (n : Nat)
+theorem methodT_congr {Ξ Ξ' : Fam} {α : Type} (X Y : α → Fam) (P Q : α → ArgFam) (n : Nat)
+    (hexc : Agree Ξ Ξ' n)
     (h : ∀ a, Agree (X a) (Y a) n) (hP : ∀ a, Agree (P a) (Q a) n) (ms : List (Sig α))
     (W : WorldT n) (v : Val) :
-    methodT (ms.map (Member.of X P)) n W v ↔ methodT (ms.map (Member.of Y Q)) n W v := by
+    methodT Ξ (ms.map (Member.of X P)) n W v ↔ methodT Ξ' (ms.map (Member.of Y Q)) n W v := by
   constructor
   · intro hv m hmem
     obtain ⟨s, hs, rfl⟩ := List.mem_map.mp hmem
     exact memberT_mono (m := Member.of X P s) (m' := Member.of Y Q s) rfl
-      (fun v j hj U u => (onHost_congr X Y P Q n h hP s v j hj U u).mp)
+      (fun v j hj U u => (onHost_congr X Y P Q n hexc h hP s v j hj U u).mp)
       (hv (Member.of X P s) (List.mem_map_of_mem hs))
   · intro hv m hmem
     obtain ⟨s, hs, rfl⟩ := List.mem_map.mp hmem
     exact memberT_mono (m := Member.of Y Q s) (m' := Member.of X P s) rfl
-      (fun v j hj U u => (onHost_congr X Y P Q n h hP s v j hj U u).mpr)
+      (fun v j hj U u => (onHost_congr X Y P Q n hexc h hP s v j hj U u).mpr)
       (hv (Member.of Y Q s) (List.mem_map_of_mem hs))
 
 /-- Rename a member signature's operands. -/

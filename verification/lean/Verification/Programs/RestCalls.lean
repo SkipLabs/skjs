@@ -17,10 +17,10 @@ theorem call_elim_rest {S : List (Fam × List Fam × ArgFam × Fam)} {s : Fam ×
     (hE : Adm s.2.2.1)
     {n : Nat} {W : WorldT n} {f r : Tm} {args extra : List Tm} {heap : Heap}
     (hrv : isVal r = true) (hr : s.1 n W r)
-    (hf : restsT S n W f) (ha : ArgsT s.2.1 n W args) (he : s.2.2.1 n W extra)
+    (hf : restsT Ξ S n W f) (ha : ArgsT s.2.1 n W args) (he : s.2.2.1 n W extra)
     (hev : CallArguments.Values extra)
     (hw : WorldAdm W) (hh : HeapOk n W heap) :
-    Safe s.2.2.2 n W heap (.invoke f r (args ++ extra)) := by
+    Safe Ξ s.2.2.2 n W heap (.invoke f r (args ++ extra)) := by
   apply ArgumentContracts.call_safe
     (P := ArgsRest s.2.1 s.2.2.1)
     (Adm.of_transfer (fun ha j hj U hx => ArgsRest_transfer hA hE ha j hj U hx)) hR
@@ -34,10 +34,10 @@ theorem call_elim_rest {S : List (Fam × List Fam × ArgFam × Fam)} {s : Fam ×
 theorem ctx_bind {A B : Fam} (C : Tm → Tm)
     (lift : ∀ {h t h' t'}, Step h t h' t' → Step h (C t) h' (C t'))
     (raise : ∀ {t v}, Raises t v → Raises (C t) v) :
-    ∀ n W h t, WorldAdm W → HeapOk n W h → Safe A n W h t →
+    ∀ n W h t, WorldAdm W → HeapOk n W h → Safe Ξ A n W h t →
     (∀ j (hj : j ≤ n) U, WExt (trunc j hj W) U → WorldAdm U →
-      ∀ h' v, HeapOk j U h' → isVal v = true → A j U v → Safe B j U h' (C v)) →
-    Safe B n W h (C t) := by
+      ∀ h' v, HeapOk j U h' → isVal v = true → A j U v → Safe Ξ B j U h' (C v)) →
+    Safe Ξ B n W h (C t) := by
   intro n
   induction n with
   | zero => intros; trivial
@@ -59,7 +59,7 @@ theorem argument_alloc_safe {T : TupleF} (hT : ∀ i A, positionFam T i = some A
     {n : Nat} {W : WorldT n} {h : Heap} {vs : List Tm}
     (hw : WorldAdm W) (hh : HeapOk n W h) (hp : ArgumentContracts.Fits T n W vs)
     (hvals : CallArguments.Values vs) :
-    Safe (listT { T with readonly := false }) n W h (.arrLit vs) := by
+    Safe Ξ (listT { T with readonly := false }) n W h (.arrLit vs) := by
   obtain ⟨hreq, hbound, hel⟩ := hp
   have hsome : ∀ i, i < vs.length → ∃ A, positionFam T i = some A := by
     intro i hi
@@ -74,7 +74,7 @@ theorem argument_alloc_safe {T : TupleF} (hT : ∀ i A, positionFam T i = some A
     intro i hi
     obtain ⟨A, hA⟩ := hsome i (by simpa [hlen] using hi)
     simp [As, hA]
-  have hres := arr_alloc_rule_below (Q := listT { T with readonly := false }) (As := As)
+  have hres := arr_alloc_rule_below (Ξ := Ξ) (Q := listT { T with readonly := false }) (As := As)
     (by
       intro A hA
       obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hA
@@ -219,11 +219,11 @@ theorem spread_parts_safe {E R : Fam} (hE : Adm E) (hEv : ValOnly E) {f r : Tm}
       (∀ p ∈ parts, ∀ S, p.1 = some S → Adm S ∧ Spreads S E) →
       WorldAdm W → HeapOk n W heap → CallArguments.Values pre →
       (∀ p ∈ parts, ∀ j (hj : j ≤ n) U, WExt (trunc j hj W) U → WorldAdm U →
-        ∀ heap, HeapOk j U heap → Safe (p.1.getD E) j U heap p.2) →
+        ∀ heap, HeapOk j U heap → Safe Ξ (p.1.getD E) j U heap p.2) →
       (∀ j (hj : j ≤ n) U, WExt (trunc j hj W) U → WorldAdm U →
         ∀ heap extra, HeapOk j U heap → (∀ e ∈ extra, E j U e) →
-          Safe R j U heap (.invoke f r (pre ++ extra))) →
-      Safe R n W heap (.invoke f r (pre ++ parts.map partTerm))
+          Safe Ξ R j U heap (.invoke f r (pre ++ extra))) →
+      Safe Ξ R n W heap (.invoke f r (pre ++ parts.map partTerm))
   | [], n, W, heap, pre, _, hw, hh, _, _, hk => by
     simpa using hk n (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hw heap [] hh (by simp)
   | (none, a) :: parts, n, W, heap, pre, hS, hw, hh, hp, ht, hk => by
@@ -256,7 +256,7 @@ theorem spread_parts_safe {E R : Fam} (hE : Adm E) (hEv : ValOnly E) {f r : Tm}
   | (some S, s) :: parts, n, W, heap, pre, hS, hw, hh, hp, ht, hk => by
     obtain ⟨hSa, hSs⟩ := hS (some S, s) (by simp) S rfl
     have hs := ht (some S, s) (by simp) n (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hw heap hh
-    show Safe R n W heap (.invoke f r (pre ++ .spread s :: parts.map partTerm))
+    show Safe Ξ R n W heap (.invoke f r (pre ++ .spread s :: parts.map partTerm))
     apply ctx_bind (A := S) (fun t => .invoke f r (pre ++ .spread t :: parts.map partTerm))
       (fun s => call_lift hf hrv hp (.spreadC s)) (fun s => call_raise hf hrv hp (.spreadC s))
       n W heap s hw hh hs

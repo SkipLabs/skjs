@@ -110,7 +110,7 @@ def topT : Fam := fun _ _ v => isVal v = true ∧ Scoped 0 v
 
 def sourceT : Fam := fun _ _ v => isSourceVal v = true ∧ Scoped 0 v
 
-def semWithArgs (X : α → Fam) (P : α → ArgFam) : Clause α → Fam
+def semWithArgs (Ξ : Fam) (X : α → Fam) (P : α → ArgFam) : Clause α → Fam
   | .top => topT
   | .source => sourceT
   | .list a bs => fun n W v => listT (tupleFams X a) n W v ∧ ∀ b ∈ bs, listT (tupleFams X b) n W v
@@ -128,22 +128,22 @@ def semWithArgs (X : α → Fam) (P : α → ArgFam) : Clause α → Fam
   | .symbol => symbolT
   | .refs a bs vs os ms ks => fun n W v =>
       refsT (famsOf X a) (bs.map (famsOf X)) n W v ∧ viewT (famsOf X vs) n W v ∧
-        optT (os.map (·.map X)) n W v ∧ methodT (ms.map (Member.of X P)) n W v ∧
+        optT (os.map (·.map X)) n W v ∧ methodT Ξ (ms.map (Member.of X P)) n W v ∧
         ∀ K ∈ ks, ownKeysT K n W v
   | .dict a bs vs ds os ms ks cs => fun n W v =>
       refsT (famsOf X a) (bs.map (famsOf X)) n W v ∧
       viewT (famsOf X vs) n W v ∧
         ((∀ d ∈ ds, dictViewT d.1 (X d.2) n W v) ∧ ∀ d ∈ cs, dictCellT d.1 (X d.2) n W v) ∧
-        optT (os.map (·.map X)) n W v ∧ methodT (ms.map (Member.of X P)) n W v ∧
+        optT (os.map (·.map X)) n W v ∧ methodT Ξ (ms.map (Member.of X P)) n W v ∧
         ∀ K ∈ ks, ownKeysT K n W v
-  | .arrs L S => interT (CallEffects.callsT (L.map (Arrow.map X)))
-      (CallEffects.restsT (S.map (RestArrow.mapWith X P)))
+  | .arrs L S => interT (CallEffects.callsT Ξ (L.map (Arrow.map X)))
+      (CallEffects.restsT Ξ (S.map (RestArrow.mapWith X P)))
   | .callable a bs L S =>
-      interT (CallableConjunctions.objectsT (famsOf X a) (bs.map (famsOf X))
+      interT (CallableConjunctions.objectsT Ξ (famsOf X a) (bs.map (famsOf X))
         (L.map (Arrow.map X)))
-        (CallEffects.restsT (S.map (RestArrow.mapWith X P)))
-  | .ctors L S => interT (ctorsT (L.map fun p => (p.1.map X, X p.2)))
-      (ctorRestsT (S.map fun s => (s.1.map X, P s.2.1, X s.2.2)))
+        (CallEffects.restsT Ξ (S.map (RestArrow.mapWith X P)))
+  | .ctors L S => interT (ctorsT Ξ (L.map fun p => (p.1.map X, X p.2)))
+      (ctorRestsT Ξ (S.map fun s => (s.1.map X, P s.2.1, X s.2.2)))
   -- An argument list is not a runtime value: a pack clause's members are
   -- lists, read by `clauseArguments`.
   | .pack _ _ => fun _ _ _ => False
@@ -155,8 +155,8 @@ def clauseArguments (X : α → Fam) : Clause α → ArgFam
       ArgumentContracts.Fits (tupleFams X t) n W vs
   | _ => fun _ _ _ => False
 
-def semList (X : α → Fam) (P : α → ArgFam) (L : List (Clause α)) : Fam :=
-  setSem (semWithArgs X P) L
+def semList (Ξ : Fam) (X : α → Fam) (P : α → ArgFam) (L : List (Clause α)) : Fam :=
+  setSem (semWithArgs Ξ X P) L
 
 inductive Formula (α : Type) where
   | bot
@@ -165,11 +165,11 @@ inductive Formula (α : Type) where
   | inter (a b : Formula α)
   deriving Repr, DecidableEq
 
-def eval (X : α → Fam) (P : α → ArgFam) : Formula α → Fam
+def eval (Ξ : Fam) (X : α → Fam) (P : α → ArgFam) : Formula α → Fam
   | .bot => fun _ _ _ => False
-  | .atom c => semWithArgs X P c
-  | .union a b => unionT (eval X P a) (eval X P b)
-  | .inter a b => interT (eval X P a) (eval X P b)
+  | .atom c => semWithArgs Ξ X P c
+  | .union a b => unionT (eval Ξ X P a) (eval Ξ X P b)
+  | .inter a b => interT (eval Ξ X P a) (eval Ξ X P b)
 
 /-- Intersection of clauses: preserve all constraints of the same shape. -/
 def meet : Clause α → Clause α → List (Clause α)
@@ -275,9 +275,9 @@ def normalize : Formula α → List (Clause α)
   | .inter a b => meetLists (normalize a) (normalize b)
 
 private theorem singleton_sem (X : α → Fam) (P : α → ArgFam) (c : Clause α) (n W v) :
-    semList X P [c] n W v ↔ semWithArgs X P c n W v := by simp [semList, setSem]
+    semList Ξ X P [c] n W v ↔ semWithArgs Ξ X P c n W v := by simp [semList, setSem]
 
-private theorem nil_sem (X : α → Fam) (P : α → ArgFam) (n W v) : ¬ semList X P [] n W v := by
+private theorem nil_sem (X : α → Fam) (P : α → ArgFam) (n W v) : ¬ semList Ξ X P [] n W v := by
   simp [semList, setSem]
 
 def shape : Clause α → Nat
@@ -300,7 +300,7 @@ def valueShape : Val → Nat
 
 /-- Every member of a clause is a closed value; top says nothing more. -/
 theorem semWithArgs_value {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
-    (h : semWithArgs X P c n W v) : isVal v = true ∧ Scoped 0 v := by
+    (h : semWithArgs Ξ X P c n W v) : isVal v = true ∧ Scoped 0 v := by
   cases c with
   | top => exact h
   | source => exact ⟨sourceVal_isVal h.1, h.2⟩
@@ -327,7 +327,7 @@ theorem semWithArgs_value {X : α → Fam} {P : α → ArgFam} {c : Clause α} {
 
 /-- A member's shape is its clause's, except under the two value universes. -/
 theorem semWithArgs_shape {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
-    (hc : c ≠ .top) (hj : c ≠ .source) (h : semWithArgs X P c n W v) : valueShape v = shape c := by
+    (hc : c ≠ .top) (hj : c ≠ .source) (h : semWithArgs Ξ X P c n W v) : valueShape v = shape c := by
   cases c with
   | top => exact absurd rfl hc
   | source => exact absurd rfl hj
@@ -365,7 +365,7 @@ theorem semWithArgs_shape {X : α → Fam} {P : α → ArgFam} {c : Clause α} {
 contains only JavaScript values. Argument-pack clauses have no term members. -/
 theorem semWithArgs_source {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
     (ht : c ≠ .top) (hl : ∀ a bs, c ≠ .list a bs)
-    (h : semWithArgs X P c n W v) : sourceT n W v := by
+    (h : semWithArgs Ξ X P c n W v) : sourceT n W v := by
   have hv := semWithArgs_value h
   refine ⟨?_, hv.2⟩
   by_cases hj : c = .source
@@ -380,11 +380,11 @@ def sourceClause : Clause α → Bool
   | _ => true
 
 theorem sourceClause_sound {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
-    (hc : sourceClause c = true) (h : semWithArgs X P c n W v) : sourceT n W v := by
+    (hc : sourceClause c = true) (h : semWithArgs Ξ X P c n W v) : sourceT n W v := by
   apply semWithArgs_source (by intro e; subst c; cases hc) (by intros a bs e; subst c; cases hc) h
 
 private theorem meet_source (X : α → Fam) (P : α → ArgFam) (c : Clause α) (n W v) :
-    semList X P (meet .source c) n W v ↔ sourceT n W v ∧ semWithArgs X P c n W v := by
+    semList Ξ X P (meet .source c) n W v ↔ sourceT n W v ∧ semWithArgs Ξ X P c n W v := by
   unfold meet
   cases c with
   | top =>
@@ -402,7 +402,7 @@ private theorem meet_source (X : α → Fam) (P : α → ArgFam) (c : Clause α)
     exact ⟨fun h => ⟨semWithArgs_source (by simp) (by intros; simp) h, h⟩, And.right⟩
 
 theorem meet_sound (X : α → Fam) (P : α → ArgFam) (a b : Clause α) (n : Nat) (W : WorldT n) (v : Val) :
-    semList X P (meet a b) n W v ↔ interT (semWithArgs X P a) (semWithArgs X P b) n W v := by
+    semList Ξ X P (meet a b) n W v ↔ interT (semWithArgs Ξ X P a) (semWithArgs Ξ X P b) n W v := by
   by_cases ha : a = .top
   · subst ha
     rw [show meet .top b = [b] from rfl, singleton_sem]
@@ -579,7 +579,7 @@ theorem meet_sound (X : α → Fam) (P : α → ArgFam) (a b : Clause α) (n : N
 /-- Every key a member's clause says it owns, each bound admits: a clause
 with a member is consistent. -/
 theorem semWithArgs_consistent {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
-    (h : semWithArgs X P c n W v) : c.consistent = true := by
+    (h : semWithArgs Ξ X P c n W v) : c.consistent = true := by
   -- What an object clause says: its fields and views are at locations of its
   -- one object, whose own keys each bound admits.
   have present : ∀ (a : List (PropKey × α)) (bs : List (List (PropKey × α)))
@@ -611,7 +611,7 @@ theorem semWithArgs_consistent {X : α → Fam} {P : α → ArgFam} {c : Clause 
 
 /-- A member of an object clause owns every key the clause says it owns. -/
 theorem semWithArgs_owns {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v} {k : PropKey}
-    (h : semWithArgs X P c n W v) (hk : k ∈ c.presentKeys) :
+    (h : semWithArgs Ξ X P c n W v) (hk : k ∈ c.presentKeys) :
     ∃ (flds : List (PropKey × Nat)) (l : Nat) (oid : Nat), v = .objAt flds .absent oid ∧ flds.lookup k = some l := by
   have present : ∀ (a : List (PropKey × α)) (bs : List (List (PropKey × α)))
       (vs : List (PropKey × α)),
@@ -637,14 +637,14 @@ theorem semWithArgs_owns {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n
 
 /-- A member of an object clause meets each of the clause's key bounds. -/
 theorem semWithArgs_bounded {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v} {K : KeyBound}
-    (h : semWithArgs X P c n W v) (hK : K ∈ c.keyBounds) : ownKeysT K n W v := by
+    (h : semWithArgs Ξ X P c n W v) (hK : K ∈ c.keyBounds) : ownKeysT K n W v := by
   cases c with
   | refs a bs vs os ms ks => exact h.2.2.2.2 K hK
   | dict a bs vs ds os ms ks cs => exact h.2.2.2.2.2 K hK
   | _ => simp [Clause.keyBounds] at hK
 
 theorem meetLists_sound (X : α → Fam) (P : α → ArgFam) (A B : List (Clause α)) (n W v) :
-    semList X P (meetLists A B) n W v ↔ interT (semList X P A) (semList X P B) n W v := by
+    semList Ξ X P (meetLists A B) n W v ↔ interT (semList Ξ X P A) (semList Ξ X P B) n W v := by
   constructor
   · rintro ⟨c, hc, hv⟩
     obtain ⟨a, ha, b, hb, hm⟩ : ∃ a ∈ A, ∃ b ∈ B, c ∈ meet a b := by
@@ -660,20 +660,20 @@ theorem meetLists_sound (X : α → Fam) (P : α → ArgFam) (A B : List (Clause
     exact ⟨a, ha, b, hb, hc, semWithArgs_consistent hv⟩
 
 theorem normalize_sound (X : α → Fam) (P : α → ArgFam) (f : Formula α) (n W v) :
-    semList X P (normalize f) n W v ↔ eval X P f n W v := by
+    semList Ξ X P (normalize f) n W v ↔ eval Ξ X P f n W v := by
   induction f with
   | bot => simp [normalize, semList, setSem, eval]
   | atom c => exact singleton_sem X P c n W v
   | union a b ih ih' =>
-    have hu : semList X P (normalize a ++ normalize b) n W v ↔
-        semList X P (normalize a) n W v ∨ semList X P (normalize b) n W v := by
+    have hu : semList Ξ X P (normalize a ++ normalize b) n W v ↔
+        semList Ξ X P (normalize a) n W v ∨ semList Ξ X P (normalize b) n W v := by
       simp [semList, setSem, List.mem_append, or_and_right, exists_or]
     exact hu.trans (or_congr ih ih')
   | inter a b ih ih' => exact (meetLists_sound X P _ _ n W v).trans (and_congr ih ih')
 
 /-- All constructors remain admissible, without assumptions on the operand
 families. Invariant comparison and arrow guards supply the required stability. -/
-theorem semWithArgs_adm (X : α → Fam) (P : α → ArgFam) (c : Clause α) : Adm (semWithArgs X P c) := by
+theorem semWithArgs_adm (X : α → Fam) (P : α → ArgFam) (c : Clause α) : Adm (semWithArgs Ξ X P c) := by
   cases c with
   | nul => exact nulT_adm
   | bool => exact boolT_adm
@@ -812,8 +812,10 @@ theorem list_congr_below (X Y : α → Fam) (t : Tuple α) (n : Nat)
     obtain ⟨E, c, ⟨e, he, rfl⟩, hw, hag⟩ := hrest i l hi hl
     exact ⟨X e, c, ⟨e, he, rfl⟩, hw, fun j hj W' u => (hag j hj W' u).congr (h e j hj W' u).symm⟩
 
-theorem semWithArgs_congr (X Y : α → Fam) (P Q : α → ArgFam) (n : Nat) (h : ∀ a, Agree (X a) (Y a) n)
-    (hP : ∀ a, Agree (P a) (Q a) n) (c : Clause α) (W : WorldT n) (v : Val) : semWithArgs X P c n W v ↔ semWithArgs Y Q c n W v := by
+theorem semWithArgs_congr {Ξ Ξ' : Fam} (X Y : α → Fam) (P Q : α → ArgFam) (n : Nat)
+    (hexc : Agree Ξ Ξ' n) (h : ∀ a, Agree (X a) (Y a) n)
+    (hP : ∀ a, Agree (P a) (Q a) n) (c : Clause α) (W : WorldT n) (v : Val) :
+    semWithArgs Ξ X P c n W v ↔ semWithArgs Ξ' Y Q c n W v := by
   cases c with
   | nul => rfl
   | bool => rfl
@@ -834,38 +836,38 @@ theorem semWithArgs_congr (X Y : α → Fam) (P Q : α → ArgFam) (n : Nat) (h 
     exact and_congr (congr_below X Y a bs n h W v)
       (and_congr (view_congr_below X Y vs n h W v)
         (and_congr (opt_congr_below X Y os n h W v)
-          (and_congr (methodT_congr X Y P Q n h hP ms W v) Iff.rfl)))
+          (and_congr (methodT_congr X Y P Q n hexc h hP ms W v) Iff.rfl)))
   | dict a bs vs ds os ms ks cs =>
     exact and_congr (congr_below X Y a bs n h W v)
       (and_congr (view_congr_below X Y vs n h W v)
         (and_congr (and_congr (forall_congr' fun d => forall_congr' fun _ => dictViewT_congr (h d.2) W v)
             (forall_congr' fun d => forall_congr' fun _ => dictCellT_congr (h d.2) W v))
           (and_congr (opt_congr_below X Y os n h W v)
-            (and_congr (methodT_congr X Y P Q n h hP ms W v) Iff.rfl))))
+            (and_congr (methodT_congr X Y P Q n hexc h hP ms W v) Iff.rfl))))
   | arrs L S =>
     have hd : ∀ As : List α, ArgsAgree n (As.map X) (As.map Y) := by
       intro As; induction As with
       | nil => exact .nil
       | cons a As ih => exact .cons (h a) ih
-    exact and_congr (CallEffects.callsT_congr L (Arrow.map X) (Arrow.map Y) (fun _ _ => rfl)
+    exact and_congr (CallEffects.callsT_congr L (Arrow.map X) (Arrow.map Y) hexc (fun _ _ => rfl)
       (fun p _ => ⟨h p.receiver, hd p.arguments, h p.result⟩) W v)
-      (CallEffects.restsT_congr S (RestArrow.mapWith X P) (RestArrow.mapWith Y Q) (fun _ _ => rfl)
+      (CallEffects.restsT_congr S (RestArrow.mapWith X P) (RestArrow.mapWith Y Q) hexc (fun _ _ => rfl)
         (fun s _ => ⟨h s.receiver, hd s.arguments.1, hP s.arguments.2, h s.result⟩) W v)
   | callable a bs L S =>
     have hd : ∀ As : List α, ArgsAgree n (As.map X) (As.map Y) := by
       intro As; induction As with
       | nil => exact .nil
       | cons a As ih => exact .cons (h a) ih
-    exact and_congr (CallableConjunctions.congr_below X Y a bs L n h W v)
-      (CallEffects.restsT_congr S (RestArrow.mapWith X P) (RestArrow.mapWith Y Q) (fun _ _ => rfl)
+    exact and_congr (CallableConjunctions.congr_below X Y a bs L n hexc h W v)
+      (CallEffects.restsT_congr S (RestArrow.mapWith X P) (RestArrow.mapWith Y Q) hexc (fun _ _ => rfl)
         (fun s _ => ⟨h s.receiver, hd s.arguments.1, hP s.arguments.2, h s.result⟩) W v)
   | ctors L S =>
     have hd : ∀ As : List α, ArgsAgree n (As.map X) (As.map Y) := by
       intro As; induction As with
       | nil => exact .nil
       | cons a As ih => exact .cons (h a) ih
-    exact and_congr (ctorsT_congr L _ _ (fun p _ => ⟨hd p.1, h p.2⟩) W v)
-      (ctorRestsT_congr S _ _ (fun s _ => ⟨hd s.1, hP s.2.1, h s.2.2⟩) W v)
+    exact and_congr (ctorsT_congr L _ _ hexc (fun p _ => ⟨hd p.1, h p.2⟩) W v)
+      (ctorRestsT_congr S _ _ hexc (fun s _ => ⟨hd s.1, hP s.2.1, h s.2.2⟩) W v)
   | pack a bs => rfl
 
 /-! ## Renaming operands
@@ -947,7 +949,7 @@ theorem tupleFams_map (Y : β → Fam) (f : α → β) (t : Tuple α) :
 /-- Operand substitution transports value and list operands independently.
 -/
 theorem semWithArgs_map (Y : β → Fam) (P : β → ArgFam) (f : α → β) (c : Clause α) :
-    semWithArgs Y P (c.map f) = semWithArgs (fun a => Y (f a)) (fun a => P (f a)) c := by
+    semWithArgs Ξ Y P (c.map f) = semWithArgs Ξ (fun a => Y (f a)) (fun a => P (f a)) c := by
   cases c
   case dict =>
     simp only [semWithArgs, Clause.map, mapFields, List.forall_mem_map]

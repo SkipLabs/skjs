@@ -723,7 +723,7 @@ def resolutionContext (s : State) (p : NativePromise E) :
   if checked : (∀ l ∈ stable, l.withinHeads (· ∈ p.region.heads)) ∧
       (∀ l ∈ stable, l.free = []) then
     let some shape := NativePromiseSeparation.check E.graph (p.application [NativePromise.parameter E]).label stable
-      | throw "native Promise structure does not establish separation from stable values"
+      | throw "native Promise Ξ structure does not establish separation from stable values"
     let some h := (List.range s.heads.size).find? (fun h =>
       (s.heads[h]?).any fun d => d.kinds.isEmpty && d.binders.isEmpty && d.body == some (.clauses [.source]))
       | throw "native resolution requires the JavaScript value universe"
@@ -751,12 +751,12 @@ def nativePromise (s : State) (E : Equations) : Except String (Option (NativePro
       if ha : E.signature[h].parameters = 1 then
         if hk : E.signature[h].kinds = [.value] then
           let some region := E.checkOrdinaryRegion (h :: (s.nativeStable.getD []).flatMap Tree.dependencyHeads)
-            | throw "native Promise dependencies require ordinary quantified library definitions"
+            | throw "native Promise Ξ dependencies require ordinary quantified library definitions"
           return some ⟨⟨h, hi⟩, ha, hk, region.1, region.2 h List.mem_cons_self⟩
-        else throw "native Promise requires one value parameter"
-      else throw "native Promise requires one type argument"
-    else throw "native Promise head is outside the frozen equations"
-  | _ => throw "multiple native Promise declarations"
+        else throw "native Promise Ξ requires one value parameter"
+      else throw "native Promise Ξ requires one type argument"
+    else throw "native Promise Ξ head is outside the frozen equations"
+  | _ => throw "multiple native Promise Ξ declarations"
 
 /-- The store of a checked request: the extracted heads, whose validated
 equations are `E`, and their variances, computed as checks ask for them and

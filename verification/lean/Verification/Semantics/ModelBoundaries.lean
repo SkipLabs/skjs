@@ -19,21 +19,22 @@ def oneNode (e : Tm) : CallCode := .graph 1 [e] [(.ret, none)] 0 []
 
 /-- A run returning what its node evaluates to is as safe as that evaluation:
 the return spends one step, which an admissible type can pay. -/
-theorem frame_ret_safe {A : Fam} (hA : Adm A) {E K L d} :
+theorem frame_ret_safe {Ξ A : Fam} (hΞ : Adm Ξ) (hA : Adm A) {E K L d} :
     ∀ (n : Nat) (W : WorldT n) (h : Heap) (t : Tm), WorldAdm W → HeapOk n W h →
-      Safe A n W h t → Safe A n W h (.frame E K t L d .ret none) := by
+      Safe Ξ A n W h t → Safe Ξ A n W h (.frame E K t L d .ret none) := by
   intro n
   induction n with
   | zero => intros; trivial
   | succ n ih =>
     intro W h t hw hh hs
-    rcases hs with (⟨hv, ht⟩ | ⟨v, hr, hsc⟩) | ⟨U, h', t', hx, hu, st, hh', hs⟩
+    rcases hs with (⟨hv, ht⟩ | ⟨v, hr, hsc, hxi⟩) | ⟨U, h', t', hx, hu, st, hh', hs⟩
     · exact Or.inr ⟨trunc n (Nat.le_succ n) W, h, t, WExt_refl _, WorldAdm_trunc _ hw,
         .frameRet hv, HeapOk_trunc n W h hh,
         value_safe A n _ h t hv (hA.down_le (n + 1) n (Nat.le_succ n) W t ht)⟩
     · exact Or.inr ⟨trunc n (Nat.le_succ n) W, h, .throw v, WExt_refl _, WorldAdm_trunc _ hw,
         .frameRaise hr, HeapOk_trunc n W h hh,
-        thrown_safe A n _ h ⟨v, .throwV (raises_val hr) (raises_sourceVal hr), hsc⟩⟩
+        thrown_safe A n _ h ⟨v, .throwV (raises_val hr) (raises_sourceVal hr), hsc,
+          hΞ.down_le (n + 1) n (Nat.le_succ n) W v hxi⟩⟩
     · exact Or.inr ⟨U, h', _, hx, hu, .frameC st, hh', ih U h' t' hu hh' hs⟩
 
 /-! ## Allocation and arrow results -/
@@ -44,9 +45,9 @@ def allocFn : Tm := .obj 0 (oneNode (.alloc .nul))
 /-- The function meets `(x: null) => ref B` for *every* admissible `B` that
 contains null: the contract of the new cell is chosen by the membership proof,
 not by the program. -/
-theorem allocFn_typed {Rc B : Fam} (hB : Adm B)
+theorem allocFn_typed {Ξ Rc B : Fam} (hΞ : Adm Ξ) (hB : Adm B)
     (hnul : ∀ (j : Nat) (W : WorldT j), B j W .nul) (k : Nat) (W : WorldT k) :
-    callsT [(Rc, [nulT], refT B)] k W allocFn := by
+    callsT Ξ [(Rc, [nulT], refT B)] k W allocFn := by
   refine ⟨⟨_, _, _, rfl, rfl, by simp [Scoped, allocFn, oneNode]⟩, ?_⟩
   intro p hp j hj U hx hu heap hh r hrv hr args hvals ha
   cases List.mem_singleton.mp hp
@@ -56,7 +57,7 @@ theorem allocFn_typed {Rc B : Fam} (hB : Adm B)
   | succ j =>
     refine Or.inr ⟨trunc j (Nat.le_succ j) U, heap, _, WExt_refl _, WorldAdm_trunc _ hu,
       .gotoEnter rfl rfl, HeapOk_trunc j U heap hh, ?_⟩
-    apply frame_ret_safe (refT_adm B) j _ heap _ (WorldAdm_trunc _ hu) (HeapOk_trunc j U heap hh)
+    apply frame_ret_safe hΞ (refT_adm B) j _ heap _ (WorldAdm_trunc _ hu) (HeapOk_trunc j U heap hh)
     simpa [instantiate] using alloc_rule hB j _ heap .nul rfl (WorldAdm_trunc _ hu)
       (HeapOk_trunc j U heap hh) (hnul _ _)
 
@@ -88,13 +89,13 @@ theorem emptyWorld_adm (k : Nat) : WorldAdm (ofList ([] : List (Ctr k))) := by
 the signature `(x: A) => B ∧ C` from `(x: A) => B` and `(x: A) => C`. -/
 theorem arrow_inter_codomain_fails :
     ¬ ∀ (Rc A B C : Fam) (k : Nat) (W : WorldT k) (v : Val),
-        callsT [(Rc, [A], B)] k W v → callsT [(Rc, [A], C)] k W v →
-        callsT [(Rc, [A], interT B C)] k W v := by
+        callsT topF [(Rc, [A], B)] k W v → callsT topF [(Rc, [A], C)] k W v →
+        callsT topF [(Rc, [A], interT B C)] k W v := by
   intro hrule
-  have h1 : callsT [(undefT, [nulT], refT nulT)] 5 (ofList []) allocFn :=
-    allocFn_typed nulT_adm (fun _ _ => rfl) 5 _
-  have h2 : callsT [(undefT, [nulT], refT (unionT nulT boolT))] 5 (ofList []) allocFn :=
-    allocFn_typed (unionT_adm nulT boolT nulT_adm boolT_adm) (fun _ _ => Or.inl rfl) 5 _
+  have h1 : callsT topF [(undefT, [nulT], refT nulT)] 5 (ofList []) allocFn :=
+    allocFn_typed topF_adm nulT_adm (fun _ _ => rfl) 5 _
+  have h2 : callsT topF [(undefT, [nulT], refT (unionT nulT boolT))] 5 (ofList []) allocFn :=
+    allocFn_typed topF_adm (unionT_adm nulT boolT nulT_adm boolT_adm) (fun _ _ => Or.inl rfl) 5 _
   have hb := hrule _ _ _ _ 5 (ofList []) allocFn h1 h2
   have hx : WExt (trunc 4 (by omega) (ofList ([] : List (Ctr 5)))) (ofList []) := by
     rw [trunc_empty]
@@ -156,7 +157,7 @@ observed: the call enters the run, then its node, and the value is observed
 two levels below the call. Distinct eventual contracts remain
 indistinguishable at these budgets. -/
 theorem constant_nested_calls (Rc A : Fam) :
-    callsT [(Rc, [nulT], nestedRef 2 A)] 4 (ofList [res R]) constFn := by
+    callsT Ξ [(Rc, [nulT], nestedRef 2 A)] 4 (ofList [res R]) constFn := by
   refine ⟨⟨_, _, _, rfl, rfl, by simp [Scoped, constFn, oneNode]⟩, ?_⟩
   intro p hp j hj U hx hu heap hh r hrv hr args hvals ha
   cases List.mem_singleton.mp hp
@@ -180,7 +181,7 @@ theorem constant_nested_calls (Rc A : Fam) :
       ((nested_agrees_cycle 2 A m (by omega) _ _).mpr hr)
 
 theorem constant_not_bottom (Rc : Fam) (hRc : Rc 3 (ofList [res R]) .undef) :
-    ¬ callsT [(Rc, [nulT], bottomT)] 4 (ofList [res R]) constFn := by
+    ¬ callsT Ξ [(Rc, [nulT], bottomT)] 4 (ofList [res R]) constFn := by
   intro ht
   have hx : WExt (trunc 3 (by omega) (ofList [res R] : WorldT 4))
       (ofList [res R] : WorldT 3) := by
@@ -210,9 +211,9 @@ theorem constant_not_bottom (Rc : Fam) (hRc : Rc 3 (ofList [res R]) .undef) :
 arbitrary reference nesting in the exact indexed interpretation. This is a
 finite-budget counterexample in an admissible world with a satisfying heap. -/
 theorem deeper_reference_rule_fails : ¬ (∀ n W v,
-    callsT [(undefT, [nulT], nestedRef 2 nulT)] n W v →
-    callsT [(undefT, [nulT], nestedRef 2 boolT)] n W v →
-    callsT [(undefT, [nulT], bottomT)] n W v) := by
+    callsT Ξ [(undefT, [nulT], nestedRef 2 nulT)] n W v →
+    callsT Ξ [(undefT, [nulT], nestedRef 2 boolT)] n W v →
+    callsT Ξ [(undefT, [nulT], bottomT)] n W v) := by
   intro hr
   exact constant_not_bottom undefT rfl
     (hr 4 _ _ (constant_nested_calls undefT nulT) (constant_nested_calls undefT boolT))
@@ -250,7 +251,7 @@ theorem boolWorld_ref (n : Nat) : refT boolT n (boolWorld n) (.obj 0 .absent) :=
 enter the code, its node, the write, the run returning, and the returned
 value/postcondition. -/
 theorem callback_does_not_frame (W : WorldT 5) :
-    ¬ SafePost nulT (fun h _ => Observes h 0 .tru) 5 W [.tru]
+    ¬ SafePost Ξ nulT (fun h _ => Observes h 0 .tru) 5 W [.tru]
       (.app (writer 0) .nul) := by
   intro hs
   have s1 : Step [.tru] (.app (writer 0) .nul) [.tru] _ := .callGraph rfl (by decide)
