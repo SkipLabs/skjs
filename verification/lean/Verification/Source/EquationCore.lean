@@ -494,7 +494,9 @@ partial def rowHead (n : Nat) : M Nat := do
   let own := P.own[n]!
   alloc s!"row|{n}"
     { name := s!"row {n}", kind := if own.isEmpty then .literal else .scheme,
-      kinds := P.free[n]!.map fun _ => .value, binders := own.map (⟨·, .value⟩) } fun h => some (.row h n)
+      kinds := P.free[n]!.map fun _ => .value,
+      binders := own.map fun b => ⟨b, if P.packed[n]!.contains b then .packed else .value⟩ }
+    fun h => some (.row h n)
 
 /-- Producer row `n` as a label in `scope`: its head applied to what its free
 binder names are there, a name out of scope its placeholder. The primitive
@@ -515,8 +517,14 @@ its locals. -/
 partial def rowBody (n : Nat) : M (GraphRow Tree (List Tree)) := do
   let P := (← get).rows
   let scope : List (String × Binding) :=
-    (P.own[n]!.zipIdx.map fun (name, j) => (name, ({ pack := false, value := [.local j] } : Binding))) ++
-    (P.free[n]!.zipIdx.map fun (name, i) => (name, ({ pack := false, value := [.argument i] } : Binding)))
+    (P.own[n]!.zipIdx.map fun (name, j) =>
+      (name, ({ pack := false, value := [.local j], packed := P.packed[n]!.contains name } : Binding))) ++
+    -- A packed binder's argument lists are its own row.
+    (P.own[n]!.zipIdx.filterMap fun (name, j) => if P.packed[n]!.contains name then
+      some (name ++ "#pack", ({ pack := false, value := [.local j] } : Binding)) else none) ++
+    (P.free[n]!.zipIdx.flatMap fun (name, i) =>
+      [(name, ({ pack := false, value := [.argument i] } : Binding)),
+       (name ++ "#pack", ({ pack := false, value := [.argument i] } : Binding))])
   let row := P.rows[n]!
   -- Only type operands are unions. Scheme binder lists and bound pairs
   -- carry binding structure, so their enumeration is not a union spelling.

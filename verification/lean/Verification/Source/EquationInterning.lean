@@ -126,6 +126,25 @@ def ctxKind (ctx : Ctx) : Item → ParameterKind
     else if (ctx.binders.lookup n).any (·.pack) then .arguments else .value
   | _ => .value
 
+/-- What a head is lifted over: a packed binder's argument lists, under its
+packed name, go with it; once when they are its row (a unit's or a closure's
+binder), and as an item of their own otherwise (a generic value's binder,
+whose instance gives its argument lists apart). -/
+def liftedItems (ctx : Ctx) (named : List Item) : List Item :=
+  let sameRow (n : String) : Bool :=
+    match ctx.binders.lookup n, ctx.binders.lookup (packedName n) with
+    | some b, some p => b.packed && b.value == p.value
+    | _, _ => false
+  let canonical := (named.map fun it => match it with
+    | .binder x => match x.dropSuffix? "#pack" with
+      | some b => if sameRow b.toString then .binder b.toString else it
+      | none => it
+    | _ => it).eraseDups
+  canonical ++ canonical.filterMap fun it => match it with
+    | .binder n => if (ctx.binders.lookup (packedName n)).isSome && !sameRow n &&
+        !canonical.contains (.binder (packedName n)) then some (.binder (packedName n)) else none
+    | _ => none
+
 /-- The scope inside a head lifted over `items`: each item is its argument. -/
 def liftedCtx (ctx : Ctx) (items : List Item) (h : Nat) : Ctx :=
   let indexed := items.zipIdx
@@ -136,10 +155,15 @@ def liftedCtx (ctx : Ctx) (items : List Item) (h : Nat) : Ctx :=
       | some (_, j) => [.argument j]
       | none => []
     self := (indexed.find? (·.1 == .self)).map fun (_, j) => [.argument j]
-    binders := indexed.filterMap fun (it, j) => match it with
-      | .binder n => some (n, Binding.mk ((ctx.binders.lookup n).any (·.pack)) [.argument j]
-          ((ctx.binders.lookup n).any (·.packed)))
-      | _ => none
+    -- A packed binder's argument lists, under its packed name, are its row:
+    -- the same argument.
+    binders := indexed.flatMap fun (it, j) => match it with
+      | .binder n =>
+        let packed := (ctx.binders.lookup n).any (·.packed)
+        (n, Binding.mk ((ctx.binders.lookup n).any (·.pack)) [.argument j] packed) ::
+          (if packed && !items.contains (.binder (packedName n)) then
+            [(packedName n, Binding.mk true [.argument j] false)] else [])
+      | _ => []
     owner := some h
     site := ctx.site
     source := ctx.source
@@ -162,12 +186,7 @@ applied to their values here (§8.1). The key is the occurrence's text and the
 kinds of what it mentions: equal keys lower to equal templates. -/
 def occurrence (ctx : Ctx) (tag : String) (term : Json) (shadow : List String := [])
     (binders : List Binder := []) (job : Nat → Ctx → Job) : M Tree := do
-  -- A packed binder's argument lists, under its packed name, go with it.
-  let named := mentions shadow term
-  let items := named ++ named.filterMap fun it => match it with
-    | .binder n => if (ctx.binders.lookup (packedName n)).isSome && !named.contains (.binder (packedName n))
-        then some (.binder (packedName n)) else none
-    | _ => none
+  let items := liftedItems ctx (mentions shadow term)
   let args ← items.mapM fun it => (ctxValue ctx it : Except String Union)
   let kinds := items.map (ctxKind ctx)
   let key := s!"{tag}|{reprStr kinds}|{term.compress}"
@@ -266,10 +285,10 @@ def internLifted (name : String) (cs : List (Clause (List Tree))) : M Tree := do
 
 /-- A fresh placeholder for a scheme's binder, until the scheme's head binds
 it (`schemeOver`). -/
-def freshBinder (name : String) : M Tree := do
+def freshBinder (name : String) (kind : ParameterKind := .value) : M Tree := do
   let s ← get
   set { s with fresh := s.fresh.push name }
-  return .var freshOwner s.fresh.size .value
+  return .var freshOwner s.fresh.size kind
 
 /-- A scheme over binders from `freshBinder`: its head's template has the
 binders as its locals, and every other rigid subtree lifted. The label is the

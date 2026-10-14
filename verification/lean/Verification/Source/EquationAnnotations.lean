@@ -83,11 +83,7 @@ def enterUnit (path : String) (scope : List (String × Binding)) (node : Json) (
   let named := (mentions names (unitTerms node)).filter fun it => match it with
     | .binder n => (scope.lookup n).isSome
     | _ => false
-  -- An enclosing packed binder's argument lists go with it.
-  let items := named ++ named.filterMap fun it => match it with
-    | .binder n => if (scope.lookup (packedName n)).isSome && !named.contains (.binder (packedName n))
-        then some (.binder (packedName n)) else none
-    | _ => none
+  let items := liftedItems ctx named
   let args ← items.mapM fun it => (ctxValue ctx it : Except String Union)
   let name := (node.getObjValAs? String "name").toOption.getD path
   -- A binder the unit's terms use both as a value and as a rest's argument
@@ -112,17 +108,17 @@ def enterUnit (path : String) (scope : List (String × Binding)) (node : Json) (
       bounded := bounded ++ [(n, r, some B)]
       inner := (n, { pack := false, value := meetUnions [r.value, B] }) :: inner
       if let [q] := r.value then bounds := bounds ++ [(q, B)]
-  -- A packed binder's argument lists are its row's, under its packed name;
-  -- its values, within its bound, under its name.
+  -- A packed binder is its row, in both components: its values under its
+  -- name, its argument lists under its packed name; its bound is checked at
+  -- its instances. A value binder's values are within its bound.
   let bindings := bounded.flatMap fun (n, r, B) =>
-    let lists : List (String × Binding) :=
-      if r.packed then [(packedName n, { pack := true, value := r.value })] else []
+    if r.packed then [(n, r), (packedName n, { pack := true, value := r.value })] else
     match B with
-    | none => (n, r) :: lists
-    | some B => (n, ({ pack := false, value := meetUnions [r.value, B], packed := r.packed } : Binding)) :: lists
-  -- A packed binder's argument lists are its row itself, unbounded.
+    | none => [(n, r)]
+    | some B => [(n, ({ pack := false, value := meetUnions [r.value, B] } : Binding))]
+  -- A packed binder, and its argument lists, are its row itself.
   let owned := bounded.flatMap fun (n, r, B) => match r.value with
-    | [t] => (n, t, B) :: (if r.packed then [(packedName n, t, none)] else [])
+    | [t] => if r.packed then [(n, t, none), (packedName n, t, none)] else [(n, t, B)]
     | _ => []
   modify fun s => { s with scopes := (path, bindings) :: s.scopes, unitBinders := (path, owned) :: s.unitBinders }
   return bindings ++ scope
@@ -143,7 +139,7 @@ def bindNames (scope : List (String × Binding)) (bounds : List (Tree × Union))
     let pack := u.pack
     return (n, ({ pack, value := [← placeholder n (if pack then .arguments else .value)] } : Binding))
   let lists : List (String × Binding) ← bound.filterMapM fun (n, b) => do
-    if b.packed then return some (packedName n, { pack := true, value := [← placeholder (packedName n) .packed] })
+    if b.packed then return some (packedName n, { pack := true, value := b.value })
     return none
   let inner := bound ++ lists ++ scope
   -- A value binder's declared bound, read where an application over it

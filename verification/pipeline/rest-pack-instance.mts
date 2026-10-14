@@ -6,15 +6,16 @@ import type { SourceClaims } from "../tools/source-claims.mts";
 
 /** A type parameter typing a value and a rest is instantiated at an array or
  * tuple type, whose argument lists the rest's are: a forged instance that is
- * no array is refused by both verifier entry points, not read as a pack. */
-export function checkRestPackInstance(verifier: string, artifacts: string): void {
+ * no array, at the call or `new` whose text starts with `at`, is refused by
+ * both verifier entry points, not read as a pack. */
+export function checkRestPackInstance(verifier: string, artifacts: string, at: string): void {
   const claims: SourceClaims = JSON.parse(readFileSync(join(artifacts, "claims.json"), "utf8"));
   const source = readFileSync(join(artifacts, "source.ts"), "utf8");
-  const start = source.indexOf("emptyInfer()");
+  const start = source.indexOf(at);
   assert(start >= 0);
   const forged = structuredClone(claims);
   const call = forged.functions.flatMap((f) => f.expressions).find((e) => e.pos[0] === start && e.instantiate);
-  assert(call?.instantiate?.length === 1, "emptyInfer's call names its one instance");
+  assert(call?.instantiate?.length === 1, `${at} names its one instance`);
   // The Boolean rows: no array.
   call.instantiate[0].type = [1, 2];
   const claimed = join(artifacts, "forged-pack-instance-claims.json");

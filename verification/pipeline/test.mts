@@ -19,7 +19,7 @@ import { readDiagnostic } from "../tools/diagnostic.mts";
 import { presentObligation } from "../tools/diagnostic-view.mts";
 // Forged-claim controls on single cases, each in a file of its own:
 // generic-rest.mts, a universal rest claim past collection, substitution and binding;
-// rest-pack-instance.mts, a forged non-array instance of a type parameter typing a value and a rest;
+// rest-pack-instance.mts, a forged non-array instance of a type parameter typing a value and a rest, at a call and at a `new`;
 // overload-claims.mts, per-signature claims across the same independent boundary;
 // default-parameters.mts, forged claims about parameter defaults: their scope, a generic closure's default, a capture read before its initialization.
 import { checkGenericRest } from "./generic-rest.mts";
@@ -1170,6 +1170,14 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   assert.throws(() => runExample("invalid-constructor-rest-class", "made"), /reading 'toFixed'/);
 }
 {
+  // A packed class binder: `run` spreads the stored array into the
+  // callback; a shorter array stored by `set` leaves the callback's
+  // parameter `undefined`, as Node shows it throwing.
+  assert.equal(runExample("class-rest-binder", "kept"), 52);
+  assert.equal(runExample("class-rest-binder", "paired"), 7);
+  assert.throws(() => runExample("invalid-class-rest-binder-set", "lost"), /reading 'toFixed'/);
+}
+{
   // An array literal's spread is copied before a later element that runs
   // code, as JavaScript reads it there; a spread operand claimed at other
   // than an array is refused where the elements are produced and checked.
@@ -1972,7 +1980,8 @@ for (const [artifacts, arity, refusal] of [
   invoke(forged, join(artifacts, "evidence.json"), artifacts);
 }
 checkGenericRest(verifier, run("generic-rest"));
-checkRestPackInstance(verifier, run("rest-pack-declared"));
+checkRestPackInstance(verifier, run("rest-pack-declared"), "emptyInfer()");
+checkRestPackInstance(verifier, run("class-rest-binder"), "new RestRunner(\n");
 checkOverloads(verifier, run("overloads"));
 checkDefaults(verifier, run("default-parameter-scope"));
 checkPatternDefaults(verifier, run("destructuring-known-default"));

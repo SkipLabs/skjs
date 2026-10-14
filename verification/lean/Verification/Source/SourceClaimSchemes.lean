@@ -34,7 +34,7 @@ partial def rebindClaim (T : EquationStore.State) (θ : List (String × List Tre
   | .union ts => .union (ts.map (rebindClaim T θ))
   | .array e => .array (rebindClaim T θ e)
   | .scheme tps rc ps rest r effect =>
-    let θ := θ.filter fun q => !(tps.flatMap ResolutionWire.Binder.ownedNames).contains q.1
+    let θ := θ.filter fun q => !EquationLowering.ownsName (tps.flatMap ResolutionWire.Binder.ownedNames) q.1
     .scheme (tps.map fun q => { q with bound := q.bound.map (rebindClaim T θ) }) (rebindClaim T θ rc)
       (ps.map (rebindClaim T θ)) (rest.map (rebindClaim T θ)) (rebindClaim T θ r) effect
   | c => c
@@ -97,7 +97,7 @@ private partial def subst (θ : List (String × (ClaimType ι))) : ClaimType ι 
   | .union ts => .union (ts.map (subst θ))
   | .param name => (θ.lookup name).getD (.param name)
   | .scheme tps rc ps rest r effect =>
-      let inner := θ.filter fun q => !(tps.flatMap ResolutionWire.Binder.ownedNames).contains q.1
+      let inner := θ.filter fun q => !EquationLowering.ownsName (tps.flatMap ResolutionWire.Binder.ownedNames) q.1
       .scheme (tps.map fun q => { q with bound := q.bound.map (subst inner) }) (subst inner rc) (ps.map (subst inner))
         (rest.map (subst inner)) (subst inner r) effect
   | c => c
@@ -429,7 +429,7 @@ private partial def mentions (names : List String) : ClaimType Tree → Bool
   | .union ts => ts.any (mentions names)
   | .array e => mentions names e
   | .scheme tps rc ps rest r _effect =>
-    let names := names.filter fun n => !(tps.flatMap ResolutionWire.Binder.ownedNames).contains n
+    let names := names.filter fun n => !EquationLowering.ownsName (tps.flatMap ResolutionWire.Binder.ownedNames) n
     tps.any (fun q => q.bound.any (mentions names)) || mentions names rc || ps.any (mentions names) ||
       rest.any (mentions names) || mentions names r
   | _ => false
@@ -450,8 +450,13 @@ private partial def schemeRowOf (t : ClaimType Tree) : SchemeM (Tree × List (St
   if tps.any (·.resolution.isSome) then
     throw "qualified callable requires descriptor scheme checking"
   let names := tps.map (·.name)
+  -- A binder whose argument lists the scheme spells, `T#pack`, is packed:
+  -- its lists are its own row's.
   let (T, reg) ← get
-  let (T, binders) := EquationStore.binders T names
+  let parts := rc :: ps ++ rest.toList ++ [r]
+  let packed := names.filter fun n => parts.any fun c =>
+    rebindClaim T [(n ++ "#pack", [.local 0])] c != c
+  let (T, binders) := EquationStore.binders T names packed
   set (T, reg)
   let params := names.zip binders
   let meetRow (p : Tree) (cs : List (PositiveNormalization.Clause (List Tree))) (also : List Tree) :
@@ -485,6 +490,13 @@ private partial def schemeRowOf (t : ClaimType Tree) : SchemeM (Tree × List (St
       let B ← groundT bound
       rows := rows ++ [(n, ← boundedRow l B)]
       bounds := bounds ++ [(l, B)]
+  -- A packed binder is its own row, in both components, unbounded: the
+  -- scheme holds at each of its instances.
+  rows := rows.map fun (n, r) => match params.lookup n with
+    | some l => if packed.contains n then (n, l) else (n, r)
+    | none => (n, r)
+  rows := rows ++ params.filterMap fun (n, l) =>
+    if packed.contains n then some (n ++ "#pack", l) else none
   let θ := rows.map fun (n, l) => (n, ClaimType.labels [l])
   -- A label the claim spells a binder in reads it as its row.
   let named (c : ClaimType Tree) : SchemeM (ClaimType Tree) := do
@@ -498,7 +510,8 @@ private partial def schemeRowOf (t : ClaimType Tree) : SchemeM (Tree × List (St
       let E ← groundT (← named e)
       let pack ← internS (.pack ⟨[], [], some E, false, .dense⟩ [])
       pure ([], [⟨rc, (ps, [pack]), r, effect⟩])
-  let boundRows := bounds
+  let boundRows := bounds.filter fun (l, _) =>
+    !(params.any fun (n, l') => l' == l && packed.contains n)
   let (T, reg) ← get
   let (T, label) := EquationStore.scheme T binders sigs boundRows rests
   -- The scheme binds parameters of its own: its binders, and each row read

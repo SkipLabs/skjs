@@ -10,8 +10,15 @@ binder names it mentions freely, in first-occurrence order. -/
 structure ProducerRows where
   rows : Array (GraphRow Json (List Json))
   own : Array (List String)
+  /-- The own binders whose argument lists, `T#pack`, the row reads: packed
+  binders, one row read in both components. -/
+  packed : Array (List String)
   free : Array (List String)
   deriving Inhabited
+
+/-- Whether `own` binds the name `x`: a binder, or a binder's argument lists. -/
+def ownsName (own : List String) (x : String) : Bool :=
+  own.contains x || ((x.dropSuffix? "#pack").map fun b => own.contains b.toString).getD false
 
 /-- The binder names and the rows a label mentions. A declaration's position
 is no row. -/
@@ -52,14 +59,21 @@ def producerRows (types : Array Json) : Except String ProducerRows := do
   let step (free : Array (List String)) : Array (List String) :=
     (Array.range rows.size).map fun n =>
       let (ns, rs) := direct[n]!
-      ((ns ++ rs.flatMap fun m => free[m]!).filter (!own[n]!.contains ·)).eraseDups
+      ((ns ++ rs.flatMap fun m => free[m]!).filter (!ownsName own[n]! ·)).eraseDups
   let mut free : Array (List String) := rows.map fun _ => []
   let total := (direct.toList.flatMap (·.1)).eraseDups.length * rows.size + 1
   for _ in [0:total] do
     let next := step free
     if next == free then break
     free := next
-  return { rows, own, free }
+  let packed := (Array.range rows.size).map fun n =>
+    let (ns, rs) := direct[n]!
+    let reads := ns ++ rs.flatMap fun m => free[m]!
+    own[n]!.filter fun b => reads.contains (b ++ "#pack")
+  -- A packed binder's argument lists, `T#pack`, are its row: one free name.
+  let free' := free.map fun ns =>
+    (ns.map fun x => ((x.dropSuffix? "#pack").map (·.toString)).getD x).eraseDups
+  return { rows, own, packed, free := free' }
 
 /-! ### Producer rows (§9.1)
 

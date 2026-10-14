@@ -493,6 +493,16 @@ Lowering turns the parser's declarations into definitions:
   inside a definition becomes a definition of its own, over the variables
   it mentions: $`L\langle\vec\gamma\rangle=\text{the literal}`$ with
   $`\vec\gamma`$ its free variables. This is λ-lifting of type literals.
+- **Packed binders:** a binder used both as a value and as a rest's argument
+  lists is one variable $`\alpha`$ of the packed sort, read in both
+  components; its argument lists $`\alpha^{*}`$, spelled `T#pack`, are the
+  same variable. A unit's or a closure's literal is lifted over it once. A
+  generic value's literal is lifted over $`\alpha`$ and $`\alpha^{*}`$ apart,
+  which its instance gives as $`X`$ and $`\mathsf{Pack}(\tau)`$, $`\tau`$ the
+  tuple contract of the array or tuple type $`X`$. A declaration's packed
+  parameter's argument is the union of the two. Its domain, the laws
+  relating $`\alpha`$ and $`\alpha^{*}`$, and the instantiation check are in
+  [PROGRAM-TYPING](PROGRAM-TYPING.md#packed-binders).
 
 A written type application must satisfy each declaration's bound at its
 completed arguments. These subtype obligations are checked over the compacted

@@ -256,8 +256,9 @@ def binder (name : String) : Except String Tree :=
 /-- Fresh value parameters, one per name, for a scheme's binders. They stand
 for the scheme's binders until `scheme` binds them: the scheme's own binders
 are its row's (`GraphRow.scheme`), which may be other labels. -/
-def binders (s : State) (names : List String) : State × List Tree :=
-  names.foldl (fun (s, ls) n => let (s, l) := grow s (freshBinder n); (s, ls ++ [l])) (s, [])
+def binders (s : State) (names : List String) (packed : List String := []) : State × List Tree :=
+  names.foldl (fun (s, ls) n =>
+    let (s, l) := grow s (freshBinder n (if packed.contains n then .packed else .value)); (s, ls ++ [l])) (s, [])
 
 /-- A scheme over binders from `binders`: its signatures, its binders' bounds
 and its variadic signatures, call signatures or, for a construct scheme,

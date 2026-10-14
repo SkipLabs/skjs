@@ -109,9 +109,9 @@ def genericClaim (T : EquationStore.State) (θ : List (String × List Tree)) : G
 
 /-- The argument lists of a binder typing both a value and a rest, at its
 instance `X`: those of `X`'s tuple contract, where `X` is an array or tuple
-type, whose fresh arrays are its values (PROGRAM-TYPING.md, "Judgments and
-constructor views"). An instance with other members, a tagged array, is
-refused. -/
+type, whose fresh arrays are its values, and whose store has no sparse holes,
+so that its values are packable by those lists (PROGRAM-TYPING.md, "Packed
+binders"). An instance with other members, a tagged array, is refused. -/
 def instancePack (T : EquationStore.State) (X : List Tree) (n : String) :
     Except String (EquationStore.State × List Tree) := do
   let G := SourceTypes.graph T
@@ -121,6 +121,7 @@ def instancePack (T : EquationStore.State) (X : List Tree) (n : String) :
   let some [s] := fs.lookup SourceTypes.storeField <|> vs.lookup SourceTypes.storeField | throw refuse
   if c != SourceTypes.arrayOf T s false && c != SourceTypes.arrayOf T s true then throw refuse
   let [.list τ []] := PositiveRules.expand G [s] | throw refuse
+  if τ.presence == .sparse then throw refuse
   let (T, l) := EquationStore.intern T [.pack { τ with readonly := false, presence := .dense } []]
   return (T, [l])
 

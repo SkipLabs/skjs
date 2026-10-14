@@ -634,13 +634,32 @@ as many parameters, each at least as wide, with a result at most as wide:
 
 A binder a declaration uses both as a value and as a rest's argument lists
 (`class RestRunner<T extends readonly unknown[]> { args: T; callback: (...args: T) => number }`)
-is **packed**. Its instances are array or tuple types with no other members,
-which every instantiation checks (`instancePack`, `packOf`): the array a call
-of the callback collects is then a value of the instance, a fresh array with
-exactly its elements. A packed binder is one parameter row read in both
-components of its mixed family $`\eta(T)`$: its argument lists are
-$`\eta(T)^{\mathsf{args}}`$, and its values are $`\eta(T)`$'s values that are
-**packable** by those lists:
+is **packed**. Write $`T^{*}`$ for its argument lists. Its domain relates
+the two components:
+
+```math
+\vec v\in T^{*}\ \text{for the element list}\ \vec v\ \text{of each}\ v\in T
+\qquad\qquad
+\mathrm{fresh}(\vec v)\in T\ \text{for each}\ \vec v\in T^{*}
+```
+
+The first law, **spread**, reads a value of $`T`$ as one of its argument
+lists. The second, **collection**, makes the fresh array a call collects from
+a list of $`T^{*}`$ a value of $`T`$. A packed binder ranges over the
+instances where both hold: array or tuple types with no other members and no
+sparse holes, whose values are the arrays of their elements. Every
+instantiation checks it, at the call, `new` or type argument naming the
+instance (`instancePack`, `packOf`); a tagged array type, whose values carry
+a member a fresh array lacks, is refused there
+(`invalid-class-rest-binder-instance`). The spread law is part of the
+binder's meaning and is proved. The collection law is read by no typing
+rule and is not proved: it speaks of lists no program has allocated as an
+array, which needs the allocation lemma of the
+[model limits](SOURCE-FRAGMENT.md#model-limits).
+
+A packed binder is one parameter row read in both components of its mixed
+family $`\eta(T)`$: its argument lists are $`\eta(T)^{\mathsf{args}}`$, and
+its values are $`\eta(T)`$'s values that are **packable** by those lists:
 
 ```math
 ⟦T⟧_n(W,v)\iff \eta(T)_n(W,v)\ \land\ \mathrm{Packable}(\eta(T)^{\mathsf{args}})_n(W,v)
@@ -648,16 +667,18 @@ $`\eta(T)^{\mathsf{args}}`$, and its values are $`\eta(T)`$'s values that are
 
 ```math
 \mathrm{Packable}(P)_n(W,v)\iff \forall j{+}1\le n,\ U\sqsupseteq W|_{j+1},\ h\models_{j+1}U.\
-  v=\mathsf{obj}(\varphi),\ h(\varphi.\mathtt{[]})=\mathsf{arr}(\vec\ell),\ 
+  v=\mathsf{obj}(\varphi),\ h(\varphi.\mathtt{[]})=\mathsf{arr}(\vec\ell),\
   \mathrm{readElems}_h(\vec\ell)=\vec v,\ \forall i{+}1\le j.\ P_i(U|_i,\vec v)
 ```
 
-(`Packable`, `selectParameter`). The relation between the two components is
-in the meaning of the row, so a body checked at every assignment
-(`Parametricity.accepted_at`) needs no assumption about the assignment. A
-spread of a value of the binder, or of a meet row of it, into a variadic
-callee whose rest admits the binder's lists, after the fixed actuals, passes
-one of those lists (`callPacked`, `packed_call_safe`, `packedBy_sound`):
+(`Packable`, `selectParameter`). The relation is in the meaning of the row,
+so a body checked at every assignment (`Parametricity.accepted_at`) needs no
+assumption about the assignment. A body reads a packed binder at its row,
+without its declared bound, and a scheme quantifying one has no bound for it:
+the bound is checked where an instance is named. A spread of a value of the
+binder, or of a meet row of it, into a variadic callee whose rest admits the
+binder's lists, after the fixed actuals, passes one of those lists
+(`callPacked`, `packed_call_safe`, `packedBy_sound`):
 
 ```math
 \frac{\Gamma\vdash_G f:F\quad(R_t,\vec A,P,B)\in\mathrm{restSigs}_G(F)\quad t\in P\quad
@@ -666,16 +687,22 @@ one of those lists (`callPacked`, `packed_call_safe`, `packedBy_sound`):
      {\Gamma\vdash_G f(\vec a,\ {\ldots}a.\mathtt{[]}):B}\ \textsf{callPacked}
 ```
 
-At an instance, an array or tuple type $`X`$ whose store meets a tuple contract
-$`\tau`$ with no sparse holes is packable by $`\tau`$'s lists: a satisfying
-heap holds at the store's location a store meeting $`\tau`$ one level down,
-whose elements fit $`\tau`$ below that (`packable_of_store`,
-`RestCalls.listT_readElems`). So at $`T:=X`$, with $`T`$'s lists
-$`\mathsf{Pack}(\tau)`$, the binder's values are exactly $`X`$'s. The lemma
-reads only the heap the program already holds; it allocates nothing. A
-declaration's packed parameter's argument at an application is completed
-with those lists (`packOf`), and a packed binder's lists are spelled with its
-packed name, `T#pack`.
+**Instantiation.** At an instance, an array or tuple type $`X`$ whose store
+meets a tuple contract $`\tau`$ with no sparse holes is packable by
+$`\tau`$'s lists: a satisfying heap holds at the store's location a store
+meeting $`\tau`$ one level down, whose elements fit $`\tau`$ below that
+(`packable_of_store`, `RestCalls.listT_readElems`). So at $`T:=X`$, with
+$`T^{*}:=\mathsf{Pack}(\tau)`$, the binder's values are exactly $`X`$'s:
+
+```math
+\frac{X=\mathsf{Array}(s)\qquad s=\mathsf{list}(\tau)\qquad \tau.\mathrm{presence}\ne\mathsf{sparse}}
+     {\forall v\in X.\ \mathrm{Packable}(\mathrm{Fits}\,\tau)(v)}\ \textsf{InstPack}
+```
+
+The lemma reads only the heap the program already holds; it allocates
+nothing. A declaration's packed parameter's argument at an application is
+its instance's value and lists (`packOf`), and a packed binder's lists are
+spelled with its packed name, `T#pack`.
 
 #### Variadic construct signatures
 

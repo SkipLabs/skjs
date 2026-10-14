@@ -173,8 +173,8 @@ structure Binding where
   packed : Bool := false
   deriving Repr, Inhabited
 
-/-- The name of the argument lists a binder typing a value and a rest stands
-for: a placeholder of its own, instantiated from the binder's instance. -/
+/-- The name of the argument lists of a binder typing a value and a rest: a
+packed binder, whose row holds its values and its argument lists. -/
 def packedName (n : String) : String := n ++ "#pack"
 
 /-- The parameters a declaration's expression uses as a rest's argument

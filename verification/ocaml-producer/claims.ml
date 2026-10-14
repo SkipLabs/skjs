@@ -91,6 +91,35 @@ let encode (proposal : Proposal_types.t) =
       | t -> [t] in
     List.fold_right (fun part acc ->
       List.concat_map (fun arm -> List.map (fun rest -> arm :: rest) acc) (arms part)) parts [[]] in
+  (* The binders a type uses as packed ones: as a rest's argument lists, or
+     as the argument of a declaration's packed parameter. *)
+  let rec packed_uses (t : ty) : rigid list = match t with
+    | Rigid _ -> []
+    | Union ts -> List.concat_map packed_uses ts
+    | Meet (t,ts) -> List.concat_map packed_uses (t::ts)
+    | Atoms atoms -> List.concat_map (function
+        | Shape s ->
+          List.concat_map (fun (f:field) ->
+            packed_uses f.read @ (match f.write with Some w -> packed_uses w | None -> [])) s.fields
+          @ List.concat_map (fun (i:index_signature) -> packed_uses i.value) s.indexes
+          @ List.concat_map signature_uses s.calls
+          @ (match s.elements with Some q -> sequence_uses q | None -> [])
+        | Ctors ss -> List.concat_map signature_uses ss
+        | Named (id,args) ->
+          let packed = match List.find_opt (fun (d:Source.declaration) -> d.id = id) declarations with
+            | Some d -> packed_rigids d.expression | None -> [] in
+          let parameters = match List.find_opt (fun (d:Source.declaration) -> d.id = id) declarations with
+            | Some d -> d.parameters | None -> [] in
+          List.concat (List.mapi (fun i arg -> match List.nth_opt parameters i, arg with
+            | Some p, (Rigid r | Meet (Rigid r,_)) when List.mem p packed -> [r]
+            | _ -> packed_uses arg) args)
+        | Exact fs -> List.concat_map (fun (f:field) -> packed_uses f.read) fs
+        | _ -> []) atoms
+  and signature_uses (s : signature) =
+    (match s.rest_pack with Some (PackParameter r) -> [r] | Some (Pack q) -> sequence_uses q | None -> [])
+    @ List.concat_map packed_uses (s.receiver :: s.result :: s.params @ Option.to_list s.variadic)
+  and sequence_uses (q : sequence) =
+    List.concat_map packed_uses (q.required @ q.optional_elements @ Option.to_list q.rest) in
   let rec labels t = labels_json (label_list t)
   and label_list = function
     (* A binder is its name: Lean reads it as its unit or closure binds it,
@@ -186,11 +215,18 @@ let encode (proposal : Proposal_types.t) =
         | Some (_,Some _) -> offset+3,groups @ [Object ["input",int offset;
             "observation",int (offset+1);"result",int (offset+2)]]) (0,[]) s.quantified in
       (* A bounded value binder is read within its bound, as in the
-         closure claim. Keep the bound itself on the scheme as well. *)
+         closure claim. Keep the bound itself on the scheme as well. A
+         packed binder is read at its row, in both components, and has no
+         bound: the scheme holds at each of its instances. *)
+      let packed = signature_uses s in
+      let s = {s with quantified = List.map (fun (q:Semantic.quantifier) ->
+        if List.mem q.identity packed then {q with bound = None} else q) s.quantified} in
       let within_bounds = List.filter_map (fun (q:Semantic.quantifier) ->
-        match Option.value q.bound ~default:(ValueArgument top) with
-        | ValueArgument bound -> Some (q.identity, ValueArgument (Meet (Rigid q.identity,[bound])))
-        | _ -> None) s.quantified in
+        match q.bound with
+        | _ when List.mem q.identity packed -> None
+        | None -> Some (q.identity, ValueArgument (Meet (Rigid q.identity,[top])))
+        | Some (ValueArgument bound) -> Some (q.identity, ValueArgument (Meet (Rigid q.identity,[bound])))
+        | Some _ -> None) s.quantified in
       let body = Inference.substitute_signature within_bounds {s with quantified=[]} in
       let signature,variadic = match body.variadic,body.rest_pack with
         | None,None -> [call_contract body.call_effect (labels body.receiver) (Array (List.map labels body.params)) (labels body.result)],[]
@@ -204,7 +240,8 @@ let encode (proposal : Proposal_types.t) =
         let bound = Option.value q.bound ~default:(ValueArgument top) in
         Array [label_json (Binder q.identity.spelling);
           (match bound with ValueArgument t -> labels t | PackArgument p -> pack_labels p
-           | ResolutionArgument _ -> unsupported "a resolution descriptor is not a method binder bound")]) s.quantified in
+           | ResolutionArgument _ -> unsupported "a resolution descriptor is not a method binder bound")])
+        (List.filter (fun (q:Semantic.quantifier) -> not (List.mem q.identity packed)) s.quantified) in
       [Row (intern (Object ["scheme",Object (["binders",Array binders;"signatures",Array signature]
         @ (if bounds = [] then [] else ["bounds",Array bounds])
         @ (if resolution = [] then [] else ["resolution",Array resolution])
@@ -402,12 +439,16 @@ let encode (proposal : Proposal_types.t) =
         when signature.quantified <> [] || List.exists contains_symbolic
           (signature.receiver :: signature.result :: signature.params @ Option.to_list signature.variadic) ->
       if signature.rest_pack <> None then unsupported "a pack parameter in a scheme claim";
+      (* A packed binder has no bound: the scheme holds at each instance. *)
+      let packed = signature_uses signature in
       let type_params = Array (List.map (fun (q:Semantic.quantifier) -> Object [
         "name",String q.identity.spelling;
         "resolution",(match q.resolution with None -> Null | Some (observation,result) ->
           Object ["observation",String observation.spelling;
             "result",(match result with None -> Null | Some (r:Semantic.rigid) -> String r.spelling)]);
-        "bound",(match q.bound with None -> Null | Some (ValueArgument t) -> claim_type t
+        "bound",(match q.bound with None -> Null
+          | Some _ when List.mem q.identity packed -> Null
+          | Some (ValueArgument t) -> claim_type t
           | Some (PackArgument _ | ResolutionArgument _) -> unsupported "a non-value bound in a scheme claim")])
         signature.quantified) in
       Object ["scheme",Object ["effect",effect_json signature.call_effect;"typeParams",type_params;
