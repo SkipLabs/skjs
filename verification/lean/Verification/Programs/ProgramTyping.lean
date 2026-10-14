@@ -2269,7 +2269,7 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
       {ms : List (MethodMembers.Sig (Ty ι))} {ks : List KeyBound} {f : PropKey} {r : Bool}
       {A U : Ty ι} :
       HasTyWith G images subtyping Γ a Ref → Represents G Ref (.refs fs [] vs os ms ks) → ⟨f, r, A⟩ ∈ os →
-      Represents G U .undef → HasTyWith G images subtyping Γ (.readAt f a) (A ++ U)
+      Represents G U .undef → inheritedKey f = false → HasTyWith G images subtyping Γ (.readAt f a) (A ++ U)
   /-- A dictionary read may miss even when every present value has type `A`.
   An index says nothing of a key its class does not admit, so a key is read
   through one only where its class surely admits it: any string key through
@@ -2277,14 +2277,14 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
   index, a symbol key through a symbol index. -/
   | readDict {f : PropKey} {K : IndexKeys} : HasTyWith G images subtyping Γ a Ref →
       Represents G Ref (.dict fs [] vs ix os ms ks cs) →
-      (K, A) ∈ ix → K.surely f = true → Represents G U .undef →
+      (K, A) ∈ ix → K.surely f = true → Represents G U .undef → inheritedKey f = false →
       HasTyWith G images subtyping Γ (.readAt f a) (A ++ U)
   /-- A computed key of the key clause of a class within the index's reads
   through it: a string through a string index, a number through a number
   index or a string one, a symbol through a symbol index. -/
   | indexDict {K KK : IndexKeys} : HasTyWith G images subtyping Γ a Ref → Represents G Ref (.dict fs [] vs ix os ms ks cs) →
       HasTyWith G images subtyping Γ key Kt → Represents G Kt (keyClause KK) → KK.within K = true →
-      (K, A) ∈ ix → Represents G U .undef →
+      (K, A) ∈ ix → Represents G U .undef → KK ≠ .strings →
       HasTyWith G images subtyping Γ (.indexAt a key) (A ++ U)
   | write : HasTyWith G images subtyping Γ a Ref → Represents G Ref (.refs fs [] vs os ms ks) → (f, A) ∈ fs →
       HasTyWith G images subtyping Γ b A → Represents G N .nul → HasTyWith G images subtyping Γ (.writeAt f a b) N
@@ -2974,7 +2974,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       obtain ⟨flds', l', c', oid'', rfl, hf', hl', hag'⟩ :=
         viewsT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) (by simpa using hml) hp.2.1
       exact read_view_rule (meaning_valOnly G A) i V h' l' hV hh' hf' hl' hag'
-  | @readOptional Γ a Ref fs vs os ms ks f r A U ha hr hm hUnd ih =>
+  | @readOptional Γ a Ref fs vs os ms ks f r A U ha hr hm hUnd _ ih =>
     intro n W h ρ he hw hh
     apply bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj V hx hv heap v hok hval ha'
@@ -2988,7 +2988,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
           obtain ⟨c, hc, hag⟩ := optT_present (List.mem_map_of_mem hm) hs.2.2.1 hl
           exact ⟨c, hc, fun i hi U u hu => (hag i hi U u).1 hu⟩))
 
-  | @readDict Γ a Ref fs vs ix os ms ks cs A U f K ha hr hm hsure hUnd ih =>
+  | @readDict Γ a Ref fs vs ix os ms ks cs A U f K ha hr hm hsure hUnd _ ih =>
     intro n W h ρ he hw hh
     apply bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj V hx hv heap v hok hval ha'
@@ -2997,7 +2997,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     apply Safe_mono j (fun k _ X u hu => (meaning_append G A U k X u).mpr
       (hu.elim Or.inl (fun h => Or.inr ((represents_back hUnd k X u) h)))) V heap _
       (read_dict_rule (meaning_valOnly G A) j V heap hv hok (IndexKeys.surely_admits hsure) hd)
-  | @indexDict Γ a Ref fs vs ix os ms ks cs key Kt A U K KK ha hr hk hStr hwithin hm hUnd iha ihk =>
+  | @indexDict Γ a Ref fs vs ix os ms ks cs key Kt A U K KK ha hr hk hStr hwithin hm hUnd _ iha ihk =>
     intro n W h ρ he hw hh
     apply bind (fun v => .indexAt v (instantiate 0 ρ key)) Step.indexC1 Raises.indexC1 n W h _ hw hh
       (iha n W h ρ he hw hh)

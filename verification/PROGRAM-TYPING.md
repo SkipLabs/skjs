@@ -714,9 +714,17 @@ absent, the proved `indexDict` rule includes `undefined` in the result:
 ```math
 \frac{\Gamma\vdash_G a:R\quad R\equiv_G\mathsf{Dict}(\theta{:}A)\quad
       \Gamma\vdash_G k:K\quad K\equiv_G\mathsf{key}(\theta_k)\quad\theta_k\sqsubseteq\theta\quad
-      U\equiv_G\mathsf{Undefined}}
+      \theta_k\neq\mathsf{strings}\quad U\equiv_G\mathsf{Undefined}}
      {\Gamma\vdash_G a[k]:A\cup U}
 ```
+
+A read at a key the object may lack finds, in JavaScript, what the prototype
+chain holds under it; an ordinary object's chain ends at `Object.prototype`,
+whose members (`objectProtoKeys`) the model's objects do not hold. So no rule
+reads such a key as possibly absent: `readOptional` and `readDict` take a key
+$`\kappa\notin\mathsf{Inh}`$ (`inheritedKey`), and `indexDict` no key of every
+string. A required field or view is the object's own and is read under any
+name.
 
 The separate `readDict` rule covers a fixed key $`\kappa`$ with the same result
 contract, through an index whose class surely admits it ($`\theta\ni_!\kappa`$,
@@ -737,13 +745,13 @@ $`r`$, and $`\kappa`$ a [property key](POSITIVE-TYPES.md#records):
      {\Gamma\vdash_G a.\kappa:A}
 \qquad
 \frac{\Gamma\vdash_G a:R\quad R\equiv_G\mathsf{Ref}(\varphi;\psi;\omega)\quad(\kappa{:}^{r}A)\in\omega
-      \quad U\equiv_G\mathsf{Undefined}}
+      \quad\kappa\notin\mathsf{Inh}\quad U\equiv_G\mathsf{Undefined}}
      {\Gamma\vdash_G a.\kappa:A\cup U}
 ```
 
 ```math
 \frac{\Gamma\vdash_G a:R\quad R\equiv_G\mathsf{Dict}(\varphi;\psi;\overline{D};\omega)\quad (\theta{:}A)\in\overline{D}
-      \quad\theta\ni_!\kappa\quad U\equiv_G\mathsf{Undefined}}
+      \quad\theta\ni_!\kappa\quad\kappa\notin\mathsf{Inh}\quad U\equiv_G\mathsf{Undefined}}
      {\Gamma\vdash_G a.\kappa:A\cup U}
 ```
 

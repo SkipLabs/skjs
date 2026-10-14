@@ -351,9 +351,7 @@ names are node's (`Object.getOwnPropertyNames` of `Object.prototype`,
 prototypes hold another string key would answer `true` where the model
 answers `false`. A key the model reserves for itself is refused too. -/
 def inKeyRefusal (key : String) : Option String :=
-  let objectKeys := ["constructor", "__defineGetter__", "__defineSetter__", "hasOwnProperty",
-    "__lookupGetter__", "__lookupSetter__", "isPrototypeOf", "propertyIsEnumerable", "toString",
-    "valueOf", "__proto__", "toLocaleString"]
+  let objectKeys := objectProtoKeys
   let arrayKeys := ["length", "at", "concat", "copyWithin", "fill", "find", "findIndex", "findLast",
     "findLastIndex", "lastIndexOf", "pop", "push", "reverse", "shift", "unshift", "slice", "sort",
     "splice", "includes", "indexOf", "join", "keys", "entries", "values", "forEach", "filter", "flat",

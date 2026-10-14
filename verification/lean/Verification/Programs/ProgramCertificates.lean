@@ -912,6 +912,7 @@ declared bounds. -/
     match j.term, ps with
     | .readAt f a, [ja] =>
       ja.context = j.context ∧ ja.term = a ∧ Represents G U .undef ∧ j.type = A ++ U ∧
+      inheritedKey f = false ∧
       (match expand G ja.type with
        | [.refs _ [] _ os _ _] => ∃ o ∈ os, o.key = f ∧ o.type = A
        | _ => False)
@@ -920,7 +921,7 @@ declared bounds. -/
     match j.term, ps with
     | .readAt f a, [ja] =>
       ja.context = j.context ∧ ja.term = a ∧ Represents G U .undef ∧ j.type = A ++ U ∧
-      K.surely f = true ∧
+      K.surely f = true ∧ inheritedKey f = false ∧
       (match expand G ja.type with
        | [.dict _ [] _ ix _ _ _ _] => (K, A) ∈ ix
        | _ => False)
@@ -931,7 +932,7 @@ declared bounds. -/
       ja.context = j.context ∧ ja.term = a ∧
       jk.context = j.context ∧ jk.term = key ∧
       Represents G jk.type (keyClause KK) ∧ KK.within K = true ∧
-      Represents G U .undef ∧ j.type = A ++ U ∧
+      Represents G U .undef ∧ j.type = A ++ U ∧ KK ≠ .strings ∧
       (match expand G ja.type with
        | [.dict _ [] _ ix _ _ _ _] => (K, A) ∈ ix
        | _ => False)
@@ -1759,7 +1760,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
       · contradiction
     · contradiction
   · rename_i A U _ _ f a ja
-    rcases hl with ⟨hΓ, ht, hUnd, eq, hr⟩
+    rcases hl with ⟨hΓ, ht, hUnd, eq, hinh, hr⟩
     have ha := hp ja (by simp)
     rw [hΓ, ht] at ha
     split at hr
@@ -1768,19 +1769,19 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
       obtain ⟨⟨f', r, A'⟩, ho, hf, hA⟩ := hr
       simp only at hf hA
       subst hf hA
-      exact .readOptional ha he ho hUnd
+      exact .readOptional ha he ho hUnd hinh
     · contradiction
   · rename_i K A U _ _ f a ja
-    rcases hl with ⟨hΓ, ht, hUnd, eq, hsure, hr⟩
+    rcases hl with ⟨hΓ, ht, hUnd, eq, hsure, hinh, hr⟩
     have ha := hp ja (by simp)
     rw [hΓ, ht] at ha
     split at hr
     · rename_i fs vs ix os he
       subst eq
-      exact .readDict ha he hr hsure hUnd
+      exact .readDict ha he hr hsure hUnd hinh
     · contradiction
   · rename_i K KK E U _ _ a key ja jk
-    rcases hl with ⟨hΓa, hta, hΓk, htk, hStr, hwithin, hUnd, eq, hr⟩
+    rcases hl with ⟨hΓa, hta, hΓk, htk, hStr, hwithin, hUnd, eq, hns, hr⟩
     have ha := hp ja (by simp)
     have hk := hp jk (by simp)
     rw [hΓa, hta] at ha
@@ -1788,7 +1789,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
     split at hr
     · rename_i fs vs ix os he
       subst eq
-      exact .indexDict ha he hk hStr hwithin hr hUnd
+      exact .indexDict ha he hk hStr hwithin hr hUnd hns
     · contradiction
   · rename_i f a b ja jb
     rcases hl with ⟨hΓa, hta, hΓb, htb, hn, hr⟩
@@ -2537,23 +2538,23 @@ theorem checkTreeUsing_complete [DecidableEq ι] {G : NormalGraph ι}
           show expand G P = [.refs gs [] ws os' ms' ks'] from hP]
         exact ⟨⟨K, hK, hf⟩, hpr, hm⟩⟩
     simpa using ih
-  | @readOptional Γ a Ref fs vs os ms ks f r A U ha hr hm hUnd ih =>
+  | @readOptional Γ a Ref fs vs os ms ks f r A U ha hr hm hUnd hinh ih =>
     apply node_complete (G := G) (images := images) (j := ⟨Γ, .readAt f a, A ++ U⟩)
       (r := .readOptional A U) (js := [⟨Γ,a,Ref⟩])
-      ⟨rfl,rfl,hUnd,rfl,by
+      ⟨rfl,rfl,hUnd,rfl,hinh,by
         simp only [show expand G Ref = [.refs fs [] vs os ms ks] from hr]; exact ⟨_, hm, rfl, rfl⟩⟩
 
     simpa using ih
-  | @readDict Γ a Ref fs vs ix os ms ks cs A U f K ha hr hm hsure hUnd ih =>
+  | @readDict Γ a Ref fs vs ix os ms ks cs A U f K ha hr hm hsure hUnd hinh ih =>
     apply node_complete (G := G) (images := images) (j := ⟨Γ, .readAt f a, A ++ U⟩)
       (r := .readDict K A U) (js := [⟨Γ,a,Ref⟩])
-      ⟨rfl,rfl,hUnd,rfl,hsure,
+      ⟨rfl,rfl,hUnd,rfl,hsure,hinh,
         by simp only [show expand G Ref = [.dict fs [] vs ix os ms ks cs] from hr]; exact hm⟩
     simpa using ih
-  | @indexDict Γ a Ref fs vs ix os ms ks cs key Kt A U K KK ha hr hk hStr hwithin hm hUnd iha ihk =>
+  | @indexDict Γ a Ref fs vs ix os ms ks cs key Kt A U K KK ha hr hk hStr hwithin hm hUnd hns iha ihk =>
     apply node_complete (G := G) (images := images) (j := ⟨Γ, .indexAt a key, A ++ U⟩)
       (r := .indexDict K KK A U) (js := [⟨Γ,a,Ref⟩, ⟨Γ,key,Kt⟩])
-      ⟨rfl,rfl,rfl,rfl,hStr,hwithin,hUnd,rfl,
+      ⟨rfl,rfl,rfl,rfl,hStr,hwithin,hUnd,rfl,hns,
         by simp only [show expand G Ref = [.dict fs [] vs ix os ms ks cs] from hr]; exact hm⟩
     intro p hp
     simp only [List.mem_cons, List.not_mem_nil, or_false] at hp

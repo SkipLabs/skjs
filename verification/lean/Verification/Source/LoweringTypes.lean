@@ -448,9 +448,22 @@ negation. -/
     let key ← comparisonsExpr fc key
     let e ← comparisonsExpr fc e
     let string := decide (Answers (SourceTypes.graph (← table)) (← exprType fc e) .isStr true)
+    -- A read at a key the object may lack finds, in JavaScript, what
+    -- `Object.prototype` holds under it, where the model finds nothing: no
+    -- rule reads such a key as possibly absent (`inheritedKey`, and
+    -- `indexDict` at no key of every string). A key known only at run time
+    -- to be some string is refused here, at its site.
+    let anyString := (PositiveRules.expand (SourceTypes.graph (← table)) (← exprType fc key)).any
+      fun c => match c with
+        | .str => true
+        | _ => false
     match ← keyField fc key string (← recordReceiver fc e) (← dictReceiver fc e) with
     | .field s => return .index p (some s) e key
-    | .dynamic => return .index p none e key
+    | .dynamic =>
+      if anyString then
+        throw (locatedRefusal (← table) p .expressionClaim
+          "a read at a key that may name a member every object inherits from `Object.prototype` (`toString`, `constructor`, `valueOf`, ...): the model's objects hold no prototype there, so a key the object may lack is read only where no member of it is under the key")
+      return .index p none e key
     | .element => return .elemAt p e key
   | .arrayLit p es => return .arrayLit p (← es.mapM (comparisonsExpr fc))
   | .arrayAssign p targets rest rhs =>

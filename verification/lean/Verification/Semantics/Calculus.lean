@@ -65,6 +65,20 @@ No source property names it, so an object owns it exactly when it is an array:
 that is what `Array.isArray` tests (`Tag.isArray`). -/
 def arrayStoreKey : PropKey := "[]"
 
+/-- The string keys `Object.prototype` holds (node's
+`Object.getOwnPropertyNames(Object.prototype)`): every ordinary object
+inherits a member under each, which the model's objects do not hold. -/
+def objectProtoKeys : List String := ["constructor", "__defineGetter__", "__defineSetter__", "hasOwnProperty",
+  "__lookupGetter__", "__lookupSetter__", "isPrototypeOf", "propertyIsEnumerable", "toString",
+  "valueOf", "__proto__", "toLocaleString"]
+
+/-- **A key every ordinary object inherits a member under**: where the object
+does not own it, JavaScript's read finds `Object.prototype`'s member and the
+model's finds `undefined`, so no rule reads it as possibly absent. -/
+def inheritedKey : PropKey → Bool
+  | .str s => objectProtoKeys.contains s
+  | .sym _ => false
+
 /-- The shapes a value can have, and so the tests a program can make of one.
 Nullishness groups null and undefined for source coalescing; the other tests
 distinguish individual runtime shapes. `truthy` is JavaScript's `ToBoolean`:

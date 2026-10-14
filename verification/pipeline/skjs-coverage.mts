@@ -447,6 +447,7 @@ function brief(detail: string): string {
 const GROUPS: [string, RegExp][] = [
   ["generic contracts requiring an unsupported exact representation", /generic contract (?:at|:)/],
   ["TypeScript refuses the code too (the pipeline follows TypeScript's types)", /TypeScript refuses this code too/],
+  ["a read at a key the object may lack, which may name an `Object.prototype` member", /a read at a key that may name a member every object inherits from `Object\.prototype`/],
   ["arrays and open records: an array of the realm at a generic call, a mutable tuple's `length`", /an array of the realm at a generic call|`length` of a mutable tuple|past the positions of a mutable tuple/],
   ["a non-null assertion on a read at a for...in key after code that may remove the key or change the object read", /non-null assertion on a read at a for\.\.\.in key/],
   ["generic methods: two declarations' instances related", /an instance of a declaration with generic methods at an instance of another/],
@@ -526,6 +527,9 @@ type ClassEntry = { cls: RefusalClass; label: string; re: RegExp; why: string; r
 const CLASSES: ClassEntry[] = [
   // Reviewed search failures: require both the unit and its observed obligation.
   // A different failure in the same unit falls through to the general classifier.
+  { cls: "principled", label: "a read at a key that may name an `Object.prototype` member",
+    re: /a read at a key that may name a member every object inherits from `Object\.prototype`/,
+    why: "an ordinary object inherits Object.prototype's members, which the model's objects do not hold: at a key known only at run time JavaScript's read finds `toString`, a function, where the type says a value or nothing (`invalid-dictionary-inherited-key`, run under Node; SOURCE-FRAGMENT \"Refused on principle\")" },
   { cls: "principled", label: "SKJS closed-object semantics are outside the pipeline",
     unit: "tests/expect-error/json-generated-service.ts#GraphResource",
     re: /^search: reject: source direct obligation at _: GraphCollections: the type argument for EagerCollection/,

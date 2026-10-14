@@ -630,6 +630,20 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   // A mutable tuple's `length` grows past its arity.
   assert.equal(runExample("invalid-length-view-tuple", "tupleLength(0)"), 2,
     "invalid-length-view-tuple: the view reads 2 despite its 1 contract");
+  // A literal inherits `Object.prototype`'s members.
+  assert.equal(runExample("invalid-dictionary-inherited-key", `typeof inherited("toString")`), "function",
+    "invalid-dictionary-inherited-key: the read finds Object.prototype.toString despite its number contract");
+  // A member access, an optional field and a pattern each find
+  // `Object.prototype`'s member under its name where the object lacks it.
+  assert.equal(runExample("invalid-dictionary-inherited-named", "typeof named()"), "function",
+    "invalid-dictionary-inherited-named: the read finds Object.prototype.__defineGetter__");
+  assert.equal(runExample("invalid-optional-inherited-key", "typeof optional({})"), "function",
+    "invalid-optional-inherited-key: the read finds Object.prototype.toString");
+  assert.equal(runExample("invalid-pattern-inherited-key", "typeof destructured({})"), "function",
+    "invalid-pattern-inherited-key: the pattern finds Object.prototype.valueOf");
+  // A non-null assertion on a read the object lacks the key of.
+  assert.equal(runExample("invalid-non-null-index", "wrong({}, 0)"), undefined,
+    "invalid-non-null-index: the read is undefined despite the assertion");
   // An array's `length` is not one of its own enumerable properties.
   assert.equal(runExample("invalid-array-spread-length", "count([1, 2])"), undefined,
     "invalid-array-spread-length: the copy has no length despite its number contract");
@@ -1200,7 +1214,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   // document: under another import closure they are other types, which the
   // evidence does not justify.
   const fragment: unknown = JSON.parse(readFileSync(join(good, "fragment.json"), "utf8"));
-  const json: unknown = JSON.parse(readFileSync(join(run("recursive-json"), "fragment.json"), "utf8"));
+  const json: unknown = JSON.parse(readFileSync(join(run("recursive-json-uninherited-key"), "fragment.json"), "utf8"));
   assert.ok(fragment && typeof fragment === "object" && json && typeof json === "object" && "declarations" in json);
   const forgedImport = join(good, "forged-import.json");
   writeFileSync(forgedImport, JSON.stringify({ ...fragment, declarations: json.declarations }));
@@ -1211,7 +1225,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
 {
   // Each label tree has one spelling and names a declaration of the fragment's
   // document; a binder is a label, never a row the producer writes.
-  const recursiveJson = run("recursive-json");
+  const recursiveJson = run("recursive-json-uninherited-key");
   const path = join(recursiveJson, "claims.json");
   const claims = readClaims(recursiveJson);
   const nullary = Number(must(/\{"decl":(\d+)\}/.exec(readFileSync(path, "utf8")),
@@ -1241,7 +1255,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
 {
   // The named view remains part of a mixed dictionary's source contract: an
   // index-only replacement must not certify a function annotated with both.
-  const indexed = run("index-signature");
+  const indexed = run("index-signature-uninherited-key");
   const claims = readClaims(indexed);
   const mixed = must(claims.types.find((row) =>
     row.length === 1 && typeof row[0] === "object" && "dict" in row[0] &&
