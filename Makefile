@@ -116,5 +116,9 @@ viewer:
 .git/hooks/pre-commit: bin/git_hooks/check_format.sh
 	ln -s $(PWD)/bin/git_hooks/check_format.sh .git/hooks/pre-commit
 
+# install the commit-record check (commits touching verification/)
+.git/hooks/commit-msg: bin/git_hooks/commit_record.sh
+	ln -s $(PWD)/bin/git_hooks/commit_record.sh .git/hooks/commit-msg
+
 .PHONY: setup-git-hooks
-setup-git-hooks: .git/hooks/pre-commit
+setup-git-hooks: .git/hooks/pre-commit .git/hooks/commit-msg
