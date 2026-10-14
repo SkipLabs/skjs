@@ -965,8 +965,10 @@ number`, or a number index at the string index's contract, is the string
 index alone. A named key reads through an index whose class surely admits it,
 at $`V\mid\mathtt{undefined}`$ (`readDict`); a computed `string`, `number` or
 `symbol` key through an index over a class containing its keys (`indexDict`),
-the narrower number index where both admit it. No write through an index is
-typed. A numeric property name is the key its value's `ToString` spells
+the narrower number index where both admit it. No write in place through an
+index is typed: a write at a key known only at run time is a
+[key-adding write](PROGRAM-TYPING.md#key-adding-writes) on a local's own
+object, its copy with an allocation at the key over it. A numeric property name is the key its value's `ToString` spells
 (`numericKey` in `type-term.mts`), and a number key of a receiver claimed only
 at records is the [named access](SOURCE-ELABORATION.md#derived-source-forms) of that key.
 
