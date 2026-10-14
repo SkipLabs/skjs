@@ -52,6 +52,22 @@ def produceJson (ast claims : Json) (fileKey : String) (fuel : Nat)
     throw (validationFailure rs checked "source evidence does not justify the extracted graph requests")
   return evidence
 
+private def codeJson {ι : Type} [ToJson ι] (c : CodeEntry ι) : Json :=
+  Json.mkObj [("arity", toJson c.arity), ("start", toJson c.start),
+    ("program", toJson ((c.exprs.zip c.conts).map fun (e, k, h) => (⟨e, k, h⟩ : Node)))]
+
+/-- The program graph each unit lowers to, with the graph code it creates, for
+inspection: per unit its name, entry node and nodes, and per code its arity,
+entry node and nodes. -/
+def lowerJson (ast claims : Json) (fileKey : String)
+    (only : Option (String × Span) := none) : Except String Json := do
+  let (T, plans) ← extractPlans ast claims fileKey only {}
+  let ⟨_, frozen⟩ ← freezePlans T plans
+  return toJson (frozen.map fun
+    | .graph name _ r => Json.mkObj [("name", toJson name), ("start", toJson r.toRequest.start),
+        ("program", toJson r.toRequest.program),
+        ("codes", toJson (r.toRequest.codes.map fun (c : CodeRequest _) => codeJson c.entry))])
+
 /-- Every extracted plan crosses the exhaustive certification boundary, and its
 graph request proves the enclosing execution safe at every assignment admitted
 by its source signature, including its descriptor contract when qualified. The

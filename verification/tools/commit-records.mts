@@ -49,12 +49,12 @@ function readRecord(rev: string): CommitRecord {
   const sections: Section[] = [];
   let current: Section | undefined;
   for (const line of lines.slice(1, end)) {
-    const head = /^([A-Z][A-Za-z ]+):\s*(.*)$/.exec(line);
+    const head = /^([A-Z][A-Za-z]*(?: [a-z][A-Za-z]*){0,3}(?: \((?:[^()]|\([^()]*\))*\))?):\s*(.*)$/.exec(line);
     if (head) {
       current = { name: head[1], text: head[2] ? [head[2]] : [], block: [] };
       sections.push(current);
-    } else if (line.startsWith("    ")) {
-      (current ??= pushProse(sections)).block.push(line.slice(4));
+    } else if (/^ {2,}\S/.test(line)) {
+      (current ??= pushProse(sections)).block.push(line);
     } else if (line.trim()) {
       if (!current || current.block.length) current = pushProse(sections);
       current.text.push(line.trim());
@@ -88,12 +88,82 @@ function tests(value: string): string {
   }).join(" ");
 }
 
-/** Mathematics in a rule: sub- and superscripts set as such, on escaped text. */
+/** Mathematics set as type theory sets it: one-letter names (variables,
+ * metavariables) italic; a name applied to arguments, `sig(g)`, an upright
+ * operator; a capitalised name an upright constructor; binders and relations
+ * coloured; `code` in backticks highlighted TypeScript; a run of two or more
+ * words, `g read, not called`, a side condition in text. `_x`, `_{…}` and
+ * `^{…}` are sub- and superscripts. The input is the record's; nothing is
+ * added to it. */
+const KEYWORDS = new Set(["if", "then", "else", "let", "in", "tag", "of", "for", "with", "where"]);
+const BINDERS = new Set("∀∃λΛμ");
+const RELATIONS = new Set("⊢⊨≤≥⊑⊒∈∉⊆⊂=≠≡:⇝↦≜≔");
+const TEXT_WORD = /^(?:a|an|A|An|[A-Za-z][A-Za-z'-]*[a-z][A-Za-z'-]*)$/;
+type MathToken = { kind: "code" | "str" | "script" | "word" | "num" | "space" | "sym"; text: string };
+function mathTokens(text: string): MathToken[] {
+  const token = /(`[^`]+`)|("[^"\n]*")|(_\{[^{}]*\}|\^\{[^{}]*\}|_[A-Za-z0-9\u0370-\u03ff\u2200-\u22ff]+\u20d7?)|([A-Za-z\u0370-\u03ff][A-Za-z0-9\u0370-\u03ff'′-]*\u20d7?)|(\d+)|(\s+)|([\s\S])/g;
+  return [...text.matchAll(token)].map(([t, code, str, script, word, num, space]) => ({
+    kind: code ? "code" : str ? "str" : script ? "script" : word ? "word" : num ? "num" : space ? "space" : "sym", text: t }));
+}
 function math(text: string): string {
-  return esc(text)
-    .replace(/_\{([^{}]*)\}/g, "<sub>$1</sub>")
-    .replace(/\^\{([^{}]*)\}/g, "<sup>$1</sup>")
-    .replace(/_([A-Za-z0-9\u0370-\u03ff\u2200-\u22ff]+(?:\u20d7)?)/g, "<sub>$1</sub>");
+  const ts = mathTokens(text);
+  // Side conditions in words: two or more words, or one lowercase word of
+  // three letters or more, not applied to arguments; a run continues across
+  // spaces, punctuation, quoted strings and code.
+  const prose = new Set<number>();
+  const textWord = (k: number) => ts[k]?.kind === "word" && TEXT_WORD.test(ts[k].text) && !KEYWORDS.has(ts[k].text)
+    && ts[k + 1]?.text !== "(" && ts[k + 1]?.kind !== "script";
+  // Inside a run a keyword is an ordinary word ("in double brackets").
+  const joins = (k: number) => ["space", "code", "str"].includes(ts[k].kind) || ",;()".includes(ts[k].text)
+    || (ts[k].kind === "word" && KEYWORDS.has(ts[k].text));
+  for (let i = 0; i < ts.length; i++) {
+    if (!textWord(i)) continue;
+    const run = [i];
+    for (let k = i + 1; k < ts.length && (joins(k) || textWord(k)); k++) if (textWord(k)) run.push(k);
+    const last = run[run.length - 1];
+    if (run.length >= 2 || /^[a-z]{3,}$/.test(ts[i].text)) {
+      // A trailing closing parenthesis or string belongs to the run when the run holds its start.
+      let end = last;
+      while (end + 1 < ts.length && (ts[end + 1].kind === "str" || (ts[end + 1].text === ")" && ts.slice(i, end + 1).some(t => t.text === "(")))) end++;
+      for (let k = i; k <= end; k++) prose.add(k);
+      i = end;
+    }
+  }
+  const out: string[] = [];
+  ts.forEach((t, i) => {
+    const e = esc(t.text);
+    const piece = t.kind === "code" ? `<code class="m-code">${highlight(t.text.slice(1, -1))}</code>`
+      : t.kind === "str" ? `<code class="m-code"><span class="tk-s">${e}</span></code>` : e;
+    if (prose.has(i)) {
+      const open = !prose.has(i - 1), close = !prose.has(i + 1);
+      out.push(`${open ? '<span class="m-text">' : ""}${piece}${close ? "</span>" : ""}`);
+      return;
+    }
+    switch (t.kind) {
+      case "code": case "str": out.push(piece); return;
+      case "script": {
+        const sup = t.text.startsWith("^"), inner = t.text.replace(/^[_^]\{?|\}$/g, "");
+        out.push(`<${sup ? "sup" : "sub"}>${math(inner)}</${sup ? "sup" : "sub"}>`);
+        return;
+      }
+      case "word": {
+        const w = t.text;
+        if (w === "refused") out.push(`<span class="refused">${e}</span>`);
+        else if (KEYWORDS.has(w) && prose.has(i - 1 - Number(ts[i - 1]?.kind === "space"))) out.push(`<span class="m-text">${e}</span>`);   // ending a sentence
+        else if (KEYWORDS.has(w)) out.push(`<span class="m-kw">${e}</span>`);
+        else if ((ts[i + 1]?.text === "(" || ts[i + 1]?.kind === "script") && w.length > 1) out.push(`<span class="m-op">${e}</span>`);
+        else if (/^[A-Za-z\u0370-\u03ff][0-9'′]*\u20d7?$/.test(w)) out.push(`<var>${e}</var>`);
+        else if (/^[A-Z]/.test(w)) out.push(`<span class="m-con">${e}</span>`);
+        else out.push(`<span class="m-op">${e}</span>`);   // a lowercase name of two letters
+        return;
+      }
+      case "sym":
+        out.push(BINDERS.has(t.text) ? `<span class="m-bind">${e}</span>` : RELATIONS.has(t.text) ? `<span class="m-rel">${e}</span>` : e);
+        return;
+      default: out.push(e);
+    }
+  });
+  return out.join("");
 }
 
 /** A line's parts: runs of three or more spaces separate side-by-side formulas. */
@@ -106,7 +176,7 @@ const formulas = (lines: string[]): string =>
 /** A `Rule:` block: groups separated by blank lines; a group with a line of
  * `─` is an inference rule (premises above, conclusion below, the name after
  * the bar); any other group is a list of formulas. The text is the record's. */
-function rules(block: string[]): string {
+function rules(block: string[], kind = ""): string {
   const groups: string[][] = [[]];
   for (const line of block) {
     if (line.trim()) groups[groups.length - 1].push(line);
@@ -114,7 +184,7 @@ function rules(block: string[]): string {
   }
   return `<div class="rules">${groups.filter(g => g.length).map(g => {
     const bar = g.findIndex(l => /^\s*─{3,}/.test(l));
-    if (bar < 0) return formulas(g);
+    if (bar < 0) return g.some(l => l.includes("⇝")) ? lowering(g, kind === "Typing") : formulas(g);
     const name = /\(([^()]+)\)\s*$/.exec(g[bar])?.[1] ?? "";
     // A definition ending in `=`, with its continuation, stays a formula above the rule.
     let first = 0;
@@ -126,8 +196,108 @@ function rules(block: string[]): string {
     return (above.length ? formulas(above) : "") +
       `<div class="infer"><div class="frac"><div class="premises">${premises.map(p => `<span>${math(p)}</span>`).join("")}</div>` +
       `<div class="bar"></div><div class="conclusion">${conclusion.map(l => `<div>${math(l.trim())}</div>`).join("")}</div></div>` +
-      (name ? `<span class="rule-name">${esc(name)}</span>` : "") + `</div>`;
+      (name ? `<span class="rule-name">(${esc(name)})</span>` : "") + `</div>`;
   }).join("")}</div>`;
+}
+
+/** Lines without their common indentation. */
+function dedent(lines: string[]): string[] {
+  const indents = lines.filter(l => l.trim()).map(l => /^ */.exec(l)?.[0].length ?? 0);
+  const cut = indents.length ? Math.min(...indents) : 0;
+  const out = lines.map(l => l.slice(cut));
+  while (out.length && !out[out.length - 1].trim()) out.pop();
+  return out;
+}
+
+const TS_KEYWORDS = new Set(("abstract as async await break case catch class const constructor continue declare default delete do else " +
+  "enum export extends false finally for from function get if implements import in instanceof interface keyof let new null of " +
+  "private protected public readonly return set static super switch this throw true try type typeof undefined unique var void while yield").split(" "));
+
+/** TypeScript or JavaScript source, highlighted by token. */
+function highlight(code: string): string {
+  const token = /(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`)|(\b\d[\d_.]*n?\b)|([A-Za-z_$][\w$]*)/g;
+  let out = "", last = 0;
+  for (const m of code.matchAll(token)) {
+    out += esc(code.slice(last, m.index));
+    const [t, comment, str, num, id] = m;
+    out += comment !== undefined ? `<span class="tk-c">${esc(t)}</span>`
+      : str !== undefined ? `<span class="tk-s">${esc(t)}</span>`
+      : num !== undefined ? `<span class="tk-n">${esc(t)}</span>`
+      : id !== undefined && TS_KEYWORDS.has(id) ? `<span class="tk-k">${esc(t)}</span>`
+      : id !== undefined && /^[A-Z]/.test(id) ? `<span class="tk-t">${esc(t)}</span>`
+      : esc(t);
+    last = (m.index ?? 0) + t.length;
+  }
+  return out + esc(code.slice(last));
+}
+
+/** Code lines; `mark` names the lines the other version lacks. */
+const codeBlock = (lines: string[], mark: "add" | "del" | "" = "", other: string[] = []): string =>
+  `<pre class="code">${lines.map(l => `<span class="ln${mark && !other.includes(l) ? ` ${mark}` : ""}">${highlight(l) || " "}</span>`).join("")}</pre>`;
+
+/** A change to a named object: `<Kind> <action> (<target>)`, the kind deciding
+ * how its content is drawn (mathematics or code), Before/After shown side by side. */
+const MATH_KINDS = new Set(["Rule", "Rules", "Semantics", "Definition", "Definitions", "Type", "Typing", "Notation"]);
+const CODE_KINDS = new Set(["Example", "Counterexample", "Code"]);
+
+/** A lowering: each `source ⇝ target` line is the TypeScript form (highlighted)
+ * mapped to its term in the calculus (operations coloured); `label: …` lines
+ * are side conditions; a trailing parenthesized remark is a note. */
+function lowering(lines: string[], typing = false): string {
+  const term = (t: string): string =>
+    math(t);
+  const note = (t: string): [string, string] => {
+    const m = /^(.*?)\s*(\([^()]*\))\s*$/.exec(t);
+    return m ? [m[1], `<span class="note">${inline(m[2])}</span>`] : [t, ""];
+  };
+  return `<div class="lowering">${lines.filter(l => l.trim()).map(l => {
+    const [body, remark] = note(l.trim());
+    const arrow = body.indexOf("⇝");
+    if (arrow >= 0) {
+      const src = `<code class="src">${highlight(body.slice(0, arrow).trim())}</code>`;
+      // A type's meaning is written ⟦source⟧ = type; a lowering, source ⇝ term.
+      return typing
+        ? `<div class="map"><span class="tgt sem">⟦${src}⟧</span><span class="to">=</span><span class="tgt">${term(body.slice(arrow + 1).trim())}</span>${remark}</div>`
+        : `<div class="map">${src}<span class="to">⇝</span><span class="tgt">${term(body.slice(arrow + 1).trim())}</span>${remark}</div>`;
+    }
+    const lab = /^([a-z][\w ]{0,24}):\s+(.*)$/.exec(body);
+    if (lab) return `<div class="cond"><span class="label">${esc(lab[1])}</span><span class="tgt">${term(lab[2])}</span>${remark}</div>`;
+    return `<div class="cond"><span class="tgt">${term(body)}</span>${remark}</div>`;
+  }).join("")}</div>`;
+}
+
+function section(s: Section): string {
+  const m = /^([A-Z][A-Za-z]*)(?: (added|modified|removed|replaced))?(?: \(((?:[^()]|\([^()]*\))*)\))?$/.exec(s.name);
+  const kind = m?.[1] ?? s.name, action = m?.[2] ?? "", target = m?.[3] ?? "";
+  const lines = dedent(s.block);
+  const head = s.name
+    ? `<h4 class="change">${action ? `<span class="act ${action}">${action}</span>` : ""}${esc(kind)}${target && !CODE_KINDS.has(kind) ? ` <span class="target">${inline(target)}</span>` : ""}</h4>`
+    : "";
+  const text = s.text.length ? `<p>${inline(s.text.join(" "))}</p>` : "";
+  if (!lines.length) return head + text;
+  if (kind === "Effect") {
+    return head + text + `<ul class="effect">${lines.filter(l => l.trim()).map(l => {
+      const [what, ...rest] = parts(l);
+      return `<li><code>${esc(what)}</code>${rest.length ? ": " : ""}${rest.map(x => inline(x).replace(/ → /g, ' <span class="arrow">→</span> ')).join(" ")}</li>`;
+    }).join("")}</ul>`;
+  }
+  const split = lines.findIndex(l => /^(Before|After):\s*$/.test(l.trim()));
+  const draw = (body: string[], mark: "add" | "del" | "" = "", other: string[] = []): string =>
+    kind === "Lowering" ? lowering(body) : MATH_KINDS.has(kind) ? rules(body, kind) : CODE_KINDS.has(kind) ? codeBlock(body, mark, other)
+    : `<div class="prose">${body.join("\n").split(/\n\s*\n/).map(p => `<p>${inline(p.replace(/\s+/g, " ").trim())}</p>`).join("")}</div>`;
+  if (split < 0) return head + text + draw(lines);
+  const before: string[] = [], after: string[] = [];
+  let into: string[] | undefined;
+  for (const l of lines) {
+    const t = l.trim();
+    if (t === "Before:") into = before;
+    else if (t === "After:") into = after;
+    else into?.push(l);
+  }
+  const b = dedent(before), a = dedent(after);
+  return head + text + `<div class="versions">` +
+    (b.length ? `<figure><figcaption>Before</figcaption>${draw(b, "del", a)}</figure>` : "") +
+    (a.length ? `<figure><figcaption>After</figcaption>${draw(a, "add", b)}</figure>` : "") + `</div>`;
 }
 
 function card(r: CommitRecord): string {
@@ -139,11 +309,7 @@ function card(r: CommitRecord): string {
   ];
   const units = words(r, "Units");
   if (units.length) out.push(`<div class="units">${units.map(u => `<span>${esc(u)}</span>`).join("")}</div>`);
-  for (const s of r.sections) {
-    if (s.name) out.push(`<h4>${esc(s.name)}</h4>`);
-    if (s.text.length) out.push(`<p>${inline(s.text.join(" "))}</p>`);
-    if (s.block.length) out.push(s.name === "Rule" ? rules(s.block) : `<pre class="code">${esc(s.block.join("\n").trimEnd())}</pre>`);
-  }
+  for (const s of r.sections) out.push(section(s));
   const facts = FACTS.flatMap(k => {
     const v = r.trailers.get(k);
     if (v === undefined) return [];
@@ -179,23 +345,25 @@ function group(arg: string): Group {
 function summary(groups: Group[]): string {
   const ranges = groups.filter(g => g.range);
   if (!ranges.length) return "";
-  const rows = ranges.map(g => {
+  const items = ranges.map(g => {
     const count = (o: string) => g.records.filter(r => r.trailers.get("Outcome") === o).flatMap(r => words(r, "Units")).length;
-    const units = ["verified", "refused", "gap"].map(o => [o, count(o)] as const).filter(([, n]) => n).map(([o, n]) => `${n} ${o}`).join(", ") || "—";
+    const units = ["verified", "refused", "gap"].map(o => [o, count(o)] as const).filter(([, n]) => n).map(([o, n]) => `${n} ${o}`).join(", ");
     const list = (key: string, skip = "") => [...new Set(g.records.map(r => r.trailers.get(key) ?? "").filter(v => v && v !== skip))];
     const parts = [...new Set(g.records.flatMap(r => words(r, "Parts")))];
-    const trust = list("Trust", "none");
-    return `<tr><td><a href="#g-${esc(g.name)}"><code>${esc(g.name)}</code></a></td><td class="num">${g.records.length}</td><td>${units}</td>` +
-      `<td>${parts.map(p => `<span class="chip${/semantics|trust|wire/.test(p) ? " strong" : ""}">${esc(p)}</span>`).join(" ")}</td>` +
-      `<td>${trust.length ? trust.map(t => `<span class="trust">${esc(t)}</span>`).join(" ") : '<span class="none">none</span>'}</td>` +
-      `<td>${list("Wire").map(inline).join("<br>") || '<span class="none">none</span>'}</td>` +
-      `<td>${list("Depends").map(inline).join("<br>") || '<span class="none">—</span>'}</td></tr>`;
+    const facts = [
+      `${g.records.length} commit${g.records.length === 1 ? "" : "s"}${units ? `, units ${units}` : ""}`,
+      `parts: ${parts.map(p => `<span class="chip${/semantics|trust|wire/.test(p) ? " strong" : ""}">${esc(p)}</span>`).join(" ")}`,
+      ...list("Trust", "none").map(t => `new trust: <span class="trust">${esc(t)}</span>`),
+      ...list("Wire").map(w => `wire: ${inline(w)}`),
+      ...list("Depends").map(d => `depends on: ${inline(d)}`),
+    ];
+    return `<li><a href="#g-${esc(g.name)}"><code>${esc(g.range ?? g.name)}</code></a><ul>${facts.map(f => `<li>${f}</li>`).join("")}</ul></li>`;
   });
   const owners = new Map<string, string[]>();
   for (const g of ranges) for (const f of g.files) owners.set(f, [...(owners.get(f) ?? []), g.name]);
   const shared = [...owners].filter(([, gs]) => gs.length > 1).sort();
-  return `<section><h2>Branches</h2><div class="table-wrap"><table><thead><tr><th>Branch</th><th>Commits</th><th>Units</th><th>Parts</th><th>New trust</th><th>Wire</th><th>Depends</th></tr></thead><tbody>${rows.join("")}</tbody></table></div>` +
-    (shared.length ? `<h4>Files changed by more than one branch</h4><div class="table-wrap"><table><tbody>${shared.map(([f, gs]) => `<tr><td><code>${esc(f)}</code></td><td>${gs.map(esc).join(", ")}</td></tr>`).join("")}</tbody></table></div>` : "") +
+  return `<section><h2>Branches</h2><ul class="summary">${items.join("")}</ul>` +
+    (shared.length ? `<h4>Files changed by more than one branch</h4><ul class="summary">${shared.map(([f, gs]) => `<li><code>${esc(f)}</code>: ${gs.map(esc).join(", ")}</li>`).join("")}</ul>` : "") +
     `</section>`;
 }
 
@@ -221,12 +389,12 @@ pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
 .rules sub, .rules sup { font-size:.72em; line-height:0 }
 .formulas { display:flex; flex-direction:column; gap:4px }
 .formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
-.infer { display:flex; align-items:center; gap:12px; flex-wrap:wrap }
+.infer { display:flex; align-items:center; gap:12px }
 .frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
 .premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
 .bar { align-self:stretch; border-top:1.5px solid var(--ink) }
 .conclusion { padding:3px 6px 0; text-align:center }
-.rule-name { font:600 12px/1 var(--body); letter-spacing:.04em; color:var(--accent); white-space:nowrap }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
 .card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
 .card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
 .sha { font:12px/1.4 var(--mono); color:var(--muted) }
@@ -247,6 +415,32 @@ details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:
 .table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
 table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
 th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#8e3fb5 } .tk-s { color:#2b7a3d } .tk-n { color:#b0601a } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2b5b9c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2b5b9c; font-style:normal } .m-con { color:#1f6f66; font-style:normal; font-variant:small-caps }
+.m-kw { color:#8e3fb5; font-weight:600; font-style:normal } .m-bind { color:#8e3fb5 } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
 a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
 @media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }`;
 

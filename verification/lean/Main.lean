@@ -20,6 +20,8 @@ def main (args : List String) : IO UInt32 := do
   match args with
   | ["--lower-control-flow", astPath] =>
       Verification.RequestCli.flowFile astPath
+  | ["--lower-program", astPath, claimsPath, fileKey] =>
+      Verification.RequestCli.lowerFile astPath claimsPath fileKey
   | ["--check-source-claims", astPath, claimsPath, fileKey, evidencePath] =>
       Verification.RequestCli.sourceFiles astPath claimsPath fileKey evidencePath none none budget
   | ["--produce-source-claims", astPath, claimsPath, fileKey, evidencePath, depth] =>
@@ -38,6 +40,7 @@ def main (args : List String) : IO UInt32 := do
       | _, _, _ => IO.eprintln "reject: search depth and function position must be natural numbers"; return 2
   | _ =>
       IO.eprintln "usage: verifier --lower-control-flow <ast.json>"
+      IO.eprintln "       verifier --lower-program <ast.json> <source-claims.json> <file-key>"
       IO.eprintln "       verifier --produce-source-claims <ast.json> <source-claims.json> <file-key> <evidence.json> <depth>"
       IO.eprintln "       verifier --check-source-claims <ast.json> <source-claims.json> <file-key> <evidence.json>"
       IO.eprintln "       (each mode also takes --function <name> <start> <end>: one function, the others its module)"

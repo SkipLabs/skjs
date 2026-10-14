@@ -19,6 +19,14 @@ def flowFile (astPath : String) : IO UInt32 := do
   | .ok graph => IO.println graph.compress; return 0
   | .error reason => IO.eprintln s!"reject: {reason}"; return 1
 
+/-- Print the program graph each unit lowers to (`SourceClaimJson.lowerJson`). -/
+def lowerFile (astPath claimsPath fileKey : String) : IO UInt32 := do
+  let ast ← readJson astPath
+  let claims ← readJson claimsPath
+  match do SourceClaimJson.lowerJson (← ast) (← claims) fileKey with
+  | .ok j => IO.println j.compress; return 0
+  | .error e => IO.eprintln s!"reject: {e}"; return 1
+
 def sourceFiles (astPath claimsPath fileKey evidencePath : String)
     (fuel : Option Nat) (only : Option (String × Span) := none)
     (budget : PositiveCertificates.SearchBudget := {}) : IO UInt32 := do

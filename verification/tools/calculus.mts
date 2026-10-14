@@ -187,7 +187,7 @@ const BARE: Record<Extract<Term, string>, true> = {
 };
 const bare: readonly unknown[] = Object.keys(BARE);
 const isBareTerm = (v: unknown): v is Extract<Term, string> => bare.includes(v);
-type KeysOf<T> = T extends unknown ? keyof T : never;
+export type KeysOf<T> = T extends unknown ? keyof T : never;
 type TermKey = KeysOf<Exclude<Term, string>>;
 
 export function decodeTerm(value: unknown): Term {
@@ -280,3 +280,63 @@ export function decodeTerm(value: unknown): Term {
 }
 export const printTerm = (term: Term): string =>
   JSON.stringify(decodeTerm(term));
+
+/* Readable notation for terms, as commit records and the lowering dump show
+ * them. Each table is keyed by the constructors of `Term`, `Tag` and
+ * `CallCode`: adding a constructor there and not here is a type error. */
+type ObjectTerm = Exclude<Term, string>;
+type Args<K extends TermKey> = Extract<ObjectTerm, Record<K, unknown>>[K];
+const showTerms = (ts: Term[]): string => ts.map(showTerm).join(", ");
+const SHOW_ATOM: Record<Extract<Term, string>, string> = { nul: "null", undef: "undefined", tru: "true", fls: "false" };
+const SHOW_TERM: { [K in TermKey]: (a: Args<K>) => string } = {
+  num: a => `num#${a.bits}`,
+  str: a => JSON.stringify(a.value),
+  bigint: a => `${a.value}n`,
+  var: a => `x${a.i}`,
+  invoke: a => `${showTerm(a.f)}.call(${[a.r, ...a.args].map(showTerm).join(", ")})`,
+  letE: a => `let ${showTerm(a.a)} in ${showTerm(a.b)}`,
+  objAt: a => `obj#${a.identity}{${a.fields.map(([k, l]) => `${k}: ℓ${l}`).join(", ")}}${showCode(a.call)}`,
+  makeAt: a => `new{${a.names.map((n, i) => `${n}: ${a.inits[i] === undefined ? "?" : showTerm(a.inits[i])}`).join(", ")}}${showCode(a.call)}`,
+  readAt: a => `${showTerm(a.a)}.${a.field}`,
+  indexAt: a => `${showTerm(a.a)}[${showTerm(a.key)}]`,
+  writeAt: a => `${showTerm(a.a)}.${a.field} := ${showTerm(a.b)}`,
+  test: a => `${showTag(a.k)}(${showTerm(a.a)})`,
+  ite: a => `if ${showTerm(a.c)} then ${showTerm(a.t)} else ${showTerm(a.e)}`,
+  arith: a => `${showTerm(a.a)} ${a.op} ${showTerm(a.b)}`,
+  arrLit: a => `[${showTerms(a.inits)}]`,
+  elemAt: a => `${showTerm(a.a)}⟦${showTerm(a.i)}⟧`,
+  setElem: a => `${showTerm(a.a)}⟦${showTerm(a.i)} ↦ ${showTerm(a.v)}⟧`,
+  lenOf: a => `len(${showTerm(a.a)})`,
+  arr: a => `store[${a.elems.map(e => (e === null ? "hole" : `ℓ${e}`)).join(", ")}]`,
+  spread: a => `...${showTerm(a.a)}`,
+  throw: a => `throw ${showTerm(a.a)}`,
+  merge: a => `merge(${showTerm(a.a)}, ${showTerm(a.b)}${a.drop.length ? ` drop ${a.drop.map(d => (typeof d === "string" ? d : `sym#${d.symbol}`)).join(", ")}` : ""})`,
+};
+/** A term in the notation of commit records. */
+export function showTerm(t: Term): string {
+  if (typeof t === "string") return SHOW_ATOM[t];
+  const [k] = Object.keys(t);
+  // asserted: a decoded term has exactly one constructor key, one of TermKey
+  const show = SHOW_TERM[k as TermKey] as (a: unknown) => string;
+  return show((t as Record<string, unknown>)[k]); // asserted: the constructor's own arguments
+}
+const SHOW_TAG: Record<Extract<Tag, string>, string> = {
+  isNul: "isNull", isBool: "isBoolean", isRef: "isObject", isFun: "isFunction", isUndef: "isUndefined",
+  isNullish: "isNullish", isNum: "isNumber", isStr: "isString", isBigint: "isBigInt", isSymbol: "isSymbol",
+  truthy: "truthy", isArray: "Array.isArray", typeofObject: "typeofObject",
+};
+export function showTag(k: Tag): string {
+  if (typeof k === "string") return SHOW_TAG[k];
+  if ("hasKey" in k) return `has ${typeof k.hasKey.key === "string" ? k.hasKey.key : `sym#${k.hasKey.key.symbol}`}`;
+  if ("numEq" in k) return `=== num#${k.numEq.bits}`;
+  if ("strEq" in k) return `=== ${JSON.stringify(k.strEq.value)}`;
+  if ("boolEq" in k) return `=== ${k.boolEq.value}`;
+  return `=== ${k.bigintEq.value}n`;
+}
+function showCode(c: CallCode): string {
+  if (c === "absent") return "";
+  if ("closure" in c) return ` code(λ${c.closure.arity}. ${showTerm(c.closure.body)})`;
+  if ("variadic" in c) return ` code(λ${c.variadic.fixed}+. ${showTerm(c.variadic.body)})`;
+  if ("bound" in c) return ` code(bind ${showTerm(c.bound.target)})`;
+  return ` code(graph of ${c.graph.exprs.length} nodes)`;
+}

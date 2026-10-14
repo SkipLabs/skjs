@@ -1,8 +1,9 @@
 #!/bin/bash
 
 # commit-msg hook: a commit that changes verification/ carries a commit
-# record (.claude/skills/review/SKILL.md): trailers git can parse, with
-# Outcome and Parts, and Trust unless the outcome is no-behaviour-change.
+# record (.claude/skills/review/SKILL.md): a Why: section, a change block when
+# behaviour changes, and trailers git can parse, with Outcome and Parts, and
+# Trust unless the outcome is no-behaviour-change.
 
 exec 1>&2
 
@@ -36,6 +37,15 @@ if [[ -z "$(value Parts)" ]]; then
 fi
 if [[ "$outcome" != "no-behaviour-change" && -z "$(value Trust)" ]]; then
     problems+=("no 'Trust:' trailer (write 'Trust: none' when nothing new is trusted)")
+fi
+
+body=$(grep -v '^#' "$message_file")
+if ! printf '%s\n' "$body" | grep -q '^Why:'; then
+    problems+=("no 'Why:' section (the problem this commit addresses)")
+fi
+if [[ "$outcome" != "no-behaviour-change" ]] &&
+    ! printf '%s\n' "$body" | grep -Eq '^(Rule|Semantics|Definition|Typing|Lowering|Refusal|Trust|Wire) (added|modified|removed)'; then
+    problems+=("no change block such as 'Rule added (name):' or 'Lowering modified (name):'")
 fi
 
 if (( ${#problems[@]} )); then
