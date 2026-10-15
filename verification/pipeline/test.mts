@@ -717,7 +717,21 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     `probe(Object.assign(() => 1, { call: () => "wrong" }))`), "wrong");
   assert.equal(runExample("invalid-call-provenance-escape",
     `probe((f) => { Object.assign(f, { call: () => "wrong" }); })`), "wrong");
+  assert.equal(runExample("invalid-call-provenance-module-argument",
+    `probe((f) => { Object.assign(f, { call: () => "wrong" }); })`), "wrong");
+  // An importing module's write, made before it calls `probe`.
+  assert.equal(runExample("invalid-call-provenance-module-export",
+    `Object.assign(g, { call: () => "wrong" }); probe()`), "wrong");
   assert.equal(runExample("invalid-direct-eval", "probe()"), "wrong");
+  assert.equal(runExample("invalid-call-provenance-shadow-loop",
+    `probe([Object.assign(() => 1, { call: () => "wrong" })])`), "wrong");
+  assert.equal(runExample("invalid-call-provenance-shadow-catch",
+    `probe(() => { throw Object.assign(() => 1, { call: () => "wrong" }); })`), "wrong");
+  // Run as a script: `g` is the global object's property. Another script's
+  // write through it is what the trusted assumption that only the file
+  // writes its top-level bindings excludes.
+  assert.equal(runExample("script-global-assumption",
+    `probe(() => { globalThis.g.call = () => "wrong"; })`), "wrong");
   assert.equal(runExample("invalid-call-provenance-let",
     `reassigned(Object.assign(function () { return 1; }, { call: () => "wrong" }), { value: 1 })`), "wrong");
   // Sloppy code converts a receiver that is not an object: a primitive to a

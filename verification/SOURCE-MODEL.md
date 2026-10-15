@@ -142,6 +142,16 @@ parameters, `for...of` and `catch` bindings in any body
 declaration, a closure's included, or in its own initializer is refused, as
 JavaScript's temporal dead zone throws there.
 
+A module function is an immutable slot holding its code. A file without
+imports or exports may run as a script, whose top-level functions are
+properties of the global object other scripts can write; the slot rests on
+the trusted assumption that other code preserves the file's top-level
+bindings and their functions (the file runs as a module, or no other code
+writes its globals or gives one of its functions an own `call`, `apply` or
+`bind`), for a plain call
+and for `.call`, `.apply` and `.bind` alike
+([trust surface](DESIGN.md#trust-surface)).
+
 ### Objects and prototypes
 
 An object's set of keys is fixed at allocation in the calculus. Writing a field

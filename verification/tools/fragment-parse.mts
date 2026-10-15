@@ -2380,48 +2380,94 @@ class Gate {
   private knownLocal(node: Expression): boolean {
     const seen = new Set<number>();
     const followed = new Set<string>();
-    return this.localArrow(node, seen, followed) && this.confined(seen, followed);
+    const functions = new Set<Node>();
+    return this.localArrow(node, seen, followed, functions) && this.confined(seen, followed, functions);
   }
 
-  /** Whether the locals declared at `seen` are confined: every reference to
-   * one is the callee of a call, the object of `.call`, `.apply` or `.bind`
-   * (directly or through a member), a spread or a member value in an object
-   * literal another of them is given, the target of a plain assignment to it,
-   * or the object of a read or write of a member other than `call`, `apply`,
-   * `bind` and the members `followed` (which hold the functions followed)
-   * that is not called. Any other reference (an argument, `Object.assign`'s
-   * target, a receiver of a method call, a return, another binding's value,
-   * a read of a followed member) may hand a followed value to code that
-   * replaces its member or adds a `call` of its own. An object literal they
-   * are given holds no accessor: a spread of it runs its getters with the
-   * object as receiver. */
-  private confined(seen: Set<number>, followed: Set<string>): boolean {
-    const decls: ts.VariableDeclaration[] = [];
+  private bindings?: Map<Node, Map<string, Node>>;
+  /** The declaration a name resolves to, lexically: the nearest scope
+   * enclosing the reference that binds it (`bindingScope`), a parameter
+   * before a named function expression's own name; none for a global. */
+  private resolve(id: Identifier): Node | undefined {
+    if (!this.bindings) {
+      const bindings = new Map<Node, Map<string, Node>>();
+      const visit = (n: Node): void => {
+        if (ts.isTypeNode(n) || ts.isInterfaceDeclaration(n) || ts.isTypeAliasDeclaration(n)) return;
+        const name = nameOf(n);
+        if ((ts.isParameterDeclaration(n) || ts.isVariableDeclaration(n) || ts.isBindingElement(n) ||
+             ts.isFunctionDeclaration(n) || ts.isClassDeclaration(n) || ts.isEnumDeclaration(n) ||
+             ts.isFunctionExpression(n) || ts.isClassExpression(n) || ts.isImportSpecifier(n) ||
+             ts.isNamespaceImport(n) || ts.isImportClause(n)) && name && ts.isIdentifier(name)) {
+          const scope = ts.isImportSpecifier(n) || ts.isNamespaceImport(n) || ts.isImportClause(n)
+            ? this.file : bindingScope(n);
+          const own = ts.isFunctionExpression(n) || ts.isClassExpression(n);
+          const names = bindings.get(scope) ?? new Map<string, Node>();
+          bindings.set(scope, names);
+          const before = names.get(name.text);
+          if (!before || (!own && (ts.isFunctionExpression(before) || ts.isClassExpression(before))))
+            names.set(name.text, n);
+        }
+        n.forEachChild(visit);
+      };
+      visit(this.file);
+      this.bindings = bindings;
+    }
+    for (let at: Node | undefined = id.parent; at; at = at.parent) {
+      const found = this.bindings.get(at)?.get(id.text);
+      if (found) return found;
+    }
+    return undefined;
+  }
+
+  /** Whether the values followed are confined: code holding one is the
+   * file's own, whose writes `memberMayBeWritten` reads. Every reference to
+   * a local declared at `seen`, or to one of the file's function
+   * declarations in `functions` (a reference resolved to it, `resolve`), is
+   * the callee of a call, the object of `.call`, `.apply` or `.bind`
+   * (directly or through a member), the target of a plain assignment to it,
+   * the object of a read or write, not a call, of a member other than
+   * `call`, `apply`, `bind` and the members `followed`, or a local's value: a
+   * local's initializer or the right side of a plain assignment to it, the
+   * reference itself, or a spread or member value in an object literal that
+   * is. Such a local is confined in turn, and the member it is given at is
+   * followed. Any other reference (an argument, `Object.assign`'s target, a
+   * method call's receiver, a return, a read of a followed member) may hand
+   * the value to code that replaces its member or adds a `call` of its own.
+   * An object literal a local holds has no accessor: a spread of it runs its
+   * getters with the object as receiver. */
+  private confined(seen: Set<number>, followed: Set<string>, functions: Set<Node>): boolean {
+    const targets = new Set<Node>(functions);
+    const declared = new Map<number, ts.VariableDeclaration>();
     const collect = (n: Node): void => {
-      if (ts.isVariableDeclaration(n) && seen.has(n.getStart(this.file))) decls.push(n);
+      if (ts.isVariableDeclaration(n)) declared.set(n.getStart(this.file), n);
       n.forEachChild(collect);
     };
     collect(this.file);
-    const names = new Set(decls.flatMap((d) => ts.isIdentifier(d.name) ? [d.name.text] : []));
+    for (const start of seen) {
+      const decl = declared.get(start);
+      if (decl) targets.add(decl);
+    }
     const strip = (n: Node): Node => {
       let at = n;
       while (ts.isParenthesizedExpression(at.parent)) at = at.parent;
       return at;
     };
-    // A literal one of these locals is given: its initializer, or the right
-    // side of a plain assignment to it.
-    const givenToSeen = (literal: Node): boolean => {
-      const at = strip(literal);
+    const hasAccessor = (literal: Node): boolean => ts.isObjectLiteralExpression(literal) &&
+      literal.properties.some((p) => ts.isGetAccessorDeclaration(p) || ts.isSetAccessorDeclaration(p));
+    // The local whose value `value` is: its initializer, or the right side
+    // of a plain assignment to it.
+    const holderOf = (value: Node): Node | undefined => {
+      const at = strip(value);
       const holder = at.parent;
-      if (ts.isVariableDeclaration(holder) && holder.initializer === at)
-        return seen.has(holder.getStart(this.file));
+      if (ts.isVariableDeclaration(holder) && holder.initializer === at) return holder;
       if (ts.isBinaryExpression(holder) && holder.right === at &&
           holder.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
         let left: Expression = holder.left;
         while (ts.isParenthesizedExpression(left)) left = left.expression;
-        return ts.isIdentifier(left) && names.has(left.text);
+        const target = ts.isIdentifier(left) ? this.resolve(left) : undefined;
+        return target && ts.isVariableDeclaration(target) ? target : undefined;
       }
-      return false;
+      return undefined;
     };
     const gateCallee = (access: Node): boolean => {
       if (!ts.isPropertyAccessExpression(access) || !["call", "apply", "bind"].includes(access.name.text))
@@ -2445,44 +2491,62 @@ class Gate {
           !((ts.isCallExpression(outer) || ts.isNewExpression(outer)) && outer.expression === strip(parent)) &&
           !ts.isTaggedTemplateExpression(outer);
       }
-      if (ts.isSpreadAssignment(parent) || (ts.isPropertyAssignment(parent) && parent.initializer === at))
-        return givenToSeen(parent.parent);
-      if (ts.isShorthandPropertyAssignment(parent)) return givenToSeen(parent.parent);
       if (ts.isBinaryExpression(parent) && parent.left === at &&
           parent.operatorToken.kind === ts.SyntaxKind.EqualsToken) return true;
-      return false;
-    };
-    let ok = true;
-    const visit = (n: Node): void => {
-      // A type names no value.
-      if (!ok || ts.isTypeNode(n)) return;
-      if (ts.isObjectLiteralExpression(n) && givenToSeen(n) &&
-          n.properties.some((p) => ts.isGetAccessorDeclaration(p) || ts.isSetAccessorDeclaration(p)))
-        ok = false;
-      if (ts.isIdentifier(n) && names.has(n.text)) {
-        const parent = n.parent;
-        const isName =
-          (ts.isPropertyAccessExpression(parent) && parent.name === n) ||
-          (ts.isQualifiedName(parent) && parent.right === n) ||
-          ((ts.isPropertyAssignment(parent) || ts.isMethodDeclaration(parent) ||
-            ts.isPropertyDeclaration(parent) || ts.isGetAccessorDeclaration(parent) ||
-            ts.isSetAccessorDeclaration(parent)) && parent.name === n) ||
-          (ts.isVariableDeclaration(parent) && parent.name === n && seen.has(parent.getStart(this.file)));
-        if (!isName && !allowed(n)) ok = false;
+      let value: Node = at;
+      if (ts.isSpreadAssignment(parent) || ts.isShorthandPropertyAssignment(parent) ||
+          (ts.isPropertyAssignment(parent) && parent.initializer === at)) {
+        if (!ts.isSpreadAssignment(parent)) {
+          if (!ts.isIdentifier(parent.name)) return false;
+          followed.add(parent.name.text);
+        }
+        value = parent.parent;
       }
-      n.forEachChild(visit);
+      const holder = holderOf(value);
+      if (!holder || hasAccessor(value)) return false;
+      targets.add(holder);
+      return true;
     };
-    for (const d of decls) {
-      let block: Node | undefined = d.parent;
-      while (block && !ts.isBlock(block)) block = block.parent;
-      if (block) visit(block);
+    // A declaration's own name, or a member's: no reference.
+    const isName = (n: Identifier): boolean => {
+      const parent = n.parent;
+      return (ts.isPropertyAccessExpression(parent) && parent.name === n) ||
+        (ts.isQualifiedName(parent) && parent.right === n) ||
+        ((ts.isPropertyAssignment(parent) || ts.isMethodDeclaration(parent) ||
+          ts.isPropertyDeclaration(parent) || ts.isGetAccessorDeclaration(parent) ||
+          ts.isSetAccessorDeclaration(parent) || ts.isVariableDeclaration(parent) ||
+          ts.isParameterDeclaration(parent) || ts.isBindingElement(parent) ||
+          ts.isFunctionDeclaration(parent) || ts.isFunctionExpression(parent) ||
+          ts.isClassDeclaration(parent) || ts.isClassExpression(parent)) && nameOf(parent) === n);
+    };
+    // A local or member followed late may have been referenced before:
+    // repeat until neither grows.
+    for (let size = -1; size !== targets.size + followed.size;) {
+      size = targets.size + followed.size;
+      let ok = true;
+      const visit = (n: Node): void => {
+        // A type names no value.
+        if (!ok || ts.isTypeNode(n)) return;
+        if (ts.isIdentifier(n) && !isName(n)) {
+          const target = this.resolve(n);
+          if (target && targets.has(target) && !allowed(n)) ok = false;
+        }
+        n.forEachChild(visit);
+      };
+      visit(this.file);
+      if (!ok) return false;
+      for (const target of targets)
+        if (ts.isVariableDeclaration(target) &&
+            (!ts.isIdentifier(target.name) || (target.initializer && hasAccessor(target.initializer))))
+          return false;
     }
-    return ok;
+    return true;
   }
 
-  private localArrow(node: Expression, seen = new Set<number>(), followed = new Set<string>()): boolean {
+  private localArrow(node: Expression, seen = new Set<number>(), followed = new Set<string>(),
+      functions = new Set<Node>()): boolean {
     if (ts.isParenthesizedExpression(node))
-      return this.localArrow(node.expression, seen, followed);
+      return this.localArrow(node.expression, seen, followed, functions);
     if (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) return true;
     if (
       ts.isPropertyAccessExpression(node) &&
@@ -2496,7 +2560,7 @@ class Gate {
       if (this.memberMayBeWritten(member)) return false;
       followed.add(member);
       const values = this.localValues(node.expression, seen);
-      return !!values && values.every((v) => this.memberOf(v, member, seen, followed) === true);
+      return !!values && values.every((v) => this.memberOf(v, member, seen, followed, functions) === true);
     }
     if (
       ts.isCallExpression(node) &&
@@ -2517,11 +2581,14 @@ class Gate {
       ts.isPropertyAccessExpression(node.expression) &&
       node.expression.name.text === "bind"
     )
-      return this.localArrow(node.expression.expression, seen, followed);
+      return this.localArrow(node.expression.expression, seen, followed, functions);
     if (!ts.isIdentifier(node)) return false;
     const values = this.localValues(node, seen);
-    if (values) return values.every((v) => this.localArrow(v, seen, followed));
-    return this.moduleFunction(node);
+    if (values) return values.every((v) => this.localArrow(v, seen, followed, functions));
+    const declaration = this.resolve(node);
+    if (!declaration || !this.moduleFunction(node)) return false;
+    functions.add(declaration);
+    return true;
   }
 
   /** What the object literal `value` holds at `member` once built: `true`
@@ -2532,7 +2599,7 @@ class Gate {
    * literal; it copies the own enumerable data properties, which a literal's
    * members are. */
   private memberOf(value: Expression, member: string, seen: Set<number>,
-      followed: Set<string>): boolean | "absent" {
+      followed: Set<string>, functions: Set<Node>): boolean | "absent" {
     while (ts.isParenthesizedExpression(value)) value = value.expression;
     if (!ts.isObjectLiteralExpression(value)) return false;
     let found: boolean | "absent" = "absent";
@@ -2543,7 +2610,7 @@ class Gate {
         const sources = ts.isIdentifier(source) ? this.localValues(source, seen)
           : ts.isObjectLiteralExpression(source) ? [source] : undefined;
         if (!sources) return false;
-        const parts = sources.map((s) => this.memberOf(s, member, seen, followed));
+        const parts = sources.map((s) => this.memberOf(s, member, seen, followed, functions));
         if (parts.every((x) => x === "absent")) continue;
         // A source that may lack the key leaves the earlier part's value.
         found = parts.every((x) => x === true || (x === "absent" && found === true));
@@ -2552,34 +2619,34 @@ class Gate {
       if (!p.name || ts.isComputedPropertyName(p.name) || ts.isPrivateIdentifier(p.name)) return false;
       if (p.name.text !== member) continue;
       found = ts.isMethodDeclaration(p) ? true
-        : ts.isPropertyAssignment(p) ? this.localArrow(p.initializer, seen, followed)
-        : ts.isShorthandPropertyAssignment(p) ? this.localArrow(p.name, seen, followed)
+        : ts.isPropertyAssignment(p) ? this.localArrow(p.initializer, seen, followed, functions)
+        : ts.isShorthandPropertyAssignment(p) ? this.localArrow(p.name, seen, followed, functions)
         : false;
     }
     return found;
   }
 
-  /** Whether this identifier names one of the file's function declarations
-   * with a body: nothing between it and the module binds the name, and no
-   * write in the file can replace the `call`, `apply` or `bind` its object
-   * inherits (an assignment to the declaration's binding is refused where it
-   * is written). */
+  /** Whether this identifier resolves to one of the file's function
+   * declarations with a body, not exported: an exported one is held by
+   * every importer, where other code may give it an own `call`. A script's
+   * top-level function is also a property of the global object, which, by
+   * the trusted assumption that only the file writes its top-level
+   * bindings, no other code writes (DESIGN, Trust surface). No write in the
+   * file can replace the `call`, `apply` or `bind` its object inherits (an
+   * assignment to the declaration's binding is refused where it is
+   * written). */
   private moduleFunction(node: Identifier): boolean {
-    const name = node.text;
-    for (let scope: Node | undefined = node.parent; scope && !ts.isSourceFile(scope); scope = scope.parent) {
-      if (ts.isBlock(scope) && scope.statements.some((s) =>
-          (ts.isVariableStatement(s) && s.declarationList.declarations.some((d) =>
-            !ts.isIdentifier(d.name) || d.name.text === name)) ||
-          (ts.isFunctionDeclaration(s) && s.name?.text === name) ||
-          (ts.isClassDeclaration(s) && s.name?.text === name)))
-        return false;
-      if (ts.isFunctionLikeDeclaration(scope) &&
-          scope.parameters?.some((p) => !ts.isIdentifier(p.name) || p.name.text === name))
-        return false;
-    }
-    const declared = this.file.statements.filter((s) => ts.isFunctionDeclaration(s) && s.name?.text === name);
-    return declared.length > 0 && declared.every((s) => ts.isFunctionDeclaration(s) && !!s.body &&
-        !s.modifiers?.some((m) => m.kind === ts.SyntaxKind.DeclareKeyword)) &&
+    const declaration = this.resolve(node);
+    if (!declaration || !ts.isFunctionDeclaration(declaration) || !declaration.parent ||
+        !ts.isSourceFile(declaration.parent))
+      return false;
+    const declared = this.file.statements.filter((s) => {
+      const name = nameOf(s);
+      return !!name && ts.isIdentifier(name) && name.text === node.text &&
+        !ts.isInterfaceDeclaration(s) && !ts.isTypeAliasDeclaration(s);
+    });
+    return declared.every((s) => ts.isFunctionDeclaration(s) && !!s.body &&
+        !s.modifiers?.some((m) => m.kind === ts.SyntaxKind.DeclareKeyword || m.kind === ts.SyntaxKind.ExportKeyword)) &&
       !["call", "apply", "bind"].some((member) => this.memberMayBeWritten(member));
   }
 
@@ -2627,35 +2694,19 @@ class Gate {
     node: Identifier,
     seen: Set<number>,
   ): Expression[] | undefined {
-    // Held as a string: a narrowing of `node` does not reach into a closure.
-    const name = node.text;
-    for (let scope = node.parent; scope; scope = scope.parent) {
-      if (ts.isBlock(scope)) {
-        for (const statement of scope.statements) {
-          if (!ts.isVariableStatement(statement)) continue;
-          for (const decl of statement.declarationList.declarations) {
-            if (!ts.isIdentifier(decl.name) || decl.name.text !== name)
-              continue;
-            if (!decl.initializer || seen.has(decl.getStart(this.file)))
-              return undefined;
-            seen.add(decl.getStart(this.file));
-            if (statement.declarationList.flags & ts.NodeFlags.Const)
-              return [decl.initializer];
-            if (!(statement.declarationList.flags & ts.NodeFlags.Let))
-              return undefined;
-            return this.letWrites(scope, decl.name);
-          }
-        }
-      }
-      if (
-        ts.isFunctionLikeDeclaration(scope) &&
-        scope.parameters?.some(
-          (p) => !ts.isIdentifier(p.name) || p.name.text === name,
-        )
-      )
-        return undefined;
-    }
-    return undefined;
+    const decl = this.resolve(node);
+    if (!decl || !ts.isVariableDeclaration(decl) || !ts.isIdentifier(decl.name) || !decl.initializer)
+      return undefined;
+    const list = decl.parent;
+    const statement = list?.parent;
+    if (!list || ts.isCatchClause(list) || !statement || !ts.isVariableStatement(statement) ||
+        !statement.parent || !ts.isBlock(statement.parent))
+      return undefined;
+    if (seen.has(decl.getStart(this.file))) return undefined;
+    seen.add(decl.getStart(this.file));
+    if (list.flags & ts.NodeFlags.Const) return [decl.initializer];
+    if (!(list.flags & ts.NodeFlags.Let)) return undefined;
+    return this.letWrites(statement.parent, decl.name);
   }
 
   /** The values the `let` declared at `declared` in `block` is given: its

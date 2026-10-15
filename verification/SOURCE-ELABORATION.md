@@ -1078,17 +1078,28 @@ and a `.bind` of a known local function (`localArrow`). A spread copies a
 literal's own enumerable data properties, so the copy's member is the
 source's.
 
-Every local these rules follow is confined (`confined`): each reference to it
-is the callee of a call, the object of `.call`, `.apply` or `.bind`, directly
-or through one member, a spread or a member value in an object literal another
-such local is given, the target of a plain assignment to it, or the object of
-a read or write, not a call, of a member other than `call`, `apply`, `bind`
-and the members the rules follow; and no literal it is given has an accessor,
-which a spread runs with the object as its receiver. Code holding a followed
-value is then the file's own, whose writes the rules above read: any other
-reference (an argument, `Object.assign`'s target, a method call's receiver, a
-return, another binding's value, a read of a followed member) may hand it to
-code that replaces its member or gives the function an own `call`.
+A name means the declaration it resolves to, lexically (`resolve`): the
+nearest enclosing scope binding it, a loop's or a `catch` clause's binding
+included. A file-level function is known when not exported: an exported one is
+held by every importer, where other code may give it an own `call`. A
+script's top-level function is also a property of the global object, which
+the trusted assumption that other code preserves the file's top-level
+bindings and their functions' `call`, `apply` and `bind` covers (other code
+may still read it) ([trust surface](DESIGN.md#trust-surface)). Every value these rules follow is confined (`confined`): the
+locals they read and the file's function declarations they reach. Each
+reference to one is the callee of a call, the object of `.call`, `.apply` or
+`.bind`, directly or through one member, the target of a plain assignment to
+it, the object of a read or write, not a call, of a member other than `call`,
+`apply`, `bind` and the members followed, or a local's value: a local's
+initializer or the right side of a plain assignment to it, the reference
+itself or a spread or member value in an object literal that is. That local is
+confined in turn, the member it is given at is followed, and a literal it is
+given has no accessor, which a spread runs with the object as its receiver.
+Code holding a followed value is then the file's own, whose writes the rules
+above read: any other reference (an argument, `Object.assign`'s target, a
+method call's receiver, a return, a read of a followed member) and an export
+may hand it to code that replaces its member or gives the function an own
+`call`.
 
 ## Certifying inferred call effects
 
