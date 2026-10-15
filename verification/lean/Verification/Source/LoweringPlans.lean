@@ -454,7 +454,7 @@ bag, or an explicit union of cell contracts each naming the field. -/
       let some (K, B) := (PositiveNormalization.numericFirst ix).find? (fun (K, _) => K.surely fld)
         | throw s!"read of a key '{fld}' no index of the object constrains"
       pure (DirectProof.node Γ (.readAt fld a.term) (B ++ [Labels.undef]) (.readDict K B [Labels.undef]) [a])
-  | [.callable fs _ _ _] =>
+  | [.callable fs _ _ _] | [.ctors _ _ fs _] =>
     let some B := fs.lookup fld | throw s!"read of a field '{fld}' the contract does not name"
     pure (DirectProof.node Γ (.readAt fld a.term) B .readCallable [a])
   | _ =>

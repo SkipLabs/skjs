@@ -751,19 +751,29 @@ slots are introduced only after the operand supplying their type is checked. -/
     pure (DirectProof.node Γ
       (.makeAt (code.code code.kind) (P.map Prod.fst) (values.map (·.term))) [C]
       (.callableGraph code.arrays) (casts ++ code.capturePlans Γ))
-  | .ctor _ lam => do
+  | .ctor _ lam statics => do
     -- A class value: its constructor's graph code, construct-only, checked at
     -- each construct signature with `undefined` in the receiver slot `new`
-    -- passes, then the parameters (`Rule.ctorGraph`).
+    -- passes, then the parameters, allocated with its code field and its
+    -- static fields, each at the contract its claim states, in member order
+    -- (`Rule.ctorGraph`).
     let .lambda _ none [] _ [] false (some _) _ := lam
       | throw "a class value is a constructor lambda with plain parameters"
+    let P ← match PositiveRules.expand G A with
+      | [.ctors _ _ P []] => pure P
+      | _ => throw "a class value's claim must name its construct signatures and static fields"
+    if P.map Prod.fst != statics.map Prod.fst then
+      throw "a class value's claim must state exactly its static fields, in member order"
+    let values ← statics.mapM fun (_, e) => closureExpr recursive fc scope Γ e
+    let casts := (values.zip (P.map Prod.snd)).map fun (v, D) => DirectProof.cast Γ D v
     let code ← LoweringClosures.lambdaCode recursive fc scope Γ lam A (.ctor [Labels.undef])
-    pure (DirectProof.node Γ (Tm.makeFn (code.code .construct) .nul) A (.ctorGraph [Labels.undef])
-      (code.capturePlans Γ))
+    pure (DirectProof.node Γ
+      (.makeAt (code.code .construct) (codeField :: P.map Prod.fst) (.nul :: values.map (·.term))) A
+      (.ctorGraph [Labels.undef]) (casts ++ code.capturePlans Γ))
   | .construct _ f args spreads _ => do
     if !spreads.isEmpty then throw "a constructor spread inside a closed expression is outside the fragment"
     let callee ← closureExpr recursive fc scope Γ f
-    let [.ctors L _] := PositiveRules.expand G callee.type
+    let [.ctors L _ _ _] := PositiveRules.expand G callee.type
       | throw "`new` needs a value with construct signatures"
     let actuals ← args.attach.mapM fun ⟨a,_⟩ => closureExpr recursive fc scope Γ a
     -- As for a call: a signature declaring exactly the actuals written, or a

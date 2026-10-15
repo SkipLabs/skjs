@@ -36,7 +36,7 @@ private partial def assignsExpr (name : String) : Fragment.Expr → Bool
   | .call _ f args _ _ | .invoke _ f args _ _ => assignsExpr name f || args.any (assignsExpr name)
   | .callWithReceiver _ f r args | .bindWithReceiver _ f r args =>
     assignsExpr name f || assignsExpr name r || args.any (assignsExpr name)
-  | .ctor _ lam => assignsExpr name lam
+  | .ctor _ lam fs => assignsExpr name lam || fs.any (assignsExpr name ·.2)
   | .objectAssign _ t ss => assignsExpr name t || ss.any (assignsExpr name)
   | .construct _ f args _ _ => assignsExpr name f || args.any (assignsExpr name)
   | .applyWithReceiver _ f r list =>
@@ -267,7 +267,7 @@ owned objects are found. -/
 partial def closureBodies : Fragment.Expr → List (List Fragment.Stmt)
   | .lambda _ _ _ _ ds _ _ b => ds.flatMap (fun d => closureBodies d.2) ++
     (match b with | .block _ ss => [ss] | b => closureBodies b)
-  | .ctor _ lam => closureBodies lam
+  | .ctor _ lam _ => closureBodies lam
   | .var .. | .lit .. => []
   | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .shapeTest _ _ _ e => closureBodies e
   | .equality _ _ a b | .logical _ _ a b | .coalesce _ a b | .singletonTest _ _ _ _ a b

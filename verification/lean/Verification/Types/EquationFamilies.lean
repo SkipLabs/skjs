@@ -292,8 +292,9 @@ def clausePolar : Clause α → List (Variance × α)
   | .arrs L S => L.flatMap arrowPolar ++ S.flatMap restPolar
   | .callable a bs L S =>
     (a ++ bs.flatten).map (fun f => (.inv, f.2)) ++ L.flatMap arrowPolar ++ S.flatMap restPolar
-  | .ctors L S => L.flatMap (fun q => q.1.map (.contra, ·) ++ [(.co, q.2)]) ++
-      S.flatMap fun q => q.1.map (.contra, ·) ++ [(.contra, q.2.1), (.co, q.2.2)]
+  | .ctors L S a bs => L.flatMap (fun q => q.1.map (.contra, ·) ++ [(.co, q.2)]) ++
+      S.flatMap (fun q => q.1.map (.contra, ·) ++ [(.contra, q.2.1), (.co, q.2.2)]) ++
+      (a ++ bs.flatten).map (fun f => (.inv, f.2))
   | _ => []
 
 /-- A template's operands with their polarities; a scheme's bounds are `inv`. -/

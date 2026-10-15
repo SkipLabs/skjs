@@ -365,12 +365,21 @@ partial def termRow (ctx : Ctx) (term : Json) : M (GraphRow Tree (List Tree)) :=
   | "object" => return .clauses [← objectClause ctx term]
   | "function" => return .clauses [← functionClause ctx term]
   | "constructor" =>
-    fieldsExactly term ["k", "params", "rest", "result", "span"]
+    -- A class value's type states its static fields (`statics`), each an
+    -- invariant field of the class value, left out when it has none.
+    let hasStatics := (term.getObjVal? "statics").isOk
+    fieldsExactly term (["k", "params", "rest", "result", "span"] ++ (if hasStatics then ["statics"] else []))
     let ps ← (← arr term "params").mapM (lowerType ctx)
     let restTerm ← field term "rest"
     let result ← lowerType ctx (← field term "result")
-    if restTerm == .null then return .clauses [.ctors [(ps.toList, result)]]
-    return .clauses [.ctors [] [(ps.toList, ← lowerRest ctx restTerm, result)]]
+    let statics ← if !hasStatics then pure [] else do
+      let fs ← arr term "statics"
+      if fs.isEmpty then throw s!"{ctx.site}: a class value's empty static field list is left out"
+      fs.toList.mapM fun f => do
+        fieldsExactly f ["name", "type"]
+        return (PropKey.str (← str f "name"), ← lowerType ctx (← field f "type"))
+    if restTerm == .null then return .clauses [.ctors [(ps.toList, result)] [] statics []]
+    return .clauses [.ctors [] [(ps.toList, ← lowerRest ctx restTerm, result)] statics []]
   | k => throw s!"{ctx.site}: no row for a '{k}' term"
 
 /-- A pack parameter's bound, an array or a tuple of required positions: the

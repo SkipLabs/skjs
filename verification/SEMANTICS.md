@@ -140,12 +140,13 @@ decimal spelling, as JavaScript's string wrapper owns them enumerable
 (`stringData`); $\mathsf{data}_h$ of
 $\mathsf{null}$, $\mathsf{undefined}$, a Boolean, a number, a bigint or a symbol
 is empty; and $P\lhd Q$ keeps $P$'s entries whose key $Q$ lacks, then $Q$'s
-(`mergeParts`, `ownAll`, `ownData`, `mergeData`). A function or class the
-program creates holds one field, under $\kappa_{\mathsf{code}}$ (`codeField`,
-spelled `[[code]]`, which no source key spells), which gives it a location; a
-copy takes none of it, as JavaScript's function owns no enumerable property
-(a class's static fields are bindings of the model,
-[SOURCE-MODEL](SOURCE-MODEL.md#object-literals)). A
+(`mergeParts`, `ownAll`, `ownData`, `mergeData`). A function the program
+creates holds one field, under $\kappa_{\mathsf{code}}$ (`codeField`, spelled
+`[[code]]`, which no source key spells), which gives it a location; a copy
+takes none of it, as JavaScript's function owns no enumerable property. A
+class value the program creates holds that field and its static fields, which
+a copy takes, as JavaScript's class owns each static field as an enumerable
+data property. A
 value the heap lacks, or a term that is not a value there, reads as
 `undefined`, so the step never depends on one (`heapVal`). It allocates
 nothing itself; the `makeAt` it steps to does, as a literal's. Symbol-keyed

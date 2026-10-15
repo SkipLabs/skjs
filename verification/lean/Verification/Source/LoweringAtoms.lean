@@ -493,7 +493,7 @@ Mappings discard only the temporaries introduced by this expression. -/
       | some [.list T []] => T.optional.isEmpty && T.rest.isNone
       | _ => false
     let variadicCtor := match PositiveRules.expand G (As.headD []) with
-      | [.ctors _ (_ :: _)] => true
+      | [.ctors _ (_ :: _) _ _] => true
       | _ => false
     if variadicCtor && spreads.any (fun i => !fixedTuple (As[i+1]?.getD [])) then
       let n := As.length

@@ -60,8 +60,11 @@ private partial def exprSitesCore (includeBodies : Bool) : Fragment.Expr → Sit
       (joinSites ([],[p],[]) (joinSites (exprSitesCore includeBodies f) (exprSitesCore includeBodies receiver)))
   | .call p f args _ _ | .invoke p f args _ _ => args.foldl (fun acc a => joinSites acc (exprSitesCore includeBodies a)) (joinSites ([],[p],[]) (exprSitesCore includeBodies f))
   -- A class value is one expression; its constructor's body has its own sites.
-  | .ctor p (.lambda _ _ _ _ _ _ _ e) => if !includeBodies then ([],[p],[]) else joinSites ([],[p],[]) (exprSitesCore includeBodies e)
-  | .ctor p _ => ([],[p],[])
+  | .ctor p lam fs =>
+    let own := fs.foldl (fun acc f => joinSites acc (exprSitesCore includeBodies f.2)) ([],[p],[])
+    match lam with
+    | .lambda _ _ _ _ _ _ _ e => if !includeBodies then own else joinSites own (exprSitesCore includeBodies e)
+    | _ => own
   | .construct p f args _ _ => args.foldl (fun acc a => joinSites acc (exprSitesCore includeBodies a)) (joinSites ([],[p],[]) (exprSitesCore includeBodies f))
   | .applyWithReceiver p f receiver list =>
     joinSites ([],[p],[]) (joinSites (exprSitesCore includeBodies f) (joinSites (exprSitesCore includeBodies receiver)

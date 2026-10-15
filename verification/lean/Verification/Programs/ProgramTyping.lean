@@ -1129,7 +1129,7 @@ theorem objectClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause α}
   | refs | dict => obtain ⟨fs, oid, h, _⟩ := hv.1.1; exact ⟨fs, .absent, oid, h⟩
   | callable => obtain ⟨fs, code, oid, h, _⟩ := hv.1.1.1; exact ⟨fs, code, oid, h⟩
   | arrs => obtain ⟨fs, code, oid, h, _⟩ := hv.1.1; exact ⟨fs, code, oid, h⟩
-  | ctors => obtain ⟨fs, _, _, _, _, _, _, oid, h, _⟩ := hv.1.1; exact ⟨fs, _, oid, h⟩
+  | ctors => obtain ⟨fs, _, _, _, _, _, _, oid, h, _⟩ := hv.1.1.1; exact ⟨fs, _, oid, h⟩
   | _ => simp [objectClause] at hc
 
 /-- Strict equality answers when one operand is a primitive or an object. -/
@@ -2528,18 +2528,23 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
   /-- **A class value.** Construct-only graph code, checked at each construct
   signature from the frame with `undefined` for the receiver `new` passes, and
   at each variadic one with an element rest `El` at the row `ctorRestParams`
-  gives: the further positions it binds at `El` or `undefined`. -/
+  gives: the further positions it binds at `El` or `undefined`; allocated with
+  its code field and its static fields, named by the program, as a callable
+  object's bag is. -/
   | ctorGraph {Γ : List (Ty ι)} {F U : Ty ι} {L : List (List (Ty ι) × Ty ι)}
       {S : List (List (Ty ι) × Ty ι × Ty ι)} {arity start : Nat}
       {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)}
-      {caps : List (Ty ι × Nat)} :
-      Represents G F (.ctors L S) → Represents G U .undef →
+      {caps : List (Ty ι × Nat)} {parts : List (PropKey × Ty ι × Tm)} :
+      Represents G F (.ctors L S (parts.map fun p => (p.1, p.2.1)) []) → Represents G U .undef →
+      (codeField :: parts.map Prod.fst).Nodup →
+      (∀ p ∈ parts, HasTyWith G images subtyping Γ p.2.2 p.2.1) →
       (∀ p ∈ L, GraphCodeSpec G arity E K start (caps.map Prod.fst) ⟨U, p.1, p.2, .unrestricted⟩) →
       (∀ s ∈ S, ∃ El, restElem G s.2.1 = some El ∧ GraphCodeSpec G arity E K start (caps.map Prod.fst)
         ⟨U, ctorRestParams arity s.1 El U, s.2.2, .unrestricted⟩) →
       (∀ c ∈ caps, c.2 < Γ.length) →
       (∀ c ∈ caps, HasTyWith G images subtyping Γ (.var c.2) c.1) →
-      HasTyWith G images subtyping Γ (.makeFn (.graph arity E K start (caps.map fun c => .var c.2) .construct) .nul) F
+      HasTyWith G images subtyping Γ (.makeAt (.graph arity E K start (caps.map fun c => .var c.2) .construct)
+        (codeField :: parts.map Prod.fst) (.nul :: parts.map fun p => p.2.2)) F
   /-- **A callable object.** The bag is allocated as a record's is, its fields
   named by the program, with graph code that meets the signatures it offers,
   as a function's does. -/
@@ -2558,19 +2563,22 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
       HasTyWith G images subtyping Γ (.makeAt (.graph arity E K start (caps.map fun c => .var c.2) kind rest)
         (parts.map Prod.fst) (parts.map fun p => p.2.2)) F
   /-- `new f(args)`: `f` at a construct signature, each actual at its
-  parameter. As a call may, `new` may omit trailing positions whose contracts
-  admit `undefined`, the value the machine binds there. -/
+  parameter, whatever static fields its class states. As a call may, `new`
+  may omit trailing positions whose contracts admit `undefined`, the value the
+  machine binds there. -/
   | construct {Γ : List (Ty ι)} {f : Tm} {F B : Ty ι} {L : List (List (Ty ι) × Ty ι)}
-      {S : List (List (Ty ι) × Ty ι × Ty ι)} {xs : List (Ty ι × Tm)} {Us : List (Ty ι)} :
-      HasTyWith G images subtyping Γ f F → Represents G F (.ctors L S) → (xs.map Prod.fst ++ Us, B) ∈ L →
+      {S : List (List (Ty ι) × Ty ι × Ty ι)} {xs : List (Ty ι × Tm)} {Us : List (Ty ι)}
+      {a : List (PropKey × Ty ι)} {bs : List (List (PropKey × Ty ι))} :
+      HasTyWith G images subtyping Γ f F → Represents G F (.ctors L S a bs) → (xs.map Prod.fst ++ Us, B) ∈ L →
       (∀ p ∈ xs, HasTyWith G images subtyping Γ p.2 p.1) → (∀ A ∈ Us, HasTyWith G images subtyping Γ .undef A) →
       HasTyWith G images subtyping Γ (.construct f (xs.map Prod.snd)) B
   /-- **A variadic construction.** `new f(args)` at a variadic construct
   signature: the fixed actuals at its parameters, then parts that fit its
   rest (`RestParts`), as a variadic call's do. -/
   | constructRest {Γ : List (Ty ι)} {f : Tm} {F P B : Ty ι} {L : List (List (Ty ι) × Ty ι)}
-      {S : List (List (Ty ι) × Ty ι × Ty ι)} {xs : List (Ty ι × Tm)} {parts : List (Bool × Ty ι × Tm)} :
-      HasTyWith G images subtyping Γ f F → Represents G F (.ctors L S) → (xs.map Prod.fst, P, B) ∈ S →
+      {S : List (List (Ty ι) × Ty ι × Ty ι)} {xs : List (Ty ι × Tm)} {parts : List (Bool × Ty ι × Tm)}
+      {a : List (PropKey × Ty ι)} {bs : List (List (PropKey × Ty ι))} :
+      HasTyWith G images subtyping Γ f F → Represents G F (.ctors L S a bs) → (xs.map Prod.fst, P, B) ∈ S →
       (∀ p ∈ xs, HasTyWith G images subtyping Γ p.2 p.1) →
       (∀ p ∈ parts, HasTyWith G images subtyping Γ p.2.2 p.2.1) →
       RestParts G P (parts.map fun p => (p.1, p.2.1)) →
@@ -2586,9 +2594,13 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
       ⟨Rt, xs.map Prod.fst ++ Us, B, effect⟩ ∈ L → HasTyWith G images subtyping Γ r Rt →
       (∀ p ∈ xs, HasTyWith G images subtyping Γ p.2 p.1) → (∀ A ∈ Us, HasTyWith G images subtyping Γ .undef A) →
       HasTyWith G images subtyping Γ (.invoke f r (xs.map Prod.snd)) B
-  | readCallable : HasTyWith G images subtyping Γ a F → Represents G F (.callable P Ps L S) → (f, A) ∈ P →
+  /-- A field of a value with code: a callable object's bag field, or a
+  class value's static field. -/
+  | readCallable {c : Clause (Ty ι)} : HasTyWith G images subtyping Γ a F → Represents G F c →
+      c.bag = some (P, Ps) → (f, A) ∈ P →
       HasTyWith G images subtyping Γ (.readAt f a) A
-  | writeCallable : HasTyWith G images subtyping Γ a F → Represents G F (.callable P Ps L S) → (f, A) ∈ P →
+  | writeCallable {c : Clause (Ty ι)} : HasTyWith G images subtyping Γ a F → Represents G F c →
+      c.bag = some (P, Ps) → (f, A) ∈ P →
       HasTyWith G images subtyping Γ b A → Represents G N .nul → HasTyWith G images subtyping Γ (.writeAt f a b) N
   | app {effect : Effect} {Γ : List (Ty ι)} {f r : Tm} {F Rt B : Ty ι} {L : List (Arrow (Ty ι))}
       {S : List (RestArrow (Ty ι))} {xs : List (Ty ι × Tm)} {Us : List (Ty ι)} :
@@ -3008,20 +3020,78 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     refine ⟨?_, fun q hq As hlen hal _ => (instanceTWithArgs_adm _ _ _ _ _).down_le j q hq U _ (hsig As hlen hal)⟩
     simp only [Callee, hcon, Bool.false_eq_true, if_false]
     exact ⟨_, _, _, rfl, callable_of_kind hkind.1, by simpa [Scoped, vs, instantiate] using hsc⟩
-  | @ctorGraph Γ F U L S arity start E K caps hr hu hspec hrest hlt hcap ih =>
+  | @ctorGraph Γ F U L S arity start E K caps parts hr hu hnd hp hspec hrest hlt hcap ih ihc =>
     intro n W h ρ he hw hh
-    simp only [instantiate, instantiateArgs_eq_map, List.map_map]
-    apply makeFn_rule nulT_adm n W h _ .nul rfl hw hh rfl
-    intro j hj V hx
+    simp only [instantiate, instantiateArgs_eq_map, List.map_map, List.map_cons, Function.comp_def]
+    have hmap : (parts.map fun p => (meaning G p.2.1, instantiate 0 ρ p.2.2)).map Prod.snd
+        = parts.map fun x => instantiate 0 ρ x.2.2 := by
+      simp [List.map_map, Function.comp_def]
+    rw [← hmap]
+    apply bind_list (parts.map fun p => (meaning G p.2.1, instantiate 0 ρ p.2.2))
+      (by intro q hq; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hq; exact meaning_adm G r.2.1)
+      (fun args => .makeAt (.graph arity E K start (caps.map fun c => ρ c.2) .construct)
+        (codeField :: parts.map Prod.fst) (.nul :: args))
+      (fun hs => CallArguments.Step.makeArgs (.tail rfl hs)) (fun hr => (CallArguments.ArgRaises.tail rfl hr).make)
+      hw hh
+      (by
+        intro q hq
+        obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hq
+        intro j hj U hx hu heap hok
+        exact ih r hr' j U heap ρ (he.transfer j hj U hx) hu hok)
+    intro j hj U hx hu' heap args hok hargs
+    have hAs : (parts.map fun p => (meaning G p.2.1, instantiate 0 ρ p.2.2)).map Prod.fst
+        = parts.map fun p => meaning G p.2.1 := by simp [List.map_map, Function.comp_def]
+    rw [hAs] at hargs
+    have hlenA := ArgsT_length hargs
+    apply make_fields_rule (As := nulT :: parts.map fun p => meaning G p.2.1)
+      (by
+        intro A hA'
+        rcases List.mem_cons.mp hA' with rfl | hA'
+        · exact nulT_adm
+        · obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hA'; exact meaning_adm G r.2.1)
+      j U heap (.graph arity E K start (caps.map fun c => ρ c.2) .construct) _ (.nul :: args) hnd
+      (by simpa using hlenA.symm) (by simpa using hlenA.symm)
+      (by
+        intro v hv
+        rcases List.mem_cons.mp hv with rfl | hv
+        · rfl
+        · exact ArgsT_values
+            (by intro A hA'; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hA'; exact meaning_valOnly G r.2.1)
+            hargs v hv)
+      hu' hok
+      (by
+        intro q hq
+        simp only [List.zip_cons_cons, List.mem_cons] at hq
+        rcases hq with rfl | hq
+        · rfl
+        · exact ArgsT_zip hargs q hq)
+    intro k' hk' V hy hrec
+    have hWV : WExt (trunc k' (by omega) W) V := by
+      apply WExt_trans _ hy
+      simpa only [trunc_trunc] using WExt_trunc (Nat.le_of_lt hk') hx
     obtain ⟨hsc, henv, hcapv⟩ := captures_sem he hlt
-      (fun c hc => by simpa [instantiate] using ih c hc n W h ρ he hw hh) hj hx
+      (fun c hc => by simpa [instantiate] using ihc c hc n W h ρ he hw hh) (by omega) hWV
     have hvals : CallArguments.Values (caps.map fun c => ρ c.2) := by
       intro v hv
       obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hv
       exact (meaning_value (hcapv c hc)).1
-    have hc := ctorsT_of_graph (oid := h.length + 1) [(codeField, h.length)] hspec hu henv hsc hvals
-    have hcr := ctorRestsT_of_graph (oid := h.length + 1) [(codeField, h.length)] hrest hu henv hsc hvals
-    exact (represents_back hr j V _) ⟨hc, hcr⟩
+    have hc := ctorsT_of_graph (oid := heap.length + (.nul :: args).length)
+      (slots heap.length (codeField :: parts.map Prod.fst)) hspec hu henv hsc hvals
+    have hcr := ctorRestsT_of_graph (oid := heap.length + (.nul :: args).length)
+      (slots heap.length (codeField :: parts.map Prod.fst)) hrest hu henv hsc hvals
+    have hfam : ReferenceConjunctions.famsOf (meaning G) (parts.map fun p => (p.1, p.2.1))
+        = (parts.map Prod.fst).zip (parts.map fun p => meaning G p.2.1) := by
+      simp [ReferenceConjunctions.famsOf, List.map_map, Function.comp_def, List.zip_map']
+    have hbag : recT (ReferenceConjunctions.famsOf (meaning G) (parts.map fun p => (p.1, p.2.1))) k' V
+        (.objAt (slots heap.length (codeField :: parts.map Prod.fst)) .absent
+          (heap.length + (.nul :: args).length)) := by
+      obtain ⟨flds, oid, he', hall⟩ := hrec
+      refine ⟨flds, oid, he', fun f T hm => hall f T ?_⟩
+      rw [hfam] at hm
+      simp only [List.zip_cons_cons]
+      exact List.mem_cons_of_mem _ hm
+    exact (represents_back hr k' V _)
+      ⟨⟨hc, hcr⟩, ⟨_, _, _, rfl, rfl, hbag⟩, by simp⟩
   | @callableGraph Γ F L S arity start E K caps kind rest As parts hr hnd hp hkind hspec hlt hcap ih ihc =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
@@ -3067,7 +3137,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       simp [ReferenceConjunctions.famsOf, List.map_map, Function.comp_def, List.zip_map']
     exact (represents_back hr k' V _)
       ⟨⟨⟨⟨_, _, _, rfl, rfl, by rw [hfam]; exact hrec⟩, by simp⟩, ho.1⟩, ho.2⟩
-  | @construct Γ f F B L S xs Us hf hr hp hx hu ihf ihx ihu =>
+  | @construct Γ f F B L S xs Us a bs hf hr hp hx hu ihf ihx ihu =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
     have hs := construct_safe (Ξ := excOf G) (B := meaning G B)
@@ -3080,7 +3150,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     · apply Safe_mono n _ W h _ (ihf n W h ρ he hw hh)
       intro k hk U v hv
       simpa only [List.map_map, Function.comp_def, List.map_append] using
-        ctorsT_select ((represents_raw hr k U v) hv).1
+        ctorsT_select ((represents_raw hr k U v) hv).1.1
           (List.mem_map.mpr ⟨(xs.map Prod.fst ++ Us, B), hp,
             by simp [List.map_append, List.map_map, Function.comp_def]⟩)
     · intro p hp'
@@ -3091,13 +3161,13 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hA
       intro j hj U hx hu' heap hok
       exact ihu q hq j U heap ρ (he.transfer j hj U hx) hu' hok
-  | @constructRest Γ f F P B L S xs parts hf hr hmem hx hp hparts ihf ihx ihp =>
+  | @constructRest Γ f F P B L S xs parts a bs hf hr hmem hx hp hparts ihf ihx ihp =>
     intro n W h ρ he hw hh
     have hfF : Safe (excOf G) (ctorRestsT (excOf G) [(xs.map fun p => meaning G p.1, argMeaning G P, meaning G B)])
         n W h (instantiate 0 ρ f) := by
       apply Safe_mono n _ W h _ (ihf n W h ρ he hw hh)
       intro k _ U v hv
-      have hc := ((represents_raw hr k U v) hv).2
+      have hc := ((represents_raw hr k U v) hv).1.2
       refine ⟨hc.1, fun q hq => ?_⟩
       rw [List.mem_singleton] at hq
       subst hq
@@ -3225,13 +3295,13 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hA
       intro j hj U hx hu' heap hok
       exact ihu q hq j U heap ρ (he.transfer j hj U hx) hu' hok
-  | @readCallable Γ a Ref P Ps L S f A ha hr hm ih =>
+  | @readCallable Γ a Ref P Ps f A c ha hr hc hm ih =>
     intro n W h ρ he hw hh
     apply bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj U hx hu heap v hok hv ha'
     exact bag_read (meaning_valOnly G A) (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩)
-      ((represents_raw hr j U v) ha').1.1.1 hu hok
-  | @writeCallable Γ a Ref P Ps L S f A b N ha hr hm hb hn iha ihb =>
+      (bag_sem hc ((represents_raw hr j U v) ha')).1 hu hok
+  | @writeCallable Γ a Ref P Ps f A b N c ha hr hc hm hb hn iha ihb =>
     intro n W h ρ he hw hh
     apply bind (fun a => .writeAt f a (instantiate 0 ρ b)) Step.writeC1 Raises.writeC1 n W h _ hw hh
       (iha n W h ρ he hw hh)
@@ -3242,7 +3312,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     have ha'' := (meaning_adm G Ref).mono k _ V hy av ((meaning_adm G Ref).down_le j k hk U av ha')
     apply Safe_mono k (fun i _ X v hval => (represents_back hn i X v) hval)
     exact bag_write (meaning_adm G A) (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩)
-      ((represents_raw hr k V av) ha'').1.1.1 hb' hbval hv hok'
+      (bag_sem hc ((represents_raw hr k V av) ha'')).1 hb' hbval hv hok'
   | @app effect Γ f r F Rt B L S xs Us hf hr hp hrt ha hu ihf ihrt iha ihu =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]

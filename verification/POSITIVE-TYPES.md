@@ -390,16 +390,28 @@ as one [argument pack](#argument-packs) at $P'$.
   invocation code.
 - `callable φ⃗ L S` is additionally a plain object under the invariant record
   operands $\vec\varphi$. It has no views, optional fields or methods.
-- `ctors L S` is a class, whose code is construct-only. A construct signature
+- `ctors L S φ⃗` is a class, whose code is construct-only. A construct signature
   $\vec A\Rightarrow B$ says that `new` with actuals in $\vec A$ steps to a
   term safe at $B$ one level below; a variadic one takes a pack as its rest.
+  Its property bag, its static fields, is under the invariant record operands
+  $`\vec\varphi`$, as a callable object's is; with none it states no field.
 
 ```math
 ⟦\mathsf{Ctors}\,\overline{(\vec A,B)}⟧_k(W,v)
 \iff\mathsf{Constructible}(v)\land\forall(\vec A,B),\,j<k,\,
    U\sqsupseteq W|_j,\,\mathit{heap}\models_j U,\,\vec a\in\vec A.\;
-\exists t.\;\mathsf{new}\,v(\vec a)\to t\land t\in\mathsf{Safe}_j(B)(U,\mathit{heap}).
+\exists t.\;\mathsf{new}\,v(\vec a)\to t\land t\in\mathsf{Safe}_j(B)(U,\mathit{heap}),
 ```
+
+```math
+⟦\mathsf{Ctors}\,\overline{(\vec A,B)}\,\vec\varphi⟧_k(W,v)
+\iff⟦\mathsf{Ctors}\,\overline{(\vec A,B)}⟧_k(W,v)\land
+   \forall\varphi\in\vec\varphi.\;\mathsf{bag}(\varphi)_k(W,v),
+```
+
+with $`\mathsf{bag}(\varphi)`$ the record $`\varphi`$ of the object's own fields
+whatever its code (`bagT`). Two classes' meet is one class meeting both
+signature lists and both bags (`meet_ctors`).
 
 No class is callable and no function is constructible, so `ctors` meets
 neither `arrs` nor `callable`. With no signature, `ctors [] []` is any class.
@@ -433,7 +445,7 @@ A record, an array, a function or a class is covered by `object` by the
 existing rules: a record by width, an array's `refs` shape by width, a
 callable by an empty `arrs`, a class by an empty `ctors`.
 
-Lean: `callsT`, `restsT` (`Semantics/Safety.lean`), `objectsT`
+Lean: `callsT`, `restsT` (`Semantics/Safety.lean`), `objectsT`, `propsT`
 (`Types/CallableConjunctions.lean`), `ctorsT`, `ctorRestsT`, `ConstructsTo`.
 
 ### Argument packs
@@ -1067,6 +1079,14 @@ class whatever its constructor takes (`ArgsT_mem`):
 ```math
 \frac{(\vec A\Rightarrow B)\in L\quad\Delta(\vec C,\vec A)\ \lor\ \bot\in\vec C\quad\Delta(B,D)}
      {\Delta\vdash\mathsf{Ctors}(L)\sqsubseteq(\vec C\Rightarrow D)}
+```
+
+A target's static field is a source field of the same name, covered both
+ways, as a callable object's bag field is (`covers_bags_sound`):
+
+```math
+\frac{\forall(f{:}D)\in\vec\psi.\;\exists(f{:}A)\in\vec\varphi.\;\Delta(A,D)\land\Delta(D,A)}
+     {\Delta\vdash\mathsf{bag}(\vec\varphi)\sqsubseteq\mathsf{bag}(\vec\psi)}
 ```
 A variadic one is covered by a variadic source one with as many fixed
 parameters, each at least as wide, a rest at least as wide and a result at most as

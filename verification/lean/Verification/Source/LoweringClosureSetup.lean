@@ -195,7 +195,7 @@ scheme row's variadic signatures. -/
     | none => do
       let (L, S) ← match mode, scheme with
         | .ctor U, _ => match PositiveRules.expand G A with
-          | [.ctors L S] => do
+          | [.ctors L S _ _] => do
             -- A variadic signature with an element rest is checked at the row
             -- binding the code's further positions at the element or
             -- `undefined` (`ProgramTyping.ctorRestParams`).

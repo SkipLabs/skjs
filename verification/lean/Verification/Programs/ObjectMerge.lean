@@ -460,53 +460,52 @@ theorem emptyClause_ownData {G : NormalGraph ι} {c : Clause (List ι)} (he : em
 
 
 /-- The part of a function or class clause a merge's source reads: a
-function's own enumerable properties are whatever was assigned to it, of
-which its type states the bag's fields, if any, and no bound; a class's are
-its static fields, which its construct signatures do not state. -/
+function's own enumerable properties are whatever was assigned to it, a
+class value's its static fields, of which its type states the bag's fields,
+if any, and no bound. -/
 def codeOf : Clause (List ι) → Option (Obj ι)
   | .arrs _ _ => some ⟨[], [], [], [], false⟩
-  | .callable a bs _ _ => some ⟨(a :: bs).flatten.filter (·.1 != CallArguments.arrayStoreField), [], [], [], false⟩
-  | .ctors _ _ => some ⟨[], [], [], [], false⟩
+  | .callable a bs _ _ | .ctors _ _ a bs =>
+    some ⟨(a :: bs).flatten.filter (·.1 != CallArguments.arrayStoreField), [], [], [], false⟩
   | _ => none
 
-/-- What the semantics of a function clause gives a merge's source: an object
-with code, whose bag's fields hold their contracts. -/
+/-- A bag's fields hold their contracts on the object the bag is of. -/
+theorem bagFacts_of_sem {G : NormalGraph ι} {c : Clause (List ι)} {a : List (PropKey × List ι)}
+    {bs : List (List (PropKey × List ι))} (hc : c.bag = some (a, bs))
+    {n : Nat} {W : WorldT n} {v : Val} (hv : semWithArgs (excOf G) (meaning G) (argMeaning G) c n W v) :
+    ∃ fs code oid, v = .objAt fs code oid ∧
+      ObjFacts G ⟨(a :: bs).flatten.filter (·.1 != CallArguments.arrayStoreField), [], [], [], false⟩ n W fs := by
+  obtain ⟨⟨fs, code, oid, rfl, -, ha⟩, hbs⟩ := bag_sem hc hv
+  refine ⟨fs, code, oid, rfl, ⟨fun p hp => ?_, fun q hq => by simp at hq,
+    fun x hx => by simp at hx, fun K hK => by simp at hK, fun hp => by simp at hp,
+    fun S T hS => absurd (List.mem_filter.mp hS).2 (by simp)⟩⟩
+  -- The field is one of an operand's, whose bag is over the same fields.
+  have hrec : ∀ B ∈ a :: bs, recT (ReferenceConjunctions.famsOf (meaning G) B) n W (.objAt fs .absent oid) := by
+    intro B hB
+    rcases List.mem_cons.mp hB with rfl | hB
+    · exact ha
+    · obtain ⟨fs', code', oid', he, -, hr⟩ := hbs _ (List.mem_map_of_mem hB)
+      cases he
+      exact hr
+  obtain ⟨B, hB, hpB⟩ := List.mem_flatten.mp (List.mem_filter.mp hp).1
+  obtain ⟨flds, l, c, oid', he, hl, hc, hag⟩ :=
+    recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨p.2, hpB, rfl⟩) (hrec B hB)
+  cases he
+  exact ⟨l, c, hl, hc, fun j hj U u hu => (hag j hj U u).mp hu⟩
+
+/-- What the semantics of a function or class clause gives a merge's
+source: an object with code, whose bag's fields hold their contracts. -/
 theorem codeFacts_of_sem {G : NormalGraph ι} {c : Clause (List ι)} {o : Obj ι} (ho : codeOf c = some o)
     {n : Nat} {W : WorldT n} {v : Val} (hv : clauseSem G c n W v) :
     ∃ fs code oid, v = .objAt fs code oid ∧ ObjFacts G o n W fs := by
   obtain ⟨hv, -⟩ := hv
-  unfold codeOf at ho
-  split at ho
-  · cases ho
-    obtain ⟨⟨⟨fs, code, oid, rfl, -, -⟩, -⟩, -⟩ := hv
+  cases c <;> simp only [codeOf, Option.some.injEq, reduceCtorEq] at ho <;> subst ho
+  · obtain ⟨⟨⟨fs, code, oid, rfl, -, -⟩, -⟩, -⟩ := hv
     exact ⟨fs, code, oid, rfl, ⟨fun p hp => by simp at hp, fun q hq => by simp at hq,
       fun x hx => by simp at hx, fun K hK => by simp at hK, fun hp => by simp at hp,
       fun S T hS => by simp at hS⟩⟩
-  · rename_i a bs L S
-    cases ho
-    obtain ⟨⟨⟨⟨fs, code, oid, rfl, -, ha⟩, hbs⟩, -⟩, -⟩ := hv
-    refine ⟨fs, code, oid, rfl, ⟨fun p hp => ?_, fun q hq => by simp at hq,
-      fun x hx => by simp at hx, fun K hK => by simp at hK, fun hp => by simp at hp,
-      fun S T hS => absurd (List.mem_filter.mp hS).2 (by simp)⟩⟩
-    -- The field is one of an operand's, whose bag is over the same fields.
-    have hrec : ∀ B ∈ a :: bs, recT (ReferenceConjunctions.famsOf (meaning G) B) n W (.objAt fs .absent oid) := by
-      intro B hB
-      rcases List.mem_cons.mp hB with rfl | hB
-      · exact ha
-      · obtain ⟨fs', code', oid', he, -, hr⟩ := hbs _ (List.mem_map_of_mem hB)
-        cases he
-        exact hr
-    obtain ⟨B, hB, hpB⟩ := List.mem_flatten.mp (List.mem_filter.mp hp).1
-    obtain ⟨flds, l, c, oid', he, hl, hc, hag⟩ :=
-      recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨p.2, hpB, rfl⟩) (hrec B hB)
-    cases he
-    exact ⟨l, c, hl, hc, fun j hj U u hu => (hag j hj U u).mp hu⟩
-  · cases ho
-    obtain ⟨⟨⟨fs, n', E, K, s, caps, rest, oid, rfl, -⟩, -⟩, -⟩ := hv
-    exact ⟨fs, _, oid, rfl, ⟨fun p hp => by simp at hp, fun q hq => by simp at hq,
-      fun x hx => by simp at hx, fun K hK => by simp at hK, fun hp => by simp at hp,
-      fun S T hS => by simp at hS⟩⟩
-  · cases ho
+  · exact bagFacts_of_sem rfl hv
+  · exact bagFacts_of_sem rfl hv
 
 /-- The source side of a merge: values owning no enumerable property, a
 string, which owns its code units at its indices, or an object, a plain one,

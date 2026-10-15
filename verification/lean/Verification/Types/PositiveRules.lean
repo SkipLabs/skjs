@@ -138,7 +138,12 @@ theorem instance_body (G : NormalGraph ι) (η : MixedAssignment ι) (s : Scheme
   cases s.construct
   · rfl
   · simp only [if_true, semWithArgs, List.map_map]
-    rfl
+    -- A scheme body states no static field: its empty bag holds of every class value.
+    refine Eq.trans ?_ (props_nil_absorb ?_).symm
+    · rfl
+    · intro n W v h
+      obtain ⟨fs, _, _, _, _, _, _, oid, rfl, -⟩ := h.1.1
+      exact ⟨_, _, _, rfl⟩
 
 /-- A type's value members at the graph's own assignment. -/
 noncomputable def meaning (G : NormalGraph ι) (S : List ι) : Fam := setSem (normalDenote G) S
@@ -1335,12 +1340,14 @@ checks over the supplied subtype relation. -/
   -- at least as wide, with a result at most as wide. One with a `never`
   -- parameter admits no actual list, so any class value meets it; the
   -- results are still compared, as TypeScript compares them.
-  | .ctors L S, .ctors M T => (∀ q ∈ M, ∃ p ∈ L, (Domains R q.1 p.1 ∨ [] ∈ q.1) ∧ R p.2 q.2) ∧
+  -- A static field the target states is one the source states at the same
+  -- contract, as a callable object's bag field.
+  | .ctors L S a bs, .ctors M T c ds => ((∀ q ∈ M, ∃ p ∈ L, (Domains R q.1 p.1 ∨ [] ∈ q.1) ∧ R p.2 q.2) ∧
       -- A variadic one by one taking as many fixed parameters, each at least as
       -- wide, a rest at least as wide and a result at most as wide; or by a
       -- fixed one, when its rest is an exact tuple.
       ∀ t ∈ T, (∃ s ∈ S, Domains R t.1 s.1 ∧ R t.2.1 s.2.1 ∧ R s.2.2 t.2.2) ∨
-        ∃ p ∈ L, FixedCoversPack G R p t
+        ∃ p ∈ L, FixedCoversPack G R p t) ∧ CoversFields R (a :: bs) (c :: ds)
   -- Every target contract has a source contract within it.
   | .pack a bs, .pack c ds => ∀ q ∈ c :: ds, ∃ p ∈ a :: bs, CoversPack R p q
   | _, _ => False
@@ -3005,16 +3012,17 @@ target's, read below the level. -/
 theorem covers_ctors_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)} {η : MixedAssignment ι}
     {R : List ι → List ι → Prop} {known : Known ι} {arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop}
     {self : List ι} {L M : List (List (List ι) × List ι)} {S T : List (List (List ι) × List ι × List ι)}
-    (hc : CoversWith G sub R known arrows self (.ctors L S) (.ctors M T)) (n : Nat)
+    {a c : List (PropKey × List ι)} {bs ds : List (List (PropKey × List ι))}
+    (hc : CoversWith G sub R known arrows self (.ctors L S a bs) (.ctors M T c ds)) (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j) (hpa : ArgsLeBelow G η R n)
     (W : WorldT n) (v : Val) :
-    semWithArgs Ξ (mixedValues G η) (mixedArgs G η) (.ctors L S) n W v →
-      semWithArgs Ξ (mixedValues G η) (mixedArgs G η) (.ctors M T) n W v := by
+    semWithArgs Ξ (mixedValues G η) (mixedArgs G η) (.ctors L S a bs) n W v →
+      semWithArgs Ξ (mixedValues G η) (mixedArgs G η) (.ctors M T c ds) n W v := by
   unfold CoversWith at hc
-  rintro ⟨hv, hw⟩
-  refine ⟨⟨hv.1, fun q hq => ?_⟩, ⟨hv.1, fun t ht => ?_⟩⟩
+  rintro ⟨⟨hv, hw⟩, hb⟩
+  refine ⟨⟨⟨hv.1, fun q hq => ?_⟩, ⟨hv.1, fun t ht => ?_⟩⟩, covers_bags_sound hc.2 n hr W v hb⟩
   · obtain ⟨q0, hq0, rfl⟩ := List.mem_map.mp hq
-    obtain ⟨p, hp, hd, hres⟩ := hc.1 q0 hq0
+    obtain ⟨p, hp, hd, hres⟩ := hc.1.1 q0 hq0
     intro j hj U hx hu heap hh args hvals ha
     rcases hd with hd | hnever
     · obtain ⟨result, hcon, hsafe⟩ := hv.2 _ (List.mem_map_of_mem hp) j hj U hx hu heap hh args hvals
@@ -3024,7 +3032,7 @@ theorem covers_ctors_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (
       obtain ⟨a, ha'⟩ := ArgsT_mem ha (List.mem_map_of_mem hnever)
       exact absurd ha' (by simp [mixedValues, setSem])
   · obtain ⟨t0, ht0, rfl⟩ := List.mem_map.mp ht
-    rcases hc.2 t0 ht0 with ⟨s, hs, hd, hrest, hres⟩ | ⟨p, hp, hfp⟩
+    rcases hc.1.2 t0 ht0 with ⟨s, hs, hd, hrest, hres⟩ | ⟨p, hp, hfp⟩
     · intro j hj U hx hu heap hh args hvals ha
       obtain ⟨hlen, hfix, hpack⟩ := ha
       have hl : t0.1.length = s.1.length := Domains.length_eq hd
@@ -3090,7 +3098,7 @@ theorem Covers.sound_raw [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Re
       covers_methods_sound hc.2.2.2.1 hknown n hr hpa hre W v hself (fields_at hv.1 hv.2.1) hv.2.2.2.2.2
         hv.2.2.2.2.1,
       covers_bounds_sound hc.2.2.2.2 (recT_obj hv.1.1) hv.2.2.2.2.2⟩
-  case ctors.ctors L S M T =>
+  case ctors.ctors L S a bs M T c ds =>
     exact covers_ctors_sound (sub := sub) (known := known) (self := self)
       (arrows := fun L S M => ∀ p ∈ M, CallArrow (compatible G) (restElem G) R L S p)
       (by unfold CoversWith; exact hc) n hr hpa W v
@@ -5745,7 +5753,7 @@ theorem renames_sound [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssignmen
         s.body n W v := (instance_body G η s As) ▸ hall As (by rw [hlen]; exact hl) hal hb'
     have hcovered := covers_body_sound hcov (by
       unfold SchemeRow.body; rw [sameShape_construct hord]
-      cases s'.construct <;> simp [Clause.map]) n (hre i s As hs).1 (hre i s As hs).2 W v hi
+      cases s'.construct <;> simp [Clause.map, mapFields]) n (hre i s As hs).1 (hre i s As hs).2 W v hi
     show instanceTWithArgs _ _ η s' As _ n W v
     rw [instance_body]
     rw [← semWithArgs_map_meaning (η := assign η s.binders As)

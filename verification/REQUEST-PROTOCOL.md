@@ -392,7 +392,8 @@ parameters, and the rule's `arrays` name their rest-store types, in order:
 each is the `store` of that signature's entry. At a scheme row the signatures
 are the scheme's. `ctorGraph` creates a class value's construct-only code: an
 entry per construct signature, its receiver the rule's `undef`, the
-`undefined` type. `callableGraph` creates a callable object: one initializer
+`undefined` type, with the code field, then one initializer premise per
+static field, then the captures. `callableGraph` creates a callable object: one initializer
 premise per field, then the captures, its code's entries as `funGraph`'s.
 
 The callable expression rules use the existing term syntax. `callableGraph`
@@ -401,7 +402,7 @@ entry per advertised overload. Its result has a single initial bag contract; sub
 selects an advertised signature and, like `app`, carries one premise per
 position that signature declares and the call omits, each proving `undefined`
 at that position's contract; `readCallable` and `writeCallable` use
-the first invariant bag operand. Every nested operand label is bounds checked.
+the first invariant bag operand, a callable object's or a class value's. Every nested operand label is bounds checked.
 `app`, `callCallable` and `callRest` carry the selected signature's `effect`
 and take the callee premise, then the
 receiver premise at the selected signature's receiver, then the actuals: the

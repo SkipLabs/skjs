@@ -616,26 +616,36 @@ function, a signature may offer more parameters than the constructor binds:
 the construct step binds its first $`\mathit{arity}`$ actuals and discards the
 rest, so the code is checked at the signature's first $`\mathit{arity}`$
 parameters, entered with `undefined` for the receiver. Its code $`\kappa^{\mathsf{new}}`$ is
-construct-only graph code:
+construct-only graph code, allocated, as a function's is, with its code field
+$`\kappa_{\mathsf{code}}`$ and, as a callable object's bag is, with its static
+fields $`\overline{k_i{=}e_i}`$, each at its contract $`A_i`$ (the class's bag
+$`\varphi=\overline{k_i{:}A_i}`$, empty for a class with none):
 
 ```math
-\frac{L\equiv_G\mathsf{Ctors}(\ldots,(\vec A,B),\ldots)\quad
+\frac{L\equiv_G\mathsf{Ctors}(\ldots,(\vec A,B),\ldots;\varphi)\quad
       U\equiv_G\mathsf{Undefined}\quad
+      \kappa_{\mathsf{code}}\,\vec k\ \text{distinct}\quad
+      \forall i.\;\Gamma\vdash_G e_i:A_i\quad
       \vec C\vdash_G\kappa^{\mathsf{new}}:(U;\vec A\to B)\ \text{for each signature}\quad
-      \forall i.\;\Gamma\vdash_G x_i:C_i}
-     {\Gamma\vdash_G \mathsf{make}(\kappa^{\mathsf{new}}[\vec x],\mathsf{null}) : L}
+      \forall j.\;\Gamma\vdash_G x_j:C_j}
+     {\Gamma\vdash_G \mathsf{make}(\kappa^{\mathsf{new}}[\vec x],\kappa_{\mathsf{code}}{=}\mathsf{null},\overline{k_i{=}e_i}) : L}
 \qquad
-\frac{\Gamma\vdash_G f:L\quad L\equiv_G\mathsf{Ctors}(\ldots,(\vec A\,\vec U,B),\ldots)\quad
+\frac{\Gamma\vdash_G f:L\quad L\equiv_G\mathsf{Ctors}(\ldots,(\vec A\,\vec U,B),\ldots;\varphi)\quad
       \Gamma\vdash_G a_i:A_i\quad\Gamma\vdash_G\mathsf{undefined}:U_j}
      {\Gamma\vdash_G \mathsf{new}\ f(\vec a):B}
 ```
+
+A static field is read and written as a callable object's bag field is
+(`readCallable`, `writeCallable`, over the clause's bag, `Clause.bag`), and a
+spread of a class value copies its own data fields, of which its type states
+its static fields (`codeOf`, [allocation from parts](SEMANTICS.md#operational-language)).
 
 A plain call of a class throws in JavaScript: `pipeline/test.mts` runs
 `invalid-class-as-function` under Node beside the pipeline's refusal of it.
 [ExecutionModelTests.lean](lean/Verification/Tests/ExecutionModelTests.lean) shows the model's `new` running no call-only code, as JavaScript's `new`
 of an arrow throws.
 
-These are `ctorGraph` (`ctorsT_of_graph`) and `construct`. As a call may,
+These are `ctorGraph` (`ctorsT_of_graph`, `make_fields_rule`) and `construct`. As a call may,
 `new` may omit trailing positions $`\vec U`$ whose contracts admit `undefined`:
 the construct step binds `undefined` there, so the run entered is the one the
 padded list enters (`construction_pad`), and the source term keeps the actuals it writes. A

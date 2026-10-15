@@ -438,7 +438,8 @@ negation. -/
   | .not p e => return .not p (← comparisonsExpr fc e)
   | .unary p op e => return .unary p op (← comparisonsExpr fc e)
   | .cast p annot e => return .cast p annot (← comparisonsExpr fc e)
-  | .ctor p lam => return .ctor p (← comparisonsExpr fc lam)
+  | .ctor p lam fs => return .ctor p (← comparisonsExpr fc lam) (← fs.mapM fun (k, e) => do
+      pure (k, ← comparisonsExpr fc e))
   | .construct p f args spreads ts => return .construct p (← comparisonsExpr fc f) (← args.mapM (comparisonsExpr fc)) spreads ts
   | .alloc p ns es => return .alloc p ns (← es.mapM (comparisonsExpr fc))
   | .build p ns es => return .build p ns (← es.mapM (comparisonsExpr fc))

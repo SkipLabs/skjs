@@ -33,13 +33,31 @@ theorem calls_merge (A : Fields) (Bs : List Fields) (L M : List (Arrow Fam)) (n 
   simp only [objectsT, interT, CallEffects.callsT_append]
   exact and_assoc.symm
 
-theorem adm (A : Fields) (Bs : List Fields) (L : List (Arrow Fam)) : Adm (objectsT Ξ A Bs L) := by
-  apply interT_adm _ _ _ (CallEffects.callsT_adm L)
+theorem props_adm (A : Fields) (Bs : List Fields) : Adm (propsT A Bs) := by
   constructor
   · intro n W v h
     exact ⟨(bagT_adm A).down n W v h.1,fun B hb => (bagT_adm B).down n W v (h.2 B hb)⟩
   · intro n W U hx v h
     exact ⟨(bagT_adm A).mono n W U hx v h.1,fun B hb => (bagT_adm B).mono n W U hx v (h.2 B hb)⟩
+
+theorem adm (A : Fields) (Bs : List Fields) (L : List (Arrow Fam)) : Adm (objectsT Ξ A Bs L) :=
+  interT_adm _ _ (props_adm A Bs) (CallEffects.callsT_adm L)
+
+/-- A bag stating no field holds of every object value. -/
+theorem props_nil {fs : List (PropKey × Nat)} {code : CallCode} {oid n W} :
+    propsT [] [] n W (.objAt fs code oid) :=
+  ⟨⟨fs, code, oid, rfl, rfl, fs, oid, rfl, fun _ _ h => by simp at h⟩, fun _ h => by simp at h⟩
+
+theorem props_congr_below {α : Type} (X Y : α → Fam) (a : List (PropKey × α))
+    (bs : List (List (PropKey × α))) (n : Nat) (h : ∀ a, Agree (X a) (Y a) n) (W : WorldT n)
+    (v : Val) :
+    propsT (ReferenceConjunctions.famsOf X a) (bs.map (ReferenceConjunctions.famsOf X)) n W v ↔
+      propsT (ReferenceConjunctions.famsOf Y a) (bs.map (ReferenceConjunctions.famsOf Y)) n W v := by
+  simp only [propsT, List.forall_mem_map]
+  apply and_congr (bagT_contractive X Y a n h W v)
+  constructor <;> intro hb b hm
+  · exact (bagT_contractive X Y b n h W v).mp (hb b hm)
+  · exact (bagT_contractive X Y b n h W v).mpr (hb b hm)
 
 theorem congr_below {Ξ Ξ' : Fam} {α : Type} (X Y : α → Fam) (a : List (PropKey × α))
     (bs : List (List (PropKey × α))) (L : List (Arrow α))
@@ -53,13 +71,9 @@ theorem congr_below {Ξ Ξ' : Fam} {α : Type} (X Y : α → Fam) (a : List (Pro
     intro As; induction As with
     | nil => exact .nil
     | cons a As ih => exact .cons (h a) ih
-  apply and_congr _ (CallEffects.callsT_congr L (Arrow.map X) (Arrow.map Y) hexc (fun _ _ => rfl)
-    (fun p _ => ⟨h p.receiver, hd p.arguments, h p.result⟩) W v)
-  simp only [propsT,List.forall_mem_map]
-  apply and_congr (bagT_contractive X Y a n h W v)
-  constructor <;> intro hb b hm
-  · exact (bagT_contractive X Y b n h W v).mp (hb b hm)
-  · exact (bagT_contractive X Y b n h W v).mpr (hb b hm)
+  exact and_congr (props_congr_below X Y a bs n h W v)
+    (CallEffects.callsT_congr L (Arrow.map X) (Arrow.map Y) hexc (fun _ _ => rfl)
+      (fun p _ => ⟨h p.receiver, hd p.arguments, h p.result⟩) W v)
 
 /-- A callability-neutral bag needs no new clause: plain bags and callable
 bags with no invocation promises cover exactly the scoped bag values whose code,
