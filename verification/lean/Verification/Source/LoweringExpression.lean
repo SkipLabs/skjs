@@ -11,6 +11,17 @@ namespace LoweringExpression
 
 set_option maxHeartbeats 1000000
 
+/-- A write of a slot binding inside term code: the term has no edge to
+rebind the slot on, so later reads in the same term would see the old value. -/
+@[nospecialize] def slotWriteRefusal (scope : List (ScopeBinding Tree)) (name : String) (pos : Span) :
+    Compiler String := do
+  match resolve scope name with
+  | some (_, .slot _) =>
+    let T ← table
+    return locatedRefusal T pos .expressionClaim
+      "a write of a local inside an expression compiled as one term (a guard or a closure's term code): the term has no step that rebinds the local's slot"
+  | _ => return s!"assignment to '{name}', which is not a mutable local"
+
 /-- Build compositional proofs for lambda bodies and source ternaries without
 losing their individual claims. Requirements use the lexical context at the occurrence; synthetic let
 slots are introduced only after the operand supplying their type is checked. -/
@@ -39,7 +50,7 @@ slots are introduced only after the operand supplying their type is checked. -/
       "Object.assign in a closure's term code is outside the fragment: its copies are graph nodes")
   | .var _ name =>
     match resolve scope name with
-    | some (i, .value) => pure (DirectProof.var Γ i A)
+    | some (i, .value) | some (i, .slot _) => pure (DirectProof.var Γ i A)
     | some (i, .cell contract reference) =>
       if let some saved := (names scope).idxOf? (localSnapshotName name) then
         let some R := Γ[saved]? | throw "internal saved-local slot mismatch"
@@ -53,7 +64,7 @@ slots are introduced only after the operand supplying their type is checked. -/
     closureExpr recursive fc scope Γ (.coalesce pos (.var namePos name) (.assign pos name namePos rhs))
   | .assign _ name _ rhs => do
     let some (i, .cell contract reference) := resolve scope name
-      | throw s!"assignment to '{name}', which is not a mutable local"
+      | throw (← slotWriteRefusal scope name e.span)
     let a ← closureExpr recursive fc scope Γ rhs
     let C := a.type
     let H := C::Γ
@@ -340,7 +351,7 @@ slots are introduced only after the operand supplying their type is checked. -/
     -- for an increment), the operation, the write back at the contract, and
     -- the old or new value.
     let some (i, .cell contract reference) := resolve scope name
-      | throw s!"assignment to '{name}', which is not a mutable local"
+      | throw (← slotWriteRefusal scope name e.span)
     let targetClauses := PositiveRules.expand G contract
     if rhs.isNone && (targetClauses.isEmpty ||
         !(targetClauses.all ProgramTyping.numberClause || targetClauses.all ProgramTyping.bigintClause)) then

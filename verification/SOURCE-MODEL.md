@@ -107,11 +107,16 @@ created. See [source checkpoints](PROGRAM-TYPING.md#source-observation-checkpoin
 
 ### Mutable bindings
 
-A `let` and an assigned parameter are private cells
-with a storage contract fixed where they are declared: the annotation, or
-the producer's proposal (TypeScript's widened or evolved type), against which
-the initializer and every write are checked. A closure holds the cell's
-identity; a `const` copy holds a snapshot, and an unannotated constant of a
+A `let` and an assigned parameter have a storage contract fixed where they
+are declared: the annotation, or the producer's proposal (TypeScript's
+widened or evolved type), against which the initializer and every write are
+checked. One that every closure mentioning it sees at its value when the
+closure was created (no closure writes it, and no write follows such a
+closure's creation) is a slot of its activation, rebound at each write: what
+it holds is its type at each point, and no call, closure run or throw
+changes it. Any other is a private cell, which a closure holds the identity
+of ([slot or cell](SOURCE-ELABORATION.md#mutable-bindings-and-module-constants)).
+A `const` copy holds a snapshot, and an unannotated constant of a
 named union is held at the union's arms, as an annotated one is, an
 annotated one initialized by an object literal at the arms the literal may
 be of (TypeScript's narrowing on assignment); a constant's object literal
@@ -120,8 +125,9 @@ with its exact keys
 ([rules](SOURCE-ELABORATION.md#mutable-bindings-and-module-constants)). A `let`
 statement whose initialized bindings nothing in their scope writes, closures
 included, is a `const`: each holds its initial value throughout, so a test
-narrows it and a `let` pattern binds (`LET-CONST`). A written `let` uses a
-cell whose current contents support primitive refinements and nullish exclusions.
+narrows it and a `let` pattern binds (`LET-CONST`). A written `let` held in a
+cell has current contents that support primitive refinements and nullish
+exclusions.
 A guard can remove null or undefined from its read type until an effect
 invalidates that observation.
 A written `let` pattern binds hidden names, then each source name is a

@@ -196,7 +196,7 @@ let () =
   let open Flow in
   let node : Flow.node = {id=0;point="entry";source=Json.Null;scope=[];
     handler=None;action=Flow.End;binding_plan=None;executions=[]} in
-  let graph : Flow.graph = {owner=Json.Null;body_spans=[];entry=0;nodes=[|node|];prologue=None} in
+  let graph : Flow.graph = {owner=Json.Null;body_spans=[];entry=0;nodes=[|node|];prologue=None;cells=[]} in
   let state=fresh ~flows:[graph] () in
   let module Owner = Analysis_state.Access(struct let state = state end) in
   graph.nodes.(0) <- {node with point="input mutation"};

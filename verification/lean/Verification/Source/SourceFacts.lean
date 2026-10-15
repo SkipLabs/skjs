@@ -60,6 +60,134 @@ partial def assignsStmt (name : String) : Fragment.Stmt → Bool
   | .brk .. | .cont .. => false
 end
 
+/-! ### Bindings held in cells
+
+A cell shares a binding with the closures that capture it. A mutable binding
+is held in a slot of its own activation instead, rebound at each write, when
+every closure that mentions it sees the value it held when the closure was
+created: no closure writes it, and no write of it follows, in the
+activation's evaluation order, the creation of a closure that mentions it.
+The walk below follows that order: the parts of an expression left to right,
+statements in order, every part of a choice (a conservative superset of
+either arm), and a loop's parts twice, so that a write in one iteration is
+seen after a closure the iteration before created. Both facts it tracks only
+ever change one way, so a second pass reaches their fixpoint.
+
+A write in a conditional part of an expression (an arm of `&&`, `||`, `??`,
+`?:` or `?.`, a logical assignment's write, a pattern's default) also keeps
+the binding in a cell: the lowering joins such arms within the statement at
+one frame, which a slot rebound on one arm only would not fit. -/
+
+/-- One binding's walk: whether a closure mentioning it has been created, and
+whether it is still a slot. -/
+structure Capture where
+  captured : Bool := false
+  slot : Bool := true
+
+/-- A write, in a conditional part of an expression or not. -/
+private def Capture.write (w : Capture) (conditional : Bool) : Capture :=
+  if w.captured || conditional then { w with slot := false } else w
+
+mutual
+private partial def captureExpr (x : String) (c : Bool) (e : Fragment.Expr) (w : Capture) : Capture :=
+  let all := fun (es : List Fragment.Expr) (w : Capture) => es.foldl (fun w e => captureExpr x c e w) w
+  let arms := fun (es : List Fragment.Expr) (w : Capture) => es.foldl (fun w e => captureExpr x true e w) w
+  let written := fun (n : String) (c : Bool) (w : Capture) => if n == x then w.write c else w
+  match e with
+  | .lambda .. | .ctor .. =>
+    if e.freeNames.contains x then { captured := true, slot := w.slot && !assignsExpr x e } else w
+  | .var .. | .lit .. => w
+  | .assign _ n _ rhs => written n c (captureExpr x c rhs w)
+  | .nullishAssign _ n _ rhs => written n true (arms [rhs] w)
+  | .update _ _ target rhs _ =>
+    let w := all (target :: rhs.toList) w
+    match target with | .var _ n => written n c w | _ => w
+  | .logicalAssign _ _ target rhs =>
+    let w := arms [rhs] (captureExpr x c target w)
+    match target with | .var _ n => written n true w | _ => w
+  | .arrayAssign _ targets rest rhs =>
+    -- The right side, then each target in turn: its reference's parts, its
+    -- default, then its write.
+    let target := fun (q : Fragment.ArrayElem Fragment.Expr) (w : Capture) =>
+      let w := q.target.referenceParts.foldl (fun w e => captureExpr x c e w) w
+      let w := arms q.default_.toList w
+      match q.target.targetLocal with | some n => written n c w | none => w
+    let w := targets.foldl (fun w q => target q w) (captureExpr x c rhs w)
+    rest.toList.foldl (fun w (_, _, q) => target q w) w
+  | .logical _ _ a b | .coalesce _ a b | .optional _ _ a b => arms [b] (captureExpr x c a w)
+  | .ifBody _ a b d => arms [b, d] (captureExpr x c a w)
+  | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .shapeTest _ _ _ e => captureExpr x c e w
+  | .equality _ _ a b | .singletonTest _ _ _ _ a b
+  | .write _ _ a b | .index _ _ a b | .arith _ _ a b | .elemAt _ a b | .comma _ a b
+  | .inKeys _ a b | .withValue _ a b _ _ => all [a, b] w
+  | .indexWrite _ _ a b d | .elemWrite _ a b d => all [a, b, d] w
+  | .alloc _ _ es | .build _ _ es | .arrayLit _ es => all es w
+  | .call _ f args _ _ | .invoke _ f args _ _ | .construct _ f args _ _ => all (f :: args) w
+  | .callWithReceiver _ f r args | .bindWithReceiver _ f r args => all (f :: r :: args) w
+  | .applyWithReceiver _ f r list => all (f :: r :: list.toList) w
+  | .objectAssign _ t ss => all (t :: ss) w
+  | .block _ ss => captureStmts x ss w
+
+private partial def captureStmts (x : String) (ss : List Fragment.Stmt) (w : Capture) : Capture :=
+  ss.foldl (fun w s => captureStmt x s w) w
+
+private partial def captureStmt (x : String) (s : Fragment.Stmt) (w : Capture) : Capture :=
+  let twice := fun (f : Capture → Capture) w => f (f w)
+  let expr := fun e w => captureExpr x false e w
+  match s with
+  | .ret _ e | .effect _ e | .throw _ e => expr e w
+  | .constants _ bs => bs.foldl (fun w b => expr b.init w) w
+  | .mutables _ bs => bs.foldl (fun w b =>
+      let w := expr b.init w
+      if b.name == x then w.write false else w) w
+  | .destructure _ t d init =>
+    (d.toList ++ t.defaults).foldl (fun w e => captureExpr x true e w) (expr init w)
+  | .ite _ c t e => captureStmts x (e.getD []) (captureStmts x t (expr c w))
+  | .loop _ c b u => twice (fun w => captureStmts x u (captureStmts x b (expr c w))) w
+  | .forOf _ _ _ _ i b => twice (captureStmts x b) (expr i w)
+  | .block _ _ b => captureStmts x b w
+  | .tryStmt _ b h f =>
+    captureStmts x (f.getD []) (captureStmts x ((h.map (·.2)).getD []) (captureStmts x b w))
+  | .closing _ c b => captureStmts x c (captureStmts x b w)
+  | .brk .. | .cont .. => w
+end
+
+/-- Whether the binding `x`, whose scope runs through `ss` from its
+declaration (a parameter's: the whole body), is held in a cell. -/
+def heldInCell (x : String) (ss : List Fragment.Stmt) : Bool :=
+  !(captureStmts x ss {}).slot
+
+mutual
+/-- The `let` declarations of a statement list held in cells, by name and
+declaring statement; each `let`'s scope is the rest of its list. Closures'
+bodies are their own. With `all`, every `let` is one. -/
+private partial def letCells (all : Bool) : List Fragment.Stmt → List (String × Option Span)
+  | [] => []
+  | s :: rest =>
+    let own := match s with
+      | .mutables pos bs =>
+        (bs.filter fun b => all || heldInCell b.name (s :: rest)).map fun b => (b.name, some pos)
+      | _ => []
+    own ++ nestedCells all s ++ letCells all rest
+
+private partial def nestedCells (all : Bool) : Fragment.Stmt → List (String × Option Span)
+  | .ite _ _ t e => letCells all t ++ letCells all (e.getD [])
+  | .loop _ _ b u => letCells all b ++ letCells all u
+  | .forOf _ _ _ _ _ b | .block _ _ b => letCells all b
+  | .tryStmt _ b h f => letCells all b ++ letCells all ((h.map (·.2)).getD []) ++ letCells all (f.getD [])
+  | .closing _ c b => letCells all b ++ letCells all c
+  | _ => []
+end
+
+/-- The mutable bindings of a body held in cells: an assigned parameter by
+its name alone, a `let` by its name and declaring statement. In a module's
+initialization every `let` is one: the module's functions, separate units,
+may read it. -/
+def cellLocals (params : List String) (body : List Fragment.Stmt) (module : Bool := false) :
+    List (String × Option Span) :=
+  (params.filter fun p => body.any (assignsStmt p) && heldInCell p body).map (·, none) ++
+    letCells module body
+
 /-- Every name a statement's expressions mention, bound or not: a superset of
 the module functions its body can reach. -/
 partial def stmtNames : Fragment.Stmt → List String

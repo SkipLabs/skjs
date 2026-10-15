@@ -4,9 +4,12 @@ open Semantic
    A cell carries its fixed contract and what it is proposed to hold here:
    the contract, or a primitive refinement or nullish exclusion after an assignment or a guard,
    which Lean checks as a fact about the cell's current contents on every
-   edge into the point claiming it. *)
-type binding = Value of ty | Storage of ty * ty
-let binding_type = function Value t | Storage (_,t) -> t
+   edge into the point claiming it. A slot (`Local`) carries its contract
+   and what it holds here, any type: Lean holds it in its activation's
+   environment (the flow graph's `cells` omit it), where no call, closure or
+   throw reaches it. *)
+type binding = Value of ty | Storage of ty * ty | Local of ty * ty
+let binding_type = function Value t | Storage (_,t) | Local (_,t) -> t
 let cell contract = Storage (contract,contract)
 let lookup env name = match List.assoc_opt name env with
   | Some b -> b | None -> Json.fail ("unbound name " ^ name)
@@ -41,11 +44,15 @@ let holding contract t = Storage (contract,observed_contents contract t)
 let refine_value env name refine = List.map (fun (n,b) ->
   if n=name then n,(match b with
     | Value t -> Value (refine t)
-    | Storage (contract,current) -> holding contract (refine current))
+    | Storage (contract,current) -> holding contract (refine current)
+    | Local (contract,current) -> Local (contract,refine current))
   else n,b) env
 (* After an assignment, the cell holds the value written. *)
 let assign env name t = List.map (fun (n,b) ->
-  if n=name then n,(match b with Storage (contract,_) -> holding contract t | Value _ -> b)
+  if n=name then n,(match b with
+    | Storage (contract,_) -> holding contract t
+    | Local (contract,_) -> Local (contract,t)
+    | Value _ -> b)
   else n,b) env
 (* What a field of an immutable binding's object currently holds, where a
    guard found it: an entry named by the object's name and the field joined
@@ -62,6 +69,10 @@ let fact env key contract t =
 (* Where a step may write cells unseen (a call, a closure run later, a loop's
    other iterations), a cell is known only by its contract, and no field's
    contents are known. A step that assigns only locals keeps the fields. *)
+(* A loop's widening: a slot holds what its contract admits. *)
+let widen_locals ?(only = fun _ -> true) env = List.map (fun (n,b) -> match b with
+  | Local (contract,_) when only n -> n,Local (contract,contract)
+  | _ -> n,b) env
 let forget ?only env = List.filter_map (fun (n,b) -> match b,only with
   | _,None when is_field n -> None
   | Storage (contract,_),None -> Some (n,cell contract)

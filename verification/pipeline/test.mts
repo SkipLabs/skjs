@@ -1000,6 +1000,13 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     ["invalid-saved-field-comparison", "wrong({ value: 7 })", null],
     // A closure reads a captured cell when it runs, and sees its own write.
     ["invalid-closure-graph-captured-cell", "counter()", null],
+    // A closure created before a write, or an iteration before one, reads
+    // the written value; a throw after a write leaves the try with it.
+    ["invalid-capture-before-write", "String(stale()())", "undefined"],
+    ["invalid-capture-next-iteration", "String(loopCapture(2)())", "undefined"],
+    ["invalid-slot-catch-entry", "midTry('a', 'b', () => { throw 1; })", "b"],
+    ["slot-object-growth", "JSON.stringify(grownSlot('x', false)()) + JSON.stringify(grownSlot('x', true)())", "{\"x\":1,\"count\":2}{\"x\":1,\"count\":2}"],
+    ["activation-slots", "[survivesCall('a', 'b', () => { throw 1; }), absorbedInnerTry('a', 'b', () => { throw 1; }), capturedAfterWrites(false)(), JSON.stringify(reverse({ head: 1, tail: { head: 2, tail: null } }))].join()", "a,a,no,{\"head\":2,\"tail\":{\"head\":1,\"tail\":null}}"],
     // A generic function type's result: a pair where it holds, the argument
     // itself where another scheme was passed for it.
     ["generic-function-type-member", "pass({ twice: () => (x) => [x, x] }).twice()(1).join()", "1,1"],

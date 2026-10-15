@@ -79,6 +79,7 @@ open S
         let t=get values value in
         let binding=match List.assoc_opt name initial with
           | Some (Storage (contract,_)) when List.mem name inputs -> holding contract t
+          | Some (Local (contract,_)) when List.mem name inputs -> Local (contract,t)
           | _ -> Value t in
         run (extend env name binding) values next
       | Execution.ReadField (source,receiver,field,value,next) ->

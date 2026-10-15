@@ -44,9 +44,12 @@ a union, and dropped where it contradicts every one: `T ⊓ (null | number)` is
     (reference : SourceExecution.Reference) : Compiler (Tm × PropKey × Ty Tree) := do
   match reference with
   | .local name _ =>
-    let some (i, .cell contract _) := resolve scope name
-      | throw s!"assignment to '{name}', which is not a mutable local"
-    return (.var i, valueField, contract)
+    match resolve scope name with
+    | some (i, .cell contract _) => return (.var i, valueField, contract)
+    -- A slot is read at what it holds now; `localSlot` keeps it from being
+    -- read or written as a cell.
+    | some (i, .slot _) => return (.var i, valueField, Γ[i]?.getD [])
+    | _ => throw s!"assignment to '{name}', which is not a mutable local"
   | .field original receiver key =>
     let (i, B) ← executionSaved scope Γ receiver
     let object := Fragment.Expr.var receiver.source receiver.name
@@ -72,6 +75,24 @@ a union, and dropped where it contradicts every one: `T ⊓ (null | number)` is
       pure (.var i, fld, T)
     | _ => throw (locatedRefusal (← table) original.span .storageWrite
         "an assignment needs one cell contract")
+
+/-- The slot a local reference names, with its contract, when the local is
+held in a slot. -/
+@[nospecialize] private def localSlot (scope : List (ScopeBinding Tree)) :
+    SourceExecution.Reference → Option (Nat × Ty Tree)
+  | .local name _ => match resolve scope name with
+    | some (i, .slot contract) => some (i, contract)
+    | _ => none
+  | .field .. => none
+
+/-- The slot an operation rebinds: a write of a local held in a slot. -/
+@[nospecialize] private def rebound (scope : List (ScopeBinding Tree)) :
+    SourceExecution.Operation → Option Nat
+  | .evaluate _ _ (.cellWrite name _) => match resolve scope name with
+    | some (i, .slot _) => some i
+    | _ => none
+  | .referenceWrite _ reference _ | .updateSaved _ reference _ _ => (localSlot scope reference).map (·.1)
+  | _ => none
 
 @[nospecialize] private partial def executionClaim (fc : SourceClaims.Function Tree)
     (source : Span) (fallback : Compiler (Ty Tree)) : Compiler (Ty Tree) :=
@@ -262,16 +283,44 @@ copy takes: the copy of such an object holds all of it. -/
       else if ObjectMerge.MergeOk G [] X F X then pure X else mergeType X F
     pure (some ⟨holders, r, v, .makeKey (.var k) (.var v), symbolic, if proto then some k else none, W, F, M⟩)
 
+/-- An update's operation: its result type, its right operand (the family's
+one for an increment), and the slot of the old value. -/
+@[nospecialize] private partial def updateType (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree))
+    (original : Fragment.Expr) (_reference : SourceExecution.Reference)
+    (previous : SourceExecution.Saved) (rhs : Option SourceExecution.Saved) :
+    Compiler (Ty Tree × Tm × Nat) := do
+  let .update source op _ _ _ := original | throw "internal execution plan: expected an update"
+  let (old, T) ← executionSaved scope Γ previous
+  let clauses := PositiveRules.expand (SourceTypes.graph (← table)) T
+  if rhs.isNone && (clauses.isEmpty ||
+      !(clauses.all ProgramTyping.numberClause || clauses.all ProgramTyping.bigintClause)) then
+    throw s!"unsupported source expression at [{source.1},{source.2}): an increment needs a target of one numeric family, number or bigint"
+  let (delta, C) ← match rhs with
+    | some rhs => do
+      let (i, C) ← executionSaved scope Γ rhs
+      pure (Tm.var i, C)
+    | none => do
+      if !clauses.isEmpty && clauses.all ProgramTyping.bigintClause then
+        pure (Tm.bigint 1, [← lower (SourceTypes.use (.bigintLit 1))])
+      else pure (Tm.num (1.0 : Float).toBits, [← lower (SourceTypes.use (.numLit (1.0 : Float).toBits))])
+  return (← operatorResult op T C, delta, old)
+
 /-- Typed atomic copies can replace one owned local while every source
     operand remains scheduled by the execution plan. -/
 @[nospecialize] private partial def executionAfterContext (fc : SourceClaims.Function Tree)
     (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree))
     (operation : SourceExecution.Operation) : Compiler (List (Ty Tree)) := do
+  -- A write of a slot rebinds it to the operation's value; an update's
+  -- value is the operation's result, its new value.
+  if let some i := rebound scope operation then
+    if let .updateSaved original reference previous rhs := operation then
+      return Γ.set i (← updateType scope Γ original reference previous rhs).1
+    return Γ.set i (← executionOperationType fc scope Γ operation)
   match operation with
   | .evaluate original prepared _ =>
     if let some g ← executionGrowth fc scope Γ original prepared then
       return g.holders.foldl (fun Γ (i, storage) => match storage with
-        | .value => Γ.set i g.M
+        | .value | .slot _ => Γ.set i g.M
         | .cell .. => Γ) Γ
     if (← ownedWrite) == some original.span then
       if let .objectAssign _ (.var _ name) _ := original then
@@ -287,16 +336,19 @@ copy takes: the copy of such an object holds all of it. -/
     (original prepared : Fragment.Expr) (next : Target) : Compiler Target := do
   if let some g ← executionGrowth fc scope Γ original prepared then
     let values := g.holders.filterMap fun (i, storage) => match storage with
-      | .value => some i
+      | .value | .slot _ => some i
       | .cell .. => none
     let mapping := (next.mapping.getD (List.range (Γ.length+1))).map
       (fun j => if j == 0 then 0 else if values.contains (j-1) then 1 else j+2)
     let merged := held ⟨"",some original.span⟩ :: held ⟨"",some original.span⟩ :: scope
     let result ← emitAt original.span (.var (g.value+2)) (.bind ⟨next.label,some mapping⟩)
       (g.M::g.F::Γ) g.W "expression-claim" (scope := merged)
-    -- A holder that is a `let` holds the copy in its cell from then on.
+    -- A holder that is a `let` holds the copy from then on: in its cell, or,
+    -- held in a slot, rebound to it, the copy checked at its contract.
     let stored ← g.holders.foldlM (init := result) fun next (i, storage) => match storage with
       | .value => pure next
+      | .slot contract => emitAt original.span (.var 0) (.effect next)
+          (g.M::g.F::Γ) contract "storage-contract" (scope := merged)
       | .cell .. => emitAt original.span (.writeAt valueField (.var (i+2)) (.var 0)) (.effect next)
           (g.M::g.F::Γ) [Labels.nul] "storage-contract" (scope := merged)
     let copy := if g.swapped then Tm.merge [] (.var 0) (.var (g.receiver+1))
@@ -332,7 +384,10 @@ copy takes: the copy of such an object holds all of it. -/
       match original with
       | .objectAssign _ (.var _ name) _ => pure (valueSlot scope name)
       | _ => pure none
-    else pure none
+    else match original with
+      -- An assignment of a slot rebinds it to the value it yields.
+      | .assign _ name _ rhs => pure (rebound scope (.evaluate original prepared (.cellWrite name rhs.span)))
+      | _ => pure none
   if let .var _ name := prepared then
     if (← executionType name).isSome then
       -- A source claim checks the saved value without forgetting the more
@@ -359,9 +414,18 @@ copy takes: the copy of such an object holds all of it. -/
   | .methodRead .. | .invokeSaved .. => LoweringAtoms.compileMethodOperation recursive fc scope Γ operation next
   | .snapshotSpread .. | .snapshotObject .. => compileSnapshotOperation fc scope Γ operation next
   | .referenceRead _ reference =>
+    if let some (i, _) := localSlot scope reference then
+      return ← emitAt source (.var i) (.bind next) Γ A (scope := scope)
     let (object, fld, _) ← executionReference fc scope Γ reference
     emitAt source (.readAt fld object) (.bind next) Γ A (scope := scope)
   | .referenceWrite _ reference value =>
+    if let some (j, contract) := localSlot scope reference then
+      -- The value, checked at the contract, rebinds the slot.
+      let (i, _) ← executionSaved scope Γ value
+      let mapping := (next.mapping.getD (List.range (Γ.length+1))).map
+        (fun k => if k == j+1 then 0 else k)
+      let result ← emitAt source (.var i) (.bind ⟨next.label, some mapping⟩) Γ A "expression-claim" (scope := scope)
+      return ← emitAt source (.var i) (.effect result) Γ contract "storage-contract" (scope := scope)
     let (object, fld, _) ← executionReference fc scope Γ reference
     let (i, _) ← executionSaved scope Γ value
     let result ← emitAt source (.var i) (.bind next) Γ A "expression-claim" (scope := scope)
@@ -369,24 +433,20 @@ copy takes: the copy of such an object holds all of it. -/
       "storage-contract" (scope := scope)
   | .updateSaved original reference previous rhs =>
     let .update _ op _ _ post := original | throw "internal execution plan: expected an update"
+    let (N, delta, old) ← updateType scope Γ original reference previous rhs
+    let scope' := held ⟨"",some source⟩ :: scope
+    if let some (i, contract) := localSlot scope reference then
+      -- The new value, checked at the contract, rebinds the slot; the
+      -- expression's value is the old or the new one.
+      let mapping := (next.mapping.getD (List.range (Γ.length+1))).map
+        (fun j => if j == 0 then 0 else if j == i+1 then 1 else j+1)
+      let result ← emitAt source (.var (if post then old+1 else 0)) (.bind ⟨next.label, some mapping⟩)
+        (N::Γ) A "expression-claim" (scope := scope')
+      let check ← emitAt source (.var 0) (.effect result) (N::Γ) contract "storage-contract" (scope := scope')
+      return ← emitAt source (.arith op (.var old) delta) (.bind check) Γ N (scope := scope)
     let (object, fld, _) ← executionReference fc scope Γ reference
-    let (old, T) ← executionSaved scope Γ previous
-    let clauses := PositiveRules.expand (SourceTypes.graph (← table)) T
-    if rhs.isNone && (clauses.isEmpty ||
-        !(clauses.all ProgramTyping.numberClause || clauses.all ProgramTyping.bigintClause)) then
-      throw s!"unsupported source expression at [{source.1},{source.2}): an increment needs a target of one numeric family, number or bigint"
-    let (delta, C) ← match rhs with
-      | some rhs => do
-        let (i, C) ← executionSaved scope Γ rhs
-        pure (Tm.var i, C)
-      | none => do
-        if !clauses.isEmpty && clauses.all ProgramTyping.bigintClause then
-          pure (Tm.bigint 1, [← lower (SourceTypes.use (.bigintLit 1))])
-        else pure (Tm.num (1.0 : Float).toBits, [← lower (SourceTypes.use (.numLit (1.0 : Float).toBits))])
-    let N ← operatorResult op T C
     let mapping := (next.mapping.getD (List.range (Γ.length+1))).map
       (fun i => if i == 0 then 0 else i+1)
-    let scope' := held ⟨"",some source⟩ :: scope
     let result ← emitAt source (.var (if post then old+1 else 0)) (.bind ⟨next.label, some mapping⟩)
       (N::Γ) A "expression-claim" (scope := scope')
     let object ← match object with
@@ -487,7 +547,7 @@ private partial def executionEntryRead (name : String) : SourceExecution.Plan �
     -- A slot of fixed type keeps it, as at a statement entry (`envCore`): a
     -- read's claim is derived from it, so it says no more.
     if b.fixed.isSome then return Δ
-    let .value := b.storage | return Δ
+    if let .cell .. := b.storage then return Δ
     if (Γ[i]?.bind (ProgramCertificates.schemeOf G ·)).isSome then return Δ
     let some p := (executionEntryRead b.source.name plan).1 | return Δ
     match fc.exprs.lookup p with
@@ -521,7 +581,8 @@ prepared predicate without replaying an effectful source operand. -/
         | .evaluate _ prepared _ => comparisonsExpr fc prepared
         | _ => pure (Fragment.Expr.var source "")
       let after ← executionAfterContext fc scope Γ operation
-      withExecutionOrigins (if Γ != after then [] else retained)
+      -- A rebound slot no longer holds what an alias saved of it.
+      withExecutionOrigins (if Γ != after || (rebound scope operation).isSome then [] else retained)
         (k (held ⟨"",some source⟩ :: scope) (A::after) origin)
     compileExecutionOperation recursive fc scope Γ source operation next
   | .sequence _ binding evaluate next =>

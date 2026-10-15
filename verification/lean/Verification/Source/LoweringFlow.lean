@@ -180,7 +180,9 @@ set_option maxHeartbeats 1000000
 @[nospecialize] partial def body (recursive : RecursiveLowering) (owner : Span) (fc : SourceClaims.Function Tree) (R : Ty Tree)
     (scope : List (ScopeBinding Tree)) (stmts : List Fragment.Stmt) : Compiler Target := do
   let graph ← liftSource (SourceFlow.build owner [] stmts)
-  withFreshFlowTargets (flowNode recursive graph scope fc R scope graph.entry)
+  -- The module's initialization is the body whose owner is `(0,0)`.
+  withLocalCells (cellLocals [] stmts (module := owner == (0,0)))
+    (withFreshFlowTargets (flowNode recursive graph scope fc R scope graph.entry))
 
 end LoweringFlow
 end Verification.SourceExtraction

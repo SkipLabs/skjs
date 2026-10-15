@@ -26,6 +26,11 @@ claim about `x` describes what the cell currently holds, which is exactly what
 must not become the type of the slot holding its identity. -/
 inductive Storage (ι : Type) where
   | value
+  /-- A mutable binding every closure that mentions it sees at its value when
+  the closure was created (`cellLocals`): a slot of its activation, rebound
+  by each write, whose value is checked against `contract`. What the
+  producer says `x` is at a point is this slot's type there. -/
+  | slot (contract : Ty ι)
   | cell (contract : Ty ι) (reference : Ty ι)
   deriving Repr, Inhabited
 
@@ -65,10 +70,13 @@ itself whether a name denotes a value or a location. -/
   let b ← scope[i]?
   return (i, b.storage)
 
-/-- Only immutable value slots may be substituted by a guard's saved value. -/
+/-- Only slots holding the value itself may be substituted by a guard's saved
+value: an immutable one, or a mutable one no write has rebound since the
+value was saved (a write clears the saved aliases, `executePlanTail`). -/
 @[nospecialize] def valueSlot (scope : List (ScopeBinding ι)) (name : String) : Option Nat := do
-  let (i,.value) ← resolve scope name | none
-  return i
+  match ← resolve scope name with
+  | (i, .value) | (i, .slot _) => return i
+  | (_, .cell ..) => none
 
 /-- State local to one compiled graph. A closure begins with an empty frame
 and restores its enclosing frame as a whole. -/
@@ -96,6 +104,9 @@ private structure GraphFrame where
   the scope of the `try`), and the length of the `try`'s scope. Every node
   emitted meanwhile whose expression may throw names it. -/
   handler : Option (Target × Nat) := none
+  /-- The `let` declarations of the graph's body held in cells
+  (`cellLocals`), by name and declaring statement. -/
+  cells : List (String × Option Span) := []
 
 /-- Equation growth, obligations and nested code are shared across graph frames. -/
 private structure Built extends GraphFrame where
@@ -242,6 +253,13 @@ def withHandler (handler : Option (Target × Nat)) (action : Compiler α) : Comp
     (fun before after => { after with handler := before.handler }) action
 
 def currentHandler : Compiler (Option (Target × Nat)) := readBuilt (·.handler)
+
+/-- The body compiled in this frame holds these `let`s in cells. -/
+def withLocalCells (cells : List (String × Option Span)) (action : Compiler α) : Compiler α :=
+  scopeState (fun s => { s with cells := cells })
+    (fun before after => { after with cells := before.cells }) action
+
+def localCells : Compiler (List (String × Option Span)) := readBuilt (·.cells)
 
 /-- A recursive source body owns its memo of cyclic graph entries. -/
 def withFreshFlowTargets (action : Compiler α) : Compiler α :=

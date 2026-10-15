@@ -221,7 +221,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
       let current = resolve env n in
       publish_expression name_pos current None;
       let contract = match lookup env n with
-        | Storage (contract,_) -> contract
+        | Storage (contract,_) | Local (contract,_) -> contract
         | Value _ -> Proposal_diagnostics.unsupported "assignment to immutable binding" in
       let right = expr ~expected:contract env rhs in
       (match List.assoc_opt n (path_facts ()).Proposal_flow.evolving with
@@ -238,7 +238,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
     | ArrayAssign (targets,rest,rhs) ->
       let local (t:expr) = match t.node with
         | Id n -> (match lookup env n with
-          | Storage (contract,_) -> Some contract
+          | Storage (contract,_) | Local (contract,_) -> Some contract
           | Value _ -> Proposal_diagnostics.unsupported "assignment to immutable binding")
         | _ -> None in
       (* A field's reference is evaluated after the right side: its contract

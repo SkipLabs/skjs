@@ -181,9 +181,11 @@ did not mention grow it, and the request carries the result. -/
     let paramScope : List (ScopeBinding Tree) ← (scope.zip bindings).mapM fun (pair : ScopeBinding Tree × Ty Tree) => do
       let (b,contract) := pair
       if stmts.any (assignsStmt b.source.name) then
-        let reference ← lower (do return [← CellClaims.reference [(valueField, contract)]])
         let b := { b with param := true }
-        pure { b with storage := .cell contract reference }
+        if heldInCell b.source.name stmts then
+          let reference ← lower (do return [← CellClaims.reference [(valueField, contract)]])
+          pure { b with storage := .cell contract reference }
+        else pure { b with storage := .slot contract }
       else pure { b with param := true }
     let bodyScope := paramScope ++ siblingScope
     let slotTypes := bindings ++ siblingTypes
@@ -199,7 +201,7 @@ did not mention grow it, and the request carries the result. -/
         let Γ := (bodyScope.zip slotTypes).zipIdx.map fun (entry : ((ScopeBinding Tree) × Ty Tree) × Nat) =>
           let ((binding,A),j) := entry
           if j < i then match binding.storage with
-            | .cell _ ref => ref | .value => A
+            | .cell _ ref => ref | .value | .slot _ => A
           else A
         let mapping := (List.range fullScope.length).map fun j => if j == i then 0 else j+1
         first ← emitAt f.namePos (.makeAt .absent [valueField] [.var i])

@@ -1703,8 +1703,11 @@ object at $`\mathsf{Ref}(k{:}W;\ \mathsf{among}\,\{k\})`$ and the merge at the
 record or dictionary `mergeResult` proposes, checked by
 [$`\textsf{merge}`$](#allocation-from-parts). A constant holder $`y`$ is
 rebound by the last node's slot map, which puts the merge's value in $`y`$'s
-slot; a `let` holder by a write of its cell, checked against the cell's
-storage contract. The value of the assignment is discarded: only a statement
+slot; a `let` holder held in a cell by a write of its cell, checked against
+the cell's storage contract, and one held in a slot of its activation
+([slot or cell](SOURCE-ELABORATION.md#mutable-bindings-and-module-constants))
+by the same slot map, the merge's value checked against its storage contract.
+The value of the assignment is discarded: only a statement
 is lowered so. A write $`x[k] = e`$ at a key whose claim is of
 strings, numbers or symbols, and no one key the source spells
 (`computedKeyClaim`), is the same copy, rebound to every holder alike, with

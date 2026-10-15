@@ -627,6 +627,21 @@ let flat_atoms declarations t =
         | a -> [a]) atoms
     | Rigid _ | Meet _ -> [] in
   go [] t
+(* What a slot holds after a write of a value of type [t] under [contract],
+   as TypeScript narrows a declared type on assignment: a primitive value at
+   its own type; any other at the contract's arms, those the written literal
+   [init] rules out dropped and a nullish arm dropped where the value's type
+   excludes it. So a read sees the declared members, an optional field
+   included, on every path. A proposal: Lean checks the written value below
+   it on the edge out of the write. *)
+let slot_holds declarations contract t (init:expr option) =
+  if Environment.knowable t then t
+  else
+    let declared = arms declarations contract in
+    let declared = match init with Some e -> assigned_arms declarations declared e | None -> declared in
+    match (try Some (flat_atoms declarations t) with Json.Error _ -> None) with
+    | Some (_::_ as atoms) -> Environment.observed_contents declared (Atoms atoms)
+    | _ -> declared
 (* The keys a key's type names, each a singleton: a string, a number's
    `ToString` or a symbol. Empty where it names a family (every string, every
    number, every symbol) or anything else. *)

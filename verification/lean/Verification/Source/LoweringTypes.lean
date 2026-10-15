@@ -82,7 +82,7 @@ from its location. -/
         s!"unavailable claimed binding '{name}' at {pos}"
       else msg
     match b.storage with
-    | .value => return A
+    | .value | .slot _ => return A
     | .cell _ reference => return reference
 
 @[nospecialize] def env (fc : SourceClaims.Function Tree) (pos : Nat) (scope : List (ScopeBinding Tree)) :

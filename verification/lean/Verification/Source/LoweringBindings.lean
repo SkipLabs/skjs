@@ -43,6 +43,14 @@ set_option maxHeartbeats 1000000
     let written ← lower (Fragment.translate annotation)
     requireSameMeaning (← table) b.init.span .bindingAnnotation contract written
       s!"claimed storage contract differs from the source annotation for '{b.name}'"
+  if !(← localCells).contains (b.name, some pos) then
+    -- A slot: the initializer's value, checked at the contract, is the
+    -- binding's first value.
+    let binding : ScopeBinding Tree := { source := ⟨b.name,some pos⟩, storage := .slot contract }
+    let continued ← after (binding::scope)
+    let stored ← emitAt b.init.span (.var 0) (.effect continued) (A::Γ) contract
+      "storage-contract" (some pos.1) (scope := held ⟨"",some b.init.span⟩::scope)
+    return ← LoweringExecution.compileExpr recursive fc scope Γ b.init stored
   let reference ← lower (do return [← CellClaims.reference [(valueField, contract)]])
   let binding : ScopeBinding Tree := { source := ⟨b.name,some pos⟩, storage := .cell contract reference, apart := some Γ }
   let continued ← after (binding::scope)

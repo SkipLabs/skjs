@@ -121,6 +121,7 @@ module type Typing_scope = sig
   val with_typing_roots : root list -> (unit -> 'a) -> 'a
 end
 module type Closure_scope = sig
+  val held_in_cell : string -> Json.t -> bool
   val closure_entry : Json.t -> (string * Execution.binding_plan option) option
   val with_current_point : string -> (unit -> 'a) -> 'a
   val with_rigid_bounds : (Semantic.rigid * ty) list -> (unit -> 'a) -> 'a
@@ -129,6 +130,7 @@ module type Closure_scope = sig
   val publish_arrow : Json.t -> Proposal_types.overlay list -> unit
 end
 module type Statement_operations = sig
+  val held_in_cell : string -> Json.t -> bool
   val following_statements : Json.t -> Source.stmt list
   val forget_exact_local : string -> unit
   val mark_fresh_constructor : unit -> unit

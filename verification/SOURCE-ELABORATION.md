@@ -763,13 +763,68 @@ caller may omit it. A closure parameter's default stays the closure's own
 
 ## Mutable bindings and module constants
 
-A `let` binding and an assigned parameter lower to a private cell
+A `let` binding and an assigned parameter lower to a slot of their
+activation or to a private cell
 ([Source model](SOURCE-MODEL.md#mutable-bindings)). Its
 contract $`C`$ is fixed where it is declared; the initializer and every write
-are checked against it (`storage-contract`), and a point claim for the name
+are checked against it (`storage-contract`). A point claim for the name is
+the slot's type there, checked on every incoming edge as any slot's is, or
 describes the cell's current contents, which the
 [current-content rules](PROGRAM-TYPING.md#current-content-rules-semantic-layer) justify on every
-incoming edge. The contract is:
+incoming edge.
+
+**Slot or cell.** A cell is how a binding is shared with the closures that
+capture it. Write $`\mathrm{writes}(x)`$ for the writes of $`x`$ in its
+activation (its declaration's initialization, assignments, updates and
+pattern targets), $`\mathrm{creates}(x)`$ for the creations of closures whose
+bodies mention $`x`$, each an event of a run of the activation, and $`\prec`$
+for the order of the activation's evaluation. Then
+
+```math
+\mathrm{slot}(x)\iff
+\neg\,\mathrm{closureWrites}(x)\;\land\;
+\bigl(\forall c\in\mathrm{creates}(x),\ w\in\mathrm{writes}(x).\ w\prec c\bigr)
+\;\land\;\neg\,\mathrm{armWrite}(x)
+```
+
+where $`\mathrm{armWrite}(x)`$ holds when a write of $`x`$ lies in a conditional
+part of an expression (an arm of `&&`, `||`, `??`, `?:` or `?.`, a logical
+assignment's write, a pattern's default). Under the first two conjuncts every
+closure that mentions $`x`$ finds, whenever it runs, the value $`x`$ held when
+the closure was created, since no write follows that creation: the closure
+may capture that value, and the activation alone reads and writes the
+binding. Such a binding is a variable of the activation's environment. Its
+slot is rebound at each write, the edge out of the write's node mapping the
+written value into it, and a read of $`x`$ is the slot:
+
+```math
+\rho \vdash x \mathrel{=} e\ \leadsto\ v\leftarrow e;\ \mathrm{check}_C(v);\ \rho[x\mapsto v]
+\qquad
+\rho \vdash x\ \leadsto\ \rho(x).
+```
+
+The third conjunct is a limit of the lowering, which joins an expression's
+arms at one frame within a statement: such a binding stays a cell.
+`cellLocals` decides the conjuncts by one walk in evaluation order: the parts
+of an expression left to right, statements in order, every part of a choice
+(a superset of either arm), and a loop's parts twice, so that a write in one
+iteration follows a closure the iteration before created. The decision is
+syntactic and selects a lowering; the graph checker checks what either
+lowering states. The flow graph exported to the producer lists each body's
+cells (`cells`), so the producer and the lowering read one decision.
+
+A slot is part of the environment, which no heap step reaches: its type and
+value facts survive a call, a closure run and a throw. A `catch` is entered
+from each node that may throw (a node whose expression is a value or a slot
+names no handler), with what the slot holds at that node. A cell's contract
+is what a closure reads it at; a slot's contract only checks its writes.
+After its initialization or a write of a value of type $`V`$, the producer
+claims a slot at $`V`$ where $`V`$ is primitive, and otherwise at the arms of
+$`C`$ that $`V`$ may be of, those a written literal rules out dropped and a
+nullish arm dropped where $`V`$ excludes it (TypeScript's narrowing on
+assignment): a read then sees $`C`$'s members, an optional field included,
+on every path, and Lean checks $`V`$ below that claim on the edge out of the
+write. The contract is:
 
 ```math
 \mathrm{contract}(\mathtt{let}\ x{:}T=e)=T
@@ -813,7 +868,8 @@ Definite assignment is not an extra rule: a read at $`T`$ types only where the
 cell's current contents are known to be in $`T`$, a fact a write of a $`T`$ value
 establishes and a join keeps only when every incoming edge proves it. A
 closure reads a captured cell at its contract, $`T\cup\mathsf{Undefined}`$,
-since it may run before the write. Current contents are primitive predicates
+since it may run before the write; a binding held in a slot is captured at
+its value, which every write precedes. Current contents are primitive predicates
 or `defined`, which a write of a value whose type rules `undefined` out
 records: so a `let x: T;` of an object type `T` assigned on every path is read
 at $`T`$ ([`read-sliced`](PROGRAM-TYPING.md#checked-expression-postconditions)), and a call in

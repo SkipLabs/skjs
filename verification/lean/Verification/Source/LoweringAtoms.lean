@@ -343,12 +343,22 @@ Mappings discard only the temporaries introduced by this expression. -/
   | .block .. => throw "internal extraction error: statements outside a closure body"
   | .var _ name =>
     match resolve scope name with
-    | some (i, .value) => emitAt e.span (.var i) (.bind next) Γ A (scope := scope)
+    | some (i, .value) | some (i, .slot _) => emitAt e.span (.var i) (.bind next) Γ A (scope := scope)
     -- A source read of a mutable local returns the cell's contents; the
     -- identity in the slot is never the value of a source expression.
     | some (i, .cell ..) => emitAt e.span (.readAt valueField (.var i)) (.bind next) Γ A (scope := scope)
     | none => throw s!"unbound or uninitialized source variable '{name}'"
   | .assign _ name _ rhs =>
+    if let some (_, .slot contract) := resolve scope name then
+      -- The value, checked at the contract, is the assignment's; the
+      -- execution plan's continuation rebinds the slot to it
+      -- (`executionEvaluate`), so no other path may compile it.
+      if (← originalExpression).map (·.span) != some e.span then
+        throw "internal execution plan: a write of a slot outside its execution plan"
+      let C ← exprType fc rhs
+      let checked ← emitAt e.span (.var 0) (.effect next) (C::Γ) contract "storage-contract"
+        (scope := held ⟨"",some rhs.span⟩ :: scope)
+      return ← compileAtom recursive fc scope Γ rhs checked
     let some (i, .cell ..) := resolve scope name
       | throw s!"assignment to '{name}', which is not a mutable local"
     let C ← exprType fc rhs

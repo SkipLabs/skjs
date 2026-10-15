@@ -188,6 +188,7 @@ let rec branch_with state ?(modules = fun _ -> None) ?(claimed = fun _ -> None) 
     List.filter_map (fun (n,x) -> match x,List.assoc_opt n later with
       | Value l,Some (Value r) -> Some (n,Value (union l r))
       | Storage (contract,l),Some (Storage (_,r)) -> Some (n,holding contract (union l r))
+      | Local (contract,l),Some (Local (_,r)) -> Some (n,Local (contract,union l r))
       | _ when is_field n -> None
       | _ -> Some (n,x)) either
   | TypeofTest (shape,equal,{node=Id name;_}) ->
@@ -233,7 +234,7 @@ let rec branch_with state ?(modules = fun _ -> None) ?(claimed = fun _ -> None) 
     (* An immutable name, or a field of one: read again where Lean tests it
        against each singleton, which nothing between has changed. *)
     let immutable n = match List.assoc_opt n env with
-      | Some (Value _) -> true | Some (Storage _) -> false | None -> modules n <> None in
+      | Some (Value _ | Local _) -> true | Some (Storage _) -> false | None -> modules n <> None in
     let reread (e:expr) = match e.node with
       | Id n | Read ({node=Id n;_},_) -> immutable n
       | _ -> false in

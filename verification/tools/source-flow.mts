@@ -65,7 +65,10 @@ export interface FlowNode {
   executions: SourceExecution[];
   bindingPlan: BindingPlan | null;
 }
-export interface FlowGraph { owner: Span; bodySpans: Span[]; entry: number; prologue: BindingPlan | null; nodes: FlowNode[] }
+/** `cells`: the body's mutable bindings held in cells, a `let` named with its
+ * declaring statement, an assigned parameter with the owner; every other
+ * mutable binding is a slot of the body's activation. */
+export interface FlowGraph { owner: Span; bodySpans: Span[]; entry: number; cells: FlowBinding[]; prologue: BindingPlan | null; nodes: FlowNode[] }
 export type FlowDocument = FlowGraph[];
 
 const invalid = (what: string): never => { throw Error(`invalid control-flow document: ${what}`); };
@@ -184,8 +187,9 @@ const bindingPlan = (value: unknown): void => {
 export function decodeFlowDocument(value: unknown): FlowDocument {
   const owners = new Set<string>();
   for (const raw of array(value)) {
-    const graph = object(raw); exact(graph, ["owner", "bodySpans", "entry", "prologue", "nodes"]);
+    const graph = object(raw); exact(graph, ["owner", "bodySpans", "entry", "cells", "prologue", "nodes"]);
     span(graph.owner); if (graph.prologue !== null) bindingPlan(graph.prologue); array(graph.bodySpans).forEach(span);
+    scope(graph.cells);
     const owner = array(graph.owner).join(":");
     if (owners.has(owner)) invalid("duplicate graph owner");
     owners.add(owner);

@@ -118,6 +118,9 @@ let transfer (expr:Analysis_state.expression_infer) =
       if not escaping then env else loosen env n) env (path_facts ()).Proposal_flow.exact_locals in
     let result = match s.statement with
     | Declare (mutable_,[(n,written,init)]) ->
+      (* A `let` the flow graph does not hold in a cell is a slot of the
+         activation: every point claims what it holds there. *)
+      let slot = mutable_ && not (held_in_cell n s.span) in
       if String.ends_with ~suffix:".[[class]]" n then mark_fresh_constructor ();
       (* An unannotated constant's fresh array is built at the array type its
          first use expects it at, where that use is one (SKJS commits such a
@@ -209,8 +212,15 @@ let transfer (expr:Analysis_state.expression_infer) =
         (* An unannotated constant of a named union is held at its arms, as
            an annotated one is: a guard then keeps or drops each. *)
         | false,None -> Value (arms declarations initial) in
+      (* A `let` the flow graph does not hold in a cell is a slot of the
+         activation: it holds the initializer's value, a primitive at its
+         type and any other at the contract's arms it may be of, under the
+         same contract. *)
+      let binding = match binding with
+        | Storage (contract,_) when slot -> Local (contract,slot_holds declarations contract initial (Some init))
+        | b -> b in
       (match binding with
-       | Storage (contract,_) ->
+       | Storage (contract,_) | Local (contract,_) ->
          let candidate = { pos = init.pos; name = n; type_ = contract } in
          publish_contract candidate
        | Value _ -> ());
@@ -263,11 +273,13 @@ let transfer (expr:Analysis_state.expression_infer) =
       if List.exists (adds before receiver t) names then begin
         record_growth n;
         let t' = combine (List.map (fun name -> grown declarations t name c) names) in
-        (* Every constant holding the object holds the copy; a `let`'s cell
+        (* Every constant holding the object holds the copy, and so does a
+           `let` held in a slot, which the lowering rebinds; a `let`'s cell
            keeps its contract. *)
         let holders = holders_of n in
         List.map (fun (m,b) -> match b with
           | Value _ when List.mem m holders -> m,Value t'
+          | Local (contract,_) when List.mem m holders -> m,Local (contract,t')
           | _ -> m,b) env
       end else env
     | Effect e -> ignore (expr env e); after e env
@@ -281,6 +293,7 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
   let transfer_statement = transfer expr in
   let after e env = effects env e in
   let flow_callbacks = {
+    widen_slot=arms declarations;
     Proposal_flow.snapshot_metadata=path_facts;
     with_path_metadata;
     empty_output=Analysis_capabilities.empty_output;

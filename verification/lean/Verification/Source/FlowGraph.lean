@@ -45,6 +45,10 @@ structure Graph where
   bodySpans : List Span
   entry : Nat
   nodes : Array Node
+  /-- The body's mutable bindings held in cells (`SourceExtraction.cellLocals`):
+  a `let` named with its declaring statement, an assigned parameter with
+  the body's owner. Every other one is a slot of the body's activation. -/
+  cells : Scope := []
 
 private structure Finalizer where
   statements : List Stmt
@@ -243,6 +247,6 @@ def build (owner : Span) (scope : Scope) (body : List Stmt) : Except String Grap
   let (entry, nodes) ← (do
     let finish ← emit owner scope {} .finish
     sequence owner scope body finish {}).run #[]
-  return ⟨owner, body.map Stmt.pos, entry, nodes⟩
+  return ⟨owner, body.map Stmt.pos, entry, nodes, []⟩
 
 end Verification.SourceFlow

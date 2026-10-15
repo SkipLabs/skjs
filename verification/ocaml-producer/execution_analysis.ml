@@ -27,6 +27,7 @@ open S
   let join before left right =
     List.filter_map (fun (n,b) -> match b,List.assoc_opt n left,List.assoc_opt n right with
       | Storage (contract,_),Some (Storage (_,l)),Some (Storage (_,r)) -> Some (n,holding contract (union l r))
+      | Local (contract,_),Some (Local (_,l)),Some (Local (_,r)) -> Some (n,Local (contract,union l r))
       (* A local an arm added a key to holds the object either arm left. *)
       | Value _,Some (Value l),Some (Value r) when grew n && l <> r ->
         Some (n,Value (union l r))
@@ -64,7 +65,12 @@ open S
       | Execution.CellWrite (name,value) ->
         (match List.assoc_opt name env,claimed_type value with
          | Some (Storage _),Some t -> assign env name t
+         (* A slot holds the value at its declared arms, as a constant does:
+            a guard then keeps or drops each. *)
+         | Some (Local (contract,_)),Some t ->
+           assign env name (slot_holds declarations contract t (expression_hint value))
          | Some (Storage _),None -> forget ~only:(( = ) name) env
+         | Some (Local (contract,_)),None -> assign env name contract
          | _ -> env)
       | Execution.CellUpdate (name,source) ->
         (match List.assoc_opt name env,expression_hint source with
@@ -72,7 +78,12 @@ open S
            let right=match rhs with None -> contract | Some rhs ->
              Option.value (claimed_type rhs.pos) ~default:contract in
            assign env name (operation_result declarations op contract right)
+         | Some (Local (contract,current)),Some {node=Update (op,_,rhs,_);_} ->
+           let right=match rhs with None -> contract | Some rhs ->
+             Option.value (claimed_type rhs.pos) ~default:contract in
+           assign env name (operation_result declarations op current right)
          | Some (Storage _),_ -> forget ~only:(( = ) name) env
+         | Some (Local (contract,_)),_ -> assign env name contract
          | _ -> env))
     | Execution.Sequence (_,binding,evaluate,next) ->
       let env=run_execution ~observe env evaluate in

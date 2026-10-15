@@ -17,7 +17,11 @@ type action =
   | IteratorStep of Json.t * binding * binding * int * int
 type node = { id: int; point: string; source: Json.t; scope: binding list;
               handler: handler option; action: action; binding_plan: Execution.binding_plan option; executions: (Json.t * Execution.plan) list }
-type graph = { owner: Json.t; body_spans: Json.t list; entry: int; nodes: node array; prologue: Execution.binding_plan option }
+(* [cells]: the body's mutable bindings held in cells, a `let` named with its
+   declaring statement, an assigned parameter with the owner; every other
+   mutable binding is a slot of the body's activation. *)
+type graph = { owner: Json.t; body_spans: Json.t list; entry: int; nodes: node array;
+               prologue: Execution.binding_plan option; cells: binding list }
 
 let number = function
   | Json.Number n -> (try int_of_string n with Failure _ -> Json.fail "invalid flow node identity")
@@ -69,7 +73,8 @@ let decode j =
     Json.fail "flow edge names a missing node") (successors node)) nodes;
   let entry=number (Json.field "entry" j) in
   if not (valid entry) then Json.fail "flow entry names a missing node";
-  {owner=Json.field "owner" j;body_spans=Json.list (Json.field "bodySpans" j);entry;nodes;prologue=Execution.optional_binding (Json.field "prologue" j)}
+  {owner=Json.field "owner" j;body_spans=Json.list (Json.field "bodySpans" j);entry;nodes;prologue=Execution.optional_binding (Json.field "prologue" j);
+   cells=bindings (Json.field "cells" j)}
 
 (* Transfer proposes states on the graph's edges. Repeated visits compute a
    fixed point; callers publish claims only after the result settles. *)
@@ -99,7 +104,7 @@ let solve ~join ~transfer ~widen graph initial =
           | None -> incoming
           | Some previous ->
             let merged=join graph.nodes.(target) previous incoming in
-            if visits.(target) >= 5 then widen graph.nodes.(target) merged else merged in
+            if visits.(target) >= 5 then widen graph.nodes.(target) previous merged else merged in
         if states.(target) <> Some next then begin
           states.(target) <- Some next; enqueue target
         end) edges

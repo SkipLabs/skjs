@@ -64,8 +64,10 @@ state resume afterwards. -/
         if i == 0 || i > arity then return b
         let some contract := inputs[i]? | throw "internal closure slot mismatch"
         if stmts.any (assignsStmt b.source.name) then
-          let reference ← lower (do return [← CellClaims.reference [(valueField, contract)]])
-          pure { b with storage := .cell contract reference }
+          if heldInCell b.source.name stmts then
+            let reference ← lower (do return [← CellClaims.reference [(valueField, contract)]])
+            pure { b with storage := .cell contract reference }
+          else pure { b with storage := .slot contract }
         else pure b
       let mut first ← recursive.body bodyExpr.span fc R bodyScope stmts
       for (b,i) in bodyScope.zipIdx.reverse do
@@ -74,7 +76,7 @@ state resume afterwards. -/
           let Γ := (bodyScope.zip inputs).zipIdx.map fun (entry : ((ScopeBinding Tree) × Ty Tree) × Nat) =>
             let ((binding,A),j) := entry
             if j < i then match binding.storage with
-              | .cell _ ref => if j == 0 || j > arity then A else ref | .value => A
+              | .cell _ ref => if j == 0 || j > arity then A else ref | .value | .slot _ => A
             else A
           let mapping := (List.range layout.length).map fun j => if j == i then 0 else j+1
           first ← emitAt pos (.makeAt .absent [valueField] [.var i])

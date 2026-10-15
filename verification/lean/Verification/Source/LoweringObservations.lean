@@ -84,7 +84,7 @@ object. -/
       Γ.zipIdx.flatMap fun (A,j) =>
         if i == j then [] else
         let other := scope[j]?
-        let isCell := other.any fun o => match o.storage with | .cell .. => true | .value => false
+        let isCell := other.any fun o => match o.storage with | .cell .. => true | .value | .slot _ => false
         let fields :=
           if j > i || (b.param && other.any (·.param)) then
             -- Older than the cell: the fields its record named when the cell
@@ -98,7 +98,7 @@ object. -/
           else if isCell || other.any (·.fresh) then commonFields G A
           else []
         fields.map fun f => (⟨i,j,false,valueField,true,f,false⟩ : HeapLinks.Link)
-    | .value => []
+    | .value | .slot _ => []
 
 /-- A checkpoint is an actual no-op graph node. Every incoming edge must
 justify its supplied current-heap assertion, including backedges. -/
@@ -180,7 +180,7 @@ must follow from the stable storage contract; no claim is silently dropped. -/
       -- dropped: the storage contract must imply it, as above.
       let T ← table
       let reference ← match b.storage with
-        | .value =>
+        | .value | .slot _ =>
           let some candidate := vars.lookup b.source.name
             | throw s!"missing claimed binding '{b.source.name}' at {pos}"
           SourceClaims.resolve T candidate
@@ -200,7 +200,7 @@ must follow from the stable storage contract; no claim is silently dropped. -/
           -- Slot i is the private holder, not the object inside it. A field
           -- observation cannot be attached to the holder's own value field.
           persistentObservation b.source (pos,pos+1) reference fld A
-        | .value =>
+        | .value | .slot _ =>
           if (invariant fld).any (within T · A) then
             persistentObservation b.source (pos,pos+1) reference fld A
           else match HeapKnowledge.atoms (SourceTypes.graph T) A with

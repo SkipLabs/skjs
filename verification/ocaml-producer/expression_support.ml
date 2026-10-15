@@ -15,7 +15,7 @@ open S
     | Id n ->
       ignore (expr env target);
       (match lookup env n with
-       | Storage (contract,_) -> contract
+       | Storage (contract,_) | Local (contract,_) -> contract
        | Value _ -> Proposal_diagnostics.unsupported "assignment to immutable binding")
     | _ -> expr env target
   (* The type `e as const` gives its operand: a literal its own type, an

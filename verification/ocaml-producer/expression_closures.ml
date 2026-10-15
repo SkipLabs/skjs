@@ -168,7 +168,7 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
            | _ -> Proposal_diagnostics.unsupported "a rest parameter needs a tuple of required positions or an array")
         | [] -> Proposal_diagnostics.unsupported "a rest parameter needs a parameter" in
       let values = List.filter_map (fun (name,b) -> match b with
-        | Value _ -> Some name | Storage _ -> None) inner @ module_names in
+        | Value _ | Local _ -> Some name | Storage _ -> None) inner @ module_names in
       let readable (a:expr) key =
         match latest_claim a.pos with
         | Some t -> (match declared_head declarations [] t with

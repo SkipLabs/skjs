@@ -74,8 +74,13 @@ let create diagnostics flows offered declarations module_functions arities bound
      | _ -> ());
     List.iter register_expression (Source.children e) in
   List.iter (fun s -> List.iter register_expression (Source.statement_children s)) f.body;
+  (* An assigned parameter is a cell where the flow graph says so, and a
+     slot of the activation otherwise. *)
+  let in_cell n = List.exists (fun (g:Flow.graph) -> g.Flow.owner=f.name_pos &&
+    List.exists (fun (b:Flow.binding) -> b.Flow.name=n && b.Flow.source=f.name_pos) g.Flow.cells) flows in
   let env0 = List.map (fun (n,t) ->
-    n,if List.exists (assigns n) f.body then cell t else Value (arms declarations t)) f.params in
+    n,if List.exists (assigns n) f.body then (if in_cell n then cell t else Local (t,arms declarations t))
+      else Value (arms declarations t)) f.params in
   { diagnostics; flows; offered; declarations; module_functions; arities; assumed; env0;
     executions; expression_hints; rigid_bounds=ref bounds;
     resolution_parameters = !resolution_parameters; writes=ref [];
@@ -280,6 +285,10 @@ module Access (S : sig val state : t end) = struct
   let register_following span following = Hashtbl.replace state.following span following
   (* A statement solver owns the returned node array. Closure inference reads
      only its entry description, so it receives no alias to a graph array. *)
+  (* Whether the flow graphs hold a mutable binding, named with its declaring
+     statement (a parameter: with its body's owner), in a cell. *)
+  let held_in_cell name source = List.exists (fun (g:Flow.graph) ->
+    List.exists (fun (b:Flow.binding) -> b.Flow.name=name && b.Flow.source=source) g.Flow.cells) state.flows
   let flow_graph owner = Option.map (fun (g:Flow.graph) -> {g with Flow.nodes=Array.copy g.Flow.nodes})
     (List.find_opt (fun (g:Flow.graph) -> g.Flow.owner=owner) state.flows)
   let closure_entry owner = Option.map (fun (g:Flow.graph) ->

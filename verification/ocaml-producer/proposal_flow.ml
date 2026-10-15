@@ -38,6 +38,8 @@ type 'output callbacks = {
   entry: environment -> Json.t -> unit;
   iterator_start: Flow.node -> Source.stmt -> environment -> Flow.binding -> environment;
   iterator_step: Flow.node -> Source.stmt -> environment -> Flow.binding -> Flow.binding -> environment * environment;
+  (* A loop's widening of a slot: what its contract admits, at its arms. *)
+  widen_slot: ty -> ty;
 }
 
 let unsupported s = Json.fail ("unsupported: " ^ s)
@@ -93,6 +95,7 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
           | Storage (contract,l),Storage (other,r) ->
             if contract <> other then unsupported "incoming paths disagree on a fixed storage contract";
             Some (n,holding contract (union l r))
+          | Local (contract,l),Local (_,r) -> Some (n,Local (contract,union l r))
           | Value l,Value r -> Some (n,Value (union l r))
           | _ -> unsupported "incoming paths disagree on a binding's storage identity")) left in
     let common left right = List.filter (fun x -> List.mem x right) left in
@@ -169,19 +172,47 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
         | Flow.IteratorStep (span,b,element,yes,no) ->
           let yielded,finished=callbacks.iterator_step node (source span) env b element in
           [next yes yielded;next no finished] in
+      (* Lean names a handler only on a node whose expression may throw: a
+         node of a statement that reads and writes slots and constants alone
+         has none, so no edge carries this statement's states to it. *)
+      let rec quiet (e:Source.expr) = match e.node with
+        | Id n -> (match List.assoc_opt n env with Some (Storage _) -> false | _ -> true)
+        | Literal _ -> true
+        | Assign (n,rhs) -> (match List.assoc_opt n env with Some (Local _) -> quiet rhs | _ -> false)
+        | _ -> false in
+      let silent = match node.action with
+        | Flow.Jump _ | Flow.End -> true
+        | Flow.Statement (span,_) ->
+          (match (source span).statement with Effect e -> quiet e | _ -> false)
+        | Flow.Declaration (span,name,_,mutable_,_) ->
+          (not mutable_ || not (List.exists (fun (b:Flow.binding) -> b.name=name && b.source=span) graph.cells))
+          && (match (source span).statement with
+              | Declare (_,bindings) -> List.for_all (fun (b,_,init) -> b <> name || quiet init) bindings
+              | _ -> false)
+        | _ -> false in
       let edges=match node.handler with
         | None -> edges
         | Some h ->
+          (* A silent statement's edge carries no throw: its caught value is
+             of the empty type, which a join with any other edge drops, and
+             which marks a handler no edge reaches as unreachable. *)
+          let caught=if silent then Atoms [] else top in
           let exceptional=scope h.scope (forget env) in
           let exceptional=if List.mem_assoc h.binding.name exceptional then
-              List.map (fun (n,b) -> if n=h.binding.name then n,Value top else n,b) exceptional
-            else extend exceptional h.binding.name (Value top) in
+              List.map (fun (n,b) -> if n=h.binding.name then n,Value caught else n,b) exceptional
+            else extend exceptional h.binding.name (Value caught) in
           next h.target exceptional :: edges in
       edges)) in
       publications.(node.id) <- output;
       edges in
     let states=Flow.solve ~join ~transfer
-      ~widen:(fun _ state -> {state with env=forget state.env}) graph (capture env0) in
+      ~widen:(fun _ previous state ->
+        (* A slot still changing here is widened to its contract; one that
+           settled keeps what it holds, a branch's narrowing included. *)
+        let settled n b = List.assoc_opt n previous.env = Some b in
+        {state with env=List.map (fun (n,b) -> match b with
+          | Local (contract,_) when not (settled n b) -> n,Local (contract,callbacks.widen_slot contract)
+          | _ -> n,b) (forget state.env)}) graph (capture env0) in
     Array.iter callbacks.publish_output publications;
     let completed=Array.to_list (Array.mapi (fun id state -> match graph.nodes.(id).action,state with
       | Flow.End,Some state -> Some (scope [] state.env) | _ -> None) states) |> List.filter_map Fun.id in

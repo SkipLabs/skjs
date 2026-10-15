@@ -103,12 +103,12 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
       if not (List.mem_assoc n env) && List.mem n module_names then
         Proposal_diagnostics.unsupported ("assignment to module function " ^ n);
       (match lookup env n with
-      | Storage (contract,_) ->
+      | Storage (contract,_) | Local (contract,_) ->
         let t = expr ~expected:contract env rhs in
         (* A value that reads the binding is what it may be for anything the
            binding may hold: its contract. *)
         let written () = if reads n rhs
-          then (match quietly (fun () -> expr (forget env) rhs) with None -> Some t | s -> s)
+          then (match quietly (fun () -> expr (widen_locals ~only:(( = ) n) (forget env)) rhs) with None -> Some t | s -> s)
           else Some t in
         (match List.assoc_opt n (path_facts ()).Proposal_flow.evolving with
          | Some (key,false) -> Option.iter (evolve key) (written ())

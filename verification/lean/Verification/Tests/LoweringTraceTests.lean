@@ -15,7 +15,7 @@ open Lean ProgramTyping SourceExtraction SourceClaimJson ControlFlow
 
 /-! ## Declaration lists
 
-A `let` list: one cell per declarator, in source order. -/
+A `let` list: one slot per declarator, in source order. -/
 namespace DeclarationList
 -- `laterWriteStaysSeparate` from tests/stateful-source/declaration-list.ts,
 -- with source claims in calculus labels.
@@ -26,40 +26,31 @@ private def extracted := SourceClaimJson.extractGraphRequests ast claims file
 private def program : Program := ((extracted.toOption.getD []).map (·.program)).headD []
 private def start : Nat := ((extracted.toOption.getD []).map (·.start)).headD 0
 
--- The seed is allocated in the first cell, then read into the second cell.
--- Writing null to the first cell preserves the second cell's contents; its
--- non-null contents or false are returned.
+-- The seed is the first slot's value, then the second's. Writing null to the
+-- first rebinds its slot only; the second's non-null value or false is
+-- returned. No cell is allocated: no closure sees either binding.
 private def expected : Program :=
-  [⟨.nul, .effect ⟨47, none⟩, none⟩,
-   ⟨.nul, .effect ⟨42, none⟩, none⟩,
-   ⟨.nul, .effect ⟨37, none⟩, none⟩,
+  [⟨.nul, .effect ⟨44, none⟩, none⟩,
+   ⟨.nul, .effect ⟨40, none⟩, none⟩,
+   ⟨.nul, .effect ⟨36, none⟩, none⟩,
    ⟨.nul, .effect ⟨28, none⟩, none⟩,
    ⟨.nul, .effect ⟨8, none⟩, none⟩,
    ⟨.var 0, .ret, none⟩,
    ⟨.var 0, .effect ⟨5, some [0, 1, 2, 3]⟩, none⟩,
    ⟨.var 0, .bind ⟨6, some [0, 2, 3, 4]⟩, none⟩,
-   ⟨.readAt (Verification.PropKey.str "value") (.var 0), .bind ⟨7, none⟩, none⟩,
+   ⟨.var 0, .bind ⟨7, none⟩, none⟩,
    ⟨.nul, .effect ⟨13, none⟩, none⟩,
    ⟨.var 0, .ret, none⟩,
    ⟨.var 0, .effect ⟨10, some [0, 1, 2, 3]⟩, none⟩,
    ⟨.var 0, .bind ⟨11, some [0, 2, 3, 4]⟩, none⟩,
    ⟨.fls, .bind ⟨12, none⟩, none⟩,
-   ⟨.var 3, .tagBind
-                       (.isNul)
-                       ⟨9, some [5, 6, 7]⟩
-                       ⟨4, some [5, 6, 7]⟩, none⟩,
-   ⟨.ite
-                     (.test (.isNul) (.var 1))
-                     (.fls)
-                     (.tru), .bind ⟨14, some [0, 3, 4, 5, 6, 7, 8]⟩, none⟩,
+   ⟨.var 4, .tagBind (.isNul) ⟨9, some [0, 6, 7]⟩ ⟨4, some [0, 6, 7]⟩, none⟩,
+   ⟨.ite (.test (.isNul) (.var 1)) (.fls) (.tru), .bind ⟨14, some [0, 3, 4, 5, 6, 7, 8]⟩, none⟩,
    ⟨.var 2, .bind ⟨15, none⟩, none⟩,
-   ⟨.var 2, .bind ⟨16, none⟩, none⟩,
+   ⟨.var 3, .bind ⟨16, none⟩, none⟩,
    ⟨.var 0, .effect ⟨17, none⟩, none⟩,
    ⟨.var 0, .bind ⟨18, some [0, 2, 3, 4, 5, 6]⟩, none⟩,
-   ⟨.ite
-                     (.test (.isNul) (.var 1))
-                     (.fls)
-                     (.tru), .bind ⟨19, some [0, 3, 4, 5, 6, 7]⟩, none⟩,
+   ⟨.ite (.test (.isNul) (.var 1)) (.fls) (.tru), .bind ⟨19, some [0, 3, 4, 5, 6, 7]⟩, none⟩,
    ⟨.var 1, .bind ⟨20, none⟩, none⟩,
    ⟨.var 1, .bind ⟨21, none⟩, none⟩,
    ⟨.var 0, .effect ⟨22, none⟩, none⟩,
@@ -67,54 +58,38 @@ private def expected : Program :=
    ⟨.nul, .bind ⟨24, none⟩, none⟩,
    ⟨.var 0, .effect ⟨25, none⟩, none⟩,
    ⟨.var 0, .bind ⟨26, some [0, 2, 3, 4]⟩, none⟩,
-   ⟨.readAt (Verification.PropKey.str "value") (.var 0), .bind ⟨27, none⟩, none⟩,
+   ⟨.var 0, .bind ⟨27, none⟩, none⟩,
    ⟨.nul, .effect ⟨3, some [2, 3, 4]⟩, none⟩,
    ⟨.var 0, .effect ⟨29, none⟩, none⟩,
-   ⟨.var 0, .bind ⟨30, some [0, 2, 3, 4, 5]⟩, none⟩,
-   ⟨.var 0, .bind ⟨31, some [0, 2, 3, 4, 5]⟩, none⟩,
-   ⟨.writeAt
-                     (Verification.PropKey.str "value")
-                     (.var 3)
-                     (.var 0), .effect ⟨32, none⟩, none⟩,
-   ⟨.var 0, .bind ⟨33, none⟩, none⟩,
-   ⟨.var 0, .effect ⟨34, none⟩, none⟩,
-   ⟨.var 0, .bind ⟨35, some [0, 2, 3, 4]⟩, none⟩,
-   ⟨.nul, .bind ⟨36, none⟩, none⟩,
-   ⟨.makeAt
-                     (Verification.CallCode.absent)
-                     [Verification.PropKey.str "value"]
-                     [.var 0], .bind ⟨2, some [0, 2, 3]⟩, none⟩,
-   ⟨.var 0, .effect ⟨38, none⟩, none⟩,
-   ⟨.var 0, .effect ⟨39, some [0, 1, 2]⟩, none⟩,
-   ⟨.var 0, .bind ⟨40, some [0, 2, 3]⟩, none⟩,
-   ⟨.readAt (Verification.PropKey.str "value") (.var 0), .bind ⟨41, none⟩, none⟩,
-   ⟨.makeAt
-                     (Verification.CallCode.absent)
-                     [Verification.PropKey.str "value"]
-                     [.var 0], .bind ⟨1, some [0, 2]⟩, none⟩,
-   ⟨.var 0, .effect ⟨43, none⟩, none⟩,
-   ⟨.var 0, .effect ⟨44, some [0, 1]⟩, none⟩,
-   ⟨.var 0, .bind ⟨45, some [0, 2]⟩, none⟩,
-   ⟨.var 0, .bind ⟨46, none⟩, none⟩,
+   ⟨.var 0, .bind ⟨30, some [0, 2, 3, 0, 5]⟩, none⟩,
+   ⟨.var 0, .effect ⟨31, none⟩, none⟩,
+   ⟨.var 0, .bind ⟨32, none⟩, none⟩,
+   ⟨.var 0, .effect ⟨33, none⟩, none⟩,
+   ⟨.var 0, .bind ⟨34, some [0, 2, 3, 4]⟩, none⟩,
+   ⟨.nul, .bind ⟨35, none⟩, none⟩,
+   ⟨.var 0, .effect ⟨2, some [0, 1, 2]⟩, none⟩,
+   ⟨.var 0, .effect ⟨37, some [0, 1, 2]⟩, none⟩,
+   ⟨.var 0, .bind ⟨38, some [0, 2, 3]⟩, none⟩,
+   ⟨.var 0, .bind ⟨39, none⟩, none⟩,
+   ⟨.var 0, .effect ⟨1, some [0, 1]⟩, none⟩,
+   ⟨.var 0, .effect ⟨41, some [0, 1]⟩, none⟩,
+   ⟨.var 0, .bind ⟨42, some [0, 2]⟩, none⟩,
+   ⟨.var 0, .bind ⟨43, none⟩, none⟩,
    ⟨.nul, .effect ⟨0, some [0]⟩, none⟩]
 #guard program == expected
-#guard start == 48
+#guard start == 45
 
 /-- The seed in slot zero, nothing else bound. -/
 private def seeded (v : Tm) : Env := fun i => if i == 0 then v else .nul
 
--- The heap holds the first cell then the second, each followed by its
--- identity. After the run the first cell is null and the second still holds
--- the seed, which a non-null seed returns.
-theorem separate_cells (b : Bool) : ∃ n, Execution expected n []
-    (.at 48 (seeded (if b then .tru else .fls)))
-    [.nul, .nul, if b then .tru else .fls, .nul] (.done (if b then .tru else .fls)) := by
+-- The heap stays empty. After the run the second slot still holds the seed,
+-- which a non-null seed returns.
+theorem separate_slots (b : Bool) : ∃ n, Execution expected n []
+    (.at 45 (seeded (if b then .tru else .fls)))
+    [] (.done (if b then .tru else .fls)) := by
   cases b <;> apply Exists.intro <;> repeat first
     | exact Execution.refl
     | apply Execution.next (.enter rfl)
-    | apply Execution.next (.expr (.makeFields (by decide) rfl))
-    | apply Execution.next (.expr (.readField rfl rfl))
-    | apply Execution.next (.expr (.writeField rfl rfl (by decide)))
     | apply Execution.next (.expr (.testV rfl))
     | apply Execution.next (.expr (.iteC (.testV rfl)))
     | apply Execution.next (.expr .iteT)
@@ -124,7 +99,7 @@ theorem separate_cells (b : Bool) : ∃ n, Execution expected n []
     | apply Execution.next (.tagBind rfl)
     | apply Execution.next (.ret rfl)
 
-#print axioms separate_cells
+#print axioms separate_slots
 end DeclarationList
 
 /-! ## Object patterns

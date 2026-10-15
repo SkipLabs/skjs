@@ -5,6 +5,8 @@ import Verification.Source.ExpressionPlan
 import Verification.Source.ExecutionRoots
 -- BindingPlan supplies lexical binding and parameter-default execution schedules.
 import Verification.Source.BindingPlan
+-- SourceFacts decides which mutable bindings a body holds in cells.
+import Verification.Source.SourceFacts
 
 /-! The claim-independent execution graphs exposed to the producer. The
 consumer reconstructs these graphs from source; supplied graph edges carry no
@@ -133,6 +135,7 @@ private partial def bindingPlanJson : SourceExecution.BindingPlan → Json
 
 def Graph.json (g : Graph) (defaults : List (String × Span × Nat × Option Expr) := []) : Json :=
   Json.mkObj [("owner",toJson g.owner),("bodySpans",toJson g.bodySpans),("entry",toJson g.entry),
+    ("cells",scopeJson g.cells),
     ("prologue",(SourceExecution.bindingPrologue g.owner defaults).map bindingPlanJson |>.getD .null),
     ("nodes",toJson (g.nodes.toList.zipIdx.map fun (node,id) =>
       let expressions := SourceExecution.actionExpressions node.action
@@ -170,6 +173,14 @@ private partial def defaultPrologues : Json → Except String (List (Span × Lis
     return own ++ (← fields.toList.mapM (fun (_,value) => defaultPrologues value)).flatten
   | _ => pure []
 
+/-- A body's graph, with the mutable bindings it holds in cells. -/
+private def bodyGraph (owner : Span) (params : List String) (body : List Stmt)
+    (module : Bool := false) : Except String Graph := do
+  let graph ← build owner [] body
+  let cells := (SourceExtraction.cellLocals params body module).map
+    fun (name, source) => (⟨name, some (source.getD owner)⟩ : Descriptor)
+  return { graph with cells := cells }
+
 /-- Nested executable bodies have their own owner, independent of the point
 where their closure is created or of the signatures proposed for that closure. -/
 partial def nestedGraphs : Json → Except String (List Graph)
@@ -177,11 +188,15 @@ partial def nestedGraphs : Json → Except String (List Graph)
   | .obj fields => do
     let j := Json.obj fields
     let own ← if (j.getObjValAs? String "k").toOption == some "lambda" then do
+      let lam ← decodeExpr j
       let body ← decodeExpr (← jField j "body")
       let statements := match body with
         | .block _ ss => ss
         | e => [.ret e.span e]
-      pure [← build body.span [] statements]
+      let params := match lam with
+        | .lambda _ _ _ ps .. => ps.map Prod.fst
+        | _ => []
+      pure [← bodyGraph body.span params statements]
     else pure []
     return own ++ (← fields.toList.mapM (fun (_,v) => nestedGraphs v)).flatten
   | _ => pure []
@@ -192,9 +207,9 @@ def graphs (ast : Json) : Except String (List Graph) := do
   let functions ← jArr ast "functions"
   let top ← functions.mapM fun raw => do
     let (f, _) ← decodeFn raw
-    build f.namePos [] f.body
+    bodyGraph f.namePos (f.params.map (·.name)) f.body
   let init ← decodeInit ast
-  let initial ← if init.isEmpty then pure [] else do pure [← build (0,0) [] init]
+  let initial ← if init.isEmpty then pure [] else do pure [← bodyGraph (0,0) [] init (module := true)]
   let nested ← nestedGraphs (Json.arr ((← jArr ast "init") ++ functions).toArray)
   let all := initial ++ top ++ nested
   if (all.map (·.owner)).eraseDups.length != all.length then
