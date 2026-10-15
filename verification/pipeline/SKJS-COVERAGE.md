@@ -253,7 +253,7 @@ First blocker, not every missing feature of a unit:
 | other source forms | 1 | 1 | 0 | 1 |
 | generics: constraints, explicit type arguments, rigid types, generic function types | 1 | 0 | 1 | 1 |
 | object literal members (methods, accessors, spreads) | 1 | 1 | 0 | 1 |
-| **total** | **119** | | | |
+| **total** | **118** | | | |
 
 ## Performance on the pipeline cases
 

@@ -112,6 +112,10 @@ viewer:
 	@npm --prefix verification/report-viewer/app run build --silent
 	@node verification/report-viewer/serve.mts --open
 
+.PHONY: clean
+clean:
+	skargo clean
+
 # install the repo pre-commit hook locally
 .git/hooks/pre-commit: bin/git_hooks/check_format.sh
 	ln -s $(PWD)/bin/git_hooks/check_format.sh .git/hooks/pre-commit
