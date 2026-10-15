@@ -1688,29 +1688,32 @@ no prototype and no store, and the allocation's one location is at $`A`$
 ### Key-adding writes
 
 A source write that adds a key is the copy of the object with the key,
-rebound to the local that held it: the statement $`x.k = e`$ (or $`x[\text{"}k\text{"}] = e`$)
+rebound to every local that holds it: the statement $`x.k = e`$ (or $`x[\text{"}k\text{"}] = e`$)
 where some plain-object clause of $`x`$'s claimed type states $`k`$ neither as a
 field, a view nor a method, nor as a readonly optional field (`mayLack`),
-lowers, when $`x`$ **owns** its object at the statement, to
+lowers, when $`x`$ holds an object its holders $`H`$ **own** at the
+statement, to
 
 ```math
-x;\ e;\ o\leftarrow\mathsf{makeAt}(\{k\mapsto v\});\ x\leftarrow\mathsf{merge}_{[]}(x,o)
+x;\ e;\ o\leftarrow\mathsf{makeAt}(\{k\mapsto v\});\ m\leftarrow\mathsf{merge}_{[]}(x,o);\ \overline{y\leftarrow m}^{\,y\in H}
 ```
 
 with the value of $`e`$ at the claim of the write expression $`W`$, the one-key
 object at $`\mathsf{Ref}(k{:}W;\ \mathsf{among}\,\{k\})`$ and the merge at the
 record or dictionary `mergeResult` proposes, checked by
-[$`\textsf{merge}`$](#allocation-from-parts); the last node's slot map puts the
-merge's value in $`x`$'s slot. The value of the assignment is discarded: only a
-statement is lowered so. A write $`x[k] = e`$ at a key whose claim is of
+[$`\textsf{merge}`$](#allocation-from-parts). A constant holder $`y`$ is
+rebound by the last node's slot map, which puts the merge's value in $`y`$'s
+slot; a `let` holder by a write of its cell, checked against the cell's
+storage contract. The value of the assignment is discarded: only a statement
+is lowered so. A write $`x[k] = e`$ at a key whose claim is of
 strings, numbers or symbols, and no one key the source spells
-(`computedKeyClaim`), is the same copy with the allocation at the key's
-value, $`o\leftarrow\mathsf{makeKey}(k,v)`$, checked by
+(`computedKeyClaim`), is the same copy, rebound to every holder alike, with
+the allocation at the key's value, $`o\leftarrow\mathsf{makeKey}(k,v)`$, checked by
 [$`\textsf{makeKey}`$](#allocation-at-a-computed-key) at the type the
 object's writable index states for the key's class where it states one (the
 copy then keeps the index, as a literal meant for a dictionary is allocated
 at it), else at $`W`$. The copy takes string keys only, so a symbol key is the
-other way round, $`x\leftarrow\mathsf{merge}_{[]}(o,x)`$, where every clause of
+other way round, $`m\leftarrow\mathsf{merge}_{[]}(o,x)`$, where every clause of
 $`x`$'s claimed type lists its own keys, each a key the copy takes
 (`listsCopiedKeys`): the copy of $`x`$ then holds all of it, and the
 allocation, which no key of $`x`$'s overwrites, its key. A key of strings and
@@ -1722,40 +1725,59 @@ the prototype and does nothing with another. So a key whose claim may be
 `__proto__` (a string, or that singleton) is tested first:
 
 ```math
-\mathbf{if}\ k\equiv\texttt{"\_\_proto\_\_"}\land\lnot\,\mathsf{hasKey}(\texttt{\_\_proto\_\_})(x)\ \mathbf{then}\ v\ \mathbf{else}\ (o\leftarrow\mathsf{makeKey}(k,v);\ x\leftarrow\mathsf{merge}_{[]}(x,o);\ v)
+\mathbf{if}\ k\equiv\texttt{"\_\_proto\_\_"}\land\lnot\,\mathsf{hasKey}(\texttt{\_\_proto\_\_})(x)\ \mathbf{then}\ v\ \mathbf{else}\ (o\leftarrow\mathsf{makeKey}(k,v);\ m\leftarrow\mathsf{merge}_{[]}(x,o);\ \overline{y\leftarrow m}^{\,y\in H};\ v)
 ```
 
 two tag dispatches (`strEq`, `hasKey`) where the value's claim holds no
-object nor `null` (`noPrototypeValue`); another value is refused. Ownership (`growSites`) is syntactic:
+object nor `null` (`noPrototypeValue`); another value is refused. Ownership
+(`growSites`) is syntactic. A binding is a name and the statement declaring
+it; the holders of an object are the binding $`x_0`$ that allocated it and
+each constant bound to a holder since:
 
 ```math
-\mathrm{Own}(x,s)\iff
+\mathrm{Own}(H,s)\iff
   \begin{cases}
-  x\ \text{is declared}\ \mathtt{const}\ x = o\ \text{with}\ o\ \text{an object literal, not at module level;}\\
-  s\ \text{is at the loop depth of the declaration, in the same body;}\\
-  \text{no statement from the declaration through}\ s\ \text{lets}\ x\ \text{escape.}
+  x_0\in H\ \text{is declared}\ \mathtt{const}\ x_0 = a\ \text{or}\ \mathtt{let}\ x_0 = a,\ \text{not at module level, with}\ a\ \text{a fresh allocation;}\\
+  \text{every other}\ y\in H\ \text{is declared}\ \mathtt{const}\ y = z\ \text{with}\ z\in H\ \text{declared before it;}\\
+  s\ \text{is at the loop depth of}\ x_0\text{'s declaration, in the same body;}\\
+  \text{no statement from}\ x_0\text{'s declaration through}\ s\ \text{lets any}\ y\in H\ \text{escape.}
   \end{cases}
 ```
 
-An expression lets $`x`$ escape (`escapesExpr`) when $`x`$ occurs in it other
-than as the receiver of a member read, index read, write, index write, `in`
-test, compound or logical assignment: in a call's arguments or as a method
-call's receiver, in a binding's or field's value, a result, a spread, a
-comparison, and anywhere in a closure, which holds the object. In textual
-order every path from the declaration to $`s`$ passes only earlier statements,
-since $`s`$ is in no loop the declaration is outside; a module constant is read
-by the module's functions. With $`\mathrm{Own}(x,s)`$ no reference but
-$`x`$'s slot holds the object, so JavaScript's write in place, which every
-reference would see, and the copy, which only $`x`$ sees, agree. Any other
-write adding a key is refused, located at the write, as is a named write of
-`__proto__` (a setter).
+A fresh allocation is an object literal, or `new C(…)` with $`C`$ a class the
+file declares at its top level (or a constant bound to one): its constructor
+reads no `this` and ends in the instance's allocation
+([classes](SOURCE-CONTRACTS.md#classes)), which nothing has reached when
+`new` returns. A constant bound to a holder is no escape; any other binding of
+a holder's name removes that holder, since the parser gives every shadowing
+local a name of its own, so two bindings of one name are never both in scope.
+The lowering finds each holder in scope by its name and declaring statement;
+one out of scope holds nothing code can reach, and the receiver $`x`$ must be
+one in scope. An expression lets $`y`$ escape (`escapesExpr`) when $`y`$
+occurs in it other than as the receiver of a member read, index read, write,
+index write, `in` test, compound or logical assignment: in a call's arguments
+or as a method call's receiver, in a binding's or field's value, an
+assignment, a result, a spread, a comparison, and anywhere in a closure,
+which holds the object. In textual order every path from the allocation to
+$`s`$ passes only earlier statements, since $`s`$ is in no loop the
+allocation is outside; a module constant is read by the module's functions.
+With $`\mathrm{Own}(H,s)`$ no reference but the holders' slots and cells
+holds the object, so JavaScript's write in place, which every reference sees,
+and the copy, which every holder holds from then on, agree. Any other write
+adding a key is refused, located at the write, as is a named write of
+`__proto__` (a setter); one through a parameter, at a key the source names or
+one known only at run time, is
+[refused on principle](SOURCE-FRAGMENT.md#refused-on-principle), since the
+caller may hold the object at a type leaving the key absent, or optional at
+another type.
 
 `Object.assign(t, s_1, …, s_n)` copies each source onto its target as a
 spread copies, one $`\mathsf{merge}_{[]}`$ per source as soon as it is
 evaluated, checked by $`\textsf{merge}`$. Its target is a fresh literal, whose
 result is the call's value; or, for the statement `Object.assign(x, …);`
-with $`\mathrm{Own}(x,s)`$, the local, which holds the result from then
-on, as for a key-adding write (a source letting $`x`$ escape defeats
+whose target $`x`$ is the one holder of an object it owns
+($`\mathrm{Own}(\{x\},s)`$, $`x`$ a constant), the local, which holds the
+result from then on, as for a key-adding write (a source letting $`x`$ escape defeats
 ownership). Any other target is refused: the call's value is the target, one
 more reference to it. JavaScript sets each key through the target's `[[Set]]`,
 where a spread defines it: the two agree on a fresh plain object, but for

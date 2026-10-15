@@ -38,3 +38,13 @@ export function symbolKey(): { [Symbol.iterator]: () => number } {
   obj[Symbol.iterator] = () => 1;
   return obj;
 }
+
+// Every local holding the object, a `let`'s cell and a constant bound to it,
+// holds the copy with the key.
+export function inCellWithAlias(key: string): { [k: string]: number } {
+  let obj: { [k: string]: number } = {};
+  const ref = obj;
+  obj[key] = 1;
+  obj = {};
+  return ref;
+}

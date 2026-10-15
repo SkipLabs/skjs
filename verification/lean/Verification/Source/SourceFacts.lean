@@ -77,11 +77,14 @@ partial def stmtNames : Fragment.Stmt → List String
 /-! ### Owned objects
 
 A key-adding write is lowered as a copy (`Tm.merge`, allocation from parts)
-of the object with the key added, rebound to the local that held it. That is
-JavaScript's in-place write only where nothing else can observe the object
-the copy replaces: the local's own fresh allocation, which no other reference
-has reached. The analysis is syntactic and decides only which lowering a
-write gets; the copy is checked by the merge rule like any other. -/
+of the object with the key added, rebound to every local that holds it. That
+is JavaScript's in-place write only where nothing else can observe the object
+the copy replaces: a local's own fresh allocation (an object literal, or a
+`new` of a class the file declares at its top level, whose constructor reads
+no `this` and ends in the instance's allocation), which no reference but the
+constants bound to it since (its aliases) has reached. The analysis is
+syntactic and decides only which lowering a write gets; the copy is checked
+by the merge rule like any other. -/
 
 /-- Whether `n` may reach a place other than the receiver of a member read or
 write of `n`: another binding, a field, an argument or `this` of a call, a
@@ -155,74 +158,141 @@ partial def closureBodies : Fragment.Expr → List (List Fragment.Stmt)
   | .objectAssign _ t ss => closureBodies t ++ ss.flatMap closureBodies
   | .block _ ss => [ss]
 
-/-- The analysis state: the owned locals in scope, each with the loop depth
-of its declaration, and the key-adding writes found so far. -/
+/-- A local binding: its name and the span of the statement declaring it, as
+the lowering's scope describes it. -/
+abbrev Holder := String × Span
+
+/-- A key-adding write site: the write's span and the bindings holding its
+object there, every one of which the copy is rebound to. -/
+structure GrowSite where
+  span : Span
+  holders : List Holder
+  deriving Inhabited, Repr
+
+/-- An owned object: the loop depth of its allocation and the bindings that
+hold it, the allocating local and the constants bound to it since. -/
+private structure OwnedObject where
+  depth : Nat
+  holders : List Holder
+
+/-- The analysis state: the owned objects, and the key-adding writes found so
+far. -/
 private structure Owned where
-  locals : List (String × Nat) := []
-  sites : List Span := []
+  objects : List OwnedObject := []
+  sites : List GrowSite := []
+
+/-- An initializer that allocates an object no reference holds yet: an object
+literal, or a `new` of a class the file declares at its top level (`classes`),
+whose constructor reads no `this` and ends in the instance's allocation. -/
+private def freshAllocation (classes : List String) : Fragment.Expr → Bool
+  | .alloc .. | .build .. => true
+  | .construct _ (.var _ c) _ _ _ => classes.contains c
+  | _ => false
+
+/-- A binding of `n` makes a holder of that name, out of scope by now, hold
+nothing: the parser gives every shadowing local a name of its own, so two
+bindings of one name are never both in scope. -/
+private def forget (n : String) (s : Owned) : Owned :=
+  let held := s.objects.map fun o => { o with holders := o.holders.filter (·.1 != n) }
+  { s with objects := held.filter fun o => !o.holders.isEmpty }
+
+/-- The object a local holds, by its name. -/
+private def heldBy (s : Owned) (n : String) : Option OwnedObject :=
+  s.objects.find? fun o => o.holders.any (·.1 == n)
 
 mutual
-/-- An expression runs: every owned local it may let escape stops being
-owned, and the closures it creates are analysed as bodies of their own. -/
-private partial def ownedExpr (e : Fragment.Expr) (s : Owned) : Owned :=
-  let s := { s with locals := s.locals.filter fun (n, _) => !escapesExpr n e }
-  (closureBodies e).foldl (fun s ss => { s with sites := (ownedStmts 0 ss {}).sites ++ s.sites }) s
+/-- An expression runs: every owned object a holder of which it may let
+escape stops being owned, and the closures it creates are analysed as bodies
+of their own. -/
+private partial def ownedExpr (classes : List String) (e : Fragment.Expr) (s : Owned) : Owned :=
+  let s := { s with objects := s.objects.filter fun o => !o.holders.any fun (n, _) => escapesExpr n e }
+  (closureBodies e).foldl (fun s ss => { s with sites := (ownedStmts classes 0 ss {}).sites ++ s.sites }) s
 
-/-- The statements in order at loop depth `d`. An `o.k = e` statement on an
-owned `o` declared at the same depth is a key-adding site when `e` (and a
-computed key) lets `o` escape nowhere: no other reference exists before the
-write, and outside a loop the declaration does not enclose, the write runs
-once per allocation. Later escapes are after the write in every run. -/
-private partial def ownedStmts (d : Nat) : List Fragment.Stmt → Owned → Owned
+/-- The statements in order at loop depth `d`. An `o.k = e` statement on a
+holder `o` of an owned object allocated at the same depth is a key-adding
+site when `e` (and a computed key) lets no holder escape: no reference but
+the holders exists before the write, and outside a loop the allocation does
+not enclose, the write runs once per allocation. Later escapes are after the
+write in every run. -/
+private partial def ownedStmts (classes : List String) (d : Nat) : List Fragment.Stmt → Owned → Owned
   | [], s => s
-  | st :: rest, s => ownedStmts d rest (ownedStmt d st s)
+  | st :: rest, s => ownedStmts classes d rest (ownedStmt classes d st s)
 
-private partial def ownedStmt (d : Nat) (st : Fragment.Stmt) (s : Owned) : Owned :=
+private partial def ownedStmt (classes : List String) (d : Nat) (st : Fragment.Stmt) (s : Owned) : Owned :=
+  let declare := fun (pos : Span) (s : Owned) (b : Fragment.Binding) =>
+    let s := ownedExpr classes b.init s
+    let s := forget b.name s
+    if freshAllocation classes b.init then
+      { s with objects := { depth := d, holders := [(b.name, pos)] } :: s.objects }
+    else s
+  let escapesAny := fun (o : OwnedObject) (es : List Fragment.Expr) =>
+    o.holders.any fun (n, _) => es.any (escapesExpr n)
+  let site := fun (n : String) (span : Span) (es : List Fragment.Expr) =>
+    match heldBy s n with
+    | some o => if o.depth == d && !escapesAny o es then some ({ span, holders := o.holders } : GrowSite)
+      else none
+    | none => none
   match st with
-  | .constants _ bs => bs.foldl (fun s b =>
-      let s := ownedExpr b.init s
-      let s := { s with locals := s.locals.filter (·.1 != b.name) }
+  | .constants pos bs => bs.foldl (fun s b =>
       match b.init with
-      | .alloc .. | .build .. => { s with locals := (b.name, d) :: s.locals }
-      | _ => s) s
-  | .mutables _ bs => bs.foldl (fun s b =>
-      let s := ownedExpr b.init s
-      { s with locals := s.locals.filter (·.1 != b.name) }) s
+      -- A constant bound to a holder is one more holder of its object.
+      | .var _ m =>
+        match heldBy s m with
+        | some o =>
+          let s := forget b.name s
+          { s with objects := s.objects.map fun o' =>
+              if o'.holders == o.holders then { o' with holders := o'.holders ++ [(b.name, pos)] } else o' }
+        | none => declare pos s b
+      | _ => declare pos s b) s
+  | .mutables pos bs => bs.foldl (declare pos) s
   | .effect _ e =>
-    let site := match e with
-      | .write _ _ (.var _ n) rhs =>
-        if s.locals.contains (n, d) && !escapesExpr n rhs then some e.span else none
-      | .indexWrite _ _ (.var _ n) key rhs =>
-        if s.locals.contains (n, d) && !escapesExpr n key && !escapesExpr n rhs then some e.span
-        else none
-      | .objectAssign _ (.var _ n) ss =>
-        if s.locals.contains (n, d) && !ss.any (escapesExpr n) then some e.span else none
+    let found : Option GrowSite := match e with
+      | .write _ _ (.var _ n) rhs => site n e.span [rhs]
+      | .indexWrite _ _ (.var _ n) key rhs => site n e.span [key, rhs]
+      | .objectAssign _ (.var _ n) ss => site n e.span ss
       | _ => none
-    let s := { s with sites := site.toList ++ s.sites }
-    ownedExpr e s
-  | .ret _ e | .throw _ e => ownedExpr e s
-  | .destructure _ t dflt init => (init :: dflt.toList ++ t.defaults).foldl (fun s e => ownedExpr e s) s
-  | .ite _ c t e => ownedStmts d (e.getD []) (ownedStmts d t (ownedExpr c s))
-  | .loop _ c b u => ownedStmts (d + 1) u (ownedStmts (d + 1) b (ownedExpr c s))
-  | .forOf _ _ _ _ i b => ownedStmts (d + 1) b (ownedExpr i s)
+    let s := { s with sites := found.toList ++ s.sites }
+    ownedExpr classes e s
+  | .ret _ e | .throw _ e => ownedExpr classes e s
+  | .destructure _ t dflt init =>
+    let s := (init :: dflt.toList ++ t.defaults).foldl (fun s e => ownedExpr classes e s) s
+    t.names.foldl (fun s n => forget n s) s
+  | .ite _ c t e => ownedStmts classes d (e.getD []) (ownedStmts classes d t (ownedExpr classes c s))
+  | .loop _ c b u => ownedStmts classes (d + 1) u (ownedStmts classes (d + 1) b (ownedExpr classes c s))
+  | .forOf _ n _ _ i b => ownedStmts classes (d + 1) b (forget n (ownedExpr classes i s))
   -- The iterator's `close` runs where the body is left, after what of it ran.
-  | .closing _ c b => ownedStmts d c (ownedStmts d b s)
-  | .block _ _ b => ownedStmts d b s
-  | .tryStmt _ b h f => ownedStmts d (f.getD []) (ownedStmts d ((h.map (·.2)).getD []) (ownedStmts d b s))
+  | .closing _ c b => ownedStmts classes d c (ownedStmts classes d b s)
+  | .block _ _ b => ownedStmts classes d b s
+  | .tryStmt _ b h f =>
+    let s := ownedStmts classes d b s
+    let s := match h with
+      | some (param, hs) => ownedStmts classes d hs ((param.map fun (n, _) => forget n s).getD s)
+      | none => s
+    ownedStmts classes d (f.getD []) s
   | .brk .. | .cont .. => s
 end
 
-/-- The key-adding write sites of a body: the spans of the writes the
-lowering may make a copy of an owned object (`ownedStmts`). In the module's
-initialization, a top-level constant is a module value, which the module's
-functions and classes read: it is never owned. -/
-def growSites (ss : List Fragment.Stmt) (module : Bool := false) : List Span :=
+/-- The classes a module declares at its top level: each constant bound to a
+class (`ctor`), and each constant bound to one of those. -/
+def sourceClasses (init : List Fragment.Stmt) : List String :=
+  init.foldl (fun cs st => match st with
+    | .constants _ bs => bs.foldl (fun cs b => match b.init with
+      | .ctor .. => cs ++ [b.name]
+      | .var _ c => if cs.contains c then cs ++ [b.name] else cs
+      | _ => cs) cs
+    | _ => cs) []
+
+/-- The key-adding write sites of a body (`ownedStmts`), `classes` the
+file's top-level classes. In the module's initialization, a top-level
+binding is a module value, which the module's functions and classes read: it
+is never a holder. -/
+def growSites (classes : List String) (ss : List Fragment.Stmt) (module : Bool := false) : List GrowSite :=
   if module then
     (ss.foldl (fun s st =>
-      let s := ownedStmt 0 st s
+      let s := ownedStmt classes 0 st s
       match st with
-      | .constants _ bs => { s with locals := s.locals.filter fun (n, _) => !bs.any (·.name == n) }
+      | .constants _ bs | .mutables _ bs => bs.foldl (fun s b => forget b.name s) s
       | _ => s) {}).sites
-  else (ownedStmts 0 ss {}).sites
+  else (ownedStmts classes 0 ss {}).sites
 
 end Verification.SourceExtraction

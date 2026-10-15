@@ -137,6 +137,9 @@ module type Statement_operations = sig
   val mark_exact_allocations : Json.t list -> unit
   val mark_exact_local : string -> unit
   val record_growth : string -> unit
+  val forget_holder : string -> unit
+  val record_holder : string -> string -> unit
+  val holders_of : string -> string list
   val publish_contract : Proposal_types.contract -> unit
   val record_return : ty -> unit
   val observe_for_in : string -> unit

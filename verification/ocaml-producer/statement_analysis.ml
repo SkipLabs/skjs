@@ -151,6 +151,11 @@ let transfer (expr:Analysis_state.expression_infer) =
          which keys it lacks, so a key added on one path only is optional
          where the paths join. *)
       forget_exact_local n;
+      (* A constant bound to a local holds that local's object. *)
+      forget_holder n;
+      (match mutable_,init.node with
+       | false,Id m when List.mem_assoc m env -> record_holder n m
+       | _ -> ());
       (match mutable_,written,init.node with
        | false,None,Alloc fs when grows_later n (List.map fst fs)
              (following_statements s.span) ->
@@ -258,7 +263,12 @@ let transfer (expr:Analysis_state.expression_infer) =
       if List.exists (adds before receiver t) names then begin
         record_growth n;
         let t' = combine (List.map (fun name -> grown declarations t name c) names) in
-        List.map (fun (m,b) -> if m=n then m,Value t' else m,b) env
+        (* Every constant holding the object holds the copy; a `let`'s cell
+           keeps its contract. *)
+        let holders = holders_of n in
+        List.map (fun (m,b) -> match b with
+          | Value _ when List.mem m holders -> m,Value t'
+          | _ -> m,b) env
       end else env
     | Effect e -> ignore (expr env e); after e env
     | If _ | While _ | Block _ | ForOf _ | Try _ | Closing _ | Break _ | Continue ->

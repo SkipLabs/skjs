@@ -246,7 +246,7 @@ def extractPlans (ast claims : Json) (fileKey : String)
             d := { d with types := T }
             module := module ++ [(g.name, g.pos, .ok (.written slot))]
           | .error reason => throw (sourceRefusal d.types g.pos .schemeIntroduction reason)
-      let request ← extractNormalizedFn d.types f c.normalized module
+      let request ← extractNormalizedFn d.types f c.normalized module (SourceExtraction.sourceClasses init)
       return .graph f.name f.namePos { request with sourceScheme }
     -- A generic unit's graph extraction reports where it stops as a
     -- located refusal at the function, as the direct checker's do.

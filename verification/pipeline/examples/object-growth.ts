@@ -69,3 +69,33 @@ export function optionalAnnotated(): { a?: number } {
   o.a = 3;
   return o;
 }
+
+// A `let` holding its own copy, and a constant bound to it since: the copy
+// with the key is rebound to both, the cell and the constant.
+export function inCellWithAlias(src: { [k: string]: number }): number {
+  let o = { ...src };
+  const ref = o;
+  o.x = 5;
+  return (ref.x ?? 0) + o.x;
+}
+
+// A `new` of a class the file declares: its constructor reads no `this` and
+// ends in the instance's allocation, which nothing else has reached.
+class WithOptional {
+  constructor(public y?: string) {}
+}
+export function onInstance(): string | undefined {
+  const b = new WithOptional("s");
+  b.y = undefined;
+  return b.y;
+}
+
+// A write through an annotated constant bound to the object: every holder
+// holds the copy with the key, at which a view stating the key reads it.
+export function throughAnnotatedAlias(): number {
+  const o = {};
+  const w: { x?: number } = o;
+  w.x = 1;
+  const view: { x?: number } = o;
+  return (view.x ?? 0) + (w.x ?? 0);
+}

@@ -614,13 +614,37 @@ gives no key (`srcOf`), or a key bound excludes it. -/
     | some sb => sb.never [] (.str "__proto__")
     | none => false
 
+/-- The bindings in scope holding the object of the key-adding write site at
+`span` whose receiver is `n` (`growSites`): each holder's slot and storage,
+found by its name and declaring statement. `none` where the write is no site
+or `n` is no holder in scope. A holder out of scope holds nothing code can
+reach; one in scope that its name does not resolve to is refused. -/
+@[nospecialize] def ownedSlots (scope : List (ScopeBinding Tree)) (span : Span) (n : String) :
+    Compiler (Option (List (Nat × Storage Tree))) := do
+  let some holders ← growthHolders span | return none
+  let declares := fun (h : Holder) (b : ScopeBinding Tree) =>
+    b.source == ({ name := h.1, span := some h.2 } : RequestJson.Descriptor)
+  let bound : Holder → Option (Nat × Storage Tree) := fun h => match resolve scope h.1 with
+    | some (i, storage) => if scope[i]?.any (declares h) then some (i, storage) else none
+    | none => none
+  if (holders.filter (·.1 == n)).all fun h => (bound h).isNone then return none
+  let slots ← holders.foldlM (init := ([] : List (Nat × Storage Tree))) fun slots h => do
+    match bound h with
+    | some slot => pure (slots ++ [slot])
+    | none =>
+      if scope.any (declares h) then
+        throw s!"internal extraction error: the holder '{h.1}' of an owned object is in scope under another binding of its name"
+      pure slots
+  return some slots
+
 /-- A write statement that adds a key: `o.k = e` or `o["k"] = e` whose
-receiver's claimed type may lack `k`. On an owned local (`growSites`) it is
-the copy of the object with the key, rebound to the local's slot, returned
-with the parts the write evaluates; any other such write is refused, since
-another reference may hold the object and see its keys change. -/
+receiver's claimed type may lack `k`. On a holder of an owned object
+(`growSites`) it is the copy of the object with the key, rebound to every
+holder's slot or cell, returned with the parts the write evaluates; any other
+such write is refused, since another reference may hold the object and see
+its keys change. -/
 @[nospecialize] def growingWrite (fc : SourceClaims.Function Tree) (scope : List (ScopeBinding Tree)) (e : Fragment.Expr) :
-    Compiler (Option (Nat × Fragment.Expr × PropKey × Option Fragment.Expr × Fragment.Expr)) := do
+    Compiler (Option (List (Nat × Storage Tree) × Fragment.Expr × PropKey × Option Fragment.Expr × Fragment.Expr)) := do
   let (receiver, fld, key, rhs) ← match e with
     | .write _ fld receiver rhs => pure (receiver, fld, none, rhs)
     | .indexWrite _ (some s) receiver key rhs => pure (receiver, PropKey.str s, some key, rhs)
@@ -633,21 +657,25 @@ another reference may hold the object and see its keys change. -/
     | _ => return none
   let G := SourceTypes.graph (← table)
   if !mayLack G (← exprType fc receiver) fld then return none
-  let sites ← growthSites
-  let owned := match receiver with
-    | .var _ n => (valueSlot scope n).filter fun _ => sites.contains e.span
-    | _ => none
-  let some i := owned
-    | throw (locatedRefusal (← table) e.span .expressionClaim
+  let owned ← match receiver with
+    | .var _ n => ownedSlots scope e.span n
+    | _ => pure none
+  let some slots := owned
+    | if let .var _ n := receiver then
+        if let some (i, _) := resolve scope n then
+          if scope[i]?.any (·.param) then
+            throw (locatedRefusal (← table) e.span .expressionClaim (parameterGrowth s!"a write of \
+              '{fld}', a key the object's type does not state," n))
+      throw (locatedRefusal (← table) e.span .expressionClaim
         s!"a write of '{fld}', a key the object's type does not state, may add it to an object \
           another reference holds, which would see the object's keys change: a key-adding write \
           is typed only on a local's own fresh object that nothing else has reached (not passed, \
-          stored, captured, returned or copied to another binding), outside any loop its \
-          declaration does not enclose")
+          stored, captured, returned or bound to a binding other than a constant), outside any \
+          loop its allocation does not enclose")
   if fld == .str "__proto__" then
     throw (locatedRefusal (← table) e.span .expressionClaim
       "a write of `__proto__` runs the prototype's setter: it replaces the prototype, and adds no key")
-  return some (i, receiver, fld, key, rhs)
+  return some (slots, receiver, fld, key, rhs)
 
 /-- The object an allocation at a key of claim `K`, holding a value of `W`,
 is of: per clause of `K`, the one field a singleton names or the dictionary
@@ -664,24 +692,30 @@ over a family's class (`ComputedKey.keyedClause`). -/
 
 /-- A write statement at a key known only at run time on a record or a
 dictionary: `o[k] = e` whose key's claim is no one key the source spells
-(`computedKeyClaim`). On an owned local (`growSites`) it is the copy of the
-object with an allocation at the key over it, returned with the parts the
-write evaluates; any other is refused, since another reference may hold the
-object and see its keys change. -/
+(`computedKeyClaim`). On a holder of an owned object (`growSites`) it is the
+copy of the object with an allocation at the key, rebound to every holder's
+slot or cell, returned with the parts the write evaluates; through a
+parameter it is refused on principle, and any other is refused, since another
+reference may hold the object and see its keys change. -/
 @[nospecialize] def computedGrowth (fc : SourceClaims.Function Tree) (scope : List (ScopeBinding Tree))
-    (e : Fragment.Expr) : Compiler (Option (Nat × Fragment.Expr × Fragment.Expr × Fragment.Expr)) := do
+    (e : Fragment.Expr) :
+    Compiler (Option (List (Nat × Storage Tree) × Fragment.Expr × Fragment.Expr × Fragment.Expr)) := do
   let .indexWrite p none receiver key rhs := e | return none
   if !(← recordReceiver fc receiver) then return none
   let G := SourceTypes.graph (← table)
   if !computedKeyClaim G (← exprType fc (← comparisonsExpr fc key)) then return none
-  let sites ← growthSites
-  let owned := match receiver with
-    | .var _ n => (valueSlot scope n).filter fun _ => sites.contains p
-    | _ => none
-  let some i := owned
-    | throw (locatedRefusal (← table) p .expressionClaim
+  let owned ← match receiver with
+    | .var _ n => ownedSlots scope p n
+    | _ => pure none
+  let some slots := owned
+    | if let .var _ n := receiver then
+        if let some (i, _) := resolve scope n then
+          if scope[i]?.any (·.param) then
+            throw (locatedRefusal (← table) p .expressionClaim
+              (parameterGrowth "a write at a key known only at run time" n))
+      throw (locatedRefusal (← table) p .expressionClaim
         "a write at a key known only at run time may add the key to an object another reference holds, which would see the object's keys change: a key-adding write is typed only on a local's own fresh object that nothing else has reached")
-  return some (i, receiver, key, rhs)
+  return some (slots, receiver, key, rhs)
 
 /-- The element at literal index `b` of the array `r` reads under `H`, from
 its store: a required position at its type, an optional or rest position at

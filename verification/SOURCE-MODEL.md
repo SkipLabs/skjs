@@ -139,10 +139,10 @@ JavaScript's temporal dead zone throws there.
 ### Objects and prototypes
 
 An object's set of keys is fixed at allocation in the calculus. Writing a field
-changes its location's contents. Adding a key to a fresh, unaliased local object
-can be represented by copying the object with the additional field and updating
-the local binding. This translation is valid only when no other reference can
-observe the old object. Source extraction checks that ownership condition;
+changes its location's contents. Adding a key to a fresh local object can be
+represented by copying the object with the additional field and updating every
+local binding that holds it. This translation is valid only when no other
+reference can observe the old object. Source extraction checks that ownership condition;
 [key-adding writes](PROGRAM-TYPING.md#key-adding-writes) states the restriction.
 
 A record type is **open**: it describes named properties without excluding

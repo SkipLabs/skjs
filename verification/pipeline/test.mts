@@ -683,6 +683,14 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   // skips it even when the callback preserves the heap and returns a number.
   assert.equal(runExample("invalid-map-hole-coalescing", `const xs = [1, 2]; delete xs[1];
     const result = coalescingCallback(xs); JSON.stringify([result.length, 1 in result, result[1]])`), "[2,false,null]");
+  // A key added in place is seen by every reference to the object, at its own
+  // type: through a parameter (TypeScript accepts the module), through a
+  // constant bound to the object, through a destructured binding.
+  assert.equal(runExample("invalid-key-adding-parameter-write", "seen"), "number number");
+  for (const [file, call] of [["invalid-object-growth-alias", "grow()"],
+    ["invalid-object-growth-reused-name", "reusedName()"], ["invalid-computed-key-alias", `grow("x")`]] as const)
+    assert.throws(() => runExample(file, call), /toUpperCase is not a function/,
+      `${file}: the actual source reads the added number as a string`);
   // A subclass of Array is its instances' `constructor`, so `map` constructs
   // its result through the subclass (ArraySpeciesCreate): the construction the
   // ordinary array construction assumption excludes, and why the pipeline

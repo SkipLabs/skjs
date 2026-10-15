@@ -299,7 +299,9 @@ Divergences: SKJS-accepted units the pipeline parses and proposes, and Lean
 then refuses (94 units in `search`, `summary.reachedButRefused`). The
 source-form refusals Lean states explicitly are fragment boundaries. The rest
 were read obligation by obligation: all read are pipeline incompleteness
-except four families below; the fifth is refused by the producer.
+except four families below; the fifth is refused by the producer. One
+fragment boundary also guards an SKJS unsoundness: a key-adding write
+through a parameter.
 
 ### Confirmed: aliased views of an empty object literal (`tests/expect-error/obj-literal-indexes.ts`)
 
@@ -464,6 +466,42 @@ const s: string = await witness();
 ```
 
 and `node` throws at the marked line: `r` is `"s"`, and `r.a` is `undefined`.
+
+### Confirmed: a key-adding write through a parameter (`tests/expect-error/index-signatures.ts`, `object-type-readonly-fields.ts`)
+
+The same root as the aliased views above: a caller may hold a parameter's
+object at a type that leaves the written key absent, or optional at another
+type, and the write adds it. SKJS accepts `bracketAssignOnStringIndex`,
+`bracketAssignOnNumberIndex`, `writeConformingOk`,
+`writeNumberKeyIgnoresNonNumericField`, `writePlainIndexOk`
+(`index-signatures.ts`) and `assignNumberToOptional`
+(`object-type-readonly-fields.ts`); the pipeline refuses each write on
+principle ([refused on principle](../SOURCE-FRAGMENT.md#refused-on-principle)).
+
+Witnesses. One per unit, each the unit's function unchanged and a caller of
+the shape below (for `bracketAssignOnNumberIndex` a `{ 99?: number }` view
+read with `toFixed`; for `writeConformingOk` and
+`writeNumberKeyIgnoresNonNumericField` an object `{ a: … }` and the key
+`"b"` or `0`). `tsc --strict` and SKJS (`skjs check`, default truthiness)
+report no error for the six; `node` throws `TypeError` at the marked line of
+each:
+
+```ts
+function writePlainIndexOk(x: { [k: string]: number }, k: string): void {
+  x[k] = 5;
+}
+function w5(): string {
+  const e = {};
+  const view: { b?: string } = e;
+  writePlainIndexOk(e, "b");
+  const v = view.b;
+  return v === undefined ? "" : v.toUpperCase(); // TypeError: v.toUpperCase is not a function
+}
+const r5: string = w5();
+```
+
+The pipeline case `invalid-key-adding-parameter-write` is the module-level
+form, which `test.mts` runs under Node.
 
 ### Suspected: a rest parameter's array read as a value of its type parameter (`tests/expect-error/readonly-rest-params.ts#fullReadonlyConstraint`, `#fullReadonlyWithSink`)
 

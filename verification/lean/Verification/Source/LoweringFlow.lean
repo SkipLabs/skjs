@@ -94,8 +94,9 @@ set_option maxHeartbeats 1000000
     | .statement (.effect _ e) nextId =>
       let next ← successor nextId scope
       let owned ← if let .objectAssign _ (.var _ name) _ := e then do
-          let sites ← growthSites
-          let some _ := (valueSlot scope name).filter fun _ => sites.contains e.span
+          -- The call's copy is rebound to its target's slot alone: the
+          -- target is the object's one holder, a constant.
+          let some [(_, .value)] ← ownedSlots scope e.span name
             | throw (locatedRefusal (← table) e.span .expressionClaim
                 "Object.assign onto an object another reference may hold adds keys that reference would see: it is lowered on a local's own fresh object that nothing else has reached, outside any loop its declaration does not enclose")
           pure true

@@ -29,6 +29,7 @@ type local = {
   mutable objects: (string * (Semantic.key * Source.expr) list) list;
   mutable fresh_constructor: bool;
   mutable exact_allocs: Json.t list;
+  mutable holders: (string * string) list;
   mutable contracts: contract list;
   mutable current_point: string;
   speculative_typing: bool;
@@ -82,7 +83,7 @@ let create diagnostics flows offered declarations module_functions arities bound
     block_returned=ref (ref []); following=Hashtbl.create 64;
     local=ref { entries=[]; expressions=[]; instantiations=[]; current_point="";
       contracts=[]; evolving=[]; grown_locals=[]; exact_locals=[]; closures=[];
-      requests=[]; classes=[]; fresh_constructor=false; objects=[]; exact_allocs=[];
+      requests=[]; classes=[]; fresh_constructor=false; objects=[]; exact_allocs=[]; holders=[];
       instances=[]; arrows=[]; speculative_typing=false } }
 
 (* Writes and diagnostic observations belong to the pass and run respectively;
@@ -182,12 +183,14 @@ module Access (S : sig val state : t end) = struct
     Proposal_flow.evolving=(!local).evolving; grown_locals=(!local).grown_locals;
     exact_locals=(!local).exact_locals; closures=(!local).closures;
     classes=(!local).classes; objects=(!local).objects;
-    fresh_constructor=(!local).fresh_constructor; exact_allocs=(!local).exact_allocs }
+    fresh_constructor=(!local).fresh_constructor; exact_allocs=(!local).exact_allocs;
+    holders=(!local).holders }
   let restore_metadata (m:Proposal_flow.metadata) =
     (!local).evolving <- m.Proposal_flow.evolving; (!local).grown_locals <- m.Proposal_flow.grown_locals;
     (!local).exact_locals <- m.Proposal_flow.exact_locals; (!local).closures <- m.Proposal_flow.closures;
     (!local).classes <- m.Proposal_flow.classes; (!local).objects <- m.Proposal_flow.objects;
-    (!local).fresh_constructor <- m.Proposal_flow.fresh_constructor; (!local).exact_allocs <- m.Proposal_flow.exact_allocs
+    (!local).fresh_constructor <- m.Proposal_flow.fresh_constructor; (!local).exact_allocs <- m.Proposal_flow.exact_allocs;
+    (!local).holders <- m.Proposal_flow.holders
   let with_path_metadata enclosing incoming f =
     Fun.protect ~finally:(fun () -> restore_metadata enclosing)
       (fun () -> restore_metadata incoming; f ())
@@ -248,6 +251,19 @@ module Access (S : sig val state : t end) = struct
   let mark_exact_allocations positions = (!local).exact_allocs <- positions @ (!local).exact_allocs
   let mark_exact_local name = (!local).exact_locals <- name :: (!local).exact_locals
   let record_growth name = (!local).grown_locals <- name :: (!local).grown_locals
+  (* A binding of [n] ends every holding [n] took part in; a constant bound
+     to the local [m] holds [m]'s object. *)
+  let forget_holder n = (!local).holders <- List.filter (fun (a,b) -> a <> n && b <> n) (!local).holders
+  let record_holder n m = (!local).holders <- (n,m) :: (!local).holders
+  (* The locals holding [n]'s object: [n], and every local a chain of
+     constants bound to one another links to it. *)
+  let holders_of n =
+    let rec close seen =
+      let next = List.concat_map (fun (a,b) ->
+        (if List.mem a seen && not (List.mem b seen) then [b] else [])
+        @ (if List.mem b seen && not (List.mem a seen) then [a] else [])) (!local).holders in
+      if next = [] then seen else close (List.sort_uniq compare (seen @ next)) in
+    close [n]
   let prepare_constructor tails =
     let fresh=(!local).fresh_constructor in
     (!local).fresh_constructor <- false;

@@ -474,7 +474,7 @@ const GROUPS: [string, RegExp][] = [
   ["exceptions (try/catch/throw)", /TryStatement|ThrowStatement|a jump out of a `try`/],
   ["void expression", /VoidExpression/],
   ["destructuring and rest/default parameters", /statement (arrayPattern|pattern)|destructuring parameter|rest elements|array pattern holes|nested patterns|`let` pattern|default parameters|rest parameter needs|ordinary closure parameter|an array rest needs one|an array pattern over a value|position \d+ is outside the array/],
-  ["object growth: a key-adding write on an object another reference may hold, a dynamic index write", /may add (it|the key) to an object another reference holds|a key-adding write|may name `__proto__`, whose setter/],
+  ["object growth: a key-adding write on an object another reference may hold, a dynamic index write", /may add (it|the key) to an object another reference holds|a key-adding write|may name `__proto__`, whose setter|through the parameter '[^']*' may add the key/],
   ["object literal members (methods, accessors, spreads)", /expected a plain property|unsupported object member|a spread copies the own enumerable|a computed key in an object literal|an accessor runs code|a spread of an object with a symbol-keyed property|a spread with a written field that the arms|an optional field given `undefined`/],
   ["discriminated-union narrowing (a field read after a tag test)", /missing field _|a `let` holding a union of objects|a union of an array and a record/],
   ["classes: modifiers, inheritance, fields, parameter properties, receivers", /class member|class inheritance|extending the standard library|inheritance needs|parameter property|constructor (statement|parameter|assigns)|a static (field|method|member|initializer)|method receiver|method with a `this` parameter|Symbol.hasInstance|#private|class extending|class accessor|index signature in a class|static block|optional, generator or generic method|optional or generator method|generic class method|a class extends/],
@@ -550,9 +550,12 @@ const CLASSES: ClassEntry[] = [
     why: "Lean found no derivation; the obligation is named, its cause is not" },
   { cls: "unexplained", label: "run error or unattributed verification", re: /^\w+: attribution:/,
     why: "no refusal was stated (a crash or timeout is classed here by its status)" },
+  // ------------------------------------------- key-adding write through a parameter
+  { cls: "principled", label: "a key-adding write through a parameter", re: /through the parameter '[^']*' may add the key: the caller may hold the object/,
+    why: "the caller may hold the object at a type that leaves the key absent, or optional at another type, which the added key breaks; TypeScript accepts the program, and Node reads the added number at `string` (examples/invalid-key-adding-parameter-write.ts)" },
   // ------------------------------------------------ key-adding write gaps
   { cls: "gap", label: "a key-adding write on an object another reference may hold", re: /may add (it|the key) to an object another reference holds|a key-adding write is typed only on a local's own fresh object/,
-    why: "typed only on an unaliased local; alias tracking beyond that is open (DESIGN, Next steps)" },
+    why: "typed on an object only its local and the constants bound to it hold; a reference the body hands elsewhere needs the heap to map an object's identity to its keys (WORK, Next steps)" },
   { cls: "gap", label: "a write at a runtime string key of an object or `null` value", re: /may name `__proto__`, whose setter/,
     why: "the key may be `__proto__`, whose setter makes such a value the object's prototype; the copy that adds a key adds no prototype" },
   { cls: "gap", label: "a key-adding write at a key that may be a string or a symbol", re: /at a key that may be a string or a symbol/,
@@ -702,6 +705,10 @@ const SKJS_UNSOUND: Record<string, string> = Object.fromEntries([
   ...["testAliasMutableOptionalThenIndex", "testAliasReadonlyOptionalThenIndex", "testAliasWidenedGrantThenIndex",
       "testSameViewInBranchThenAfter", "testViewInsideLoop", "testAliasMutableSymbolOptionalThenIndex"]
     .map((n) => [`tests/expect-error/obj-literal-indexes.ts#${n}`, "aliased views of an empty object literal"]),
+  ...[["index-signatures.ts", "bracketAssignOnStringIndex"], ["index-signatures.ts", "bracketAssignOnNumberIndex"],
+      ["index-signatures.ts", "writeConformingOk"], ["index-signatures.ts", "writeNumberKeyIgnoresNonNumericField"],
+      ["index-signatures.ts", "writePlainIndexOk"], ["object-type-readonly-fields.ts", "assignNumberToOptional"]]
+    .map(([f, n]) => [`tests/expect-error/${f}#${n}`, "a key-adding write through a parameter"]),
   ["tests/expect-error/obj-literal-indexes.ts#testEscapedInferredLiteralStaysClosed", "an inferred literal type through a generic declaration is closed"],
   ["tests/expect-error/callability.ts#testInstanceTypeofFunction", "`typeof c === \"function\"` on a class instance is `never`"],
   ["tests/expect-error/void.ts#returningConstrainedVoid", "a body falling off its end at a binder bounded by `void`"],

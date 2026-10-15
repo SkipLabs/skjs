@@ -1,6 +1,7 @@
 import Verification.Source.SourceRequests
 import Verification.Source.SourceClaims
 import Verification.Source.Fragment
+import Verification.Source.SourceFacts
 
 /-! Owns lexical slots and the mutable graph construction state. -/
 namespace Verification.SourceExtraction
@@ -113,8 +114,8 @@ private structure Built extends GraphFrame where
   hints only, rendered where they can be and never obligations. -/
   nodePlans : List (DirectProof.Plan Tree) := []
   /-- The key-adding write sites of the body (`growSites`): the writes that
-  may add a key, by copying their owned object. -/
-  grows : List Span := []
+  may add a key, by copying their owned object, and the bindings holding it. -/
+  grows : List GrowSite := []
 
 /-- Source-validation failures that already know their source site use the same
 structured channel as proof obligations. Keeping the diagnostic construction
@@ -252,7 +253,15 @@ def flowTarget (id : Nat) : Compiler (Option Target) := readBuilt fun s => s.flo
 def rememberFlowTarget (id : Nat) (target : Target) : Compiler Unit :=
   updateBuilt fun s => { s with flowTargets := (id,target)::s.flowTargets }
 
-def growthSites : Compiler (List Span) := readBuilt (·.grows)
+/-- The refusal of a write that may add a key through the parameter `n`. -/
+def parameterGrowth (write n : String) : String :=
+  s!"{write} through the parameter '{n}' may add the key: the caller may hold the object at a \
+    type that leaves the key absent, or optional at another type, and see it added at this one"
+
+/-- The bindings holding the object a key-adding write at `span` copies, where
+it is a site (`growSites`). -/
+def growthHolders (span : Span) : Compiler (Option (List Holder)) :=
+  readBuilt fun s => (s.grows.find? (·.span == span)).map (·.holders)
 
 /-- Node allocation appends its claim and source-map slot at the same index. -/
 def appendNode (node : ControlFlow.Node) (claim : PointClaim Tree) : Compiler Target := ⟨fun s =>
@@ -308,7 +317,7 @@ structure LoweringResult extends LoweredGraph where
   nodePlans : List (DirectProof.Plan Tree)
 
 /-- Run one source unit with its equation table and admitted ownership sites. -/
-def runCompiler (types : EquationStore.State) (grows : List Span) (action : Compiler α) :
+def runCompiler (types : EquationStore.State) (grows : List GrowSite) (action : Compiler α) :
     Except String (α × LoweringResult) := do
   let (value,s) ← action.run { types := types, grows := grows }
   return (value,{

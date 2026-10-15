@@ -494,7 +494,16 @@ negation. -/
     | .dynamic =>
       -- A write at a key known only at run time may add the key: on an
       -- object another reference may hold it is refused as a named write
-      -- adding a key is.
+      -- adding a key is, and through a parameter on principle.
+      -- The receiver as the source spells it, where the operands are saved.
+      let origins ← executionOrigins
+      let receiver := match r with
+        | .var _ n => (origins.lookup n).getD r
+        | _ => r
+      if let .var _ n := receiver then
+        if fc.params.any (·.1 == n) then
+          throw (locatedRefusal (← table) p .expressionClaim
+            (parameterGrowth "a write at a key known only at run time" n))
       throw (locatedRefusal (← table) p .expressionClaim
         "a write at a key known only at run time may add the key to an object another reference holds, which would see the object's keys change: a key-adding write is typed only on a local's own fresh object that nothing else has reached")
     | .element => return .elemWrite p r key rhs

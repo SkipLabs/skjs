@@ -144,13 +144,13 @@ a union, and dropped where it contradicts every one: `T ⊓ (null | number)` is
         let N ← executionPlanType fc scope (A::Γ) no
         pure (Y ++ N).eraseDups)
 
-/-- A key-adding write on a local's own object, as its copy: the local's slot,
-the saved receiver's and right side's slots, the one-key allocation in the
+/-- A key-adding write on an owned object, as its copy: the slot and storage
+of each binding holding the object, the saved receiver's and right side's slots, the one-key allocation in the
 statement's context, whether the object is copied onto the allocation
 (`swapped`) rather than the allocation onto it, the key's slot where the key
 may be `__proto__`, and the claims of the write, the allocation and the copy. -/
 private structure Growth where
-  owned : Nat
+  holders : List (Nat × Storage Tree)
   receiver : Nat
   value : Nat
   alloc : Tm
@@ -177,8 +177,8 @@ copy takes: the copy of such an object holds all of it. -/
     | .symbol | .symbolLit _ => true
     | _ => false
 
-/-- A checked owned write replaces its local reference with a fresh copy.
-    Operand slots are supplied by the shared execution plan. A string key the
+/-- A checked owned write replaces every reference to its object, each
+    holder's slot or cell, with a fresh copy. Operand slots are supplied by the shared execution plan. A string key the
     source spells is allocated by `makeAt` and copied over the object; a key
     known only at run time by `makeKey` at the key's value. A symbol key, which
     the copy of an object does not take, is the allocation the object is copied
@@ -192,10 +192,10 @@ copy takes: the copy of such an object holds all of it. -/
     (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree))
     (original prepared : Fragment.Expr) : Compiler (Option Growth) := do
   if (← ownedWrite) != some original.span then return none
-  let (ownedIndex, static) ← match ← computedGrowth fc scope original with
-    | some (i, _, _, _) => pure (i, none)
+  let (holders, static) ← match ← computedGrowth fc scope original with
+    | some (holders, _, _, _) => pure (holders, none)
     | none => match ← growingWrite fc scope original with
-      | some (i, _, field, _, _) => pure (i, some field)
+      | some (holders, _, field, _, _) => pure (holders, some field)
       | none => return none
   let prepared ← comparisonsExpr fc prepared
   let (receiver, key, rhs) ← match prepared with
@@ -220,13 +220,13 @@ copy takes: the copy of such an object holds all of it. -/
   | some (.str name) =>
     let F ← groupType [name] [W]
     let M ← mergeType X F
-    pure (some ⟨ownedIndex, r, v, .makeAt .absent [.str name] [.var v], false, none, W, F, M⟩)
+    pure (some ⟨holders, r, v, .makeAt .absent [.str name] [.var v], false, none, W, F, M⟩)
   | some (.sym i) =>
     let label ← lower (SourceTypes.use (ComputedKey.oneField (.sym i) W))
     recordHints [label]
     let F := [label]
     let M ← symbolCopy F
-    pure (some ⟨ownedIndex, r, v, .makeAt .absent [.sym i] [.var v], true, none, W, F, M⟩)
+    pure (some ⟨holders, r, v, .makeAt .absent [.sym i] [.var v], true, none, W, F, M⟩)
   | none =>
     let some (.var _ keyName) := key | throw "internal execution plan: owned key was not saved"
     let some k := valueSlot scope keyName | throw "internal execution plan: missing owned key"
@@ -260,7 +260,7 @@ copy takes: the copy of such an object holds all of it. -/
     -- path on which the key is `__proto__` leaves the object as it is.
     let M ← if symbolic then symbolCopy F
       else if ObjectMerge.MergeOk G [] X F X then pure X else mergeType X F
-    pure (some ⟨ownedIndex, r, v, .makeKey (.var k) (.var v), symbolic, if proto then some k else none, W, F, M⟩)
+    pure (some ⟨holders, r, v, .makeKey (.var k) (.var v), symbolic, if proto then some k else none, W, F, M⟩)
 
 /-- Typed atomic copies can replace one owned local while every source
     operand remains scheduled by the execution plan. -/
@@ -270,7 +270,9 @@ copy takes: the copy of such an object holds all of it. -/
   match operation with
   | .evaluate original prepared _ =>
     if let some g ← executionGrowth fc scope Γ original prepared then
-      return Γ.set g.owned g.M
+      return g.holders.foldl (fun Γ (i, storage) => match storage with
+        | .value => Γ.set i g.M
+        | .cell .. => Γ) Γ
     if (← ownedWrite) == some original.span then
       if let .objectAssign _ (.var _ name) _ := original then
         let some i := valueSlot scope name | throw "internal execution plan: missing owned Object.assign target"
@@ -284,14 +286,22 @@ copy takes: the copy of such an object holds all of it. -/
     (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree))
     (original prepared : Fragment.Expr) (next : Target) : Compiler Target := do
   if let some g ← executionGrowth fc scope Γ original prepared then
+    let values := g.holders.filterMap fun (i, storage) => match storage with
+      | .value => some i
+      | .cell .. => none
     let mapping := (next.mapping.getD (List.range (Γ.length+1))).map
-      (fun j => if j == 0 then 0 else if j == g.owned+1 then 1 else j+2)
+      (fun j => if j == 0 then 0 else if values.contains (j-1) then 1 else j+2)
     let merged := held ⟨"",some original.span⟩ :: held ⟨"",some original.span⟩ :: scope
     let result ← emitAt original.span (.var (g.value+2)) (.bind ⟨next.label,some mapping⟩)
       (g.M::g.F::Γ) g.W "expression-claim" (scope := merged)
+    -- A holder that is a `let` holds the copy in its cell from then on.
+    let stored ← g.holders.foldlM (init := result) fun next (i, storage) => match storage with
+      | .value => pure next
+      | .cell .. => emitAt original.span (.writeAt valueField (.var (i+2)) (.var 0)) (.effect next)
+          (g.M::g.F::Γ) [Labels.nul] "storage-contract" (scope := merged)
     let copy := if g.swapped then Tm.merge [] (.var 0) (.var (g.receiver+1))
       else .merge [] (.var (g.receiver+1)) (.var 0)
-    let merge ← emitAt original.span copy (.bind result)
+    let merge ← emitAt original.span copy (.bind stored)
       (g.F::Γ) g.M "owned-copy" (scope := merged.tail)
     let copied ← emitAt original.span g.alloc (.bind merge)
       Γ g.F "owned-field" (scope := scope)

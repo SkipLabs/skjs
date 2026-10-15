@@ -14,6 +14,8 @@ type metadata = {
   objects: (string * (Semantic.key * Source.expr) list) list;
   fresh_constructor: bool;
   exact_allocs: Json.t list;
+  (* Each constant bound to a local, with that local: the two hold one object. *)
+  holders: (string * string) list;
 }
 type state = { env: environment; metadata: metadata }
 
@@ -79,7 +81,8 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
         closures=List.filter (fun (n,_) -> bound n) m.closures;
         classes=List.filter (fun (n,_) -> bound n) m.classes;
         objects=List.filter (fun (n,_) -> bound n) m.objects;
-        fresh_constructor=m.fresh_constructor; exact_allocs=m.exact_allocs}} in
+        fresh_constructor=m.fresh_constructor; exact_allocs=m.exact_allocs;
+        holders=List.filter (fun (n,m) -> bound n && bound m) m.holders}} in
     let join_env (node:Flow.node) left right =
       let left=scope node.scope left and right=scope node.scope right in
       let impossible env=List.exists (fun (n,b) -> not (is_field n) && binding_type b=Atoms []) env in
@@ -107,7 +110,8 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
         classes=common l.classes r.classes;
         objects=common l.objects r.objects;
         fresh_constructor=l.fresh_constructor && r.fresh_constructor;
-        exact_allocs=combined l.exact_allocs r.exact_allocs}} in
+        exact_allocs=combined l.exact_allocs r.exact_allocs;
+        holders=common l.holders r.holders}} in
     let publications=Array.make (Array.length graph.nodes) callbacks.empty_output in
     let transfer (node:Flow.node) state =
       let saved_metadata=capture env0 in
