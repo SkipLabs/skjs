@@ -4,15 +4,20 @@ How much of what SKJS accepts in its own test suite the pipeline
 (`verify-source.mts`: parser → OCaml producer → Lean search and check) verifies, what
 stops the rest, and where the two disagree because SKJS is wrong.
 
-Measurement checkpoint: October 13, 2026 (full verifier-only run, using the
-SKJS acceptance results recorded on October 9; SKJS was not rerun).
+Measurement checkpoint: October 15, 2026 (full verifier-only run on
+8f9ed04f8; the accepted units are those the expectation markers accept,
+including the two marker-accepted parse-error units, and SKJS was not run).
 The reviewed nested-promise search failure is classified by its unit and
 exact obligation.
 
-**2,489 of 2,674 SKJS-accepted units verify (93.1%); 1,858 of 2,026
-accepted functions (91.7%).** 301 of the 377 files with an accepted unit
-verify entirely. There are 87 principled refusals, 10 registered SKJS-unsound
-units, 88 gaps and no unmatched or unexplained refusals.
+**2,557 of 2,676 SKJS-accepted units verify (95.6%); 1,915 of 2,026
+accepted functions (94.5%).** 322 of the 379 files with an accepted unit
+verify entirely. There are 101 principled refusals, 16 registered SKJS-unsound
+units, 2 gaps and no unmatched or unexplained refusals. The gaps are
+`destructuring-assignment.ts#keyBeforeDefault` (a written local's content
+read in an expression's branch arm) and
+`variadic-rest-corner-cases.ts#testGenericTupleConstraint` (a generic
+contract the producer cannot represent in full).
 
 `mapArr` and `testMapCallback` fail at the native call: an arbitrary
 one-argument callback supplies no contract for the three actuals `map` passes.
@@ -24,8 +29,8 @@ Calling the unchanged function with `xs = [1, 2, 3]` and a callback that sets
 species nor external code is involved. Strengthening its callback parameter
 would change its written contract and cannot silently repair it.
 `testMapCallback` itself makes a safe call, but its extracted unit also checks
-that invalid general declaration. The current classifier still includes these
-rows among gaps; that classification is not a completeness claim.
+that invalid general declaration. The classifier counts both rows as principled
+refusals (a function value known only by its type at a longer signature).
 
 The SKJS-unsound list records independent runtime witnesses ([below](#suspected-skjs-unsoundnesses)).
 Membership alone does not show that the pipeline reached the corresponding
@@ -41,9 +46,7 @@ node verification/pipeline/skjs-coverage.mts --width 3
 
 It writes [skjs-coverage.json](skjs-coverage.json) (summary, one row per unit,
 one line per row, so a rerun's movement is a line diff). Selection uses the
-expectation markers; the script runs only the verifier pipeline. The recorded
-measurement above uses the October 9 SKJS acceptance results; a fresh run
-includes the two marker-accepted parse-error units that measurement excludes.
+expectation markers; the script runs only the verifier pipeline.
 `--only <substring>` narrows the corpus, `--keep` keeps check artifacts,
 `--out` places the derived files (default `$TMPDIR/skjs-coverage`). The script
 is not part of `verification/test-all.sh`.
@@ -54,14 +57,14 @@ is not part of `verification/test-all.sh`.
 
 | Suite | Harness verdict | Files | Units | Accepted | Verified | Accepted functions | Verified functions |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `tests/expect-error` | `@ts-expect-error` / `@skjs-expect-error` name the next non-annotation line (`tests/Helpers.sk` `findExpectErrors`); `@skjs-expect-warning` is not an error | 399 (374 with units) | 3,883 | 2,458 | 2,275 | 1,863 | 1,697 |
+| `tests/expect-error` | `@ts-expect-error` / `@skjs-expect-error` name the next non-annotation line (`tests/Helpers.sk` `findExpectErrors`); `@skjs-expect-warning` is not an error | 399 (374 with units) | 3,883 | 2,460 | 2,343 | 1,863 | 1,754 |
 | `tests/callgraph` | no error allowed | 25 | 59 | 59 | 57 | 51 | 49 |
 | `tests/constprop` | no error allowed | 14 | 66 | 66 | 66 | 49 | 49 |
 | `tests/deadcode` | no error allowed | 7 | 27 | 27 | 27 | 16 | 16 |
 | `tests/cfg` | no error allowed | 7 | 22 | 22 | 22 | 21 | 21 |
 | `tests/projects` | expect-error markers, under the project's tsconfig | 24 of 68 | 44 | 34 | 34 | 23 | 23 |
 | `tests/ts-conformance/cases` | lines listed in `reference/*.errors.txt` | 4 | 9 | 8 | 8 | 3 | 3 |
-| **total** | | **480** | **4,110** | **2,674** | **2,489** | **2,026** | **1,858** |
+| **total** | | **480** | **4,110** | **2,676** | **2,557** | **2,026** | **1,915** |
 
 Excluded (79 files, listed in the JSON with reasons): `ts-conformance/not-supported`
 (31) and `callgraph-unsupported` (4) assert only that SKJS reports errors;
@@ -83,11 +86,12 @@ other copied files enter through imports. A
 unit is marker-accepted when no statement of that closure has an error line
 (1,364 units are rejected themselves, 70 through a dependency).
 
-**SKJS confirmation (October 9).** SKJS (`check --import-stubs import-stubs`, default
-truthiness, as the harness runs it) is run once over all 2,676 derived files of
-marker-accepted units. It rejects 2: two `*-prettier-ignore.ts` files whose
-expected *parse* errors the markers attribute to the wrong statement. They are
-not counted. The remaining 2,674 are the accepted corpus.
+**Marker acceptance.** The 2,676 marker-accepted units are the accepted
+corpus. Two of them, the classes of `class-anonymous-method-prettier-ignore.ts`
+and `class-field-remove-readonly-prettier-ignore.ts`, sit in files whose
+expected *parse* errors the markers attribute to another statement; SKJS
+(`check --import-stubs import-stubs`, default truthiness) rejects their derived
+files, and the pipeline refuses them as code TypeScript refuses (principled).
 
 **Environment.** SKJS checks a test in the environment its stubs give
 (`--import-stubs import-stubs`); the pipeline gives each derived file the
@@ -122,10 +126,10 @@ is.
 
 | Phase of first blocker | Units |
 | --- | ---: |
-| verified | 2,489 |
-| source (gate) | 73 |
-| proposal (producer) | 23 |
-| search (Lean) | 89 |
+| verified | 2,557 |
+| source (gate) | 40 |
+| proposal (producer) | 11 |
+| search (Lean) | 68 |
 
 **Refusal classes.** The project's goal is that every accepted unit either
 verifies or is refused for a specific, principled reason. Each accepted unit
@@ -143,9 +147,18 @@ obligation is classified independently of the previous explanation:
   [refused on principle](../SOURCE-FRAGMENT.md#refused-on-principle): TypeScript's
   implicit index signature, covariant writable storage, method extraction,
   `instanceof` narrowing `unknown` (an object gets a class's prototype without
-  its constructor), a constructor or base class from outside the file, an
-  iterator whose type states no `return`, thenable adoption, a contextual
-  `any`, an empty intersection, a rest typed by an intersection, and code or declarations TypeScript rejects.
+  its constructor), a constructor or base class from outside the file, a class
+  extending `Array`, an iterator whose type states no `return`, thenable
+  adoption, a nested async return annotation, a contextual `any`, an empty
+  intersection, a rest typed by an intersection, a type parameter typing a
+  rest and a value, a function value known only by its type at a longer
+  signature, a `this`-typed function as a receiver-indifferent callback,
+  `.call`, `.apply` or `.bind` of a received function, a mutable tuple's
+  `length` or a position past its arity, an array `Array.isArray` finds at a
+  generic call's mutable `Array<A>`, a read at a key that may name an
+  `Object.prototype` member, a spread of a value stated with a symbol-keyed
+  field, SKJS's closed-object meaning of `Closed<T>`, and code or declarations
+  TypeScript rejects.
 - **gap** (G): a sound construct the pipeline does not yet support: a
   [next step](../WORK.md#next-steps), or a [model limit](../SOURCE-FRAGMENT.md#model-limits)
   whose obstacle the entry names (a representation limit, "no term of the
@@ -189,11 +202,10 @@ unsoundness was reached and refused for its original reason.
 - Counts are *first* blockers. A group's count is an upper bound on what
   widening it alone unlocks; the next blocker is not measured.
 - Name-based closure over-approximates (a local shadowing a top-level name
-  drags that declaration in) and drops unreferenced top-level statements. SKJS
-  confirmation guards acceptance, not the pipeline's view.
+  drags that declaration in) and drops unreferenced top-level statements.
 - A derived file of a module is written as a script (`export {}` is itself
   outside the fragment).
-- Twelve producer refusals have no location (`where: "unknown"`).
+- Eight producer refusals have no location (`where: "unknown"`).
 
 ## Refusals by class
 
@@ -204,12 +216,12 @@ blocker's key is given (`summary.byReason` and `summary.byClass` of
 
 | Class | Units |
 | --- | ---: |
-| verified | 2,489 |
-| principled (P) | 87 |
-| SKJS unsound (S) | 10 |
-| gap (G) | 88 |
+| verified | 2,557 |
+| principled (P) | 101 |
+| SKJS unsound (S) | 16 |
+| gap (G) | 2 |
 | unexplained (U) | 0 |
-| **accepted** | **2,674** |
+| **accepted** | **2,676** |
 
 Reason definitions and justifications live in `CLASSES` in
 [skjs-coverage.mts](skjs-coverage.mts); measured counts live in
@@ -222,32 +234,26 @@ First blocker, not every missing feature of a unit:
 
 | Group | Units | Self | Dependency | Files |
 | --- | ---: | ---: | ---: | ---: |
-| TypeScript refuses the code too (the pipeline follows TypeScript's types) | 37 | 29 | 8 | 24 |
-| destructuring and rest/default parameters | 14 | 9 | 5 | 5 |
-| in / instanceof / typeof tests | 14 | 7 | 0 | 6 |
+| TypeScript refuses the code too (the pipeline follows TypeScript's types) | 37 | 28 | 9 | 25 |
+| in / instanceof / typeof tests | 15 | 7 | 0 | 6 |
 | implicit index signatures: a record at an index signature (`Closed<T>` read as `T` among them) | 14 | 14 | 0 | 3 |
-| type forms: literal types, keyof, indexed access, mapped, object, index signatures, intersections, method signatures | 10 | 9 | 1 | 6 |
-| object growth: a key-adding write on an object another reference may hold, a dynamic index write | 11 | 11 | 0 | 5 |
-| generics: constraints, explicit type arguments, rigid types, generic function types | 8 | 7 | 1 | 6 |
-| calls: overloads, .call, spread arguments, Object.assign, arrow callee | 9 | 5 | 2 | 5 |
-| a named function at a signature binding more parameters, or indifferent to the receiver it requires (its type is its annotated signature) | 9 | 8 | 1 | 5 |
-| arrays and open records: `Array.isArray` on `unknown`, `length` of an array read as a record's | 8 | 8 | 0 | 5 |
-| cells read at their contract (contents known only as primitives or as no `undefined`, and forgotten across a step that may write them) | 6 | 4 | 0 | 4 |
+| destructuring and rest/default parameters | 8 | 6 | 2 | 3 |
 | classes: modifiers, inheritance, fields, parameter properties, receivers | 6 | 3 | 3 | 3 |
-| enums | 6 | 0 | 6 | 1 |
-| sloppy (non-strict) code | 6 | 4 | 2 | 3 |
-| object literal members (methods, accessors, spreads) | 5 | 4 | 0 | 4 |
-| iterables the program defines: an iterator whose type states no `return`, a spread or a pattern the protocol's lowering does not place, a well-known symbol key other than `Symbol.iterator` | 5 | 4 | 1 | 4 |
+| object growth: a key-adding write on an object another reference may hold, a dynamic index write | 6 | 6 | 0 | 2 |
 | await of non-promises and unions (the await bound) | 5 | 5 | 0 | 3 |
-| relational operators (< <= > >=) and ** | 2 | 1 | 1 | 1 |
-| search: no derivation found (evidence search failed) | 2 | 2 | 0 | 2 |
-| dictionaries: a spread of one, a key `in` found in one | 2 | 2 | 0 | 2 |
+| calls: overloads, .call, spread arguments, Object.assign, arrow callee | 5 | 4 | 1 | 3 |
+| a function value, or a module function with a rest parameter or binders, at a signature binding more parameters; a `this`-typed function where its receiver is indifferent | 4 | 3 | 1 | 3 |
+| search: no derivation found (evidence search failed) | 3 | 3 | 0 | 3 |
+| arrays: a built-in array at a generic call, a mutable tuple's `length` | 3 | 3 | 0 | 3 |
+| iterables the program defines: an iterator whose type states no `return`, a spread or a pattern the protocol's lowering does not place, a well-known symbol key other than `Symbol.iterator` | 3 | 3 | 0 | 3 |
+| type forms: literal types, keyof, indexed access, mapped, object, index signatures, intersections, method signatures | 2 | 2 | 0 | 2 |
+| a read at a key the object may lack, which may name an `Object.prototype` member | 2 | 2 | 0 | 1 |
 | invariance: a writable element or field at a wider one (TypeScript relates them covariantly) | 2 | 2 | 0 | 1 |
-| compound and update assignments (x++, \|\|=, ??=, a[i] op=) | 1 | 1 | 0 | 1 |
 | other source forms | 1 | 1 | 0 | 1 |
-| type aliases and names the declaration reader cannot resolve | 1 | 0 | 1 | 1 |
-| library globals as values (Array, Symbol, Error, Promise, Set, Map, Date, JSON, …) | 1 | 1 | 0 | 1 |
-| **total** | **190** | | | |
+| generics: constraints, explicit type arguments, rigid types, generic function types | 1 | 0 | 1 | 1 |
+| object literal members (methods, accessors, spreads) | 1 | 1 | 0 | 1 |
+| generic contracts requiring an unsupported exact representation | 1 | 1 | 0 | 1 |
+| **total** | **119** | | | |
 
 ## Performance on the pipeline cases
 
@@ -296,7 +302,7 @@ are not measured.
 ## Suspected SKJS unsoundnesses
 
 Divergences: SKJS-accepted units the pipeline parses and proposes, and Lean
-then refuses (94 units in `search`, `summary.reachedButRefused`). The
+then refuses (68 units in `search`, `summary.reachedButRefused`). The
 source-form refusals Lean states explicitly are fragment boundaries. The rest
 were read obligation by obligation: all read are pipeline incompleteness
 except four families below; the fifth is refused by the producer. One
