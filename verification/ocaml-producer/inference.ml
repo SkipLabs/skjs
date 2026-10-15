@@ -187,7 +187,7 @@ let upper_candidate = function
 (* [expand] gives a declaration's equation, to compare a class instance with
    the interface application a signature names (`new () => Mapper<K, V, K2, V2>`). *)
 let infer ?receiver ?expected ?(expand = fun _ -> None) ?(native = fun _ -> false)
-    ?(owned = fun _ -> None) ?(observed = fun _ -> None) (signature:signature) actuals =
+    ?(owned = fun _ -> None) ?(observed = fun _ -> None) ?expected_bounds (signature:signature) actuals =
   if signature.quantified=[] then unsupported "generic inference requires a quantified signature";
   if signature.rest_pack<>None then unsupported "pack inference requires an argument-list candidate";
   let domains = match signature.variadic with
@@ -458,7 +458,16 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) ?(native = fun _ -> fals
      TypeScript infers from the return position too. *)
   actual_candidates := List.filter_map (fun (v:variable) ->
     if v.lower = [] then None else Some v.identity) variables;
+  let bounds_of () = List.map (fun (v:variable) -> v.identity,(v.lower,v.upper,
+    List.filter (fun ((x:variable),(y:variable)) -> x.identity = v.identity || y.identity = v.identity) !edges))
+    variables in
+  let before = bounds_of () in
   Option.iter (fun t -> constrain ~output:true signature.result t) expected;
+  (* The binders the expected type gave a bound: [expected_bounds] receives
+     them, the provenance a caller needs where only the result context may
+     fix a binder. *)
+  Option.iter (fun r -> r := List.filter_map (fun (identity,b) ->
+    if List.assoc identity before <> b then Some identity else None) (bounds_of ())) expected_bounds;
   let unconstrained = List.filter_map (fun (v:variable) ->
     if v.lower = [] && v.upper = []
        && not (List.exists (fun ((a:variable),(b:variable)) ->

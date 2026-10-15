@@ -1007,6 +1007,8 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     ["invalid-slot-catch-entry", "midTry('a', 'b', () => { throw 1; })", "b"],
     ["slot-object-growth", "JSON.stringify(grownSlot('x', false)()) + JSON.stringify(grownSlot('x', true)())", "{\"x\":1,\"count\":2}{\"x\":1,\"count\":2}"],
     ["invalid-evolving-use-contract", "build(6)", "many"],
+    ["invalid-generic-callee-use-contract", "count(3).head", "many"],
+    ["generic-callee-use-contract", "JSON.stringify(fromArray(1, 2))", "{\"head\":1,\"tail\":{\"head\":2,\"tail\":null}}"],
     ["evolving-use-contract", "JSON.stringify(reverse({ head: 1, tail: { head: 2, tail: null } }))", "{\"head\":2,\"tail\":{\"head\":1,\"tail\":null}}"],
     ["activation-slots", "[survivesCall('a', 'b', () => { throw 1; }), absorbedInnerTry('a', 'b', () => { throw 1; }), capturedAfterWrites(false)(), JSON.stringify(reverse({ head: 1, tail: { head: 2, tail: null } }))].join()", "a,a,no,{\"head\":2,\"tail\":{\"head\":1,\"tail\":null}}"],
     // A generic function type's result: a pair where it holds, the argument

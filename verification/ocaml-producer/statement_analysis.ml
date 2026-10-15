@@ -79,6 +79,26 @@ let transfer (expr:Analysis_state.expression_infer) =
       | Call ({node=Id g;_},None,args,[],[]) when g <> n ->
         let params = match (try declared_head declarations [] (resolve env g) with Json.Error _ -> Atoms []) with
           | Atoms [Shape {calls=[s];_}] when s.quantified=[] && s.variadic=None && s.rest_pack=None -> s.params
+          (* A generic callee's parameters at the instance the call's own
+             expected type fixes, every actual left unconstrained: each
+             binder must have received a bound from relating the callee's
+             result to the expected type; where one received none (it occurs
+             only in the parameters, or the expected type says nothing of
+             it) and would take a default, none. *)
+          | Atoms [Shape {calls=[s];_}] when s.variadic=None && s.rest_pack=None
+                && List.length s.params = List.length args && expected <> None ->
+            let from_expected = ref [] in
+            (match Inference.infer ~expand:(expand_named declarations) ~receiver:(Atoms [Undef]) ?expected
+                     ~expected_bounds:from_expected s (List.map (fun _ -> Atoms []) args) with
+             | inferred ->
+               let fixed (q:Semantic.quantifier) = List.mem q.identity !from_expected &&
+                 (match List.assoc_opt q.identity inferred.substitution with
+                  | Some (ValueArgument t) -> t <> Atoms [] | _ -> false) in
+               if List.for_all fixed s.quantified then
+                 let solution = inferred.substitution in
+                 List.map (Inference.substitute solution) s.params
+               else []
+             | exception Json.Error _ -> [])
           | _ -> [] in
         List.find_map Fun.id (List.mapi (fun i a -> sink (List.nth_opt params i) a) args)
       | _ -> List.find_map (sink None) (Source.children e) in

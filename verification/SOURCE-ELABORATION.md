@@ -856,8 +856,13 @@ union exists (a value consed onto $`x`$ grows with it), the producer proposes
 a contract from the statements after the declaration. In each it examines
 the first mention of $`x`$ only, and keeps it where it is a use of the whole
 value at a type: a returned value at the result type, an annotated
-initializer at its annotation, an argument of a function of one plain
-signature at its parameter. Mentions at no such type are dropped. Where the
+initializer at its annotation, an argument of a function of one signature
+at its parameter: a plain one's, or a generic one's at the instance the
+call's own expected type fixes with the actuals unconstrained, where
+relating the callee's result to the expected type gives every binder a
+bound, so that no binder takes a default and the instance is independent of
+$`x`$.
+Mentions at no such type are dropped. Where the
 kept uses expect one type $`U`$,
 
 ```math
