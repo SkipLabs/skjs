@@ -328,8 +328,9 @@ What a class declaration may not hold, each for its reason:
   below;
 - an accessor (reading it runs code; a member read is a plain one), an
   index signature (instances are what construction allocates), a static
-  block reading `this` (the class value, whose statics are bindings of their
-  own);
+  block reading `this` (the class value, which JavaScript's block reaches
+  with later static fields undefined and the model allocates only after
+  them);
 - a private name in inheritance (a derived instance's base part is a copy,
   and a copy holds no private slot), and `#x in o` (it tests an own slot,
   where $`\mathsf{hasKey}`$ walks the prototype chain and would find an
@@ -436,7 +437,9 @@ k\ \mathtt{in}\ o\;\equiv\;\mathsf{let}\ y=k\ \mathsf{in}\ \mathsf{let}\ x=o\ \m
 where $`\mathcal B`$ is the keys the model does not answer as JavaScript does
 (`inKeyRefusal`, [guards](SOURCE-CONTRACTS.md#guards)). The operand's clauses are
 objects because `in` throws on a primitive, where the test would answer
-`false`, and not a class value, whose static members are bound apart.
+`false`, and not a class value, which holds its static fields but not the
+keys JavaScript's class owns besides (`name`, `length`, `prototype`, its static
+methods).
 
 A key TypeScript types as other than string literals (a `string`, a number,
 an array index among them, a symbol) may name what the model does not answer
@@ -912,8 +915,8 @@ checks an annotation, and a constant never changes, so the functions'
 assumption is what the unit establishes (the composition argument is
 [DESIGN.md](DESIGN.md#modules-and-code-units)'s, unchanged).
 
-A non-generic class $`C`$ bound by the initialization unit at its construct
-signature $`K_C`$ is read by its own instance methods and constructor, closures
+A non-generic class $`C`$ bound by the initialization unit at its type
+$`K_C`$ is read by its own methods, static ones included, and constructor, closures
 that unit creates before it binds $`C`$, as the class's own binding
 $`C^{\mathit{self}}`$ (`C.[[self]]`), which the initialization unit $`I`$ reads
 the way a function reads a module constant:
@@ -923,9 +926,12 @@ the way a function reads a module constant:
      {\Gamma_I(C^{\mathit{self}})=⟦K_C⟧}\ \textsf{class-self}
 ```
 
-The unit checks the class value against $`K_C`$ where it binds $`C`$, and nothing
-reaches $`C^{\mathit{self}}`$ before: only those closures read it, and none
-runs until an instance or the class value exists.
+The unit checks the class value against $`K_C`$, its construct signature and
+its static fields, where it binds $`C`$, after the static field initializers,
+and nothing reaches $`C^{\mathit{self}}`$ before: only those closures read it,
+its static methods among them, and none runs until an instance or the class
+value exists, but a static method whose body does not read the class, which a
+static initializer may call ([classes](SOURCE-CONTRACTS.md#classes)).
 
 ## Source closures and their annotations
 

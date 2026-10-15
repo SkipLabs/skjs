@@ -115,11 +115,14 @@ export type Clause<L = number> =
   /** Construct signatures `[parameters, result]`: what a class meets; and
    * variadic ones `[parameters, [rest, result]]`, whose actuals past the
    * parameters are, as one argument list, at the rest type; the field is left
-   * out when there are none. */
+   * out when there are none. Its static fields, invariant record operands as
+   * a callable's bag, `first` and `rest`, are left out when there are none. */
   | {
       ctors: {
         signatures: [Labels<L>[], Labels<L>][];
         variadic?: [Labels<L>[], [Labels<L>, Labels<L>]][];
+        first?: Fields<L>;
+        rest?: Fields<L>[];
       };
     }
   | {
@@ -380,7 +383,9 @@ export function decodeGraph(value: unknown): TypeGraph {
       if ("bounds" in r) bounds(r.bounds);
     },
     ctors: (b) => {
-      const r = objOptional(b, ["signatures"], ["variadic"]);
+      const r = objOptional(b, ["signatures"], ["variadic", "first", "rest"]);
+      if ("first" in r) fields(r.first);
+      if ("rest" in r) array(r.rest).forEach(v => fields(v));
       array(r.signatures).forEach((sig) => {
         const pair = array(sig);
         if (pair.length !== 2) throw Error("invalid construct signature");
@@ -549,6 +554,16 @@ function clauseText(c: Clause): string {
   const calls = (arrows: Arrow[], variadic: RestArrow[] = []) =>
     `calls[${[...arrows.map(arrowText), ...variadic.map(restArrowText)].join("; ")}]`;
   if ("arrs" in c) return calls(c.arrs.arrows, c.arrs.variadic);
+  if ("ctors" in c && (c.ctors.first?.length || c.ctors.rest?.length))
+    return `object[${[c.ctors.first ?? [], ...(c.ctors.rest ?? [])].map(printFields).join(" & ")}; new[${[
+      ...c.ctors.signatures.map(
+        ([ps, r]) => `(${ps.map(printLabels).join(", ")}) => ${printLabels(r)}`,
+      ),
+      ...(c.ctors.variadic ?? []).map(
+        ([ps, [rest, r]]) =>
+          `(${[...ps.map(printLabels), `...${printLabels(rest)}`].join(", ")}) => ${printLabels(r)}`,
+      ),
+    ].join("; ")}]]`;
   if ("ctors" in c)
     return `new[${[
       ...c.ctors.signatures.map(

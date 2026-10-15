@@ -231,12 +231,39 @@ function typeQuery(context: ComputedContext, node: ts.TypeQueryNode, type: Type,
   if (ts.isEnumDeclaration(first))
     throw Error(`${what} is an enum's object type, which only an annotation of the enum's module states`);
   if (nodes.every(n => ts.isFunctionDeclaration(n)) || (nodes.length === 1 && ts.isClassDeclaration(first))) {
-    if (ts.isClassDeclaration(first) && first.members.some(isStatic))
-      throw Error(`${what} is a class with static members: its statics are bindings of their own, not ` +
-        "members of the class value's type");
     const value = context.value(nodes, what);
     if (value.typeParams.length) throw Error(`${what} is generic, ${computed}: a generic value type is outside the fragment`);
-    return value.type;
+    // A class value reaches the static members of its base classes through
+    // its prototype chain, which TypeScript's `typeof C` states and the class
+    // value's type does not: such an annotation is refused, not cut short.
+    if (ts.isClassDeclaration(first) && symbol) {
+      const classType = checker.getTypeOfSymbol(symbol);
+      const inherited = (classType ? checker.getPropertiesOfType(classType) : [])
+        .filter(p => p.name !== "prototype" && !p.declarations.some(d => d.resolve()?.parent === first))
+        .map(p => p.name);
+      if (inherited.length)
+        throw Error(`${what} is a class inheriting static members of its base (${inherited.join(", ")}): its ` +
+          "class value reaches them through its prototype, which no member of the class value's type states");
+    }
+    if (!ts.isClassDeclaration(first) || !first.members.some(isStatic)) return value.type;
+    // A class value's static fields are own data properties of it, which its
+    // type states; its static methods are bindings of their own, which no
+    // member of its type states.
+    const statics = first.members.filter(isStatic).flatMap(member => {
+      if (ts.isClassStaticBlockDeclaration(member)) return [];
+      if (!ts.isPropertyDeclaration(member) || !ts.isIdentifier(member.name))
+        throw Error(`${what} is a class with static methods or private statics: they are bindings of their own, ` +
+          "not members of the class value's type");
+      const field = member.name.text;
+      const symbol = checker.getSymbolAtLocation(member.name);
+      const inferred = symbol ? checker.getTypeOfSymbol(symbol) : undefined;
+      const fieldType = member.type ? context.annotation(member.type, member, enclosingBinders(member))
+        : inferred ? literalUnion(inferred, span) : null;
+      if (!fieldType) throw Error(`${what}: the static field '${field}' has neither an annotation nor a literal type`);
+      return [{ name: field, type: fieldType }];
+    });
+    if (value.type.k !== "constructor") throw Error(`${what} is a class read as other than its construct signature`);
+    return statics.length ? { ...value.type, statics } : value.type;
   }
   if (nodes.length !== 1) throw Error(`${what} has ${nodes.length} declarations`);
   const { annotation, optional } = declared(first);

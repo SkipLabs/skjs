@@ -88,7 +88,10 @@ and substitute_atom ?meet solution = function
       write=Option.map (substitute ?meet solution) field.write;
       receivers=List.map (substitute ?meet solution) field.receivers}) fields)
   | Named (id,args) -> Named (id,List.map (substitute ?meet solution) args)
-  | Ctors signatures -> Ctors (List.map (substitute_signature ?meet solution) signatures)
+  | Ctors (signatures,statics) -> Ctors (List.map (substitute_signature ?meet solution) signatures,
+      List.map (fun (field:Semantic.field) -> {field with
+        read=substitute ?meet solution field.read;
+        write=Option.map (substitute ?meet solution) field.write}) statics)
   | (Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Top
     | Bigint | Symbol | BigintLit _ | SymbolLit _ | Callable) as atom -> atom
 and substitute_pack ?meet solution = function
@@ -163,7 +166,7 @@ let meet_atom a b =
   | Str,StrLit _ -> Some [b] | StrLit _,Str -> Some [a]
   | Bigint,BigintLit _ -> Some [b] | BigintLit _,Bigint -> Some [a]
   | Symbol,SymbolLit _ -> Some [b] | SymbolLit _,Symbol -> Some [a]
-  | Ctors a,Ctors b -> Some [Ctors (a @ b)]
+  | Ctors (a,fa),Ctors (b,fb) -> Some [Ctors (a @ b,fa @ List.filter (fun f -> not (List.mem f fa)) fb)]
   | Shape _,_ | _,Shape _ | Exact _,_ | _,Exact _ | Named _,_ | _,Named _
   | Ctors _,_ | _,Ctors _ | Callable,_ | _,Callable -> None
   | Bigint,Bigint -> Some [Bigint] | Symbol,Symbol -> Some [Symbol]
@@ -261,7 +264,7 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) ?(native = fun _ -> fals
       (* A construct signature: parameters contravariant, instance covariant.
          A class's own signature is its first; the others it is offered give
          an interface's instance, which fixes no binder the own one does not. *)
-      | Atoms [Ctors (a::_)],Atoms [Ctors [e]] when a.quantified=[] && e.quantified=[] ->
+      | Atoms [Ctors (a::_,_)],Atoms [Ctors ([e],_)] when a.quantified=[] && e.quantified=[] ->
       List.iteri (fun i p -> match List.nth_opt e.params i with
         | Some q -> constrain q p | None -> ()) a.params;
       constrain a.result e.result

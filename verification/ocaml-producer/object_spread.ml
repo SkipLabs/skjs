@@ -22,8 +22,8 @@ let method_field (f:Semantic.field) = f.host
 let numeric_name = function Name s -> canonical_numeric s | Key _ -> false
 
 (* The alternatives a spread's operand gives: nothing from a primitive other
-   than a string, a record's fields otherwise, and no key a string's or a
-   class's copy gives. *)
+   than a string, a record's fields otherwise, a class value's static fields,
+   and no key a string's copy gives. *)
 let string_key (f:Semantic.field) = match f.name with Name _ -> true | Key _ -> false
 let rec source_alternatives ?(target=false) declarations seen t = match t with
   | Atoms atoms -> List.concat_map (function
@@ -47,9 +47,14 @@ let rec source_alternatives ?(target=false) declarations seen t = match t with
         if List.mem id seen then Proposal_diagnostics.unsupported "unguarded spread cycle";
         source_alternatives ~target declarations (id::seen) (definition declarations id args)
       (* A string's own enumerable properties are its code units at its
-         index keys, and a class value's its static fields, which its construct
-         signatures do not state: the copy's type states none of their keys. *)
-      | Str | StrLit _ | Ctors _ | Callable -> [{empty_alternative with exact=false}]
+         index keys, which no record states, and a `Function`'s whatever was
+         assigned to it: the copy's type states none of their keys. *)
+      | Str | StrLit _ | Callable -> [{empty_alternative with exact=false}]
+      (* A class value's are its static fields, of which its type states its
+         own, and no bound: it may own any other. *)
+      | Ctors (_,statics) ->
+        [{empty_alternative with afields=List.filter (fun (f:Semantic.field) ->
+            not (method_field f) && f.name <> Name proto_key && string_key f) statics;exact=false}]
       (* An array's own enumerable properties are its elements, at its index
          keys, and whatever keys it carries, which its type does not state;
          at a canonical numeric key, its own field holds an element's type. *)

@@ -199,6 +199,10 @@ let rec field_type bounds declarations seen t name = match t with
       | Exact fields -> (match List.find_opt (fun (f:Semantic.field) -> f.name=name) fields with
           | Some f -> f.read
           | None -> unsupported ("missing field " ^ key_text name))
+      (* A class value's static field. *)
+      | Ctors (_,statics) -> (match List.find_opt (fun (f:Semantic.field) -> f.name=name) statics with
+          | Some f -> f.read
+          | None -> unsupported ("missing field " ^ key_text name))
       | Named (id,args) ->
         if List.mem id seen then unsupported "unguarded field cycle";
         field_type bounds declarations (id::seen) (definition declarations id args) name

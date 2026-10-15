@@ -30,9 +30,9 @@ open S
          let instance = Inference.substitute substitution
            (Atoms [Shape {shape with calls=[{signature with quantified=[]}]}]) in
          publish_instance callee.pos instance
-       | Some (Atoms [Ctors [signature]]) ->
+       | Some (Atoms [Ctors ([signature],statics)]) ->
          let instance = Inference.substitute substitution
-           (Atoms [Ctors [{signature with quantified=[]}]]) in
+           (Atoms [Ctors ([{signature with quantified=[]}],statics)]) in
          publish_instance callee.pos instance
        | _ -> ())
     | _ -> ()

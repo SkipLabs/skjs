@@ -80,7 +80,7 @@ let infer ?(state = Proposal_diagnostics.create ()) flows program =
   (* A generic class's constructor is quantified over the class's binders:
      a unit reading it names its instance, as for a generic function. *)
   let quantify_class t = match t with
-    | Atoms [Ctors [signature]] when program.Source.init_quantified <> [] ->
+    | Atoms [Ctors ([signature],statics)] when program.Source.init_quantified <> [] ->
       let mentioned = List.filter (fun (q:Semantic.quantifier) ->
         let rec mentions = function
           | Rigid r -> r = q.identity
@@ -90,7 +90,7 @@ let infer ?(state = Proposal_diagnostics.create ()) flows program =
               | Named (_,args) -> List.exists mentions args
               | _ -> false) atoms in
         List.exists mentions (signature.result :: signature.params)) program.Source.init_quantified in
-      if mentioned = [] then t else Atoms [Ctors [{signature with quantified=mentioned}]]
+      if mentioned = [] then t else Atoms [Ctors ([{signature with quantified=mentioned}],statics)]
     | t -> t in
   let module_constants = List.concat_map (fun (s:Source.stmt) -> match s.statement with
     | Declare (false,bindings) -> List.map (fun (n,written,(e:expr)) -> n,lazy (

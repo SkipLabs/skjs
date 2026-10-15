@@ -1,6 +1,6 @@
-// An object type with construct signatures and other members describes a
-// class value with statics, which are bindings of their own here, not members
-// of the class value's type.
+// An object type with a construct signature and a readonly property states
+// a class value whose static field is a read capability, a view: a class
+// value's static fields are under invariant contracts here.
 class C {
   static readonly zero: number = 0;
 }

@@ -1,8 +1,9 @@
-// A class's static members are bindings of their own, which `C.x` reads
-// where TypeScript binds it to the member: readonly fields, initialized once
-// the class value exists, in order, and methods, whose calls pass no receiver
-// they read, so they may be detached or passed as callbacks. A parameter
-// named like the class is not it.
+// A class's static fields are initialized in order, an initializer reading
+// an earlier one, and are own data properties of the class value, which
+// `C.x` reads where TypeScript binds it to the member; its static methods
+// are bindings of their own, whose calls pass no receiver they read, so they
+// may be detached or passed as callbacks. A parameter named like the class
+// is not it.
 function defaultPort(): number {
   return 8080;
 }

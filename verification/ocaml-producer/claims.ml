@@ -18,7 +18,8 @@ let rec packed_rigids (t : ty) : rigid list = match t with
         @ List.concat_map (fun (i:index_signature) -> packed_rigids i.value) s.indexes
         @ List.concat_map signature_packed s.calls
         @ (match s.elements with Some q -> sequence_packed q | None -> [])
-      | Ctors ss -> List.concat_map signature_packed ss
+      | Ctors (ss,statics) -> List.concat_map signature_packed ss
+        @ List.concat_map (fun (f:field) -> packed_rigids f.read) statics
       | Named (_,args) -> List.concat_map packed_rigids args
       | Exact fs -> List.concat_map (fun (f:field) -> packed_rigids f.read) fs
       | _ -> []) atoms
@@ -104,7 +105,8 @@ let encode (proposal : Proposal_types.t) =
           @ List.concat_map (fun (i:index_signature) -> packed_uses i.value) s.indexes
           @ List.concat_map signature_uses s.calls
           @ (match s.elements with Some q -> sequence_uses q | None -> [])
-        | Ctors ss -> List.concat_map signature_uses ss
+        | Ctors (ss,statics) -> List.concat_map signature_uses ss
+          @ List.concat_map (fun (f:field) -> packed_uses f.read) statics
         | Named (id,args) ->
           let packed = match List.find_opt (fun (d:Source.declaration) -> d.id = id) declarations with
             | Some d -> packed_rigids d.expression | None -> [] in
@@ -156,7 +158,8 @@ let encode (proposal : Proposal_types.t) =
     (* A quantified construct signature, `new <T>(x: T) => C<T>`: a construct
        scheme row, its binders the names the source spells, each construct
        signature an arrow's arguments and result (no receiver). *)
-    | Ctors [s] when s.quantified <> [] ->
+    | Ctors ([s],statics) when s.quantified <> [] ->
+      if statics <> [] then unsupported "a generic class value's static fields";
       let binders = List.map (fun (q:Semantic.rigid) -> label_json (Binder q.spelling))
         (List.concat_map quantifier_identities s.quantified) in
       if List.exists (fun (q:Semantic.quantifier) -> q.resolution <> None) s.quantified then
@@ -179,7 +182,7 @@ let encode (proposal : Proposal_types.t) =
         @ (if bounds = [] then [] else ["bounds",Array bounds])
         @ (if variadic = [] then [] else ["variadic",Array variadic])
         @ ["construct",Bool true])]))]
-    | Ctors signatures ->
+    | Ctors (signatures,statics) ->
       List.iter (fun (s:Semantic.signature) ->
         if s.quantified <> [] then unsupported "quantified construct signature claim encoding") signatures;
       (* Variadic construct signatures carry their rest, an argument-list type;
@@ -189,8 +192,13 @@ let encode (proposal : Proposal_types.t) =
         | Some _ -> None) signatures in
       let rests = List.filter_map (fun (s:Semantic.signature) -> Option.map (fun r ->
         Array [Array (List.map labels s.params);Array [pack_labels r;labels s.result]]) s.rest_pack) signatures in
+      (* The static fields, invariant, left out when there are none. *)
+      let first = List.map (fun (f:Semantic.field) ->
+          if f.optional || f.write <> Some f.read then unsupported "a class value's static fields are invariant";
+          Array [key_json f.name;labels f.read]) statics in
       [Row (intern (Array [Object ["ctors",Object (("signatures",Array fixed) ::
-        (if rests = [] then [] else ["variadic",Array rests]))]]))]
+        (if rests = [] then [] else ["variadic",Array rests]) @
+        (if first = [] then [] else ["first",Array first]))]]))]
     | Named (id,args) -> declaration_labels id args
     | Exact fs ->
       (* Invariant fields, and one own-key bound: its own keys are among
@@ -414,7 +422,8 @@ let encode (proposal : Proposal_types.t) =
           || List.exists signature_contains_symbolic s.calls
           || Option.fold ~none:false ~some:sequence_contains_symbolic s.elements
         | Exact fs -> List.exists (fun (f:Semantic.field) -> contains_symbolic f.read) fs
-        | Ctors signatures -> List.exists signature_contains_symbolic signatures
+        | Ctors (signatures,statics) -> List.exists signature_contains_symbolic signatures
+          || List.exists (fun (f:Semantic.field) -> contains_symbolic f.read) statics
         | Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Top
         | Bigint | Symbol | BigintLit _ | SymbolLit _ | Callable -> false) atoms
   and pack_contains_symbolic = function

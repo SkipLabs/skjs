@@ -327,6 +327,9 @@ export function collectDeclarations(file: string, options: {
    * with the class's name. */
   staticReads?: readonly Span[];
   staticMember?: (span: Span, cls: string) => void;
+  /** Those `X.m` reads whose static member is declared by a class `X`
+   * extends, which `X` reaches through its prototype. */
+  inheritedStatic?: (span: Span) => void;
   /** Identifiers spelling a class of the client by name: `instanceof` right
    * operands, and a class's own name in its body. */
   classTests?: readonly Span[];
@@ -1360,6 +1363,11 @@ export function collectDeclarations(file: string, options: {
           (ts.isPropertyDeclaration(member) || ts.isMethodDeclaration(member)) &&
           member.modifiers?.some(m => m.kind === ts.SyntaxKind.StaticKeyword))
         options.staticMember?.(span, owner.name.text);
+      else if (members.length === 1 && owners.length === 1 && member && owner &&
+          ts.isClassDeclaration(owner) && member.parent !== owner && ts.isClassDeclaration(member.parent) &&
+          (ts.isPropertyDeclaration(member) || ts.isMethodDeclaration(member)) &&
+          member.modifiers?.some(m => m.kind === ts.SyntaxKind.StaticKeyword))
+        options.inheritedStatic?.(span);
     }
     for (const span of options.classTests ?? []) {
       const name = identifierAt(client, span);

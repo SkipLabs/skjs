@@ -519,7 +519,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
          callable object; the meet of an arrow and a record forms none. *)
       | Meet _ -> Proposal_diagnostics.unsupported "a call of an intersection of a function type and a record, a callable with fields, which an annotation's meet does not form"
       | Atoms kinds when List.mem Callable kinds && List.for_all (function
-          | Callable | Ctors [] -> true | _ -> false) kinds ->
+          | Callable | Ctors ([],_) -> true | _ -> false) kinds ->
         let location = match site with
           | Json.Array [Json.Number first;Json.Number last] -> "[" ^ first ^ "," ^ last ^ ")"
           | _ -> Proposal_diagnostics.unsupported "call has an invalid source span" in

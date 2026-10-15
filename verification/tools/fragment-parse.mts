@@ -174,8 +174,49 @@ const SPREAD_POSITION = "a spread of a program's iterable is outside the fragmen
  * spell, apart from the instance methods' `C.m`. */
 const staticName = (cls: string, member: string): string => `static ${cls}.${member}`;
 
-/** Why an instance member reads none of its class's statics. */
-const INSTANCE_STATIC = "an instance member or constructor reading a static member of its own class is outside the fragment: statics are bindings the class defines after its methods and constructor, whose closures cannot hold them";
+/** Why an instance member reads none of its class's private static fields. */
+const INSTANCE_STATIC = "an instance member or constructor reading a private static field of its own class is outside the fragment: it is a binding the class defines after its methods and constructor, whose closures cannot hold it";
+/** Why a static initializer reads its class only through its static fields. */
+const STATIC_INIT_CLASS = "a static initializer or static block reading its class other than through an earlier static field is outside the fragment: JavaScript runs it on a class value whose later static fields are undefined, where the model allocates the class value holding them after every initializer";
+/** Why a closure a static initializer creates reads no static of its class. */
+const STATIC_INIT_CLOSURE = "a closure created by a static initializer or static block reading a static field of its class is outside the fragment: it may run after the field changes, and the class value does not exist yet where it is created";
+
+/** Whether class `cls`, declared at the file's top level, declares a static
+ * field named `name` by a property name: an own data property of its class
+ * value. */
+function staticFieldOf(file: SourceFile, cls: string, name: string): boolean {
+  return file.statements.some((s) => ts.isClassDeclaration(s) && s.name?.text === cls &&
+    s.members.some((m) => ts.isPropertyDeclaration(m) && ts.isIdentifier(m.name) && m.name.text === name &&
+      !!m.modifiers?.some((k) => k.kind === ts.SyntaxKind.StaticKeyword)));
+}
+
+/** The static method of class `cls`, declared at the file's top level, named
+ * `name` (a property name or a private name's text). */
+function staticMethodOf(file: SourceFile, cls: string, name: string): ts.MethodDeclaration | undefined {
+  for (const s of file.statements)
+    if (ts.isClassDeclaration(s) && s.name?.text === cls)
+      for (const m of s.members)
+        if (ts.isMethodDeclaration(m) && (ts.isIdentifier(m.name) || ts.isPrivateIdentifier(m.name)) &&
+            m.name.text === name && m.modifiers?.some((k) => k.kind === ts.SyntaxKind.StaticKeyword))
+          return m;
+  return undefined;
+}
+
+/** The literal type TypeScript gives a readonly static field whose
+ * initializer is a literal: `null`, a Boolean, a string, or a number, possibly
+ * negated. Null for any other initializer. */
+function staticLiteralType(init: Expression, span: Span): TypeTerm | null {
+  if (init.kind === ts.SyntaxKind.NullKeyword) return { k: "atom", name: "null", span };
+  if (init.kind === ts.SyntaxKind.TrueKeyword) return { k: "literal", name: "true", text: "true", span };
+  if (init.kind === ts.SyntaxKind.FalseKeyword) return { k: "literal", name: "false", text: "false", span };
+  if (ts.isStringLiteral(init) || ts.isNoSubstitutionTemplateLiteral(init))
+    return { k: "literal", name: "string", text: init.text, span };
+  const negated = ts.isPrefixUnaryExpression(init) && init.operator === ts.SyntaxKind.MinusToken ? init.operand : null;
+  const numeric = negated ?? init;
+  if (!ts.isNumericLiteral(numeric)) return null;
+  const value = Number(numeric.text);
+  return literalTerm(negated ? -value : value, span);
+}
 
 /** Why a class with a private name takes no part in inheritance. */
 const PRIVATE_INHERITANCE = "a class with a private name `#x` in inheritance is outside the fragment: a derived instance's base part is copied, and a copy holds no private slot";
@@ -446,6 +487,9 @@ class Gate {
   /** `C.x` member names TypeScript binds to a static member of the file's
    * class `C`, by span: the class. */
   staticReads = new Map<string, string>();
+  /** `X.m` reads of a static member a base class of `X` declares
+   * (`inheritedStatic`), by span. */
+  readonly inheritedStatics = new Set<string>();
   /** `instanceof` right operands TypeScript binds to a class declared at the
    * file's top level, by span: the class. */
   readonly classTests = new Map<string, string>();
@@ -960,7 +1004,7 @@ class Gate {
         n.kind === ts.SyntaxKind.SuperKeyword ||
         (!ts.isFunctionExpression(n) && !ts.isFunctionDeclaration(n) && !ts.isClassDeclaration(n) && !ts.isClassExpression(n) &&
           !!n.forEachChild((c) => readsSuper(c) || undefined));
-      const STATIC_SUPER = "`super` in a static member is outside the fragment: it is the base's constructor, whose statics are bindings of their own";
+      const STATIC_SUPER = "`super` in a static member is outside the fragment: it is the base's class value, which the derived class value does not hold as its prototype";
       // A derived class without a constructor has JavaScript's implicit one,
       // `constructor(...args) { super(...args); }`: it takes its base's
       // parameters, at their types, under names no source binding spells,
@@ -1005,10 +1049,15 @@ class Gate {
           // A caller may pass `undefined` where there is a default.
           type: p.initializer ? this.optionalTypeOf(p.type, p) : fieldType, fieldType, binding };
       }) : base ? implicitParams(base) : [];
-      // Static members are bindings of their own, which `C.x` reads
-      // (`staticReads`), after the class, as JavaScript defines them once the
-      // class value exists: the methods, then the fields, in order.
+      // Static methods are bindings of their own, bound first, so that
+      // instance members and static initializers may call them. A static
+      // field's initializer and a static block run, in member order, before
+      // the class value is bound, which is allocated holding the static
+      // fields: each is a binding of its own, which `C.x` in a static
+      // initializer reads (`staticReads`), and the class value's own field
+      // elsewhere.
       const staticMethods: BindingAst[] = [], statics: BindingAst[] = [];
+      const staticFields: { name: string; binding: string; pos: Span; type: TypeTerm }[] = [];
       // The prototype's methods, in member order: every instance holds the
       // prototype object under its prototype key, and reads a method there.
       const prototype: { name: PropertyKey; e: Expr }[] = [];
@@ -1021,7 +1070,7 @@ class Gate {
         // `this`; its declarations are its own, as a closure body's are.
         if (ts.isClassStaticBlockDeclaration(member)) {
           if (readsThis(member.body))
-            this.fail(member, "a static block that reads `this` is outside the fragment: its receiver is the class value, whose statics are bindings of their own");
+            this.fail(member, "a static block that reads `this` is outside the fragment: its receiver is the class value, whose later static fields JavaScript has not defined yet and which the model allocates only after its static fields are initialized");
           if (readsSuper(member.body)) this.fail(member, STATIC_SUPER);
           this.selfClass = null;
           const start = member.getStart(this.file);
@@ -1055,13 +1104,14 @@ class Gate {
           if (!(ts.isPropertyDeclaration(member) || ts.isMethodDeclaration(member)) ||
               (!ts.isIdentifier(member.name) && !ts.isPrivateIdentifier(member.name) && !hasInstance))
             return this.fail(member, unnamedMember(member, true));
-          this.selfClass = null;
           const binding = staticName(name.text,
             ts.isIdentifier(member.name) || ts.isPrivateIdentifier(member.name) ? member.name.text : HAS_INSTANCE);
           if (ts.isMethodDeclaration(member)) {
             // `C.m()` passes `C` as the receiver, a detached call `undefined`:
             // a body that reads none is the same function either way, called
             // plainly. Its signature is its annotation: functions read it there.
+            // It is bound first, before the class value, which it reads, as
+            // an instance member does, as the class's own binding.
             if (member.body && readsThis(member.body))
               this.fail(member, "a static method that reads `this` is outside the fragment");
             if (member.body && readsSuper(member.body)) this.fail(member, STATIC_SUPER);
@@ -1070,16 +1120,27 @@ class Gate {
             staticMethods.push({ name: binding, namePos: this.span(member.name), annot, init: this.lambda(member) });
             continue;
           }
+          this.selfClass = null;
           // A static field's writes would be mutable module state.
           if (!modifiers.some((m) => m.kind === ts.SyntaxKind.ReadonlyKeyword) || member.postfixToken)
             this.fail(member, "a static field must be readonly and required");
           if (member.initializer && readsThis(member.initializer))
             this.fail(member, "a static initializer that reads `this` is outside the fragment");
           if (member.initializer && readsSuper(member.initializer)) this.fail(member, STATIC_SUPER);
-          statics.push({ name: binding, namePos: this.span(member.name),
-            annot: member.type ? this.typeOf(member.type, member) : null,
+          const annot = member.type ? this.typeOf(member.type, member) : null;
+          statics.push({ name: binding, namePos: this.span(member.name), annot,
             init: member.initializer ? this.expr(member.initializer)
               : { k: "lit", pos: this.span(member.name), lit: { a: "undefined" } } });
+          // A static field named by a property name is an own enumerable
+          // data property of the class value, which the class value is
+          // allocated holding, at the type its annotation states, or, without
+          // one, the literal type TypeScript gives a readonly field's literal
+          // initializer.
+          if (ts.isIdentifier(member.name)) {
+            const type = annot ?? (member.initializer ? staticLiteralType(member.initializer, this.span(member.name)) : null) ??
+              this.fail(member, "a static field without an annotation whose initializer is not a literal: the class value's type states each static field's type");
+            staticFields.push({ name: member.name.text, binding, pos: this.span(member.name), type });
+          }
           continue;
         }
         if (ts.isPropertyDeclaration(member)) {
@@ -1290,14 +1351,19 @@ class Gate {
         derivedBase = { k: "id", pos: [heritage.getStart(this.file), heritage.getStart(this.file) + "extends".length], name: slot };
       }
       // The class value is its constructor as construct-only code, which only
-      // `new` runs.
+      // `new` runs, holding its static fields.
+      if (typeParams.length && staticFields.length)
+        this.fail(node, "a generic class with static fields: its class value is quantified over its binders, which its static fields' bag does not state");
       const lambda: Expr = { k: "ctor", pos: this.span(node), ...(typeParams.length ? { typeParams } : {}),
         lambda: { k: "lambda", pos: this.span(node),
         typeParams: [], receiver: null, params: params.map((p) => ({ name: p.name, type: p.type })),
         result: instance, body: { k: "blockBody", pos: this.span(constructor?.body ?? node),
           body: [...params.flatMap((p) => p.binding ? [p.binding] : []),
-            ...construct(body, fields, new Set(), prelude)] } } };
+            ...construct(body, fields, new Set(), prelude)] } },
+        ...(staticFields.length ? { statics: staticFields.map((f) =>
+          ({ name: f.name, e: { k: "id", pos: f.pos, name: f.binding } satisfies Expr })) } : {}) };
       const type: TypeTerm = { k: "constructor", params: params.map((p) => p.type), rest: null, result: instance,
+        ...(staticFields.length ? { statics: staticFields.map((f) => ({ name: f.name, type: f.type })) } : {}),
         span: this.span(name) };
       // A class another extends is also bound, first, as its fresh
       // constructor, claimed at the instance it allocates besides its own
@@ -1314,7 +1380,7 @@ class Gate {
         methods: methodBindings, fresh: freshName(name.text), proto: protoBinding,
         binders: binders.map((tp) => tp.name.text) });
       return { k: "const", pos: this.span(node),
-        bindings: [...methods, ...prototypeBinding, ...classBindings, ...staticMethods, ...statics] };
+        bindings: [...staticMethods, ...methods, ...prototypeBinding, ...statics, ...classBindings] };
     } finally {
       this.strict = outerStrict;
       this.superClass = outerSuper;
@@ -1356,7 +1422,7 @@ class Gate {
   /** `C.#x` of a static private member of the file's class `C`, with `C`
    * the class TypeScript binds it to: the binding the class statement gives
    * the member. Null for a private name no static member declares. */
-  private staticPrivate(node: ts.PropertyAccessExpression): string | null {
+  private staticPrivate(node: ts.PropertyAccessExpression): { binding: string; cls: string } | null {
     const name = node.name;
     if (!ts.isPrivateIdentifier(name)) return null;
     const symbol = this.privateKeys.get(this.span(name).join(":"));
@@ -1370,8 +1436,33 @@ class Gate {
     if (!cls || !member || !isStatic(member))
       return null;
     if (!ts.isIdentifier(node.expression) || this.classReads.get(this.span(node.expression).join(":")) !== cls)
-      this.fail(node, "a static private member read other than through its class's name: statics are bindings of their own");
-    return staticName(cls, name.text);
+      this.fail(node, "a static private member read other than through its class's name: private statics are bindings of their own");
+    return { binding: staticName(cls, name.text), cls };
+  }
+
+  /** Whether `body` reads class `cls`: an identifier TypeScript binds to it. */
+  private readsClass(body: Node, cls: string): boolean {
+    const visit = (n: Node): boolean =>
+      (ts.isIdentifier(n) && this.classReads.get(this.span(n).join(":")) === cls) ||
+      !!n.forEachChild((c) => visit(c) || undefined);
+    return visit(body);
+  }
+
+  /** The class whose static field initializer or static block `node` is in,
+   * and whether a closure created there holds it. */
+  private staticInitOf(node: Node): { cls: string; closure: boolean } | null {
+    let closure = false;
+    for (let at: Node = node; at.parent; at = at.parent) {
+      const parent = at.parent;
+      if (ts.isClassDeclaration(parent)) {
+        const isStaticInit = ts.isClassStaticBlockDeclaration(at) ||
+          (ts.isPropertyDeclaration(at) && at.initializer !== undefined &&
+            !!at.modifiers?.some((m) => m.kind === ts.SyntaxKind.StaticKeyword));
+        return isStaticInit && parent.name ? { cls: parent.name.text, closure } : null;
+      }
+      if (ts.isFunctionLikeDeclaration(at)) closure = true;
+    }
+    return null;
   }
 
   /** The class binding an identifier of an instance member reads, where
@@ -1380,7 +1471,7 @@ class Gate {
     const cls = this.classReads.get(this.span(node).join(":"));
     if (!cls || cls !== this.selfClass?.name) return null;
     if (this.selfClass.generic)
-      this.fail(node, "a generic class's instance member reading its own class: the class value is quantified over the binders its declaring unit reads as parameter rows, and a module value is read only at ground instances");
+      this.fail(node, "a generic class's instance member or static method reading its own class: the class value is quantified over the binders its declaring unit reads as parameter rows, and a module value is read only at ground instances");
     return selfName(cls);
   }
 
@@ -1699,7 +1790,10 @@ class Gate {
       // A class is a value like any other: its construct-only code is what a
       // plain call cannot run, which its type records. Its own name in its
       // instance members, which run only once the class exists, is its class
-      // binding, which they cannot capture where they are created.
+      // binding, which they cannot capture where they are created. A static
+      // initializer runs before the class value exists.
+      const cls = this.classReads.get(this.span(node).join(":"));
+      if (cls !== undefined && this.staticInitOf(node)?.cls === cls) this.fail(node, STATIC_INIT_CLASS);
       return { k: "id", pos: this.span(node), name: this.ownClass(node) ?? this.local(node) };
     }
 
@@ -1841,16 +1935,39 @@ class Gate {
     if (ts.isPropertyAccessExpression(node)) {
       if (node.questionDotToken)
         this.fail(node, "optional property access is outside the fragment");
-      // `C.x` that TypeScript binds to a static member of class `C` reads the
-      // binding the class statement gives it (`classStmt`).
+      // `C.x` that TypeScript binds to a static field of class `C` reads the
+      // binding its initializer bound, in a static initializer of `C`, which
+      // runs before the class value exists, and the class value's own field
+      // anywhere else; a static method's is the binding the class statement
+      // gives it first (`classStmt`), which a static initializer may call
+      // where its body does not read the class, which the model allocates only
+      // after the static initializers. A
+      // private static field is a binding of its own after the members.
+      // A static member a base class declares is reached through the class
+      // value's prototype, the base class value, which the model's class
+      // value does not hold.
+      if (this.inheritedStatics.has(this.span(node.name).join(":")))
+        this.fail(node, "a static member read through a class that inherits it from its base is outside the fragment: " +
+          "the class value reaches it through its prototype, which the model's class value does not hold");
       const cls = this.staticReads.get(this.span(node.name).join(":"));
+      const init = this.staticInitOf(node);
+      if (cls !== undefined && staticFieldOf(this.file, cls, node.name.text)) {
+        if (init?.cls !== cls)
+          return { k: "read", pos: this.span(node), field: this.memberKey(node.name), e: this.expr(node.expression) };
+        if (init.closure) this.fail(node, STATIC_INIT_CLOSURE);
+        return { k: "id", pos: this.span(node), name: staticName(cls, node.name.text) };
+      }
       const privateStatic = this.staticPrivate(node);
-      if ((cls !== undefined && cls === this.selfClass?.name) ||
-          (privateStatic !== null && privateStatic.startsWith(staticName(this.selfClass?.name ?? "", ""))))
+      const owner = cls ?? privateStatic?.cls;
+      const method = owner === undefined ? undefined : staticMethodOf(this.file, owner, node.name.text);
+      if (owner !== undefined && init?.cls === owner && method &&
+          (init.closure || (method.body !== undefined && this.readsClass(method.body, owner))))
+        this.fail(node, STATIC_INIT_CLASS);
+      if (privateStatic !== null && !method && privateStatic.cls === this.selfClass?.name)
         this.fail(node, INSTANCE_STATIC);
       if (cls !== undefined)
         return { k: "id", pos: this.span(node), name: staticName(cls, node.name.text) };
-      if (privateStatic !== null) return { k: "id", pos: this.span(node), name: privateStatic };
+      if (privateStatic !== null) return { k: "id", pos: this.span(node), name: privateStatic.binding };
       return {
         k: "read",
         pos: this.span(node),
@@ -5515,6 +5632,7 @@ export function parseFile(file: string, carriesContext = false,
         symbolKey: ([start, end], symbol) => gate.symbolKeys.set(`${start}:${end}`, symbol),
         staticReads: staticNodes.map(node => gate.span(node)),
         staticMember: ([start, end], cls) => gate.staticReads.set(`${start}:${end}`, cls),
+        inheritedStatic: ([start, end]) => gate.inheritedStatics.add(`${start}:${end}`),
         classTests: [...classTestNodes, ...classReadNodes].map(node => gate.span(node)),
         classTest: ([start, end], cls) => {
           const key = `${start}:${end}`;

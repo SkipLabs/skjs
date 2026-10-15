@@ -8,7 +8,7 @@ let primitive_shape shape = List.mem shape ["string";"number";"bigint";"symbol";
 let rec rigid_arm = function Rigid _ -> true | Union ts -> List.exists rigid_arm ts | _ -> false
 (* Keep the atoms of a `typeof` test's shape where it holds, and the others
    where it fails. *)
-let any_function = Atoms [Callable;Ctors []]
+let any_function = Atoms [Callable;Ctors ([],[])]
 let rec typeof_slice shape holds = function
   | Atoms xs when not (List.mem Top xs) ->
     let has = function

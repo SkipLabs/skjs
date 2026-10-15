@@ -30,7 +30,7 @@ open S
     | (None | Some (Atoms [Shape {calls=[_];fields=[];indexes=[];elements=None}])),Lambda (_,[],ps,_,false,_,_) ->
       register_closure n init.pos (List.map snd ps)
     | None,Alloc fs -> register_object n fs
-    | Some _,Ctor {node=Lambda (None,[],ps,[],false,Some instance,body);_} when allocated body <> None ->
+    | Some _,Ctor ({node=Lambda (None,[],ps,[],false,Some instance,body);_},_) when allocated body <> None ->
       let fs = Option.get (allocated body) in
       (* An instance's methods are its prototype chain's, the nearer first. *)
       let rec chain seen fs = match List.assoc_opt (Name proto_key) fs with
@@ -59,7 +59,7 @@ open S
 
   let offer_class (pos,params,instance,methods) expected =
     match declared_head declarations [] expected with
-    | Atoms [Ctors signatures] ->
+    | Atoms [Ctors (signatures,_)] ->
       List.iter (fun (s:Semantic.signature) ->
         let member key = match (try Some (declared_head declarations []
             (S.field_type declarations [] s.result key)) with Json.Error _ -> None) with

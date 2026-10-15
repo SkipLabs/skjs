@@ -805,6 +805,9 @@ export function members(scope: TermScope, list: readonly TypeElement[], at: Node
   const numberIndexes: { member: Node; index: Index }[] = [];
   let symbolIndex: Index | null = null;
   const constructs: TypeTerm[] = [];
+  // The fields property signatures state, which a class value's type states
+  // as its static fields.
+  const properties = new Set<Extract<TypeTerm, { k: "object" }>["fields"][number]>();
   const readonlyOnly = (modifiers: readonly Node[] | undefined) =>
     !modifiers?.some(m => m.kind !== ts.SyntaxKind.ReadonlyKeyword);
   const isReadonly = (modifiers: readonly Node[] | undefined) =>
@@ -835,8 +838,10 @@ export function members(scope: TermScope, list: readonly TypeElement[], at: Node
       if (!readonlyOnly(member.modifiers) || !member.type)
         scope.fail(member, message);
       const name = named(member, message);
-      fields.push({ name, optional, readonly: isReadonly(member.modifiers),
-        type: typeTerm(scope, member.type, member), span: memberSpan });
+      const field = { name, optional, readonly: isReadonly(member.modifiers),
+        type: typeTerm(scope, member.type, member), span: memberSpan };
+      fields.push(field);
+      properties.add(field);
     } else if (ts.isIndexSignatureDeclaration(member)) {
       const parameter = member.parameters[0];
       // A mutable index is a writable one at its read contract; Lean keeps
@@ -911,14 +916,22 @@ export function members(scope: TermScope, list: readonly TypeElement[], at: Node
     numberIndex = index;
   }
   // An interface of construct signatures alone is a class value meeting
-  // each, as such a type literal is. A class value's other members,
-  // statics, are not members of its type here.
+  // each, as such a type literal is. With properties beside one construct
+  // signature, it is a class value holding them as its static fields, own
+  // data properties under invariant contracts.
   if (constructs.length) {
-    if (fields.length || stringIndex || numberIndex || symbolIndex || calls.length)
-      scope.fail(at, "an object type with construct signatures and other members: a class value's statics " +
-        "are not members of its type");
     const [only] = constructs;
-    return constructs.length === 1 && only ? only : { k: "intersection", parts: constructs, span };
+    if (!fields.length && !stringIndex && !numberIndex && !symbolIndex && !calls.length)
+      return constructs.length === 1 && only ? only : { k: "intersection", parts: constructs, span };
+    if (stringIndex || numberIndex || symbolIndex || calls.length || constructs.length !== 1 ||
+        only?.k !== "constructor" || fields.some(f => !properties.has(f)))
+      scope.fail(at, "an object type with construct signatures and members other than properties: a class " +
+        "value's type states its construct signature and its static fields, data properties");
+    const statics = fields.map(f => typeof f.name === "string" && !f.optional && !f.readonly
+      ? { name: f.name, type: f.type }
+      : scope.fail(at, "an object type with construct signatures and a readonly, optional or symbol-keyed " +
+        "property: a class value's static fields are required data properties under invariant contracts"));
+    return { ...only, statics };
   }
   return { k: "object", fields, stringIndex, ...(numberIndex ? { numberIndex } : {}),
     ...(symbolIndex ? { symbolIndex } : {}), calls, span };

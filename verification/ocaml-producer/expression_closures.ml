@@ -16,7 +16,7 @@ open S
 module Support = Expression_support.Make(S)
 let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:Analysis_state.body_infer) ?expected env (e:Source.expr) =
   match e.node with
-    | Ctor {node=Lambda (None,[],ps,[],false,Some result,body);_} ->
+    | Ctor ({node=Lambda (None,[],ps,[],false,Some result,body);_},statics) ->
       (* The constructor's body under its parameters; `new` passes it no
          receiver it reads, and runs it later, when a cell it captures holds
          what its contract admits. The class value's type is its construct
@@ -34,7 +34,20 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
       let extra = Option.value (List.assoc_opt e.pos offered) ~default:[] in
       (* A fresh constructor gives, first, the instance it allocates. *)
       let fresh_sig = if fresh then [{own with result=allocated_type}] else [] in
-      Atoms [Ctors (fresh_sig @ own :: List.filter (fun s -> s <> own) (List.sort_uniq compare extra))]
+      (* Its static fields, each the binding its initializer bound, at the
+         contract the class's annotation states for it. *)
+      let declared = match expected with
+        | Some t -> (match declared_head declarations [] t with
+          | Atoms [Ctors (_,fs)] -> fs
+          | _ -> [])
+        | None -> [] in
+      let static_fields = List.map (fun (name,(value:Source.expr)) ->
+        match List.find_opt (fun (f:Semantic.field) -> f.name = Name name) declared with
+        | Some f -> ignore (expr ~expected:f.read env value); f
+        | None ->
+          let t = expr env value in
+          {name=Name name;optional=false;read=t;write=Some t;host=false;receivers=[]}) statics in
+      Atoms [Ctors (fresh_sig @ own :: List.filter (fun s -> s <> own) (List.sort_uniq compare extra),static_fields)]
     | Ctor _ -> Proposal_diagnostics.unsupported "a class value is a constructor lambda with plain parameters"
     | New (callee,types,args,spreads) ->
       let constructor = declared_head declarations [] (expr env callee) in
@@ -43,7 +56,7 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
          `new` reads the array's elements as a call's spread into a rest. *)
       let first_spread = List.fold_left min (List.length args) spreads in
       let variadic = match constructor with
-        | Atoms [Ctors signatures] when List.exists (fun i ->
+        | Atoms [Ctors (signatures,_)] when List.exists (fun i ->
             Semantic.tuple_positions ~readonly:true
               (declared_head declarations [] (expr env (List.nth args i))) = None) spreads
             || (spreads = [] && not (List.exists (fun (s:Semantic.signature) -> s.rest_pack = None
@@ -78,7 +91,7 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
          `undefined` there, and Lean checks each omitted position admits it. *)
       let written (s:Semantic.signature) = List.filteri (fun i _ -> i < count) s.params in
       (match constructor with
-       | Atoms [Ctors [signature]] when signature.quantified <> [] ->
+       | Atoms [Ctors ([signature],_)] when signature.quantified <> [] ->
          (* A generic class: its instance is the one the explicit type
             arguments name, or is inferred from the actuals, as a generic
             call's is. *)
@@ -101,7 +114,7 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
          instance_of callee substitution;
          publish_substitution e.pos (List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t) substitution);
          result
-       | Atoms [Ctors signatures] ->
+       | Atoms [Ctors (signatures,_)] ->
          if types <> [] then Proposal_diagnostics.unsupported "explicit type arguments to a class that takes none";
          let exact,short = List.partition (fun (s:Semantic.signature) ->
            List.length s.params = count) (List.filter (fun (s:Semantic.signature) ->

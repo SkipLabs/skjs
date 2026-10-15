@@ -1713,8 +1713,8 @@ $`\mathsf{Ref}(\varphi;\omega;\beta)`$ of $`R`$ is given by them
 function clause (a function, or a callable object, whose own enumerable
 properties are the fields its bag states and whatever else was assigned to
 it, so it states no bound; `codeOf`), a class clause (a class value, whose
-own enumerable properties are its static fields, which its construct
-signatures do not state; `codeOf`), a string clause (a string, whose own
+own enumerable properties are its static fields, of which its bag states its
+own and no bound; `codeOf`), a string clause (a string, whose own
 enumerable properties are its code units, strings, under index keys, so it
 gives no other key; `Src.str`), or a
 clause of values owning no enumerable property (`null`, `undefined`,

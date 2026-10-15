@@ -635,6 +635,21 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   assert.equal(runExample("invalid-spread-class-static", `class D { static a = "s"; }
     typeof overStatic(D).a`), "string",
     "invalid-spread-class-static: the class's static field overwrites the number under `a`");
+  // A class value's own enumerable properties are its own static fields: a
+  // copy, a rest and `Object.assign` take those, not its base's, which it
+  // reads through its prototype and `for...in` visits; no static method.
+  assert.equal(runExample("class-static-inheritance", `JSON.stringify([copy(), rest(), keys(), Derived.inherited])`),
+    '[{"own":2,"two":3},{"two":3},"own,two,inherited,",1]', "class-static-inheritance: the copies JavaScript makes");
+  assert.equal(runExample("invalid-class-static-inherited-copy", `String(copy().inherited)`), "undefined",
+    "invalid-class-static-inherited-copy: the copy lacks the base's static field");
+  assert.equal(runExample("invalid-class-static-inherited-rest", `String(rest().inherited)`), "undefined",
+    "invalid-class-static-inherited-rest: the rest lacks the base's static field");
+  assert.equal(runExample("invalid-class-static-method-copy", `typeof copy().m`), "undefined",
+    "invalid-class-static-method-copy: the copy lacks the static method");
+  assert.equal(runExample("invalid-class-static-assign", `JSON.stringify(assign())`), '{"own":2}',
+    "invalid-class-static-assign: Object.assign copies the own static field only");
+  assert.equal(runExample("invalid-typeof-inherited-statics", `String(make().inherited)`), "undefined",
+    "invalid-typeof-inherited-statics: the returned class lacks the inherited static TypeScript promises");
   // A write at a string key known only at run time: `__proto__` runs the
   // prototype's setter where the object does not own the key, which with a
   // number changes nothing, and writes the property where it owns it; with an

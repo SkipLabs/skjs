@@ -665,13 +665,61 @@ as for any call. A declaration's defaults for method binders are not read.
 A class declares its instance type in the declaration graph, and its value is
 a statement of the initialization unit: method closures, the prototype object
 `C.[[prototype]]` holding them (allocated once; not allocated when it holds
-nothing of its own that `instanceof` tests), then the class value,
-construct-only code. Its own name inside its body is `C.[[self]]`
-([`class-self`](SOURCE-ELABORATION.md#mutable-bindings-and-module-constants)). Static members are
-module bindings of their own, `static C.x`, after the class; a static read
-`C.x` is that binding where TypeScript binds it to the member (`staticReads`).
-A static block runs where it stands among the static fields, as the closure
-of its statements called at once, reading no `this`:
+nothing of its own that `instanceof` tests), its static field initializers and
+static blocks in member order, then the class value, construct-only code
+holding its static fields; its static methods are bound first, before the
+methods. Its own name inside its methods, static ones included, is
+`C.[[self]]`
+([`class-self`](SOURCE-ELABORATION.md#mutable-bindings-and-module-constants)).
+
+A static field named by a property name is an own enumerable data property of
+the class value. JavaScript creates the class value before its static
+initializers run, `this` in them being that value, and defines each static
+field on it in turn; the model allocates the class value after them, holding
+every static field at once. Each initializer binds its value first, `static
+C.f`, a binding no source spells, and the class value is allocated holding
+them, each at its annotation, or, without one, at the literal type
+TypeScript gives a readonly field's literal initializer. The two agree
+wherever no code that can reach the class value runs during the
+initializers, which the rules below on static initializers ensure:
+
+```math
+\mathtt{class}\ C\ \{\ \ldots\ \mathtt{static}\ f_1 = e_1\ \ldots\ \mathtt{static}\ f_n = e_n\ \ldots\ \}
+\;\equiv\;\ldots;\ \mathsf{const}\ \mathtt{static}\ C.f_1 = e_1;\ \ldots;\ \mathsf{const}\ \mathtt{static}\ C.f_n = e_n;\
+\mathsf{const}\ C = \mathsf{make}(\kappa^{\mathsf{new}},\ \kappa_{\mathsf{code}}{=}\mathsf{null},\ \overline{f_i{=}\mathtt{static}\ C.f_i});\ \ldots
+```
+
+The class value's type is $`\mathsf{Ctors}(\mathsf{new}(\vec D)\Rightarrow C;\ \overline{f_i{:}T_i})`$
+([classes](PROGRAM-TYPING.md#judgments-and-constructor-views)). A read `C.f` of a static
+field, where TypeScript binds it to the member (`staticReads`), is the class
+value's field read, `C.[[self]]`'s in the class's instance members, which
+run only once the class value exists; in a static initializer of `C`, which
+runs before, it is the binding $`\mathtt{static}\ C.f`$ of an earlier
+field, whose value the field holds, as nothing can reach the class value to
+write it before the model allocates it. A call `C.f()` of a static field in
+the class's methods is a method call, the class value its receiver. A static
+initializer reads its class only so, or calls a static method whose body
+does not read the class: one mentioning `C` or `this` otherwise, constructing
+`C` or calling a static method reading it included, would run code reading
+the class value, which JavaScript's code reaches with later static fields
+undefined and the model has not allocated, and a closure it creates reading
+a static field may run after the field changes; both are refused.
+
+A class value's own properties are its own static fields; a static field its
+base class declares the class value reaches through its prototype, the base
+class value, which the model's class value does not hold. A copy, an object
+pattern's rest and `Object.assign` take own enumerable properties only, so
+they agree with the model; a read `C.f` of an inherited static field and
+`typeof C` of a class inheriting a static member, whose type would drop it,
+are refused, and `Object.assign` from a class value is refused as from any
+source whose type bounds no key (it may own `__proto__`). A `for...in` over a
+class value visits its base's static fields too, which `%ForIn%`'s strings
+admit. A static method is a binding of its own, `static C.m`, read
+where TypeScript binds `C.m` to it, in the class's members too; a private
+static field is a binding of its own, bound with the static fields, which
+the class's methods cannot hold. A static block runs
+where it stands among the static fields, as the closure of its statements
+called at once, reading no `this`:
 
 ```math
 \mathtt{static}\ \{\ \vec s\ \}\;\equiv\;\mathsf{const}\ \textit{b} = (()\Rightarrow\{\ \vec s\ \})()
@@ -848,8 +896,18 @@ and $`\varphi`$ writable fields:
      {⟦\{\,\mathtt{new}\,\sigma_1;\ \ldots;\ \mathtt{new}\,\sigma_n\,\}⟧=\mathsf{ctors}(L;S)}\ \textsf{construct-literal}
 ```
 
-Construct signatures beside other members, which describe a class value's
-statics, are refused ([model limits](SOURCE-FRAGMENT.md#model-limits)). A rest
+One construct signature beside required, mutable, string-named properties
+describes a class value holding them as its static fields:
+
+```math
+\frac{⟦\mathtt{new}\,\sigma⟧=L;S\quad \forall i.\;k_i\ \text{a string}\quad ⟦\tau_i⟧=T_i}
+     {⟦\{\,\mathtt{new}\,\sigma;\ \overline{k_i\colon\tau_i}\,\}⟧=\mathsf{ctors}(L;S;\ \overline{k_i{:}T_i})}\ \textsf{construct-fields}
+```
+
+Any other member beside construct signatures (a method, an index, a call
+signature, a readonly, optional or symbol-keyed property, whose contract a
+class value's invariant static fields do not state) is refused
+([model limits](SOURCE-FRAGMENT.md#model-limits)). A rest
 parameter over a union of tuples of required positions is one signature per
 tuple, all at the signature's result, which a value meets by meeting every
 one; the library's `next(...[value]: [] | [TNext])` is `next()` and
@@ -929,12 +987,14 @@ names, and `keyof Promise<number>` holds `Symbol.toStringTag` beside
 \frac{x\ \text{declares}\ x\colon\sigma\quad\mathit{ts}(\sigma)=\mathit{ts}(\mathtt{typeof}\ x)}
      {⟦\mathtt{typeof}\ x⟧=⟦\sigma⟧_{x}}
 \qquad
-\frac{x\ \text{a function or class value, not generic, no statics}}
+\frac{x\ \text{a function or class value, not generic, no static method or private static}}
      {⟦\mathtt{typeof}\ x⟧=\mathsf{type}(x)}
 ```
 
 where $`⟦\sigma⟧_x`$ reads $`\sigma`$ where $`x`$ is declared and
-$`\mathsf{type}(x)`$ is what an import of $`x`$ reads. An indexed access projects
+$`\mathsf{type}(x)`$ is what an import of $`x`$ reads, for a class with static
+fields its construct signature and its static fields
+([classes](#classes)). An indexed access projects
 $`⟦T⟧`$ at each key of $`\mathsf{lits}(\mathit{ts}(K))`$: a
 record's field (with `| undefined` where optional), an array's element at
 `number`, a tuple's position, a union's parts, an intersection's operands'
@@ -982,7 +1042,8 @@ names, not of the values a parameter row stands for; a unique symbol whose
 declaration names no symbol (a constant made neither by `Symbol()` nor by
 `Symbol.for` of a string literal); `typeof` of a binding
 TypeScript infers another type for (a `let`, a method, a `const` assertion);
-`typeof C` of a class with statics.
+`typeof C` of a class with a static method or a private static, bindings of
+their own that no member of the class value's type states.
 
 ## Index signatures
 

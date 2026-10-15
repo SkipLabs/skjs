@@ -102,11 +102,11 @@ let rec source_type ctx j =
     | "void" -> top
     (* `object`, every object: an ordinary one, constraining no key, or one
        with call or construct code. *)
-    | "object" -> Atoms [Shape {fields=[];indexes=[];calls=[];elements=None};Callable;Ctors []]
+    | "object" -> Atoms [Shape {fields=[];indexes=[];calls=[];elements=None};Callable;Ctors ([],[])]
     | "never" -> Atoms [] | name -> unsupported ("atom " ^ name))
   (* The standard library's `Function`: callable or constructible, with no
      signature, as Lean lowers it. *)
-  | "callable" -> Atoms [Callable;Ctors []]
+  | "callable" -> Atoms [Callable;Ctors ([],[])]
   | "unique" -> (match field "symbol" j with Number i -> Atoms [SymbolLit (int_of_string i)] | _ -> unsupported "unique symbol identity")
   | "literal" -> (match text "name" j with
     | "true" -> Atoms [True] | "false" -> Atoms [False]
@@ -175,10 +175,11 @@ let rec source_type ctx j =
       (* Call signatures, or construct signatures of a generic constructor
          type, `new <T>(x: T) => C<T>`. *)
       let parsed = List.map (source_type inner) signatures in
-      if parsed <> [] && List.for_all (function Atoms [Ctors [_]] -> true | _ -> false) parsed then
+      if parsed <> [] && List.for_all (function Atoms [Ctors ([_],_)] -> true | _ -> false) parsed then
         Atoms [Ctors (List.map (function
-          | Atoms [Ctors [s]] -> {s with quantified}
-          | _ -> unsupported "generic construct signature") parsed)]
+          | Atoms [Ctors ([s],_)] -> {s with quantified}
+          | _ -> unsupported "generic construct signature") parsed,
+          List.concat_map (function Atoms [Ctors (_,statics)] -> statics | _ -> []) parsed)]
       else
       let calls = List.map (function
         | Atoms [Shape {fields=[];indexes=[];calls=[s];elements=None}] -> {s with quantified}
@@ -192,8 +193,13 @@ let rec source_type ctx j =
       | Null -> None
       | t when is_pack t -> Some (source_pack ctx (field "of" t))
       | t -> Some (Pack {required=[];optional_elements=[];rest=Some (recur t);readonly=false;presence=Dense}) in
-    Atoms [Ctors [{call_effect=Unrestricted;quantified=[];receiver=top;params=List.map recur (items "params" j);
-      variadic=None;rest_pack;result=recur (field "result" j)}]]
+    (* A class value's static fields, invariant, listed when it has any. *)
+    let statics = match List.assoc_opt "statics" (obj j) with
+      | None -> []
+      | Some fs -> List.map (fun f -> let t = recur (field "type" f) in
+          {name=Name (text "name" f);optional=false;read=t;write=Some t;host=false;receivers=[]}) (list fs) in
+    Atoms [Ctors ([{call_effect=Unrestricted;quantified=[];receiver=top;params=List.map recur (items "params" j);
+      variadic=None;rest_pack;result=recur (field "result" j)}],statics)]
   | "function" ->
     let receiver = match field "receiver" j with Null -> top | source -> recur source in
     let variadic,rest_pack = match field "rest" j with
@@ -319,7 +325,7 @@ let rec source_type ctx j =
       | Atoms [Shape {fields=[];indexes=[];calls;elements=None}] when calls <> [] -> Some calls
       | _ -> None in
     let constructible = function
-      | Atoms [Ctors signatures] -> Some signatures
+      | Atoms [Ctors (signatures,[])] -> Some signatures
       | _ -> None in
     let rigid = List.find_opt (function Rigid _ -> true | _ -> false) parts in
     (match rigid,parts with
@@ -332,7 +338,7 @@ let rec source_type ctx j =
      (* Construct operands are one overloaded constructor, `new Date()` and
         `new Date(v)`, as call operands are one overloaded callable. *)
      | None,_::_ when List.for_all (fun part -> constructible part <> None) parts ->
-       Atoms [Ctors (List.concat (List.filter_map constructible parts))]
+       Atoms [Ctors (List.concat (List.filter_map constructible parts),[])]
      | None,first::rest when ctx.owner <> None -> Meet (first,rest)
      | None,first::rest ->
        (match List.fold_left (fun acc part -> Option.bind acc (fun a -> meet_objects a part))
@@ -473,7 +479,9 @@ and expr_node =
   (* `f.apply(r, list)`: the list's elements, read by index, are the actuals. *)
   | Apply of expr * expr * expr option
   (* A class value: its constructor lambda as construct-only code. *)
-  | Ctor of expr
+  (* A class value: its constructor, and its static fields, each the binding
+     its initializer bound, in member order. *)
+  | Ctor of expr * (string * expr) list
   (* `new callee<types>(args)`: the explicit type arguments, if written,
      name the instantiation proposed for a generic class. *)
   | New of expr * ty list * expr list * int list
@@ -570,7 +578,8 @@ let chain_name = "?."
 let rec children e = match e.node with
   | Id _ | Literal _ -> []
   | BlockBody ss -> List.concat_map statement_children ss
-  | Not e | TypeofTest (_,_,e) | Read (e,_) | Ctor e | Cast (_,_,e) | Unary (_,e) -> [e]
+  | Not e | TypeofTest (_,_,e) | Read (e,_) | Cast (_,_,e) | Unary (_,e) -> [e]
+  | Ctor (e,statics) -> e :: List.map snd statics
   | Assign (_,e) | NullishAssign (_,_,e) -> [e]
   | Update (_,t,r,_) -> t :: Option.to_list r
   | LogicalAssign (_,a,b) | Comma (a,b) | HasKey (a,b) | InstanceTest (_,a,b) -> [a;b]
@@ -751,7 +760,9 @@ let rec expr binders j =
         rest,
         optional_type inner (field "result" j),
         expr inner (field "body" j))
-  | "ctor" -> Ctor (sub "lambda")
+  | "ctor" -> Ctor (sub "lambda",match List.assoc_opt "statics" (obj j) with
+      | None -> []
+      | Some fs -> List.map (fun f -> text "name" f,expr binders (field "e" f)) (list fs))
   | "new" ->
     let types = match List.assoc_opt "typeArgs" (obj j) with
       | None -> [] | Some ts -> List.map (source_type binders) (list ts) in
@@ -925,7 +936,7 @@ let decode ast =
        | t,[] -> t
        | Atoms [Shape ({calls=[call];_} as shape)],_ ->
          Atoms [Shape {shape with calls=[{call with quantified}]}]
-       | Atoms [Ctors [signature]],_ -> Atoms [Ctors [{signature with quantified}]]
+       | Atoms [Ctors ([signature],statics)],_ -> Atoms [Ctors ([{signature with quantified}],statics)]
        | _ -> unsupported "a generic imported value must be one callable"))
       (items "values" document);
     functions=List.mapi (fun scope f ->

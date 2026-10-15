@@ -29,11 +29,12 @@ and atom = Nul | Undef | True | False | Num | Str | NumLit of int64 | StrLit of 
             as a symbol key [Key] names it. *)
          | SymbolLit of int
          (* A class value: construct signatures, which `new` meets and no call
-            does. A signature's receiver is unused: `new` passes none. *)
-         | Ctors of signature list
+            does, and its static fields, own invariant fields of the class
+            value. A signature's receiver is unused: `new` passes none. *)
+         | Ctors of signature list * field list
          (* A value with call code of which no signature is known: nothing
             calls it. `Function` is it or a class value meeting no construct
-            signature, `Ctors []`; `object` is those or an empty `Shape`. *)
+            signature, `Ctors ([],[])`; `object` is those or an empty `Shape`. *)
          | Callable
          | Shape of shape
          (* A record whose own keys are exactly its fields' keys, as a fresh
@@ -122,7 +123,8 @@ let rec mentions_rigid = function
         || List.exists signature_mentions_rigid s.calls
         || Option.fold ~none:false ~some:sequence_mentions_rigid s.elements
       | Exact fs -> List.exists (fun (f:field) -> mentions_rigid f.read) fs
-      | Ctors signatures -> List.exists signature_mentions_rigid signatures
+      | Ctors (signatures,statics) -> List.exists signature_mentions_rigid signatures
+        || List.exists (fun (f:field) -> mentions_rigid f.read) statics
       | Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Top
       | Bigint | Symbol | BigintLit _ | SymbolLit _ | Callable -> false) atoms
 and sequence_mentions_rigid s = List.exists mentions_rigid
