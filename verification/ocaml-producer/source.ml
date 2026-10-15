@@ -126,8 +126,10 @@ let rec source_type ctx j =
       rest=(match field "rest" j with Null -> None | t -> Some (recur t));
       readonly=boolean (field "readonly" j);presence=presence_of_string (text "presence" j)}
   (* A generic method: its signatures quantify lexically scoped binders.
-     Self-dependent bounds and mixed value/pack uses are refused,
-     consistently with Lean's declaration lowering; a rest is a pack
+     A bound naming the method's own binders is not represented, and a
+     binder typing a rest and anything else is refused on principle
+     (SOURCE-FRAGMENT, Refused on principle), consistently with Lean's
+     declaration lowering; a rest is a pack
      parameter or any number of actuals at an element, as Lean reads it. *)
   | "scheme" ->
     let binders = items "binders" j and signatures = items "signatures" j in
@@ -138,10 +140,14 @@ let rec source_type ctx j =
       let value,pack=binder_use name term in value || pack) names in
     let uses=List.map (fun name -> name,binder_uses name signatures) names in
     let packs=List.filter_map (fun (name,(_,pack)) -> if pack then Some name else None) uses in
-    if List.exists (fun (_, (value,pack)) -> value && pack) uses
-       || List.exists (fun b -> mentions_own (field "bound" b)) binders then
+    if List.exists (fun (_, (value,pack)) -> value && pack) uses then
       unsupported ("generic contract at " ^ Json.encode (field "span" j) ^
-        ": dependent method bounds or mixed value/pack binders are not represented; the contract cannot be erased")
+        ": a type parameter typing a rest parameter and anything else is refused on principle: \
+         TypeScript's instance gives the rest the element lists of the instance's members, \
+         tagged arrays included, which no array a call collects is")
+    else if List.exists (fun b -> mentions_own (field "bound" b)) binders then
+      unsupported ("generic contract at " ^ Json.encode (field "span" j) ^
+        ": a bound naming the method's own type parameters is not represented; the contract cannot be erased")
     else begin
       let start = match list (field "span" j) with
         | Number n :: _ -> int_of_string n

@@ -73,10 +73,10 @@
    "files": 3
   },
   "destructuring and rest/default parameters": {
-   "units": 8,
-   "self": 6,
+   "units": 9,
+   "self": 7,
    "dependency": 2,
-   "files": 3
+   "files": 4
   },
   "classes: modifiers, inheritance, fields, parameter properties, receivers": {
    "units": 6,
@@ -161,20 +161,14 @@
    "self": 1,
    "dependency": 0,
    "files": 1
-  },
-  "generic contracts requiring an unsupported exact representation": {
-   "units": 1,
-   "self": 1,
-   "dependency": 0,
-   "files": 1
   }
  },
  "exhausted": 0,
  "reachedButRefused": 67,
  "byClass": {
   "verified": 2558,
-  "principled": 101,
-  "gap": 1,
+  "principled": 102,
+  "gap": 0,
   "unexplained": 0,
   "skjsUnsound": 16
  },
@@ -325,13 +319,13 @@
    "units": 1,
    "files": 1
   },
-  "a generic contract cannot be represented in full": {
-   "class": "gap",
+  "SKJS unsoundness: a body falling off its end at a binder bounded by `void`": {
+   "class": "skjs-unsound",
    "units": 1,
    "files": 1
   },
-  "SKJS unsoundness: a body falling off its end at a binder bounded by `void`": {
-   "class": "skjs-unsound",
+  "a generic contract whose type parameter types a rest and a value": {
+   "class": "principled",
    "units": 1,
    "files": 1
   }
@@ -373,7 +367,7 @@
   "search: reject: the `length` of a mutable tuple read at its arity: the length of a mutable tuple is not fixed by its type, since `push` is allowed on it (an unsoundness": 1,
   "search: reject: a mutable array at one of a wider element: a writable element or field is invariant, as a write through the wider view would break the narrower one; Typ": 1,
   "search: reject: an instance at another whose writable field differs: a writable element or field is invariant, as a write through the wider view would break the narrowe": 1,
-  "proposal: generic contract at [141,186]: dependent method bounds or mixed value/pack binders are not represented; the contract cannot be erased": 1
+  "proposal: generic contract at [141,186]: a type parameter typing a rest parameter and anything else is refused on principle: TypeScript's instance gives the rest the elem": 1
  }
 },
 "excluded": [
@@ -4261,7 +4255,7 @@
 {"source":"tests/expect-error/variadic-rest-corner-cases.ts","name":"testTupleSpreadFollowedByPositional","kind":"function","line":158,"skjsMarker":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/variadic-rest-corner-cases.ts","name":"testMotivatingAPI","kind":"function","line":164,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/variadic-rest-corner-cases.ts","name":"testTypeAliasTupleSpread","kind":"function","line":205,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/variadic-rest-corner-cases.ts","name":"testGenericTupleConstraint","kind":"function","line":217,"skjsMarker":"accepted","status":"unsupported","phase":"proposal","key":"proposal: generic contract at [141,186]: dependent method bounds or mixed value/pack binders are not represented; the contract cannot be erased","group":"generic contracts requiring an unsupported exact representation","where":"self","detail":"unsupported: generic contract at [141,186]: dependent method bounds or mixed value/pack binders are not represented; the contract cannot be erased","class":"gap"},
+{"source":"tests/expect-error/variadic-rest-corner-cases.ts","name":"testGenericTupleConstraint","kind":"function","line":217,"skjsMarker":"accepted","status":"unsupported","phase":"proposal","key":"proposal: generic contract at [141,186]: a type parameter typing a rest parameter and anything else is refused on principle: TypeScript's instance gives the rest the elem","group":"destructuring and rest/default parameters","where":"self","detail":"unsupported: generic contract at [141,186]: a type parameter typing a rest parameter and anything else is refused on principle: TypeScript's instance gives the rest the element lists of the instance's members, tagged arrays included, which no array a call collects is","class":"principled"},
 {"source":"tests/expect-error/variadic-rest-corner-cases.ts","name":"testTupleRestToPositional","kind":"function","line":227,"skjsMarker":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/variance.ts","name":"interWithTop","kind":"function","line":5,"skjsMarker":"accepted","status":"unsupported","phase":"source","key":"source: a rest parameter needs a tuple of required positions or an array: one typed by an intersection would view the fresh array a call collects at the meet of its ope","group":"destructuring and rest/default parameters","where":"self","at":"function interWithTop<T>(...x: T[] & arrayBooleanOrArrayString): T {","detail":"gate: a rest parameter needs a tuple of required positions or an array: one typed by an intersection would view the fresh array a call collects at the meet of its operands, which has no representation (line 3, col 26)","class":"principled"},
 {"source":"tests/expect-error/variance.ts","name":"checkIntersectionWithTopIsNotBottom","kind":"function","line":12,"skjsMarker":"rejected-self"},

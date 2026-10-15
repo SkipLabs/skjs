@@ -687,8 +687,8 @@ a member a fresh array lacks, is refused there
 (`invalid-class-rest-binder-instance`). The spread law is part of the
 binder's meaning and is proved. The collection law is read by no typing
 rule and is not proved: it speaks of lists no program has allocated as an
-array, which needs the allocation lemma of the
-[model limits](SOURCE-FRAGMENT.md#model-limits).
+array, which needs an array-allocation lemma whose statement is open
+([refused on principle](SOURCE-FRAGMENT.md#refused-on-principle)).
 
 A packed binder is one parameter row read in both components of its mixed
 family $`\eta(T)`$: its argument lists are $`\eta(T)^{\mathsf{args}}`$, and

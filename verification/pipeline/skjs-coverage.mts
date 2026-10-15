@@ -445,7 +445,7 @@ function brief(detail: string): string {
  * wins; order is specificity, not value. Unmatched reasons are grouped under
  * their own text, so a new refusal shows up rather than hiding in "other". */
 const GROUPS: [string, RegExp][] = [
-  ["generic contracts requiring an unsupported exact representation", /generic contract (?:at|:)/],
+  ["generic contracts requiring an unsupported exact representation", /generic contract (?:at|:)(?!.*a type parameter typing a rest parameter and anything else)/],
   ["TypeScript refuses the code too (the pipeline follows TypeScript's types)", /TypeScript refuses this code too/],
   ["a read at a key the object may lack, which may name an `Object.prototype` member", /a read at a key that may name a member every object inherits from `Object\.prototype`/],
   ["arrays: a built-in array at a generic call, a mutable tuple's `length`", /a built-in array at a generic call|`length` of a mutable tuple|past the positions of a mutable tuple/],
@@ -473,7 +473,7 @@ const GROUPS: [string, RegExp][] = [
   ["loops (for, for-in, for-of forms)", /(ForStatement|ForInStatement)\)|for\.\.\.of/],
   ["exceptions (try/catch/throw)", /TryStatement|ThrowStatement|a jump out of a `try`/],
   ["void expression", /VoidExpression/],
-  ["destructuring and rest/default parameters", /statement (arrayPattern|pattern)|destructuring parameter|rest elements|array pattern holes|nested patterns|`let` pattern|default parameters|rest parameter needs|ordinary closure parameter|an array rest needs one|an array pattern over a value|position \d+ is outside the array/],
+  ["destructuring and rest/default parameters", /statement (arrayPattern|pattern)|destructuring parameter|rest elements|array pattern holes|nested patterns|`let` pattern|default parameters|rest parameter needs|a type parameter typing a rest parameter and anything else|ordinary closure parameter|an array rest needs one|an array pattern over a value|position \d+ is outside the array/],
   ["object growth: a key-adding write on an object another reference may hold, a dynamic index write", /may add (it|the key) to an object another reference holds|a key-adding write|may name `__proto__`, whose setter|through the parameter '[^']*' may add the key/],
   ["object literal members (methods, accessors, spreads)", /expected a plain property|unsupported object member|a spread copies the own enumerable|a computed key in an object literal|an accessor runs code|a spread of an object with a symbol-keyed property|a spread with a written field that the arms|an optional field given `undefined`/],
   ["discriminated-union narrowing (a field read after a tag test)", /missing field _|a `let` holding a union of objects|a union of an array and a record/],
@@ -540,6 +540,8 @@ const CLASSES: ClassEntry[] = [
     re: /^search: reject: source expression obligation at _: evidence search failed: no derivation of its return-contract claim$/,
     detail: /The available claim for return await p; is Promise<number>\. This return requires Promise<Promise<number>>\.$/,
     why: "fresh async resolution adopts the returned promise and fulfills with number; Promise<Promise<number>> requires a promise payload under SOURCE-CONTRACTS, Async functions and await" },
+  { cls: "principled", label: "a generic contract whose type parameter types a rest and a value", re: /generic contract at .*a type parameter typing a rest parameter and anything else is refused on principle/,
+    why: "TypeScript's instance `T := X` gives the rest the element lists of `X`'s members, `[string, number] & { tag: string }` included; admitting the form needs an array-allocation lemma of the world-extension relation, linked binder positions, quantified subtyping across binder counts and rest-bound reasoning, for behaviour rarely useful in real programs; the module-function form returns an untagged array as tagged (`invalid-rest-pack-value`, run under Node; SOURCE-FRAGMENT \"Refused on principle\")" },
   { cls: "gap", label: "a generic contract cannot be represented in full", re: /generic contract (?:at|:)/,
     why: "dependent bounds, mixed binder roles or a recursive quantified family exceed the exact lowering; the contract is refused, not replaced by unknown" },
   { cls: "gap", label: "a callable value has no admitted call signature", re: /no admitted call signature/,

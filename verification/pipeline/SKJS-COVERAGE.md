@@ -8,16 +8,17 @@ Measurement checkpoint: October 15, 2026 (full verifier-only run on
 8f9ed04f8; the accepted units are those the expectation markers accept,
 including the two marker-accepted parse-error units, and SKJS was not run),
 with `destructuring-assignment.ts` measured again after field and element
-reads kept cell facts (October 15, 2026).
+reads kept cell facts and `variadic-rest-corner-cases.ts` after a type
+parameter typing a rest and a value in a generic contract was refused on
+principle (October 15, 2026).
 The reviewed nested-promise search failure is classified by its unit and
 exact obligation.
 
 **2,558 of 2,676 SKJS-accepted units verify (95.6%); 1,916 of 2,026
 accepted functions (94.6%).** 323 of the 379 files with an accepted unit
-verify entirely. There are 101 principled refusals, 16 registered SKJS-unsound
-units, 1 gap and no unmatched or unexplained refusals. The gap is
-`variadic-rest-corner-cases.ts#testGenericTupleConstraint` (a generic
-contract the producer cannot represent in full).
+verify entirely. There are 102 principled refusals, 16 registered SKJS-unsound
+units, and no gaps and no unmatched or unexplained refusals: every accepted
+unit verifies or carries a principled refusal.
 
 `mapArr` and `testMapCallback` fail at the native call: an arbitrary
 one-argument callback supplies no contract for the three actuals `map` passes.
@@ -217,9 +218,9 @@ blocker's key is given (`summary.byReason` and `summary.byClass` of
 | Class | Units |
 | --- | ---: |
 | verified | 2,558 |
-| principled (P) | 101 |
+| principled (P) | 102 |
 | SKJS unsound (S) | 16 |
-| gap (G) | 1 |
+| gap (G) | 0 |
 | unexplained (U) | 0 |
 | **accepted** | **2,676** |
 
@@ -237,7 +238,7 @@ First blocker, not every missing feature of a unit:
 | TypeScript refuses the code too (the pipeline follows TypeScript's types) | 37 | 28 | 9 | 25 |
 | in / instanceof / typeof tests | 15 | 7 | 0 | 6 |
 | implicit index signatures: a record at an index signature (`Closed<T>` read as `T` among them) | 14 | 14 | 0 | 3 |
-| destructuring and rest/default parameters | 8 | 6 | 2 | 3 |
+| destructuring and rest/default parameters | 9 | 7 | 2 | 4 |
 | classes: modifiers, inheritance, fields, parameter properties, receivers | 6 | 3 | 3 | 3 |
 | object growth: a key-adding write on an object another reference may hold, a dynamic index write | 6 | 6 | 0 | 2 |
 | await of non-promises and unions (the await bound) | 5 | 5 | 0 | 3 |
@@ -252,7 +253,6 @@ First blocker, not every missing feature of a unit:
 | other source forms | 1 | 1 | 0 | 1 |
 | generics: constraints, explicit type arguments, rigid types, generic function types | 1 | 0 | 1 | 1 |
 | object literal members (methods, accessors, spreads) | 1 | 1 | 0 | 1 |
-| generic contracts requiring an unsupported exact representation | 1 | 1 | 0 | 1 |
 | **total** | **119** | | | |
 
 ## Performance on the pipeline cases
