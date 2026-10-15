@@ -1353,6 +1353,8 @@ export const cases: Case[] = [
   negative("invalid-class-instance-has-instance", "a call of an instance method keyed by `Symbol.hasInstance` passes its actuals to its parameters, which they must meet",
     /No rule derives this invoke/),
   positive("class-static-variadic", "a class with a static field meets a construct type with a variadic construct signature and a readonly property, and `new` through it spreads an array into the rest (run under Node)"),
+  { file: "invalid-instanceof-function-hook", area: "`instanceof` of a value typed `Function`, whose `[Symbol.hasInstance]` the standard library declares, is no typed hook call: its prototype test, of a constructor from elsewhere, is refused",
+    kind: "negative", status: "unsupported", phase: "source", diagnostic: /`instanceof` whose right operand is not a class declared at the file's top level/ },
   positive("instanceof-typed-hook", "`x instanceof c` where the type of `c` states `[Symbol.hasInstance]` calls it with `x`, `c` its receiver; a class's static one is an own property of the class value"),
   negative("invalid-instanceof-typed-hook", "`instanceof` passes its operand to the hook the right operand's type states, whose parameter it must meet",
     /source expression obligation at \[264,276\): evidence search failed/),

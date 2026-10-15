@@ -337,8 +337,8 @@ export function collectDeclarations(file: string, options: {
    * client's top level, with the class's name. */
   classTest?: (span: Span, cls: string) => void;
   /** `instanceof` right operands naming other values: each whose type
-   * TypeScript gives states `[Symbol.hasInstance]` is reported
-   * to `hookTest`. */
+   * TypeScript gives states `[Symbol.hasInstance]`, in a
+   * declaration of the program, is reported to `hookTest`. */
   hookTests?: readonly Span[];
   hookTest?: (span: Span) => void;
   /** The iterables of the client's `for...of` loops: each that TypeScript
@@ -1388,7 +1388,10 @@ export function collectDeclarations(file: string, options: {
       if (!name) throw new DeclarationError(span, "TypeScript `instanceof` operand missing");
       const type = checker.getTypeAtLocation(name);
       const hook = type ? checker.getPropertiesOfType(type).find(p => p.name.startsWith("__@hasInstance@")) : undefined;
+      // A hook the program's types state, not the one `Function.prototype`
+      // holds, which a function value inherits rather than owns.
       const declaration = hook?.declarations[0]?.resolve();
+      if (!declaration || isLibraryModule(idOf(declaration.getSourceFile() ?? client))) continue;
       const key = declaration ? nameOf(declaration) : undefined;
       const target = key && ts.isComputedPropertyName(key) && ts.isPropertyAccessExpression(key.expression) &&
         ts.isIdentifier(key.expression.name) ? targetOf(checker, key.expression.name) : undefined;
