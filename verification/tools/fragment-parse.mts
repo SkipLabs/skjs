@@ -470,9 +470,10 @@ class Gate {
   /** The well-known `Symbol.iterator`'s index among the declaration
    * document's symbols, where a program iterable is iterated. */
   wellKnownIterator: number | null = null;
-  /** The standard library's well-known symbols but `Symbol.iterator`
-   * (`Symbol.toStringTag`, `Symbol.hasInstance`, …), by index: keys no
-   * literal or class of the fragment writes (`writtenSymbol`). */
+  /** The standard library's well-known symbols the host reads off an
+   * object a literal or a class's prototype makes (`Symbol.toStringTag`,
+   * `Symbol.toPrimitive`, …), by index: keys no literal or class of the
+   * fragment writes (`writtenSymbol`). */
   hostSymbols = new Set<number>();
   /** The statement being lowered, where it runs a program iterable's
    * protocol before its own code (`hoistTarget`): the spread collected, and
@@ -1411,17 +1412,19 @@ class Gate {
   }
 
   /** The symbol a computed key names where it is a `unique symbol` constant
-   * a literal or a class may write: `Symbol.iterator`, or one of the
-   * program's own. Another of the standard library's well-known symbols is
-   * refused: each changes how the host treats the object (`instanceof`,
-   * `Object.prototype.toString`, conversions), which the model does not
-   * state, and `Symbol.toStringTag` would let the object pass for a host
-   * `Set` or `Map`, whose iteration is trusted to be the host's. */
+   * a literal or a class may write: `Symbol.iterator`, `Symbol.hasInstance`
+   * (an ordinary key of these objects: `instanceof` reads it off its right
+   * operand, a class value, alone), or one of the program's own. Another of
+   * the standard library's well-known symbols is refused: each changes how
+   * the host treats the object (`Object.prototype.toString`, conversions,
+   * `for await`), which the model does not state, and `Symbol.toStringTag`
+   * would let the object pass for a host `Set` or `Map`, whose iteration is
+   * trusted to be the host's. */
   private writtenSymbol(name: ts.ComputedPropertyName, at: Node): number | null {
     const symbol = this.symbolNames.get(this.span(name.expression).join(":"));
     if (typeof symbol !== "number") return null;
     if (this.hostSymbols.has(symbol))
-      this.fail(at, "a well-known symbol key other than `Symbol.iterator` is outside the fragment: it changes how the host treats the object, which the model does not state, and `Symbol.toStringTag` would let it pass for a host collection whose iteration is trusted");
+      this.fail(at, "a well-known symbol key other than `Symbol.iterator` and `Symbol.hasInstance` is outside the fragment: it changes how the host treats the object, which the model does not state, and `Symbol.toStringTag` would let it pass for a host collection whose iteration is trusted");
     return symbol;
   }
 
@@ -5601,9 +5604,13 @@ export function parseFile(file: string, carriesContext = false,
     }
     if (early[0])
       gate.fail(early[0], `a read of \`${early[0].text}\` before its declaration: JavaScript throws there (the temporal dead zone)`);
-    // The standard library's well-known symbols but `Symbol.iterator`.
+    // The standard library's well-known symbols the host reads off the
+    // objects a literal or a class's prototype makes: all but
+    // `Symbol.iterator`, whose protocol the model runs, and
+    // `Symbol.hasInstance`, which only `instanceof` reads, off its right
+    // operand, a class value (`binary`), never one of those objects.
     gate.hostSymbols = new Set(declarations.symbols.flatMap((s, i) =>
-      s.module.startsWith("typescript/lib/") && s.name !== "iterator" ? [i] : []));
+      s.module.startsWith("typescript/lib/") && s.name !== "iterator" && s.name !== "hasInstance" ? [i] : []));
     for (const { declaration } of declarations.definitions)
       gate.typeIdentities.add(JSON.stringify([declaration.module, declaration.span, declaration.name]));
     for (const root of declarations.roots) {
