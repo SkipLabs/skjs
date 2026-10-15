@@ -130,6 +130,7 @@ module type Closure_scope = sig
   val publish_arrow : Json.t -> Proposal_types.overlay list -> unit
 end
 module type Statement_operations = sig
+  val propose_use : Json.t -> ty -> unit
   val held_in_cell : string -> Json.t -> bool
   val following_statements : Json.t -> Source.stmt list
   val forget_exact_local : string -> unit

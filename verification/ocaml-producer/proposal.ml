@@ -21,14 +21,25 @@ let infer_function state flows declarations arities module_functions (f:Source.f
      until the contracts settle. A write whose value grows with the binding
      itself (a list consed onto it) never settles. *)
   let rec settled offered rounds assumed =
-    let result,seen = Analysis_pass.infer state flows offered declarations module_functions arities bounds assumed f in
+    let result,seen,uses = Analysis_pass.infer state flows offered declarations module_functions arities bounds assumed f in
     let evolved key = Option.value (List.assoc_opt key assumed) ~default:(Atoms []) in
     let grown = List.filter (fun (key,t) -> union (evolved key) t <> evolved key) seen in
     match result,grown with
     | Ok result,[] -> result,assumed
     | Error m,[] -> raise (Json.Error m)
     | _,_ when rounds = 0 ->
-      Proposal_diagnostics.unsupported "an evolving binding's contract does not settle: a value written into it grows with the binding itself"
+      (* A contract that does not settle is proposed from the binding's uses:
+         the one type every read of its whole value is expected at. The
+         contract is a claim: Lean checks every write against it and every
+         read at it. Where no use fixes one, the refusal stays. *)
+      let refused () = Proposal_diagnostics.unsupported "an evolving binding's contract does not settle: a value written into it grows with the binding itself" in
+      if List.for_all (fun (key,_) -> List.mem_assoc key uses) grown then
+        let assumed = List.fold_left (fun acc (key,_) ->
+          (key,List.assoc key uses) :: List.remove_assoc key acc) assumed grown in
+        (match Analysis_pass.infer state flows offered declarations module_functions arities bounds assumed f with
+         | Ok result,_,_ -> result,assumed
+         | Error _,_,_ -> refused ())
+      else refused ()
     | _ ->
       let assumed = List.fold_left (fun acc (key,t) ->
         (key,union (evolved key) t) :: List.remove_assoc key acc) assumed grown in

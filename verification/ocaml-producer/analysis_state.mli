@@ -46,5 +46,6 @@ module Access (_ : sig val state : t end) : sig
   val snapshot : unit -> candidate_snapshot
   val block_returns : unit -> Semantic.ty list
   val writes : unit -> (Json.t * Semantic.ty) list
+  val uses : unit -> (Json.t * Semantic.ty) list
   val explanations : unit -> (Json.t * string) list
 end

@@ -147,7 +147,15 @@ let transfer (expr:Analysis_state.expression_infer) =
           register_evolving_binding n init.pos true;
           Some (array {required=[];optional_elements=[];rest=Some (evolved init.pos);readonly=false;presence=Readable})
         | None,Literal (LNull | LUndefined) when mutable_ ->
-          register_evolving_binding n init.pos false; committed
+          register_evolving_binding n init.pos false;
+          (* The one type the binding's whole-value uses expect, where its
+             written types never settle: a returned value, an annotated
+             initializer, a call's argument. *)
+          (match List.sort_uniq compare (List.filter_map Fun.id
+                   (List.filter_map Fun.id (uses env n (following_statements s.span)))) with
+           | [t] -> propose_use init.pos t
+           | _ -> ());
+          committed
         | _ -> committed in
       (* A constant's object literal to which a later statement of its
          block adds a key is claimed with its exact keys: the bound says

@@ -851,8 +851,23 @@ the union of what is written into the binding, its evolved type,
 ```
 
 over the initializer and every assignment of $`x`$ in its scope, closures
-included, each read at the contract where it reads $`x`$; the proposal is
-refused when no fixed union exists (a value consed onto $`x`$ grows with it).
+included, each read at the contract where it reads $`x`$. Where no fixed
+union exists (a value consed onto $`x`$ grows with it), the producer proposes
+a contract from the statements after the declaration. In each it examines
+the first mention of $`x`$ only, and keeps it where it is a use of the whole
+value at a type: a returned value at the result type, an annotated
+initializer at its annotation, an argument of a function of one plain
+signature at its parameter. Mentions at no such type are dropped. Where the
+kept uses expect one type $`U`$,
+
+```math
+\mathrm{contract}(\mathtt{let}\ x=e_0)=U
+\qquad \{U\}=\{T\mid \text{a kept use of } x \text{ is expected at } T\},
+```
+
+and the proposal is refused where they expect none or several. The
+contract is a proposal, not a summary of every use: Lean checks the
+initializer and every write against it.
 An unannotated `[]` is claimed at the array of what its `push`, `unshift` and
 index writes add. Any choice is sound here, since every write is checked
 against the contract. A parameter $`x{:}D`$ that the body assigns (`assignsStmt`) has

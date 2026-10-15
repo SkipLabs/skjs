@@ -37,4 +37,4 @@ let infer diagnostics flows offered declarations module_functions arities bounds
   {contracts=List.rev output.Analysis_capabilities.contracts;source=f;entries;expressions;arrows=List.sort_uniq compare (List.rev output.Analysis_capabilities.arrows)},List.sort_uniq compare output.Analysis_capabilities.requests
   in
   let result = try Ok (run ()) with Json.Error m -> Error m in
-  result,Owner.writes ()
+  result,Owner.writes (),Owner.uses ()

@@ -1006,6 +1006,8 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     ["invalid-capture-next-iteration", "String(loopCapture(2)())", "undefined"],
     ["invalid-slot-catch-entry", "midTry('a', 'b', () => { throw 1; })", "b"],
     ["slot-object-growth", "JSON.stringify(grownSlot('x', false)()) + JSON.stringify(grownSlot('x', true)())", "{\"x\":1,\"count\":2}{\"x\":1,\"count\":2}"],
+    ["invalid-evolving-use-contract", "build(6)", "many"],
+    ["evolving-use-contract", "JSON.stringify(reverse({ head: 1, tail: { head: 2, tail: null } }))", "{\"head\":2,\"tail\":{\"head\":1,\"tail\":null}}"],
     ["activation-slots", "[survivesCall('a', 'b', () => { throw 1; }), absorbedInnerTry('a', 'b', () => { throw 1; }), capturedAfterWrites(false)(), JSON.stringify(reverse({ head: 1, tail: { head: 2, tail: null } }))].join()", "a,a,no,{\"head\":2,\"tail\":{\"head\":1,\"tail\":null}}"],
     // A generic function type's result: a pair where it holds, the argument
     // itself where another scheme was passed for it.
@@ -1470,6 +1472,22 @@ for (const [artifacts, arity, refusal] of [
   const wrongContract = writeClaims(artifacts, "forged-storage-contract", retyped);
   assert.notEqual(produceWith(artifacts, wrongContract, "forged-storage-contract").status, 0);
   assert.match(invoke(wrongContract, join(artifacts, "evidence.json"), artifacts), /contract|claim|evidence/);
+}
+
+{
+  // A contract proposed from an evolving binding's uses is a claim: forged
+  // to `null` alone, the write of a list cell into the binding is refused.
+  const artifacts = run("evolving-use-contract");
+  const claims = readClaims(artifacts);
+  const reverse = must(claims.functions.find((f) => f.name === "reverse"), "reverse");
+  const contract = must(reverse.contracts.find((c) => c.name === "result"), "result's storage contract");
+  const nul = claims.types.findIndex((t) => JSON.stringify(t) === JSON.stringify(["nul"]));
+  assert.ok(nul >= 0, "a null type label");
+  contract.type = [nul];
+  const forged = writeClaims(artifacts, "forged-use-contract", claims);
+  assert.notEqual(produceWith(artifacts, forged, "forged-use-contract").status, 0);
+  assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts), /contract|claim|evidence/);
+  process.stdout.write("evolving use contract: a forged contract refused at the write\n");
 }
 
 

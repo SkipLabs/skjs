@@ -50,6 +50,8 @@ type t = {
   rigid_bounds: (Semantic.rigid * ty) list ref;
   resolution_parameters: Semantic.quantifier list;
   writes: (Json.t * ty) list ref;
+  (* What an evolving binding's uses expect it to hold, by its initializer. *)
+  uses: (Json.t * ty) list ref;
   typing_roots: (string * Execution.plan * env) list ref;
   executions: (string * Json.t, Execution.plan) Hashtbl.t;
   expression_hints: (Json.t, Source.expr) Hashtbl.t;
@@ -83,7 +85,7 @@ let create diagnostics flows offered declarations module_functions arities bound
       else Value (arms declarations t)) f.params in
   { diagnostics; flows; offered; declarations; module_functions; arities; assumed; env0;
     executions; expression_hints; rigid_bounds=ref bounds;
-    resolution_parameters = !resolution_parameters; writes=ref [];
+    resolution_parameters = !resolution_parameters; writes=ref []; uses=ref [];
     typing_roots=ref []; block_result=ref (Some f.result);
     block_returned=ref (ref []); following=Hashtbl.create 64;
     local=ref { entries=[]; expressions=[]; instantiations=[]; current_point="";
@@ -168,6 +170,7 @@ module Access (S : sig val state : t end) = struct
   let typing_roots () = !(state.typing_roots)
   let block_returns () = !(!(state.block_returned))
   let writes () = !(state.writes)
+  let uses () = !(state.uses)
   let explanations () = !(state.diagnostics.Proposal_diagnostics.explanations)
   let observations () : observations = {
     for_in_keys= !(state.diagnostics.Proposal_diagnostics.for_in_keys);
@@ -277,6 +280,7 @@ module Access (S : sig val state : t end) = struct
   let register_closure name pos params = (!local).closures <- (name,(pos,params)) :: (!local).closures
   let register_object name fields = (!local).objects <- (name,fields) :: (!local).objects
   let register_class name info = (!local).classes <- (name,info) :: (!local).classes
+  let propose_use key t = state.uses := (key,t) :: List.remove_assoc key !(state.uses)
   let evolve key t = state.writes :=
     (key,union (Option.value (List.assoc_opt key !(state.writes)) ~default:(Atoms [])) (widen t))
     :: List.remove_assoc key !(state.writes)
