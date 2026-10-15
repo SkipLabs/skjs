@@ -470,7 +470,7 @@ theorem familyMember_sound {X : α → Fam} {P : α → ArgFam} {cs : List (Clau
         have hc : Constructible (.objAt fs (.graph arity E K start caps .construct rest) oid) :=
           ⟨_, _, _, _, _, _, _, _, rfl, hs⟩
         refine ⟨k, hk, ?_, ?_⟩ <;> (split at hkk <;> simp at hkk)
-        · exact ⟨⟨⟨hc, by simp⟩, ⟨hc, by simp⟩⟩, CallableConjunctions.props_nil⟩
+        · exact ⟨⟨⟨hc, by simp⟩, ⟨hc, by simp⟩⟩, CallableConjunctions.props_nil, CallableConjunctions.views_nil⟩
         · rfl
   all_goals
     obtain ⟨c, hc, hk⟩ := List.any_eq_true.mp hm

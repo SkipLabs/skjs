@@ -378,6 +378,21 @@ The operand must meet the method's parameter, as any actual's, and the
 test refines nothing: the method's answer says nothing of the operand's
 type, where TypeScript narrows it to `C`.
 
+`x instanceof c`, with `c` a name of a value whose type TypeScript gives
+states `[Symbol.hasInstance]` (a construct type's readonly
+property, met by a class with that static method, which its class value
+holds), reads that method off `c` and calls it with `x`, `c` its receiver,
+as InstanceofOperator does, and converts the result by `ToBoolean`; `x` is
+a name too, so reading `c` first leaves JavaScript's order of the two reads
+unobservable:
+
+```math
+x\ \mathtt{instanceof}\ c\;\equiv\;\mathord{!}\,\mathord{!}\,\big(c\texttt{[Symbol.hasInstance]}(x)\big)
+```
+
+A value whose type does not state the method may still hold one, its
+class's: its `instanceof` stays refused.
+
 An optional chain is the same derived form with the arms exchanged. The
 parser writes `r?.x` and every link after it in the chain (`.b`, `[k]`,
 `(a)`, `!`) as one `optional` node whose body applies those links to the

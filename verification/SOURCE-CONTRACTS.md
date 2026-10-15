@@ -715,7 +715,10 @@ are refused, and `Object.assign` from a class value is refused as from any
 source whose type bounds no key (it may own `__proto__`). A `for...in` over a
 class value visits its base's static fields too, which `%ForIn%`'s strings
 admit. A static method is a binding of its own, `static C.m`, read
-where TypeScript binds `C.m` to it, in the class's members too; a private
+where TypeScript binds `C.m` to it, in the class's members too; one keyed by
+a symbol (`static [Symbol.hasInstance]`) is also an own property of the class
+value, at its annotated signature, which no copy takes, as no copy takes a
+symbol key; a private
 static field is a binding of its own, bound with the static fields, which
 the class's methods cannot hold. A static block runs
 where it stands among the static fields, as the closure of its statements
@@ -896,18 +899,18 @@ and $`\varphi`$ writable fields:
      {⟦\{\,\mathtt{new}\,\sigma_1;\ \ldots;\ \mathtt{new}\,\sigma_n\,\}⟧=\mathsf{ctors}(L;S)}\ \textsf{construct-literal}
 ```
 
-One construct signature beside required, mutable, string-named properties
-describes a class value holding them as its static fields:
+One construct signature beside required properties describes a class value
+holding them as its static fields, a mutable one invariant and a readonly
+one a view:
 
 ```math
-\frac{⟦\mathtt{new}\,\sigma⟧=L;S\quad \forall i.\;k_i\ \text{a string}\quad ⟦\tau_i⟧=T_i}
-     {⟦\{\,\mathtt{new}\,\sigma;\ \overline{k_i\colon\tau_i}\,\}⟧=\mathsf{ctors}(L;S;\ \overline{k_i{:}T_i})}\ \textsf{construct-fields}
+\frac{⟦\mathtt{new}\,\sigma⟧=L;S\quad ⟦\tau_i⟧=T_i\quad ⟦\upsilon_j⟧=U_j}
+     {⟦\{\,\mathtt{new}\,\sigma;\ \overline{k_i\colon\tau_i};\ \overline{\mathtt{readonly}\ k'_j\colon\upsilon_j}\,\}⟧=\mathsf{ctors}(L;S;\ \overline{k_i{:}T_i};\ \overline{k'_j{:}U_j})}\ \textsf{construct-fields}
 ```
 
 Any other member beside construct signatures (a method, an index, a call
-signature, a readonly, optional or symbol-keyed property, whose contract a
-class value's invariant static fields do not state) is refused
-([model limits](SOURCE-FRAGMENT.md#model-limits)). A rest
+signature, an optional property, which a class value's required static fields
+do not state) is refused ([model limits](SOURCE-FRAGMENT.md#model-limits)). A rest
 parameter over a union of tuples of required positions is one signature per
 tuple, all at the signature's result, which a value meets by meeting every
 one; the library's `next(...[value]: [] | [TNext])` is `next()` and

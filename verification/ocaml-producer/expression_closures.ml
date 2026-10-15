@@ -42,11 +42,16 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
           | _ -> [])
         | None -> [] in
       let static_fields = List.map (fun (name,(value:Source.expr)) ->
-        match List.find_opt (fun (f:Semantic.field) -> f.name = Name name) declared with
+        match List.find_opt (fun (f:Semantic.field) -> f.name = name) declared with
         | Some f -> ignore (expr ~expected:f.read env value); f
         | None ->
-          let t = expr env value in
-          {name=Name name;optional=false;read=t;write=Some t;host=false;receivers=[]}) statics in
+          (* A static method's binding may carry an effect its annotation
+             does not state; the field holds it at its annotation. *)
+          let t = match expr env value with
+            | Atoms [Shape ({calls;_} as s)] ->
+              Atoms [Shape {s with calls=List.map (fun (c:Semantic.signature) -> {c with call_effect=Unrestricted}) calls}]
+            | t -> t in
+          {name;optional=false;read=t;write=Some t;host=false;receivers=[]}) statics in
       Atoms [Ctors (fresh_sig @ own :: List.filter (fun s -> s <> own) (List.sort_uniq compare extra),static_fields)]
     | Ctor _ -> Proposal_diagnostics.unsupported "a class value is a constructor lambda with plain parameters"
     | New (callee,types,args,spreads) ->

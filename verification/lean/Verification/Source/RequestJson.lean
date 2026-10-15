@@ -95,7 +95,7 @@ compares, still refuses an explicit empty list, and a clause without them reads
 as it always has. -/
 private def omittedWhenEmpty : List (String × String) :=
   [("arrs", "variadic"), ("callable", "variadic"), ("ctors", "variadic"), ("ctors", "first"),
-   ("ctors", "rest"), ("refs", "optional"),
+   ("ctors", "rest"), ("ctors", "views"), ("refs", "optional"),
    ("dict", "optional"), ("refs", "methods"), ("dict", "methods"), ("refs", "bounds"),
    ("dict", "bounds"), ("dict", "cells")]
 

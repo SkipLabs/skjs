@@ -1239,11 +1239,11 @@ partial def decodeExpr (j : Json) : Except String Expr := do
         if fs.isEmpty then throw "a class value's empty static field list is left out"
         fs.toList.mapM fun f => do
           fieldsExactly f ["name","e"]
-          let name ← jStr (← jField f "name")
-          discard <| sourceKey name
+          let key ← PropKey.decode (← jField f "name")
+          if let .str name := key then discard <| sourceKey name
           let e ← decodeExpr (← jField f "e")
           let .var _ _ := e | throw "a class value's static field is the binding its initializer bound"
-          pure (PropKey.str name, e)
+          pure (key, e)
       | some _ => throw "a class value's statics are a list"
     return .ctor p lam statics
   | "new" => do

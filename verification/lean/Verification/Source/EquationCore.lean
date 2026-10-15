@@ -372,14 +372,22 @@ partial def termRow (ctx : Ctx) (term : Json) : M (GraphRow Tree (List Tree)) :=
     let ps ← (← arr term "params").mapM (lowerType ctx)
     let restTerm ← field term "rest"
     let result ← lowerType ctx (← field term "result")
+    -- A readonly one is a view, listed with `readonly: true`.
     let statics ← if !hasStatics then pure [] else do
       let fs ← arr term "statics"
       if fs.isEmpty then throw s!"{ctx.site}: a class value's empty static field list is left out"
       fs.toList.mapM fun f => do
-        fieldsExactly f ["name", "type"]
-        return (PropKey.str (← str f "name"), ← lowerType ctx (← field f "type"))
-    if restTerm == .null then return .clauses [.ctors [(ps.toList, result)] [] statics []]
-    return .clauses [.ctors [] [(ps.toList, ← lowerRest ctx restTerm, result)] statics []]
+        let readonly := (f.getObjVal? "readonly").isOk
+        fieldsExactly f (["name", "type"] ++ (if readonly then ["readonly"] else []))
+        if readonly then
+          if (← field f "readonly") != .bool true then
+            throw s!"{ctx.site}: a static field's readonly mark is `true`, left out otherwise"
+        let key ← PropKey.decode (← field f "name")
+        return (readonly, key, ← lowerType ctx (← field f "type"))
+    let fields := statics.filterMap fun (ro, k, t) => if ro then none else some (k, t)
+    let views := statics.filterMap fun (ro, k, t) => if ro then some (k, t) else none
+    if restTerm == .null then return .clauses [.ctors [(ps.toList, result)] [] fields [] views]
+    return .clauses [.ctors [] [(ps.toList, ← lowerRest ctx restTerm, result)] fields [] views]
   | k => throw s!"{ctx.site}: no row for a '{k}' term"
 
 /-- A pack parameter's bound, an array or a tuple of required positions: the

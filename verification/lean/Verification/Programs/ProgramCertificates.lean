@@ -298,7 +298,7 @@ inductive Rule (ι : Type) where
   | ifBoolVar (trueType falseType : Ty ι)
   | unionVar (slot : Nat)
   | callCallable (effect : Effect)
-  | readCallable | writeCallable
+  | readCallable | readBagView | writeCallable
   /-- A literal with spreads, at its element type: which parts are spreads. -/
   | arrParts (elem : Ty ι) (spreads : List Bool)
   /-- How many actuals are fixed, which later ones are spreads, and the rest
@@ -1105,6 +1105,15 @@ declared bounds. -/
       | [c] => (f, j.type) ∈ c.bagFields
       | _ => False
     | _, _ => False
+  -- A readonly static field of a class value.
+  | .readBagView =>
+    match j.term, ps with
+    | .readAt f a, [ja] =>
+      ja.context = j.context ∧ ja.term = a ∧
+      match expand G ja.type with
+      | [c] => (f, j.type) ∈ c.bagViews
+      | _ => False
+    | _, _ => False
   | .writeCallable =>
     match j.term, ps with
     | .writeAt f a b, [ja,jb] =>
@@ -1202,7 +1211,7 @@ declared bounds. -/
       (∀ ja ∈ jas.drop args.length, ja.term = .undef) ∧
       (∀ ja ∈ jas, ja.context = j.context) ∧
       match expand G jf.type with
-      | [.ctors L _ _ _] => (jas.map Sequent.type, j.type) ∈ L
+      | [.ctors L _ _ _ _] => (jas.map Sequent.type, j.type) ∈ L
       | _ => False
     | _, _ => False
   -- The constructor, the fixed actuals, then one premise per further part:
@@ -1216,7 +1225,7 @@ declared bounds. -/
         (flags.zip (jas.drop k)).map (fun q => spreadTerm (q.1, q.2.term)) ∧
       RestParts G P ((flags.zip (jas.drop k)).map fun q => (q.1, q.2.type)) ∧
       match expand G jf.type with
-      | [.ctors _ S _ _] => ((jas.take k).map Sequent.type, P, j.type) ∈ S
+      | [.ctors _ S _ _ _] => ((jas.take k).map Sequent.type, P, j.type) ∈ S
       | _ => False
     | _, _ => False
   | .sub proof =>
@@ -1280,7 +1289,7 @@ retain the subtype outcome; other rule predicates are their declarative checks. 
     | .letE | .alloc | .read | .readView | .write | .arith | .test | .readDict .. | .indexDict ..
     | .readOptional .. | .readProto .. | .arrLit | .elem | .setElem | .len | .lenStr | .elemStr ..
     | .elemOpt .. | .elemAny .. | .ifBool | .ifTrue | .ifFalse | .ifKnown .. | .ifBoolVar ..
-    | .unionVar .. | .callCallable .. | .readCallable | .writeCallable | .arrParts ..
+    | .unionVar .. | .callCallable .. | .readCallable | .readBagView | .writeCallable | .arrParts ..
     | .callRest .. | .callPacked .. | .bindE | .bindRestE | .construct | .constructRest .. | .throw | .merge
     | .makeKey
     | .lenView .. =>
@@ -2088,6 +2097,14 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
         exact .readCallable ha he hc hL
       · simp at hL
     · contradiction
+  · rename_i a ja
+    rcases hl with ⟨hΓ,ht,hL⟩
+    have ha := hp ja (by simp)
+    rw [hΓ,ht] at ha
+    split at hL
+    · rename_i c he
+      exact .readBagView ha he hL
+    · contradiction
   · rename_i a b ja jb
     rcases hl with ⟨hΓa,hta,hΓb,htb,hn,hL⟩
     have ha := hp ja (by simp)
@@ -2583,6 +2600,10 @@ theorem checkTreeUsing_complete [DecidableEq ι] {G : NormalGraph ι}
     apply node_complete (G := G) (images := images) (j := ⟨Γ,.readAt f a,A⟩) (r := .readCallable) (js := [⟨Γ,a,F⟩])
     · unfold LocalUsing; simpa [show expand G F = [c] from hr, Clause.bagFields, hc] using hm
     · simpa using ih
+  | @readBagView Γ a F f A c ha hr hm ih =>
+    apply node_complete (G := G) (images := images) (j := ⟨Γ,.readAt f a,A⟩) (r := .readBagView) (js := [⟨Γ,a,F⟩])
+    · unfold LocalUsing; simpa [show expand G F = [c] from hr] using hm
+    · simpa using ih
   | @writeCallable Γ a F P Ps f A b N c ha hr hc hm hb hn iha ihb =>
     apply node_complete (G := G) (images := images) (j := ⟨Γ,.writeAt f a b,N⟩) (r := .writeCallable)
       (js := [⟨Γ,a,F⟩,⟨Γ,b,A⟩])
@@ -2594,7 +2615,7 @@ theorem checkTreeUsing_complete [DecidableEq ι] {G : NormalGraph ι}
       rcases hj with rfl | rfl
       · exact iha
       · exact ihb
-  | @construct Γ f F B L S xs Us a bs hf hr hp hx hu ihf ihx ihu =>
+  | @construct Γ f F B L S xs Us a bs vs hf hr hp hx hu ihf ihx ihu =>
     apply node_complete (r := .construct)
       (js := ⟨Γ,f,F⟩ :: (xs.map (fun p => ⟨Γ,p.2,p.1⟩) ++ Us.map (fun A => ⟨Γ,.undef,A⟩)))
     · have hlenx : (xs.map (fun p => (⟨Γ,p.2,p.1⟩ : Sequent ι))).length
@@ -2617,7 +2638,7 @@ theorem checkTreeUsing_complete [DecidableEq ι] {G : NormalGraph ι}
             = xs.map Prod.fst ++ Us := by
           rw [List.map_append, List.map_map, List.map_map]
           simp [Function.comp_def]
-        rw [show expand G F = [.ctors L S a bs] from hr, heq]
+        rw [show expand G F = [.ctors L S a bs vs] from hr, heq]
         exact hp
     · intro j hj
       rcases List.mem_cons.mp hj with rfl | hj
@@ -2627,7 +2648,7 @@ theorem checkTreeUsing_complete [DecidableEq ι] {G : NormalGraph ι}
           exact ihx p hp
         · obtain ⟨A, hA, rfl⟩ := List.mem_map.mp hj
           exact ihu A hA
-  | @constructRest Γ f F P B L S xs parts a bs hf hr hmem hx hp hparts ihf ihx ihp =>
+  | @constructRest Γ f F P B L S xs parts a bs vs hf hr hmem hx hp hparts ihf ihx ihp =>
     apply node_complete (r := .constructRest xs.length (parts.map Prod.fst) P)
       (js := ⟨Γ,f,F⟩ :: (xs.map (fun p => ⟨Γ,p.2,p.1⟩) ++ parts.map (fun p => ⟨Γ,p.2.2,p.2.1⟩)))
     · have hlenx : (xs.map (fun p => (⟨Γ,p.2,p.1⟩ : Sequent ι))).length = xs.length := by simp
@@ -2647,7 +2668,7 @@ theorem checkTreeUsing_complete [DecidableEq ι] {G : NormalGraph ι}
         simp [List.map_map, Function.comp_def]
       · rw [hdk, hzip]
         simpa [List.map_map, Function.comp_def] using hparts
-      · rw [show expand G F = [.ctors L S a bs] from hr, htk]
+      · rw [show expand G F = [.ctors L S a bs vs] from hr, htk]
         simpa [List.map_map, Function.comp_def] using hmem
     · intro j hj
       rcases List.mem_cons.mp hj with rfl | hj

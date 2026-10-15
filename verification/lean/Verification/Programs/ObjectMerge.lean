@@ -465,20 +465,32 @@ class value's its static fields, of which its type states the bag's fields,
 if any, and no bound. -/
 def codeOf : Clause (List ι) → Option (Obj ι)
   | .arrs _ _ => some ⟨[], [], [], [], false⟩
-  | .callable a bs _ _ | .ctors _ _ a bs =>
+  | .callable a bs _ _ =>
     some ⟨(a :: bs).flatten.filter (·.1 != CallArguments.arrayStoreField), [], [], [], false⟩
+  | .ctors _ _ a bs vs =>
+    some ⟨((a :: bs).flatten ++ vs).filter (·.1 != CallArguments.arrayStoreField), [], [], [], false⟩
   | _ => none
 
 /-- A bag's fields hold their contracts on the object the bag is of. -/
 theorem bagFacts_of_sem {G : NormalGraph ι} {c : Clause (List ι)} {a : List (PropKey × List ι)}
-    {bs : List (List (PropKey × List ι))} (hc : c.bag = some (a, bs))
-    {n : Nat} {W : WorldT n} {v : Val} (hv : semWithArgs (excOf G) (meaning G) (argMeaning G) c n W v) :
+    {bs : List (List (PropKey × List ι))} (hc : c.bag = some (a, bs)) {vs : List (PropKey × List ι)}
+    {n : Nat} {W : WorldT n} {v : Val} (hv : semWithArgs (excOf G) (meaning G) (argMeaning G) c n W v)
+    (hvs : CallableConjunctions.viewsT (ReferenceConjunctions.famsOf (meaning G) vs) n W v) :
     ∃ fs code oid, v = .objAt fs code oid ∧
-      ObjFacts G ⟨(a :: bs).flatten.filter (·.1 != CallArguments.arrayStoreField), [], [], [], false⟩ n W fs := by
+      ObjFacts G ⟨((a :: bs).flatten ++ vs).filter (·.1 != CallArguments.arrayStoreField), [], [], [], false⟩
+        n W fs := by
   obtain ⟨⟨fs, code, oid, rfl, -, ha⟩, hbs⟩ := bag_sem hc hv
   refine ⟨fs, code, oid, rfl, ⟨fun p hp => ?_, fun q hq => by simp at hq,
     fun x hx => by simp at hx, fun K hK => by simp at hK, fun hp => by simp at hp,
     fun S T hS => absurd (List.mem_filter.mp hS).2 (by simp)⟩⟩
+  replace hp := (List.mem_filter.mp hp).1
+  -- A view's field is the object's own, within the view's contract.
+  by_cases hpv : p ∈ vs
+  · obtain ⟨flds, code', oid', l, c, he, hl, hc, hag⟩ :=
+      CallableConjunctions.views_at (ReferenceConjunctions.mem_famsOf.mpr ⟨p.2, hpv, rfl⟩) hvs
+    cases he
+    exact ⟨l, c, hl, hc, hag⟩
+  replace hp : p ∈ (a :: bs).flatten := (List.mem_append.mp hp).resolve_right hpv
   -- The field is one of an operand's, whose bag is over the same fields.
   have hrec : ∀ B ∈ a :: bs, recT (ReferenceConjunctions.famsOf (meaning G) B) n W (.objAt fs .absent oid) := by
     intro B hB
@@ -487,7 +499,7 @@ theorem bagFacts_of_sem {G : NormalGraph ι} {c : Clause (List ι)} {a : List (P
     · obtain ⟨fs', code', oid', he, -, hr⟩ := hbs _ (List.mem_map_of_mem hB)
       cases he
       exact hr
-  obtain ⟨B, hB, hpB⟩ := List.mem_flatten.mp (List.mem_filter.mp hp).1
+  obtain ⟨B, hB, hpB⟩ := List.mem_flatten.mp hp
   obtain ⟨flds, l, c, oid', he, hl, hc, hag⟩ :=
     recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨p.2, hpB, rfl⟩) (hrec B hB)
   cases he
@@ -504,8 +516,9 @@ theorem codeFacts_of_sem {G : NormalGraph ι} {c : Clause (List ι)} {o : Obj ι
     exact ⟨fs, code, oid, rfl, ⟨fun p hp => by simp at hp, fun q hq => by simp at hq,
       fun x hx => by simp at hx, fun K hK => by simp at hK, fun hp => by simp at hp,
       fun S T hS => by simp at hS⟩⟩
-  · exact bagFacts_of_sem rfl hv
-  · exact bagFacts_of_sem rfl hv
+  · obtain ⟨⟨fs, code, oid, rfl, -, -⟩, -⟩ := bag_sem (P := argMeaning G) (c := .callable _ _ _ _) rfl hv
+    simpa using bagFacts_of_sem (vs := []) rfl hv CallableConjunctions.views_nil
+  · exact bagFacts_of_sem rfl hv hv.2.2
 
 /-- The source side of a merge: values owning no enumerable property, a
 string, which owns its code units at its indices, or an object, a plain one,

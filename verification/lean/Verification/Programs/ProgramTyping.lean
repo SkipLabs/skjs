@@ -2568,8 +2568,8 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
   machine binds there. -/
   | construct {Γ : List (Ty ι)} {f : Tm} {F B : Ty ι} {L : List (List (Ty ι) × Ty ι)}
       {S : List (List (Ty ι) × Ty ι × Ty ι)} {xs : List (Ty ι × Tm)} {Us : List (Ty ι)}
-      {a : List (PropKey × Ty ι)} {bs : List (List (PropKey × Ty ι))} :
-      HasTyWith G images subtyping Γ f F → Represents G F (.ctors L S a bs) → (xs.map Prod.fst ++ Us, B) ∈ L →
+      {a : List (PropKey × Ty ι)} {bs : List (List (PropKey × Ty ι))} {vs : List (PropKey × Ty ι)} :
+      HasTyWith G images subtyping Γ f F → Represents G F (.ctors L S a bs vs) → (xs.map Prod.fst ++ Us, B) ∈ L →
       (∀ p ∈ xs, HasTyWith G images subtyping Γ p.2 p.1) → (∀ A ∈ Us, HasTyWith G images subtyping Γ .undef A) →
       HasTyWith G images subtyping Γ (.construct f (xs.map Prod.snd)) B
   /-- **A variadic construction.** `new f(args)` at a variadic construct
@@ -2577,8 +2577,8 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
   rest (`RestParts`), as a variadic call's do. -/
   | constructRest {Γ : List (Ty ι)} {f : Tm} {F P B : Ty ι} {L : List (List (Ty ι) × Ty ι)}
       {S : List (List (Ty ι) × Ty ι × Ty ι)} {xs : List (Ty ι × Tm)} {parts : List (Bool × Ty ι × Tm)}
-      {a : List (PropKey × Ty ι)} {bs : List (List (PropKey × Ty ι))} :
-      HasTyWith G images subtyping Γ f F → Represents G F (.ctors L S a bs) → (xs.map Prod.fst, P, B) ∈ S →
+      {a : List (PropKey × Ty ι)} {bs : List (List (PropKey × Ty ι))} {vs : List (PropKey × Ty ι)} :
+      HasTyWith G images subtyping Γ f F → Represents G F (.ctors L S a bs vs) → (xs.map Prod.fst, P, B) ∈ S →
       (∀ p ∈ xs, HasTyWith G images subtyping Γ p.2 p.1) →
       (∀ p ∈ parts, HasTyWith G images subtyping Γ p.2.2 p.2.1) →
       RestParts G P (parts.map fun p => (p.1, p.2.1)) →
@@ -2599,6 +2599,9 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
   | readCallable {c : Clause (Ty ι)} : HasTyWith G images subtyping Γ a F → Represents G F c →
       c.bag = some (P, Ps) → (f, A) ∈ P →
       HasTyWith G images subtyping Γ (.readAt f a) A
+  /-- A readonly static field of a class value: a view of its own field. -/
+  | readBagView {c : Clause (Ty ι)} : HasTyWith G images subtyping Γ a F → Represents G F c →
+      (f, A) ∈ c.bagViews → HasTyWith G images subtyping Γ (.readAt f a) A
   | writeCallable {c : Clause (Ty ι)} : HasTyWith G images subtyping Γ a F → Represents G F c →
       c.bag = some (P, Ps) → (f, A) ∈ P →
       HasTyWith G images subtyping Γ b A → Represents G N .nul → HasTyWith G images subtyping Γ (.writeAt f a b) N
@@ -2868,7 +2871,7 @@ abbrev HasTyUsing (G : NormalGraph ι) (images : PositiveCertificates.InstanceIm
   HasTyWith G images subtyping Γ t A
 
 namespace HasTyUsing
-export HasTyWith (var nul undef tru fls truLit flsLit numLit num bigintLit bigint strLit str funGraph funScheme ctorGraph callableGraph construct constructRest callCallable readCallable writeCallable app letE alloc allocDict read readView lenView readProto readOptional readDict indexDict write arith arrLit elem elemOpt elemAny setElem len lenStr elemStr test ifBool ifKnown ifBoolVar ifTag unionVar arrParts callRest callPacked bindE bindRestE bindMember bindScheme throw merge makeKey sub)
+export HasTyWith (var nul undef tru fls truLit flsLit numLit num bigintLit bigint strLit str funGraph funScheme ctorGraph callableGraph construct constructRest callCallable readCallable readBagView writeCallable app letE alloc allocDict read readView lenView readProto readOptional readDict indexDict write arith arrLit elem elemOpt elemAny setElem len lenStr elemStr test ifBool ifKnown ifBoolVar ifTag unionVar arrParts callRest callPacked bindE bindRestE bindMember bindScheme throw merge makeKey sub)
 end HasTyUsing
 
 /-- Existing source requests choose the finite checker. The typing rules
@@ -3091,7 +3094,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       simp only [List.zip_cons_cons]
       exact List.mem_cons_of_mem _ hm
     exact (represents_back hr k' V _)
-      ⟨⟨hc, hcr⟩, ⟨_, _, _, rfl, rfl, hbag⟩, by simp⟩
+      ⟨⟨hc, hcr⟩, ⟨⟨_, _, _, rfl, rfl, hbag⟩, by simp⟩, CallableConjunctions.views_nil⟩
   | @callableGraph Γ F L S arity start E K caps kind rest As parts hr hnd hp hkind hspec hlt hcap ih ihc =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
@@ -3137,7 +3140,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       simp [ReferenceConjunctions.famsOf, List.map_map, Function.comp_def, List.zip_map']
     exact (represents_back hr k' V _)
       ⟨⟨⟨⟨_, _, _, rfl, rfl, by rw [hfam]; exact hrec⟩, by simp⟩, ho.1⟩, ho.2⟩
-  | @construct Γ f F B L S xs Us a bs hf hr hp hx hu ihf ihx ihu =>
+  | @construct Γ f F B L S xs Us a bs vs hf hr hp hx hu ihf ihx ihu =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
     have hs := construct_safe (Ξ := excOf G) (B := meaning G B)
@@ -3161,7 +3164,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hA
       intro j hj U hx hu' heap hok
       exact ihu q hq j U heap ρ (he.transfer j hj U hx) hu' hok
-  | @constructRest Γ f F P B L S xs parts a bs hf hr hmem hx hp hparts ihf ihx ihp =>
+  | @constructRest Γ f F P B L S xs parts a bs vs hf hr hmem hx hp hparts ihf ihx ihp =>
     intro n W h ρ he hw hh
     have hfF : Safe (excOf G) (ctorRestsT (excOf G) [(xs.map fun p => meaning G p.1, argMeaning G P, meaning G B)])
         n W h (instantiate 0 ρ f) := by
@@ -3301,6 +3304,14 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     intro j hj U hx hu heap v hok hv ha'
     exact bag_read (meaning_valOnly G A) (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩)
       (bag_sem hc ((represents_raw hr j U v) ha')).1 hu hok
+  | @readBagView Γ a Ref f A c ha hr hm ih =>
+    intro n W h ρ he hw hh
+    apply bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
+    intro j hj U hx hu heap v hok hv ha'
+    obtain ⟨flds, code, oid, l, c', rfl, hf, hl, hag⟩ :=
+      CallableConjunctions.views_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩)
+        (bagViews_sem ((represents_raw hr j U v) ha') (List.ne_nil_of_mem hm))
+    exact read_view_rule (meaning_valOnly G A) j U heap l hu hok hf hl hag
   | @writeCallable Γ a Ref P Ps f A b N c ha hr hc hm hb hn iha ihb =>
     intro n W h ρ he hw hh
     apply bind (fun a => .writeAt f a (instantiate 0 ρ b)) Step.writeC1 Raises.writeC1 n W h _ hw hh

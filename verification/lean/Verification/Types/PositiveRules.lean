@@ -139,7 +139,7 @@ theorem instance_body (G : NormalGraph ι) (η : MixedAssignment ι) (s : Scheme
   · rfl
   · simp only [if_true, semWithArgs, List.map_map]
     -- A scheme body states no static field: its empty bag holds of every class value.
-    refine Eq.trans ?_ (props_nil_absorb ?_).symm
+    refine Eq.trans ?_ (bag_nil_absorb ?_).symm
     · rfl
     · intro n W v h
       obtain ⟨fs, _, _, _, _, _, _, oid, rfl, -⟩ := h.1.1
@@ -699,6 +699,12 @@ abbrev CoversViews (G : NormalGraph ι) (R : List ι → List ι → Prop)
     (source : List (List (PropKey × List ι))) (views target : List (PropKey × List ι)) : Prop :=
   ∀ q ∈ target, (∃ p ∈ source.flatten ++ views, p.1 = q.1 ∧ R p.2 q.2) ∨
     (q.1 = lengthKey ∧ ((source.flatten ++ views).any (·.1 == arrayStoreKey) && numIn G q.2) = true)
+
+/-- A class value's readonly static field is covered by a source static
+field or readonly static field of the same name whose contract implies it. -/
+abbrev CoversBagViews (R : List ι → List ι → Prop)
+    (source : List (List (PropKey × List ι))) (views target : List (PropKey × List ι)) : Prop :=
+  ∀ q ∈ target, ∃ p ∈ source.flatten ++ views, p.1 = q.1 ∧ R p.2 q.2
 
 /-- A key some bound excludes: no object under the bounds owns it. -/
 abbrev Excludes (bounds : List KeyBound) (k : PropKey) : Prop := ∃ K ∈ bounds, K.admits k = false
@@ -1341,13 +1347,14 @@ checks over the supplied subtype relation. -/
   -- parameter admits no actual list, so any class value meets it; the
   -- results are still compared, as TypeScript compares them.
   -- A static field the target states is one the source states at the same
-  -- contract, as a callable object's bag field.
-  | .ctors L S a bs, .ctors M T c ds => ((∀ q ∈ M, ∃ p ∈ L, (Domains R q.1 p.1 ∨ [] ∈ q.1) ∧ R p.2 q.2) ∧
+  -- contract, as a callable object's bag field; a readonly one, a field or
+  -- a view the source states within it.
+  | .ctors L S a bs vs, .ctors M T c ds ws => ((∀ q ∈ M, ∃ p ∈ L, (Domains R q.1 p.1 ∨ [] ∈ q.1) ∧ R p.2 q.2) ∧
       -- A variadic one by one taking as many fixed parameters, each at least as
       -- wide, a rest at least as wide and a result at most as wide; or by a
       -- fixed one, when its rest is an exact tuple.
       ∀ t ∈ T, (∃ s ∈ S, Domains R t.1 s.1 ∧ R t.2.1 s.2.1 ∧ R s.2.2 t.2.2) ∨
-        ∃ p ∈ L, FixedCoversPack G R p t) ∧ CoversFields R (a :: bs) (c :: ds)
+        ∃ p ∈ L, FixedCoversPack G R p t) ∧ CoversFields R (a :: bs) (c :: ds) ∧ CoversBagViews R (a :: bs) vs ws
   -- Every target contract has a source contract within it.
   | .pack a bs, .pack c ds => ∀ q ∈ c :: ds, ∃ p ∈ a :: bs, CoversPack R p q
   | _, _ => False
@@ -2690,6 +2697,46 @@ theorem covers_bags_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : Li
     obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hB
     exact ⟨flds, code, oid, rfl, hval, key b (List.mem_cons_of_mem c hb)⟩⟩
 
+/-- The same argument for a class value's readonly static fields: each
+target view is a source field or view within it, on the one object the bag
+is of. -/
+theorem covers_bag_views_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : List ι → List ι → Prop}
+    {a : List (PropKey × List ι)} {bs : List (List (PropKey × List ι))}
+    {vs ws : List (PropKey × List ι)}
+    (hc : CoversBagViews R (a :: bs) vs ws) (n : Nat)
+    (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j)
+    (W : WorldT n) (v : Val)
+    (hp : CallableConjunctions.propsT (famsOf (mixedValues G η) a)
+      (bs.map (famsOf (mixedValues G η))) n W v)
+    (hv : CallableConjunctions.viewsT (famsOf (mixedValues G η) vs) n W v) :
+    CallableConjunctions.viewsT (famsOf (mixedValues G η) ws) n W v := by
+  obtain ⟨flds, code, oid, rfl, -, ha⟩ := hp.1
+  have hsrc : refsT (famsOf (mixedValues G η) a) (bs.map (famsOf (mixedValues G η))) n W
+      (.objAt flds .absent oid) := by
+    refine ⟨ha, fun B hB => ?_⟩
+    obtain ⟨flds', code', oid', he, -, hb⟩ := hp.2 B hB
+    cases he
+    exact hb
+  have hvv : viewT (famsOf (mixedValues G η) vs) n W (.objAt flds .absent oid) := by
+    obtain ⟨flds', code', oid', he, h⟩ := hv
+    cases he
+    exact h
+  refine ⟨flds, code, oid, rfl, fun f T hm => ?_⟩
+  obtain ⟨y, hy, rfl⟩ := mem_famsOf.mp hm
+  obtain ⟨⟨pf, pl⟩, hp, hpf, hpy⟩ := hc (f, y) hy
+  simp only at hpf
+  subst hpf
+  rcases List.mem_append.mp hp with hp | hp
+  · obtain ⟨L, hL, hpL⟩ := List.mem_flatten.mp hp
+    have hL' : recT (famsOf (mixedValues G η) L) n W (.objAt flds .absent oid) := by
+      rcases List.mem_cons.mp hL with rfl | hL
+      · exact hsrc.1
+      · exact hsrc.2 _ (List.mem_map_of_mem hL)
+    obtain ⟨flds', l, c0, oid', he, hf, hl, hag⟩ := recT_at (mem_famsOf.mpr ⟨pl, hpL, rfl⟩) hL'
+    exact ⟨flds', l, c0, oid', he, hf, hl, fun j hj W' u hu => hr j hj pl y hpy W' u ((hag j hj W' u).mp hu)⟩
+  · obtain ⟨flds', l, c0, oid', he, hf, hl, hag⟩ := viewT_at (mem_famsOf.mpr ⟨pl, hp, rfl⟩) hvv
+    exact ⟨flds', l, c0, oid', he, hf, hl, fun j hj W' u hu => hr j hj pl y hpy W' u (hag j hj W' u hu)⟩
+
 theorem CoversPack.position {R : List ι → List ι → Prop} {p q : Tuple (List ι)}
     (hc : CoversPack R p q) : ∀ i a, p.position i = some a → ∃ b, q.position i = some b ∧ R a b := by
   have hpos := hc.2.2
@@ -3012,15 +3059,16 @@ target's, read below the level. -/
 theorem covers_ctors_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)} {η : MixedAssignment ι}
     {R : List ι → List ι → Prop} {known : Known ι} {arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop}
     {self : List ι} {L M : List (List (List ι) × List ι)} {S T : List (List (List ι) × List ι × List ι)}
-    {a c : List (PropKey × List ι)} {bs ds : List (List (PropKey × List ι))}
-    (hc : CoversWith G sub R known arrows self (.ctors L S a bs) (.ctors M T c ds)) (n : Nat)
+    {a c : List (PropKey × List ι)} {bs ds : List (List (PropKey × List ι))} {vs ws : List (PropKey × List ι)}
+    (hc : CoversWith G sub R known arrows self (.ctors L S a bs vs) (.ctors M T c ds ws)) (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j) (hpa : ArgsLeBelow G η R n)
     (W : WorldT n) (v : Val) :
-    semWithArgs Ξ (mixedValues G η) (mixedArgs G η) (.ctors L S a bs) n W v →
-      semWithArgs Ξ (mixedValues G η) (mixedArgs G η) (.ctors M T c ds) n W v := by
+    semWithArgs Ξ (mixedValues G η) (mixedArgs G η) (.ctors L S a bs vs) n W v →
+      semWithArgs Ξ (mixedValues G η) (mixedArgs G η) (.ctors M T c ds ws) n W v := by
   unfold CoversWith at hc
-  rintro ⟨⟨hv, hw⟩, hb⟩
-  refine ⟨⟨⟨hv.1, fun q hq => ?_⟩, ⟨hv.1, fun t ht => ?_⟩⟩, covers_bags_sound hc.2 n hr W v hb⟩
+  rintro ⟨⟨hv, hw⟩, hb, hvs⟩
+  refine ⟨⟨⟨hv.1, fun q hq => ?_⟩, ⟨hv.1, fun t ht => ?_⟩⟩, covers_bags_sound hc.2.1 n hr W v hb,
+    covers_bag_views_sound hc.2.2 n hr W v hb hvs⟩
   · obtain ⟨q0, hq0, rfl⟩ := List.mem_map.mp hq
     obtain ⟨p, hp, hd, hres⟩ := hc.1.1 q0 hq0
     intro j hj U hx hu heap hh args hvals ha
@@ -3098,7 +3146,7 @@ theorem Covers.sound_raw [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Re
       covers_methods_sound hc.2.2.2.1 hknown n hr hpa hre W v hself (fields_at hv.1 hv.2.1) hv.2.2.2.2.2
         hv.2.2.2.2.1,
       covers_bounds_sound hc.2.2.2.2 (recT_obj hv.1.1) hv.2.2.2.2.2⟩
-  case ctors.ctors L S a bs M T c ds =>
+  case ctors.ctors L S a bs vs M T c ds ws =>
     exact covers_ctors_sound (sub := sub) (known := known) (self := self)
       (arrows := fun L S M => ∀ p ∈ M, CallArrow (compatible G) (restElem G) R L S p)
       (by unfold CoversWith; exact hc) n hr hpa W v

@@ -164,7 +164,7 @@ export type Expr =
      members, and Lean reads them as parameter rows of the declaring unit. */
   /* A class value: its constructor, and its static fields, each the
    * binding its initializer bound, in member order, left out when it has none. */
-  | { k: "ctor"; pos: Span; typeParams?: TypeParamAst[]; lambda: Expr; statics?: { name: string; e: Expr }[] }
+  | { k: "ctor"; pos: Span; typeParams?: TypeParamAst[]; lambda: Expr; statics?: { name: PropertyKey; e: Expr }[] }
   /* A call through a property reference, `o.m(a)` or `o[k](a)`, parentheses
      around the reference included: the object is saved, the method read from
      it and saved, the arguments evaluated, and the saved method invoked with

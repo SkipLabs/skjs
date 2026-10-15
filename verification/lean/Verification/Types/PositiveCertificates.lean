@@ -1278,10 +1278,10 @@ and the target's receivers, its signatures against the target's schemes'). -/
     recordPairs G known self (a :: bs).flatten [] [] [] (c :: ds).flatten [] [] [] ++
     signaturePairs L M ++ restPairs S T ++ elemPairs G S T ++ packPairs G L T ++
       restFixedPairs G S M
-  | .ctors L S a bs, .ctors M T c ds =>
+  | .ctors L S a bs vs, .ctors M T c ds ws =>
     let fixed (p : List (List ι) × List ι) : Arrow (List ι) := ⟨[], p.1, p.2, .unrestricted⟩
     let rest (p : List (List ι) × List ι × List ι) : RestArrow (List ι) := ⟨[], (p.1, p.2.1), p.2.2, .unrestricted⟩
-    recordPairs G known self (a :: bs).flatten [] [] [] (c :: ds).flatten [] [] [] ++
+    recordPairs G known self (a :: bs).flatten vs [] [] (c :: ds).flatten ws [] [] ++
     signaturePairs (L.map fixed) (M.map fixed) ++ restPairs (S.map rest) (T.map rest) ++
       packPairs G (L.map fixed) (T.map rest)
   | .list a bs, .list c ds | .pack a bs, .pack c ds =>

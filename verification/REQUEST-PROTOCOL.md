@@ -269,7 +269,7 @@ one subtype-evidence list per outgoing edge. A derivation node names the
 `var`, `nul`, `undef`, `tru`, `fls`, `truLit`, `flsLit`, `numLit`, `num`,
 `strLit`, `str`, `bigintLit`, `bigint`, `funGraph`, `ctorGraph`, `callableGraph`, `app`, `letE`, `alloc`,
 `read`, `readOptional`, `readDict`, `indexDict`, `write`, `ifBool`, `ifTrue`, `ifFalse`, `ifKnown`, `ifBoolVar`,
-`unionVar`, `callCallable`, `readCallable`, `writeCallable`, `readView`, `lenView`, `readProto`, `arith`, `test`,
+`unionVar`, `callCallable`, `readCallable`, `readBagView`, `writeCallable`, `readView`, `lenView`, `readProto`, `arith`, `test`,
 `arrLit`, `elem`, `elemOpt`, `elemAny`, `setElem`, `len`, `lenStr`, `elemStr`,
 `callRest`, `callPacked`, `arrParts`, `bindE`, `bindRestE`, `bindMember`, `construct`, `constructRest`, `sub`,
 `throw`, whose one premise types the thrown operand, `makeKey`, an allocation
@@ -402,7 +402,7 @@ entry per advertised overload. Its result has a single initial bag contract; sub
 selects an advertised signature and, like `app`, carries one premise per
 position that signature declares and the call omits, each proving `undefined`
 at that position's contract; `readCallable` and `writeCallable` use
-the first invariant bag operand, a callable object's or a class value's. Every nested operand label is bounds checked.
+the first invariant bag operand, a callable object's or a class value's, and `readBagView` a class value's readonly static field, a view. Every nested operand label is bounds checked.
 `app`, `callCallable` and `callRest` carry the selected signature's `effect`
 and take the callee premise, then the
 receiver premise at the selected signature's receiver, then the actuals: the

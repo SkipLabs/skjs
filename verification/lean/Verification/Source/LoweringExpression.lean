@@ -773,7 +773,7 @@ slots are introduced only after the operand supplying their type is checked. -/
   | .construct _ f args spreads _ => do
     if !spreads.isEmpty then throw "a constructor spread inside a closed expression is outside the fragment"
     let callee ← closureExpr recursive fc scope Γ f
-    let [.ctors L _ _ _] := PositiveRules.expand G callee.type
+    let [.ctors L _ _ _ _] := PositiveRules.expand G callee.type
       | throw "`new` needs a value with construct signatures"
     let actuals ← args.attach.mapM fun ⟨a,_⟩ => closureExpr recursive fc scope Γ a
     -- As for a call: a signature declaring exactly the actuals written, or a

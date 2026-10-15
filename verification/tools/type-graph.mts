@@ -123,6 +123,7 @@ export type Clause<L = number> =
         variadic?: [Labels<L>[], [Labels<L>, Labels<L>]][];
         first?: Fields<L>;
         rest?: Fields<L>[];
+        views?: Fields<L>;
       };
     }
   | {
@@ -383,9 +384,10 @@ export function decodeGraph(value: unknown): TypeGraph {
       if ("bounds" in r) bounds(r.bounds);
     },
     ctors: (b) => {
-      const r = objOptional(b, ["signatures"], ["variadic", "first", "rest"]);
+      const r = objOptional(b, ["signatures"], ["variadic", "first", "rest", "views"]);
       if ("first" in r) fields(r.first);
       if ("rest" in r) array(r.rest).forEach(v => fields(v));
+      if ("views" in r) fields(r.views, true);
       array(r.signatures).forEach((sig) => {
         const pair = array(sig);
         if (pair.length !== 2) throw Error("invalid construct signature");
@@ -554,8 +556,9 @@ function clauseText(c: Clause): string {
   const calls = (arrows: Arrow[], variadic: RestArrow[] = []) =>
     `calls[${[...arrows.map(arrowText), ...variadic.map(restArrowText)].join("; ")}]`;
   if ("arrs" in c) return calls(c.arrs.arrows, c.arrs.variadic);
-  if ("ctors" in c && (c.ctors.first?.length || c.ctors.rest?.length))
-    return `object[${[c.ctors.first ?? [], ...(c.ctors.rest ?? [])].map(printFields).join(" & ")}; new[${[
+  if ("ctors" in c && (c.ctors.first?.length || c.ctors.rest?.length || c.ctors.views?.length))
+    return `object[${[c.ctors.first ?? [], ...(c.ctors.rest ?? [])].map(printFields).join(" & ")}${
+      c.ctors.views?.length ? ` & readonly ${printFields(c.ctors.views)}` : ""}; new[${[
       ...c.ctors.signatures.map(
         ([ps, r]) => `(${ps.map(printLabels).join(", ")}) => ${printLabels(r)}`,
       ),

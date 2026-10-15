@@ -592,7 +592,7 @@ came from a different context. No execution budget is inspected. -/
     | .construct f args =>
       let own := match f with | .var i => (Γ[i]?).toList | _ => []
       return (own ++ pool).eraseDups.findCheck? fun F => do
-        let [.ctors L S _ _] := expand G F | none
+        let [.ctors L S _ _ _] := expand G F | none
         let flags := args.map fun a => match a with | .spread _ => true | _ => false
         let candidates : List ((List (Ty ι) × Ty ι) ⊕ (List (Ty ι) × Ty ι × Ty ι)) :=
           (if flags.any id then [] else L.map .inl) ++ S.map .inr
@@ -774,7 +774,8 @@ came from a different context. No execution budget is inspected. -/
                     ((gs ++ ws.filter (·.1 != lengthKey)).lookup f).map (·, Rule.readProto P)
                   | _ => none
               else none)
-          | [.callable fs _ _ _] | [.ctors _ _ fs _] => (fs.lookup f).map (·,Rule.readCallable)
+          | [.callable fs _ _ _] => (fs.lookup f).map (·,Rule.readCallable)
+          | [.ctors _ _ fs _ vs] => (fs.lookup f).map (·,Rule.readCallable) <|> (vs.lookup f).map (·,Rule.readBagView)
           -- A dictionary's named field or view, else its index, which may miss.
           -- The index holds of every present field, an optional one included.
           | [.dict fs [] vs ix _ _ _ _] =>
@@ -792,7 +793,7 @@ came from a different context. No execution budget is inspected. -/
       let direct := pool.findCheck? fun R => do
         let (fs,r) ← match expand G R with
           | [.refs fs [] _ _ _ _] => some (fs,Rule.write)
-          | [.callable fs _ _ _] | [.ctors _ _ fs _] => some (fs,Rule.writeCallable)
+          | [.callable fs _ _ _] | [.ctors _ _ fs _ _] => some (fs,Rule.writeCallable)
           | _ => none
         let B ← fs.lookup f
         let ea ← recur Γ a R

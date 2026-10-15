@@ -79,9 +79,9 @@ export type TypeTerm =
   /** `new (params) => result`: a construct signature, which a class meets and
    * no plain function does; `rest` as a function's, or null. A class value's
    * type also states its static fields (`statics`), own data properties of
-   * the class value, left out when it has none. */
+   * the class value, a readonly one marked, left out when it has none. */
   | { k: "constructor"; params: TypeTerm[]; rest: TypeTerm | null; result: TypeTerm;
-      statics?: { name: string; type: TypeTerm }[]; span: Span }
+      statics?: { name: PropertyKey; type: TypeTerm; readonly?: true }[]; span: Span }
   /** A rest parameter typed by a type parameter, `...params: P`: the actuals
    * past the fixed ones are, as one argument list, at `P`, a pack parameter.
    * Only a signature's `rest` holds one; any other rest is its element. */

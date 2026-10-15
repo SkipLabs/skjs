@@ -636,9 +636,15 @@ $`\varphi=\overline{k_i{:}A_i}`$, empty for a class with none):
 ```
 
 A static field is read and written as a callable object's bag field is
-(`readCallable`, `writeCallable`, over the clause's bag, `Clause.bag`), and a
-spread of a class value copies its own data fields, of which its type states
-its static fields (`codeOf`, [allocation from parts](SEMANTICS.md#operational-language)).
+(`readCallable`, `writeCallable`, over the clause's bag, `Clause.bag`), a
+readonly one read as a view (`readBagView`, `views_at`), and a spread of a
+class value copies its own data fields, of which its type states its static
+fields (`codeOf`, [allocation from parts](SEMANTICS.md#operational-language)):
+
+```math
+\frac{\Gamma\vdash_G a:F\quad F\equiv_G\mathsf{Ctors}(\ldots;\vec\varphi;\psi)\quad(f{:}A)\in\psi}
+     {\Gamma\vdash_G a.f:A}\ (\texttt{readBagView})
+```
 
 A plain call of a class throws in JavaScript: `pipeline/test.mts` runs
 `invalid-class-as-function` under Node beside the pipeline's refusal of it.

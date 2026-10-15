@@ -336,6 +336,11 @@ export function collectDeclarations(file: string, options: {
   /** Called for each of them TypeScript binds to a class declared at the
    * client's top level, with the class's name. */
   classTest?: (span: Span, cls: string) => void;
+  /** `instanceof` right operands naming other values: each whose type
+   * TypeScript gives states `[Symbol.hasInstance]` is reported
+   * to `hookTest`. */
+  hookTests?: readonly Span[];
+  hookTest?: (span: Span) => void;
   /** The iterables of the client's `for...of` loops: each that TypeScript
    * types as a string, a `Set`, a `Map` or a host collection iterator is
    * reported to `iterable` with the iteration intrinsic that steps it
@@ -1377,6 +1382,18 @@ export function collectDeclarations(file: string, options: {
       if (owners.length === 1 && owner && ts.isClassDeclaration(owner) && owner.name &&
           owner.parent === client && owner.name.text === name.text)
         options.classTest?.(span, owner.name.text);
+    }
+    for (const span of options.hookTests ?? []) {
+      const name = identifierAt(client, span);
+      if (!name) throw new DeclarationError(span, "TypeScript `instanceof` operand missing");
+      const type = checker.getTypeAtLocation(name);
+      const hook = type ? checker.getPropertiesOfType(type).find(p => p.name.startsWith("__@hasInstance@")) : undefined;
+      const declaration = hook?.declarations[0]?.resolve();
+      const key = declaration ? nameOf(declaration) : undefined;
+      const target = key && ts.isComputedPropertyName(key) && ts.isPropertyAccessExpression(key.expression) &&
+        ts.isIdentifier(key.expression.name) ? targetOf(checker, key.expression.name) : undefined;
+      if (target?.declarations.some(d => isLibraryModule(idOf(d.resolve()?.getSourceFile() ?? client))))
+        options.hookTest?.(span);
     }
     for (const span of options.bindingReads ?? []) {
       const name = identifierAt(client, span);

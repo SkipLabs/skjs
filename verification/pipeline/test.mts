@@ -650,6 +650,8 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     "invalid-class-static-assign: Object.assign copies the own static field only");
   assert.equal(runExample("invalid-typeof-inherited-statics", `String(make().inherited)`), "undefined",
     "invalid-typeof-inherited-statics: the returned class lacks the inherited static TypeScript promises");
+  assert.equal(runExample("class-static-variadic", `JSON.stringify([run, copy()])`), "[19,7]",
+    "class-static-variadic: the construction and the copy JavaScript makes");
   // A write at a string key known only at run time: `__proto__` runs the
   // prototype's setter where the object does not own the key, which with a
   // number changes nothing, and writes the property where it owns it; with an

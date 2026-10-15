@@ -493,6 +493,9 @@ class Gate {
   /** `instanceof` right operands TypeScript binds to a class declared at the
    * file's top level, by span: the class. */
   readonly classTests = new Map<string, string>();
+  /** `instanceof` right operands whose type TypeScript gives states
+   * `[Symbol.hasInstance]`, by span. */
+  readonly hookTests = new Set<string>();
   /** A `for...of` iterable's iteration intrinsic, where TypeScript's type of
    * it picks one other than `%Iterate%`, or, for a program's iterable,
    * `client`, `client-method` (its iterator's `return` a required method) or
@@ -1057,7 +1060,7 @@ class Gate {
       // initializer reads (`staticReads`), and the class value's own field
       // elsewhere.
       const staticMethods: BindingAst[] = [], statics: BindingAst[] = [];
-      const staticFields: { name: string; binding: string; pos: Span; type: TypeTerm }[] = [];
+      const staticFields: { name: PropertyKey; binding: string; pos: Span; type: TypeTerm }[] = [];
       // The prototype's methods, in member order: every instance holds the
       // prototype object under its prototype key, and reads a method there.
       const prototype: { name: PropertyKey; e: Expr }[] = [];
@@ -1118,6 +1121,15 @@ class Gate {
             const annot = member.type && !member.typeParameters?.length
               ? signature(this.scope, member.parameters, member.type, member, this.span(member), true) : null;
             staticMethods.push({ name: binding, namePos: this.span(member.name), annot, init: this.lambda(member) });
+            // A static method keyed by a symbol is also an own property of
+            // the class value, at its signature, which no copy takes, as no
+            // copy takes a symbol key (or, in JavaScript, a method).
+            if (hasInstance && ts.isComputedPropertyName(member.name)) {
+              const symbol = this.symbolKeys.get(this.span(member.name.expression).join(":"));
+              if (symbol === undefined || !annot)
+                this.fail(member, "a static method keyed by a symbol is an own property of the class value, at its annotated signature");
+              staticFields.push({ name: { symbol }, binding, pos: this.span(member.name), type: annot });
+            }
             continue;
           }
           this.selfClass = null;
@@ -1504,8 +1516,8 @@ class Gate {
 
   /** The symbol a computed key names where it is a `unique symbol` constant
    * a literal or a class may write: `Symbol.iterator`, `Symbol.hasInstance`
-   * (an ordinary key of these objects: `instanceof` reads it off its right
-   * operand, a class value, alone), or one of the program's own. Another of
+   * (an ordinary key of these objects: `instanceof` alone reads it, off its
+   * right operand), or one of the program's own. Another of
    * the standard library's well-known symbols is refused: each changes how
    * the host treats the object (`Object.prototype.toString`, conversions,
    * `for await`), which the model does not state, and `Symbol.toStringTag`
@@ -2296,9 +2308,16 @@ class Gate {
           args: node.arguments.map((arg) => this.expr(arg)) };
       }
       // A static method is not read from its class but bound on its own, so
-      // its call is a plain call: its body reads no receiver it is given.
+      // its call is a plain call: its body reads no receiver it is given. A
+      // static field is the class value's, and a call of it a method call.
+      const staticOwner = ts.isPropertyAccessExpression(target) ? this.staticReads.get(this.span(target.name).join(":")) : undefined;
       const isStatic = ts.isPropertyAccessExpression(target) &&
-        (this.staticReads.has(this.span(target.name).join(":")) || this.staticPrivate(target) !== null);
+        ((staticOwner !== undefined && !staticFieldOf(this.file, staticOwner, target.name.text)) ||
+          this.staticPrivate(target) !== null);
+      // A call of a static field passes the class value as its receiver,
+      // which a static initializer has not yet.
+      if (staticOwner !== undefined && !isStatic && this.staticInitOf(target)?.cls === staticOwner)
+        this.fail(node, STATIC_INIT_CLASS);
       if (
         (ts.isPropertyAccessExpression(target) && !isStatic) ||
         ts.isElementAccessExpression(target)
@@ -3027,6 +3046,24 @@ class Gate {
       }
       if (this.hasInstanceClass(node.right))
         this.fail(node, "`instanceof` of a class with a static `[Symbol.hasInstance]` calls that method, a computed static member, outside the fragment");
+      // A right operand whose type states `[Symbol.hasInstance]`:
+      // `instanceof` reads that method off it and calls it with the operand,
+      // the right operand its receiver, converting the result by
+      // `ToBoolean` (ECMA-262, InstanceofOperator). The operands are names,
+      // whose reads JavaScript's order and the call's alike leave unchanged.
+      if (!cls && this.hookTests.has(this.span(node.right).join(":"))) {
+        const symbol = this.symbolIdentities.findIndex((s) =>
+          s.module.startsWith("typescript/lib/") && s.name === "hasInstance");
+        if (!ts.isIdentifier(node.left) || symbol < 0)
+          this.fail(node, "`instanceof` of a value whose type states `[Symbol.hasInstance]` calls it: its left operand is a name");
+        const start = node.getStart(this.file);
+        const keyword = node.operatorToken.getStart(this.file);
+        const keywordEnd = node.operatorToken.end;
+        const call: Expr = { k: "invoke", pos: [start, keywordEnd],
+          callee: { k: "read", pos: [keyword, node.end], field: { symbol }, e: this.expr(node.right) },
+          args: [this.expr(node.left)] };
+        return { k: "not", pos: this.span(node), e: { k: "not", pos: [keyword, keywordEnd], e: call } };
+      }
       if (!cls)
         this.fail(node, "`instanceof` whose right operand is not a class declared at the file's top level: nothing in the file says which prototype a constructor from elsewhere gives its instances");
       return { k: "instanceTest", pos: this.span(node), e: this.expr(node.left),
@@ -5515,6 +5552,16 @@ export function parseFile(file: string, carriesContext = false,
     node.forEachChild(findClassTests);
   };
   if (!carriesContext && classNames.size) findClassTests(source);
+  // `x instanceof c` of another name: TypeScript decides whether the type of
+  // `c` states `[Symbol.hasInstance]`.
+  const hookTestNodes: Identifier[] = [];
+  const findHookTests = (node: Node): void => {
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.InstanceOfKeyword &&
+        ts.isIdentifier(node.right) && !classNames.has(node.right.text))
+      hookTestNodes.push(node.right);
+    node.forEachChild(findHookTests);
+  };
+  if (!carriesContext) findHookTests(source);
   // A class's own name in its body: TypeScript decides which name it.
   const classReadNodes: Identifier[] = [];
   for (const c of classNodes) {
@@ -5601,12 +5648,12 @@ export function parseFile(file: string, carriesContext = false,
   if (importNodes.length || localNodes.length || globalNodes.length || globalValueNodes.length ||
       firstArray || firstAsync || keyNodes.length || ambientNames.length || staticNodes.length ||
       classTestNodes.length || classReadNodes.length || contextualNodes.length || assignNodes.length ||
-      receiverNodes.length || enumNodes.length || computedNodes.length || symbolNameNodes.length ||
+      hookTestNodes.length || receiverNodes.length || enumNodes.length || computedNodes.length || symbolNameNodes.length ||
       keyTypeNodes.length || bindingNodes.length || iterableNodes.length || spreadNodes.length ||
       restTargets.length || privateNodes.length || inKeyNodes.length || receiverTargetNodes.length || elementReadNodes.length) {
     const first = importNodes[0] ?? localNodes[0] ?? globalNodes[0] ?? globalValueNodes[0] ?? firstArray ??
       firstAsync ?? keyNodes[0] ?? ambientNames[0] ?? staticNodes[0] ?? classTestNodes[0] ?? classReadNodes[0] ?? contextualNodes[0] ?? assignNodes[0] ??
-      receiverNodes[0] ?? enumNodes[0] ??
+      hookTestNodes[0] ?? receiverNodes[0] ?? enumNodes[0] ??
       computedNodes[0] ?? symbolNameNodes[0] ?? keyTypeNodes[0] ?? bindingNodes[0] ?? iterableNodes[0] ??
       spreadNodes[0] ?? restTargets[0]?.node ?? privateNodes[0] ?? inKeyNodes[0] ?? receiverTargetNodes[0] ?? elementReadNodes[0];
     if (!first) throw Error("missing declaration root");
@@ -5639,6 +5686,8 @@ export function parseFile(file: string, carriesContext = false,
           if (classTestKeys.has(key)) gate.classTests.set(key, cls);
           if (classReadKeys.has(key)) gate.classReads.set(key, cls);
         },
+        hookTests: hookTestNodes.map(node => gate.span(node)),
+        hookTest: ([start, end]) => gate.hookTests.add(`${start}:${end}`),
         privateNames: privateNodes.map(node => gate.span(node)),
         privateName: ([start, end], symbol) => gate.privateKeys.set(`${start}:${end}`, symbol),
         bindingReads: bindingNodes.map(node => gate.span(node)),
@@ -5726,7 +5775,7 @@ export function parseFile(file: string, carriesContext = false,
     // objects a literal or a class's prototype makes: all but
     // `Symbol.iterator`, whose protocol the model runs, and
     // `Symbol.hasInstance`, which only `instanceof` reads, off its right
-    // operand, a class value (`binary`), never one of those objects.
+    // operand (`binary`), and calls where that operand's type states it.
     gate.hostSymbols = new Set(declarations.symbols.flatMap((s, i) =>
       s.module.startsWith("typescript/lib/") && s.name !== "iterator" && s.name !== "hasInstance" ? [i] : []));
     for (const { declaration } of declarations.definitions)

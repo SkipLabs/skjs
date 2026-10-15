@@ -454,9 +454,15 @@ bag, or an explicit union of cell contracts each naming the field. -/
       let some (K, B) := (PositiveNormalization.numericFirst ix).find? (fun (K, _) => K.surely fld)
         | throw s!"read of a key '{fld}' no index of the object constrains"
       pure (DirectProof.node Γ (.readAt fld a.term) (B ++ [Labels.undef]) (.readDict K B [Labels.undef]) [a])
-  | [.callable fs _ _ _] | [.ctors _ _ fs _] =>
+  | [.callable fs _ _ _] =>
     let some B := fs.lookup fld | throw s!"read of a field '{fld}' the contract does not name"
     pure (DirectProof.node Γ (.readAt fld a.term) B .readCallable [a])
+  -- A class value's static field, or its readonly view.
+  | [.ctors _ _ fs _ vs] =>
+    match fs.lookup fld, vs.lookup fld with
+    | some B, _ => pure (DirectProof.node Γ (.readAt fld a.term) B .readCallable [a])
+    | none, some B => pure (DirectProof.node Γ (.readAt fld a.term) B .readBagView [a])
+    | none, none => throw s!"read of a field '{fld}' the contract does not name"
   | _ =>
     -- A union reads each alternative as that alternative reads, at the
     -- union of what they read.

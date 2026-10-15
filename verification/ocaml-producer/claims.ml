@@ -192,13 +192,18 @@ let encode (proposal : Proposal_types.t) =
         | Some _ -> None) signatures in
       let rests = List.filter_map (fun (s:Semantic.signature) -> Option.map (fun r ->
         Array [Array (List.map labels s.params);Array [pack_labels r;labels s.result]]) s.rest_pack) signatures in
-      (* The static fields, invariant, left out when there are none. *)
-      let first = List.map (fun (f:Semantic.field) ->
-          if f.optional || f.write <> Some f.read then unsupported "a class value's static fields are invariant";
-          Array [key_json f.name;labels f.read]) statics in
+      (* The static fields, invariant, and the readonly ones, views, each
+         list left out when empty. *)
+      let invariant,readonly = List.partition (fun (f:Semantic.field) -> f.write <> None) statics in
+      let entry (f:Semantic.field) =
+        if f.optional || (f.write <> None && f.write <> Some f.read) then
+          unsupported "a class value's static field is invariant or readonly";
+        Array [key_json f.name;labels f.read] in
+      let first = List.map entry invariant and views = List.map entry readonly in
       [Row (intern (Array [Object ["ctors",Object (("signatures",Array fixed) ::
         (if rests = [] then [] else ["variadic",Array rests]) @
-        (if first = [] then [] else ["first",Array first]))]]))]
+        (if first = [] then [] else ["first",Array first]) @
+        (if views = [] then [] else ["views",Array views]))]]))]
     | Named (id,args) -> declaration_labels id args
     | Exact fs ->
       (* Invariant fields, and one own-key bound: its own keys are among

@@ -390,11 +390,12 @@ as one [argument pack](#argument-packs) at $P'$.
   invocation code.
 - `callable φ⃗ L S` is additionally a plain object under the invariant record
   operands $\vec\varphi$. It has no views, optional fields or methods.
-- `ctors L S φ⃗` is a class, whose code is construct-only. A construct signature
+- `ctors L S φ⃗ ψ` is a class, whose code is construct-only. A construct signature
   $\vec A\Rightarrow B$ says that `new` with actuals in $\vec A$ steps to a
   term safe at $B$ one level below; a variadic one takes a pack as its rest.
   Its property bag, its static fields, is under the invariant record operands
-  $`\vec\varphi`$, as a callable object's is; with none it states no field.
+  $`\vec\varphi`$, as a callable object's is, and the readonly fields
+  $`\psi`$, views; with none it states no field.
 
 ```math
 ⟦\mathsf{Ctors}\,\overline{(\vec A,B)}⟧_k(W,v)
@@ -404,14 +405,15 @@ as one [argument pack](#argument-packs) at $P'$.
 ```
 
 ```math
-⟦\mathsf{Ctors}\,\overline{(\vec A,B)}\,\vec\varphi⟧_k(W,v)
+⟦\mathsf{Ctors}\,\overline{(\vec A,B)}\,\vec\varphi\,\psi⟧_k(W,v)
 \iff⟦\mathsf{Ctors}\,\overline{(\vec A,B)}⟧_k(W,v)\land
-   \forall\varphi\in\vec\varphi.\;\mathsf{bag}(\varphi)_k(W,v),
+   \forall\varphi\in\vec\varphi.\;\mathsf{bag}(\varphi)_k(W,v)\land\mathsf{views}(\psi)_k(W,v),
 ```
 
 with $`\mathsf{bag}(\varphi)`$ the record $`\varphi`$ of the object's own fields
-whatever its code (`bagT`). Two classes' meet is one class meeting both
-signature lists and both bags (`meet_ctors`).
+whatever its code (`bagT`), and $`\mathsf{views}(\psi)`$ its views
+(`viewsT`). Two classes' meet is one class meeting both signature lists and
+both bags (`meet_ctors`).
 
 No class is callable and no function is constructible, so `ctors` meets
 neither `arrs` nor `callable`. With no signature, `ctors [] []` is any class.
@@ -1085,9 +1087,13 @@ A target's static field is a source field of the same name, covered both
 ways, as a callable object's bag field is (`covers_bags_sound`):
 
 ```math
-\frac{\forall(f{:}D)\in\vec\psi.\;\exists(f{:}A)\in\vec\varphi.\;\Delta(A,D)\land\Delta(D,A)}
-     {\Delta\vdash\mathsf{bag}(\vec\varphi)\sqsubseteq\mathsf{bag}(\vec\psi)}
+\frac{\forall(f{:}D)\in\vec\varphi'.\;\exists(f{:}A)\in\vec\varphi.\;\Delta(A,D)\land\Delta(D,A)
+      \qquad\forall(f{:}D)\in\psi'.\;\exists(f{:}A)\in\vec\varphi\,\psi.\;\Delta(A,D)}
+     {\Delta\vdash\mathsf{bag}(\vec\varphi;\psi)\sqsubseteq\mathsf{bag}(\vec\varphi';\psi')}
 ```
+
+A target's readonly static field is a source field or view within it
+(`covers_bag_views_sound`).
 A variadic one is covered by a variadic source one with as many fixed
 parameters, each at least as wide, a rest at least as wide and a result at most as
 wide, or, when its rest is an exact tuple, by a fixed one as above. So a class

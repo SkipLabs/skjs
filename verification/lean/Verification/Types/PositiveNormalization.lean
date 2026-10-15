@@ -93,9 +93,11 @@ inductive Clause (α : Type) where
   are, as one pack, at the rest. Its code has `[[Construct]]` only, so no
   callable clause meets it. Its property bag, its static fields, is under
   the invariant record operands `first` and `rest`, as a callable object's
-  (`CallableConjunctions.propsT`); with none it states no field. -/
+  (`CallableConjunctions.propsT`), and the readonly `views`
+  (`CallableConjunctions.viewsT`); with none it states no field. -/
   | ctors (signatures : List (List α × α)) (variadic : List (List α × α × α) := [])
       (first : List (PropKey × α) := []) (rest : List (List (PropKey × α)) := [])
+      (views : List (PropKey × α) := [])
   /-- An argument list under one or more tuple contracts: what a rest
   parameter's type says of the actuals after the fixed ones. Only a signature's
   rest meets one; no program value is one. -/
@@ -145,9 +147,10 @@ def semWithArgs (Ξ : Fam) (X : α → Fam) (P : α → ArgFam) : Clause α → 
       interT (CallableConjunctions.objectsT Ξ (famsOf X a) (bs.map (famsOf X))
         (L.map (Arrow.map X)))
         (CallEffects.restsT Ξ (S.map (RestArrow.mapWith X P)))
-  | .ctors L S a bs => interT (interT (ctorsT Ξ (L.map fun p => (p.1.map X, X p.2)))
+  | .ctors L S a bs vs => interT (interT (ctorsT Ξ (L.map fun p => (p.1.map X, X p.2)))
       (ctorRestsT Ξ (S.map fun s => (s.1.map X, P s.2.1, X s.2.2))))
-      (CallableConjunctions.propsT (famsOf X a) (bs.map (famsOf X)))
+      (interT (CallableConjunctions.propsT (famsOf X a) (bs.map (famsOf X)))
+        (CallableConjunctions.viewsT (famsOf X vs)))
   -- An argument list is not a runtime value: a pack clause's members are
   -- lists, read by `clauseArguments`.
   | .pack _ _ => fun _ _ _ => False
@@ -210,8 +213,8 @@ def meet : Clause α → Clause α → List (Clause α)
       [.dict (a ++ c) (bs ++ ds) (vs ++ ws) (ix ++ iy) (os ++ ps) (ms ++ ns) (ks ++ ls) (cx ++ cy)]
   | .arrs L S, .arrs M T => [.arrs (L ++ M) (S ++ T)]
   -- Two bags on one object are both; two bagless ones stay bagless.
-  | .ctors L S [] [], .ctors M T [] [] => [.ctors (L ++ M) (S ++ T)]
-  | .ctors L S a bs, .ctors M T c ds => [.ctors (L ++ M) (S ++ T) a (bs ++ c :: ds)]
+  | .ctors L S [] [] [], .ctors M T [] [] [] => [.ctors (L ++ M) (S ++ T)]
+  | .ctors L S a bs vs, .ctors M T c ds ws => [.ctors (L ++ M) (S ++ T) a (bs ++ c :: ds) (vs ++ ws)]
   | .pack a bs, .pack c ds => [.pack a (bs ++ c :: ds)]
   | .callable a bs L S, .callable c ds M T => [.callable a (bs ++ c :: ds) (L ++ M) (S ++ T)]
   | .callable a bs L S, .arrs M T => [.callable a bs (L ++ M) (S ++ T)]
@@ -335,7 +338,7 @@ theorem semWithArgs_value {X : α → Fam} {P : α → ArgFam} {c : Clause α} {
   | bigintLit i => subst v; exact ⟨rfl, trivial⟩
   | symbolLit i => subst v; exact ⟨rfl, trivial⟩
   | symbol => obtain ⟨i, rfl⟩ := h; exact ⟨rfl, trivial⟩
-  | ctors L S a bs => obtain ⟨_, _, _, _, _, _, _, _, rfl, hs⟩ := h.1.1.1; exact ⟨rfl, hs⟩
+  | ctors L S a bs vs => obtain ⟨_, _, _, _, _, _, _, _, rfl, hs⟩ := h.1.1.1; exact ⟨rfl, hs⟩
   | pack a bs => exact h.elim
 
 
@@ -370,7 +373,7 @@ theorem semWithArgs_shape {X : α → Fam} {P : α → ArgFam} {c : Clause α} {
   | bigintLit i => cases h; rfl
   | symbolLit i => cases h; rfl
   | symbol => obtain ⟨i, rfl⟩ := h; rfl
-  | ctors L S a bs =>
+  | ctors L S a bs vs =>
     obtain ⟨_, _, _, _, _, _, _, _, rfl, -⟩ := h.1.1.1
     rfl
   | pack a bs => exact h.elim
@@ -391,8 +394,14 @@ theorem semWithArgs_source {X : α → Fam} {P : α → ArgFam} {c : Clause α} 
 /-- The property bag a clause states of a value with code: a callable
 object's fields, or a class value's static fields. -/
 def Clause.bag : Clause α → Option (List (PropKey × α) × List (List (PropKey × α)))
-  | .callable a bs _ _ | .ctors _ _ a bs => some (a, bs)
+  | .callable a bs _ _ | .ctors _ _ a bs _ => some (a, bs)
   | _ => none
+
+/-- The readonly fields a clause states of a value with code: a class
+value's readonly static fields. -/
+def Clause.bagViews : Clause α → List (PropKey × α)
+  | .ctors _ _ _ _ vs => vs
+  | _ => []
 
 /-- The first operand of a clause's bag: the fields a read or write finds. -/
 def Clause.bagFields (c : Clause α) : List (PropKey × α) :=
@@ -406,20 +415,27 @@ theorem bag_sem {X : α → Fam} {P : α → ArgFam} {c : Clause α} {a : List (
     CallableConjunctions.propsT (famsOf X a) (bs.map (famsOf X)) n W v := by
   cases c <;> simp only [Clause.bag, Option.some.injEq, Prod.mk.injEq, reduceCtorEq] at hc
   · obtain ⟨rfl, rfl⟩ := hc; exact h.1.1
-  · obtain ⟨rfl, rfl⟩ := hc; exact h.2
+  · obtain ⟨rfl, rfl⟩ := hc; exact h.2.1
+
+theorem bagViews_sem {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
+    (h : semWithArgs Ξ X P c n W v) (hne : c.bagViews ≠ []) :
+    CallableConjunctions.viewsT (famsOf X c.bagViews) n W v := by
+  cases c <;> simp only [Clause.bagViews, ne_eq, not_true_eq_false] at hne
+  exact h.2.2
 
 /-- An empty bag adds nothing to a family of object values. -/
-theorem props_nil_absorb {A : Fam} {X : α → Fam}
+theorem bag_nil_absorb {A : Fam} {X : α → Fam}
     (hA : ∀ n W v, A n W v → ∃ fs code oid, v = Tm.objAt fs code oid) :
-    interT A (CallableConjunctions.propsT (famsOf X [])
-      (([] : List (List (PropKey × α))).map (famsOf X))) = A := by
+    interT A (interT (CallableConjunctions.propsT (famsOf X [])
+      (([] : List (List (PropKey × α))).map (famsOf X)))
+      (CallableConjunctions.viewsT (famsOf X []))) = A := by
   funext n W v
   apply propext
   constructor
   · exact And.left
   · intro h
     obtain ⟨fs, code, oid, rfl⟩ := hA n W v h
-    exact ⟨h, CallableConjunctions.props_nil⟩
+    exact ⟨h, CallableConjunctions.props_nil, CallableConjunctions.views_nil⟩
 
 /-- A clause whose term members are source values. -/
 def sourceClause : Clause α → Bool
@@ -449,11 +465,11 @@ private theorem meet_source (X : α → Fam) (P : α → ArgFam) (c : Clause α)
     exact ⟨fun h => ⟨semWithArgs_source (by simp) (by intros; simp) h, h⟩, And.right⟩
 
 theorem meet_ctors (L M : List (List α × α)) (S T : List (List α × α × α))
-    (a c : List (PropKey × α)) (bs ds : List (List (PropKey × α))) :
-    meet (.ctors L S a bs) (.ctors M T c ds) =
-      if a = [] ∧ bs = [] ∧ c = [] ∧ ds = [] then [.ctors (L ++ M) (S ++ T)]
-      else [.ctors (L ++ M) (S ++ T) a (bs ++ c :: ds)] := by
-  cases a <;> cases bs <;> cases c <;> cases ds <;> simp [meet]
+    (a c : List (PropKey × α)) (bs ds : List (List (PropKey × α))) (vs ws : List (PropKey × α)) :
+    meet (.ctors L S a bs vs) (.ctors M T c ds ws) =
+      if a = [] ∧ bs = [] ∧ vs = [] ∧ c = [] ∧ ds = [] ∧ ws = [] then [.ctors (L ++ M) (S ++ T)]
+      else [.ctors (L ++ M) (S ++ T) a (bs ++ c :: ds) (vs ++ ws)] := by
+  cases a <;> cases bs <;> cases vs <;> cases c <;> cases ds <;> cases ws <;> simp [meet]
 
 theorem meet_sound (X : α → Fam) (P : α → ArgFam) (a b : Clause α) (n : Nat) (W : WorldT n) (v : Val) :
     semList Ξ X P (meet a b) n W v ↔ interT (semWithArgs Ξ X P a) (semWithArgs Ξ X P b) n W v := by
@@ -594,11 +610,11 @@ theorem meet_sound (X : α → Fam) (P : α → ArgFam) (a b : Clause α) (n : N
       simp [singleton_sem, semWithArgs, interT, symbolT]
       intro hv; subst v; exact ⟨i, rfl⟩
     · -- ctors ∩ ctors: every construct signature of both, both bags
-      rename_i L S a bs M T c ds
-      show semList Ξ X P (meet (.ctors L S a bs) (.ctors M T c ds)) n W v ↔ _
+      rename_i L S a bs vs M T c ds ws
+      show semList Ξ X P (meet (.ctors L S a bs vs) (.ctors M T c ds ws)) n W v ↔ _
       rw [meet_ctors]
       split
-      · obtain ⟨rfl, rfl, rfl, rfl⟩ := ‹_ ∧ _›
+      · obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩ := ‹_ ∧ _›
         simp only [singleton_sem, semWithArgs, List.map_append, List.map_nil, interT]
         rw [ctorsT_append, ctorRestsT_append]
         constructor
@@ -607,10 +623,16 @@ theorem meet_sound (X : α → Fam) (P : α → ArgFam) (a b : Clause α) (n : N
         · rintro ⟨⟨⟨h1, h3⟩, hb⟩, ⟨h2, h4⟩, -⟩
           exact ⟨⟨⟨h1, h2⟩, h3, h4⟩, hb⟩
       · simp only [singleton_sem, semWithArgs, List.map_append, List.map_cons, interT]
-        rw [ctorsT_append, ctorRestsT_append, CallableConjunctions.props_merge]
+        rw [ctorsT_append, ctorRestsT_append, CallableConjunctions.props_merge, famsOf_append]
         simp only [interT]
-        exact ⟨fun ⟨⟨⟨h1, h2⟩, h3, h4⟩, hp, hq⟩ => ⟨⟨⟨h1, h3⟩, hp⟩, ⟨h2, h4⟩, hq⟩,
-          fun ⟨⟨⟨h1, h3⟩, hp⟩, ⟨h2, h4⟩, hq⟩ => ⟨⟨⟨h1, h2⟩, h3, h4⟩, hp, hq⟩⟩
+        constructor
+        · rintro ⟨⟨⟨h1, h2⟩, h3, h4⟩, ⟨hp, hq⟩, hv⟩
+          obtain ⟨_, _, _, _, _, _, _, _, rfl, -⟩ := h1.1
+          obtain ⟨hv1, hv2⟩ := (CallableConjunctions.views_append _ _).mp hv
+          exact ⟨⟨⟨h1, h3⟩, hp, hv1⟩, ⟨h2, h4⟩, hq, hv2⟩
+        · rintro ⟨⟨⟨h1, h3⟩, hp, hv1⟩, ⟨h2, h4⟩, hq, hv2⟩
+          obtain ⟨_, _, _, _, _, _, _, _, rfl, -⟩ := h1.1
+          exact ⟨⟨⟨h1, h2⟩, h3, h4⟩, ⟨hp, hq⟩, (CallableConjunctions.views_append _ _).mpr ⟨hv1, hv2⟩⟩
     · -- pack ∩ pack: every contract of both, on the one list
       rename_i a bs c ds
       simp [singleton_sem, semWithArgs, interT]
@@ -772,8 +794,9 @@ theorem semWithArgs_adm (X : α → Fam) (P : α → ArgFam) (c : Clause α) : A
         fun K hK => (ownKeysT_adm K).mono n W U hx v (h.2.2.2.2.2 K hK)⟩
   | arrs L S => exact interT_adm _ _ (CallEffects.callsT_adm _) (CallEffects.restsT_adm _)
   | callable a bs L S => exact interT_adm _ _ (CallableConjunctions.adm _ _ _) (CallEffects.restsT_adm _)
-  | ctors L S a bs =>
-    exact interT_adm _ _ (interT_adm _ _ (ctorsT_adm _) (ctorRestsT_adm _)) (CallableConjunctions.props_adm _ _)
+  | ctors L S a bs vs =>
+    exact interT_adm _ _ (interT_adm _ _ (ctorsT_adm _) (ctorRestsT_adm _))
+      (interT_adm _ _ (CallableConjunctions.props_adm _ _) (CallableConjunctions.views_adm _))
   | pack a bs => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
   | bigintLit _ => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
   | symbolLit _ => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
@@ -932,14 +955,15 @@ theorem semWithArgs_congr {Ξ Ξ' : Fam} (X Y : α → Fam) (P Q : α → ArgFam
     exact and_congr (CallableConjunctions.congr_below X Y a bs L n hexc h W v)
       (CallEffects.restsT_congr S (RestArrow.mapWith X P) (RestArrow.mapWith Y Q) hexc (fun _ _ => rfl)
         (fun s _ => ⟨h s.receiver, hd s.arguments.1, hP s.arguments.2, h s.result⟩) W v)
-  | ctors L S a bs =>
+  | ctors L S a bs vs =>
     have hd : ∀ As : List α, ArgsAgree n (As.map X) (As.map Y) := by
       intro As; induction As with
       | nil => exact .nil
       | cons a As ih => exact .cons (h a) ih
     exact and_congr (and_congr (ctorsT_congr L _ _ hexc (fun p _ => ⟨hd p.1, h p.2⟩) W v)
       (ctorRestsT_congr S _ _ hexc (fun s _ => ⟨hd s.1, hP s.2.1, h s.2.2⟩) W v))
-      (CallableConjunctions.props_congr_below X Y a bs n h W v)
+      (and_congr (CallableConjunctions.props_congr_below X Y a bs n h W v)
+        (CallableConjunctions.views_congr_below X Y vs n h W v))
   | pack a bs => rfl
 
 /-! ## Renaming operands
@@ -981,8 +1005,9 @@ def Clause.map (f : α → β) : Clause α → Clause β
   | .callable a bs L S => .callable (mapFields f a) (bs.map (mapFields f))
       (L.map (Arrow.map f))
       (S.map (RestArrow.map f))
-  | .ctors L S a bs => .ctors (L.map fun q => (q.1.map f, f q.2))
+  | .ctors L S a bs vs => .ctors (L.map fun q => (q.1.map f, f q.2))
       (S.map fun q => (q.1.map f, f q.2.1, f q.2.2)) (mapFields f a) (bs.map (mapFields f))
+      (mapFields f vs)
   | .pack a bs => .pack (a.map f) (bs.map (·.map f))
 
 /-- Renaming operands keeps a clause a record's or not. -/
@@ -1038,8 +1063,8 @@ def Clause.operands : Clause α → List α
   | .callable a bs L S => (a ++ bs.flatten).map (·.2) ++
       L.flatMap Arrow.operands ++
       S.flatMap RestArrow.operands
-  | .ctors L S a bs => L.flatMap (fun q => q.1 ++ [q.2]) ++ S.flatMap (fun q => q.1 ++ [q.2.1, q.2.2]) ++
-      (a ++ bs.flatten).map (·.2)
+  | .ctors L S a bs vs => L.flatMap (fun q => q.1 ++ [q.2]) ++ S.flatMap (fun q => q.1 ++ [q.2.1, q.2.2]) ++
+      (a ++ bs.flatten ++ vs).map (·.2)
   | .pack a bs => a.operands ++ bs.flatMap Tuple.operands
   | _ => []
 
@@ -1159,12 +1184,13 @@ theorem map_of_operands {c : Clause α} {f : α → α} (h : ∀ a ∈ c.operand
     simp only [List.mem_map, List.mem_flatten] at hx ⊢
     obtain ⟨q, hq, rfl⟩ := hx
     exact ⟨q, ⟨fs, hfs, hq⟩, rfl⟩
-  | ctors L S a bs =>
+  | ctors L S a bs vs =>
     simp only [Clause.operands, List.map_append, List.mem_append, List.mem_flatMap] at h
     simp only [Clause.map, Clause.ctors.injEq]
     refine ⟨map_self fun q hq => ?_, map_self fun q hq => ?_,
-      mapFields_self fun x hx => h x (.inr (.inl hx)),
-      map_self fun fs hfs => mapFields_self fun x hx => h x (.inr (.inr ?_))⟩
+      mapFields_self fun x hx => h x (.inr (.inl (.inl hx))),
+      map_self fun fs hfs => mapFields_self fun x hx => h x (.inr (.inl (.inr ?_))),
+      mapFields_self fun x hx => h x (.inr (.inr hx))⟩
     · have h2 := h q.2 (.inl (.inl ⟨q, hq, by simp⟩))
       have h1 := map_self (l := q.1) fun x hx => h x (.inl (.inl ⟨q, hq, by simp [hx]⟩))
       simp [h1, h2]

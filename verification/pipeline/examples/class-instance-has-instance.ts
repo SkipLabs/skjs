@@ -1,5 +1,5 @@
 // `Symbol.hasInstance` is a host hook only where `instanceof` reads it, off
-// its right operand, a class value. An instance method keyed by it is an
+// its right operand. An instance method keyed by it is an
 // ordinary prototype key: called as any method, and `instanceof` of its
 // class still walks the operand's prototype chain.
 class Matcher {

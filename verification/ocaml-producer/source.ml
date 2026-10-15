@@ -193,11 +193,14 @@ let rec source_type ctx j =
       | Null -> None
       | t when is_pack t -> Some (source_pack ctx (field "of" t))
       | t -> Some (Pack {required=[];optional_elements=[];rest=Some (recur t);readonly=false;presence=Dense}) in
-    (* A class value's static fields, invariant, listed when it has any. *)
+    (* A class value's static fields, listed when it has any: invariant, or
+       a readonly one, a view. *)
     let statics = match List.assoc_opt "statics" (obj j) with
       | None -> []
       | Some fs -> List.map (fun f -> let t = recur (field "type" f) in
-          {name=Name (text "name" f);optional=false;read=t;write=Some t;host=false;receivers=[]}) (list fs) in
+          let readonly = List.mem_assoc "readonly" (obj f) in
+          {name=property_key (field "name" f);optional=false;read=t;write=(if readonly then None else Some t);
+           host=false;receivers=[]}) (list fs) in
     Atoms [Ctors ([{call_effect=Unrestricted;quantified=[];receiver=top;params=List.map recur (items "params" j);
       variadic=None;rest_pack;result=recur (field "result" j)}],statics)]
   | "function" ->
@@ -481,7 +484,7 @@ and expr_node =
   (* A class value: its constructor lambda as construct-only code. *)
   (* A class value: its constructor, and its static fields, each the binding
      its initializer bound, in member order. *)
-  | Ctor of expr * (string * expr) list
+  | Ctor of expr * (Semantic.key * expr) list
   (* `new callee<types>(args)`: the explicit type arguments, if written,
      name the instantiation proposed for a generic class. *)
   | New of expr * ty list * expr list * int list
@@ -762,7 +765,7 @@ let rec expr binders j =
         expr inner (field "body" j))
   | "ctor" -> Ctor (sub "lambda",match List.assoc_opt "statics" (obj j) with
       | None -> []
-      | Some fs -> List.map (fun f -> text "name" f,expr binders (field "e" f)) (list fs))
+      | Some fs -> List.map (fun f -> property_key (field "name" f),expr binders (field "e" f)) (list fs))
   | "new" ->
     let types = match List.assoc_opt "typeArgs" (obj j) with
       | None -> [] | Some ts -> List.map (source_type binders) (list ts) in

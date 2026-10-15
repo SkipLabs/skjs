@@ -927,10 +927,10 @@ export function members(scope: TermScope, list: readonly TypeElement[], at: Node
         only?.k !== "constructor" || fields.some(f => !properties.has(f)))
       scope.fail(at, "an object type with construct signatures and members other than properties: a class " +
         "value's type states its construct signature and its static fields, data properties");
-    const statics = fields.map(f => typeof f.name === "string" && !f.optional && !f.readonly
-      ? { name: f.name, type: f.type }
-      : scope.fail(at, "an object type with construct signatures and a readonly, optional or symbol-keyed " +
-        "property: a class value's static fields are required data properties under invariant contracts"));
+    const statics = fields.map(f => !f.optional
+      ? { name: f.name, type: f.type, ...(f.readonly ? { readonly: true as const } : {}) }
+      : scope.fail(at, "an object type with construct signatures and an optional property: a class value's " +
+        "static fields are required data properties"));
     return { ...only, statics };
   }
   return { k: "object", fields, stringIndex, ...(numberIndex ? { numberIndex } : {}),
