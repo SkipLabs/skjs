@@ -83,7 +83,7 @@ theorem heap_alloc (n : Nat) (W : WorldT n) (h : Heap) (c : Ctr n) (v : Val)
     obtain ⟨w, hw, hmem⟩ := hall l d hlW
     refine ⟨w, by rw [List.getElem?_append_left (by omega)]; exact hw, ?_⟩
     intro j hj
-    exact hadm l d hlW j hj _ _
+    exact (hadm l d hlW).1 j hj _ _
       (WExt_trunc (Nat.le_of_lt hj) (WExt_appendW W c)) w (hmem j hj)
   · have hb : l < (toList W).length + 1 := by
       have := (List.getElem?_eq_some_iff.mp hl').1; simpa using this
@@ -124,7 +124,7 @@ theorem heap_allocs : ∀ (n : Nat) (cs : List (Ctr n)) (W : WorldT n) (h : Heap
       have hstep : HeapOk n (appendW W c) (h ++ [v]) := by
         refine heap_alloc n W h c v hok hadm ?_
         intro j hj
-        exact hcadm j hj _ _ (hxt j hj) v (hv (c, v) (by simp) j hj)
+        exact hcadm.1 j hj _ _ (hxt j hj) v (hv (c, v) (by simp) j hj)
       have hrest := ih (appendW W c) (h ++ [v]) vs hstep
         (WorldAdm_append hadm hcadm) (fun d hd => hc d (by simp [hd]))
         (by simpa using hlen) ?_
@@ -132,7 +132,7 @@ theorem heap_allocs : ∀ (n : Nat) (cs : List (Ctr n)) (W : WorldT n) (h : Heap
         simpa [List.append_assoc] using hrest
       · rintro ⟨d, w⟩ hp j hj
         have hd : d ∈ cs := (List.of_mem_zip hp).1
-        exact hc d (by simp [hd]) j hj _ _ (hxt j hj) w
+        exact (hc d (by simp [hd])).1 j hj _ _ (hxt j hj) w
           (hv (d, w) (List.mem_cons_of_mem _ hp) j hj)
 
 /-! ## An inhabited cyclic heap -/
@@ -163,8 +163,9 @@ theorem cyclic_world_adm (n : Nat) : WorldAdm (ofList [res R] : WorldT n) := by
   | zero =>
     simp only [List.getElem?_cons_zero, Option.some.injEq] at hl
     subst hl
-    intro j _ W W' hx v hv
-    exact R_adm.mono j W W' hx v hv
+    refine ⟨fun j _ W W' hx v hv => R_adm.mono j W W' hx v hv, fun j _ W v hv => ?_⟩
+    obtain ⟨_, _, _, _, rfl, -⟩ := recT_single.mp ((R_unfold j W v).mp hv)
+    rfl
   | succ k => simp at hl
 
 theorem emptyHeapOk (j : Nat) : HeapOk j (ofList ([] : List (Ctr j))) [] := by

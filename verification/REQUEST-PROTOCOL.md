@@ -355,9 +355,10 @@ established by allocation, since fresh locations differ from every field of
 every record-typed slot in scope, and the reason a write to one cell keeps
 facts about another. These are finite state assertions, not extra type labels.
 `effect: null` selects ordinary expression evidence; a non-null effect selects
-one of the checked `StepEvidence` constructors (`ordinary`, `pure`,
+one of the checked `StepEvidence` constructors (`ordinary`, `pure`, `reading`,
 `typedRead`, `observedRead`, `slicedRead`, `knownValue`, `created`, `allocated`, `written`).
-`slicedRead` carries `tag`, `slot`, `proof` and `sub`: its cell observation
+`reading` carries an ordinary `proof` of a term built by field and element
+reads over variables and values, and keeps every fact. `slicedRead` carries `tag`, `slot`, `proof` and `sub`: its cell observation
 must exclude the tag, and `sub` proves that the negative slice of the ordinary
 read contract fits the requested type. Constructor payloads use
 Lean's derived JSON encoding, with strict decode/re-encode checking.

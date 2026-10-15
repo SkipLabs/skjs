@@ -1638,9 +1638,14 @@ theorem restStore_safe {G : NormalGraph ι} {S P : Ty ι} (hS : RestStore G S P)
       rw [PositiveNormalization.positionFam_tupleFams] at hB
       obtain ⟨b, -, rfl⟩ := Option.map_eq_some_iff.mp hB
       exact meaning_adm G b
+    have hposv : ∀ i B, positionFam (tupleFams (meaning G) T') i = some B → ValOnly B := by
+      intro i B hB
+      rw [PositiveNormalization.positionFam_tupleFams] at hB
+      obtain ⟨b, -, rfl⟩ := Option.map_eq_some_iff.mp hB
+      exact meaning_valOnly G b
     have hfit : ArgumentContracts.Fits (tupleFams (meaning G) T') n W extra := by
       exact (mixed_pack_args hP).mp he
-    have := RestCalls.argument_alloc_safe (Ξ := excOf G) hpos hw hh hfit hvals
+    have := RestCalls.argument_alloc_safe (Ξ := excOf G) hpos hposv hw hh hfit hvals
     apply Safe_mono n _ W h _ this
     intro k _ V v hv
     apply (represents_back hR k V v)
@@ -2346,6 +2351,7 @@ theorem fresh_store_safe {E : Fam} (ro : Bool) (presence : ArrayPresence) (hE : 
     Safe Ξ (listT ⟨[], [], some E, ro, presence⟩) n W h (.arrLit vs) := by
   apply arr_alloc_rule (As := List.replicate vs.length E)
     (by intro A hA; rw [List.eq_of_mem_replicate hA]; exact hE)
+    (by intro A hA; rw [List.eq_of_mem_replicate hA]; exact hEv)
     n W h vs (by simp) (fun v hm => hEv n W v (hvs v hm)) hw hh
     (by
       intro q hq
@@ -2973,7 +2979,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
   | @funGraph Γ F L S arity start E K caps kind rest As hr hkind hspec hlt hcap ih =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map]
-    apply makeFn_rule nulT_adm n W h _ .nul rfl hw hh rfl
+    apply makeFn_rule nulT_adm nulT_valOnly n W h _ .nul rfl hw hh rfl
     intro j hj V hx
     obtain ⟨hsc, henv, hcapv⟩ := captures_sem he hlt
       (fun c hc => by simpa [instantiate] using ih c hc n W h ρ he hw hh) hj hx
@@ -2986,7 +2992,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     obtain ⟨hF, hfree⟩ := capturesFree_sound hcf
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map]
-    apply makeFn_rule nulT_adm n W h _ .nul rfl hw hh rfl
+    apply makeFn_rule nulT_adm nulT_valOnly n W h _ .nul rfl hw hh rfl
     intro j hj U hx
     obtain ⟨hsc, -, hcapv⟩ := captures_sem he hlt
       (fun c hc => by simpa [instantiate] using ih c hc n W h ρ he hw hh) hj hx
@@ -3052,6 +3058,11 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         rcases List.mem_cons.mp hA' with rfl | hA'
         · exact nulT_adm
         · obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hA'; exact meaning_adm G r.2.1)
+      (by
+        intro A hA'
+        rcases List.mem_cons.mp hA' with rfl | hA'
+        · exact nulT_valOnly
+        · obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hA'; exact meaning_valOnly G r.2.1)
       j U heap (.graph arity E K start (caps.map fun c => ρ c.2) .construct) _ (.nul :: args) hnd
       (by simpa using hlenA.symm) (by simpa using hlenA.symm)
       (by
@@ -3119,6 +3130,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     have hlenA := ArgsT_length hargs
     apply make_fields_rule (As := parts.map fun p => meaning G p.2.1)
       (by intro A hA'; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hA'; exact meaning_adm G r.2.1)
+      (by intro A hA'; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hA'; exact meaning_valOnly G r.2.1)
       j U heap (.graph arity E K start (caps.map fun c => ρ c.2) kind rest) _ args hnd
       (by simpa using hlenA.symm) (by simpa using hlenA.symm)
       (ArgsT_values
@@ -3388,6 +3400,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     apply make_fields_rule
       (As := parts.map fun p => meaning G p.2.1)
       (by intro A hA'; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hA'; exact meaning_adm G r.2.1)
+      (by intro A hA'; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hA'; exact meaning_valOnly G r.2.1)
       j U heap .absent _ args hnd (by simpa using hlen.symm) (by simpa using hlen.symm)
       (ArgsT_values
         (by intro A hA'; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hA'; exact meaning_valOnly G r.2.1)
@@ -3432,6 +3445,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     apply make_fields_rule
       (As := parts.map fun p => meaning G p.2.1)
       (by intro A hA'; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hA'; exact meaning_adm G r.2.1)
+      (by intro A hA'; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hA'; exact meaning_valOnly G r.2.1)
       j U heap .absent _ args hnd (by simpa using hlen.symm) (by simpa using hlen.symm)
       (ArgsT_values
         (by intro A hA'; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hA'; exact meaning_valOnly G r.2.1)
@@ -3631,6 +3645,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     have hlen := ArgsT_length hargs
     apply arr_alloc_rule (As := xs.map fun p => meaning G p.1)
       (by intro A hA'; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hA'; exact meaning_adm G r.1)
+      (by intro A hA'; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hA'; exact meaning_valOnly G r.1)
       j U heap args hlen.symm
       (ArgsT_values
         (by intro A hA'; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hA'; exact meaning_valOnly G r.1)
@@ -3810,7 +3825,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       obtain ⟨c, hw', hag⟩ := key
       exact set_present_rule (meaning_adm G A) p X heap'' l vv hvval hxw hok'' hloc hw' hag hv' hkeep
     | none =>
-      apply set_grow_rule (meaning_adm G A) p X heap'' vv hvval hxw hok'' hk hloc hv'
+      apply set_grow_rule (meaning_adm G A) (meaning_valOnly G A) p X heap'' vv hvval hxw hok'' hk hloc hv'
       intro j' hj' U' hx' hm'
       refine (represents_back hr j' U' _) ⟨?_, by simp⟩
       have hold := ((represents_raw hr j' U' _) (hkeep j' hj' U' hx')).1

@@ -19,7 +19,7 @@ def next (As : List Fam) : Config → Config
 def policy (As : List Fam) : Policy :=
   ⟨fun c d => next As c = d, fun h₁ h₂ => h₁.symm.trans h₂⟩
 
-theorem allocation_safe {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A)
+theorem allocation_safe {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A) (hV : ∀ A ∈ As, ValOnly A)
     (n : Nat) (W : WorldT n) (h : Heap) (code : CallCode)
     (ns : List PropKey) (vs : List Val)
     (hnd : ns.Nodup) (hns : ns.length = vs.length) (hAs : As.length = vs.length)
@@ -37,7 +37,7 @@ theorem allocation_safe {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A)
     have hcadm : ∀ c ∈ As.map (fun A => (res A : Ctr p)), CtrAdm c := by
       intro c hc
       obtain ⟨A, hA', rfl⟩ := List.mem_map.mp hc
-      exact fun i _ U U' hx w hw => (hA A hA').mono i U U' hx w hw
+      exact ⟨fun i _ U U' hx w hw => (hA A hA').mono i U U' hx w hw, fun i _ U w hw => hV A hA' i U w hw⟩
     have hlen : h.length = (toList (trunc p (Nat.le_succ p) W)).length := by
       have := hok.1; simp [trunc] at this ⊢; omega
     have hcont : ∀ q ∈ (As.map (fun A => (res A : Ctr p))).zip vs, ∀ (j : Nat) (hj : j < p),
@@ -54,7 +54,7 @@ theorem allocation_safe {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A)
       rcases List.mem_append.mp hc with hc | hc
       · exact hcadm c hc
       · simp only [List.mem_singleton] at hc; subst c
-        exact fun _ _ _ _ _ _ h => h
+        exact ⟨fun _ _ _ _ _ _ h => h, fun _ _ _ _ h => by rw [show _ = Tm.nul from h]; rfl⟩
     have hcont' : ∀ q ∈ contracts.zip (vs ++ [.nul]), ∀ (j : Nat) (hj : j < p),
         q.1 j hj (trunc j (Nat.le_of_lt hj) (trunc p (Nat.le_succ p) W)) q.2 := by
       intro q hq

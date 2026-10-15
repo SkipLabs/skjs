@@ -10,17 +10,17 @@
   "rejected-dependency": 70
  },
  "accepted": 2676,
- "verified": 2557,
+ "verified": 2558,
  "byStatus": {
-  "verified (check)": 2557,
-  "unverified (search)": 68,
+  "verified (check)": 2558,
+  "unverified (search)": 67,
   "unsupported (source)": 40,
   "unsupported (proposal)": 11
  },
  "bySuite": {
   "expect-error": {
    "accepted": 2460,
-   "verified": 2343
+   "verified": 2344
   },
   "constprop": {
    "accepted": 66,
@@ -47,11 +47,11 @@
    "verified": 8
   }
  },
- "filesAllVerified": 322,
+ "filesAllVerified": 323,
  "filesWithAccepted": 379,
  "functions": {
   "accepted": 2026,
-  "verified": 1915
+  "verified": 1916
  },
  "byGroup": {
   "TypeScript refuses the code too (the pipeline follows TypeScript's types)": {
@@ -109,10 +109,10 @@
    "files": 3
   },
   "search: no derivation found (evidence search failed)": {
-   "units": 3,
-   "self": 3,
+   "units": 2,
+   "self": 2,
    "dependency": 0,
-   "files": 3
+   "files": 2
   },
   "arrays: a built-in array at a generic call, a mutable tuple's `length`": {
    "units": 3,
@@ -170,11 +170,11 @@
   }
  },
  "exhausted": 0,
- "reachedButRefused": 68,
+ "reachedButRefused": 67,
  "byClass": {
-  "verified": 2557,
+  "verified": 2558,
   "principled": 101,
-  "gap": 2,
+  "gap": 1,
   "unexplained": 0,
   "skjsUnsound": 16
  },
@@ -280,11 +280,6 @@
    "units": 1,
    "files": 1
   },
-  "a written local's content read in an expression's branch arm": {
-   "class": "gap",
-   "units": 1,
-   "files": 1
-  },
   "a contextual `any` parameter": {
    "class": "principled",
    "units": 1,
@@ -364,7 +359,6 @@
   "proposal: reject: TypeScript refuses this code too": 2,
   "search: reject: source expression obligation at _: evidence search failed: no derivation of its binding-annotation claim": 1,
   "source: a class extends a class declared earlier in the file; one from a library, an ambient declaration or a value is outside the fragment": 1,
-  "search: reject: source expression obligation at _: evidence search failed: no derivation of its node-typing claim": 1,
   "search: reject: source refusal at _: position 1 is past the positions of a mutable tuple, which `push` may have extended with a value its type does not state there (Typ": 1,
   "source: TypeScript types this unannotated closure parameter from its context as `any`, which states no contract": 1,
   "search: reject: a built-in array at a generic call's mutable array of a binder: `Array.isArray` finds a `readonly unknown[]` in `unknown` or a record, which may be a tu": 1,
@@ -1110,7 +1104,7 @@
 {"source":"tests/expect-error/destructuring-assignment.ts","name":"restDoesNotLetATupleBecomeAnArray","kind":"function","line":96,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/destructuring-assignment.ts","name":"restTargetOfArrayAccepted","kind":"function","line":106,"skjsMarker":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/destructuring-assignment.ts","name":"inferredTargetEvolves","kind":"function","line":115,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/destructuring-assignment.ts","name":"keyBeforeDefault","kind":"function","line":123,"skjsMarker":"accepted","status":"unverified","phase":"search","key":"search: reject: source expression obligation at _: evidence search failed: no derivation of its node-typing claim","group":"search: no derivation found (evidence search failed)","where":"self","at":"value","detail":"reject: source expression obligation at [164,169): evidence search failed: no derivation of its node-typing claim — No rule derives this readAt at 1 from value: { value: null | number }.","class":"gap"},
+{"source":"tests/expect-error/destructuring-assignment.ts","name":"keyBeforeDefault","kind":"function","line":123,"skjsMarker":"accepted","status":"verified","phase":"check","class":"verified"},
 {"source":"tests/expect-error/destructuring-assignment.ts","name":"keyClearsDefault","kind":"function","line":129,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/destructuring-const.ts","name":"first,second","kind":"variable","line":4,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/destructuring-const.ts","name":"name2,age","kind":"variable","line":9,"skjsMarker":"rejected-self"},

@@ -878,6 +878,58 @@ theorem pure_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImage
     | exact refine_value rfl (result_holds (HeapKnowledge.shift_holds hk) ⟨.fls,by simp,rfl⟩) hs
     | exact refine_value rfl (HeapKnowledge.shift_holds hk) hs
 
+export Purity (readTerm read_step read_value)
+
+/-- A heap that meets an admissible world, above level zero, holds values:
+every location has a contract, and a contract admits only values. -/
+theorem heap_values {n W h} (hw : WorldAdm W) (hh : HeapOk (n+1) W h) :
+    ∀ (l : Nat) (v : Tm), h[l]? = some v → isVal v = true := by
+  intro l v hl
+  have hlt : l < (toList W).length := by
+    have := (List.getElem?_eq_some_iff.mp hl).1; rw [← hh.1]; exact this
+  obtain ⟨c, hc⟩ : ∃ c, lookup W l = some c :=
+    ⟨_, by simp only [lookup]; exact List.getElem?_eq_getElem hlt⟩
+  obtain ⟨u, hu, hmem⟩ := hh.2 l c hc
+  rw [hl] at hu; cases hu
+  exact (hw l c hc).2 0 (by omega) _ v (hmem 0 (by omega))
+
+theorem read_instantiate {G : NormalGraph ι} {Γ t ρ n W} {d : Nat}
+    (hp : readTerm t = true) (hc : checkScope (Γ.length + d) t = true)
+    (he : EnvOk G Γ ρ n W) : readTerm (instantiate d ρ t) = true := by
+  induction t using Tm.induct generalizing d <;>
+    simp_all [readTerm,isVal,instantiate,checkScope]
+  case var i =>
+    split
+    · rfl
+    · have hi : i - d < Γ.length := by omega
+      have hv := (meaning_value (he.2 (i-d) Γ[i-d] (List.getElem?_eq_some_iff.mpr ⟨hi,rfl⟩))).1
+      exact read_value hv
+
+/-- **Reads keep the heap.** A read of fields and elements changes no
+location, so any predicate of the heap it starts from holds where it ends. -/
+theorem read_frame {T Q} : ∀ {n W h t}, Safe Ξ T n W h t → readTerm t = true →
+    WorldAdm W → HeapOk n W h → (∀ v, Q h v) → SafePost Ξ T Q n W h t := by
+  intro n; induction n with
+  | zero => intros; trivial
+  | succ n ih =>
+    intro W h t hs hp hw hh hq
+    rcases hs with (⟨hv,ht⟩ | hr) | ⟨U,h',t',hx,hu,step,hh',hs⟩
+    · exact Or.inl (Or.inl ⟨hv,ht,hq t⟩)
+    · exact Or.inl (Or.inr hr)
+    · obtain ⟨rfl, hp'⟩ := read_step step hp (heap_values hw hh)
+      exact Or.inr ⟨U,h',t',hx,hu,step,hh',ih hs hp' hu hh' hq⟩
+
+theorem reading_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {Γ k t A ρ n W h}
+    (ht : HasTyUsing G images Γ t A) (hp : readTerm t = true)
+    (hc : checkScope Γ.length t = true)
+    (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h)
+    (hw : WorldAdm W) (hh : HeapOk n W h) :
+    SafePost (excOf G) (meaning G A)
+      (fun h' v => HeapKnowledge.Holds (HeapKnowledge.shift k) (push v ρ) h')
+      n W h (instantiate 0 ρ t) :=
+  read_frame (ht.sound n W h ρ he hw hh) (read_instantiate (d := 0) hp (by simpa using hc) he) hw hh
+    (fun _ => HeapKnowledge.shift_holds hk)
+
 /-- Creating graph code allocates a fresh bag without running its code or
 invalidating knowledge about existing cells: its captures are slots, already
 values. -/
@@ -907,6 +959,9 @@ be changed by an untrusted producer. -/
 inductive StepEvidence (ι : Type) where
   | ordinary (proof : ProgramCertificates.Evidence ι)
   | pure (proof : ProgramCertificates.Evidence ι)
+  /-- Field and element reads over values (`readTerm`): the ordinary
+  derivation, and every fact of the heap kept. -/
+  | reading (proof : ProgramCertificates.Evidence ι)
   | created (proof : ProgramCertificates.Evidence ι)
   | typedRead (slot : Nat) (proof : ProgramCertificates.Evidence ι)
   | observedRead (slot : Nat) (contents : List Atom)
@@ -1015,6 +1070,9 @@ frame. Subtype comparisons retain unfinished work through the step validation. -
   | .pure e =>
     checkedOutput G images e (decide (claim e = j ∧ checkScope j.context.length j.term = true ∧
       pureTerm j.term = true)) (pureOutput G j.context k j.term) codes
+  | .reading e =>
+    checkedOutput G images e (decide (claim e = j ∧ checkScope j.context.length j.term = true ∧
+      readTerm j.term = true)) (HeapKnowledge.shift k) codes
   | .created e =>
     (CheckResult.ofBool (decide (claim e = j ∧ checkScope j.context.length j.term = true))).bind fun _ =>
     (checkTreeResult G images e codes).bind fun _ =>
@@ -1097,6 +1155,10 @@ theorem checkStepUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Instan
     if claim e = j ∧ checkScope j.context.length j.term = true ∧
         checkTreeUsing G images e codes = true ∧ pureTerm j.term = true
     then some (pureOutput G j.context k j.term) else none
+  | .reading e =>
+    if claim e = j ∧ checkScope j.context.length j.term = true ∧
+        checkTreeUsing G images e codes = true ∧ readTerm j.term = true
+    then some (HeapKnowledge.shift k) else none
   | .created e =>
     if claim e = j ∧ checkScope j.context.length j.term = true ∧ checkTreeUsing G images e codes = true then
       match j.term with
@@ -1206,6 +1268,16 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
       rw [hj] at typed
       cases hc
       exact pure_sound typed hpure scope he hk hw hh
+    · contradiction
+  | reading e =>
+    simp only [checkStepUsing_eq] at hc
+    split at hc
+    · rename_i hp
+      obtain ⟨hj,scope,ht,hread⟩ := hp
+      have typed := checkTreeUsing_sound e ht hcodes
+      rw [hj] at typed
+      cases hc
+      exact reading_sound typed hread scope he hk hw hh
     · contradiction
   | created e =>
     simp only [checkStepUsing_eq] at hc
@@ -1386,6 +1458,8 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
 #print axioms store_alloc_sound
 #print axioms graphCreation_sound
 #print axioms checkStep_sound
+#print axioms read_frame
+#print axioms reading_sound
 #print axioms fieldOperand_sound
 #print axioms nullishAtoms_sound
 #print axioms nullish_partition

@@ -56,6 +56,7 @@ theorem ctx_bind {A B : Fam} (C : Tm → Tm)
 current level, as a fresh store, meet it as a writable store. The allocation
 step, rather than tuple membership, consumes an approximation level. -/
 theorem argument_alloc_safe {T : TupleF} (hT : ∀ i A, positionFam T i = some A → Adm A)
+    (hTv : ∀ i A, positionFam T i = some A → ValOnly A)
     {n : Nat} {W : WorldT n} {h : Heap} {vs : List Tm}
     (hw : WorldAdm W) (hh : HeapOk n W h) (hp : ArgumentContracts.Fits T n W vs)
     (hvals : CallArguments.Values vs) :
@@ -79,6 +80,10 @@ theorem argument_alloc_safe {T : TupleF} (hT : ∀ i A, positionFam T i = some A
       intro A hA
       obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hA
       exact hT i _ (hAi i hi))
+    (by
+      intro A hA
+      obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hA
+      exact hTv i _ (hAi i hi))
     n W h vs hlen hvals hw hh
     (by
       intro p hp j hj

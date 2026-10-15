@@ -1175,6 +1175,19 @@ theorem entryFam_adm (G : NormalGraph ι) (fs os ix) (e : PropKey × Tm) : Adm (
       · exact setSem_adm (normalDenote_adm G) _
       · exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
 
+omit [DecidableEq ι] in
+/-- An entry's family admits only values when the entry's own value is one. -/
+theorem entryFam_valOnly (G : NormalGraph ι) (fs os ix) (e : PropKey × Tm) (hv : isVal e.2 = true) :
+    ValOnly (entryFam G fs os ix e) := by
+  unfold entryFam
+  split
+  · exact fun _ _ _ ⟨_, _, h⟩ => (normalDenote_value h).1
+  · split
+    · exact fun _ _ _ ⟨_, _, h⟩ => (normalDenote_value h).1
+    · split
+      · exact fun _ _ _ ⟨_, _, h⟩ => (normalDenote_value h).1
+      · intro _ _ _ h; rw [h]; exact hv
+
 /-- The entries a merge allocates, read through its two sides. -/
 structure Sides (G : NormalGraph ι) (d : List PropKey) (oa : Obj ι) (sb : Src ι)
     (p : Nat) (W : WorldT (p + 1)) (pa qs : List (PropKey × Tm)) : Prop where
@@ -1522,6 +1535,9 @@ theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
     WorldAdm_trunc _ hadm, Step.mergeV hva hvb hparts, HeapOk_trunc p W h hok, ?_⟩
   apply make_fields_rule_below (As := ps.map (entryFam G fs os ix))
     (fun A hA => by obtain ⟨e, -, rfl⟩ := List.mem_map.mp hA; exact entryFam_adm G fs os ix e)
+    (fun A hA => by
+      obtain ⟨e, he, rfl⟩ := List.mem_map.mp hA
+      exact entryFam_valOnly G fs os ix e (hvals _ (List.mem_map_of_mem he)))
     p (below W) h .absent (ps.map Prod.fst) (ps.map Prod.snd) hnodup (by simp) (by simp) hvals
     (WorldAdm_trunc _ hadm) (HeapOk_trunc p W h hok)
   · intro q hq

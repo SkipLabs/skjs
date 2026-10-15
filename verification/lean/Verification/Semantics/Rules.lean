@@ -231,7 +231,7 @@ theorem write_rule {code : CallCode} {flds : List (PropKey × Nat)} {f : PropKey
 /-- **Allocating an object with named fields.** One step takes one fresh
 location per field, so the world grows by one contract per field and the result
 sees the whole record. The single-cell rule above is the one-field case. -/
-theorem make_fields_rule {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A)
+theorem make_fields_rule {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A) (hV : ∀ A ∈ As, ValOnly A)
     (n : Nat) (W : WorldT n) (h : Heap) (code : CallCode)
     (ns : List PropKey) (vs : List Val)
     (hnd : ns.Nodup) (hns : ns.length = vs.length) (hAs : As.length = vs.length)
@@ -244,13 +244,13 @@ theorem make_fields_rule {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A)
       Q j U (.objAt (slots h.length ns) code (h.length + vs.length))) :
     Safe Ξ Q n W h (.makeAt code ns vs) :=
   OperationWorlds.erase n W h (.makeAt code ns vs)
-    (AllocationWorlds.allocation_safe hA n W h code ns vs hnd hns hAs hvals hadm hok
+    (AllocationWorlds.allocation_safe hA hV n W h code ns vs hnd hns hAs hvals hadm hok
       (fun p hp j _ => (hA p.1 (List.of_mem_zip hp).1).down_le n j (by omega) W p.2 (hv p hp)) result)
 
 /-- **Allocating named fields, from values known below the level.** The
 allocation step spends a level, so each value need meet its family only at
 the levels the heap is judged at after it. -/
-theorem make_fields_rule_below {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A)
+theorem make_fields_rule_below {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A) (hV : ∀ A ∈ As, ValOnly A)
     (n : Nat) (W : WorldT n) (h : Heap) (code : CallCode)
     (ns : List PropKey) (vs : List Val)
     (hnd : ns.Nodup) (hns : ns.length = vs.length) (hAs : As.length = vs.length)
@@ -263,27 +263,28 @@ theorem make_fields_rule_below {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm
       Q j U (.objAt (slots h.length ns) code (h.length + vs.length))) :
     Safe Ξ Q n W h (.makeAt code ns vs) :=
   OperationWorlds.erase n W h (.makeAt code ns vs)
-    (AllocationWorlds.allocation_safe hA n W h code ns vs hnd hns hAs hvals hadm hok hv result)
+    (AllocationWorlds.allocation_safe hA hV n W h code ns vs hnd hns hAs hvals hadm hok hv result)
 
 /-- **Allocating an object with no named field**, as `.bind` does: the
 result meets `Q` at whatever identity the allocation gives it. -/
 theorem make_empty_rule {Q : Fam} (hQ : Adm Q) (n : Nat) (W : WorldT n) (h : Heap)
     (code : CallCode) (hadm : WorldAdm W) (hok : HeapOk n W h)
     (hv : ∀ oid, Q n W (.objAt [] code oid)) : Safe Ξ Q n W h (.makeAt code [] []) :=
-  make_fields_rule (As := []) (fun _ h => by simp at h) n W h code [] [] List.nodup_nil rfl rfl
+  make_fields_rule (As := []) (fun _ h => by simp at h) (fun _ h => by simp at h) n W h code [] [] List.nodup_nil rfl rfl
     (by simp) hadm hok (by simp) fun j hj U hx _ =>
       hQ.mono j _ U hx _ (hQ.down_le n j (Nat.le_of_lt hj) W _ (hv _))
 
 /-- **Object allocation.** Both descriptor shapes allocate through this rule.
 The world grows by the stored contract; the result obligation supplies the
 descriptor-specific view of the fresh object in that future world. -/
-theorem make_rule {A Q : Fam} (hA : Adm A) (n : Nat) (W : WorldT n) (h : Heap) (code : CallCode) (v : Tm)
+theorem make_rule {A Q : Fam} (hA : Adm A) (hV : ValOnly A) (n : Nat) (W : WorldT n) (h : Heap) (code : CallCode) (v : Tm)
     (hval : isVal v = true) (hadm : WorldAdm W) (hok : HeapOk n W h) (hv : A n W v)
     (result : ∀ j (hj : j < n) (U : WorldT j),
       WExt (trunc j (Nat.le_of_lt hj) W) U →
       refT A j U (.obj h.length .absent) → Q j U (.obj h.length code)) :
     Safe Ξ Q n W h (.make code v) :=
-  make_fields_rule (As := [A]) (by intro B hB; rw [List.mem_singleton.mp hB]; exact hA) n W h code
+  make_fields_rule (As := [A]) (by intro B hB; rw [List.mem_singleton.mp hB]; exact hA)
+    (by intro B hB; rw [List.mem_singleton.mp hB]; exact hV) n W h code
     [valueField] [v] (by simp) rfl rfl
     (by simpa using hval) hadm hok (by simpa using hv)
     (fun j hj U hx hr => result j hj U hx (by simpa [refT, slots] using hr))
@@ -291,12 +292,13 @@ theorem make_rule {A Q : Fam} (hA : Adm A) (n : Nat) (W : WorldT n) (h : Heap) (
 /-- **Creating a function object.** Its one field, which gives it a location
 and so an identity, holds the value; the result obligation supplies the view
 of the fresh object its code gives. -/
-theorem makeFn_rule {A Q : Fam} (hA : Adm A) (n : Nat) (W : WorldT n) (h : Heap) (code : CallCode) (v : Tm)
+theorem makeFn_rule {A Q : Fam} (hA : Adm A) (hV : ValOnly A) (n : Nat) (W : WorldT n) (h : Heap) (code : CallCode) (v : Tm)
     (hval : isVal v = true) (hadm : WorldAdm W) (hok : HeapOk n W h) (hv : A n W v)
     (result : ∀ j (hj : j < n) (U : WorldT j),
       WExt (trunc j (Nat.le_of_lt hj) W) U → Q j U (.fnObj h.length code)) :
     Safe Ξ Q n W h (.makeFn code v) :=
-  make_fields_rule (As := [A]) (by intro B hB; rw [List.mem_singleton.mp hB]; exact hA) n W h code
+  make_fields_rule (As := [A]) (by intro B hB; rw [List.mem_singleton.mp hB]; exact hA)
+    (by intro B hB; rw [List.mem_singleton.mp hB]; exact hV) n W h code
     [codeField] [v] (by simp) rfl rfl
     (by intro u hu; rw [List.mem_singleton.mp hu]; exact hval) hadm hok
     (by intro p hp; simp only [List.zip_cons_cons, List.zip_nil_right, List.mem_singleton] at hp
@@ -307,7 +309,7 @@ theorem makeFn_rule {A Q : Fam} (hA : Adm A) (n : Nat) (W : WorldT n) (h : Heap)
 under its family, and the store meets the claimed tuple contract by
 `listT_alloc`; the continuation sees it at the extended world. The allocation
 is a step, so the elements need their families below the budget only. -/
-theorem arr_alloc_rule_below {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A)
+theorem arr_alloc_rule_below {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A) (hV : ∀ A ∈ As, ValOnly A)
     (n : Nat) (W : WorldT n) (h : Heap) (vs : List Val)
     (hAs : As.length = vs.length) (hvals : ∀ v ∈ vs, isVal v = true)
     (hadm : WorldAdm W) (hok : HeapOk n W h)
@@ -323,7 +325,7 @@ theorem arr_alloc_rule_below {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A
     have hcadm : ∀ c ∈ As.map (fun A => (res A : Ctr p)), CtrAdm c := by
       intro c hc
       obtain ⟨A, hA', rfl⟩ := List.mem_map.mp hc
-      exact fun i _ U U' hx w hw => (hA A hA').mono i U U' hx w hw
+      exact ⟨fun i _ U U' hx w hw => (hA A hA').mono i U U' hx w hw, fun i _ U w hw => hV A hA' i U w hw⟩
     have hlen : h.length = (toList (trunc p (Nat.le_succ p) W)).length := by
       have := hok.1; simp [trunc] at this ⊢; omega
     have hcont : ∀ q ∈ (As.map (fun A => (res A : Ctr p))).zip vs, ∀ (j : Nat) (hj : j < p),
@@ -353,7 +355,7 @@ theorem arr_alloc_rule_below {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A
       rw [this]
       simp [List.getElem?_map, List.getElem?_eq_getElem hi]
 
-theorem arr_alloc_rule {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A)
+theorem arr_alloc_rule {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A) (hV : ∀ A ∈ As, ValOnly A)
     (n : Nat) (W : WorldT n) (h : Heap) (vs : List Val)
     (hAs : As.length = vs.length) (hvals : ∀ v ∈ vs, isVal v = true)
     (hadm : WorldAdm W) (hok : HeapOk n W h)
@@ -363,7 +365,7 @@ theorem arr_alloc_rule {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A)
       (∀ (i : Nat) (hi : i < As.length), lookup U (h.length + i) = some (res (As[i]'hi))) →
       Q j U (.arr (elemSlots h.length vs.length))) :
     Safe Ξ Q n W h (.arrLit vs) :=
-  arr_alloc_rule_below hA n W h vs hAs hvals hadm hok
+  arr_alloc_rule_below hA hV n W h vs hAs hvals hadm hok
     (fun p hp j hj => (hA p.1 (List.of_mem_zip hp).1).down_le n j (Nat.le_of_lt hj) W p.2 (hv p hp))
     result
 
@@ -428,7 +430,7 @@ theorem set_present_rule {ls : List (Option Nat)} {b : UInt64} {A Q : Fam}
 /-- **A write that grows the store.** A fresh location under the position's
 family takes the value; the store the write yields records it. -/
 theorem set_grow_rule {ls : List (Option Nat)} {b : UInt64} {k : Nat} {A Q : Fam}
-    (hA : Adm A) (n : Nat) (W : WorldT n) (h : Heap)
+    (hA : Adm A) (hV : ValOnly A) (n : Nat) (W : WorldT n) (h : Heap)
     (v : Tm) (hval : isVal v = true) (hadm : WorldAdm W) (hok : HeapOk n W h)
     (hk : indexOfBits b = some k) (hn : elemLoc ls b = none) (hv : A n W v)
     (hq : ∀ j (hj : j < n) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
@@ -440,7 +442,7 @@ theorem set_grow_rule {ls : List (Option Nat)} {b : UInt64} {k : Nat} {A Q : Fam
     have hcadm : ∀ c ∈ [(res A : Ctr p)], CtrAdm c := by
       intro c hc
       simp only [List.mem_singleton] at hc; subst hc
-      exact fun i _ U U' hx w hw => hA.mono i U U' hx w hw
+      exact ⟨fun i _ U U' hx w hw => hA.mono i U U' hx w hw, fun i _ U w hw => hV i U w hw⟩
     have hlen : h.length = (toList (trunc p (Nat.le_succ p) W)).length := by
       have := hok.1; simp [trunc] at this ⊢; omega
     have hcont : ∀ q ∈ [(res A : Ctr p)].zip [v], ∀ (j : Nat) (hj : j < p),
@@ -505,10 +507,10 @@ theorem elem_str_rule {s : String} {b : UInt64} {Q : Fam}
     · exact value_safe _ _ _ _ _ rfl (hundef _ _)
 
 /-- Plain references specialize the common allocation rule to an absent descriptor. -/
-theorem alloc_rule {A : Fam} (hA : Adm A) (n : Nat) (W : WorldT n) (h : Heap) (v : Tm)
+theorem alloc_rule {A : Fam} (hA : Adm A) (hV : ValOnly A) (n : Nat) (W : WorldT n) (h : Heap) (v : Tm)
     (hval : isVal v = true) (hadm : WorldAdm W) (hok : HeapOk n W h) (hv : A n W v) :
     Safe Ξ (refT A) n W h (.alloc v) :=
-  make_rule hA n W h .absent v hval hadm hok hv (fun _ _ _ _ hr => hr)
+  make_rule hA hV n W h .absent v hval hadm hok hv (fun _ _ _ _ hr => hr)
 
 #print axioms make_rule
 #print axioms alloc_rule
@@ -553,7 +555,8 @@ theorem arith_throw_safe {S : Fam} (op : Arith) (a b : Tm) (ht : binopThrows op 
   cases n with
   | zero => trivial
   | succ p =>
-    have hcadm : CtrAdm (res nulT : Ctr p) := fun _ _ _ _ _ _ h => h
+    have hcadm : CtrAdm (res nulT : Ctr p) :=
+      ⟨fun _ _ _ _ _ _ h => h, fun _ _ _ _ h => by rw [show _ = Tm.nul from h]; rfl⟩
     refine Or.inr ⟨appendW (trunc p (Nat.le_succ p) W) (res nulT), h ++ [.nul], _,
       WExt_appendW _ _, WorldAdm_append (WorldAdm_trunc _ hadm) hcadm, .arithThrow ht,
       heap_alloc p _ h (res nulT) .nul (HeapOk_trunc p W h hok) (WorldAdm_trunc _ hadm)

@@ -268,10 +268,10 @@ theorem write_observed {A : Fam} (ha : Adm A) {n W h l v}
   exact one_step rfl rfl (.writeField hv hf hlt) ⟨rfl,rfl⟩
     (write_rule ha n W h l v hv hw hh hf hl hc ht)
 
-theorem alloc_observed {A : Fam} (ha : Adm A) {n W h v}
+theorem alloc_observed {A : Fam} (ha : Adm A) (hV : ValOnly A) {n W h v}
     (hw : WorldAdm W) (hh : HeapOk n W h) (hv : isVal v = true) (ht : A n W v) :
     SafePost Ξ (refT A) (fun h' u => h' = h ++ [v] ++ [.nul] ∧ u = .obj h.length .absent) n W h (.alloc v) :=
-  one_step rfl rfl (.makeV hv) ⟨rfl,rfl⟩ (alloc_rule ha n W h v hv hw hh ht)
+  one_step rfl rfl (.makeV hv) ⟨rfl,rfl⟩ (alloc_rule ha hV n W h v hv hw hh ht)
 
 /-- A same-location alias shares the observation; variable names do not matter. -/
 theorem alias {h l k v} (he : l = k) (ho : Observes h l v) : Observes h k v := by

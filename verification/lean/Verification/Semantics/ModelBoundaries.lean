@@ -45,7 +45,7 @@ def allocFn : Tm := .obj 0 (oneNode (.alloc .nul))
 /-- The function meets `(x: null) => ref B` for *every* admissible `B` that
 contains null: the contract of the new cell is chosen by the membership proof,
 not by the program. -/
-theorem allocFn_typed {Ξ Rc B : Fam} (hΞ : Adm Ξ) (hB : Adm B)
+theorem allocFn_typed {Ξ Rc B : Fam} (hΞ : Adm Ξ) (hB : Adm B) (hBv : ValOnly B)
     (hnul : ∀ (j : Nat) (W : WorldT j), B j W .nul) (k : Nat) (W : WorldT k) :
     callsT Ξ [(Rc, [nulT], refT B)] k W allocFn := by
   refine ⟨⟨_, _, _, rfl, rfl, by simp [Scoped, allocFn, oneNode]⟩, ?_⟩
@@ -58,7 +58,7 @@ theorem allocFn_typed {Ξ Rc B : Fam} (hΞ : Adm Ξ) (hB : Adm B)
     refine Or.inr ⟨trunc j (Nat.le_succ j) U, heap, _, WExt_refl _, WorldAdm_trunc _ hu,
       .gotoEnter rfl rfl, HeapOk_trunc j U heap hh, ?_⟩
     apply frame_ret_safe hΞ (refT_adm B) j _ heap _ (WorldAdm_trunc _ hu) (HeapOk_trunc j U heap hh)
-    simpa [instantiate] using alloc_rule hB j _ heap .nul rfl (WorldAdm_trunc _ hu)
+    simpa [instantiate] using alloc_rule hB hBv j _ heap .nul rfl (WorldAdm_trunc _ hu)
       (HeapOk_trunc j U heap hh) (hnul _ _)
 
 /-- Two references whose operands differ have an empty intersection: a location
@@ -93,9 +93,11 @@ theorem arrow_inter_codomain_fails :
         callsT topF [(Rc, [A], interT B C)] k W v := by
   intro hrule
   have h1 : callsT topF [(undefT, [nulT], refT nulT)] 5 (ofList []) allocFn :=
-    allocFn_typed topF_adm nulT_adm (fun _ _ => rfl) 5 _
+    allocFn_typed topF_adm nulT_adm (fun _ _ _ h => by rw [show _ = Tm.nul from h]; rfl) (fun _ _ => rfl) 5 _
   have h2 : callsT topF [(undefT, [nulT], refT (unionT nulT boolT))] 5 (ofList []) allocFn :=
-    allocFn_typed topF_adm (unionT_adm nulT boolT nulT_adm boolT_adm) (fun _ _ => Or.inl rfl) 5 _
+    allocFn_typed topF_adm (unionT_adm nulT boolT nulT_adm boolT_adm)
+      (fun _ _ _ h => by
+        rcases h with h | h | h <;> (subst h; rfl)) (fun _ _ => Or.inl rfl) 5 _
   have hb := hrule _ _ _ _ 5 (ofList []) allocFn h1 h2
   have hx : WExt (trunc 4 (by omega) (ofList ([] : List (Ctr 5)))) (ofList []) := by
     rw [trunc_empty]

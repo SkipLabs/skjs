@@ -217,13 +217,13 @@ theorem write {A : Fam} (ha : Adm A) {ρ h i a v n W}
 
 /-- Allocation preserves existing observations and adds the new cell at the
 result slot. This relies on actual heap extension, not on non-aliasing names. -/
-theorem alloc {A : Fam} (ha : Adm A) {facts ρ h a v n W}
+theorem alloc {A : Fam} (ha : Adm A) (hV : ValOnly A) {facts ρ h a v n W}
     (hf : Holds facts ρ h) (hw : WorldAdm W) (hh : HeapOk n W h)
     (hv : a.holds v) (ht : A n W v) :
     SafePost Ξ (refT A)
       (fun h' v => Holds (⟨0,[a],valueField⟩ :: shift facts) (push v ρ) h') n W h
       (.alloc v) := by
-  apply weaken _ (alloc_observed ha hw hh (Atom.isValue hv) ht)
+  apply weaken _ (alloc_observed ha hV hw hh (Atom.isValue hv) ht)
   intro h' result hp f hm
   rw [hp.1,hp.2]
   rcases List.mem_cons.mp hm with rfl | hm

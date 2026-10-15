@@ -6,16 +6,16 @@ stops the rest, and where the two disagree because SKJS is wrong.
 
 Measurement checkpoint: October 15, 2026 (full verifier-only run on
 8f9ed04f8; the accepted units are those the expectation markers accept,
-including the two marker-accepted parse-error units, and SKJS was not run).
+including the two marker-accepted parse-error units, and SKJS was not run),
+with `destructuring-assignment.ts` measured again after field and element
+reads kept cell facts (October 15, 2026).
 The reviewed nested-promise search failure is classified by its unit and
 exact obligation.
 
-**2,557 of 2,676 SKJS-accepted units verify (95.6%); 1,915 of 2,026
-accepted functions (94.5%).** 322 of the 379 files with an accepted unit
+**2,558 of 2,676 SKJS-accepted units verify (95.6%); 1,916 of 2,026
+accepted functions (94.6%).** 323 of the 379 files with an accepted unit
 verify entirely. There are 101 principled refusals, 16 registered SKJS-unsound
-units, 2 gaps and no unmatched or unexplained refusals. The gaps are
-`destructuring-assignment.ts#keyBeforeDefault` (a written local's content
-read in an expression's branch arm) and
+units, 1 gap and no unmatched or unexplained refusals. The gap is
 `variadic-rest-corner-cases.ts#testGenericTupleConstraint` (a generic
 contract the producer cannot represent in full).
 
@@ -57,14 +57,14 @@ is not part of `verification/test-all.sh`.
 
 | Suite | Harness verdict | Files | Units | Accepted | Verified | Accepted functions | Verified functions |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `tests/expect-error` | `@ts-expect-error` / `@skjs-expect-error` name the next non-annotation line (`tests/Helpers.sk` `findExpectErrors`); `@skjs-expect-warning` is not an error | 399 (374 with units) | 3,883 | 2,460 | 2,343 | 1,863 | 1,754 |
+| `tests/expect-error` | `@ts-expect-error` / `@skjs-expect-error` name the next non-annotation line (`tests/Helpers.sk` `findExpectErrors`); `@skjs-expect-warning` is not an error | 399 (374 with units) | 3,883 | 2,460 | 2,344 | 1,863 | 1,755 |
 | `tests/callgraph` | no error allowed | 25 | 59 | 59 | 57 | 51 | 49 |
 | `tests/constprop` | no error allowed | 14 | 66 | 66 | 66 | 49 | 49 |
 | `tests/deadcode` | no error allowed | 7 | 27 | 27 | 27 | 16 | 16 |
 | `tests/cfg` | no error allowed | 7 | 22 | 22 | 22 | 21 | 21 |
 | `tests/projects` | expect-error markers, under the project's tsconfig | 24 of 68 | 44 | 34 | 34 | 23 | 23 |
 | `tests/ts-conformance/cases` | lines listed in `reference/*.errors.txt` | 4 | 9 | 8 | 8 | 3 | 3 |
-| **total** | | **480** | **4,110** | **2,676** | **2,557** | **2,026** | **1,915** |
+| **total** | | **480** | **4,110** | **2,676** | **2,558** | **2,026** | **1,916** |
 
 Excluded (79 files, listed in the JSON with reasons): `ts-conformance/not-supported`
 (31) and `callgraph-unsupported` (4) assert only that SKJS reports errors;
@@ -126,10 +126,10 @@ is.
 
 | Phase of first blocker | Units |
 | --- | ---: |
-| verified | 2,557 |
+| verified | 2,558 |
 | source (gate) | 40 |
 | proposal (producer) | 11 |
-| search (Lean) | 68 |
+| search (Lean) | 67 |
 
 **Refusal classes.** The project's goal is that every accepted unit either
 verifies or is refused for a specific, principled reason. Each accepted unit
@@ -216,10 +216,10 @@ blocker's key is given (`summary.byReason` and `summary.byClass` of
 
 | Class | Units |
 | --- | ---: |
-| verified | 2,557 |
+| verified | 2,558 |
 | principled (P) | 101 |
 | SKJS unsound (S) | 16 |
-| gap (G) | 2 |
+| gap (G) | 1 |
 | unexplained (U) | 0 |
 | **accepted** | **2,676** |
 
@@ -243,7 +243,7 @@ First blocker, not every missing feature of a unit:
 | await of non-promises and unions (the await bound) | 5 | 5 | 0 | 3 |
 | calls: overloads, .call, spread arguments, Object.assign, arrow callee | 5 | 4 | 1 | 3 |
 | a function value, or a module function with a rest parameter or binders, at a signature binding more parameters; a `this`-typed function where its receiver is indifferent | 4 | 3 | 1 | 3 |
-| search: no derivation found (evidence search failed) | 3 | 3 | 0 | 3 |
+| search: no derivation found (evidence search failed) | 2 | 2 | 0 | 2 |
 | arrays: a built-in array at a generic call, a mutable tuple's `length` | 3 | 3 | 0 | 3 |
 | iterables the program defines: an iterator whose type states no `return`, a spread or a pattern the protocol's lowering does not place, a well-known symbol key other than `Symbol.iterator` | 3 | 3 | 0 | 3 |
 | type forms: literal types, keyof, indexed access, mapped, object, index signatures, intersections, method signatures | 2 | 2 | 0 | 2 |
@@ -302,7 +302,7 @@ are not measured.
 ## Suspected SKJS unsoundnesses
 
 Divergences: SKJS-accepted units the pipeline parses and proposes, and Lean
-then refuses (68 units in `search`, `summary.reachedButRefused`). The
+then refuses (67 units in `search`, `summary.reachedButRefused`). The
 source-form refusals Lean states explicitly are fragment boundaries. The rest
 were read obligation by obligation: all read are pipeline incompleteness
 except four families below; the fifth is refused by the producer. One

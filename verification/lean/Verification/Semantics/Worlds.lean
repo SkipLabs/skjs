@@ -158,9 +158,11 @@ theorem lookup_appendWs {k : Nat} (W : WorldT k) (cs : List (Ctr k)) {i : Nat}
 
 /-- Only worlds whose contracts are themselves stable under allocation can
 carry a heap: preserving the contents obligation across an allocation is a
-property of the contracts, not of `refT`. -/
+property of the contracts, not of `refT`. A contract admits only values, so a
+location of a heap that meets its world holds a value. -/
 def CtrAdm {k : Nat} (c : Ctr k) : Prop :=
-  ∀ (j : Nat) (hj : j < k) (W W' : WorldT j), WExt W W' → ∀ v, c j hj W v → c j hj W' v
+  (∀ (j : Nat) (hj : j < k) (W W' : WorldT j), WExt W W' → ∀ v, c j hj W v → c j hj W' v) ∧
+    ∀ (j : Nat) (hj : j < k) (W : WorldT j) v, c j hj W v → isVal v = true
 
 def WorldAdm {k : Nat} (W : WorldT k) : Prop := ∀ l c, lookup W l = some c → CtrAdm c
 
@@ -168,8 +170,8 @@ theorem WorldAdm_trunc {k j : Nat} (h : j ≤ k) {W : WorldT k} (hA : WorldAdm W
     WorldAdm (trunc j h W) := by
   intro l c' hl
   obtain ⟨c, hc, rfl⟩ := lookup_trunc_inv h W l c' hl
-  intro i hi U U' hx v hv
-  exact hA l c hc i (Nat.lt_of_lt_of_le hi h) U U' hx v hv
+  exact ⟨fun i hi U U' hx v hv => (hA l c hc).1 i (Nat.lt_of_lt_of_le hi h) U U' hx v hv,
+    fun i hi U v hv => (hA l c hc).2 i (Nat.lt_of_lt_of_le hi h) U v hv⟩
 
 theorem WorldAdm_append {k : Nat} {W : WorldT k} {c : Ctr k}
     (hW : WorldAdm W) (hc : CtrAdm c) : WorldAdm (appendW W c) := by

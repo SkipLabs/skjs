@@ -2754,17 +2754,27 @@ It computes a guaranteed output, not an assumed postcondition:
 | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Pure value or variable copy          | Preserve facts and links; copies establish slot equality and duplicate existing facts. Literals establish their exact result even when their supplied type is wider. Lambda bodies require ordinary typing, without captured heap facts. |
 | Pure test or conditional             | Preserve existing facts and links, shifted past the result slot. Every evaluated subexpression must be syntactically pure (a length `lenOf` of a slot among them: an array's store is read by a field read of its own, then counted); no new result-to-cell link is invented.                                                                       |
+| Read (`reading`)                     | Field and element reads over values (`readAt`, `elemAt`, `readTerm`): check ordinary evidence and scope, and preserve every fact and link, shifted past the result slot. A read changes no location, and a heap meeting an admissible world holds values, so a read's result is a value. |
 | Ordinary typed read                  | Preserve facts and record read links to the receiver and witnessed aliases, retaining its plain or callable descriptor; through a key a record may lack, optional links. No prior current-content fact is needed. Its result has the supplied type. |
 | Observed read                        | Preserve facts and links; record the result's primitive predicate and its current read relationship. That set must fit the requested ordinary result type.                                                                               |
 | Sliced read (`slicedRead`)           | A read whose cell fact excludes a nullish tag: ordinary read evidence at the location's contract $`C`$, whose negative slice by that tag is below the requested type by a checked subtype proof. As an ordinary typed read otherwise. |
 | Known immutable value                | Check the requested primitive type against a proved slot fact or the slot's ordinary primitive type.                                                                                                                                     |
-| Allocation                           | Check ordinary creation evidence and scope for either descriptor, preserve old facts, add the fresh bag's initial contents where a checked value slot's are known, and its fields' distinctness from every record slot's. Closure code is not executed. A merge of two slots is an allocation too: old facts preserved, the fields its result type names distinct. So is an array literal's store of value slots, whose element locations lie past the heap's end: old facts preserved (`store_alloc_sound`); an element read (`elemAt`) is still an ordinary expression. |
+| Allocation                           | Check ordinary creation evidence and scope for either descriptor, preserve old facts, add the fresh bag's initial contents where a checked value slot's are known, and its fields' distinctness from every record slot's. Closure code is not executed. A merge of two slots is an allocation too: old facts preserved, the fields its result type names distinct. So is an array literal's store of value slots, whose element locations lie past the heap's end: old facts preserved (`store_alloc_sound`). |
 | Write                                | Check ordinary write evidence (no old-content premise), discard old cell facts but those a distinct link separates from the written location, record new contents for the receiver and its witnessed aliases where the value is a known primitive, or its supported nullish exclusion, and preserve immutable facts and slot equalities. Read links are discarded. |
 | Ordinary expression, including calls | Check ordinary evidence, discard cell facts and read links, preserving immutable facts and slot equalities.                                                                                                                              |
 
-`typedRead_sound`, `slicedRead_sound`, `read_sound`, `alloc_sound` (with
-`merge_alloc_sound` and `store_alloc_sound`) and
-`write_sound` prove the read, allocation and write rules above. The sliced
+`typedRead_sound`, `slicedRead_sound`, `read_sound`, `reading_sound` (by
+`read_frame`), `alloc_sound` (with `merge_alloc_sound` and
+`store_alloc_sound`) and `write_sound` prove the read, allocation and write
+rules above. The read rule is
+
+```math
+\frac{\Gamma\vdash_G t : A\quad \mathsf{reads}(t)}
+     {\Gamma;\Pi;\Sigma\vdash_G r\leftarrow t : A\dashv\Pi;\Sigma}\ \textsf{read-frame}
+```
+
+where $`\mathsf{reads}(t)`$ holds of a term built from variables and values by
+field reads and element reads. The sliced
 read is
 
 ```math

@@ -1121,7 +1121,7 @@ read/value rule may succeed when ordinary derivation search cannot. -/
     | .writeAt _ (.var i) (.var v) =>
       choices := choices ++ [.written i v (HeapExpressionRules.valuesAt G j.context k v) e]
     | _ => pure ()
-    choices := choices ++ [.created e,.pure e,.ordinary e]
+    choices := choices ++ [.created e,.pure e,.reading e,.ordinary e]
   for effect in choices do
     let checked := checker.run j k effect codes
     incomplete := incomplete <|> checked.exhaustion

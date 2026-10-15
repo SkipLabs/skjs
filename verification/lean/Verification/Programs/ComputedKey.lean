@@ -164,7 +164,9 @@ theorem keyed_values_safe [DecidableEq ι] {G : NormalGraph ι} {K A R : List ι
   refine Or.inr ⟨trunc p (Nat.le_succ p) W, h, .makeAt .absent [f] [av], WExt_refl _,
     WorldAdm_trunc _ hadm, Step.makeKeyV hval hf, HeapOk_trunc p W h hok, ?_⟩
   apply make_fields_rule (As := [meaning G A]) (by simpa using hadmA)
-    p _ h .absent [f] [av] (by simp) rfl rfl (by simpa using hval) (WorldAdm_trunc _ hadm)
+    (fun B hB => by
+      rw [List.mem_singleton.mp hB]
+      exact fun _ _ _ ⟨_, _, h⟩ => (normalDenote_value h).1) p _ h .absent [f] [av] (by simp) rfl rfl (by simpa using hval) (WorldAdm_trunc _ hadm)
     (HeapOk_trunc p W h hok) (by simpa using hav')
   intro j hj U hx hrec
   have hown : ∀ g l, (slots h.length [f]).lookup g = some l → ∃ T, (g, T) ∈ [f].zip [meaning G A] := by

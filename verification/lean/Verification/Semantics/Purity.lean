@@ -166,7 +166,39 @@ theorem CollectingRun.step {h t h' t'} (hp : CollectingRun t) (hs : Step h t h' 
     simp only [subst, substArgs_eq_map, List.map_cons, hm]
     exact .pure (.goto hE (by simp_all [isVal]) rfl)
 
+/-- Field and element reads over values: they look up locations of the heap
+and change none. -/
+def readTerm : Tm → Bool
+  | .var _ => true
+  | .readAt _ a => readTerm a
+  | .elemAt a i => readTerm a && readTerm i
+  | t => isVal t
+
+theorem read_value {v : Tm} (hv : isVal v = true) : readTerm v = true := by
+  cases v <;> simp_all [readTerm, isVal]
+
+/-- A step of a read leaves the heap as it is, and what remains is a read,
+when the heap holds only values. -/
+theorem read_step {h t h' t'} (hs : Step h t h' t') (hp : readTerm t = true)
+    (hv : ∀ (l : Nat) (v : Tm), h[l]? = some v → isVal v = true) : h' = h ∧ readTerm t' = true := by
+  induction hs with
+  | readC _ ih => simp only [readTerm] at hp ⊢; exact ih hp hv
+  | readField _ hl => exact ⟨rfl, read_value (hv _ _ hl)⟩
+  | readProto _ _ hl => exact ⟨rfl, by simp only [readTerm]; exact read_value (hv _ _ hl)⟩
+  | readMissing => exact ⟨rfl, rfl⟩
+  | elemC1 _ ih =>
+    simp only [readTerm, Bool.and_eq_true] at hp ⊢
+    exact ⟨(ih hp.1 hv).1, (ih hp.1 hv).2, hp.2⟩
+  | elemC2 _ _ ih =>
+    simp only [readTerm, Bool.and_eq_true] at hp ⊢
+    exact ⟨(ih hp.2 hv).1, hp.1, (ih hp.2 hv).2⟩
+  | elemRead _ hl => exact ⟨rfl, read_value (hv _ _ hl)⟩
+  | elemAbsent => exact ⟨rfl, rfl⟩
+  | elemStr => exact ⟨rfl, by unfold codeUnitAt; split <;> rfl⟩
+  | _ => simp [readTerm, isVal] at hp
+
 #print axioms CollectingRun.step
+#print axioms read_step
 #print axioms PureRun.step
 
 end Verification.Purity

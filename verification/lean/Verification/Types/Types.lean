@@ -1215,6 +1215,8 @@ theorem Adm.of_transfer {α : Type} {A : WorldFamily α}
 be stored. -/
 def ValOnly (A : Fam) : Prop := ∀ (j : Nat) (W : WorldT j) (a : Val), A j W a → isVal a = true
 
+theorem nulT_valOnly : ValOnly nulT := fun _ _ _ h => by rw [show _ = Tm.nul from h]; rfl
+
 /-- Restricting a semantic type to a contract is level-independent. -/
 theorem trunc_res {k j : Nat} (h : j ≤ k) (T : Fam) :
     trunc j h (ofList [res T]) = ofList [res T] := by
