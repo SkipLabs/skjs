@@ -101,10 +101,13 @@ def genericClaim (T : EquationStore.State) (θ : List (String × List Tree)) : G
         | some e => [("rest", c e)]
         | none => []) ++
       [("result", c res), ("construct", toJson "unknown"), ("array", toJson "unknown")])])]
-  | .construct ps res =>
+  | .construct ps res fs =>
     let c (U : List Tree) : Json := graphClaim (normUnion (U.flatMap (rebind T θ)))
-    Json.mkObj [("top", toJson false), ("atoms", Json.arr #[Json.mkObj [("a", toJson "constructor"),
-      ("params", Json.arr (ps.map c).toArray), ("result", c res)]])]
+    let statics := fs.map fun (k, r, U) => Json.mkObj ([("name", toJson k), ("type", c U)] ++
+      (if r then [("readonly", toJson true)] else []))
+    Json.mkObj [("top", toJson false), ("atoms", Json.arr #[Json.mkObj ([("a", toJson "constructor"),
+      ("params", Json.arr (ps.map c).toArray), ("result", c res)] ++
+      (if statics.isEmpty then [] else [("statics", Json.arr statics.toArray)]))])]
   | .other U => graphClaim (normUnion (U.flatMap (rebind T θ)))
 
 /-- The argument lists of a binder typing both a value and a rest, at its

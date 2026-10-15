@@ -320,7 +320,13 @@ class value constructing an $`R`$ from $`\vec A`$ at every instance
 ([scheme rows](POSITIVE-TYPES.md#parameter-and-scheme-rows)). A generic class
 read as a value meets its own construct scheme, by **module-scheme** with its
 construct signatures: its construct code is checked by the initialization
-unit at every assignment of the class's binders.
+unit at every assignment of the class's binders. The scheme states the
+construct signatures alone; a read of the class's static field reads the class
+value at an instance ([classes](#classes)), so a unit reading the class both as
+a value and through a static field holds the instances its reads name, which
+do not meet the scheme (a gap, `class-static-generic-value-refused`: the slot
+holds the scheme or the instances, not the scheme with the static-field
+facts).
 
 ```math
 \frac{C\ \text{a generic class}\quad \mathsf{ctor}(C)=\forall\vec p\le\vec\beta.\ \mathsf{new}\ \vec A\to C\langle\vec p\rangle\quad C\ \text{read, not constructed}}
@@ -678,10 +684,14 @@ initializers run, `this` in them being that value, and defines each static
 field on it in turn; the model allocates the class value after them, holding
 every static field at once. Each initializer binds its value first, `static
 C.f`, a binding no source spells, and the class value is allocated holding
-them, each at its annotation, or, without one, at the literal type
-TypeScript gives a readonly field's literal initializer. The two agree
-wherever no code that can reach the class value runs during the
-initializers, which the rules below on static initializers ensure:
+them, each at its annotation, or, without one, at the type TypeScript gives
+the field (as a term, `contextualTerm`), its initializer's value checked at
+it. The two agree wherever no code that can reach the class value runs
+during the initializers, which the rules below on static initializers
+ensure. A static field names none of the class's binders (TypeScript refuses
+one that does), so a generic class value's bag is the same at each instance,
+and a read of one off the class value reads it at an instance, each binder at
+its bound:
 
 ```math
 \mathtt{class}\ C\ \{\ \ldots\ \mathtt{static}\ f_1 = e_1\ \ldots\ \mathtt{static}\ f_n = e_n\ \ldots\ \}
@@ -692,18 +702,33 @@ initializers, which the rules below on static initializers ensure:
 The class value's type is $`\mathsf{Ctors}(\mathsf{new}(\vec D)\Rightarrow C;\ \overline{f_i{:}T_i})`$
 ([classes](PROGRAM-TYPING.md#judgments-and-constructor-views)). A read `C.f` of a static
 field, where TypeScript binds it to the member (`staticReads`), is the class
-value's field read, `C.[[self]]`'s in the class's instance members, which
-run only once the class value exists; in a static initializer of `C`, which
-runs before, it is the binding $`\mathtt{static}\ C.f`$ of an earlier
-field, whose value the field holds, as nothing can reach the class value to
-write it before the model allocates it. A call `C.f()` of a static field in
-the class's methods is a method call, the class value its receiver. A static
-initializer reads its class only so, or calls a static method whose body
-does not read the class: one mentioning `C` or `this` otherwise, constructing
-`C` or calling a static method reading it included, would run code reading
-the class value, which JavaScript's code reaches with later static fields
-undefined and the model has not allocated, and a closure it creates reading
-a static field may run after the field changes; both are refused.
+value's field read, `C.[[self]]`'s in the class's methods, which run only
+once the class value exists, and a call `C.f()` of one is a method call, the
+class value its receiver; in a static
+initializer of `C`, which runs before the model allocates the class value,
+it is the binding $`\mathtt{static}\ C.f`$ of an earlier field, whose value
+the field holds, as nothing can reach the class value to write it before.
+A static initializer reads its class only so, calls a static method whose
+body does not read the class, or constructs it:
+
+```math
+\frac{\text{constructing}\ C\ \text{(constructor, instance field initializers) runs no code and mentions no}\ C
+      \qquad \text{no static initializer of}\ C\ \text{runs code but}\ \mathtt{new}\ C(\vec a)}
+     {\mathtt{new}\ C(\vec a)\ \text{in a static initializer}\;\equiv\;\mathtt{new}\ C.\texttt{[[class]]}(\vec a)}
+```
+
+$`C.\texttt{[[class]]}`$ is the class's construct-only code, bound before the
+static initializers (as for a class another extends), and the class value is
+that code allocated again with the static fields. Construction then reads no
+static field and runs no code that could reach the class value: JavaScript
+defines the static fields one by one, so a construction reading one may find
+it undefined (`invalid-class-static-constructs-early`, which returns
+`undefined` for a `number` under Node). A static initializer mentioning `C`
+or `this` otherwise, or calling a static method reading the class, would run
+code reading the class value, which JavaScript's code reaches with later
+static fields undefined and the model has not allocated, and a closure it
+creates reading a static field may run after the field changes; both are
+refused.
 
 A class value's own properties are its own static fields; a static field its
 base class declares the class value reaches through its prototype, the base
@@ -714,7 +739,9 @@ they agree with the model; a read `C.f` of an inherited static field and
 are refused, and `Object.assign` from a class value is refused as from any
 source whose type bounds no key (it may own `__proto__`). A `for...in` over a
 class value visits its base's static fields too, which `%ForIn%`'s strings
-admit. A static method is a binding of its own, `static C.m`, read
+admit.
+
+A static method is a binding of its own, `static C.m`, read
 where TypeScript binds `C.m` to it, in the class's members too; one keyed by
 a symbol (`static [Symbol.hasInstance]`) is also an own property of the class
 value, at its annotated signature, which no copy takes, as no copy takes a

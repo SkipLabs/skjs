@@ -158,8 +158,9 @@ let encode (proposal : Proposal_types.t) =
     (* A quantified construct signature, `new <T>(x: T) => C<T>`: a construct
        scheme row, its binders the names the source spells, each construct
        signature an arrow's arguments and result (no receiver). *)
-    | Ctors ([s],statics) when s.quantified <> [] ->
-      if statics <> [] then unsupported "a generic class value's static fields";
+    (* A generic class value's static fields name none of its binders and are
+       read at an instance; the scheme states its construct signatures. *)
+    | Ctors ([s],_) when s.quantified <> [] ->
       let binders = List.map (fun (q:Semantic.rigid) -> label_json (Binder q.spelling))
         (List.concat_map quantifier_identities s.quantified) in
       if List.exists (fun (q:Semantic.quantifier) -> q.resolution <> None) s.quantified then

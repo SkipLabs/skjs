@@ -190,6 +190,51 @@ function staticFieldOf(file: SourceFile, cls: string, name: string): boolean {
       !!m.modifiers?.some((k) => k.kind === ts.SyntaxKind.StaticKeyword)));
 }
 
+/** Whether a node runs code of the program when evaluated: a call, a
+ * construction, an iteration, a tagged template, an `await` or `yield`;
+ * `except` names constructions that count as running none. A closure it
+ * creates runs nothing until called. */
+function runsCode(node: Node, except: (n: ts.NewExpression) => boolean = () => false): boolean {
+  const visit = (n: Node): boolean => {
+    if (ts.isFunctionExpression(n) || ts.isArrowFunction(n) || ts.isFunctionDeclaration(n)) return false;
+    if (ts.isNewExpression(n) && except(n)) return (n.arguments ?? []).some(visit);
+    if (ts.isCallExpression(n) || ts.isNewExpression(n) || ts.isTaggedTemplateExpression(n) ||
+        ts.isAwaitExpression(n) || ts.isYieldExpression(n) || ts.isForOfStatement(n) || ts.isSpreadElement(n) ||
+        ts.isArrayBindingPattern(n) || ts.isTemplateExpression(n) || ts.isClassDeclaration(n) ||
+        ts.isClassExpression(n)) return true;
+    if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.InstanceOfKeyword) return true;
+    return !!n.forEachChild((c) => visit(c) || undefined);
+  };
+  return visit(node);
+}
+
+/** Whether a class's static initializers may construct it before its class
+ * value exists: constructing it runs no code (no base class, a constructor
+ * and instance field initializers running none), and its static
+ * initializers and blocks run none but those constructions, so no code of
+ * the class, which reads the class value, runs before the class value is
+ * bound. */
+function selfConstructs(declaration: ClassDeclaration): boolean {
+  if (declaration.heritageClauses?.some((h) => h.token === ts.SyntaxKind.ExtendsKeyword)) return false;
+  const cls = declaration.name?.text;
+  const own = (n: ts.NewExpression) => ts.isIdentifier(n.expression) && n.expression.text === cls;
+  // Constructing reads no static field either: one not yet initialized
+  // holds nothing in JavaScript, which reads `undefined` there.
+  const mentions = (n: Node): boolean => (ts.isIdentifier(n) && n.text === cls) ||
+    !!n.forEachChild((c) => mentions(c) || undefined);
+  return declaration.members.every((m) => {
+    const isStaticMember = isStatic(m);
+    if (ts.isConstructorDeclaration(m))
+      return !m.parameters.some((p) => p.initializer && (runsCode(p.initializer) || mentions(p.initializer))) &&
+        !(m.body && (runsCode(m.body) || mentions(m.body)));
+    if (ts.isPropertyDeclaration(m))
+      return !m.initializer || (isStaticMember ? !runsCode(m.initializer, own)
+        : !runsCode(m.initializer) && !mentions(m.initializer));
+    if (ts.isClassStaticBlockDeclaration(m)) return !runsCode(m.body, own);
+    return true;
+  });
+}
+
 /** The static method of class `cls`, declared at the file's top level, named
  * `name` (a property name or a private name's text). */
 function staticMethodOf(file: SourceFile, cls: string, name: string): ts.MethodDeclaration | undefined {
@@ -202,21 +247,6 @@ function staticMethodOf(file: SourceFile, cls: string, name: string): ts.MethodD
   return undefined;
 }
 
-/** The literal type TypeScript gives a readonly static field whose
- * initializer is a literal: `null`, a Boolean, a string, or a number, possibly
- * negated. Null for any other initializer. */
-function staticLiteralType(init: Expression, span: Span): TypeTerm | null {
-  if (init.kind === ts.SyntaxKind.NullKeyword) return { k: "atom", name: "null", span };
-  if (init.kind === ts.SyntaxKind.TrueKeyword) return { k: "literal", name: "true", text: "true", span };
-  if (init.kind === ts.SyntaxKind.FalseKeyword) return { k: "literal", name: "false", text: "false", span };
-  if (ts.isStringLiteral(init) || ts.isNoSubstitutionTemplateLiteral(init))
-    return { k: "literal", name: "string", text: init.text, span };
-  const negated = ts.isPrefixUnaryExpression(init) && init.operator === ts.SyntaxKind.MinusToken ? init.operand : null;
-  const numeric = negated ?? init;
-  if (!ts.isNumericLiteral(numeric)) return null;
-  const value = Number(numeric.text);
-  return literalTerm(negated ? -value : value, span);
-}
 
 /** Why a class with a private name takes no part in inheritance. */
 const PRIVATE_INHERITANCE = "a class with a private name `#x` in inheritance is outside the fragment: a derived instance's base part is copied, and a copy holds no private slot";
@@ -541,6 +571,9 @@ class Gate {
   /** Closure parameters written without a type, by the span of their name:
    * the type TypeScript gives each from its context, or why none states it. */
   readonly contextualParams = new Map<string, TypeTerm | { refused: string }>();
+  /** The type TypeScript gives each static field written without an
+   * annotation, by its name's span, or why none. */
+  readonly staticTypes = new Map<string, TypeTerm | { refused: string }>();
   /** The callable form's annotations TypeScript infers for an
    * `Object.assign(arrow, literal)` written without type arguments, by the
    * call's span, or why none. */
@@ -1149,8 +1182,10 @@ class Gate {
           // one, the literal type TypeScript gives a readonly field's literal
           // initializer.
           if (ts.isIdentifier(member.name)) {
-            const type = annot ?? (member.initializer ? staticLiteralType(member.initializer, this.span(member.name)) : null) ??
-              this.fail(member, "a static field without an annotation whose initializer is not a literal: the class value's type states each static field's type");
+            const inferred = annot ? null : this.staticTypes.get(this.span(member.name).join(":"));
+            if (!annot && (!inferred || "refused" in inferred))
+              this.fail(member, `a static field without an annotation, whose type TypeScript gives no term of the fragment states: ${inferred && "refused" in inferred ? inferred.refused : "no type"}`);
+            const type = annot ?? (inferred && !("refused" in inferred) ? inferred : this.fail(member, "a static field's type"));
             staticFields.push({ name: member.name.text, binding, pos: this.span(member.name), type });
           }
           continue;
@@ -1364,14 +1399,31 @@ class Gate {
       }
       // The class value is its constructor as construct-only code, which only
       // `new` runs, holding its static fields.
-      if (typeParams.length && staticFields.length)
-        this.fail(node, "a generic class with static fields: its class value is quantified over its binders, which its static fields' bag does not state");
-      const lambda: Expr = { k: "ctor", pos: this.span(node), ...(typeParams.length ? { typeParams } : {}),
-        lambda: { k: "lambda", pos: this.span(node),
+      // A static field names none of the class's binders (TypeScript refuses
+      // one that does), so a generic class value's bag is the same at each
+      // of its instances.
+      // A static initializer constructing the class constructs it through
+      // its construct-only code, bound before them (`selfConstruction`).
+      const constructs = node.members.some((m) => {
+        let found = false;
+        const visit = (n: Node): void => {
+          if (ts.isNewExpression(n) && ts.isIdentifier(n.expression) &&
+              this.classReads.get(this.span(n.expression).join(":")) === name.text) found = true;
+          n.forEachChild(visit);
+        };
+        if ((ts.isPropertyDeclaration(m) && m.modifiers?.some((k) => k.kind === ts.SyntaxKind.StaticKeyword)) ||
+            ts.isClassStaticBlockDeclaration(m)) visit(m);
+        return found;
+      });
+      const constructorLambda: Expr = { k: "lambda", pos: this.span(node),
         typeParams: [], receiver: null, params: params.map((p) => ({ name: p.name, type: p.type })),
         result: instance, body: { k: "blockBody", pos: this.span(constructor?.body ?? node),
           body: [...params.flatMap((p) => p.binding ? [p.binding] : []),
-            ...construct(body, fields, new Set(), prelude)] } },
+            ...construct(body, fields, new Set(), prelude)] } };
+      const lambda: Expr = { k: "ctor", pos: this.span(node), ...(typeParams.length ? { typeParams } : {}),
+        // Its code is the construct-only code bound before the static
+        // initializers, where they construct the class (`decodeBindings`).
+        lambda: constructs || extended ? { k: "id", pos: this.span(name), name: freshName(name.text) } : constructorLambda,
         ...(staticFields.length ? { statics: staticFields.map((f) =>
           ({ name: f.name, e: { k: "id", pos: f.pos, name: f.binding } satisfies Expr })) } : {}) };
       const type: TypeTerm = { k: "constructor", params: params.map((p) => p.type), rest: null, result: instance,
@@ -1380,19 +1432,28 @@ class Gate {
       // A class another extends is also bound, first, as its fresh
       // constructor, claimed at the instance it allocates besides its own
       // construct signature; the class value is that binding.
+      // A class another extends, or whose static initializers construct it,
+      // is also bound, first, as its fresh constructor, before its static
+      // initializers, claimed at the instance it allocates besides its own
+      // construct signature: a derived class's construction, and a static
+      // initializer's (`selfConstruction`), construct through it. The class
+      // value is that binding, or, holding static fields, its constructor
+      // allocated again with them (`decodeBindings`).
+      let freshBinding: BindingAst[] = [];
       let classBindings: BindingAst[] = [{ name: name.text, namePos: this.span(name), annot: type, init: lambda }];
-      if (extended) {
+      if (extended || constructs) {
         const brace = this.file.text.indexOf("{", heritage ? heritage.end : name.end);
-        classBindings = [
-          { name: freshName(name.text), namePos: [node.getStart(this.file), name.end], annot: null, init: lambda },
-          { name: name.text, namePos: this.span(name), annot: type,
-            init: { k: "id", pos: [brace, brace + 1], name: freshName(name.text) } }];
+        freshBinding = [{ name: freshName(name.text), namePos: [node.getStart(this.file), name.end], annot: null,
+          init: { k: "ctor", pos: [node.getStart(this.file), name.end], ...(typeParams.length ? { typeParams } : {}),
+            lambda: constructorLambda } }];
+        classBindings = [{ name: name.text, namePos: this.span(name), annot: type,
+          init: staticFields.length ? lambda : { k: "id", pos: [brace, brace + 1], name: freshName(name.text) } }];
       }
       this.classRecords.set(name.text, { params: params.map((p) => ({ name: p.name, type: p.type })),
         methods: methodBindings, fresh: freshName(name.text), proto: protoBinding,
         binders: binders.map((tp) => tp.name.text) });
       return { k: "const", pos: this.span(node),
-        bindings: [...staticMethods, ...methods, ...prototypeBinding, ...statics, ...classBindings] };
+        bindings: [...staticMethods, ...methods, ...prototypeBinding, ...freshBinding, ...statics, ...classBindings] };
     } finally {
       this.strict = outerStrict;
       this.superClass = outerSuper;
@@ -1450,6 +1511,23 @@ class Gate {
     if (!ts.isIdentifier(node.expression) || this.classReads.get(this.span(node.expression).join(":")) !== cls)
       this.fail(node, "a static private member read other than through its class's name: private statics are bindings of their own");
     return { binding: staticName(cls, name.text), cls };
+  }
+
+  /** `new C(…)` in a static initializer of `C`, which runs before the class
+   * value exists: the class's construct-only code, bound before the static
+   * initializers (`freshName`), where constructing runs no code that
+   * could read the class value (`selfConstructs`). Null for any other `new`. */
+  private selfConstruction(node: ts.NewExpression): Expr | null {
+    const callee = node.expression;
+    if (!ts.isIdentifier(callee)) return null;
+    const cls = this.classReads.get(this.span(callee).join(":"));
+    const init = this.staticInitOf(node);
+    if (cls === undefined || init?.cls !== cls || init.closure) return null;
+    const declaration = this.file.statements.find((st): st is ClassDeclaration =>
+      ts.isClassDeclaration(st) && st.name?.text === cls);
+    if (!declaration || !selfConstructs(declaration))
+      this.fail(node, "a static initializer constructing its class where constructing it reads the class or runs code, or another static initializer runs code: it could read a static field not yet defined, `undefined` in JavaScript, or the class value, which the model allocates only after its static fields are initialized");
+    return { k: "id", pos: this.span(callee), name: freshName(cls) };
   }
 
   /** Whether `body` reads class `cls`: an identifier TypeScript binds to it. */
@@ -1830,7 +1908,7 @@ class Gate {
       return {
         k: "new",
         pos: this.span(node),
-        callee: this.expr(node.expression),
+        callee: this.selfConstruction(node) ?? this.expr(node.expression),
         args,
         ...(spreads.length ? { spreads } : {}),
         ...(node.typeArguments?.length
@@ -5577,6 +5655,14 @@ export function parseFile(file: string, carriesContext = false,
   const classReadKeys = new Set(classReadNodes.map(node => gate.span(node).join(":")));
   // A closure parameter without a type: TypeScript gives it one from its
   // context.
+  // A static field written without an annotation: TypeScript gives it a
+  // type, which the class value's type states.
+  const staticTypeNodes: Node[] = [];
+  for (const c of classNodes)
+    for (const m of c.members)
+      if (ts.isPropertyDeclaration(m) && !m.type && ts.isIdentifier(m.name) &&
+          m.modifiers?.some((k) => k.kind === ts.SyntaxKind.StaticKeyword))
+        staticTypeNodes.push(m.name);
   const contextualNodes: Node[] = [];
   const findContextual = (node: Node): void => {
     if (ts.isParameterDeclaration(node) && !node.type && !node.dotDotDotToken && node.parent &&
@@ -5648,12 +5734,13 @@ export function parseFile(file: string, carriesContext = false,
   if (importNodes.length || localNodes.length || globalNodes.length || globalValueNodes.length ||
       firstArray || firstAsync || keyNodes.length || ambientNames.length || staticNodes.length ||
       classTestNodes.length || classReadNodes.length || contextualNodes.length || assignNodes.length ||
+      staticTypeNodes.length ||
       hookTestNodes.length || receiverNodes.length || enumNodes.length || computedNodes.length || symbolNameNodes.length ||
       keyTypeNodes.length || bindingNodes.length || iterableNodes.length || spreadNodes.length ||
       restTargets.length || privateNodes.length || inKeyNodes.length || receiverTargetNodes.length || elementReadNodes.length) {
     const first = importNodes[0] ?? localNodes[0] ?? globalNodes[0] ?? globalValueNodes[0] ?? firstArray ??
       firstAsync ?? keyNodes[0] ?? ambientNames[0] ?? staticNodes[0] ?? classTestNodes[0] ?? classReadNodes[0] ?? contextualNodes[0] ?? assignNodes[0] ??
-      hookTestNodes[0] ?? receiverNodes[0] ?? enumNodes[0] ??
+      hookTestNodes[0] ?? staticTypeNodes[0] ?? receiverNodes[0] ?? enumNodes[0] ??
       computedNodes[0] ?? symbolNameNodes[0] ?? keyTypeNodes[0] ?? bindingNodes[0] ?? iterableNodes[0] ??
       spreadNodes[0] ?? restTargets[0]?.node ?? privateNodes[0] ?? inKeyNodes[0] ?? receiverTargetNodes[0] ?? elementReadNodes[0];
     if (!first) throw Error("missing declaration root");
@@ -5708,6 +5795,8 @@ export function parseFile(file: string, carriesContext = false,
           if (read && (start < dStart || inInitializer)) early.push(read);
           gate.renames.set(`${start}:${end}`, renamed);
         },
+        staticTypes: staticTypeNodes.map(node => gate.span(node)),
+        staticType: ([start, end], result) => gate.staticTypes.set(`${start}:${end}`, result),
         contextualParams: contextualNodes.map(node => gate.span(node)),
         contextualParam: ([start, end], result) => gate.contextualParams.set(`${start}:${end}`, result),
         assignCalls: assignNodes.map(node => gate.span(node)),

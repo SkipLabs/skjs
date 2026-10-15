@@ -15,6 +15,25 @@ module Make (S : Inputs) = struct
 open S
 module Support = Expression_support.Make(S)
 let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:Analysis_state.body_infer) ?expected env (e:Source.expr) =
+  (* A class value's static fields, each the binding its initializer bound,
+     at the contract the class's annotation states for it. *)
+  let static_fields expected env statics =
+    let declared = match expected with
+      | Some t -> (match declared_head declarations [] t with
+        | Atoms [Ctors (_,fs)] -> fs
+        | _ -> [])
+      | None -> [] in
+    List.map (fun (name,(value:Source.expr)) ->
+      match List.find_opt (fun (f:Semantic.field) -> f.name = name) declared with
+      | Some f -> ignore (expr ~expected:f.read env value); f
+      | None ->
+        (* A static method's binding may carry an effect its annotation
+           does not state; the field holds it at its annotation. *)
+        let t = match expr env value with
+          | Atoms [Shape ({calls;_} as s)] ->
+            Atoms [Shape {s with calls=List.map (fun (c:Semantic.signature) -> {c with call_effect=Unrestricted}) calls}]
+          | t -> t in
+        {name;optional=false;read=t;write=Some t;host=false;receivers=[]}) statics in
   match e.node with
     | Ctor ({node=Lambda (None,[],ps,[],false,Some result,body);_},statics) ->
       (* The constructor's body under its parameters; `new` passes it no
@@ -34,25 +53,19 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
       let extra = Option.value (List.assoc_opt e.pos offered) ~default:[] in
       (* A fresh constructor gives, first, the instance it allocates. *)
       let fresh_sig = if fresh then [{own with result=allocated_type}] else [] in
-      (* Its static fields, each the binding its initializer bound, at the
-         contract the class's annotation states for it. *)
-      let declared = match expected with
-        | Some t -> (match declared_head declarations [] t with
-          | Atoms [Ctors (_,fs)] -> fs
-          | _ -> [])
-        | None -> [] in
-      let static_fields = List.map (fun (name,(value:Source.expr)) ->
-        match List.find_opt (fun (f:Semantic.field) -> f.name = name) declared with
-        | Some f -> ignore (expr ~expected:f.read env value); f
-        | None ->
-          (* A static method's binding may carry an effect its annotation
-             does not state; the field holds it at its annotation. *)
-          let t = match expr env value with
-            | Atoms [Shape ({calls;_} as s)] ->
-              Atoms [Shape {s with calls=List.map (fun (c:Semantic.signature) -> {c with call_effect=Unrestricted}) calls}]
-            | t -> t in
-          {name;optional=false;read=t;write=Some t;host=false;receivers=[]}) statics in
-      Atoms [Ctors (fresh_sig @ own :: List.filter (fun s -> s <> own) (List.sort_uniq compare extra),static_fields)]
+      Atoms [Ctors (fresh_sig @ own :: List.filter (fun s -> s <> own) (List.sort_uniq compare extra),
+        static_fields expected env statics)]
+    (* A class value whose code is that of the class value named, bound
+       before its static initializers, which construct the class through it:
+       that one's construct signatures, with the class's static fields. *)
+    | Ctor ({node=Id h;_},statics) ->
+      (match declared_head declarations [] (binding_type (lookup env h)) with
+       | Atoms [Ctors (signatures,[])] ->
+         (* The signatures it is offered, as a constructor's own are. *)
+         let extra = Option.value (List.assoc_opt e.pos offered) ~default:[] in
+         Atoms [Ctors (signatures @ List.filter (fun s -> not (List.mem s signatures)) (List.sort_uniq compare extra),
+           static_fields expected env statics)]
+       | _ -> Proposal_diagnostics.unsupported ("a class value's code names no class value: " ^ h))
     | Ctor _ -> Proposal_diagnostics.unsupported "a class value is a constructor lambda with plain parameters"
     | New (callee,types,args,spreads) ->
       let constructor = declared_head declarations [] (expr env callee) in

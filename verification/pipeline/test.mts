@@ -650,6 +650,10 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     "invalid-class-static-assign: Object.assign copies the own static field only");
   assert.equal(runExample("invalid-typeof-inherited-statics", `String(make().inherited)`), "undefined",
     "invalid-typeof-inherited-statics: the returned class lacks the inherited static TypeScript promises");
+  // External code receiving a class value may write its static field; the
+  // test supplies `change`, which the example declares.
+  assert.equal(runExample("invalid-class-static-generic-external", `function change(k) { k.limit = 9; }
+    run()`), 9, "invalid-class-static-generic-external: the read finds the written value");
   assert.equal(runExample("class-static-variadic", `JSON.stringify([run, copy()])`), "[19,7]",
     "class-static-variadic: the construction and the copy JavaScript makes");
   // A write at a string key known only at run time: `__proto__` runs the
@@ -1082,6 +1086,8 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   assert.equal(runImporting("invalid-unique-symbol-value-import", "held === brand"), false);
   // A class has no plain call: calling it throws.
   assert.throws(() => runExample("invalid-class-as-function", "go()"), /cannot be invoked without 'new'/);
+  // A construction in a static initializer reads a static not yet defined.
+  assert.equal(runExample("invalid-class-static-constructs-early", "String(read())"), "undefined");
   // A generic method's contract read as `unknown` admits 42, which no call
   // can run.
   assert.throws(() => runExample("invalid-generic-method-nested-scheme", "wrong().run({ id: (x) => x })"),

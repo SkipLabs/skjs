@@ -103,10 +103,21 @@ partial def callableType (j : Json) : SourceTypes.Lowering (Ty Tree) := do
     else if (← jStr (← jField atom "a")) == "constructor" then
       -- A construct signature: what a class meets and no plain function does.
       -- A generic class's instances form one conjunction: each is a signature.
-      let signatures ← (← CellClaims.conjuncts atom).mapM fun a => do
-        fieldsExactly a ["a", "params", "result"]
-        return (← (← jArr a "params").mapM callableType, ← callableType (← jField a "result"))
-      return [← SourceTypes.use (.ctors signatures)]
+      -- A generic class's static fields, the same in each, name none of its
+      -- binders: the first's are the class value's.
+      let parts ← (← CellClaims.conjuncts atom).mapM fun a => do
+        let hasStatics := (a.getObjVal? "statics").isOk
+        fieldsExactly a (["a", "params", "result"] ++ (if hasStatics then ["statics"] else []))
+        let statics ← if !hasStatics then pure [] else (← jArr a "statics").mapM fun f => do
+          let readonly := (f.getObjVal? "readonly").isOk
+          fieldsExactly f (["name", "type"] ++ (if readonly then ["readonly"] else []))
+          return (← PropKey.decode (← jField f "name"), readonly, ← callableType (← jField f "type"))
+        return ((← (← jArr a "params").mapM callableType, ← callableType (← jField a "result")), statics)
+      let statics := (parts.head?.map (·.2)).getD []
+      if parts.any (·.2 != statics) then throw "a class value's instances state the same static fields"
+      let fields := statics.filterMap fun (k, r, t) => if r then none else some (k, t)
+      let views := statics.filterMap fun (k, r, t) => if r then some (k, t) else none
+      return [← SourceTypes.use (.ctors (parts.map (·.1)) [] fields [] views)]
     else if ["array", "store"].contains (← jStr (← jField atom "a")) then
       return [← arrayType atom]
     else if (← jStr (← jField atom "a")) == "record" &&
@@ -730,6 +741,9 @@ partial def Expr.callees : Expr → List (Span × Span × String × List Json)
   | .lambda _ _ _ ps ds _ _ b =>
     ((ds.flatMap fun d => d.2.callees) ++ b.callees).filter
       (fun c => !(ps.map Prod.fst).contains c.2.2.1)
+  -- A read off a name instantiates it, as a call does, where it is a
+  -- generic class value whose static field it reads.
+  | .read p _ (.var q n) => [(p, q, n, [])]
   | .shapeTest _ _ _ e | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e => e.callees
   | .ctor _ e fs => e.callees ++ fs.flatMap (·.2.callees)
   | .construct p f args _ ts =>
@@ -1227,9 +1241,12 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     fieldsExactly j (["k","pos","lambda"] ++
       (if (j.getObjVal? "typeParams").isOk then ["typeParams"] else []) ++
       (if (j.getObjVal? "statics").isOk then ["statics"] else []))
+    -- Or the name of a class value bound earlier in the same declaration,
+    -- whose constructor this one's code is (`decodeBindings`).
     let lam ← decodeExpr (← jField j "lambda")
-    let .lambda _ none [] _ [] false _ _ := lam
-      | throw "a class value is a constructor lambda with plain parameters"
+    match lam with
+    | .lambda _ none [] _ [] false _ _ | .var .. => pure ()
+    | _ => throw "a class value is a constructor lambda with plain parameters"
     -- Its static fields, each read from the binding its initializer bound,
     -- under a name a source property spells; the list is left out when
     -- empty, its one spelling of none.
@@ -1353,7 +1370,16 @@ partial def decodeBindings (j : Json) : Except String (List Binding) := do
     return (⟨← jStr (← jField b "name"), ← jSpan b "namePos",
       if a == .null then none else some a, ← decodeExpr (← jField b "init")⟩ : Binding)
   if bindings.isEmpty then throw "a declaration needs a binding"
-  return bindings
+  -- A class value whose code is that of a class value bound earlier in the
+  -- declaration, by name: its static initializers construct the class
+  -- through that one before it exists. It is that constructor, allocated
+  -- again with the class's static fields; its body is written once.
+  bindings.mapM fun b => match b.init with
+    | .ctor p (.var _ h) fs =>
+      match bindings.find? (·.name == h) with
+      | some ⟨_, _, _, .ctor _ lam@(.lambda ..) []⟩ => pure { b with init := .ctor p lam fs }
+      | _ => throw s!"a class value's code names no class value '{h}' of its declaration"
+    | _ => pure b
 
 partial def decodeStmt (j : Json) : Except String Stmt := do
   let p ← jSpan j "pos"

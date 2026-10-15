@@ -388,6 +388,11 @@ export function collectDeclarations(file: string, options: {
    * each is reported to `contextualParam` with the type TypeScript gives it
    * from its context, as a type term (`contextualTerm`), or the reason none
    * states it. */
+  /** The names of the client's static fields written without an
+   * annotation: each is reported to `staticType` with the type TypeScript
+   * gives it, as a term (`contextualTerm`), or why none. */
+  staticTypes?: readonly Span[];
+  staticType?: (span: Span, result: TypeTerm | { refused: string }) => void;
   contextualParams?: readonly Span[];
   contextualParam?: (span: Span, result: TypeTerm | { refused: string }) => void;
   /** The client's calls `Object.assign(arrow, literal)` written without type
@@ -1464,6 +1469,18 @@ export function collectDeclarations(file: string, options: {
       };
       return visit(client);
     };
+    for (const span of options.staticTypes ?? []) {
+      const name = identifierAt(client, span);
+      if (!name) throw new DeclarationError(span, "TypeScript static field missing");
+      const symbol = checker.getSymbolAtLocation(name);
+      const type = symbol ? checker.getTypeOfSymbol(symbol) : undefined;
+      try {
+        if (!type || type.isErrorType()) throw Error("TypeScript gives this static field no type");
+        options.staticType?.(span, contextualTerm(type, span));
+      } catch (error) {
+        options.staticType?.(span, { refused: error instanceof Error ? error.message : String(error) });
+      }
+    }
     for (const span of options.contextualParams ?? []) {
       const parameter = parameterAt(span);
       if (!parameter) throw new DeclarationError(span, "TypeScript parameter missing");

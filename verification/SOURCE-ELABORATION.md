@@ -946,7 +946,8 @@ its static fields, where it binds $`C`$, after the static field initializers,
 and nothing reaches $`C^{\mathit{self}}`$ before: only those closures read it,
 its static methods among them, and none runs until an instance or the class
 value exists, but a static method whose body does not read the class, which a
-static initializer may call ([classes](SOURCE-CONTRACTS.md#classes)).
+static initializer may call, and a constructor reading no class and running no
+code, through which one may construct the class ([classes](SOURCE-CONTRACTS.md#classes)).
 
 ## Source closures and their annotations
 

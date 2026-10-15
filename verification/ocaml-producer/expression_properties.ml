@@ -7,6 +7,8 @@ module type Inputs = sig
   include Expression_support.Inputs
   include Analysis_capabilities.Path_queries
   include Analysis_capabilities.Evolution
+  include Analysis_capabilities.Claim_operations
+  include Analysis_capabilities.Instance_publication
 end
 module Make (S : Inputs) = struct
 open S
@@ -38,6 +40,20 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
           Proposal_diagnostics.unsupported ("a cell read at its contract: a read of " ^ key_text n ^ " on a `let` or an assigned \
             parameter holding a primitive beside an object, which a test does not narrow: what a cell is known \
             to hold is primitive values or merely no `undefined`"))
+    (* A static field read off a generic class value: its bag names none
+       of the class's binders, so the value is read at an instance, each
+       binder at its bound. *)
+    | Read (({node=Id name;_} as o),n) when not (is_local name) &&
+        (match module_type name with Some (Atoms [Ctors ([s],_::_)]) -> s.quantified <> [] | _ -> false) ->
+      (match module_type name with
+       | Some (Atoms [Ctors ([s],statics)]) ->
+         ignore (expr env o);
+         let substitution = List.map (fun (q:quantifier) -> q.identity,
+           (match q.bound with Some b -> b | None -> ValueArgument Semantic.top)) s.quantified in
+         instance_of o substitution;
+         publish_substitution site (List.map (fun ((r:rigid),t) -> r.spelling,t) substitution);
+         S.field_type declarations [] (Atoms [Ctors ([],statics)]) n
+       | _ -> Proposal_diagnostics.unsupported "a generic class value")
     | Read (e,n) ->
       let receiver = expr env e in
       if not (List.mem site (observations ()).Analysis_capabilities.method_callees) && method_member declarations receiver n then
