@@ -93,6 +93,9 @@ function tests(value: string): string {
  * `^{…}` are sub- and superscripts. The input is the record's; nothing is
  * added to it. */
 const KEYWORDS = new Set(["if", "then", "else", "let", "in", "tag"]);
+const CONNECTIVES = new Set(["or", "and", "not"]);
+/** JavaScript's literal values, drawn as code wherever they appear. */
+const LITERALS = new Set(["null", "undefined", "true", "false", "NaN"]);
 const BINDERS = new Set("∀∃λΛμ");
 const RELATIONS = new Set("⊢⊨≤≥⊑⊒∈∉⊆⊂=≠≡:⇝↦≜≔");
 const TEXT_WORD = /^(?:a|an|A|An|[A-Za-z][A-Za-z'-]*[a-z][A-Za-z'-]*)$/;
@@ -106,13 +109,15 @@ function mathTokens(text: string): MathToken[] {
  * code, a quoted string, a sub- or superscript, `refused`, a keyword, an
  * operator applied to arguments, a one-letter variable, a capitalised
  * constructor, a binder, a relation, or other symbols and spaces (`plain`). */
-type MathRole = "text" | "code" | "str" | "intr" | "script" | "refused" | "kw" | "op" | "var" | "con" | "bind" | "rel" | "plain";
+type MathRole = "text" | "code" | "str" | "intr" | "lit" | "script" | "refused" | "kw" | "op" | "var" | "con" | "bind" | "rel" | "plain";
 function mathRoles(ts: MathToken[]): MathRole[] {
   // Side conditions in words: two or more words, or one lowercase word of
   // three letters or more, not applied to arguments; a run continues across
   // spaces, punctuation, quoted strings and code.
   const prose = new Set<number>();
-  const textWord = (k: number) => ts[k]?.kind === "word" && TEXT_WORD.test(ts[k].text) && !KEYWORDS.has(ts[k].text)
+  // A lone word just after a relation (`: bool`, `= number`) names a type.
+  const afterRelation = (k: number) => { let j = k - 1; while (ts[j]?.kind === "space") j--; return ts[j] !== undefined && RELATIONS.has(ts[j].text); };
+  const textWord = (k: number) => ts[k]?.kind === "word" && TEXT_WORD.test(ts[k].text) && !KEYWORDS.has(ts[k].text) && !LITERALS.has(ts[k].text)
     && ts[k + 1]?.text !== "(" && ts[k + 1]?.kind !== "script";
   // Inside a run a keyword is an ordinary word ("in double brackets").
   const joins = (k: number) => ["space", "code", "str"].includes(ts[k].kind) || ",;()".includes(ts[k].text)
@@ -122,7 +127,7 @@ function mathRoles(ts: MathToken[]): MathRole[] {
     const run = [i];
     for (let k = i + 1; k < ts.length && (joins(k) || textWord(k)); k++) if (textWord(k)) run.push(k);
     const last = run[run.length - 1];
-    if (run.length >= 2 || /^[a-z]{3,}$/.test(ts[i].text)) {
+    if (run.length >= 2 || (/^[a-z]{3,}$/.test(ts[i].text) && !afterRelation(i))) {
       // A trailing closing parenthesis or string belongs to the run when the run holds its start.
       // An opening parenthesis just before the run belongs to it too.
       const start = ts[i - 1]?.text === "(" ? i - 1 : i;
@@ -140,6 +145,9 @@ function mathRoles(ts: MathToken[]): MathRole[] {
       const w = t.text;
       // A keyword ending a sentence ("beginning with") is a word of it.
       if (KEYWORDS.has(w)) return prose.has(i - 1 - Number(ts[i - 1]?.kind === "space")) ? "text" : "kw";
+      if (LITERALS.has(w)) return "lit";
+      if (CONNECTIVES.has(w)) return "text";
+      if (/^[a-z]{3,}$/.test(w) && afterRelation(i)) return "con";
       if ((ts[i + 1]?.text === "(" || ts[i + 1]?.kind === "script") && w.length > 1) return "op";
       if (/^[A-Za-zͰ-Ͽ][0-9'′]*⃗?$/.test(w)) return "var";
       return /^[A-Z]/.test(w) ? "con" : "op";
@@ -153,7 +161,7 @@ function math(text: string): string {
   const ts = mathTokens(text), roles = mathRoles(ts);
   const prose = (i: number) => roles[i] === "text" || ((roles[i] === "code" || roles[i] === "str") && (roles[i - 1] === "text" || roles[i + 1] === "text"));
   const CLASS: { [R in MathRole]: string } = {
-    text: "m-text", code: "", str: "", intr: "m-intr", script: "", refused: "refused", kw: "m-kw", op: "m-op", var: "", con: "m-con", bind: "m-bind", rel: "m-rel", plain: "" };
+    text: "m-text", code: "", str: "", intr: "m-intr", lit: "m-lit", script: "", refused: "refused", kw: "m-kw", op: "m-op", var: "", con: "m-con", bind: "m-bind", rel: "m-rel", plain: "" };
   return ts.map((t, i) => {
     const e = esc(t.text), r = roles[i];
     const piece = r === "code" ? `<code class="m-code">${highlight(t.text.slice(1, -1))}</code>`
@@ -425,7 +433,7 @@ ul.effect .arrow { color:var(--accent); font-weight:600 }
 .lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
 .lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
 .lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
-.m-intr { font:14px/1.5 var(--mono); color:#2b5b9c }
+.m-intr { font:14px/1.5 var(--mono); color:#2b5b9c } .m-lit { font:13px/1.5 var(--mono); color:#8e3fb5 }
 .lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
 .lowering .to { color:var(--accent); font-weight:600; font-size:17px }
 .lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }

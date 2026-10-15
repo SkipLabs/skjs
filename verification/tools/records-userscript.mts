@@ -199,7 +199,7 @@ const header = `// ==UserScript==
 // @name         Commit records on GitHub
 // @description  Shows a pull request's commit records as the review page draws them (built from verification/tools/record-render.mts).
 // @namespace    skjs-verification
-// @version      4
+// @version      5
 // @match        https://github.com/*
 // @grant        GM.xmlHttpRequest
 // @grant        GM.getValue
