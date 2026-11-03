@@ -2204,6 +2204,16 @@ extension class TypeChecker {
           SKJSCode(9999),
         )
       };
+      e.value match {
+      | AsConst(sub) ->
+        // Composite literals first: no "unnecessary" error — freezing an
+        // object/array literal is meaningful even in a const binding.
+        this.maybeAsConstType(tcenv, sub) match {
+        | Some(ty) -> return ty
+        | None() -> void
+        }
+      | _ -> void
+      };
       this.asConstExpr(tcenv, e) match {
       | Some(ty) -> return ty
       | None() -> void
@@ -2279,7 +2289,15 @@ extension class TypeChecker {
             };
             break type match {
             | None() ->
-              value.flatMap(e -> this.asConstExpr(tcenv, e)) match {
+              value.flatMap(e ->
+                (e.value match {
+                | AsConst(sub) -> this.maybeAsConstType(tcenv, sub)
+                | _ -> None()
+                }) match {
+                | some @ Some _ -> some
+                | None() -> this.asConstExpr(tcenv, e)
+                }
+              ) match {
               | None() -> this.newTVar(tcenv, pos, FromUntypedVar(pos))
               | Some(ty) -> ty
               }
@@ -3855,6 +3873,10 @@ extension class TypeChecker {
         stableRight,
       )
     | AsConst(subExpr) ->
+      this.maybeAsConstType(tcenv, subExpr) match {
+      | Some(compositeTy) -> return compositeTy
+      | None() -> void
+      };
       this.asConstExpr(tcenv, subExpr) match {
       | Some(ty) -> ty
       | None() ->
@@ -4037,6 +4059,102 @@ extension class TypeChecker {
       ),
       true,
     )
+  }
+
+  // `as const` on an object literal (#801): the deeply-frozen CLOSED type —
+  // readonly literal-pinned fields plus never string/symbol indexes (every
+  // unnamed key provably absent).
+  // Array literals keep main's constArrayLit path (readonly tuple, with the
+  // usual redundancy warning), so this only intercepts objects; nested
+  // values freeze recursively via asConstFieldValue. None for non-object
+  // expressions (the primitive and array paths stay in asConstExpr /
+  // constArrayLit).
+  private fun maybeAsConstType(tcenv: mutable TCEnv, e: Expr): ?TType {
+    pos = e.pos;
+    e.value match {
+    | Object(efields) ->
+      fieldsMap: SortedMap<FieldNameString, TField> = SortedMap[];
+      for (field in efields) {
+        field match {
+        | FDNormal(name, v) ->
+          fd = TField::create{
+            pos => name.pos,
+            name => name.value,
+            isOptional => false,
+            isReadonly => Some(name.pos),
+            type => this.asConstFieldValue(tcenv, v),
+            access => FAPublic(),
+          };
+          !fieldsMap = fieldsMap.set(fd.name, fd)
+        | FDComputed(key, _) ->
+          tcenv.error(
+            Array[
+              (key.pos, "Computed keys are not yet supported with 'as const'"),
+            ],
+            SKJSCode(9034),
+          )
+        | FDSpread(spread) ->
+          tcenv.error(
+            Array[
+              (
+                spread.pos,
+                "Spread is not supported with 'as const': the spread source may have unknown keys, so the result cannot be proven closed",
+              ),
+            ],
+            SKJSCode(9034),
+          )
+        | FDMethod _ ->
+          tcenv.error(
+            Array[(pos, "Methods are not yet supported with 'as const'")],
+            SKJSCode(9034),
+          )
+        }
+      };
+      Some(
+        TType::single(
+          TObject::createSingleBranch(
+            TFields::createFromSorted{
+              fields => fieldsMap,
+              isArray => Some(false),
+            }.withNeverIndexes(
+              TField::createNeverIndex("k", pos),
+              TField::createNeverIndex("s", pos),
+            ),
+            None(),
+            pos,
+          ),
+        ),
+      )
+    | _ -> None()
+    }
+  }
+
+  // The type of a field/element value under an enclosing `as const`.
+  private fun asConstFieldValue(tcenv: mutable TCEnv, e: Expr): TType {
+    this.maybeAsConstType(tcenv, e) match {
+    | Some(ty) -> ty
+    | None() ->
+      e.value match {
+      | EArray(elts) if (elts.all(x -> !(x.value is Spread _))) ->
+        // A nested array literal freezes to a readonly tuple, exactly as a
+        // top-level `[...] as const` does (constArrayLit).
+        this.constArrayLit(tcenv, e.pos, elts)
+      | AsConst(sub) ->
+        // Redundant inner assertion: the enclosing as-const already freezes.
+        tcenv.warning(
+          Array[(sub.pos, "This 'as const' is unnecessary")],
+          SKJSCode(2044),
+        );
+        this.asConstFieldValue(tcenv, sub)
+      | _ ->
+        this.asConstExpr(tcenv, e) match {
+        | Some(ty) -> ty
+        | None() ->
+          ty = this.expr(tcenv, e, true);
+          this.stableAliasExprType(tcenv, e, ty)
+        }
+      }
+    }
   }
 
   /* The precise type of a const-foldable expression -- a primitive literal, a
