@@ -292,6 +292,19 @@ extension class TField {
 }
 
 extension class STypes {
+  // void's only runtime value is undefined, so a void unit on one side meets
+  // an undefined unit on the other side to undefined, even though their tags
+  // differ (issue #1041).
+  private static fun voidUndefCross(
+    x: SType,
+    other: InternalKeyedArrayMap<STypeTag, SType>,
+  ): ?SType {
+    (x, other.maybeGet(TagUndefined())) match {
+    | (TPrimUnit(TVoid(), _), Some(u @ TPrimUnit(TUndefined(), _))) -> Some(u)
+    | _ -> None()
+    }
+  }
+
   // Structural intersection delegates only object-field normalization. None
   // denotes bottom; primitive and parameter algebra never accesses a solver.
   static fun interWith(
@@ -299,22 +312,49 @@ extension class STypes {
     stypes2: STypes,
     meetFields: (TFields, TFields) -> ?TFields,
   ): ?STypes {
-    stypes1.stypes.mapInterOption(stypes2.stypes, (sty1, sty2) -> {
-      invariant(
-        sty1.tag() == sty2.tag(),
-        "mapInterOption ensures iteration with identical tags",
-      );
-      (sty1, sty2) match {
-      | (TPrimUnit _, TPrimUnit _) -> Some(sty1)
+    stypes1.stypes.mergeOption(stypes2.stypes, ior ->
+      ior match {
+      | Both(sty1, sty2) ->
+        Some(
+          {
+            invariant(
+              sty1.tag() == sty2.tag(),
+              "mergeOption ensures iteration with identical tags",
+            );
+            (sty1, sty2) match {
+            | (TPrimUnit _, TPrimUnit _) -> Some(sty1)
 
-      | (p1 @ TPrimValue _, p2 @ TPrimValue _) -> TPrimValue::inter(p1, p2)
+            | (p1 @ TPrimValue _, p2 @ TPrimValue _) ->
+              TPrimValue::inter(p1, p2)
 
-      | (obj1 @ TObject _, obj2 @ TObject _) ->
-        TObject::interWith(obj1, obj2, meetFields)
+            | (obj1 @ TObject _, obj2 @ TObject _) ->
+              TObject::interWith(obj1, obj2, meetFields)
 
-      | _ -> internal_error("Internal error")
+            | _ -> internal_error("Internal error")
+            }
+          },
+        )
+      // A void unit unique to one side still meets an undefined unit on the
+      // other side. Guarded against a duplicate TagUndefined key when this
+      // side already has its own undefined unit (which Both then pairs).
+      | Left(x) ->
+        Some(
+          if (stypes1.stypes.maybeGet(TagUndefined()).isNone()) {
+            STypes::voidUndefCross(x, stypes2.stypes)
+          } else {
+            None()
+          },
+        )
+      | Right(y) ->
+        Some(
+          if (stypes2.stypes.maybeGet(TagUndefined()).isNone()) {
+            STypes::voidUndefCross(y, stypes1.stypes)
+          } else {
+            None()
+          },
+        )
       }
-    }) match {
+    ) match {
     | Some(stypes) if (!stypes.isEmpty()) -> Some(STypes(stypes))
     | _ -> None()
     }
@@ -401,7 +441,11 @@ extension base class SType {
     sty2: SType,
   ): Bool {
     (sty1, sty2) match {
-    | (TPrimUnit(kind1, _), TPrimUnit(kind2, _)) -> kind1 == kind2
+    | (TPrimUnit(kind1, _), TPrimUnit(kind2, _)) ->
+      kind1 == kind2 ||
+        // void's only runtime value is undefined, so the two overlap (#1041)
+        (kind1 is TVoid() && kind2 is TUndefined()) ||
+        (kind1 is TUndefined() && kind2 is TVoid())
     | (TPrimUnit _, _)
     | (_, TPrimUnit _) ->
       false

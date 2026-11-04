@@ -450,6 +450,10 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
 - **Readonly is preserved**: a field or index the scrutinee declared `readonly` stays readonly through the narrowing — the intersection with the class view may restrict what it reads as, but never grants a write the value's type withheld (`x.a = x.b` on a narrowed `{ readonly a; readonly b }`, or `a[0] = a[1]` on a `ReadonlyArray<string>` narrowed by `instanceof Array`, is rejected). tsc narrows to `C<any>` / a mutable `string[]` and accepts it
 - **Verified by**: `tests/expect-error/instanceof-generic-skolem-args.ts`, `tests/expect-error/tparam-name-collision.ts`, `tests/expect-error/instanceof-readonly-field.ts`
 
+### 27f. `void` and `undefined` Overlap in Equality Narrowing
+- **Rule**: `void`'s only runtime value is `undefined`, so `void` and `undefined` overlap: `void & undefined` is `undefined` (not `never`), and a strict comparison between them is not reported as always-false. In `if (x === y)` with `x: void` and `y: undefined` the true branch narrows `x` to `undefined` — the branch is reachable at runtime, so narrowing to `never` would be unsound (issue #1041). `void` and `null` stay disjoint (`undefined === null` is false at runtime). Note SKJS keeps `undefined` non-assignable to `void` (stricter than tsc, which accepts `const v: void = undefined`); only the intersection/overlap treat the two as the same value.
+- **Verified by**: `tests/expect-error/void.ts`
+
 ### 28. Object Spread Soundness (Stricter than TypeScript)
 - **Rule**: In an object literal with spreads, fields defined before a spread are dropped from the result type
 - **TypeScript difference**: TypeScript keeps pre-spread fields in the result type, which is unsound — the spread value could overwrite them at runtime (structural subtyping allows extra properties)

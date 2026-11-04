@@ -230,3 +230,28 @@ function testArithmeticAssignment(): void {
   // @ts-expect-error Right operand of '+' is not assignable to the left operand's type
   x += returningVoid();
 }
+
+// --- void vs undefined in equality narrowing (issue #1041) ---
+
+// void's only runtime value is undefined, so `x === y` with x: void and
+// y: undefined is reachable at runtime: the true branch narrows x to
+// undefined, not never.
+function voidEqualsUndefinedNarrowsToUndefined(
+  returningVoid: () => void,
+  y: undefined,
+): void {
+  const x = returningVoid();
+  // @skjs-expect-warning An expression of type 'void' cannot be used here
+  if (x === y) {
+    __SKJS_show(x, `undefined`);
+    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+    const n: never = x;
+  }
+}
+
+function voidUnionEqualsUndefined(x: void | string, y: undefined): void {
+  // @skjs-expect-warning An expression of type 'void' cannot be used here
+  if (x === y) {
+    __SKJS_show(x, `undefined`);
+  }
+}
