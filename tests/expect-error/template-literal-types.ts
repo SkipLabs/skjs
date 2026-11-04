@@ -156,7 +156,7 @@ function preciseExponent(x: PreciseExponent): "1e+100" {
 
 // --- Holes whose type may not be interpolated at all ---
 
-// @skjs-expect-error Type '{}' is not assignable to type 'string | number | bigint | boolean | null | undefined'
+// @skjs-expect-error Type 'object' is not assignable to type 'string | number | bigint | boolean | null | undefined'
 type ObjectHole = `${object}`;
 
 // @skjs-expect-error Type 'symbol' is not assignable to type 'string | number | bigint | boolean | null | undefined'
@@ -175,7 +175,7 @@ type FunctionTypeHole = `${(q: string) => void}`;
 
 // A hole that may not be interpolated is reported even when another hole is
 // irreducible: the constraint is checked before the template is reduced.
-// @skjs-expect-error Type '{}' is not assignable to type 'string | number | bigint | boolean | null | undefined'
+// @skjs-expect-error Type 'object' is not assignable to type 'string | number | bigint | boolean | null | undefined'
 type NotStringifiableBeatsIrreducible = `${object}${number}`;
 
 // --- Positions that stress the parser rather than the reduction ---
