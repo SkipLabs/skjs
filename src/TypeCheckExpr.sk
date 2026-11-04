@@ -2875,15 +2875,9 @@ extension class TypeChecker {
       | Get(e1, idx) -> callViaReceiver(e1, true, idx, f.pos, AKNormal())
       | _ -> dispatchCall(this.expr(tcenv, f, mostPrecise), None())
       };
-      f.value match {
-      | Dot(
-        NormalDot(),
-        Expr(_, Var(Name(_, "console"))),
-        Name(_, "assert"),
-      ) if (args.size() >= 1) ->
-        this.evalCond(tcenv, args[0], true)
-      | _ -> void
-      };
+      // `console.assert` only logs — it does not throw — so its condition
+      // proves nothing and must not narrow (issue #1042; tsc's lib declares
+      // no assertion signature for it either).
       rty
     | New(subExpr, targsAst, args) ->
       tcenv.markForInImpure(pos);
