@@ -71,9 +71,9 @@ In tests, warnings are asserted with `// @skjs-expect-warning`; see [docs/testin
 
 ### 5. Console Surface Is Minimal
 - **Rule**: Only `console.log`, `console.assert`, and `console.error` are provided by `import-stubs/@types/skjs`; other console helpers (e.g., `console.table`) are unavailable.
-- **Behavior**: The declared methods follow their TypeScript signatures (`log` and `error` are variadic, `assert` takes a condition plus optional message).
+- **Behavior**: The declared methods follow their TypeScript signatures (`log` and `error` are variadic, `assert` takes a condition plus optional message). `console.assert` only logs — it does not throw — so its condition is checked but proves nothing: no narrowing follows (issue #1042; tsc's lib declares no assertion signature for it either). Use `if (x === null) throw ...` for a checked assertion.
 - **Workaround**: Create your own logging wrapper module (e.g., `logger.ts`) that exports the shapes you need, or extend `@types/skjs` locally before running the checker.
-- **Verified by**: `examples/src/console_surface.ts` covers supported calls; `tests/expect-error/console.ts` ensures unsupported helpers like `console.table` stay blocked.
+- **Verified by**: `examples/src/console_surface.ts` covers supported calls; `tests/expect-error/console.ts` ensures unsupported helpers like `console.table` stay blocked and that `console.assert` does not narrow.
 
 ### 6. Undefined Method Access
 - **Rule**: Cannot call methods on potentially undefined values
