@@ -1,0 +1,901 @@
+\documentclass[11pt]{article}
+
+\input{../shared/skjs-macros}
+\input{../shared/pin}
+
+
+\newtheorem{finding}[theorem]{Finding}
+\newtheorem{policy}[theorem]{Policy}
+
+% Macros copied from the main paper (skjs-type-soundness.tex @ \skjspinhash).
+\newcommand{\ObjVal}{\mathsf{ObjVal}}
+\newcommand{\Env}{\Gamma}
+\newcommand{\RefineB}[4]{#1 \vdash #2 \stackrel{#4}{\rightsquigarrow} #3}
+\newcommand{\refineop}{\mathsf{refine}}
+% Local shorthands.
+\newcommand{\Loc}{\mathsf{Loc}}
+\newcommand{\decl}{\mathsf{decl}}
+\newcommand{\capt}{\mathsf{capt}}
+\newcommand{\havoc}{\mathsf{havoc}}
+
+\title{Refinement Invalidation under Mutation\\
+{\large Deep Dive F for ``Refinement and Inference Growth in SKJS''}}
+\author{}
+\date{\skjspin}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+The main soundness paper proves \emph{one-step branch soundness}: a
+condition is evaluated against a fixed store, and the refined environment
+is guaranteed only at that instant. This paper extends the model with
+mutation events and determines which events must invalidate an existing
+narrowing. It relates each implementation path to the point where mutation
+can break the main paper's branch-soundness argument.
+
+Assignments to captured locals are checked against the binding's declared or
+widened inferred type (\textbf{L-CAPT}). Bindings whose types intentionally
+evolve from an unannotated \texttt{null} or \texttt{undefined} initializer are
+the stated exception. Two distinct read-side failures remain: a closure can
+observe an enclosing narrowing after an intervening mutation invalidates it
+(\textbf{L-STALE-READ}), and a narrowing established before a loop can survive
+an invalidating write on the loop's back edge
+(\textbf{L-LOOP-CARRIED}). Field writes and calls create corresponding
+invalidation requirements for field narrowings.
+
+The paper compares four repair policies and recommends invalidating affected
+locals at loop entry and closure capture, restoring a field's declared type
+after writes, and invalidating field narrowings across calls. It states the
+preservation property that this combined policy must satisfy.
+\end{abstract}
+
+\tableofcontents
+
+%==========================================================================
+\section{Purpose and Ledger Rows Addressed}
+\label{sec:purpose}
+
+This paper addresses the following rows of the main paper's Assumptions
+and Proof Obligations table (its \S 8):
+\begin{itemize}
+\item \textbf{L-PURE} (\textsc{violated}) — ``evaluating a condition does
+  not mutate the narrowed locals'', and, by extension, the unstated
+  companion assumption that the store does not change between the
+  condition and the \emph{uses} of the narrowed environment. Tracked as
+  issues \#597 and \#599.
+\item \textbf{L-MUT} (\textsc{assumed}, with a tracked instance) — field
+  writes are governed by $\mathsf{set}$-types; the tracked instance is
+  issue \#598: a field reassignment inside a refined branch does not
+  re-widen the narrowed field.
+\item \textbf{L-CAPT} (\textsc{proved} here) — assignments to captured
+  locals are checked against the binding's declared type
+  (Section~\ref{sec:capt-proof}).
+\item \textbf{L-STALE-READ} (\textsc{violated}, owned here) — closure
+  bodies read enclosing narrowings that are stale at invocation
+  (Finding~\ref{find:stale-read}).
+\item \textbf{L-LOCAL} (\textsc{proved}) — the module-level half by the
+  checker's rejection of mutable module-level bindings plus the
+  narrowing primitive's early return; the captured-local half, which the
+  main paper says ``sharpens L-PURE'', is made precise here
+  (Finding~\ref{find:stale-read}).
+\end{itemize}
+The deliverable is a \emph{specified} invalidation policy
+(Policy~\ref{pol:main}) with a soundness statement
+(Lemma~\ref{lem:preservation}), plus the exact ledger-row edits the main
+paper should adopt (Section~\ref{sec:status}). L-PURE remains
+\textsc{violated} until the policy lands; this paper turns it from an open
+design question into a fix with a stated lemma.
+
+%==========================================================================
+\section{Minimal Recap of the Main Paper}
+\label{sec:recap}
+
+We reuse the main paper's notation without redefining it: values $\Val$
+with runtime tags, object values $\ObjVal$ with the snapshot interface
+$(\mathsf{props}, \mathsf{get}, \dots)$, type denotations
+$\sem{\cdot}_\rho$ indexed by the substitution state $\rho$, environments
+$\Env$ mapping locals to \texttt{TType}, stores $\sigma$ mapping locals to
+values, satisfaction $\sigma \models_\rho \Env$, the evaluation relations
+$\sigma \models_b e$, and branch soundness for rules
+$\RefineB{\Env}{e}{\Env'}{b}$ (main paper, Definitions ``Environments
+and Stores'' through ``Branch Soundness''). Three
+recap points are necessary here:
+\begin{enumerate}
+\item \textbf{One-step scoping.} The main paper's branch-soundness
+  theorems say: if $\sigma \models_\rho \Env$ and $\sigma \models_b e$
+  then $\sigma \models_{\rho'} \Env'$ — for the \emph{same} $\sigma$. No
+  claim is made about later program points; assignment, loops, and joins
+  are covered only by merge soundness (its Lemma ``Merge Soundness'').
+  The gap between
+  ``$\Env'$ holds at branch entry'' and ``$\Env'$ holds at each use inside
+  the branch'' is exactly the subject of this paper.
+\item \textbf{Snapshot object semantics.} Membership
+  $o \in \sem{\mathsf{object}(B)}$ constrains the properties of $o$ ``at
+  the moment a condition is evaluated'' (main paper, Definition
+  ``Object Interface''), via
+  $\mathsf{get}$-types only; $\mathsf{set}$-types govern which writes the
+  checker accepts (\textbf{L-MUT}) and do not participate in membership.
+\item \textbf{The refinement primitive writes to the scope.} All narrowing
+  lands in the flow-sensitive scope by
+  \texttt{setLocalFilterMap}/\texttt{scope.set}; field narrowing
+  (\textsc{R-EqField}, \textsc{R-TruthyField}) rewrites the field's
+  $\mathsf{get}$ inside the local's object type via
+  \texttt{narrowField} $\to$ \texttt{updateField} $\to$
+  \texttt{TField::withGet}, leaving $\mathsf{set}$ untouched.
+\end{enumerate}
+\impl{TypeCheckRefine.sk / setLocalFilterMap, narrowField;
+TType.sk / TField::withGet}
+
+\paragraph{The scope chain.}
+Because the invalidation question is about \emph{where} flow information
+lives, we fix the implementation's scope discipline once. A
+\texttt{Scope} is a mutable frame with an \texttt{up} pointer, per-frame
+\texttt{isLoop} and \texttt{isFunction} flags (the latter marks lambda
+bodies), declared names (\texttt{locals}), and flow entries
+(\texttt{refs}). A flow entry \texttt{LocalRef} carries the current
+(narrowed) \texttt{type} \emph{and} the binding's \texttt{declaredType}
+and \texttt{isAnnotated} bit, preserved across narrowing writes
+(\texttt{TypeCheckScope.sk:14-19}). Lookup (\texttt{maybeGetRefHelper},
+\texttt{TypeCheckScope.sk:62-75}) walks the \texttt{up} chain and records
+whether it crossed a loop frame; \texttt{isThroughFunction}
+(\texttt{TypeCheckScope.sk:115-132}) separately detects captures by
+walking the declaration chain. The central asymmetry: \texttt{Scope::set}
+(\texttt{TypeCheckScope.sk:165-204}) \emph{always writes into the current
+frame}, even when the binding was found higher up — flow updates shadow
+rather than mutate the defining frame — after one of three checks on the
+written type: an \emph{annotated} binding's writes are checked against
+the declared type wherever they occur; an un-annotated binding's write
+that escapes the current function is checked against the widened
+inferred type, except for evolving bindings (bare
+\texttt{let x = null/undefined}, recognized by
+\texttt{getSingleVar}); otherwise a write through a loop frame is
+checked against the loop-entry type. Structured constructs reconcile
+shadow frames explicitly: \texttt{if}/\texttt{else} via \texttt{merge}
+(pointwise union) or \texttt{popReplace} when one side terminates;
+\texttt{switch} clauses via \texttt{mergeN} (with a no-match path exactly
+when no \texttt{default} clause is present \emph{and} the finite case set
+does not exhaust the scrutinee) and
+\texttt{uniteFallenInto} for fallthrough; loop frames via
+\texttt{popMerge} plus \texttt{break}/\texttt{continue} snapshots
+(\texttt{snapshotTo}/\texttt{uniteSnapshot}); \texttt{try} constructs
+via a write-log — every runtime write is recorded
+(\texttt{TCEnv::writeVar} $\to$ \texttt{recordTryWrite}) and a
+\texttt{catch}/\texttt{finally} is entered with the try's logged writes
+unioned in (\texttt{uniteTryWrites}), with the log routed along every
+escape channel (\texttt{propagateTryWrites},
+\texttt{foldFinallyIntoSnapshot}). Closure bodies are the exception and
+the subject of Section~\ref{sec:sites}.
+\impl{TypeCheckScope.sk / LocalRef, Scope::set, maybeGetRefHelper,
+isThroughFunction, merge, mergeN, popMerge, popReplace, snapshotTo,
+uniteTryWrites; TypeCheckEnv.sk / writeVar, withTryWriteLog;
+TypeCheckStmt.sk / If, While, For, Switch, Try arms}
+
+%==========================================================================
+\section{A Store Model with Mutation Events}
+\label{sec:model}
+
+The main paper's store $\sigma$ maps locals to values and is fixed. To
+talk about invalidation we split it and let it step.
+
+\begin{definition}[Two-Level Store]
+\label{def:store}
+A store is a pair $\sigma = (\sigma_L, \sigma_H)$ where
+$\sigma_L : \mathsf{Var} \rightharpoonup \Val$ maps locals to values and
+$\sigma_H$ is a heap giving each object identity its current property
+map; the snapshot interface $\mathsf{get}(o, p)$ of the main paper's
+the Object Interface definition is read as
+$\mathsf{get}_{\sigma_H}(o, p)$. Satisfaction
+$\sigma \models_\rho \Env$ means
+$\sigma_L(x) \in \sem{\Env(x)}^{\sigma_H}_\rho$ for all
+$x \in \mathrm{dom}(\Env)$, where object-type membership consults
+$\sigma_H$. All results of the main paper hold verbatim for a fixed
+$(\sigma_L, \sigma_H)$.
+\end{definition}
+
+\begin{definition}[Mutation Events]
+\label{def:events}
+Between two checker-visible program points the store may step
+$\sigma \xrightarrow{\mu} \sigma'$ by one of:
+\begin{itemize}
+\item \textbf{(M-Asgn)} direct assignment $x := v$: replaces
+  $\sigma_L(x)$; $\sigma_H$ unchanged.
+\item \textbf{(M-Field)} field write $o.f := v$: replaces one property in
+  $\sigma_H$; $\sigma_L$ unchanged. Reachable from the checked function as
+  \texttt{x.f = e}, or from \emph{any} called code holding an alias of
+  $o$. If $f$ is accessor-backed, the event is instead ``run the setter'',
+  which may perform arbitrary further events.
+\item \textbf{(M-Call)} call/new/await boundary: runs foreign code, which
+  may perform any sequence of (M-Field) events on heap objects reachable
+  from its arguments, from globals, or from closures it can reach, and any
+  (M-Asgn) events on locals \emph{captured by such closures}. Locals not
+  captured by any closure are unreachable: (M-Call) cannot write them.
+\end{itemize}
+JS is single-threaded per agent, so between two adjacent checker-visible
+points with no intervening call and no intervening syntactic write, the
+store is genuinely fixed; this is what makes the main paper's one-step
+theorems non-vacuous.\footnote{In a multi-agent (shared-memory) setting
+even that fails for \texttt{SharedArrayBuffer}-backed state; SKJS, like
+tsc, ignores this, and so do we.}
+\end{definition}
+
+\begin{definition}[Preservation Discipline]
+\label{def:discipline}
+The checker tracks a current environment $\Env_t$ at each program point
+$t$. Call an environment-update function $U_\mu$ (what the checker does
+to $\Env$ when it sees, or must conservatively assume, event $\mu$)
+\emph{adequate} for $\mu$ if
+$\sigma \models_\rho \Env$ and $\sigma \xrightarrow{\mu} \sigma'$ imply
+$\sigma' \models_{\rho}U_\mu(\Env)$. Flow-sensitive checking is sound iff
+every event that can occur between two points is matched by an adequate
+update on that path. The main paper's branch-soundness results supply the
+$U$ for condition evaluation (no event, $\sigma' = \sigma$); this paper
+supplies — or exhibits the absence of — the $U$'s for
+(M-Asgn), (M-Field), (M-Call).
+\end{definition}
+
+\subsection{The three tracked shapes}
+\label{sec:shapes}
+
+Each shape below is pinned by
+\texttt{tests/expect-error/unsound-refinement.ts} (cases 1--3); all three
+compile without error today, re-confirmed by running the checker at the
+pinned revision.
+
+\paragraph{Shape (a) — \#597: side-effecting call between test and use.}
+\begin{verbatim}
+declare function sideEffect(): void;
+function f(x: { f: number | null }): void {
+  if (x.f !== null) {
+    sideEffect();          // (M-Call): may write x.f through an alias
+    const n: number = x.f; // accepted; unsound
+  }
+}
+\end{verbatim}
+\textsc{R-EqField} narrows the object branch's field to
+$f.\mathsf{get} = \texttt{number}$ at branch entry — sound there. The
+call is an (M-Call) event: $x$'s object is reachable from the caller of
+$f$ (it is a parameter, hence aliased), so $\sigma_H$ may step. The
+checker's update for the call is the identity, which is \emph{not}
+adequate for (M-Call): the failing hypothesis is the fixity of $\sigma_H$
+— precisely assumption \textbf{L-PURE} read as ``the snapshot taken by
+the snapshot Object Interface is still current at the use''. No lemma of
+the main paper is
+wrong; its scope boundary (``one-step'') is real.
+
+\paragraph{Shape (b) — \#599: captured local mutated via an invoked lambda.}
+\begin{verbatim}
+function f(): void {
+  let x: string | null = "hello";
+  if (x !== null) {
+    const reset = () => { x = null; };
+    reset();               // (M-Call) performing (M-Asgn) on captured x
+    const s: string = x;   // accepted; unsound
+  }
+}
+\end{verbatim}
+Here the mutation is not foreign: the checker \emph{typechecks the
+assignment} \texttt{x = null} while checking the lambda body. The event
+is visible, yet the update applied to the branch environment is the
+identity — Section~\ref{sec:sites} shows the assignment lands in the
+lambda's scope frame, which is discarded. The failing hypothesis is again
+\textbf{L-PURE} at the \texttt{reset()} boundary; but unlike shape (a),
+an exact (not conservative) update was available and thrown away.
+
+\paragraph{Shape (c) — \#598: field reassignment inside a refined branch.}
+\begin{verbatim}
+function f(x: { f: number | null }): void {
+  if (x.f !== null) {
+    x.f = null;            // (M-Field), checked against set-type: passes
+    const n: number = x.f; // accepted; unsound (tsc rejects, TS2322)
+  }
+}
+\end{verbatim}
+A pure (M-Field) event with no call and no alias needed: the write is
+syntactic and checked — against the field's $\mathsf{set}$-type
+(\texttt{number | null}, untouched by narrowing), so it passes — but the
+update applied to $\Env(x)$ is the identity, leaving the stale
+$f.\mathsf{get} = \texttt{number}$. The failing hypothesis is the
+\textbf{L-MUT} note's ``membership semantics (get-only) is sound for the
+snapshot reads refinement performs'': after the write the snapshot is
+stale, so $\sigma'(x) \notin \sem{\Env(x)}^{\sigma'_H}$. This shape is
+\emph{not} tsc-parity: tsc's assignment narrowing rewrites the declared
+flow type of \texttt{x.f} to \texttt{null} and rejects the next line.
+\impl{TypeCheckRefine.sk / evalFieldEqualityType (withGet);
+TType.sk / TFields::resolveFieldType (isLValue reads set)}
+
+%==========================================================================
+\section{What the Implementation Does at Each Mutation Site}
+\label{sec:sites}
+
+Established by code inspection at \texttt{\skjspinhash} and, where marked
+\emph{(probed)}, by running the checker (\texttt{make
+check-file-in-docker}) on minimal programs.
+
+\subsection{(M-Asgn) direct assignment to a local: sound flow update,
+with a loop-carried hole}
+\label{sec:masgn-direct}
+\texttt{assign}'s \texttt{Var}-LHS arm types the RHS and calls
+\texttt{tcenv.writeVar} — the runtime-write wrapper that records the
+value for any enclosing \texttt{try}'s write-log and then calls
+\texttt{scope.set} (\texttt{TypeCheckExpr.sk:3749-3770},
+\texttt{TypeCheckEnv.sk:274-282}): the local's flow entry is
+\emph{replaced} by the RHS type in the current frame. This is the
+adequate update $U_{\text{M-Asgn}}(\Env) = \Env[x \mapsto \tau_{\rm RHS}]$
+($\sigma'_L(x) = v \in \sem{\tau_{\rm RHS}}$ by \textbf{L-TC}). In
+particular a narrowed type is correctly clobbered: \texttt{if (x !== null)
+\{ x = null; const s: string = x; \}} is rejected \emph{(probed)}.
+\texttt{x++}/\texttt{x--} on a variable is routed through
+\texttt{Scope::set} like \texttt{x = x + 1}
+(\texttt{TypeCheckExpr.sk:3097-3115}) — though directly, bypassing
+\texttt{writeVar}, so an enclosing try's write-log does not see it (a
+benign gap for types, since the operand is already checked to be
+\texttt{number}, but a gap in the log's completeness claim).
+
+\begin{finding}[Loop-carried narrowings are not invalidated]
+\label{find:loop-carried}
+\emph{(probed)} \texttt{Scope::set}'s checks are mutually exclusive in
+order annotation $\to$ capture $\to$ loop
+(\texttt{TypeCheckScope.sk:178-197}): for an \emph{annotated} binding,
+a write through a loop frame is checked only against the declared type,
+and the loop-entry (possibly narrowed) type is never consulted. A
+narrowing established before the loop therefore survives the back edge
+while the store does not:
+\begin{verbatim}
+declare function cond(): boolean;
+function f(): void {
+  let x: string | null = "hi";
+  if (x !== null) {
+    while (cond()) {
+      const s: string = x;  // iteration 2: x is null; accepted
+      x = null;             // legal against the declared type
+    }
+  }
+}
+\end{verbatim}
+compiles clean; at runtime the second iteration binds
+\texttt{s : string} to \texttt{null} (confirmed on Node), and tsc
+rejects the read (TS2322: \texttt{string | null} not assignable to
+\texttt{string}). No call, closure, or alias is involved — this is a
+pure back-edge instance of the invalidation question, and the only
+mutation site in Section~\ref{sec:sites} where the checker applies a
+\emph{wrong} update rather than a missing one: the body is checked once
+under the pre-loop narrowing, so iteration-2 reads are justified only if
+back-edge writes preserve the loop-entry type, which the declared-type
+check does not ensure. For \emph{un-annotated} bindings the loop-entry
+check does fire and the shape is rejected. Registry row
+\textbf{L-LOOP-CARRIED}; the witness is the repro of issue report
+\path{issues/loop-carried-narrowing-stale.md}, accepted at the pin. The
+fix is policy layer P1 (Section~\ref{sec:recommend}).
+\end{finding}
+\impl{TypeCheckExpr.sk / assign (Var arm, line 3749), PostOp (line 3083);
+TypeCheckEnv.sk / writeVar; TypeCheckScope.sk / Scope::set
+(annotation/capture/loop arms, lines 178--197)}
+
+\subsection{(M-Asgn) through a closure: checked, but not propagated}
+\label{sec:capt-proof}
+\texttt{anonFunction} checks a lambda body in a fresh subscope created
+with \texttt{isFunction => true} whose \texttt{up} is the creation-site
+scope (\texttt{TypeCheckExpr.sk:3584}), then restores the saved scope
+\emph{without any merge}: the lambda frame and every flow entry written
+into it are discarded. Writes to captured locals are therefore never
+\emph{propagated} — but they are \emph{checked}. This subsection proves
+\textbf{L-CAPT} and delimits it.
+
+\begin{lemma}[L-CAPT: captured writes are checked against the declared
+type]
+\label{lem:capt}
+Every syntactic assignment form to a local — plain and destructuring
+assignment, and \texttt{++}/\texttt{--} — reaches \texttt{Scope::set}
+(\texttt{writeVar} call sites \texttt{TypeCheckExpr.sk:3760, 3990, 4224};
+the \texttt{PostOp} route \texttt{TypeCheckExpr.sk:3102-3115}). For an
+\emph{annotated} binding, \texttt{Scope::set} checks the written type
+against \texttt{declaredType} unconditionally
+(\texttt{TypeCheckScope.sk:178-183}) — the annotation is a hard
+constraint wherever the write occurs, including inside a lambda body.
+For an \emph{un-annotated} binding whose write escapes the current
+function — detected by \texttt{isThroughFunction}, which walks the
+declaration chain and ORs the \texttt{isFunction} flags crossed
+(\texttt{TypeCheckScope.sk:115-132}), staying correct when an earlier
+in-lambda write already shadowed the binding — the written type is
+checked against the widened inferred type stored in
+\texttt{declaredType} (\texttt{TypeCheckScope.sk:184-194}).
+\emph{(Probed:)} both the annotated and the inferred-type variants of a
+wrong-typed captured write (\texttt{number} into a \texttt{string}
+binding) are rejected with TS2322 at the write.
+\end{lemma}
+
+\begin{keydef}
+\textbf{The evolving-binding exception (row L-CAPT-EVOLVE, violated).} The
+inferred-type check is
+skipped when \texttt{declaredType} is a single unresolved type variable
+— a bare \texttt{let x = null}/\texttt{undefined}
+(\texttt{TypeCheckScope.sk:192}). Such a binding widens like
+TypeScript's evolving \texttt{any}, so \emph{every} escaping write is
+allowed, and reads elsewhere are not informed of it — witnessed
+end-to-end (issue report \texttt{evolving-capture-unchecked.md}: a
+closure writes \texttt{"s"} into a bare \texttt{let x = null} binding
+and a later read binds the string at type \texttt{null}). tsc accepts
+the same program through the same mechanism (implicit evolving
+\texttt{any}), so the hole is tsc-parity — but it is a hole, and it is
+this paper's row \textbf{L-CAPT-EVOLVE}, which is exactly the case
+L-CAPT's proved statement excludes: L-CAPT quantifies over bindings
+with an annotation or a non-trivial initializer.
+\end{keydef}
+
+Because captured writes are checked but not propagated, the remaining
+closure-side unsoundness is on the \emph{read} side:
+
+\begin{finding}[Closure bodies read narrowings that are stale at invocation
+— row L-STALE-READ]
+\label{find:stale-read}
+\emph{(probed)} Because lookup walks the whole \texttt{up} chain
+(\textbf{L-LOCAL}'s captured-local half), a lambda body checked inside a
+refined branch \emph{sees the narrowed type}:
+\texttt{let x: string | null = "hi"; if (x !== null) \{ const f = () =>
+x.length; x = null; f(); \}}
+compiles clean and crashes at runtime. The narrowing was valid when the
+closure was \emph{created}, not when it \emph{runs}. tsc handles this by
+re-widening, inside closure bodies, any \texttt{let} that is assigned
+anywhere in the function. This is the dual of shape (b): (b) is a stale
+the closure writes and enclosing code later reads; here enclosing code
+writes and the closure later reads. Confirmed with a runtime witness (a
+\texttt{TypeError} reading \texttt{.length} of \texttt{null}); the
+witnesses — including a field-level variant no policy layer below
+covers — are the two repros of issue report
+\path{issues/stale-closure-reads-narrowing.md}, both accepted at the
+pin.
+\end{finding}
+\impl{TypeCheckExpr.sk / anonFunction (line 3550: isFunction subscope,
+scope save/restore, no merge); TypeCheckScope.sk / Scope::set,
+isThroughFunction, maybeGetRefHelper}
+
+\subsection{(M-Field) syntactic field write: checked, but no update}
+For \texttt{x.f = e} (with \texttt{x} not a tracked growable local
+object), \texttt{assign} falls to its default arm: it types the LHS in
+lvalue mode — \texttt{dot} with \texttt{AKLValue}, which resolves the
+field via \texttt{resolveFieldType(.., isLValue=true)} $=$ the field's
+$\mathsf{set}$-type, intersected across members — checks
+$\tau_{\rm RHS} <:$ that, and returns. \emph{It never touches the scope
+entry for \texttt{x}}: there is no \texttt{scope.set} on this path, so a
+narrowed $f.\mathsf{get}$ survives its own overwrite (shape (c)). The
+narrowing machinery and the write path even share the data: narrowing
+rewrote $f.\mathsf{get}$ via \texttt{withGet} and left $f.\mathsf{set}$
+declared, which is exactly why the write still typechecks. (The separate
+\texttt{assignLocalObject} path for growable local objects \emph{does}
+update the scope, by intersection — a growth mechanism, not an
+invalidation one, and out of scope here.)
+\impl{TypeCheckExpr.sk / assign (default arm, line 3806), dot (AKLValue);
+TType.sk / TFields::resolveFieldType}
+
+\subsection{(M-Call): no invalidation whatsoever}
+No call, \texttt{new}, \texttt{await}, or method invocation touches
+\texttt{tcenv.scope}. The complete set of scope writers in the checker
+is: \texttt{Scope::set} via the refinement primitives
+(\texttt{TypeCheckRefine.sk:94, 104, 737}), via \texttt{writeVar}
+(\texttt{assign}'s \texttt{Var} arm, destructuring's
+\texttt{assignTarget}, and \texttt{assignLocalObject} —
+\texttt{TypeCheckExpr.sk:3760, 3990, 4224}), the \texttt{PostOp} arm
+(\texttt{TypeCheckExpr.sk:3104}), and the \texttt{this}-retyping after
+\texttt{super(...)} (\texttt{TypeCheckExpr.sk:2298}); plus the
+structured merges and edge folds
+(\texttt{merge}/\texttt{mergeN}/\texttt{popMerge}/\texttt{popReplace},
+\texttt{uniteFallenInto}, \texttt{uniteSnapshot},
+\texttt{uniteTryWrites}, \texttt{seedRefs} — all in
+\texttt{TypeCheckScope.sk}). Call typing is absent from that list, so
+shapes (a) and (b) follow mechanically: the identity update is applied
+at every (M-Call).
+\impl{TypeCheckRefine.sk; TypeCheckExpr.sk / assign, PostOp;
+TypeCheckEnv.sk / writeVar; TypeCheckScope.sk (grep: no scope writes in
+call paths)}
+
+%==========================================================================
+\section{Design Space}
+\label{sec:design}
+
+Notation: for a function under check, let $C$ be the set of locals
+captured by at least one closure, $W \subseteq C$ those additionally
+assigned \emph{anywhere in the function} (matching tsc's discipline and
+the stale-read witness, whose write is in the enclosing body, not a
+closure; both computable syntactically in one pre-pass), and say a local
+is
+\emph{heap-visible} if its value is an object that may be aliased —
+conservatively: any object-typed local other than a fresh, never-escaping
+literal. $\havoc_S(\Env)$ re-widens the entries of $S$: whole-variable
+narrowings back to the binding's declared type, and field-level
+narrowings by restoring each narrowed $f.\mathsf{get}$ (mechanisms in
+Section~\ref{sec:rewiden}).
+
+\subsection{Option (i): havoc-on-call}
+At every (M-Call) boundary apply
+$\havoc_{W \,\cup\, \{\text{field narrowings of heap-visible locals}\}}$.
+\emph{Soundness:} adequate for (M-Call) by construction — the havocked
+entries over-approximate every value the event can install (captured
+writes are bounded by the declared type, Lemma~\ref{lem:capt}, with
+evolving bindings havocked to their widened union instead; field writes
+by $\mathsf{set}$-types via \textbf{L-MUT}), and unhavocked entries are
+unreachable by the event (Definition~\ref{def:events}: uncaptured locals
+cannot be written by a call). \emph{Precision cost:} the breaking shape
+is ``narrow once, then several statements each containing a call and a
+later use of the narrowing''. Spot-checks against the repository corpus
+at the pinned revision:
+\begin{itemize}
+\item \texttt{examples/src/type\_refinement\_examples.ts}
+  (\texttt{processResponse}): \texttt{response.kind === "success"}
+  narrowing used once, \emph{inside the argument} of the following
+  \texttt{console.log} — argument evaluation precedes the call, so a
+  call-boundary havoc does not break it. Survives.
+\item \texttt{examples/src/deck.ts} (display loop): \texttt{card}
+  narrowed by \texttt{!== undefined}, used only in the argument of one
+  \texttt{console.log}. Survives.
+\item \texttt{examples/src/runtime\_demo.ts} /
+  \texttt{builtins\_documentation.ts}: \texttt{aliceAge !== undefined}
+  then \texttt{aliceAge.toString()} inside one call argument. Survives —
+  but note \texttt{aliceAge} is not captured and not object-typed, so
+  option (i) as scoped above would not havoc it anyway; only a cruder
+  ``havoc everything'' would, and even that survives these single-use
+  sites.
+\item Breaking witness (crude variant): any
+  \texttt{if (x) \{ log(x.a); log(x.b); \}} with \texttt{x} a narrowed
+  \emph{field path or captured local} — the first \texttt{log} havocs,
+  the second use fails. \texttt{examples/src/try\_catch.ts} (uses
+  \texttt{e.message} after an earlier statement in the branch) is the
+  nearest real instance; it survives the scoped option (i) only because
+  the intervening statements contain no call.
+\end{itemize}
+The corpus tolerates the \emph{scoped} havoc well: narrowed values are
+overwhelmingly consumed before or inside the first following call. The
+cost concentrates on ADT-style field narrowings used across several
+statements with interleaved calls — common in real code, rarer in this
+repo.
+
+\subsection{Option (ii): effect / purity tracking}
+Havoc only at calls whose callee may write the relevant location. SKJS
+already builds a call graph during checking (\texttt{CGNode},
+\texttt{recordCalls}), so the skeleton exists; what is missing is
+(1) a per-function summary ``writes captured local $x$'' /
+``writes some field $f$ through some alias'', computed to a fixpoint over
+the call graph including indirect calls through function-typed values —
+which in practice degrades to ``any unknown callee may write anything'',
+(2) summaries for \texttt{declare}d ambient functions, which have no
+bodies — so either effect annotations are added to the language
+(a major design commitment tsc has repeatedly declined) or ambient calls
+havoc everything, and (3) soundness of the summary under first-class
+functions, requiring the call graph itself to be sound, which it is not
+required to be today (it exists for diagnostics/codegen ordering).
+\emph{Verdict:} strictly dominates (i) in precision when it fires, but
+its sound version collapses to (i) at every ambient or indirect call —
+the overwhelmingly common case (\texttt{console.log} is ambient). Not
+recommendable as the primary mechanism; viable later as a precision
+overlay on top of (i)/(iii).
+\impl{Reachability.sk / CGNode; TypeCheckEnv.sk / recordCalls}
+
+\subsection{Option (iii): capture-based invalidation}
+Precompute $W$ (captured-and-assigned locals). Then: (1) at every
+(M-Call) boundary, $\havoc_W$; (2) inside closure bodies, do not let
+narrowings of $W$-locals flow in — resolve them at their declared type
+(fixing Finding~\ref{find:stale-read}). The prerequisite that makes
+``declared type'' a sound havoc target — captured writes bounded by the
+declared type — is established checker behavior (Lemma~\ref{lem:capt});
+for the evolving-binding exception the havoc target is the widened union
+of the binding's writes. This is sound for \emph{whole-local}
+narrowings: an (M-Call) can write exactly the $W$-locals
+(Definition~\ref{def:events}), and each write is bounded by the declared
+type. It deliberately does \emph{not} address field
+narrowings (shape (a)) — the heap is aliased regardless of capture. tsc
+implements a cousin of this policy in restricted positions (narrowings of
+\texttt{var}s and of \texttt{let}s assigned in nested functions are
+dropped inside closure bodies, and loop-carried narrowings are reset),
+but performs no call-boundary invalidation at all.
+\emph{Precision cost:} negligible in the corpus — no repository example
+narrows a captured-and-assigned local and then calls; the pinned
+\#599 reproducer is the canonical instance and is exactly what should
+break.
+
+\subsection{Option (iv): status quo (documented tsc-parity unsoundness)}
+Keep everything, document L-PURE as violated (done), pin the
+reproducers (done). This is genuine tsc parity for shapes (a) and (b) —
+tsc accepts both — but \emph{not} for shape (c),
+Finding~\ref{find:loop-carried}, or Finding~\ref{find:stale-read}, all
+of which tsc rejects. Status quo is therefore not a coherent resting
+point: those are SKJS bugs that tsc rejects, not compatibility choices.
+
+\subsection{Recommendation}
+\label{sec:recommend}
+
+\begin{policy}[Adopted invalidation policy]
+\label{pol:main}
+Layered, in decreasing order of urgency:
+\begin{enumerate}
+\item \textbf{P1 (bug fix, Finding~\ref{find:loop-carried}):} invalidate
+  loop-carried narrowings. Either extend \texttt{Scope::set}'s
+  loop-write check to annotated bindings — a back-edge write is
+  checked against the loop-entry (possibly narrowed) type \emph{in
+  addition to} the declared type — or, matching tsc, re-widen at loop
+  entry the narrowings of every binding the loop body assigns.
+\item \textbf{P2 (\#598):} re-widen the narrowed field getter at every
+  syntactic field write (rule in Section~\ref{sec:rewiden}).
+\item \textbf{P3 (\#599 + Finding~\ref{find:stale-read}):} option (iii)
+  capture-based invalidation for $W$-locals: havoc at calls, block
+  narrowing inflow to closure bodies.
+\item \textbf{P4 (\#597):} option (i) scoped to field-level narrowings of
+  heap-visible locals, applied at (M-Call) boundaries. This is the only
+  layer with a real precision cost; if product priorities delay it, the
+  deviation is exactly tsc's, and L-PURE's ledger row shrinks to this one
+  named residue rather than three shapes.
+\end{enumerate}
+\end{policy}
+
+\begin{lemma}[Preservation across mutation events — replaces one-step
+scoping at mutation sites]
+\label{lem:preservation}
+Assume the main paper's axioms (\textbf{L-UNION}, \textbf{L-INTER},
+\textbf{L-INTER-BOT}, \textbf{L-EXP}, \textbf{L-MONO}, \textbf{L-TC},
+\textbf{L-SUB}) and the
+well-formedness condition $\sem{f.\mathsf{get}} \supseteq$ the values a
+read of $f$ can yield after an accepted write
+(Obligation~\ref{obl:getset}). Under Policy~\ref{pol:main} (P1--P4), for
+every checker path point $t$ with environment $\Env_t$ and every event
+$\sigma \xrightarrow{\mu} \sigma'$ occurring between $t$ and the next
+point $t'$: $\sigma \models_\rho \Env_t$ implies
+$\sigma' \models_\rho \Env_{t'}$, where $\Env_{t'}$ is the environment
+produced by the policy's update for $\mu$
+(Definition~\ref{def:discipline}):
+$U_{\text{M-Asgn}} = [x \mapsto \tau_{\rm RHS}]$ with the L-CAPT check
+(Lemma~\ref{lem:capt}) bounding captured writes and the P1 loop-entry
+check bounding back-edge writes; $U_{\text{M-Field}}$ the P2
+re-widening; $U_{\text{M-Call}} = \havoc_W \circ \havoc_{\rm fields}$
+(P3, P4). Consequently branch soundness extends from branch entry to
+every use in the branch, by induction over the events on the path.
+\end{lemma}
+
+\noindent\emph{Proof sketch.} Case (M-Asgn): \textbf{L-TC} for the RHS;
+for captured writes Lemma~\ref{lem:capt} bounds the written value by the
+declared type, which is what $\havoc$ later restores (evolving bindings,
+outside the lemma's scope, havoc to the widened union of their writes);
+for a back-edge write the P1 check bounds it by the loop-entry type,
+which is what iteration-2 reads assume. Case (M-Field):
+Lemma~\ref{lem:rewiden-sound}. Case (M-Call): the event can write only
+$W$-locals and the heap (Definition~\ref{def:events}); $\havoc_W$
+restores declared types, sound by the Lemma~\ref{lem:capt} bound;
+$\havoc_{\rm fields}$ restores get-types whose adequacy is
+Obligation~\ref{obl:getset}; entries outside both havoc sets denote
+locations the event cannot write, so their satisfaction transports
+unchanged. $\square$
+
+%==========================================================================
+\section{The Re-Widening Rule for Field Writes (\#598)}
+\label{sec:rewiden}
+
+\begin{keydef}
+\textbf{Rule W-Field.} On \texttt{x.f = e} with RHS type $\tau_{\rm RHS}$
+(after the existing $\tau_{\rm RHS} <: \bigsqcap f.\mathsf{set}$ check),
+update \texttt{x}'s scope entry by the memberwise primitive
+$\refineop^{g,\mathsf{None}}$ with mapper: non-object members unchanged;
+each object branch $\beta$ with a declared field $f$ becomes
+\[
+\beta[f.\mathsf{get} \mapsto
+  \mathsf{union}(f.\mathsf{get},\ \tau_{\rm RHS}),\quad
+  f.\mathsf{opt} \mapsto f.\mathsf{opt}]
+\]
+and branches without $f$ (or reached only via an index) are unchanged.
+Optionality is \emph{kept}: clearing it would be sound for data fields
+(the write makes $f$ present) but unsound for a branch whose write went
+through a setter-less index — keep the conservative reading.
+\end{keydef}
+
+This reuses the exact machinery of \texttt{narrowField}: the same
+\texttt{setLocalFilterMap} walk, the same
+\texttt{updateField}$/$\texttt{withGet} write-back — with
+$\mathsf{union}$ where narrowing used $\mathsf{inter}$/$\mathsf{rmc}$,
+and with the branch-dropping arm removed (a write never refutes a
+branch). No new representation is needed.
+\impl{TypeCheckRefine.sk / narrowField, setLocalFilterMap (mechanism to
+reuse); TypeCheckExpr.sk / assign (default arm — the missing
+scope.set site)}
+
+\begin{lemma}[W-Field is adequate for (M-Field)]
+\label{lem:rewiden-sound}
+If $\sigma \models_\rho \Env$ and $\sigma \xrightarrow{o.f := v} \sigma'$
+with $v \in \sem{\tau_{\rm RHS}}$ and $o = \sigma_L(x)$, then
+$\sigma' \models_\rho U(\Env)$ for the W-Field update $U$ — provided $f$
+is data-backed in $o$ \emph{and} no other local's recorded type views the
+same object through a wider $\mathsf{set}$-type for $f$ (cross-alias
+get/set coherence — registry row \textbf{L-MUT-ALIAS}). The latter
+hypothesis fails at the pin: the alias
+\texttt{const y:\ \{f:\ number\} = x} \emph{is admitted} after narrowing
+and the legal write \texttt{o.f := null} through \texttt{x} is
+unrecorded on $y$ (mechanism, executed witness, and tsc comparison:
+issue report \path{issues/narrowed-alias-stale-write.md}). The
+hypothesis is strictly stronger than Obligation~\ref{obl:getset}; its
+site-by-site analysis — including the created views that need no declared
+alias at all — is deep dive H's.
+\end{lemma}
+\begin{proof}
+Only $x$'s entry changes and only $o$'s $f$-property changed in
+$\sigma_H$. Let $\beta$ be the object branch with $o \in \sem{\beta}$.
+If $\beta$ declares $f$: every constraint of $\beta$ except the $f$-value
+constraint is insensitive to the event; the new value $v$ satisfies the
+new get-type by $v \in \sem{\tau_{\rm RHS}} \subseteq
+\sem{\mathsf{union}(f.\mathsf{get}, \tau_{\rm RHS})}$ (\textbf{L-UNION}).
+If $\beta$ does not declare $f$ but an index covers it, the index
+constraint on the new value holds because the accepted write checked
+$\tau_{\rm RHS}$ against the resolved $\mathsf{set}$-type, which for an
+index-covered key includes the index's set-type, and the well-formedness
+of Obligation~\ref{obl:getset} carries it to the get side. Entries of
+other locals may alias $o$: their branches' $f.\mathsf{get}$ must also
+admit $v$ — this is \emph{not} guaranteed by W-Field (it updates only
+$x$) and is exactly why P4 additionally havocs field narrowings of other
+heap-visible locals at writes-through-aliases; for the syntactic
+single-local write of \#598, aliasing within the same function without an
+intervening call also requires havocking \emph{other} locals' narrowed
+$f$ — the implementation should apply W-Field to every local whose type
+carries a narrowed field named $f$, a cheap over-approximation.
+\end{proof}
+
+\paragraph{The accessor situation.}
+At the pinned revision SKJS does not represent \texttt{get}/\texttt{set}
+accessor members as get/set fields at all: the parser records an
+\texttt{isGetSet} marker (\texttt{FGet}/\texttt{FSet}) but the type
+checker never consults it, so a getter \texttt{get p(): T} is typed as a
+\emph{method} \texttt{p(): T} (a setter likewise, then rejected for
+lacking a return type). That method-typing is itself unsound in the
+\emph{call} direction --- \texttt{const n: number = c.p()} type-checks
+but throws at runtime, and tsc rejects it (TS6234); registry row
+ACCESSOR-METHOD (issue report \path{getter-typed-as-method.md}), a known
+limitation (tests \path{callgraph-unsupported/getter-calls.ts}). For
+re-widening the consequence is that there are no coercing-setter fields:
+a getter read is never a narrowable value (it is a function), and the
+only fields with genuinely distinct \texttt{get}/\texttt{set} are
+synthetic index signatures (independent get/set variables) and readonly
+fields (\texttt{set}${=}\bot$), neither of which runs user code on a
+write. So the W-Field rule's $\mathsf{union}$ against $\tau_{\rm RHS}$
+carries no accessor residue at present; its only residue is the
+cross-alias one of Lemma~\ref{lem:rewiden-sound}.
+
+\paragraph{The accessor caveat, forward-looking.}
+\emph{If} accessor members were represented as get/set fields, writing
+\texttt{o.f = e} would run a coercing setter, which could store --- and a
+subsequent get return --- any value of the \emph{declared} get-type,
+which $\mathsf{union}(\text{narrowed get}, \tau_{\rm RHS})$ need not
+contain. The sound re-widening would then be
+$\mathsf{union}(f.\mathsf{get}, f.\mathsf{set})$, which contains the
+declared get-type whenever declared-get $\subseteq$ set holds
+(Obligation~\ref{obl:getset}); tsc's $\tau_{\rm RHS}$ narrowing is unsound
+for coercing accessors in the same way. Because \texttt{TField} records
+only \texttt{get}/\texttt{set}/\texttt{access} and not accessor-ness, the
+$\mathsf{union}(f.\mathsf{get}, f.\mathsf{set})$ form would be the sound
+option expressible even then --- and supplying accessor-ness, so the
+checker builds get/set accessor fields, is the same change that closes
+ACCESSOR-METHOD. We therefore recommend the $\tau_{\rm RHS}$ variant now
+(sound today up to the cross-alias residue, and matching tsc), revisiting
+the accessor case if and when accessor fields are added.
+
+\begin{obligation}[Get/set coherence]
+\label{obl:getset}
+For every well-formed field, any value readable from the field after an
+accepted write lies in $\sem{f.\mathsf{get}}$ read at the field's
+\emph{declared} (un-narrowed) type. For data fields this is immediate
+(the read returns the written value, bounded by
+$f.\mathsf{set} = f.\mathsf{get}$ declared); for accessors it needs the
+declared-get $\subseteq$ set check, which SKJS should enforce at
+declaration (tsc's TS2380 lineage). Status: \textsc{open}; needed by
+Lemma~\ref{lem:preservation}'s field case and by exit (1) above.
+\end{obligation}
+
+%==========================================================================
+\section{Status and Registry}
+\label{sec:status}
+
+What this paper establishes per row, and how the specified
+fixes change the registry when they land:
+
+\begingroup
+\renewcommand{\arraystretch}{1.3}
+\small
+\begin{longtable}{@{}p{2.0cm}p{8.6cm}p{3.4cm}@{}}
+\toprule
+\textbf{Row} & \textbf{Established here / fix impact} &
+\textbf{Expected status after the fix} \\
+\midrule
+\endhead
+L-PURE & Fix specified: Policy P1--P4. Lemma~\ref{lem:preservation}
+  discharges the caller-side cases (a) \#597 by P4 and (b)
+  \#599 by P3. Cases it does \emph{not} cover: the closure-side
+  stale read is the separate row L-STALE-READ below; implicit
+  invocations (getters/coercions/iterators) are outside the (M-Call)
+  event model, so P3/P4 do not fire there. The back-edge instance
+  (Finding~\ref{find:loop-carried}, fix P1) is adjacent: no call is
+  involved, so it sits outside L-PURE's statement — its own row is
+  L-LOOP-CARRIED. &
+  the caller-side cases close once P3/P4 land; the loop and
+  event-model cases remain \\
+L-MUT & \#598 has a specified re-widening rule (W-Field, adequate by
+  Lemma~\ref{lem:rewiden-sound} for data fields); the accessor case
+  depends on get/set coherence (Obligation~\ref{obl:getset}); the
+  cross-view case is the separate row L-MUT-ALIAS, witnessed via
+  aliases created after narrowing, outside W-Field's reach (issue report
+  \texttt{narrowed-alias-stale-write.md}; analyzed in deep dive H). &
+  data fields discharged once W-Field lands; L-MUT-ALIAS needs its
+  own fix \\
+L-LOCAL & Module half: mutable module-level bindings are rejected
+  outright (\texttt{toplevel let is not supported}, probed for both
+  plain and \texttt{declare} forms), and the narrowing primitive
+  early-returns for any name outside the local scope
+  (\texttt{TypeCheckRefine.sk:727-730}). Captured half: lookup walks
+  the whole chain, so narrowings flow into closure bodies — made
+  precise as L-STALE-READ. &
+  module half stable; captured half governed by L-STALE-READ \\
+L-CAPT & Proved (Lemma~\ref{lem:capt}): every assignment form reaches
+  \texttt{Scope::set}, which checks annotated bindings against the
+  declared type everywhere and un-annotated captured writes against the
+  widened inferred type; probed at the write for both. Scoped by the
+  evolving-binding exception (bare \texttt{let x = null/undefined};
+  tsc-parity). &
+  stable; the exception is the named residue \\
+L-STALE-READ & Owned here (Finding~\ref{find:stale-read}): closure
+  bodies read enclosing narrowings valid at creation, not invocation;
+  witnessed in local and field-level forms (issue report
+  \texttt{stale-closure-reads-narrowing.md}). P3 blocks inflow for
+  captured-and-assigned locals; the field-level variant is closed by no
+  layer. &
+  local form closes once P3 lands; field-level variant needs its own
+  rule \\
+L-GETSET & Introduced here (Obligation~\ref{obl:getset}):
+  prerequisite for the sound accessor variant of W-Field. &
+  depends on the get/set coherence check \\
+\bottomrule
+\end{longtable}
+\endgroup
+
+\paragraph{Recommended pinned tests.}
+Extend \texttt{tests/expect-error/unsound-refinement.ts} (cases 1--3
+already pin shapes (a)--(c)) with:
+case 4, Finding~\ref{find:loop-carried} (loop-carried narrowing read on
+iteration 2); case 5, Finding~\ref{find:stale-read} (closure reads a
+narrowing, local reassigned, closure invoked). Each policy layer that
+lands flips its cases from expect-clean to expect-error, forcing the
+corresponding passage of this paper and of the main paper's ledger to be
+updated in the same change — the maintenance discipline of the main
+paper's Appendix B. Additionally pin the \emph{sound} behaviors this
+paper leans on, so regressions become visible: direct-assignment clobbering
+(\texttt{x = null} after narrowing rejects the next use), the rejection
+of a wrong-typed captured write in both its annotated and inferred-type
+forms (Lemma~\ref{lem:capt}), and the un-annotated loop back-edge check
+— all verified by probe at the pinned revision but not currently pinned
+by any test.
+
+\paragraph{Failed attempts and negative findings, for the record.}
+(1) A pure ``havoc everything at every call'' baseline was considered and
+rejected without implementation: spot-checks (Section~\ref{sec:design})
+show it would already break single-expression uses like
+\texttt{aliceAge.toString() + aliceAge.toString()} only under
+sub-expression granularity, but its statement-level version survives the
+corpus surprisingly well — the reason to reject it is principle (it
+havocs locals a call provably cannot reach), not corpus breakage.
+(2) An attempt to justify clearing optionality in W-Field failed on the
+index-covered-write case and was withdrawn (rule keeps optionality).
+(3) An attempt to state Lemma~\ref{lem:rewiden-sound} without the
+aliased-locals havoc failed — the two-locals-one-object counterexample is
+noted in its proof; the lemma is honest only with the ``apply W-Field to
+every local carrying a narrowed $f$'' clause.
+(4) Effect tracking (option ii) was evaluated and found to collapse to
+havoc at every ambient/indirect call; recorded so it is not re-proposed
+without effect annotations.
+
+\paragraph{Registry.}
+The authoritative, current statuses are maintained in the registry
+(\texttt{docs/ledger.yaml}), rendered as the main paper's Assumptions and
+Proof Obligations tables; this paper is cited there as evidence. The
+registry rows it supports:
+
+\input{../generated/rows-F}
+
+\paragraph{Imports (review contract).}
+The named statements this paper assumes from elsewhere. A reviewer treats
+each as an axiom, checking citations against the registry's canonical
+statement; no other paper's internals are in scope:
+
+\input{../generated/imports-F}
+
+\end{document}

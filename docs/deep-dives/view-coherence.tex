@@ -1,0 +1,605 @@
+\documentclass[11pt]{article}
+
+\input{../shared/skjs-macros}
+\input{../shared/pin}
+
+\newtheorem{finding}[theorem]{Finding}
+
+% Notation local to this paper.
+\newcommand{\setty}{\mathsf{setty}}
+\newcommand{\getty}{\mathsf{getty}}
+\newcommand{\Env}{\Gamma}
+
+\title{View Coherence under Mutable Aliasing:\\
+Writes through Multiple Types of One Object\\
+{\large Deep Dive H for ``Refinement and Inference Growth in SKJS''}}
+\author{}
+\date{\skjspin}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+The main paper's membership semantics is get-only and snapshot; its
+Write Authorization definition (registry row \textbf{SET-SEM}) gives
+each type of an object a second component: the writes accepted by its
+$\mathsf{set}$-types. Row \textbf{L-MUT-ALIAS} requires a write accepted
+through one type to preserve the membership guarantees of every other live
+type of the same runtime object. We examine how those multiple types arise:
+subtyping, assignment after narrowing, and types introduced directly by a
+refinement rule. Every remaining construction path is assigned to one of
+these cases or placed explicitly outside the model.
+
+Two conditions together guarantee coherence. Subtyping must not increase
+write capability (\textbf{L-SUB-FIELDS-SET}), and a source type must accept
+only writes that remain within its own readable type. The checker enforces the
+first condition, but narrowing can break the second. Ordinary declaration and
+subtyping paths reject the problematic field, array, and override conversions,
+often more strictly than tsc. Types introduced by \texttt{instanceof}
+narrowing are coherent because the implementation uses rigid type arguments,
+preserves already-compatible branches, and retains readonly members. The
+witnessed failure occurs when a previously narrowed object is assigned to a
+narrower alias: a legal write through either original reference can invalidate
+the other reference's type. The intersection operation also unions accepted
+write types, but no independent program path to an incoherent live pair was
+found. The paper records repair requirements for each failing case.
+\end{abstract}
+
+\tableofcontents
+
+%==========================================================================
+\section{Purpose and Ledger Rows Addressed}
+\label{sec:purpose}
+
+This document is deep dive H in the series supporting the main paper
+(\emph{Refinement and Inference Growth in SKJS}). It owns the registry row \textbf{L-MUT-ALIAS} (cross-view mutation
+coherence). Every other row this paper names is an import; the
+authoritative list, with each row's canonical statement, owner, and
+status, is the generated review contract in
+Section~\ref{sec:status} — citations in the body are checked against
+it.
+
+The division of labor with deep dive F is by axis. F is temporal: does
+an installed view \emph{stay} valid across mutation events (invalidation
+policy, the W-Field re-widening rule)? This paper is spatial: is the
+\emph{set of simultaneously live views} of one object coherent at the
+moment a view is created? The two compose into the write-preservation
+clause of an eventual heap-level soundness statement: this paper for
+coherence at creation, F for preservation afterwards. That composition
+is a later heap-level proof obligation, not a fact assumed here: every
+transition analyzed by F must be shown to preserve this paper's relational
+coherence invariant, and aliases created before a narrowing involve
+both obligations.
+
+\impl{TTypeSubtyping.sk / TFields::isSub\_; TypeCheckRefine.sk /
+narrowField, evalInstanceof; TType.sk / TFields::resolveFieldType}
+
+%==========================================================================
+\section{Write Permissions}
+\label{sec:recap}
+
+We use the main paper's Write Authorization definition unchanged
+(registry row \textbf{SET-SEM}): a view $b$ authorizes the write of $v$
+at key $p$ iff $v \in \sem{\setty(b,p)}$, where $\setty(b,p)$ resolves
+to the intersected $\mathsf{set}$-types of a named field, else the
+covering index's $\mathsf{set}$-type, and readonly
+($\mathsf{set}=\bot$) authorizes nothing. The checker realizes the
+definition at assignment sites by checking the right-hand side against
+$\setty$ with \texttt{isSub} — so every verdict below is conditional on
+\textbf{L-SUB} exactly where a subtype check decides it. Writes mediated
+by method calls (a setter-style method, \texttt{push}) are split into
+this paper's open row
+\textbf{L-MUT-ALIAS-CALL}: the signature semantics \textbf{E-SIG}, as
+stated, concerns behavioral call soundness and does not by itself
+guarantee preservation of aliases after receiver mutation, so the question
+cannot be assigned a status until a receiver-effect strengthening exists — the
+alias pair from Section~\ref{sec:narrowing} reaches every
+alias through a setter-style method exactly as through the direct
+write analyzed there.
+
+Write $\getty(b,p)$ for the resolved get-type ($f.\mathsf{get}$, or the
+covering index's). Both resolvers are total: $\setty(b,p) = \bot$ when
+no writable field or index covers $p$ (the view authorizes nothing
+there), and $\getty(b,p) = \top$ when $b$ does not constrain $p$ (the
+extensible semantics constrains mentioned keys only). Optionality does
+not enter: an accepted write makes the key present, and the get-clause
+then applies. Where several constraints apply, both resolve exactly as
+the implementation's lvalue read does. Throughout, a \emph{view} of a
+runtime object $o$ is
+an object branch recorded in some scope entry (a local's flow type, a
+field's type) through which checked code can reach $o$; a view is
+\emph{live} while such an entry exists.
+
+%==========================================================================
+\section{The Coherence Property and Its Two Mechanisms}
+\label{sec:mechanisms}
+
+\begin{definition}[Cross-View Coherence (registry row L-MUT-ALIAS)]
+\label{def:coherence}
+A set $V$ of live views of the same runtime object is \emph{coherent}
+at key $p$ iff every write authorized by any $v_1 \in V$ preserves the
+membership clause of every $v_2 \in V$ at $p$:
+$\sem{\setty(v_1,p)} \subseteq \sem{\getty(v_2,p)}$ for all
+$v_1, v_2 \in V$.
+\end{definition}
+
+\begin{definition}[Write-Self-Consistency]
+\label{def:selfcons}
+A view $v$ is \emph{write-self-consistent} at $p$ iff
+$\sem{\setty(v,p)} \subseteq \sem{\getty(v,p)}$ — the writes it
+authorizes keep its own reads true. A declared data field has
+$\mathsf{set} = \mathsf{get}$ and is self-consistent by construction; a
+readonly field is self-consistent vacuously.
+\end{definition}
+
+\begin{lemma}[Coherence Along Admission Edges]
+\label{lem:admission}
+Let view $y$ be admitted from view $x$ by an accepted \texttt{isSub}
+(assignment, argument passing, return). If $x$ is write-self-consistent
+at $p$, then $\{x, y\}$ is coherent at $p$, conditional on the accepted
+subtype checks (\textbf{L-SUB}) and the field-arm capability
+preservation (\textbf{L-SUB-FIELDS-SET}).
+\end{lemma}
+\begin{proof}
+Acceptance gives $\sem{\getty(x,p)} \subseteq \sem{\getty(y,p)}$
+(covariant get check) and
+$\sem{\setty(y,p)} \subseteq \sem{\setty(x,p)}$ (contravariant set
+check, row L-SUB-FIELDS-SET; the readonly check is its $\bot$ case). A
+write through $y$: $v \in \sem{\setty(y,p)} \subseteq \sem{\setty(x,p)}
+\subseteq \sem{\getty(x,p)}$ (self-consistency of $x$) $\subseteq
+\sem{\getty(y,p)}$ — both views' clauses hold. A write through $x$:
+$v \in \sem{\setty(x,p)} \subseteq \sem{\getty(x,p)} \subseteq
+\sem{\getty(y,p)}$ — likewise. Coherence extends along chains of
+admissions from one self-consistent root by the same computation. Where
+$p$ resolves through an index rather than a named field, the appeal is
+to the index arms' get/set checks; deep dive D records their
+set-direction as conditional exactly like the named-field arms', and the
+index-signature control probe of Section~\ref{sec:declared} pins the
+contravariant rejection empirically.
+\end{proof}
+
+\begin{corollary}[Declaration-Only Aliasing is Coherent]
+\label{cor:declared}
+If every view of $o$ arises from declared object types by admission
+chains, coherence holds at every data-field key: declared fields are
+self-consistent (Definition~\ref{def:selfcons}), and
+Lemma~\ref{lem:admission} covers each edge. (Accessor fields are the
+separate row \textbf{L-GETSET}.)
+\end{corollary}
+
+So there are exactly two ways to break coherence, and they organize
+every site audited below: give a program a view whose source is
+\emph{not} self-consistent (Section~\ref{sec:narrowing} — refinement
+narrows $\mathsf{get}$ only, so a narrowed view has
+$\mathsf{set} \not\subseteq \mathsf{get}$), or give it a view that never
+passed a subtyping check at all (Section~\ref{sec:created} — views created
+by refinement, whose coherence is the refinement rule's own obligation; the pin's
+\texttt{instanceof} rule discharges it by rigid instantiation).
+
+The same split re-derives deep dive F's \#598 with no new machinery: a
+write \emph{through the narrowed view itself} is authorized by the wide
+$\setty$ and lands outside the narrowed $\getty$ — self-inconsistency
+exploited through one view. Deep dive F specifies a re-widening rule
+(W-Field) for the written view. Because that rule updates only the written
+view, it cannot restore a type guarantee held by another alias.
+
+%==========================================================================
+\section{Site Audit}
+\label{sec:audit}
+
+\subsection{Installation inventory}
+\label{sec:inventory}
+
+The audit covers three view-creation families; the remaining ways a
+program comes to hold a view reduce to the following cases.
+\emph{Admission} (Section~\ref{sec:declared}): local
+initialization and re-assignment, argument passing, return passing,
+storing a reference into an object field, and array/tuple element
+storage — each checks the incoming value against the declared target
+type with \texttt{isSub} at its \texttt{TypeCheckExpr} site, so each
+is an admission edge. In particular, by imported
+\textbf{L-SUB-CLOSED-ABSENCE}, subtyping cannot create a
+\texttt{Closed<T>} absence fact from an extensible source: the target's
+concrete never-valued index rejects a source that does not already prove
+the same absence.
+\emph{Refinement installation}
+(Sections~\ref{sec:narrowing} and~\ref{sec:created}): the R-rules.
+\emph{No aliasing created}:
+destructuring and spread copy values into fresh objects; an object
+literal checked against a contextual type is a single view at birth,
+aliased only through later admissions. \emph{Same entry, other axis}:
+closure capture shares the captured entry rather than creating a view —
+deep dive F's territory. \emph{Class construction and inheritance}:
+field initialization is admission against the declared field type, and
+the override check is confirmed by the probe of
+Section~\ref{sec:declared}. \emph{Generic instantiation}: a call to a
+generic function admits arguments against the instantiated signature —
+an admission edge like any other. \emph{Types that authorize no
+writes}: enum objects (every field readonly) and \texttt{Closed<T>}
+absence facts are analyzed in Section~\ref{sec:created}'s closing
+paragraph. \emph{Trust
+boundary}: ambient (stub-declared) values enter with their declared
+types unchecked — part of the corpus-wide stub trust, like every other
+ambient fact, and the one entry point for declared intersection views
+(Section~\ref{sec:inter-set}). The funneling of the admission families
+to \texttt{isSub} is an implementation claim reviewers should check at
+the named sites; it is asserted from those call sites, not proved.
+\impl{TypeCheckExpr.sk / assign, call/return checking}
+
+\subsection{Subtyping checks for declaration-derived views}
+\label{sec:declared}
+
+Three control probes against the pinned checker
+(\texttt{target/host/dev/skjs}, via \texttt{make check-file-in-docker})
+confirm
+Corollary~\ref{cor:declared}'s premises are enforced:
+
+\begin{itemize}
+\item \emph{Covariant field upcast, rejected.} \texttt{\{f: number\}}
+  into \texttt{\{f: number | string\}}: the contravariant set check
+  fails (``Type string \ldots is not assignable to type number''). tsc
+  accepts this (property covariance); SKJS is stricter, trading
+  incompleteness for the coherent pair.
+\item \emph{Mutable-array upcast, rejected.}
+  \texttt{Array<number>} into \texttt{Array<unknown>} fails the
+  contravariant parameter check on methods. tsc accepts (method
+  bivariance).
+\item \emph{Narrowing subclass override, rejected.} \texttt{class E
+  extends D} redeclaring \texttt{f: number} over \texttt{f: number |
+  string} is rejected (``incorrectly extends its base class''). tsc
+  accepts; the override would create an incoherent pair at every
+  \texttt{E}-to-\texttt{D} upcast.
+\item \emph{Index-signature admission, rejected.} \texttt{\{f:
+  number\}} into \texttt{\{[k: string]: number | string\}} fails the
+  same contravariant check on the index's $\mathsf{set}$-type — the
+  check covers $\setty$'s index resolution, not only named fields.
+\end{itemize}
+
+Verdict: for declaration-derived views, the subtyping checks establish
+their half of coherence — conditional on \textbf{L-SUB}'s open cases,
+exactly as row L-SUB-FIELDS-SET records.
+\impl{TTypeSubtyping.sk / TFields::isSub\_ (shared/left/right arms);
+TypeCheckClass.sk (override checking)}
+
+\subsection{Aliases created after field narrowing: refuted by witnesses}
+\label{sec:narrowing}
+
+Field narrowing updates the get-type only; the set-type keeps its
+declared width (the same fact deep dive F pins for \#598). The narrowed
+view is therefore not write-self-consistent, and
+Lemma~\ref{lem:admission}'s hypothesis fails exactly where subtyping
+cannot detect it: admission checks the covariant get against the
+\emph{narrowed} get and the contravariant set against the
+\emph{declared} set, so both pass.
+
+\begin{finding}[An alias created from a get-narrowed source is incoherent]
+\label{find:narrowed-alias}
+A get-narrowed object passes the subtyping check, and the resulting pair
+fails Definition~\ref{def:coherence} for writes through either alias. A
+write legal for the source's declared $\mathsf{set}$-type falsifies the
+new alias's get clause — the alias need not even be writable (a readonly
+target goes stale the same way). Conversely, a write legal for the new
+alias — a same-type alias suffices — falsifies the source's
+own narrowing. Executed witnesses for both directions, the readonly
+variant, and the tsc comparison: issue report
+\path{issues/narrowed-alias-stale-write.md}. A repair applied when the
+alias is created
+must restore the full symmetric coherence of
+Definition~\ref{def:coherence}, not one consequence of the source's
+self-inconsistency: for a source field whose get-type sits strictly
+below its set-type, require \emph{both} cross containments — source
+set below target get, and target set below source get (vacuous for a
+readonly target). Self-consistent declared sources satisfy both through
+the existing subtyping checks, so declared programs are unaffected; a
+one-sided repair leaves one write direction exposed.
+\impl{TypeCheckRefine.sk / narrowField (withGet);
+TTypeSubtyping.sk / TFields::isSub\_ (shared arm);
+TType.sk / TFields::resolveFieldType (isLValue)}
+\end{finding}
+
+\subsection{Views created by \texttt{instanceof}, coherent by
+rigid instantiation}
+\label{sec:created}
+
+A view created by refinement is installed without any
+\texttt{isSub} admission, so Lemma~\ref{lem:admission} does not apply
+at all; coherence is the refinement rule's own obligation. The relevant
+rules are \texttt{instanceof} narrowing
+(\texttt{evalInstanceof}, \texttt{src/TypeCheckRefine.sk:362-440}) —
+\texttt{instanceof Array} is the same rule at the \texttt{Array}
+class, with no special case — and \texttt{Array.isArray}'s readonly
+view, the vacuous case analyzed in the \texttt{Array} paragraph below.
+
+\paragraph{How the view is created.} The rule instantiates the class's
+hidden type arguments at \emph{skolems}: synthetic, rigid type
+parameters named for their provenance (\texttt{Box\#T}), carrying the
+declared upper bound, created with collision-guarded identities
+(\texttt{makeSkolemTArgsOf}, \texttt{src/TEnv.sk:780-808};
+\texttt{genSkolemTParam}, \texttt{src/TTypeSubst.sk:262-281}). A skolem
+is not an inference candidate — no write can \emph{bind} it; each one
+denotes the runtime object's actual hidden argument by the imported
+interpretation row \textbf{SKOLEM-SEM}, and the installed view contains
+the object by \textbf{L-INST}. The view is then computed per
+branch of the scrutinee:
+\begin{itemize}
+\item \emph{Branches already satisfying the test are kept verbatim.} A
+  preservation probe — the class at fresh inference arguments, created
+  in a temporary clone so nothing leaks into the real substitution
+  (\texttt{src/TypeCheckRefine.sk:373-379}; clones cannot create skolems,
+  \texttt{src/TTypeSubst.sk:163}) — is matched against each branch, and
+  a matching branch is pushed unchanged
+  (\texttt{src/TypeCheckRefine.sk:395-404}). No new view exists at all:
+  the branch \emph{is} the pre-narrowing view, with its own precise
+  arguments.
+\item \emph{Non-matching branches are intersected with the skolem
+  view}, and the scrutinee's readonly members are re-imposed on the
+  result: \texttt{keepReadonlyFrom} forces $\mathsf{set}=\bot$ back
+  onto every named field, symbol field, and index the branch declared
+  readonly (\texttt{src/TypeCheckRefine.sk:407-416};
+  \texttt{src/TType.sk:2489-2512}). Its lookup is per-member-kind, so
+  it restores readonly status at every key the branch named — but a named
+  field the \emph{intersection introduces} at a key the branch covered
+  only by a readonly index escapes it (row \textbf{V-MINT-ROIDX},
+  below).
+\item \emph{A $\top$-bound scrutinee gets the skolem class view
+  itself} ($C\langle C\#\bar{T}\rangle$;
+  \texttt{src/TypeCheckRefine.sk:430-439, 721-738}) — declared data
+  fields at rigid arguments, $\mathsf{set}=\mathsf{get}$,
+  write-self-consistent by construction.
+\end{itemize}
+
+\begin{lemma}[\texttt{instanceof}-View Coherence]
+\label{lem:created}
+Let $y$ be the view \texttt{instanceof} $C$ installs from scrutinee
+branch $x$, and let $A$ be any set of live views of the same runtime
+object, each reached from a write-self-consistent declared root by
+admission chains. Then $A \cup \{y\}$ is coherent at every data-field
+key that $x$ does not cover solely by a readonly index (the excluded
+case is row \textbf{V-MINT-ROIDX}), conditional on
+\textbf{L-SUB}/\textbf{L-SUB-FIELDS-SET} (the
+chains), \textbf{L-INST} (view membership), \textbf{SKOLEM-SEM} (each
+skolem denotes the actual hidden argument), and \textbf{SET-SEM}.
+\end{lemma}
+\begin{proof}
+For a kept branch, $y = x$ and there is nothing to show. Otherwise
+$\setty(y,p) = \setty(x,p) \cup \setty(C\langle
+C\#\bar{T}\rangle,p)$ (\texttt{TField::inter} unions set-types,
+\texttt{src/TTypeInter.sk:228}), less the members
+\texttt{keepReadonlyFrom} returns to $\bot$ — removing authorizations
+is monotone-safe, so it suffices to analyze the two union arms. Let $r$
+be the object's construction view: the class's declared fields at the
+actual arguments $\bar{A}$, so $\setty(r,p) = \getty(r,p) =
+\sem{T_p[\bar{A}]}$ for a data field, and by \textbf{SKOLEM-SEM} each
+$C\#T_i$ denotes the actual argument $A_i$, hence
+$\setty(C\langle C\#\bar{T}\rangle,p) = \sem{T_p[\bar{A}]}$. Every
+view in $A \cup \{x\}$ sits on an admission chain from $r$, giving
+$\setty(v,p) \subseteq \setty(r,p)$ (contravariant accumulation, row
+L-SUB-FIELDS-SET) and $\getty(r,p) \subseteq \getty(v,p)$ (covariant
+accumulation) for each such $v$. A write of $w$ through $y$'s first
+arm, $w \in \setty(x,p) \subseteq \setty(r,p) = \getty(r,p)$, lands in
+$\getty(v,p)$ for every $v \in A$, in $\getty(x,p)$ — hence in the
+$x$-conjunct of $\getty(y,p)$ — and in the skolem conjunct, which
+\emph{is} $\getty(r,p)$. A write through the second arm,
+$w \in \sem{T_p[\bar{A}]} = \getty(r,p)$, lands in the same three
+places by the same containments. A write through any $v \in A$
+satisfies $w \in \setty(v,p) \subseteq \getty(r,p)$ and so preserves
+both conjuncts of $\getty(y,p)$. Where $p$ resolves through an index in
+\emph{both} $x$ and $y$, the same computation runs on the index arms,
+whose set direction deep dive D records alongside the named-field
+arms'. The excluded case is precisely where the resolution
+\emph{changes}: $x$ covers $p$ only by a readonly index while the class
+view contributes named $p$, so $y$ resolves $p$ through the introduced
+named field — whose setter is the union computed by
+\texttt{TField::interIndex}, absorbing the index's $\bot$ — and the
+transfer above does not apply (row \textbf{V-MINT-ROIDX}).
+\end{proof}
+
+The lemma's premise localizes what remains exposed: a scrutinee branch
+that was previously get-narrowed is \emph{not} on a self-consistent
+admission chain, and the intersection installed by refinement keeps its
+$\mathsf{set}$-width — so such a pair inherits the incoherence of
+Section~\ref{sec:narrowing}'s site through the same union. That is the
+previously established defect reached through a longer route, not a defect of
+the \texttt{instanceof} rule. Accessor fields are \textbf{L-GETSET}; call-mediated
+writes are \textbf{L-MUT-ALIAS-CALL}.
+
+\paragraph{A class field covered by a readonly index (row V-MINT-ROIDX).}
+The one write-permission defect of the \texttt{instanceof} rule itself is the
+resolution change excluded from the lemma. Mechanism, verified in
+source: \texttt{TField::interIndex} builds the introduced named field
+with $\mathsf{set} = \mathsf{set}_1 \cup \mathsf{set}_2$
+(\texttt{src/TTypeInter.sk:245-262}), so a readonly covering index's
+$\bot$ setter is absorbed by the class field's writable one; and
+\texttt{keepReadonlyFrom} checks a named field only against the
+original's \emph{named} fields (\texttt{original.maybeGet},
+\texttt{src/TType.sk:2489-2512}), so a field the intersection
+introduced at an index-only key is never restored. The resulting view
+then authorizes a write the scrutinee view prohibited. Its status is
+\textsc{violated} by code-level derivation: three checked-code admission routes
+into a readonly-covering-index view of a class instance were probed at
+the pin and all rejected (a class instance into an index-signature
+type, directly, through an intermediate named-field binding, and
+through a function boundary — SKJS is stricter than tsc on each), so
+the remaining candidate route is the ambient/stub trust boundary. The
+repair is to make \texttt{keepReadonlyFrom} consult the original's
+covering index for introduced named fields, with the symbol kind
+handled identically.
+\impl{TTypeInter.sk / TField::interIndex, interNamedFields;
+TType.sk / keepReadonlyFrom}
+
+\paragraph{\texttt{Array} probes.} The rule at \texttt{Array} creates
+\texttt{Array}$\langle$\texttt{Array\#T}$\rangle$: the index
+$\mathsf{set}$-type is the skolem, so a write of any program-typeable
+value is rejected — probed at the pin: on \texttt{x: unknown},
+\texttt{if (x instanceof Array) \{ x[0] = "s" \}} is rejected
+(``\texttt{string} is not assignable''), and on
+\texttt{x: ReadonlyArray<number>} even \texttt{x[0] = 1} stays
+rejected, the readonly index surviving the intersection by
+\texttt{keepReadonlyFrom}'s index arm
+(\texttt{src/TType.sk:2505-2510}). The \texttt{Array.isArray} path
+creates \texttt{ReadonlyArray}$\langle\top\rangle$ instead
+(\texttt{evalIsArray}, \texttt{src/TypeCheckRefine.sk:326-358}) — the
+vacuous case of Definition~\ref{def:selfcons}: it authorizes no writes and is
+self-consistent for free.
+\impl{TypeCheckRefine.sk / evalInstanceof; TEnv.sk /
+makeSkolemTArgsOf; TType.sk / TFields::keepReadonlyFrom;
+TTypeSubst.sk / Subst::genSkolemTParam}
+
+\paragraph{Other refinement rules.}
+\textsc{R-Eq}, \textsc{R-EqField}, and \textsc{R-IsArray} install
+intersections of \emph{already-live} views (the scrutinee's current
+type against a value type or brand) rather than views of new
+provenance; their write-permission behavior reduces to the intersection's
+set direction, audited next. \textsc{R-In}'s true branch synthesizes a
+named field for the tested key, but with no new authorization: where an
+index covers the key, the field copies the index's $\mathsf{get}$
+\emph{and} $\mathsf{set}$ — the same writes $\setty$'s index resolution
+already authorized — and where none does, it is a phantom with
+$\mathsf{get}=\top$, $\mathsf{set}=\bot$, invisible to subtyping and
+erroring at access (\texttt{src/TypeCheckRefine.sk:555-593}).
+\texttt{switch} narrowing is an \textsc{R-Eq} client: each case label
+narrows the scrutinee through a synthesized strict-equality condition
+(\texttt{src/TypeCheckStmt.sk:610-614}), and fallthrough entries carry
+the falling clause's whole scope — no separate install mechanism.
+\texttt{Closed<T>} constrains key \emph{absence}; unmentioned keys have
+$\setty = \bot$, so no checked write through the closed view can add a key.
+By imported \textbf{L-SUB-CLOSED-ABSENCE}, admission does not create
+the absence fact from an extensible source, and conditional on
+\textbf{L-SUB}/\textbf{L-SUB-FIELDS-SET} a later admitted view acquires no
+write capability the closed source lacked; absence facts therefore carry
+no writable fields. Enum objects declare every member and
+reverse-mapping field readonly
+(\texttt{src/TypeCheckEnum.sk:555-609}) — vacuously coherent.
+
+\subsection{The intersection's $\mathsf{set}$-union: mechanism without a
+found route}
+\label{sec:inter-set}
+
+\texttt{TField::inter} \emph{unions} the operands' set-types (deep dive
+B flags the direction and defers analysis of write permissions to this paper). By
+\textbf{L-UNION} the unioned type accepts every value either operand's
+set accepts — the permissive direction: a write only one operand's view
+authorizes passes through the merged view, and the \emph{other}
+operand's get-clause has no reason to survive it. The mechanism is
+real. What this audit could not produce is a route to an incoherent
+live pair through it:
+
+\begin{itemize}
+\item \emph{By declaration}: an intersection-typed target
+  (\texttt{A \& B}) has its set-types \emph{widened} by the union, so
+  the contravariant check rejects admission into it from either
+  operand's type (probed at the pin: rejected). tsc, which intersects
+  property types instead, rejects the subsequent write; SKJS rejects
+  the admission — different mechanisms, same outcome.
+\item \emph{By refinement}: the rules of Section~\ref{sec:created}
+  install intersections of the scrutinee's own views — including the
+  skolem-view intersection, whose unioned $\mathsf{set}$ is exactly
+  what Lemma~\ref{lem:created} covers; producing a runtime value that
+  inhabits two views with genuinely different set-types at one key
+  requires admission or a refinement step that Sections~\ref{sec:declared}
+  and~\ref{sec:narrowing}--\ref{sec:created} already analyze.
+\item \emph{By ambient declaration}: a stub-declared intersection-typed
+  value enters with no checked admission — the stub trust boundary of
+  Section~\ref{sec:inventory}, not a checked-code route.
+\end{itemize}
+
+Verdict: no independent defect established; the direction stays
+rejected by subtyping on every route found. Because this question's
+status differs from the witnessed sites', it is its own open registry row
+\textbf{V-INTER-SET} — a sound repair for
+Finding~\ref{find:narrowed-alias} should keep it in view, since
+narrowing-installed intersections are exactly where the union becomes
+reachable without passing a subtyping check.
+\impl{TTypeInter.sk / TField::inter (set => TType::union)}
+
+\subsection{Read-path merge, accessors}
+\label{sec:rest}
+
+The multi-branch read merge (\texttt{TFields::union}) \emph{intersects}
+set-types — the conservative dual, writes through the summary authorized
+only if every branch authorizes them — so the branch-merge client adds
+no exposure (deep dive B proves the read direction; the set direction is
+restrictive by construction). Accessor fields, where get and set are
+distinct declared members and self-consistency is not a syntactic
+identity, are the open row \textbf{L-GETSET} and are not analyzed here.
+\impl{TTypeUnion.sk / TField::union (set => inter)}
+
+%==========================================================================
+\section{Status and Registry}
+\label{sec:status}
+
+\paragraph{Verdict for L-MUT-ALIAS.} The row's status is rendered from
+the registry below; the evidence this paper contributes decomposes site
+by site — one witnessed refutation, with the open questions split into
+their own rows:
+\begin{itemize}
+\item aliases created after narrowing: refuted, witnessed for writes through either alias
+  (Finding~\ref{find:narrowed-alias});
+\item views created by \texttt{instanceof}: coherent by rigid
+  instantiation (Lemma~\ref{lem:created}), conditional on
+  \textbf{L-SUB}/\textbf{L-SUB-FIELDS-SET}/\textbf{L-INST} and the
+  admission-chain premise — a previously get-narrowed scrutinee routes
+  the alias-after-narrowing defect through the refinement, adding nothing new;
+\item the intersection $\mathsf{set}$-union: mechanism present, no
+  reachable incoherent pair found — the open row \textbf{V-INTER-SET}
+  (Section~\ref{sec:inter-set});
+\item call-mediated mutation: cannot be assigned a status until E-SIG
+  acquires receiver effects — the open row \textbf{L-MUT-ALIAS-CALL}
+  (Section~\ref{sec:recap}).
+\end{itemize}
+Declaration-only aliasing is coherent by Corollary~\ref{cor:declared},
+conditional on \textbf{L-SUB}/\textbf{L-SUB-FIELDS-SET}, with the four
+rejection probes of Section~\ref{sec:declared} checking the subtyping
+behavior (the index-signature control extending them to $\setty$'s
+index resolution) and the two \texttt{Array} probes of
+Section~\ref{sec:created} checking the write permissions of the created
+view. The analysis of the refuted site states its fix direction.
+
+\paragraph{Registry.}
+The authoritative statuses are maintained in the registry
+(\texttt{docs/ledger.yaml}); this paper is cited there as evidence. The
+rows it supports:
+
+\input{../generated/rows-H}
+
+\paragraph{Imports (review contract).}
+The named statements this paper assumes from elsewhere. A reviewer treats
+each as an axiom, checking citations against the registry's canonical
+statement; no other paper's internals are in scope:
+
+\input{../generated/imports-H}
+
+%==========================================================================
+\section{Implementation Anchor Index}
+\label{sec:anchors}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\small
+\begin{tabular}{@{}p{4.6cm}>{\raggedright\arraybackslash}p{9.4cm}@{}}
+\toprule
+\textbf{This document} & \textbf{Implementation} \\
+\midrule
+write resolution & \texttt{TType.sk / TFields::resolveFieldType
+  (isLValue)}; \texttt{TypeCheckExpr.sk / assign} \\
+field subtyping checks & \texttt{TTypeSubtyping.sk /
+  TFields::isSub\_, isSub\_NamedFields} \\
+override checking & \texttt{TypeCheckClass.sk} \\
+field narrowing (get-only) & \texttt{TypeCheckRefine.sk / narrowField,
+  evalFieldEqualityType (withGet)} \\
+views created by refinement & \texttt{TypeCheckRefine.sk / evalInstanceof,
+  evalIsArray}; \texttt{TEnv.sk / makeSkolemTArgsOf}; \texttt{TType.sk
+  / TFields::keepReadonlyFrom} \\
+rigid instantiation & \texttt{TTypeSubst.sk / Subst::genSkolemTParam} \\
+key-fact synthesis & \texttt{TypeCheckRefine.sk / evalCond (In arm,
+  field synthesis)} \\
+intersection set direction & \texttt{TTypeInter.sk / TField::inter
+  (set => TType::union)} \\
+merge set direction & \texttt{TTypeUnion.sk / TField::union
+  (set => inter)} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\end{document}
