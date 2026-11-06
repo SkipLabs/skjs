@@ -71,9 +71,9 @@ In tests, warnings are asserted with `// @skjs-expect-warning`; see [docs/testin
 
 ### 5. Console Surface Is Minimal
 - **Rule**: Only `console.log`, `console.assert`, and `console.error` are provided by `import-stubs/@types/skjs`; other console helpers (e.g., `console.table`) are unavailable.
-- **Behavior**: The declared methods follow their TypeScript signatures (`log` and `error` are variadic, `assert` takes a condition plus optional message).
+- **Behavior**: The declared methods follow their TypeScript signatures (`log` and `error` are variadic, `assert` takes a condition plus optional message). `console.assert` only logs — it does not throw — so its condition is checked but proves nothing: no narrowing follows (issue #1042; tsc's lib declares no assertion signature for it either). Use `if (x === null) throw ...` for a checked assertion.
 - **Workaround**: Create your own logging wrapper module (e.g., `logger.ts`) that exports the shapes you need, or extend `@types/skjs` locally before running the checker.
-- **Verified by**: `examples/src/console_surface.ts` covers supported calls; `tests/expect-error/console.ts` ensures unsupported helpers like `console.table` stay blocked.
+- **Verified by**: `examples/src/console_surface.ts` covers supported calls; `tests/expect-error/console.ts` ensures unsupported helpers like `console.table` stay blocked and that `console.assert` does not narrow.
 
 ### 6. Undefined Method Access
 - **Rule**: Cannot call methods on potentially undefined values
@@ -449,6 +449,10 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
 - **Diagnostics**: a hidden argument prints as `C#P` — the class it belongs to and the parameter it stands for, e.g. `Box#T` — rather than the bare `T` the class declared, so a message naming two of them usually distinguishes them by itself (`Box#T` against `Crate#T`, `Pair#A` against `Pair#B`). When two still print alike — two narrowings of the same class, or a shadowed name the program declared — they are numbered `#1`/`#2` in the message that mentions both, ordered by identity so a parameter keeps its number, followed by a line saying the names collide. All of this is display-only: `#` cannot appear in a type reference, and none of it reaches a suggestion offered as code to paste — a "Consider adding explicit type arguments" hint whose `e.g., <...>` example would have to name a hidden argument keeps the advice but drops the example, since the program has no way to write one. `--verbose` prints the qualified ids and none of it
 - **Readonly is preserved**: a field or index the scrutinee declared `readonly` stays readonly through the narrowing — the intersection with the class view may restrict what it reads as, but never grants a write the value's type withheld (`x.a = x.b` on a narrowed `{ readonly a; readonly b }`, or `a[0] = a[1]` on a `ReadonlyArray<string>` narrowed by `instanceof Array`, is rejected). tsc narrows to `C<any>` / a mutable `string[]` and accepts it
 - **Verified by**: `tests/expect-error/instanceof-generic-skolem-args.ts`, `tests/expect-error/tparam-name-collision.ts`, `tests/expect-error/instanceof-readonly-field.ts`
+
+### 27f. `void` and `undefined` Overlap in Equality Narrowing
+- **Rule**: `void`'s only runtime value is `undefined`, so `void` and `undefined` overlap: `void & undefined` is `undefined` (not `never`), and a strict comparison between them is not reported as always-false. In `if (x === y)` with `x: void` and `y: undefined` the true branch narrows `x` to `undefined` — the branch is reachable at runtime, so narrowing to `never` would be unsound (issue #1041). `void` and `null` stay disjoint (`undefined === null` is false at runtime). Note SKJS keeps `undefined` non-assignable to `void` (stricter than tsc, which accepts `const v: void = undefined`); only the intersection/overlap treat the two as the same value.
+- **Verified by**: `tests/expect-error/void.ts`
 
 ### 28. Object Spread Soundness (Stricter than TypeScript)
 - **Rule**: In an object literal with spreads, fields defined before a spread are dropped from the result type
