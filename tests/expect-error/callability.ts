@@ -413,3 +413,19 @@ function testUnionCallRecoveredType(x: (() => string) | { a: number }): void {
     const n: number = x();
   }
 }
+
+//////////////////////////////////////////////////////////////////////////////
+// #1038: a function laundered through a structural type into a class type
+//////////////////////////////////////////////////////////////////////////////
+
+// Pinned at current behavior: the "function" branch is reachable at runtime
+// (the function passes through both assignments), but today the class type's
+// definitely-not-callable claim drops the branch, so it narrows to never and
+// the assignment below is silently accepted.
+function testLaunderedFnTypeofFunction(g: () => void): void {
+  const o: {} = g;
+  const c: Empty = o;
+  if (typeof c === "function") {
+    const n: never = c;
+  }
+}
