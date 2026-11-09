@@ -1180,12 +1180,12 @@ base class TEnv{
       tcenvb.notSupported(constructorTy.pos, "new returning a constructor")
     | None() -> void
     };
-    isArray = c.kind match {
-    | CKInterface() -> None()
-    | CKAbstract()
-    | CKClass() ->
-      Some(false) /* Unless overridden by brand field */
-    };
+    // Class instances are structural like interfaces: an array is assignable
+    // to an all-public class type (directly or through {}), so a
+    // definitely-not-array claim is not enforceable and Array.isArray
+    // narrowing must not trust it (issue #1062). Unknown unless overridden by
+    // the brand field.
+    isArray = None();
     // Class instances are never callable or constructible; interfaces are
     // structural, so their callability is unconstrained (a function with the
     // right members inhabits them). Mirrors the isArray brand above.

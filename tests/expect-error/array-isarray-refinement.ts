@@ -292,7 +292,7 @@ function testObjectLiteralEliminatedInPositiveBranch(): number {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Class instances have isArray=false and are eliminated by Array.isArray
+// Class instances do not claim isArray=false (issue #1062)
 ///////////////////////////////////////////////////////////////////////////////
 
 class NumHolder<T> {
@@ -302,11 +302,11 @@ class NumHolder<T> {
   }
 }
 
-// Class instances have isArray=false and are eliminated in the
-// positive Array.isArray branch.
+// Class types are structural: an array carrying the right fields inhabits
+// NumHolder<number>, so the positive Array.isArray branch keeps the class type
+// (tsc narrows to NumHolder<number> & any[]) instead of eliminating it.
 function testClassInstanceNotArray(x: NumHolder<number>): number {
   if (Array.isArray(x)) {
-    // @skjs-expect-error Cannot access a property on type 'never'
     return x.value;
   } else {
     return x.value;
@@ -352,13 +352,14 @@ function restArrayEntries(source: number[]): number {
 
 class EmptyHolder {}
 
-// Pinned at current behavior: the Array.isArray branch is reachable at runtime
-// (an array is assignable to an all-public class type, directly or through
-// {}), but today the class type's isArray=false claim drops the branch, so it
-// narrows to never and the assignment below is silently accepted.
+// The Array.isArray branch is reachable at runtime (an array is assignable to
+// an all-public class type, directly or through {}), and the class type no
+// longer claims isArray=false, so the branch keeps the value and the never
+// assignment is rejected.
 function testArrayIntoClassIsArray(xs: number[]): void {
   const c: EmptyHolder = xs;
   if (Array.isArray(c)) {
+    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
     const n: never = c;
   }
 }
@@ -367,6 +368,7 @@ function testArrayLaunderedIntoClassIsArray(xs: number[]): void {
   const o: {} = xs;
   const c: EmptyHolder = o;
   if (Array.isArray(c)) {
+    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
     const n: never = c;
   }
 }
