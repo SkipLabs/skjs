@@ -345,3 +345,28 @@ function restArrayEntries(source: number[]): number {
   if (Array.isArray(copy)) return 0;
   return copy[0] ?? 0;
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// #1062: an array assigned to a class type
+///////////////////////////////////////////////////////////////////////////////
+
+class EmptyHolder {}
+
+// Pinned at current behavior: the Array.isArray branch is reachable at runtime
+// (an array is assignable to an all-public class type, directly or through
+// {}), but today the class type's isArray=false claim drops the branch, so it
+// narrows to never and the assignment below is silently accepted.
+function testArrayIntoClassIsArray(xs: number[]): void {
+  const c: EmptyHolder = xs;
+  if (Array.isArray(c)) {
+    const n: never = c;
+  }
+}
+
+function testArrayLaunderedIntoClassIsArray(xs: number[]): void {
+  const o: {} = xs;
+  const c: EmptyHolder = o;
+  if (Array.isArray(c)) {
+    const n: never = c;
+  }
+}
