@@ -97,7 +97,7 @@ extension class TypeChecker {
           common = this.materializeReadContext<TType>(
             tcenv,
             local.pos,
-            context -> context.intersection(comparisonType, otherType),
+            context -> context.intersection(comparisonType, otherType, true),
             (scratch, readEnv) ->
               TType::inter(scratch, readEnv, comparisonType, otherType)
             ,
@@ -209,7 +209,7 @@ extension class TypeChecker {
         overlap = this.materializeReadContext<TType>(
           tcenv,
           local.pos,
-          context -> context.intersection(branchFieldType, otherType),
+          context -> context.intersection(branchFieldType, otherType, true),
           (scratch, readEnv) ->
             TType::inter(scratch, readEnv, branchFieldType, otherType)
           ,
