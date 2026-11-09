@@ -2366,7 +2366,7 @@ base class TEnv{
         this.materializeReadContext<TType>(
           tcenvb,
           pos,
-          context -> context.intersection(left, right),
+          context -> context.intersection(left, right, false),
           (scratch, readEnv) -> TType::inter(scratch, readEnv, left, right),
         ).withPos(pos)
       }

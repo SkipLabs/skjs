@@ -374,7 +374,10 @@ mutable class TypeReadContext private {
       types = tys.values();
       first = types.next().fromSome();
       Some(
-        types.reduce((left, right) -> context.intersection(left, right), first),
+        types.reduce(
+          (left, right) -> context.intersection(left, right, false),
+          first,
+        ),
       )
     | tv @ TVar _ ->
       variance.map(_ -> {
@@ -450,7 +453,7 @@ mutable class TypeReadContext private {
 
   private mutable fun constrainRead(tv: TVar, value: TType): TType {
     for (constraint in tv.constraints) {
-      !value = this.intersection(value, constraint)
+      !value = this.intersection(value, constraint, false)
     };
     value
   }
@@ -520,7 +523,7 @@ mutable class TypeReadContext private {
   ): TType {
     this.lifetime.checkActive();
     TType::fromTParamWithConstraintWith(pos, parameter, (left, right) ->
-      this.retainedIntersection(left, right)
+      this.retainedIntersection(left, right, false)
     )
   }
 
@@ -531,7 +534,7 @@ mutable class TypeReadContext private {
         TField::interContracts(
           left,
           right,
-          context.retainedIntersection(left.get, right.get),
+          context.retainedIntersection(left.get, right.get, false),
           TType::unionStructural(left.set, right.set),
         )
       )
@@ -765,11 +768,17 @@ mutable class TypeReadContext private {
     result
   }
 
-  mutable fun intersection(left: TType, right: TType): TType {
+  // `narrowing` marks control-flow refinement intersections (equality
+  // narrowing): there an incomparable pair of call signatures must not
+  // collapse to bottom, because one function can inhabit both signatures
+  // (SkipLabs/skjs#768). Narrowing results are over-approximations, so they
+  // are never memoized into the shared intersection cache used by
+  // intersection-type construction.
+  mutable fun intersection(left: TType, right: TType, narrowing: Bool): TType {
     this.lifetime.checkActive();
     if (left == right) return left;
     hasVar = left.getSingleVar().isSome() || right.getSingleVar().isSome();
-    if (!hasVar) {
+    if (!hasVar && !narrowing) {
       this.scratch.memoizedIntersection(left, right) match {
       | Some(result) -> return result
       | None() -> void
@@ -778,8 +787,8 @@ mutable class TypeReadContext private {
     this.scratch.withTypeQuery(() -> {
       stamp = this.scratch.typeQueryReadStamp();
       context = this with {allowTargetGrowth => false};
-      result = context.intersection_(left, right);
-      if (!hasVar && this.scratch.canCacheTypeQuerySince(stamp)) {
+      result = context.intersection_(left, right, narrowing);
+      if (!hasVar && !narrowing && this.scratch.canCacheTypeQuerySince(stamp)) {
         this.scratch.memoizedIntersection(left, right) match {
         | Some(cached) -> !result = cached
         | None() -> this.scratch.memoizeIntersection(left, right, result)
@@ -789,7 +798,11 @@ mutable class TypeReadContext private {
     })
   }
 
-  private mutable fun intersection_(left: TType, right: TType): TType {
+  private mutable fun intersection_(
+    left: TType,
+    right: TType,
+    narrowing: Bool,
+  ): TType {
     if (right.isTop() || left.isBottom()) return left;
     if (left.isTop() || right.isBottom()) return right;
     // Inspect bare candidates just as the legacy intersection did. Unknown
@@ -833,25 +846,35 @@ mutable class TypeReadContext private {
     };
     TType::ofClauses(
       left.pos,
-      Clauses::interWith(a, b, (f, g) -> context.intersectFields(f, g)),
+      Clauses::interWith(a, b, (f, g) ->
+        context.intersectFields(f, g, narrowing)
+      ),
     )
   }
 
-  private mutable fun retainedIntersection(left: TType, right: TType): TType {
+  private mutable fun retainedIntersection(
+    left: TType,
+    right: TType,
+    narrowing: Bool,
+  ): TType {
     stamp = this.scratch.typeQueryReadStamp();
-    result = this.intersection(left, right);
+    result = this.intersection(left, right, narrowing);
     if (this.scratch.canCacheTypeQuerySince(stamp)) result else {
       TType::unexpandedInter(left, right)
     }
   }
 
-  private mutable fun intersectFields(left: TFields, right: TFields): ?TFields {
+  private mutable fun intersectFields(
+    left: TFields,
+    right: TFields,
+    narrowing: Bool,
+  ): ?TFields {
     TFields::interWith(
       left,
       right,
       (a, b) -> {
         get = if (this.tenv.expandInter) {
-          this.retainedIntersection(a.get, b.get)
+          this.retainedIntersection(a.get, b.get, narrowing)
         } else {
           TType::unexpandedInter(a.get, b.get)
         };
@@ -861,12 +884,21 @@ mutable class TypeReadContext private {
         TField::interContracts(
           a,
           b,
-          this.retainedIntersection(a.get, b.get),
+          this.retainedIntersection(a.get, b.get, narrowing),
           TType::unionStructural(a.set, b.set),
         ),
       (a, b) ->
-        TFun::interWith(a.fun_, b.fun_, (f, g) ->
-          this.functionSubtype(f, g) is STOk()
+        TFun::interWith(
+          a.fun_,
+          b.fun_,
+          (f, g) -> this.functionSubtype(f, g) is STOk(),
+          // Incomparable signatures are not disjoint: one function can
+          // inhabit both via parameter contravariance, so refinement must
+          // not collapse the branch to bottom (SkipLabs/skjs#768). Keep the
+          // left signature as a sound over-approximation of the shared
+          // values. Intersection-type construction (narrowing == false)
+          // keeps bottom, so a materialized `A & B` stays a subtype of both.
+          if (narrowing) Some(a.fun_) else None(),
         ).map(f -> TFuns::singleFun(f, a.pos))
       ,
     )
@@ -943,7 +975,9 @@ mutable class TypeReadContext private {
   // retain the observation frame, including reads made by failed comparisons.
   mutable fun disjoint(left: TType, right: TType): Bool {
     this.lifetime.checkActive();
-    this.runDescendant(context -> context.intersection(left, right).isBottom())
+    this.runDescendant(context ->
+      context.intersection(left, right, false).isBottom()
+    )
   }
 
   private mutable fun tupleElements(clauses: Clauses): ?Array<TType> {

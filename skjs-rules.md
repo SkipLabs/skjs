@@ -454,6 +454,10 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
 - **Rule**: `void`'s only runtime value is `undefined`, so `void` and `undefined` overlap: `void & undefined` is `undefined` (not `never`), and a strict comparison between them is not reported as always-false. In `if (x === y)` with `x: void` and `y: undefined` the true branch narrows `x` to `undefined` — the branch is reachable at runtime, so narrowing to `never` would be unsound (issue #1041). `void` and `null` stay disjoint (`undefined === null` is false at runtime). Note SKJS keeps `undefined` non-assignable to `void` (stricter than tsc, which accepts `const v: void = undefined`); only the intersection/overlap treat the two as the same value.
 - **Verified by**: `tests/expect-error/void.ts`
 
+### 27g. Incomparable Function Signatures Are Not Disjoint in Equality Narrowing
+- **Rule**: two call signatures neither of which subsumes the other can still be inhabited by one function (parameter contravariance: `(x: unknown) => void` is a subtype of both `(s: string) => void` and `(n: number) => void`). So in `if (k === g)` the true branch must not narrow `k` to `never` — the branch is reachable at runtime (issue #768). Refinement keeps the left signature as a sound over-approximation of the shared values. Intersection-type *construction* is unaffected: a materialized `((s: string) => void) & ((n: number) => void)` still collapses to `never`, so an initializer that inhabits only one side is rejected.
+- **Verified by**: `tests/expect-error/equality.ts`
+
 ### 28. Object Spread Soundness (Stricter than TypeScript)
 - **Rule**: In an object literal with spreads, fields defined before a spread are dropped from the result type
 - **TypeScript difference**: TypeScript keeps pre-spread fields in the result type, which is unsound — the spread value could overwrite them at runtime (structural subtyping allows extra properties)

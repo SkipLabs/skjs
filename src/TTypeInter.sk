@@ -729,8 +729,16 @@ extension class TFun {
     f1: TFun,
     f2: TFun,
   ): ?TFun {
-    TFun::interWith(f1, f2, (left, right) ->
-      TType::absorbsFun(subst, tenv, left, right)
+    TFun::interWith(
+      f1,
+      f2,
+      (left, right) -> TType::absorbsFun(subst, tenv, left, right),
+      // Intersection-type construction keeps incomparable signatures
+      // disjoint (bottom): the materialized `A & B` must stay a subtype of
+      // both operands. The narrowing backend (TTypeObservation) passes a
+      // sound over-approximation instead — incomparable is not disjoint
+      // (SkipLabs/skjs#768).
+      None(),
     )
   }
 
@@ -738,6 +746,7 @@ extension class TFun {
     f1: TFun,
     f2: TFun,
     isSubtype: (TFun, TFun) -> Bool,
+    onIncomparable: ?TFun,
   ): ?TFun {
     merged = f1.cgNodes.union(f2.cgNodes);
     if (isSubtype(f1, f2)) {
@@ -745,7 +754,7 @@ extension class TFun {
     } else if (isSubtype(f2, f1)) {
       Some(f2 with {cgNodes => merged})
     } else {
-      None()
+      onIncomparable.map(f -> f with {cgNodes => merged})
     }
   }
 }

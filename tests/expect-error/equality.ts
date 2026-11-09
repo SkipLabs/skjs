@@ -149,6 +149,24 @@ function funCounterExample(): boolean {
   return f === g;
 }
 
+// #768: incomparable signatures are not disjoint — one function can inhabit
+// both via parameter contravariance, so the === branch is reachable and must
+// not narrow to never.
+function tfunInterIncomparable(
+  k: (s: string) => void,
+  g: (n: number) => void,
+): void {
+  if (k === g) {
+    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+    const z: never = k;
+  }
+}
+
+function tfunInterIncomparableCall(): void {
+  const h = (x: unknown): void => {};
+  tfunInterIncomparable(h, h);
+}
+
 // No warning: both can be valid `Promise<never>` values. tsc reports TS2367.
 function promiseDisjoint(p: Promise<number>, q: Promise<string>): boolean {
   return p === q;
