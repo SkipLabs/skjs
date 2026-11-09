@@ -43,7 +43,7 @@ function height(N: node | null): number {
 //right rotate
 function rightRotate(y: node): node {
   let x = y.left;
-  console.assert(x !== null);
+  if (x === null) throw new Error("assertion failed");
   let T2 = x.right;
   x.right = y;
   y.left = T2;
@@ -55,7 +55,7 @@ function rightRotate(y: node): node {
 //left rotate
 function leftRotate(x: node): node {
   let y = x.right;
-  console.assert(y !== null);
+  if (y === null) throw new Error("assertion failed");
   let T2 = y.left;
   y.left = x;
   x.right = T2;
@@ -96,7 +96,7 @@ function insertNodeHelper(node: null | node, item: number): node {
 
   if (balanceFactor > 1) {
     let left = node.left;
-    console.assert(left !== null);
+    if (left === null) throw new Error("assertion failed");
     if (item < left.item) {
       return rightRotate(node);
     } else if (item > left.item) {
@@ -107,7 +107,7 @@ function insertNodeHelper(node: null | node, item: number): node {
 
   if (balanceFactor < -1) {
     let right = node.right;
-    console.assert(right !== null);
+    if (right === null) throw new Error("assertion failed");
     if (item > right.item) {
       return leftRotate(node);
     } else if (item < right.item) {
@@ -167,7 +167,7 @@ function deleteNodeHelper(root: null | node, item: number): null | node {
       return rightRotate(root);
     } else {
       let left = root.left;
-      console.assert(left !== null);
+      if (left === null) throw new Error("assertion failed");
       root.left = leftRotate(left);
       return rightRotate(root);
     }
@@ -177,7 +177,7 @@ function deleteNodeHelper(root: null | node, item: number): null | node {
       return leftRotate(root);
     } else {
       let right = root.right;
-      console.assert(right !== null);
+      if (right === null) throw new Error("assertion failed");
       root.right = rightRotate(right);
       return leftRotate(root);
     }
@@ -191,7 +191,7 @@ function nodeWithMinimumValue(node: node): node {
   let left = current.left;
   while (left !== null) {
     left = current.left;
-    console.assert(left !== null);
+    if (left === null) throw new Error("assertion failed");
     current = left;
     left = current.left;
   }
