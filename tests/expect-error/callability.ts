@@ -222,12 +222,17 @@ function testProvenCallableTruthiness(o: {}): void {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Definite non-callability: class instances and arrays keep precise narrowing
+// Definite non-callability: arrays keep precise narrowing; class instances do
+// not claim it (issue #1038)
 ///////////////////////////////////////////////////////////////////////////////
 
-// A class instance is not callable: the "function" branch is never.
+// A class instance's callability is unknown, not definitely-absent: width
+// subtyping lets a callable flow into a class type through an intermediate
+// structural type (function -> {} -> C), so the "function" branch keeps the
+// class type (tsc narrows it to Function here too) and cannot narrow to never.
 function testInstanceTypeofFunction(c: C): void {
   if (typeof c === "function") {
+    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
     const n: never = c;
   }
 }
@@ -288,14 +293,13 @@ function testEnumObjectTypeofFunction(): void {
 // Assignability of functions to class-instance types
 ///////////////////////////////////////////////////////////////////////////////
 
-// A known-callable value is not assignable to a class-instance type, even an
-// empty one: class instances claim definitely-not-callable, and typeof
-// narrowing relies on that claim (testInstanceTypeofFunction above). tsc
-// accepts this (and then unsoundly narrows the instance type to never in the
-// typeof-"function" branch the function makes reachable); SKJS is stricter
-// and sound here.
+// A known-callable value IS assignable to a class-instance type, even an empty
+// one — tsc-parity, and sound now that class instances no longer claim
+// definitely-not-callable: the stored function stays non-invocable through
+// the class type (its call mode is unknown, not CPresent), and
+// typeof-"function" narrowing keeps the branch instead of narrowing to never
+// (issue #1038).
 function testFnToEmptyClass(f: () => void): Empty {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return f;
 }
 
@@ -309,16 +313,15 @@ function testLiteralToClass(): C {
   return { a: 1 };
 }
 
-// Constructible values are typeof "function", so they are not assignable to
-// class-instance types either (tsc accepts both, structurally; sound-stricter
-// like testFnToEmptyClass).
+// Constructible values are typeof "function"; like plain callables they are
+// assignable to class-instance types (tsc-parity, sound per #1038: the class
+// type's unknown call mode keeps the value non-invocable and non-constructible
+// through it).
 function testNewSigToEmptyClass(o: { new (): C }): Empty {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return o;
 }
 
 function testCtorToEmptyClass(): Empty {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return C;
 }
 
@@ -418,14 +421,14 @@ function testUnionCallRecoveredType(x: (() => string) | { a: number }): void {
 // #1038: a function laundered through a structural type into a class type
 //////////////////////////////////////////////////////////////////////////////
 
-// Pinned at current behavior: the "function" branch is reachable at runtime
-// (the function passes through both assignments), but today the class type's
-// definitely-not-callable claim drops the branch, so it narrows to never and
-// the assignment below is silently accepted.
+// The "function" branch is reachable at runtime (the function passes through
+// both assignments), and the class type's callability is unknown, so the
+// branch keeps the class type — the never assignment is rejected.
 function testLaunderedFnTypeofFunction(g: () => void): void {
   const o: {} = g;
   const c: Empty = o;
   if (typeof c === "function") {
+    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
     const n: never = c;
   }
 }

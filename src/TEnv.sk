@@ -1186,15 +1186,13 @@ base class TEnv{
     | CKClass() ->
       Some(false) /* Unless overridden by brand field */
     };
-    // Class instances are never callable or constructible; interfaces are
-    // structural, so their callability is unconstrained (a function with the
-    // right members inhabits them). Mirrors the isArray brand above.
-    (call, new) = c.kind match {
-    | CKInterface() -> (CUnknown(), CUnknown())
-    | CKAbstract()
-    | CKClass() ->
-      (CAbsent(), CAbsent())
-    };
+    // Interfaces and class instances are structural, so their callability is
+    // unconstrained: width subtyping lets a callable flow into them through
+    // an intermediate structural type (function -> {} -> C, issue #1038), so
+    // a definitely-absent claim is not enforceable and typeof narrowing must
+    // not trust it. (Arrays keep CAbsent via the isArray brand in
+    // TFields::createFromSortedIterator, which assignability does enforce.)
+    (call, new) = (CUnknown(), CUnknown());
     tIndexes = TIndexes::create(tcenvb, this, indexes);
     TFields::create{fields, symbolFields, tIndexes, call, new, isArray}
   }

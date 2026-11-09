@@ -60,12 +60,11 @@ function testFunctionToFn(f: Function): () => void {
   return f;
 }
 
-// Function is not assignable to a class-instance type. Stricter than tsc,
-// which accepts the empty-instance target structurally and then unsoundly
-// narrows it to never in the typeof-"function" branch a stored function
-// makes reachable.
+// Function is assignable to a class-instance type (tsc-parity, sound since
+// #1038: the class type's callability is unknown, so the stored function
+// stays non-invocable through it and typeof-"function" narrowing keeps the
+// branch instead of narrowing to never).
 function testFunctionToEmptyClass(f: Function): Empty {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return f;
 }
 
