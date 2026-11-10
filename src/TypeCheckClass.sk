@@ -79,6 +79,12 @@ extension class TypeChecker {
               parentName,
               parentTArgs.map(ty -> this.normalize(subst, ty)),
             );
+            // An interface extending a class inherits its members but not its
+            // identity (interfaces are structural), so it is checked against
+            // the base's structural view.
+            if (isInterface) {
+              !super = TType::withoutClassIdentity(subst, this, super)
+            };
             if (!isInterface) {
               !this.super = Some((superCstr, super));
             };
@@ -155,10 +161,16 @@ extension class TypeChecker {
       interface.value match {
       | TAInst(parentName, parentTArgs) ->
         if (this.hasClassDef(tcenvl, parentName)) {
-          super = this.new(
+          // `implements` is a structural contract: the implementer must have
+          // the members, but it is not an instance of the implemented class.
+          super = TType::withoutClassIdentity(
             subst,
-            parentName,
-            parentTArgs.map(ty -> this.normalize(subst, ty)),
+            this,
+            this.new(
+              subst,
+              parentName,
+              parentTArgs.map(ty -> this.normalize(subst, ty)),
+            ),
           );
           tcenv = TCEnv::mcreate(subst, CGNode::toplevel(fileName));
           tcenv.recordClassHierarchy{

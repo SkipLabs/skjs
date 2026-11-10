@@ -407,12 +407,18 @@ extension class TypeChecker {
     // each branch takes its own attempt from the probe, so one branch's
     // inference cannot reach another.
     probeSubst = tcenv.subst.compatibilityProbe();
+    // Preservation matches members only: the class identity is what
+    // `instanceof` proves, not something the scrutinee must already carry.
+    // A preserved branch then gains the identity (or is dropped when it is
+    // already an instance of an unrelated class).
     probeFields = this.newFieldsOf(
       probeSubst,
       c,
       className,
       this.makeTArgsOf(probeSubst, c, className),
-    );
+    ).withoutClassIdentity();
+    withIdentity = (fields: TFields) ->
+      fields.interClassIdentity(skolemFields.classIds);
     filterMap = stype ->
       stype match {
       | tObj @ TObject _ ->
@@ -432,7 +438,12 @@ extension class TypeChecker {
           if (
             TType::probeFieldsCompatible(probeSubst, this, fields, probeFields)
           ) {
-            branches.push(fields)
+            withIdentity(fields) match {
+            | Some(identified) ->
+              if (identified != fields) !rewritten = true;
+              branches.push(identified)
+            | None() -> !rewritten = true
+            }
           } else {
             !rewritten = true;
             TFields::inter(tcenv.subst, this, fields, skolemFields) match {

@@ -1196,7 +1196,50 @@ base class TEnv{
       (CAbsent(), CAbsent())
     };
     tIndexes = TIndexes::create(tcenvb, this, indexes);
-    TFields::create{fields, symbolFields, tIndexes, call, new, isArray}
+    classIds = this.classIdentity(tcenvb, c);
+    TFields::create{
+      fields,
+      symbolFields,
+      tIndexes,
+      call,
+      new,
+      isArray,
+      classIds,
+    }
+  }
+
+  // Class instance types are nominal: the identity of a class instance is the
+  // declaration names of the class and every class ancestor, so an instance
+  // of a subclass is an instance of each base. Interfaces stay structural
+  // (None), and so do classes declared in .d.ts stubs (Array, Map, Promise,
+  // ...), which literals and tuples inhabit. A declaration Name carries its
+  // position, so same-named classes in different modules stay distinct.
+  fun classIdentity(tcenvb: mutable TCEnvBase, c: Class): ?ArraySet<Name> {
+    isNominal = (cls: Class) ->
+      !(cls.kind is CKInterface()) &&
+        !cls.name.pos.fileName.toString().endsWith(".d.ts");
+    if (!isNominal(c)) return None();
+    chain = mutable Vector[c.name];
+    visited = mutable Set[c.name];
+    todo = mutable Vector[c];
+    while (!todo.isEmpty()) {
+      cls = todo.pop();
+      for (extend in cls.extends_) {
+        extend.value match {
+        | TAInst(parentName, _) ->
+          if (this.hasClassDef(tcenvb, parentName)) {
+            parent = this.getClass(tcenvb, parentName);
+            if (isNominal(parent) && !visited.contains(parent.name)) {
+              visited.insert(parent.name);
+              chain.push(parent.name);
+              todo.push(parent)
+            }
+          }
+        | _ -> void
+        }
+      }
+    };
+    Some(ArraySet::createFromMVector(chain))
   }
 
   fun newStatic(tcenvb: mutable TCEnvBase, className: Name): TType {

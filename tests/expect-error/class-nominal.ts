@@ -26,11 +26,14 @@ interface PtShape {
 
 // An object literal is not an instance.
 function literalToClass(): Pt {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  // @skjs-expect-error-line4 Only an instance of class 'Pt' (or a subclass) has this type; use 'new' or an interface for structural shapes
   return { x: 1, y: 2 };
 }
 
 // A structurally identical sibling class is a different class.
 function siblingToClass(p: SamePt): Pt {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return p;
 }
 
@@ -42,6 +45,7 @@ function emptyToClass(o: {}): Pt {
 
 // A spread copy is a plain object, not an instance.
 function spreadCopyToClass(p: Pt): Pt {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return { ...p };
 }
 
@@ -115,5 +119,36 @@ class Other {
 }
 
 function intoUnrelatedIntersection(p: Pt): Pt & Other {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return p;
+}
+
+// `implements` is a structural contract: the implementer is checked against
+// the class's members, but it is not an instance of that class.
+class ImplPt implements Pt {
+  x: number = 1;
+  y: number = 2;
+}
+
+function implementerToClass(p: ImplPt): Pt {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  return p;
+}
+
+function implementerToShape(p: ImplPt): PtShape {
+  return p;
+}
+
+// An interface extending a class inherits its members, not its identity.
+interface PtLike extends Pt {
+  label: string;
+}
+
+function literalToClassInterface(): PtLike {
+  return { x: 1, y: 2, label: "a" };
+}
+
+// A subclass instance meets its base in an intersection.
+function subclassIntersection(s: SubPt): Pt & SubPt {
+  return s;
 }

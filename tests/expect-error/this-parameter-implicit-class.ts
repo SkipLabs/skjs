@@ -54,6 +54,7 @@ function retypedMethod(source: C, other: OtherReceiver): void {
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const method: typeof source.m = other.m;
   const carrier = { value: 1, m: method };
+  // @skjs-expect-error The 'this' context is not assignable to method's 'this' type
   carrier.m(0);
 }
 
@@ -64,8 +65,11 @@ function reattachedMethod(other: OtherReceiver): void {
   carrier.m(0);
 }
 
+// Classes are nominal: a plain object with the same fields is not an
+// OtherReceiver, so reattaching its method to one is rejected (class-nominal.ts).
 function compatibleReattachment(other: OtherReceiver): void {
   const carrier = { text: "ok", m: other.m };
+  // @skjs-expect-error The 'this' context is not assignable to method's 'this' type
   carrier.m(0);
 }
 
@@ -95,5 +99,6 @@ function parameterReattachment({ m }: OtherReceiver): void {
 function compatibleDestructuring(other: OtherReceiver): void {
   const { m } = other;
   const carrier = { text: "ok", m };
+  // @skjs-expect-error The 'this' context is not assignable to method's 'this' type
   carrier.m(0);
 }

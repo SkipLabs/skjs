@@ -596,6 +596,13 @@ extension class TFields {
     | (ia, _) ->
       ia
     };
+    classIds = TFields::interClassIds(
+      fields1.classIds,
+      fields2.classIds,
+    ) match {
+    | None() -> return None()
+    | Some(ids) -> ids
+    };
     // Process fields first so that tuple index type variables are resolved
     // before call/new signatures with union types.
     fields = TFields::interNamedFieldsWith(
@@ -643,8 +650,33 @@ extension class TFields {
         call,
         new,
         isArray,
+        classIds,
       },
     )
+  }
+
+  // Meet of two class identities (nominal classes). A structural side (None)
+  // adds no constraint. Two class chains share an instance only when one
+  // class extends the other (single inheritance), i.e. one chain contains the
+  // other; the meet is then the longer chain. Otherwise the classes are
+  // unrelated and the intersection is uninhabited (outer None).
+  static fun interClassIds(
+    ids1: ?ArraySet<Name>,
+    ids2: ?ArraySet<Name>,
+  ): ??ArraySet<Name> {
+    (ids1, ids2) match {
+    | (None(), ids)
+    | (ids, None()) ->
+      Some(ids)
+    | (Some(a), Some(b)) ->
+      if (a.contains(b)) {
+        Some(Some(a))
+      } else if (b.contains(a)) {
+        Some(Some(b))
+      } else {
+        None()
+      }
+    }
   }
 
   fun interIsArray(isArray: Bool): ?TFields {

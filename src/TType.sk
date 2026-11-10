@@ -127,6 +127,27 @@ class TType private {
     TType::create(pos, TInsts::empty(), Clauses::top())
   }
 
+  // The structural view of a class instance type: same members, no class
+  // identity (nominal classes, see TEnv::classIdentity). Used where a class
+  // is a shape contract rather than an instance type: `implements C`, and
+  // the members `interface I extends C` inherits.
+  static fun withoutClassIdentity(
+    subst: mutable Subst,
+    tenv: TEnv,
+    ty: TType,
+  ): TType {
+    ty.mapSTypes(subst, tenv, None(), stypesOpt ->
+      stypesOpt.map(stypes ->
+        stypes.mapSTypes(stype ->
+          stype match {
+          | obj @ TObject _ -> obj.map(fields -> fields.withoutClassIdentity())
+          | prim -> prim
+          }
+        )
+      )
+    )
+  }
+
   // A single atomic type.
   static fun single(sType: SType): TType {
     TType::fromSTypes(sType.pos, STypes::single(sType))
@@ -2496,6 +2517,11 @@ class TFields protected {
   call: Callability = CUnknown(),
   // None = unknown, Some(true) = is array, Some(false) = not array
   isArray: ?Bool = None(),
+  // Class identity (nominal classes): None = structural, i.e. any value with
+  // the members; Some(chain) = only instances of every class in `chain`, the
+  // declaration names of a class and all its ancestors. A class's own chain
+  // is nonempty; Some(empty) never arises. See TEnv::newFieldsOf.
+  classIds: ?ArraySet<Name> = None(),
 } extends TIndexesBase uses XXHashable, Orderable {
   static fun empty(): TFields {
     TFields{}
@@ -2508,6 +2534,7 @@ class TFields protected {
     new: Callability = CUnknown(),
     call: Callability = CUnknown(),
     isArray: ?Bool = None(),
+    classIds: ?ArraySet<Name> = None(),
   }: TFields {
     // Array-branded objects (arrays, tuples) are never callable or
     // constructible, so an unconstrained mode is lowered to CAbsent. As
@@ -2536,6 +2563,7 @@ class TFields protected {
       new,
       call,
       isArray,
+      classIds,
     }
   }
 
@@ -2565,6 +2593,7 @@ class TFields protected {
     new: Callability = CUnknown(),
     call: Callability = CUnknown(),
     isArray: ?Bool = None(),
+    classIds: ?ArraySet<Name> = None(),
   }: TFields {
     brandKey = FieldNameString(kArrayBrandFieldName);
     fields.maybeGet(brandKey) match {
@@ -2640,6 +2669,7 @@ class TFields protected {
       new,
       call,
       isArray,
+      classIds,
     }
   }
 
@@ -2705,9 +2735,28 @@ class TFields protected {
     }
   }
 
-  // Copying properties creates a plain object, regardless of the source kind.
+  // The structural view: same members, no class identity.
+  fun withoutClassIdentity(): TFields {
+    this with {classIds => None()}
+  }
+
+  // Meet this branch's class identity with `ids` (see TFields::interClassIds):
+  // None when the branch is already an instance of an unrelated class.
+  fun interClassIdentity(ids: ?ArraySet<Name>): ?TFields {
+    TFields::interClassIds(this.classIds, ids).map(meet ->
+      this with {classIds => meet}
+    )
+  }
+
+  // Copying properties creates a plain object, regardless of the source kind:
+  // not callable, not an array, and not an instance of any class.
   fun asPropertyCopy(): TFields {
-    this with {call => CAbsent(), new => CAbsent(), isArray => Some(false)}
+    this with {
+      call => CAbsent(),
+      new => CAbsent(),
+      isArray => Some(false),
+      classIds => None(),
+    }
   }
 
   fun preserveCopyUncertainty(
@@ -2740,6 +2789,7 @@ class TFields protected {
       new => this.new.mapSig(fTFuns),
       call => this.call.mapSig(fTFuns),
       isArray => this.isArray,
+      classIds => this.classIds,
     }
   }
 

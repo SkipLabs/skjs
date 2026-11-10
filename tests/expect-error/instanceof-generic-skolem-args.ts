@@ -222,10 +222,12 @@ function unionObjectArm(o: { a: number } | Box<string>): string {
   return "";
 }
 
-// Checks against two different generic classes introduce independent skolems;
-// a shared field must not make either hidden type argument escape.
+// Checks against a generic class and its subclass introduce independent
+// skolems; the shared field must not make either hidden type argument escape.
+// (Two unrelated classes share no instance -- classes are nominal, see
+// class-nominal.ts -- so `instanceof Box && instanceof Crate` is unreachable.)
 function crossClassRead(x: unknown): string {
-  if (x instanceof Box && x instanceof Crate) {
+  if (x instanceof Box && x instanceof SubBox) {
     // @skjs-expect-error Type of returned value is not assignable to the function's return type
     // @skjs-expect-error-line2 Type 'Box#T'
     // @skjs-expect-error-line3 is not assignable to type 'string'

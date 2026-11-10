@@ -618,6 +618,18 @@ union/intersection member, or a reference's arguments) denotes nothing.
   `C<string>`. This is a **sound over-refusal**: tsc accepts `C<string>`.
 - **Verified by**: `tests/expect-error/circular-type-param-default.ts`
 
+### 35. Class Instance Types Are Nominal (Stricter than TypeScript)
+
+- **Rule**: a class instance type `C` is inhabited only by values constructed by `C` or a subclass. Object literals, structurally identical sibling classes (including a same-named class from another module), spread and rest copies, values of unknown provenance (`{}`), interface-typed values and `implements C` implementers are **not** assignable to `C`, even when they have every member. Interfaces and object types stay structural: an instance of `C` is still assignable to any interface or object type it matches, and `interface I extends C` inherits `C`'s members but not its identity. Classes declared in `.d.ts` stubs (`Array`, `Map`, `Promise`, …) stay structural, since literals and tuples inhabit them.
+- **Intersections**: two unrelated classes share no instance, so `A & B` is `never`; for a class and its subclass, `Base & Sub` is `Sub` (single inheritance). tsc keeps `A & B` for public-only classes.
+- **`instanceof`**: `x instanceof C` narrows `x` to `C`, also when `x`'s declared type already had `C`'s members.
+- **TypeScript difference**: tsc compares classes structurally (`const p: Pt = { x: 1, y: 2 }` type-checks), apart from `private`/`#private`/`protected` members. Flow makes classes nominal for the same reasons.
+- **Why**: SKJS narrowing relies on facts that hold only for real instances: methods live on the prototype, instances are neither callable nor arrays, and `instanceof C` is true for them. Under structural class types each of those facts was a soundness hole (issues #1038, #1062, and the `instanceof`-else entry in docs/typescript-soundness-holes.md).
+- **Migration**: describe plain-object shapes with an `interface` or object type; construct instances with `new`.
+- **Error**: assigning a non-instance reports `Only an instance of class 'C' (or a subclass) has this type; use 'new' or an interface for structural shapes`.
+- **SKJS enforcement**: `TFields.classIds` holds the class identity of an object branch: `None` for structural types, or the declarations of a class and its ancestors (`TEnv::classIdentity`). Subtyping requires the target's identity to be a subset of the source's; intersection keeps the longer of two nested chains and is empty otherwise; property copies drop it. Identity is not a member, so `keyof`, spread, index signatures and printing are unaffected.
+- **Verified by**: `tests/expect-error/class-nominal.ts`, `tests/projects/class-nominal-same-name/`
+
 ## Coding Guidelines for SKJS
 
 1. **Avoid toplevel variables**: Define everything inside functions or classes
