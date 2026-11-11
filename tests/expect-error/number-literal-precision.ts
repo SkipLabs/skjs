@@ -46,3 +46,37 @@ function impreciseDecimalPair(
 function beyondRangePair(x: 1e309, y: 2e309): boolean {
   return x === y;
 }
+
+// #781: two spellings of one double. `x === y` is true at runtime (both are
+// 2^53), so the branch is reachable and must not narrow to never. Pinned at
+// current behavior: the branch narrows to never and the assignment is
+// silently accepted.
+function impreciseEqualityNarrowing(
+  x: 9007199254740993 | "q",
+  y: 9007199254740992 | "r",
+): void {
+  if (x === y) {
+    const z: never = x;
+  }
+}
+
+// Same with a radix spelling kept in source form (0x20000000000001 is 2^53+1,
+// which rounds to the double 2^53).
+function impreciseRadixEqualityNarrowing(
+  x: 0x20000000000001 | "q",
+  y: 9007199254740992 | "r",
+): void {
+  if (x === y) {
+    const z: never = x;
+  }
+}
+
+// #781: 1e-400 underflows to +0, a falsy value, so `x` has two falsy members.
+// Pinned at current behavior: 1e-400 is classified truthy, so the condition is
+// accepted and the else branch narrows to "" although x can be 0 there.
+function underflowIsFalsy(x: 1e-400 | ""): void {
+  if (x) {
+    return;
+  }
+  const z: "" = x;
+}
