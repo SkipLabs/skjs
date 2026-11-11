@@ -1374,13 +1374,12 @@ extension class TFields {
     (m1, m2) match {
     | (_, CUnknown()) -> Some(STOk())
     | (CAbsent(), CAbsent()) -> Some(STOk())
-    // Lax by design: TS structural assignability lets any plain object type
-    // flow into a class-instance type ({a: number} -> C), so an
-    // unknown-callability source is accepted against a definitely-absent
-    // mode. CAbsent therefore stays a brand-like approximation (like
-    // isArray): a callable can still be laundered through an intermediate
-    // structural type (in two steps even a Function-typed value:
-    // Function -> {} -> C). A *known* callable is rejected below.
+    // An unknown-callability source is accepted against a definitely-absent
+    // mode: the target's CAbsent is backed elsewhere. For a nominal class it
+    // is the class identity check (only constructed instances, never
+    // callable, reach a nominal class type), and object-literal or array
+    // targets are not reached by laundering a callable. A *known* callable
+    // is rejected below.
     | (CUnknown(), CAbsent()) -> Some(STOk())
     // A callable (or constructible) value is not assignable where the mode
     // claims definitely-absent: typeof narrowing relies on that claim to
