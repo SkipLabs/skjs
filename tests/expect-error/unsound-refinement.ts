@@ -589,3 +589,28 @@ function computedCall(x: { fn: (() => number) | null }): number {
   // @ts-expect-error This expression is not callable
   return x[(x.fn = null) === null ? "fn" : "fn"]();
 }
+
+// #792 (forward): admitting a narrowed view, then a write legal for the
+// source's declared set-type, would make the admitted alias stale. The
+// admission itself is rejected: the narrowed get is not the field's type.
+function narrowedAliasForward(x: { f: number | null }): number {
+  if (x.f !== null) {
+    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+    const y: { f: number } = x;
+    x.f = null;
+    return y.f;
+  }
+  return 0;
+}
+
+// #792 (reverse): a same-type alias's write must invalidate the source's
+// own narrowing.
+function narrowedAliasReverse(x: { f: number | null }): number {
+  if (x.f !== null) {
+    const y: { f: number | null } = x;
+    y.f = null;
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
+    return x.f;
+  }
+  return 0;
+}

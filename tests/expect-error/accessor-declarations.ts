@@ -4,6 +4,9 @@ class AccessorBox {
     return 1;
   }
 }
+// #767: a getter must never be typed as a callable method (calling the read
+// value throws at runtime). Accessors are rejected at the declaration, so the
+// call below is not reachable through an accepted program.
 function classAccessorCall(x: AccessorBox): number {
   return x.value();
 }
