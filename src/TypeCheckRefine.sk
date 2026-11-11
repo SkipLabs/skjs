@@ -300,10 +300,20 @@ extension class TypeChecker {
       filterMap = x ~>
         x match {
         | tObj @ TObject _ ->
-          // Never provenCallable here: even when this branch implies the
-          // value is not typeof "object", it may be a primitive inhabitant
-          // of the branch rather than a callable object.
-          tObj.mapOpt(tFields -> tFields.narrowByTypeofFunction(!target, false))
+          // The matching side is proven non-primitive by the runtime check.
+          // The non-matching side may be a primitive inhabitant of an
+          // unknown branch (through boxing), so it stays unmarked — unless
+          // the branch already asserts non-primitivity (the `object`
+          // keyword, a typeof-proven object), in which case the surviving
+          // value is definitely a function and callability is proven.
+          tObj.mapOpt(tFields ->
+            tFields
+              .narrowByTypeofFunction(
+                !target,
+                tFields.isPrimitive == Some(false),
+              )
+              .map(f -> if (target) f.withIsPrimitive(Some(false)) else f)
+          )
         | TPrimUnit(TNull(), _) -> if (target) Some(x) else None()
         | _ -> if (target) None() else Some(x)
         };
@@ -311,7 +321,7 @@ extension class TypeChecker {
         Some(
           STypes::union(
             STypes::single(TPrimUnit(TNull(), typePos)),
-            STypes::single(TObject::createEmpty(typePos)),
+            STypes::single(TObject::createNonPrimitive(typePos)),
           ),
         )
       } else {
@@ -323,8 +333,15 @@ extension class TypeChecker {
         x match {
         | tObj @ TObject _ ->
           // In the true branch the runtime test proves [[Call]], so the
-          // narrowing may strengthen unknown callability (provenCallable).
-          tObj.mapOpt(tFields -> tFields.narrowByTypeofFunction(target, target))
+          // narrowing may strengthen unknown callability (provenCallable),
+          // and the surviving values are functions — non-primitive. The
+          // non-matching side can still hold primitives (through boxing),
+          // so it stays unknown.
+          tObj.mapOpt(tFields ->
+            tFields.narrowByTypeofFunction(target, target).map(f ->
+              if (target) f.withIsPrimitive(Some(false)) else f
+            )
+          )
         | _ -> if (target) None() else Some(x)
         };
       // Symbolic clauses (type parameters, unknown) carry no concrete
