@@ -156,7 +156,7 @@ function subclassIntersection(s: SubPt): Pt & SubPt {
 // The diagnostic names the class the target requires, not one of its bases.
 function literalToSubclass(): SubPt {
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
-  // @skjs-expect-error-line4 Only an instance of class 'Pt' (or a subclass) has this type; use 'new' or an interface for structural shapes
+  // @skjs-expect-error-line4 Only an instance of class 'SubPt' (or a subclass) has this type; use 'new' or an interface for structural shapes
   return { x: 1, y: 2, z: 3 };
 }
 

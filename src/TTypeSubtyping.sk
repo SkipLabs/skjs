@@ -716,8 +716,7 @@ base class STErrorOnTFields(
   | STRecFieldsCopyProvenance(TField, TField)
   | STRecIndexCopyProvenance(TField, TField)
   // Nominal classes: the target is a class instance type the source is not
-  // an instance of. Carries the first class of the target's identity the
-  // source lacks.
+  // an instance of. Carries the class the target names.
   | STRecFieldsClassIdentity(Name)
 
   fun toError(
@@ -1361,12 +1360,10 @@ extension class TFields {
     STOk()
   }
 
-  // The first class of `target`'s identity that `source` is not an instance
-  // of, if any. A structural target (None) accepts any source.
+  // The class `target` requires that `source` is not an instance of, if any.
+  // A structural target (None) accepts any source.
   static fun missingClassIdentity(source: TFields, target: TFields): ?Name {
-    target.classIds.flatMap(required ->
-      required.firstMissingFrom(source.classIds)
-    )
+    target.classIds.flatMap(required -> required.missingFrom(source.classIds))
   }
 
   static fun isSubCallabilityWith(

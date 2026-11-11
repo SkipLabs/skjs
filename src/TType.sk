@@ -2504,36 +2504,42 @@ base class Callability uses XXHashable, Orderable {
 }
 
 // The class identity of a class instance type (nominal classes): the
-// declarations of a class and all its class ancestors. An instance of a
-// subclass is an instance of every class in its identity. Never empty: the
-// only constructors require a class, and the operations below cannot remove
-// one, so "no identity" is always spelled `None()` on the TFields side.
+// declaration of the class (`cls`) and of its class ancestors. An instance of
+// `cls` is an instance of each ancestor. Keeping `cls` apart makes the
+// identity non-empty by construction ("no identity" is `None()` on the
+// TFields side) and lets diagnostics name the class the type was written
+// with. With single inheritance a class determines its ancestors, which
+// TEnv::classIdentity computes the same way for every use of the class.
 value class ClassIdentity private (
-  private classes: ArraySet<Name>,
+  cls: Name,
+  private ancestors: ArraySet<Name>,
 ) uses XXHashable, Orderable {
-  // The identity of `cls`, given its class ancestors (any order, duplicates
-  // and `cls` itself allowed).
+  // The identity of `cls` with the given class ancestors (any order;
+  // duplicates and `cls` itself are ignored).
   static fun create(cls: Name, ancestors: readonly Sequence<Name>): this {
-    chain = mutable Vector[cls];
-    chain.extend(ancestors);
-    static(ArraySet::createFromMVector(chain))
+    static(
+      cls,
+      ArraySet::createFromVector(Vector::createFromItems(ancestors)).filter(
+        a -> a != cls,
+      ),
+    )
   }
 
   // Every instance of `this` is an instance of `other`: `this` is `other` or
   // one of its subclasses.
   fun isSubclassOf(other: ClassIdentity): Bool {
-    this.classes.contains(other.classes)
+    other.cls == this.cls || this.ancestors.containsElt(other.cls)
   }
 
-  // A class of `this` that a value of identity `source` is not an instance of
-  // (the first in declaration-name order), or None when every instance of
-  // `source` is an instance of `this`. A structural source (None) is an
-  // instance of no class, so it misses the first class of `this`.
-  fun firstMissingFrom(source: ?ClassIdentity): ?Name {
+  // The class a value of identity `source` must be an instance of to have
+  // identity `this`, when it is not one: `this.cls`, the class the target
+  // names (an instance of it is an instance of each ancestor too). None when
+  // `source` is `this` or a subclass. A structural source (None) is an
+  // instance of no class.
+  fun missingFrom(source: ?ClassIdentity): ?Name {
     source match {
-    | None() -> this.classes.values().next()
-    | Some(have) ->
-      this.classes.values().find(id -> !have.classes.containsElt(id))
+    | Some(have) if (have.isSubclassOf(this)) -> None()
+    | _ -> Some(this.cls)
     }
   }
 
