@@ -2,8 +2,9 @@
 class MembershipPlain {
   value: number = 0;
 }
-class MembershipNumeric {
-  value: number = 0;
+// A subclass, so its instances are MembershipPlain instances (classes are
+// nominal): what is erased below is only the hook.
+class MembershipNumeric extends MembershipPlain {
   static [Symbol.hasInstance](x: { value: number }): boolean {
     return x.value.toFixed(0) === "0";
   }

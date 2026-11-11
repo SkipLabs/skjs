@@ -127,6 +127,27 @@ class TType private {
     TType::create(pos, TInsts::empty(), Clauses::top())
   }
 
+  // The structural view of a class instance type: same members, no class
+  // identity (nominal classes, see TEnv::classIdentity). Used where a class
+  // is a shape contract rather than an instance type: `implements C`, and
+  // the members `interface I extends C` inherits.
+  static fun withoutClassIdentity(
+    subst: mutable Subst,
+    tenv: TEnv,
+    ty: TType,
+  ): TType {
+    ty.mapSTypes(subst, tenv, None(), stypesOpt ->
+      stypesOpt.map(stypes ->
+        stypes.mapSTypes(stype ->
+          stype match {
+          | obj @ TObject _ -> obj.map(fields -> fields.withoutClassIdentity())
+          | prim -> prim
+          }
+        )
+      )
+    )
+  }
+
   // A single atomic type.
   static fun single(sType: SType): TType {
     TType::fromSTypes(sType.pos, STypes::single(sType))
@@ -2482,6 +2503,60 @@ base class Callability uses XXHashable, Orderable {
   }
 }
 
+// The class identity of a class instance type (nominal classes): the
+// declaration of the class (`cls`) and of its class ancestors. An instance of
+// `cls` is an instance of each ancestor. Keeping `cls` apart makes the
+// identity non-empty by construction ("no identity" is `None()` on the
+// TFields side) and lets diagnostics name the class the type was written
+// with. With single inheritance a class determines its ancestors, which
+// TEnv::classIdentity computes the same way for every use of the class.
+value class ClassIdentity private (
+  cls: Name,
+  private ancestors: ArraySet<Name>,
+) uses XXHashable, Orderable {
+  // The identity of `cls` with the given class ancestors (any order;
+  // duplicates and `cls` itself are ignored).
+  static fun create(cls: Name, ancestors: readonly Sequence<Name>): this {
+    static(
+      cls,
+      ArraySet::createFromVector(Vector::createFromItems(ancestors)).filter(
+        a -> a != cls,
+      ),
+    )
+  }
+
+  // Every instance of `this` is an instance of `other`: `this` is `other` or
+  // one of its subclasses.
+  fun isSubclassOf(other: ClassIdentity): Bool {
+    other.cls == this.cls || this.ancestors.containsElt(other.cls)
+  }
+
+  // The class a value of identity `source` must be an instance of to have
+  // identity `this`, when it is not one: `this.cls`, the class the target
+  // names (an instance of it is an instance of each ancestor too). None when
+  // `source` is `this` or a subclass. A structural source (None) is an
+  // instance of no class.
+  fun missingFrom(source: ?ClassIdentity): ?Name {
+    source match {
+    | Some(have) if (have.isSubclassOf(this)) -> None()
+    | _ -> Some(this.cls)
+    }
+  }
+
+  // The meet: with single inheritance two classes share an instance only when
+  // one extends the other, and the shared instances are the subclass's. None
+  // when the classes are unrelated (the intersection is uninhabited).
+  fun meet(other: ClassIdentity): ?ClassIdentity {
+    if (this.isSubclassOf(other)) {
+      Some(this)
+    } else if (other.isSubclassOf(this)) {
+      Some(other)
+    } else {
+      None()
+    }
+  }
+}
+
 class TFields protected {
   fields: InternalKeyedArrayMap<
     FieldNameString,
@@ -2496,6 +2571,10 @@ class TFields protected {
   call: Callability = CUnknown(),
   // None = unknown, Some(true) = is array, Some(false) = not array
   isArray: ?Bool = None(),
+  // Class identity (nominal classes): None = structural, i.e. any value with
+  // the members; Some(identity) = only instances of that class (or a
+  // subclass). See TEnv::classIdentity.
+  classIds: ?ClassIdentity = None(),
 } extends TIndexesBase uses XXHashable, Orderable {
   static fun empty(): TFields {
     TFields{}
@@ -2508,6 +2587,7 @@ class TFields protected {
     new: Callability = CUnknown(),
     call: Callability = CUnknown(),
     isArray: ?Bool = None(),
+    classIds: ?ClassIdentity = None(),
   }: TFields {
     // Array-branded objects (arrays, tuples) are never callable or
     // constructible, so an unconstrained mode is lowered to CAbsent. As
@@ -2536,6 +2616,7 @@ class TFields protected {
       new,
       call,
       isArray,
+      classIds,
     }
   }
 
@@ -2565,6 +2646,7 @@ class TFields protected {
     new: Callability = CUnknown(),
     call: Callability = CUnknown(),
     isArray: ?Bool = None(),
+    classIds: ?ClassIdentity = None(),
   }: TFields {
     brandKey = FieldNameString(kArrayBrandFieldName);
     fields.maybeGet(brandKey) match {
@@ -2640,6 +2722,7 @@ class TFields protected {
       new,
       call,
       isArray,
+      classIds,
     }
   }
 
@@ -2705,9 +2788,28 @@ class TFields protected {
     }
   }
 
-  // Copying properties creates a plain object, regardless of the source kind.
+  // The structural view: same members, no class identity.
+  fun withoutClassIdentity(): TFields {
+    this with {classIds => None()}
+  }
+
+  // Meet this branch's class identity with `ids` (see TFields::interClassIds):
+  // None when the branch is already an instance of an unrelated class.
+  fun interClassIdentity(ids: ?ClassIdentity): ?TFields {
+    TFields::interClassIds(this.classIds, ids).map(meet ->
+      this with {classIds => meet}
+    )
+  }
+
+  // Copying properties creates a plain object, regardless of the source kind:
+  // not callable, not an array, and not an instance of any class.
   fun asPropertyCopy(): TFields {
-    this with {call => CAbsent(), new => CAbsent(), isArray => Some(false)}
+    this with {
+      call => CAbsent(),
+      new => CAbsent(),
+      isArray => Some(false),
+      classIds => None(),
+    }
   }
 
   fun preserveCopyUncertainty(
@@ -2740,6 +2842,7 @@ class TFields protected {
       new => this.new.mapSig(fTFuns),
       call => this.call.mapSig(fTFuns),
       isArray => this.isArray,
+      classIds => this.classIds,
     }
   }
 

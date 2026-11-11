@@ -28,8 +28,10 @@ class Base {
 }
 class Derived extends Base {}
 
-class BaseMethod {
-  m(this: Base): void {}
+// An interface, so `Derived & BaseMethod` is inhabited: two unrelated classes
+// would share no instance (classes are nominal, see class-nominal.ts).
+interface BaseMethod {
+  m(this: Base): void;
 }
 declare const d: Derived & BaseMethod;
 d.m();

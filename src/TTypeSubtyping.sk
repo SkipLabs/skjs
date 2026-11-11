@@ -715,6 +715,9 @@ base class STErrorOnTFields(
   | STRecFieldsFieldAccess(TField, TField)
   | STRecFieldsCopyProvenance(TField, TField)
   | STRecIndexCopyProvenance(TField, TField)
+  // Nominal classes: the target is a class instance type the source is not
+  // an instance of. Carries the class the target names.
+  | STRecFieldsClassIdentity(Name)
 
   fun toError(
     subst: mutable Subst,
@@ -809,6 +812,19 @@ base class STErrorOnTFields(
           (
             target.pos,
             "Construct an own enumerable property explicitly to use this field type",
+          ),
+        ],
+        None(),
+      )
+    | STRecFieldsClassIdentity(className, _fields1, _fields2) ->
+      (
+        List.Nil(),
+        List[
+          (
+            className.pos,
+            `Only an instance of class '${
+              className.value
+            }' (or a subclass) has this type; use 'new' or an interface for structural shapes`,
           ),
         ],
         None(),
@@ -1333,7 +1349,21 @@ extension class TFields {
     | Some(err @ STErrorOnTFuns _) ->
       return STRecFieldsNew(Some(err), fields1, fields2)
     };
+    // Nominal classes, checked last so a structural mismatch is reported
+    // first: the source must be an instance of every class in the target's
+    // identity chain.
+    TFields::missingClassIdentity(fields1, fields2) match {
+    | Some(missing) ->
+      return STRecFieldsClassIdentity(missing, fields1, fields2)
+    | None() -> void
+    };
     STOk()
+  }
+
+  // The class `target` requires that `source` is not an instance of, if any.
+  // A structural target (None) accepts any source.
+  static fun missingClassIdentity(source: TFields, target: TFields): ?Name {
+    target.classIds.flatMap(required -> required.missingFrom(source.classIds))
   }
 
   static fun isSubCallabilityWith(

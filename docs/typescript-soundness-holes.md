@@ -199,7 +199,7 @@ function f(x: C): number {
 const n: number = f({ a: 5 }); // runtime: { a: 5 }
 ```
 
-**Test:** [tests/expect-error/instanceof-hasinstance.ts](../tests/expect-error/instanceof-hasinstance.ts) · **SKJS:** rejects — `Type 'C'` / `is not assignable to type 'number'`; SKJS never narrows the `instanceof` else-branch
+**Test:** [tests/expect-error/instanceof-hasinstance.ts](../tests/expect-error/instanceof-hasinstance.ts), [tests/expect-error/class-nominal.ts](../tests/expect-error/class-nominal.ts) · **SKJS:** rejects — `Type 'C'` / `is not assignable to type 'number'`; SKJS never narrows the `instanceof` else-branch, and since class instance types are nominal ([skjs-rules.md](../skjs-rules.md) rule 35) the structural `{ a: 5 }` cannot reach `f` at all
 
 ### typeof x === "function" removes object constituents that callable values inhabit
 

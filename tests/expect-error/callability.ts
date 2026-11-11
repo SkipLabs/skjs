@@ -299,13 +299,15 @@ function testFnToEmptyClass(f: () => void): Empty {
   return f;
 }
 
-// Structural assignability into class-instance types (unaffected: an object
-// with unknown callability may flow into an instance-typed slot).
+// Class types are nominal: a structurally matching object is not an instance
+// (see class-nominal.ts), whatever its callability.
 function testStructuralToClass(o: { a: number }): C {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return o;
 }
 
 function testLiteralToClass(): C {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return { a: 1 };
 }
 

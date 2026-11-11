@@ -17,16 +17,25 @@ class Cat2 {
   meow: string = "";
 }
 
-// No warning: one value can be both a Cat and a Dog
-// (`{ meow: "", bark: "" }` satisfies both shapes)
+// No warning for reference types, even unrelated classes (which, being
+// nominal, share no instance; see class-nominal.ts): the overlap check stays
+// conservative for objects.
 function classDisjoint(x: Cat, y: Dog): boolean {
   return x === y;
 }
 
+// One value can be both shapes when the shapes are structural.
+interface CatShape {
+  meow: string;
+}
+interface DogShape {
+  bark: string;
+}
+
 function classCounterExample(): boolean {
   const v = { meow: "", bark: "" };
-  const x: Cat = v;
-  const y: Dog = v;
+  const x: CatShape = v;
+  const y: DogShape = v;
   return x === y;
 }
 

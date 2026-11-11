@@ -1,8 +1,10 @@
 // Test that detaching a method with a this parameter and calling it without
 // binding is rejected (per TS: the call uses `this: void`).
 
-class Ctx {
-  value: number = 1;
+// An interface, so `H & Ctx` is inhabited: two unrelated classes would share
+// no instance (classes are nominal, see class-nominal.ts).
+interface Ctx {
+  value: number;
 }
 
 class H {
