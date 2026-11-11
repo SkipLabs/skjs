@@ -114,6 +114,72 @@ fun isPreciseJSNumberLiteral(s: String): Bool {
   sig <= 15 && expValue <= 307
 }
 
+// The IEEE-754 double a number literal name denotes, when it can be
+// computed: canonical and beyond-precision decimal names (as normalized by
+// normalizeJSNumber), and radix names kept in source form past 2^53, which
+// are converted exactly to decimal first. Parsing goes through the runtime's
+// correctly-rounded strtod, so two names denote the same double iff their
+// results are ==. None when a name cannot be parsed (e.g. longer than the
+// runtime parser accepts): callers must then assume any value.
+fun jsNumberLiteralDouble(name: String): ?Float {
+  (negative, unsigned) = if (name.startsWith("-")) {
+    (true, name.stripPrefix("-"))
+  } else {
+    (false, name)
+  };
+  base = if (unsigned.startsWith("0x") || unsigned.startsWith("0X")) {
+    16
+  } else if (unsigned.startsWith("0o") || unsigned.startsWith("0O")) {
+    8
+  } else if (unsigned.startsWith("0b") || unsigned.startsWith("0B")) {
+    2
+  } else {
+    10
+  };
+  decimal = if (base == 10) unsigned else {
+    radixToDecimalString(
+      unsigned.substring(unsigned.getIter().forward(2)),
+      base,
+    )
+  };
+  // The runtime parser rejects inputs of 255 bytes or more.
+  if (decimal.length() >= 250) return None();
+  decimal.toFloatOption().map(f -> if (negative) -f else f)
+}
+
+// Whether two number literal names may denote the same double. Equal names
+// do; two precise names (isPreciseJSNumberLiteral) never collide; otherwise
+// the doubles are compared, and an unparseable name may denote anything.
+fun jsNumberLiteralsMayCollide(a: String, b: String): Bool {
+  if (a == b) return true;
+  if (isPreciseJSNumberLiteral(a) && isPreciseJSNumberLiteral(b)) return false;
+  (jsNumberLiteralDouble(a), jsNumberLiteralDouble(b)) match {
+  | (Some(x), Some(y)) -> x == y
+  | _ -> true
+  }
+}
+
+// Whether a number literal name may denote a falsy value (+0, -0 or NaN),
+// and whether it may denote a truthy one. Precise names are exact: only "0"
+// and "NaN" are falsy. A beyond-precision name can underflow to zero (1e-400
+// is +0) or overflow to Infinity (truthy), so its double decides; an
+// unparseable name may be either.
+fun jsNumberLiteralMayBeFalsy(name: String): Bool {
+  if (isPreciseJSNumberLiteral(name)) return name == "0" || name == "NaN";
+  jsNumberLiteralDouble(name) match {
+  | Some(f) -> f == 0.0 || f.isNaN()
+  | None() -> true
+  }
+}
+
+fun jsNumberLiteralMayBeTruthy(name: String): Bool {
+  if (isPreciseJSNumberLiteral(name)) return name != "0" && name != "NaN";
+  jsNumberLiteralDouble(name) match {
+  | Some(f) -> !(f == 0.0 || f.isNaN())
+  | None() -> true
+  }
+}
+
 // A property name a `number`-typed key can produce at runtime, i.e. some
 // `String(n)`. This is TypeScript's notion of a numeric property name
 // (`(+name).toString() === name`): the finite canonical numeric strings
