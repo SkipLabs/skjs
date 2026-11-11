@@ -1760,20 +1760,29 @@ base class TPrimValueKind uses XXHashable, Orderable {
     }
   }
 
-  // Whether `literal` (a value as stored in PrimLiterals for this kind) is
-  // one of JavaScript's falsy values: `false`, `0`/`NaN`, `0n`, `""`.
-  // Symbols are always truthy. Numeric and bigint literal names are
-  // normalized when literal types are built (getNumber/getBigInt, with
-  // signs applied through negateJSNumberLiteral — issue #655), so zero has
-  // exactly one spelling per kind: "0" and "0n". Beyond-precision number
-  // literals keep their spelled form, but those can never be zero.
-  fun isFalsy(literal: String): Bool {
+  // Whether `literal` (a value as stored in PrimLiterals for this kind) may
+  // be one of JavaScript's falsy values (`false`, `0`/`-0`/`NaN`, `0n`,
+  // `""`), and whether it may be truthy. Symbols are always truthy. Bigint
+  // and precise number literal names are normalized when literal types are
+  // built (getNumber/getBigInt, with signs applied through
+  // negateJSNumberLiteral — issue #655), so zero has exactly one spelling per
+  // kind: "0" and "0n". A beyond-precision number name keeps its spelled
+  // form and can still be zero (1e-400 underflows to +0, issue #781), so its
+  // double decides (jsNumberLiteralMayBeFalsy).
+  fun mayBeFalsy(literal: String): Bool {
     this match {
     | TBool() -> literal == "false"
     | TString() -> literal == ""
-    | TNum() -> literal == "NaN" || literal == "0"
+    | TNum() -> jsNumberLiteralMayBeFalsy(literal)
     | TBigInt() -> literal == "0n"
     | TSymbol() -> false
+    }
+  }
+
+  fun mayBeTruthy(literal: String): Bool {
+    this match {
+    | TNum() -> jsNumberLiteralMayBeTruthy(literal)
+    | _ -> !this.mayBeFalsy(literal)
     }
   }
 }
@@ -1969,9 +1978,10 @@ base class SType private (
       falsyCount: FalsyCount = FZero();
       hasTruthy = false;
       for (lit in lits) {
-        if (kind.isFalsy(lit.val)) {
+        if (kind.mayBeFalsy(lit.val)) {
           !falsyCount = falsyCount.plus(FOne())
-        } else {
+        };
+        if (kind.mayBeTruthy(lit.val)) {
           !hasTruthy = true
         }
       };
@@ -2009,9 +2019,12 @@ base class SType private (
     | TPrimValue(TBool(), None(), pos) ->
       Some(TPrimValue::single(TBool(), if (target) "true" else "false", pos))
     | TPrimValue(kind, Some(lits), pos) ->
-      // truthy side keeps non-falsy literals, falsy side keeps falsy ones.
+      // Each side keeps the literals that may take it (a literal whose value
+      // cannot be determined is kept on both sides).
       lits
-        .filterLiterals(lit -> kind.isFalsy(lit.val) != target)
+        .filterLiterals(lit ->
+          if (target) kind.mayBeTruthy(lit.val) else kind.mayBeFalsy(lit.val)
+        )
         .map(l -> TPrimValue(kind, Some(l), pos))
     }
   }

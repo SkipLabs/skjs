@@ -66,6 +66,19 @@ class PrimLiterals private (
     if (result.isEmpty()) None() else Some(PrimLiterals(result))
   }
 
+  // The literals of `this` that may denote the same runtime value as some
+  // literal of `that`, for literal kinds where distinct names can denote one
+  // value (beyond-precision numbers). Keeps `this`'s spellings.
+  fun interMayEqual(
+    that: PrimLiterals,
+    mayEqual: (String, String) -> Bool,
+  ): ?PrimLiterals {
+    this.filterLiterals(lit ->
+      that.inner.containsKey(lit.val) ||
+        that.inner.values().any(other -> mayEqual(lit.val, other.val))
+    )
+  }
+
   fun diff(that: PrimLiterals): ?PrimLiterals {
     result = this.inner.diff(that.inner);
     if (result.isEmpty()) None() else Some(PrimLiterals(result))
