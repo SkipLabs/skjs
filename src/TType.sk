@@ -2477,10 +2477,11 @@ class TIndexes{} extends TIndexesBase uses XXHashable, Orderable {
 //    ({}, interfaces, object type annotations), whose width subtyping admits
 //    callable inhabitants — e.g. `const o: {} = () => {}`.
 //
-// CAbsent is assigned where no callable value can be constructed (object
-// literals, enum objects) or as a brand-like approximation for nominal
-// class instances and array-branded objects (like `isArray`, structural
-// width subtyping cannot fully enforce it).
+// CAbsent is assigned where no callable value can be constructed: object
+// literals, enum objects, instances of nominal classes (only constructed
+// instances inhabit them, see TEnv::classIdentity), and array-branded objects
+// (like `isArray`). Structural types, including ambient classes, keep
+// CUnknown.
 base class Callability uses XXHashable, Orderable {
   children =
   | CAbsent()

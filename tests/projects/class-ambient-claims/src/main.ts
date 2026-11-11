@@ -5,6 +5,7 @@ import { Amb } from "./lib.js";
 function arrayIntoAmbient(xs: number[] & { a: number }): string {
   const c: Amb = xs;
   if (Array.isArray(c)) {
+    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
     const n: never = c;
     return n;
   }
@@ -16,6 +17,7 @@ function functionIntoAmbient(g: (() => void) & { a: number }): string {
   const o: { a: number } = g;
   const c: Amb = o;
   if (typeof c === "function") {
+    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
     const n: never = c;
     return n;
   }

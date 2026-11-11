@@ -1180,23 +1180,18 @@ base class TEnv{
       tcenvb.notSupported(constructorTy.pos, "new returning a constructor")
     | None() -> void
     };
-    isArray = c.kind match {
-    | CKInterface() -> None()
-    | CKAbstract()
-    | CKClass() ->
-      Some(false) /* Unless overridden by brand field */
-    };
-    // Class instances are never callable or constructible; interfaces are
-    // structural, so their callability is unconstrained (a function with the
-    // right members inhabits them). Mirrors the isArray brand above.
-    (call, new) = c.kind match {
-    | CKInterface() -> (CUnknown(), CUnknown())
-    | CKAbstract()
-    | CKClass() ->
-      (CAbsent(), CAbsent())
+    // An instance of a nominal class (one with a class identity) is a real
+    // instance: never an array, callable or constructible. Every other
+    // instance type is structural -- interfaces, and ambient classes from
+    // .d.ts stubs (rule 35) -- so an array or function carrying the members
+    // inhabits it and those facts are unknown (unless the isArray brand field
+    // overrides, as for Array itself).
+    classIds = this.classIdentity(tcenvb, c);
+    (isArray, call, new) = classIds match {
+    | Some _ -> (Some(false), CAbsent(), CAbsent())
+    | None() -> (None(), CUnknown(), CUnknown())
     };
     tIndexes = TIndexes::create(tcenvb, this, indexes);
-    classIds = this.classIdentity(tcenvb, c);
     TFields::create{
       fields,
       symbolFields,
