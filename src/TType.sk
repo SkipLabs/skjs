@@ -2503,6 +2503,54 @@ base class Callability uses XXHashable, Orderable {
   }
 }
 
+// The class identity of a class instance type (nominal classes): the
+// declarations of a class and all its class ancestors. An instance of a
+// subclass is an instance of every class in its identity. Never empty: the
+// only constructors require a class, and the operations below cannot remove
+// one, so "no identity" is always spelled `None()` on the TFields side.
+value class ClassIdentity private (
+  private classes: ArraySet<Name>,
+) uses XXHashable, Orderable {
+  // The identity of `cls`, given its class ancestors (any order, duplicates
+  // and `cls` itself allowed).
+  static fun create(cls: Name, ancestors: readonly Sequence<Name>): this {
+    chain = mutable Vector[cls];
+    chain.extend(ancestors);
+    static(ArraySet::createFromMVector(chain))
+  }
+
+  // Every instance of `this` is an instance of `other`: `this` is `other` or
+  // one of its subclasses.
+  fun isSubclassOf(other: ClassIdentity): Bool {
+    this.classes.contains(other.classes)
+  }
+
+  // A class of `this` that a value of identity `source` is not an instance of
+  // (the first in declaration-name order), or None when every instance of
+  // `source` is an instance of `this`. A structural source (None) is an
+  // instance of no class, so it misses the first class of `this`.
+  fun firstMissingFrom(source: ?ClassIdentity): ?Name {
+    source match {
+    | None() -> this.classes.values().next()
+    | Some(have) ->
+      this.classes.values().find(id -> !have.classes.containsElt(id))
+    }
+  }
+
+  // The meet: with single inheritance two classes share an instance only when
+  // one extends the other, and the shared instances are the subclass's. None
+  // when the classes are unrelated (the intersection is uninhabited).
+  fun meet(other: ClassIdentity): ?ClassIdentity {
+    if (this.isSubclassOf(other)) {
+      Some(this)
+    } else if (other.isSubclassOf(this)) {
+      Some(other)
+    } else {
+      None()
+    }
+  }
+}
+
 class TFields protected {
   fields: InternalKeyedArrayMap<
     FieldNameString,
@@ -2518,10 +2566,9 @@ class TFields protected {
   // None = unknown, Some(true) = is array, Some(false) = not array
   isArray: ?Bool = None(),
   // Class identity (nominal classes): None = structural, i.e. any value with
-  // the members; Some(chain) = only instances of every class in `chain`, the
-  // declaration names of a class and all its ancestors. A class's own chain
-  // is nonempty; Some(empty) never arises. See TEnv::newFieldsOf.
-  classIds: ?ArraySet<Name> = None(),
+  // the members; Some(identity) = only instances of that class (or a
+  // subclass). See TEnv::classIdentity.
+  classIds: ?ClassIdentity = None(),
 } extends TIndexesBase uses XXHashable, Orderable {
   static fun empty(): TFields {
     TFields{}
@@ -2534,7 +2581,7 @@ class TFields protected {
     new: Callability = CUnknown(),
     call: Callability = CUnknown(),
     isArray: ?Bool = None(),
-    classIds: ?ArraySet<Name> = None(),
+    classIds: ?ClassIdentity = None(),
   }: TFields {
     // Array-branded objects (arrays, tuples) are never callable or
     // constructible, so an unconstrained mode is lowered to CAbsent. As
@@ -2593,7 +2640,7 @@ class TFields protected {
     new: Callability = CUnknown(),
     call: Callability = CUnknown(),
     isArray: ?Bool = None(),
-    classIds: ?ArraySet<Name> = None(),
+    classIds: ?ClassIdentity = None(),
   }: TFields {
     brandKey = FieldNameString(kArrayBrandFieldName);
     fields.maybeGet(brandKey) match {
@@ -2742,7 +2789,7 @@ class TFields protected {
 
   // Meet this branch's class identity with `ids` (see TFields::interClassIds):
   // None when the branch is already an instance of an unrelated class.
-  fun interClassIdentity(ids: ?ArraySet<Name>): ?TFields {
+  fun interClassIdentity(ids: ?ClassIdentity): ?TFields {
     TFields::interClassIds(this.classIds, ids).map(meet ->
       this with {classIds => meet}
     )

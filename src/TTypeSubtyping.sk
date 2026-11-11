@@ -1364,14 +1364,9 @@ extension class TFields {
   // The first class of `target`'s identity that `source` is not an instance
   // of, if any. A structural target (None) accepts any source.
   static fun missingClassIdentity(source: TFields, target: TFields): ?Name {
-    target.classIds match {
-    | None() -> None()
-    | Some(required) ->
-      source.classIds match {
-      | None() -> required.values().next()
-      | Some(have) -> required.values().find(id -> !have.containsElt(id))
-      }
-    }
+    target.classIds.flatMap(required ->
+      required.firstMissingFrom(source.classIds)
+    )
   }
 
   static fun isSubCallabilityWith(

@@ -1214,12 +1214,12 @@ base class TEnv{
   // (None), and so do classes declared in .d.ts stubs (Array, Map, Promise,
   // ...), which literals and tuples inhabit. A declaration Name carries its
   // position, so same-named classes in different modules stay distinct.
-  fun classIdentity(tcenvb: mutable TCEnvBase, c: Class): ?ArraySet<Name> {
+  fun classIdentity(tcenvb: mutable TCEnvBase, c: Class): ?ClassIdentity {
     isNominal = (cls: Class) ->
       !(cls.kind is CKInterface()) &&
         !cls.name.pos.fileName.toString().endsWith(".d.ts");
     if (!isNominal(c)) return None();
-    chain = mutable Vector[c.name];
+    ancestors = mutable Vector[];
     visited = mutable Set[c.name];
     todo = mutable Vector[c];
     while (!todo.isEmpty()) {
@@ -1231,7 +1231,7 @@ base class TEnv{
             parent = this.getClass(tcenvb, parentName);
             if (isNominal(parent) && !visited.contains(parent.name)) {
               visited.insert(parent.name);
-              chain.push(parent.name);
+              ancestors.push(parent.name);
               todo.push(parent)
             }
           }
@@ -1239,7 +1239,7 @@ base class TEnv{
         }
       }
     };
-    Some(ArraySet::createFromMVector(chain))
+    Some(ClassIdentity::create(c.name, ancestors))
   }
 
   fun newStatic(tcenvb: mutable TCEnvBase, className: Name): TType {

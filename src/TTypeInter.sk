@@ -655,27 +655,19 @@ extension class TFields {
     )
   }
 
-  // Meet of two class identities (nominal classes). A structural side (None)
-  // adds no constraint. Two class chains share an instance only when one
-  // class extends the other (single inheritance), i.e. one chain contains the
-  // other; the meet is then the longer chain. Otherwise the classes are
-  // unrelated and the intersection is uninhabited (outer None).
+  // Meet of two optional class identities (nominal classes). A structural
+  // side (None) adds no constraint; two identities meet as in
+  // ClassIdentity::meet. The outer None means the intersection is
+  // uninhabited (unrelated classes).
   static fun interClassIds(
-    ids1: ?ArraySet<Name>,
-    ids2: ?ArraySet<Name>,
-  ): ??ArraySet<Name> {
+    ids1: ?ClassIdentity,
+    ids2: ?ClassIdentity,
+  ): ??ClassIdentity {
     (ids1, ids2) match {
     | (None(), ids)
     | (ids, None()) ->
       Some(ids)
-    | (Some(a), Some(b)) ->
-      if (a.contains(b)) {
-        Some(Some(a))
-      } else if (b.contains(a)) {
-        Some(Some(b))
-      } else {
-        None()
-      }
+    | (Some(a), Some(b)) -> a.meet(b).map(m -> Some(m))
     }
   }
 
