@@ -420,7 +420,13 @@ extension class TPrimValue {
     | (_, None()) -> Some(t1)
     | (None(), Some _) -> Some(t2)
     | (Some(lits1), Some(lits2)) ->
-      lits1.inter(lits2).map(lits -> TPrimValue(t1.kind, Some(lits), t1.pos))
+      // Two number literal names can denote one double (beyond-precision
+      // spellings, issue #781), so number literals meet by value: an empty
+      // name intersection is not proof of disjointness.
+      (t1.kind match {
+      | TNum() -> lits1.interMayEqual(lits2, jsNumberLiteralsMayCollide)
+      | _ -> lits1.inter(lits2)
+      }).map(lits -> TPrimValue(t1.kind, Some(lits), t1.pos))
     }
   }
 }
