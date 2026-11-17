@@ -147,6 +147,18 @@ type RadixPastPrecision = `${0x20000000000001}`;
 // @skjs-expect-error Template literal types are only supported when every interpolation has finitely many values, which this one does not
 type DecimalPastPrecision = `${9007199254740993}`;
 
+// An underflowing literal is the double 0 (its literal type is `0`), so its
+// hole reduces to "0".
+type UnderflowHole = `${1e-400}`;
+function underflowHole(x: UnderflowHole): "0" {
+  return x;
+}
+
+// An overflowing literal is Infinity. Pinned at current behavior: its hole is
+// rejected.
+// @skjs-expect-error Template literal types are only supported when every interpolation has finitely many values, which this one does not
+type OverflowHole = `${1e309}`;
+
 // A spelling that DOES pin down one double still reduces.
 type PreciseExponent = `${1e100}`;
 function preciseExponent(x: PreciseExponent): "1e+100" {
