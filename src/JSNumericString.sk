@@ -554,15 +554,21 @@ fun negateJSNumberLiteral(canonical: String): String {
 
 // Normalize a JS numeric literal to its canonical String(Number(x)) form.
 // Handles underscores (1_000), hex (0x10), binary (0b10), trailing
-// decimal zeros (1.0), and non-canonical scientific notation (1e3).
+// decimal zeros (1.0), and non-canonical scientific notation (1e3) exactly,
+// then names a beyond-precision value by its double
+// (canonicalizeBeyondPrecision).
 fun normalizeJSNumber(raw: String): String {
   // Fast path: this runs for every numeric literal token, and most literals
-  // ("0", "42", "1.5") are already canonical. Sound because canonical-form
-  // strings are fixed points of the pipeline below: isJSNumericString
-  // enforces the same ECMA-262 magnitude bounds the formatter applies, and
-  // it rejects everything the pipeline would rewrite (underscores, radix
-  // prefixes, unsigned or out-of-bounds exponents, trailing zeros, "-0").
-  if (isJSNumericString(raw)) {
+  // ("0", "42", "1.5") are already canonical. Sound because a precise
+  // canonical-form string is a fixed point of the pipeline below:
+  // isJSNumericString enforces the same ECMA-262 magnitude bounds the
+  // formatter applies and rejects everything the pipeline would rewrite
+  // (underscores, radix prefixes, unsigned or out-of-bounds exponents,
+  // trailing zeros, "-0"), and precision (at most 15 significant digits,
+  // isPreciseJSNumberLiteral) means its double prints back the same digits.
+  // A canonical-shaped name with more digits can still name a rounded double
+  // (9007199254740993 is 2^53), so it goes through canonicalization.
+  if (isPreciseJSNumberLiteral(raw)) {
     return raw
   };
   s0 = raw.replace("_", "");
@@ -574,8 +580,75 @@ fun normalizeJSNumber(raw: String): String {
     (false, s0)
   };
 
-  result = normalizeUnsignedJSNumber(s);
+  result = canonicalizeBeyondPrecision(normalizeUnsignedJSNumber(s));
   if (negative && result != "0") "-" + result else result
+}
+
+// The ECMAScript String() form of the double an unsigned number literal name
+// denotes, for names the exact normalizer leaves non-canonical: decimals with
+// 16 or more significant digits, radix literals past 2^53, and exponents
+// outside the double range. tsc keys number literal types by their double,
+// so `9007199254740993` and `9007199254740992`, `1e-400` and `0`, or `2e309`
+// and `1e309` are each one literal type (issue #781).
+//
+// The digits come from Float.toString, which yields the shortest decimal
+// that round-trips (the digits of JS Number.prototype.toString) since Skip
+// std 0.5.0 (SkipLabs/skip#1288); formatCanonicalJSNumber then lays them out
+// as JS does. Soundness rests on the name identifying the double, so the
+// result is checked to parse back to that exact double, and the spelled name
+// is kept otherwise (e.g. with an older formatter that printed fewer digits,
+// or a name the runtime cannot parse). Infinity keeps its spelled form too:
+// "Infinity" is not a numeric literal name SKJS can type.
+fun canonicalizeBeyondPrecision(name: String): String {
+  if (isPreciseJSNumberLiteral(name)) return name;
+  jsNumberLiteralDouble(name) match {
+  | None() -> name
+  | Some(f) ->
+    if (f == 0.0) return "0";
+    if (f.isNaN() || f == Float::inf || f == -Float::inf) return name;
+    (digits, exp10) = shortestFloatDigits(f) match {
+    | None() -> return name
+    | Some(de) -> de
+    };
+    canonical = formatCanonicalJSNumber(digits, exp10 + 1);
+    // Round-trip guard: the canonical name must denote the very same double.
+    canonical.toFloatOption() match {
+    | Some(back) if (back == f) -> canonical
+    | _ -> name
+    }
+  }
+}
+
+// The significant digits and decimal exponent of a positive finite double's
+// shortest round-trip representation: f = 0.d1d2...dn * 10^(exp10 + 1),
+// i.e. d1.d2...dn * 10^exp10. Parsed from Float.toString, whose layouts are
+// "123.45", "1.0", "1.2345e+20", "5.0e-324" (fixed or exponent notation).
+fun shortestFloatDigits(f: Float): ?(String, Int) {
+  s = f.toString();
+  (mantissa, exp) = s.splitFirst("e") match {
+  | (m, "") -> (m, 0)
+  | (m, e) ->
+    e.stripPrefix("+").toIntOption() match {
+    | Some(n) -> (m, n)
+    | None() -> return None()
+    }
+  };
+  (intPart, fracPart) = mantissa.splitFirst(".");
+  allDigits = intPart + fracPart;
+  // Position of the decimal point within allDigits, then normalize away
+  // leading and trailing zeros.
+  point = intPart.length() + exp;
+  lead = 0;
+  chars = allDigits.chars();
+  while (lead < chars.size() - 1 && chars[lead] == '0') !lead = lead + 1;
+  trail = chars.size();
+  while (trail > lead + 1 && chars[trail - 1] == '0') !trail = trail - 1;
+  digits = String::fromChars(chars.slice(lead, trail).toArray());
+  if (digits == "0" || !digits.chars().all(c -> c >= '0' && c <= '9')) {
+    return None()
+  };
+  // d1 sits at position `lead`, so its power of ten is point - lead - 1.
+  Some((digits, point - lead - 1))
 }
 
 fun normalizeUnsignedJSNumber(s: String): String {
@@ -605,8 +678,9 @@ fun normalizeUnsignedJSNumber(s: String): String {
   normalizeDecimalJS(s)
 }
 
-// 2^53: the largest Int an IEEE-754 double represents exactly. Values the
-// normalizer cannot represent exactly are left in their spelled form.
+// 2^53: the largest Int an IEEE-754 double represents exactly. The exact
+// pipeline leaves larger radix values in their spelled form, and
+// canonicalizeBeyondPrecision then names them by their double.
 const maxSafeJSInt: Int = 9007199254740992;
 
 // Parse validated radix digits (no separators). Returns None when the value
