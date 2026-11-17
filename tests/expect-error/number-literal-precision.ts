@@ -85,3 +85,39 @@ function underflowIsFalsy(x: 1e-400 | ""): void {
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const z: "" = x;
 }
+
+// Spellings of one double as types. tsc accepts each: number literal types
+// are keyed by their double. Pinned at current behavior: the spellings are
+// distinct literal types, so each is rejected.
+function sameDoubleDecimal(x: 9007199254740993): 9007199254740992 {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  return x;
+}
+
+function sameDoubleLong(x: 123456789012345678901): 123456789012345680000 {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  return x;
+}
+
+function fractionSameDouble(x: 0.300000000000000044): 0.30000000000000004 {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  return x;
+}
+
+// 1e-400 underflows to 0; 1e309 and 2e309 both overflow to Infinity.
+function underflowIsZero(x: 1e-400): 0 {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  return x;
+}
+
+function overflowSpellings(x: 2e309): 1e309 {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  return x;
+}
+
+// The printed literal type is its spelled form today.
+function showBeyondPrecision(x: 9007199254740993, y: 1e-400, z: 2e309): void {
+  __SKJS_show(x, "9007199254740993");
+  __SKJS_show(y, "1e-400");
+  __SKJS_show(z, "2e+309");
+}
