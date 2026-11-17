@@ -147,6 +147,22 @@ fun jsNumberLiteralDouble(name: String): ?Float {
   decimal.toFloatOption().map(f -> if (negative) -f else f)
 }
 
+// Whether a normalized number literal name is exactly the string
+// ECMAScript String() produces for its value: a canonical name whose double
+// is finite and prints back the same digits. A beyond-precision name is
+// canonical after normalization (canonicalizeBeyondPrecision), so this holds;
+// a name the normalizer kept spelled -- an Infinity value (`1e+309`), an
+// exponent beyond its guard -- fails it.
+fun isJSNumberLiteralStringForm(name: String): Bool {
+  if (isPreciseJSNumberLiteral(name)) return true;
+  if (!isJSNumericString(name)) return false;
+  jsNumberLiteralDouble(name) match {
+  | Some(f) if (!f.isNaN() && f != Float::inf && f != -Float::inf) ->
+    normalizeJSNumber(name) == name
+  | _ -> false
+  }
+}
+
 // Whether two number literal names may denote the same double. Equal names
 // do; two precise names (isPreciseJSNumberLiteral) never collide; otherwise
 // the doubles are compared, and an unparseable name may denote anything.
