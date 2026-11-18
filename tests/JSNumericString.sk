@@ -422,4 +422,27 @@ fun testNormalizeCanonicalizesBeyondPrecision(): void {
   );
 }
 
+// Spellings the runtime float parser does not take as they are: a leading
+// `.`, and zero padding past its input-length limit, which is dropped
+// before parsing. A spelling still too long after that keeps its form.
+@test
+fun testNormalizeParserEdgeSpellings(): void {
+  SKTest.expectEq("0.5", SKJS.normalizeJSNumber(".5"));
+  SKTest.expectEq("500", SKJS.normalizeJSNumber(".5e3"));
+  SKTest.expectEq("5", SKJS.normalizeJSNumber("5."));
+  SKTest.expectEq("1.5", SKJS.normalizeJSNumber("1.5" + "0".repeat(300)));
+  SKTest.expectEq("0", SKJS.normalizeJSNumber("0." + "0".repeat(300)));
+  SKTest.expectEq(
+    "1.23e-301",
+    SKJS.normalizeJSNumber("0." + "0".repeat(300) + "123"),
+  );
+  SKTest.expectEq("1.2e+261", SKJS.normalizeJSNumber("12" + "0".repeat(260)));
+  SKTest.expectEq(
+    "0.07",
+    SKJS.normalizeJSNumber("7" + "0".repeat(260) + "e-262"),
+  );
+  long = "1." + "0".repeat(260) + "1";
+  SKTest.expectEq(long, SKJS.normalizeJSNumber(long));
+}
+
 module end;
