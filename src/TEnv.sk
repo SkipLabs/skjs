@@ -402,6 +402,7 @@ base class TEnv{
     targs: Array<TType>,
     tparams: Array<TypeParam>,
     selfTd: ?TypeDef = None(),
+    fillDefaults: Bool = true,
   ): void {
     _ = this.instantiateTParams(
       tcenv.subst,
@@ -410,6 +411,7 @@ base class TEnv{
       tparams,
       ValidateTypeArguments(),
       selfTd,
+      fillDefaults,
     )
   }
 
@@ -447,6 +449,13 @@ base class TEnv{
     // self-referential constraint is a check SKJS cannot verify, so any
     // instantiation reaching it is refused.
     selfTd: ?TypeDef = None(),
+    // Whether a missing argument may be filled from the parameter's default.
+    // Classes and interfaces do not support optional type parameters: their
+    // defaults are rejected at the declaration (SKJSCode 2021), and filling
+    // one anyway can recurse without end (`class C<T = C>`, issue #1025). For
+    // them a missing argument is recovered without reading the default, after
+    // the arity error reported by the caller.
+    fillDefaults: Bool = true,
   ): this {
     // A cycle through a second alias's default (which `typeReachesTypeDef`
     // below does not follow) leads back to instantiating the same alias with
@@ -492,7 +501,15 @@ base class TEnv{
     shadowed = static::tparamNames(tParams);
 
     for (i => tParam in tParams) {
-      tArg = if (i < tArgs.size()) tArgs[i] else {
+      tArg = if (i < tArgs.size()) tArgs[i] else if (!fillDefaults) {
+        // `unknown` for a parameter with no constraint, and `never` when it is
+        // constrained: never satisfies any constraint without consulting it,
+        // so no second error follows the arity one, and normalizing nothing
+        // here cannot recurse through the class (`class C<T extends C<T>>`).
+        if (tParam.constraint is Some _) TType::bottom(pos) else {
+          TType::top(pos)
+        }
+      } else {
         tParam.default match {
         | Some(default) ->
           reachesSelf =
@@ -1473,6 +1490,8 @@ base class TEnv{
         targs,
         cls.tparams,
         ProbeTypeArguments(),
+        None(),
+        false,
       );
     };
     (this, cls)
@@ -2357,6 +2376,11 @@ base class TEnv{
           | td @ TypeDef _ -> Some(td)
           | _ -> None()
           };
+          // A class or interface default is rejected at its declaration
+          // (classes do not support optional type parameters) and is never
+          // filled: filling `class C<T = C>`'s default recurses without end
+          // (issue #1025).
+          fillDefaults = !(tdef is Class _);
           tcenvb match {
           | tcenv @ TCEnv _ ->
             this.validateExplicitTypeArgs(
@@ -2365,6 +2389,7 @@ base class TEnv{
               normTargs,
               tparams,
               selfTd,
+              fillDefaults,
             )
           | declaration @ TypeReadDeclaration _ ->
             _ = this.instantiateTParams(
@@ -2374,6 +2399,7 @@ base class TEnv{
               tparams,
               ProbeTypeArguments(),
               selfTd,
+              fillDefaults,
             )
           | _ ->
             _ = this.instantiateTParams(
@@ -2383,6 +2409,7 @@ base class TEnv{
               tparams,
               ProbeTypeArguments(),
               selfTd,
+              fillDefaults,
             )
           }
         };
