@@ -136,16 +136,31 @@ type SymbolBeatsNumberInHole = `${number | symbol}`;
 
 // --- Number literal holes whose spelling does not pin down one double ---
 
-// A spelling that does not pin down one double is rejected rather than guessed
-// at: the normalizer keeps a radix literal past 2^53 in source form, and its
-// name is not a string any runtime value produces. (tsc reduces this to
-// "9007199254740992"; SKJS rejects instead of naming an impossible string.)
-// @skjs-expect-error Template literal types are only supported when every interpolation has finitely many values, which this one does not
+// A literal beyond double precision is named by the String() form of its
+// double (rule 30), so its hole reduces to that string, as in tsc: both
+// spellings below are the double 2^53.
 type RadixPastPrecision = `${0x20000000000001}`;
+function radixPastPrecision(x: RadixPastPrecision): "9007199254740992" {
+  return x;
+}
 
-// Likewise a beyond-precision decimal, which the normalizer keeps verbatim.
-// @skjs-expect-error Template literal types are only supported when every interpolation has finitely many values, which this one does not
 type DecimalPastPrecision = `${9007199254740993}`;
+function decimalPastPrecision(x: DecimalPastPrecision): "9007199254740992" {
+  return x;
+}
+
+// An underflowing literal is the double 0 (its literal type is `0`), so its
+// hole reduces to "0".
+type UnderflowHole = `${1e-400}`;
+function underflowHole(x: UnderflowHole): "0" {
+  return x;
+}
+
+// FIXME: tsc reduces this to "Infinity". An overflowing literal keeps its
+// spelled name (`1e+309`), which is not the string the runtime produces, so
+// the hole is rejected rather than reduced to the wrong string.
+// @skjs-expect-error Template literal types are only supported when every interpolation has finitely many values, which this one does not
+type OverflowHole = `${1e309}`;
 
 // A spelling that DOES pin down one double still reduces.
 type PreciseExponent = `${1e100}`;

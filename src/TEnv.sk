@@ -2606,12 +2606,14 @@ base class TEnv{
               for (lit in lits.values()) values.push(lit.val)
             | TPrimValue(TNum(), Some(lits), _) ->
               for (lit in lits.values()) {
-                // A number literal's name is its ECMAScript String() form only
-                // when the spelling pins down one double. The normalizer leaves
-                // a beyond-precision spelling alone and keeps a radix literal
-                // past 2^53 in source form (see rule 30), and neither names a
-                // string any runtime value produces.
-                if (isPreciseJSNumberLiteral(lit.val)) {
+                // A number literal's name is the ECMAScript String() form of
+                // its double whenever it is canonical and finite: the
+                // normalizer rewrites beyond-precision spellings to that form
+                // too (rule 30). The spellings it keeps name no string a
+                // runtime value produces: an Infinity literal (`1e+309` is
+                // canonical-shaped, but String(1e309) is "Infinity") and an
+                // exponent beyond its guard.
+                if (isJSNumberLiteralStringForm(lit.val)) {
                   values.push(lit.val)
                 } else {
                   !irreducible = true
