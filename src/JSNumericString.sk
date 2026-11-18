@@ -127,6 +127,9 @@ fun jsNumberLiteralDouble(name: String): ?Float {
   } else {
     (false, name)
   };
+  if (unsigned == "Infinity") {
+    return Some(if (negative) -Float::inf else Float::inf)
+  };
   base = if (unsigned.startsWith("0x") || unsigned.startsWith("0X")) {
     16
   } else if (unsigned.startsWith("0o") || unsigned.startsWith("0O")) {
@@ -149,12 +152,13 @@ fun jsNumberLiteralDouble(name: String): ?Float {
 
 // Whether a normalized number literal name is exactly the string
 // ECMAScript String() produces for its value: a canonical name whose double
-// is finite and prints back the same digits. A beyond-precision name is
-// canonical after normalization (canonicalizeBeyondPrecision), so this holds;
-// a name the normalizer kept spelled -- an Infinity value (`1e+309`), an
-// exponent beyond its guard -- fails it.
+// is finite and prints back the same digits, or "Infinity" / "-Infinity". A
+// beyond-precision name is canonical after normalization
+// (canonicalizeBeyondPrecision), so this holds; a name the normalizer kept
+// spelled -- an exponent beyond its guard -- fails it.
 fun isJSNumberLiteralStringForm(name: String): Bool {
   if (isPreciseJSNumberLiteral(name)) return true;
+  if (name == "Infinity" || name == "-Infinity") return true;
   if (!isJSNumericString(name)) return false;
   jsNumberLiteralDouble(name) match {
   | Some(f) if (!f.isNaN() && f != Float::inf && f != -Float::inf) ->
@@ -613,15 +617,19 @@ fun normalizeJSNumber(raw: String): String {
 // as JS does. Soundness rests on the name identifying the double, so the
 // result is checked to parse back to that exact double, and the spelled name
 // is kept otherwise (e.g. with an older formatter that printed fewer digits,
-// or a name the runtime cannot parse). Infinity keeps its spelled form too:
-// "Infinity" is not a numeric literal name SKJS can type.
+// or a name the runtime cannot parse). A value that overflows is named
+// "Infinity", as tsc names it; an exponent beyond the normalizer's guard
+// keeps its spelled form.
 fun canonicalizeBeyondPrecision(name: String): String {
   if (isPreciseJSNumberLiteral(name)) return name;
   jsNumberLiteralDouble(name) match {
   | None() -> name
   | Some(f) ->
     if (f == 0.0) return "0";
-    if (f.isNaN() || f == Float::inf || f == -Float::inf) return name;
+    // An overflowing literal is the double Infinity, whose String() form is
+    // "Infinity" (the sign, if any, is applied by the caller).
+    if (f == Float::inf) return "Infinity";
+    if (f.isNaN() || f == -Float::inf) return name;
     (digits, exp10) = shortestFloatDigits(f) match {
     | None() -> return name
     | Some(de) -> de

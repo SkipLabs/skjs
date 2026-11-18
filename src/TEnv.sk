@@ -3878,8 +3878,11 @@ base class TEnv{
     if (allNumbers) {
       resultTys.push(TType::single(TPrimValue::number(pos)))
     } else {
+      // A key that is the String() form of a number literal also has that
+      // number literal type in keyof, including the "Infinity" key (the
+      // literal named Infinity, rule 30) and "-Infinity".
       for (str in strings) {
-        if (isJSNumericString(str)) !numbers = numbers.set(str)
+        if (isJSNumberLiteralStringForm(str)) !numbers = numbers.set(str)
       };
       PrimLiterals::ofSet(numbers, pos).each(nbrLits ->
         resultTys.push(TType::single(TPrimValue(TNum(), Some(nbrLits), pos)))

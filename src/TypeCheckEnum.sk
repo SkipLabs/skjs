@@ -565,15 +565,16 @@ extension base class TEnv {
         access => FAPublic(),
       }
     };
-    // Reverse fields also need every numeric value in canonical form: a
-    // spelled imprecise literal (e.g. 0x20000000000001, beyond 2^53) does
-    // not name its runtime key String(Number(x)), and could collide with a
-    // canonical member's key, so no individual entry would be trustworthy.
+    // Reverse fields also need every numeric value to be named as its runtime
+    // key String(Number(x)): normalization names beyond-precision and
+    // overflowing values that way (rule 30, e.g. Infinity), but a spelling it
+    // kept could collide with another member's key, so no individual entry
+    // would be trustworthy then.
     reverseTrustworthy =
       members.all(m -> m.value is EMVLiteral _) &&
       members.all(m ->
         enumNumLiteralVal(m.value) match {
-        | Some(v) -> isJSNumericString(v)
+        | Some(v) -> isJSNumberLiteralStringForm(v)
         | None() -> true
         }
       );
