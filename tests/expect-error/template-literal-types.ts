@@ -156,11 +156,12 @@ function underflowHole(x: UnderflowHole): "0" {
   return x;
 }
 
-// FIXME: tsc reduces this to "Infinity". An overflowing literal keeps its
-// spelled name (`1e+309`), which is not the string the runtime produces, so
-// the hole is rejected rather than reduced to the wrong string.
-// @skjs-expect-error Template literal types are only supported when every interpolation has finitely many values, which this one does not
+// An overflowing literal is named Infinity, so its hole is "Infinity", as in
+// tsc.
 type OverflowHole = `${1e309}`;
+function overflowHole(x: OverflowHole): "Infinity" {
+  return x;
+}
 
 // A spelling that DOES pin down one double still reduces.
 type PreciseExponent = `${1e100}`;

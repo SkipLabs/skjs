@@ -2027,7 +2027,13 @@ extension class TypeChecker {
     stypes.any(sty ->
       sty match {
       | TPrimValue(TNum(), Some(lits), _) ->
-        lits.values().any(lit -> !isPreciseJSNumberLiteral(lit.val))
+        lits.values().any(lit ->
+          !isPreciseJSNumberLiteral(lit.val) &&
+            // An Infinity literal is one exact value, named only "Infinity"
+            // or "-Infinity" since normalization (rule 30).
+            lit.val != "Infinity" &&
+            lit.val != "-Infinity"
+        )
       | _ -> false
       }
     )
