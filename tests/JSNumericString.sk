@@ -363,24 +363,58 @@ fun testJSNumericStringRejectsOutOfBoundsForms(): void {
   SKTest.expectTrue(SKJS.isJSNumericString("100000000000000000000"));
 }
 
-// Literals whose exact value is not representable in an IEEE-754 double
-// (radix literals above 2^53, exponents beyond the guard) are left in their
-// spelled form rather than normalized with wrapping Int arithmetic.
+// Literals beyond double precision normalize to the ECMAScript String() form
+// of the double they denote (issue #781): tsc keys number literal types by
+// their double, so two spellings of one double are one literal type. The
+// digits come from Float.toString's shortest round-trip form. Exponents
+// beyond the guard, and values that overflow to Infinity, keep their spelled
+// form ("Infinity" is not a number literal name).
 @test
-fun testNormalizeKeepsImpreciseSpelledForm(): void {
+fun testNormalizeCanonicalizesBeyondPrecision(): void {
   SKTest.expectEq(
-    "0xFFFFFFFFFFFFFFFF",
+    "18446744073709552000",
     SKJS.normalizeJSNumber("0xFFFFFFFFFFFFFFFF"),
   );
   SKTest.expectEq(
-    "0x8000000000000000",
+    "9223372036854776000",
     SKJS.normalizeJSNumber("0x8000000000000000"),
   );
+  SKTest.expectEq(
+    "9007199254740992",
+    SKJS.normalizeJSNumber("9007199254740993"),
+  );
+  SKTest.expectEq(
+    "9007199254740992",
+    SKJS.normalizeJSNumber("0x20000000000001"),
+  );
+  SKTest.expectEq(
+    "123456789012345680000",
+    SKJS.normalizeJSNumber("123456789012345678901"),
+  );
+  SKTest.expectEq(
+    "0.30000000000000004",
+    SKJS.normalizeJSNumber("0.300000000000000044"),
+  );
+  SKTest.expectEq(
+    "1.2345678901234568e-7",
+    SKJS.normalizeJSNumber("0.0000001234567890123456789"),
+  );
+  SKTest.expectEq("1e+21", SKJS.normalizeJSNumber("999999999999999999999"));
+  SKTest.expectEq("5e-324", SKJS.normalizeJSNumber("4.9406564584124654e-324"));
+  SKTest.expectEq(
+    "1.7976931348623157e+308",
+    SKJS.normalizeJSNumber("1.7976931348623158e308"),
+  );
+  // Underflow is the double +0, and the sign of a negative zero drops.
+  SKTest.expectEq("0", SKJS.normalizeJSNumber("1e-400"));
+  SKTest.expectEq("0", SKJS.normalizeJSNumber("-1e-400"));
+  // Overflow to Infinity keeps the spelled form.
+  SKTest.expectEq("1e+309", SKJS.normalizeJSNumber("1e309"));
   SKTest.expectEq(
     "1e18446744073709551619",
     SKJS.normalizeJSNumber("1e18446744073709551619"),
   );
-  // 2^53 itself is exactly representable and still normalizes.
+  // 2^53 itself is exactly representable and normalizes as before.
   SKTest.expectEq(
     "9007199254740992",
     SKJS.normalizeJSNumber("0x20000000000000"),

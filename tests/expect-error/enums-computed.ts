@@ -268,9 +268,14 @@ function spelledBigCanonicalReverse(): string {
   return SpelledBig[9007199254740994];
 }
 
+// 0x20000000000001 is the double 2^53, so its reverse-mapping key is
+// "9007199254740992" whichever way it is spelled.
 function spelledBigSpelledReverse(): "A" {
-  // @skjs-expect-error Property '0x20000000000001' does not exist on this type
   return SpelledBig[0x20000000000001];
+}
+
+function spelledBigRoundedReverse(): "A" {
+  return SpelledBig[9007199254740992];
 }
 
 function duplicateNameMemberType(): D.A {
