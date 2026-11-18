@@ -1970,10 +1970,9 @@ extension class TypeChecker {
           stypes2.any(sty2 -> SType::overlaps(subst, this, sty1, sty2))
         );
         if (!overlap) {
-          // Two spellings of a beyond-precision number literal can denote
-          // the same runtime double (9007199254740993 === 9007199254740992
-          // is always true; 1e309 and 2e309 are both Infinity), so a
-          // textual non-overlap proves nothing there: stay silent.
+          // Number literal names are the String() form of their double, so
+          // distinct names are distinct values; a spelling the normalizer
+          // kept may still denote another name's double: stay silent.
           if (
             this.hasImpreciseNumberLiteral(stypes1) ||
             this.hasImpreciseNumberLiteral(stypes2)
@@ -2021,19 +2020,14 @@ extension class TypeChecker {
     }
   }
 
-  // Whether any number literal in these types is beyond IEEE-754 double
-  // precision (see SKJS.isPreciseJSNumberLiteral).
+  // Whether any number literal in these types is inexact: a spelling the
+  // normalizer kept, which may denote the same double as another name (see
+  // SKJS.isExactJSNumberName).
   private fun hasImpreciseNumberLiteral(stypes: STypes): Bool {
     stypes.any(sty ->
       sty match {
       | TPrimValue(TNum(), Some(lits), _) ->
-        lits.values().any(lit ->
-          !isPreciseJSNumberLiteral(lit.val) &&
-            // An Infinity literal is one exact value, named only "Infinity"
-            // or "-Infinity" since normalization (rule 30).
-            lit.val != "Infinity" &&
-            lit.val != "-Infinity"
-        )
+        lits.values().any(lit -> !isExactJSNumberName(lit.val))
       | _ -> false
       }
     )
