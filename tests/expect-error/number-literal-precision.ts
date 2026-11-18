@@ -30,6 +30,27 @@ function wraparoundAlwaysTrue(x: 0xffffffffffffffff, y: -1): boolean {
   return x === y;
 }
 
+// Distinct names of distinct doubles, each with more than 15 significant
+// digits or at the edge of the double range (tsc: TS2367 on each). No
+// warning, for the same reason.
+function distinctBeyondPrecision(
+  x: 9007199254740993,
+  y: 9007199254740994,
+): boolean {
+  return x === y;
+}
+
+function distinctSixteenDigits(
+  x: 0.1234567890123456,
+  y: 0.1234567890123457,
+): boolean {
+  return x === y;
+}
+
+function distinctRangeEdges(x: 1e308, y: 1e-308): boolean {
+  return x === y;
+}
+
 // Both literals are the double 9007199254740992 (2^53): one literal type.
 function hexVsDecimalSameDouble(): void {
   const a: 9007199254740992 = 0x20000000000001;
