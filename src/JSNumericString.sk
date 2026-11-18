@@ -183,54 +183,38 @@ fun compactDecimal(s: String): String {
   String::fromChars(chars.slice(lead, trail).toArray()) + "e" + exp.toString()
 }
 
-// Whether a normalized number literal name is exactly the string
-// ECMAScript String() produces for its value: a canonical name whose double
-// is finite and prints back the same digits, or "Infinity" / "-Infinity". A
-// beyond-precision name is canonical after normalization
-// (normalizeJSNumber names it by its double), so this holds; a name the normalizer kept
-// spelled -- an exponent beyond its guard -- fails it.
-fun isJSNumberLiteralStringForm(name: String): Bool {
-  if (isPreciseJSNumberLiteral(name)) return true;
-  if (name == "Infinity" || name == "-Infinity") return true;
-  if (!isJSNumericString(name)) return false;
-  jsNumberLiteralDouble(name) match {
-  | Some(f) if (!f.isNaN() && f != Float::inf && f != -Float::inf) ->
-    normalizeJSNumber(name) == name
-  | _ -> false
-  }
+// Whether a number literal name is exactly the ECMAScript String() form of
+// the double it denotes. normalizeJSNumber produces such names for every
+// literal it can parse, so the only inexact names are spellings it kept (too
+// long for the runtime parser). String() is a function of the double, so
+// two distinct exact names denote distinct doubles: exact names compare by
+// name. A precise name (isPreciseJSNumberLiteral) is exact without parsing.
+fun isExactJSNumberName(name: String): Bool {
+  isPreciseJSNumberLiteral(name) ||
+    jsNumberLiteralDouble(name).flatMap(jsNumberToString) == Some(name)
 }
 
-// Whether two number literal names may denote the same double. Equal names
-// do; two precise names (isPreciseJSNumberLiteral) never collide; otherwise
-// the doubles are compared, and an unparseable name may denote anything.
+// Whether a string is String(n) for some number n other than NaN: an exact
+// number name. "NaN" is excluded because NaN is not a number literal.
+fun isJSNumberLiteralStringForm(name: String): Bool {
+  name != "NaN" && isExactJSNumberName(name)
+}
+
+// Whether two number literal names may denote the same double: equal names
+// do, distinct exact names never do, and an inexact name may denote anything.
 fun jsNumberLiteralsMayCollide(a: String, b: String): Bool {
-  if (a == b) return true;
-  if (isPreciseJSNumberLiteral(a) && isPreciseJSNumberLiteral(b)) return false;
-  (jsNumberLiteralDouble(a), jsNumberLiteralDouble(b)) match {
-  | (Some(x), Some(y)) -> x == y
-  | _ -> true
-  }
+  a == b || !isExactJSNumberName(a) || !isExactJSNumberName(b)
 }
 
 // Whether a number literal name may denote a falsy value (+0, -0 or NaN),
-// and whether it may denote a truthy one. Precise names are exact: only "0"
-// and "NaN" are falsy. A beyond-precision name can underflow to zero (1e-400
-// is +0) or overflow to Infinity (truthy), so its double decides; an
-// unparseable name may be either.
+// and whether it may denote a truthy one. An exact name is falsy iff it is
+// "0" or "NaN" (-0 is named "0"); an inexact name may be either.
 fun jsNumberLiteralMayBeFalsy(name: String): Bool {
-  if (isPreciseJSNumberLiteral(name)) return name == "0" || name == "NaN";
-  jsNumberLiteralDouble(name) match {
-  | Some(f) -> f == 0.0 || f.isNaN()
-  | None() -> true
-  }
+  name == "0" || name == "NaN" || !isExactJSNumberName(name)
 }
 
 fun jsNumberLiteralMayBeTruthy(name: String): Bool {
-  if (isPreciseJSNumberLiteral(name)) return name != "0" && name != "NaN";
-  jsNumberLiteralDouble(name) match {
-  | Some(f) -> !(f == 0.0 || f.isNaN())
-  | None() -> true
-  }
+  (name != "0" && name != "NaN") || !isExactJSNumberName(name)
 }
 
 // A property name a `number`-typed key can produce at runtime, i.e. some

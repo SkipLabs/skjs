@@ -5,7 +5,8 @@
 // form, so two spellings of one double are one literal type
 // (`9007199254740993` is `9007199254740992`, `1e-400` is `0`, `1e309` is
 // `Infinity`). A name the runtime cannot parse keeps its spelled form;
-// equality narrowing and truthiness then assume it may be any value.
+// equality narrowing, truthiness and the always-true/false comparison
+// warnings then assume it may be any value.
 
 function hexWraparound(): void {
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
@@ -22,21 +23,19 @@ function fieldWraparound(x: { 0xffffffffffffffff: string }): { "-1": string } {
   return x;
 }
 
-// 0xffffffffffffffff is 18446744073709552000 as a double, never -1. The
-// always-false claim would be correct here, but a literal with more than 15
-// significant digits is conservatively treated as imprecise, so no warning is
-// emitted.
+// Number literal names are the String() form of their double, so distinct
+// names are distinct values and comparing them is always false, as tsc
+// reports (TS2367): 0xffffffffffffffff is 18446744073709552000, never -1.
 function wraparoundAlwaysTrue(x: 0xffffffffffffffff, y: -1): boolean {
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   return x === y;
 }
 
-// Distinct names of distinct doubles, each with more than 15 significant
-// digits or at the edge of the double range (tsc: TS2367 on each). No
-// warning, for the same reason.
 function distinctBeyondPrecision(
   x: 9007199254740993,
   y: 9007199254740994,
 ): boolean {
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   return x === y;
 }
 
@@ -44,10 +43,12 @@ function distinctSixteenDigits(
   x: 0.1234567890123456,
   y: 0.1234567890123457,
 ): boolean {
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   return x === y;
 }
 
 function distinctRangeEdges(x: 1e308, y: 1e-308): boolean {
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   return x === y;
 }
 

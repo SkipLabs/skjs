@@ -445,4 +445,29 @@ fun testNormalizeParserEdgeSpellings(): void {
   SKTest.expectEq(long, SKJS.normalizeJSNumber(long));
 }
 
+// Number names are compared by name, except a spelling the normalizer kept
+// (too long to parse), which may denote any double.
+@test
+fun testNumberNamesCompareByName(): void {
+  SKTest.expectFalse(
+    SKJS.jsNumberLiteralsMayCollide("9007199254740992", "9007199254740994"),
+  );
+  SKTest.expectFalse(SKJS.jsNumberLiteralsMayCollide("1e+308", "Infinity"));
+  SKTest.expectTrue(SKJS.jsNumberLiteralsMayCollide("1e+308", "1e+308"));
+  long = "1." + "0".repeat(260) + "1";
+  SKTest.expectTrue(SKJS.jsNumberLiteralsMayCollide(long, "1"));
+  SKTest.expectTrue(SKJS.jsNumberLiteralMayBeFalsy(long));
+  SKTest.expectTrue(SKJS.jsNumberLiteralMayBeTruthy(long));
+  SKTest.expectFalse(SKJS.jsNumberLiteralMayBeFalsy("5e-324"));
+  SKTest.expectTrue(SKJS.jsNumberLiteralMayBeFalsy("0"));
+  SKTest.expectFalse(SKJS.jsNumberLiteralMayBeTruthy("0"));
+  SKTest.expectTrue(SKJS.isJSNumberLiteralStringForm("-Infinity"));
+  SKTest.expectTrue(
+    SKJS.isJSNumberLiteralStringForm("1.7976931348623157e+308"),
+  );
+  SKTest.expectFalse(SKJS.isJSNumberLiteralStringForm("NaN"));
+  SKTest.expectFalse(SKJS.isJSNumberLiteralStringForm("1e308"));
+  SKTest.expectFalse(SKJS.isJSNumberLiteralStringForm(long));
+}
+
 module end;
