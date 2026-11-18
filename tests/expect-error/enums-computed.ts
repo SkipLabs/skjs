@@ -114,10 +114,8 @@ function fractionalMember(): 1.5 {
   return Frac.A;
 }
 
-// FIXME: tsc folds fractional auto-increment precisely (1.5 + 1 = 2.5);
-// SKJS over-approximates the member to number.
+// Auto-increment folds with double arithmetic, as in tsc: 1.5 + 1 = 2.5.
 function fractionalAutoIncrement(): 2.5 {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return Frac.B;
 }
 
@@ -455,57 +453,46 @@ enum FloatFold {
 }
 
 function floatFoldSum(): 0.30000000000000004 {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return FloatFold.Sum;
 }
 
 function floatFoldProduct(): 3 {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return FloatFold.Product;
 }
 
 function floatFoldQuotient(): 3.3333333333333335 {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return FloatFold.Quotient;
 }
 
 function floatFoldPastSafe(): 9007199254740992 {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return FloatFold.PastSafe;
 }
 
 function floatFoldOverflow(): 1e309 {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return FloatFold.Overflow;
 }
 
 function floatFoldCancel(): 0 {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return FloatFold.Cancel;
 }
 
 function floatFoldNegZero(): 0 {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return FloatFold.NegZero;
 }
 
 function floatFoldOr(): 1 {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return FloatFold.Or;
 }
 
 function floatFoldShift(): -2 {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return FloatFold.Shift;
 }
 
 function floatFoldHugeOr(): 0 {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return FloatFold.HugeOr;
 }
 
 function floatFoldTilde(): -2 {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return FloatFold.Tilde;
 }
 
