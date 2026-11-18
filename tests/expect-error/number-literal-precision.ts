@@ -147,3 +147,10 @@ function infinityTruthy(x: 1e309 | ""): void {
   }
   const z: "" = x;
 }
+
+// keyof sees the Infinity key both as the string "Infinity" and as the
+// number literal Infinity (the literal 1e309), as for any numeric key.
+function infinityKeyof(o: { 1e309: 1; 5: 2 }): void {
+  const k: keyof typeof o = 1e309;
+  const s: keyof typeof o = "Infinity";
+}
