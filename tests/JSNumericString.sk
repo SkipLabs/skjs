@@ -412,7 +412,7 @@ fun testNormalizeCanonicalizesBeyondPrecision(): void {
   SKTest.expectEq("Infinity", SKJS.normalizeJSNumber("1e309"));
   SKTest.expectEq("-Infinity", SKJS.normalizeJSNumber("-1e309"));
   SKTest.expectEq("Infinity", SKJS.normalizeJSNumber("1.7976931348623159e308"));
-  // An exponent past the exact pipeline's guard still parses to a double:
+  // An exponent too large for an Int still parses to a double:
   // Infinity here, as tsc names it.
   SKTest.expectEq("Infinity", SKJS.normalizeJSNumber("1e18446744073709551619"));
   // 2^53 itself is exactly representable and normalizes as before.
