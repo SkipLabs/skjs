@@ -420,3 +420,19 @@ enum DupStringValue {
 function dupStringMember(): "x" {
   return DupStringValue.B;
 }
+
+// Infinity members have the runtime reverse-mapping keys "Infinity" and
+// "-Infinity", whichever way the value is spelled (tsc types the access as
+// plain string).
+enum InfinityMembers {
+  Pos = 1e309,
+  Neg = -1e309,
+}
+
+function infinityReverse(): "Pos" {
+  return InfinityMembers[2e309];
+}
+
+function negInfinityReverse(): "Neg" {
+  return InfinityMembers[-1e309];
+}

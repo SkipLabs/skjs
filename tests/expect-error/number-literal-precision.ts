@@ -3,10 +3,9 @@
 // SKJS keys a number literal type by the double it denotes (issue #781): a
 // beyond-precision literal is named by that double's ECMAScript String()
 // form, so two spellings of one double are one literal type
-// (`9007199254740993` is `9007199254740992`, `1e-400` is `0`). Values that
-// overflow to Infinity, and exponents beyond the parser's guard, keep their
-// spelled form; equality narrowing and truthiness still compare those by the
-// double they denote.
+// (`9007199254740993` is `9007199254740992`, `1e-400` is `0`, `1e309` is
+// `Infinity`). A name the runtime cannot parse keeps its spelled form;
+// equality narrowing and truthiness then assume it may be any value.
 
 function hexWraparound(): void {
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
@@ -46,8 +45,9 @@ function impreciseDecimalPair(
   return x === y;
 }
 
-// Both values are Infinity at runtime: same suppression.
+// Both values are Infinity at runtime: one literal type, `Infinity`.
 function beyondRangePair(x: 1e309, y: 2e309): boolean {
+  // @skjs-expect-warning This comparison is always true because the operands always hold the same single value
   return x === y;
 }
 
@@ -106,11 +106,8 @@ function underflowIsZero(x: 1e-400): 0 {
   return x;
 }
 
-// FIXME: tsc accepts: 1e309 and 2e309 both overflow to Infinity, but values
-// beyond the double range keep their spelled form, so they stay distinct
-// literal types (sound, stricter than tsc).
+// 1e309 and 2e309 both overflow to Infinity: one literal type.
 function overflowSpellings(x: 2e309): 1e309 {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
@@ -118,22 +115,19 @@ function overflowSpellings(x: 2e309): 1e309 {
 function showBeyondPrecision(x: 9007199254740993, y: 1e-400, z: 2e309): void {
   __SKJS_show(x, "9007199254740992");
   __SKJS_show(y, "0");
-  __SKJS_show(z, "2e+309");
+  __SKJS_show(z, "Infinity");
 }
 
-// Infinity literals. tsc names them Infinity / -Infinity, so every spelling
-// of an overflowing value is one literal type, a template hole over it is
-// "Infinity", and it is the numeric property name "Infinity". Pinned at
-// current behavior: the spelled names 1e+309 and 2e+309 are distinct types,
-// the hole is rejected, and the key is "1e+309".
+// Infinity literals are named Infinity / -Infinity, as in tsc: every
+// spelling of an overflowing value is one literal type, and it is the
+// numeric property name "Infinity".
 function infinitySpellings(x: 2e309): 1e309 {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
 function infinityShow(x: 1e309, y: -1e309): void {
-  __SKJS_show(x, "1e+309");
-  __SKJS_show(y, "-1e+309");
+  __SKJS_show(x, "Infinity");
+  __SKJS_show(y, "-Infinity");
 }
 
 // +Infinity is not -Infinity (rejected by tsc too).
@@ -143,7 +137,6 @@ function infinitySign(x: 1e309): -1e309 {
 }
 
 function infinityKey(o: { 1e309: number }): { Infinity: number } {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return o;
 }
 

@@ -366,9 +366,8 @@ fun testJSNumericStringRejectsOutOfBoundsForms(): void {
 // Literals beyond double precision normalize to the ECMAScript String() form
 // of the double they denote (issue #781): tsc keys number literal types by
 // their double, so two spellings of one double are one literal type. The
-// digits come from Float.toString's shortest round-trip form. Exponents
-// beyond the guard, and values that overflow to Infinity, keep their spelled
-// form ("Infinity" is not a number literal name).
+// digits come from Float.toString's shortest round-trip form, and a value
+// that overflows is named "Infinity".
 @test
 fun testNormalizeCanonicalizesBeyondPrecision(): void {
   SKTest.expectEq(
@@ -408,12 +407,14 @@ fun testNormalizeCanonicalizesBeyondPrecision(): void {
   // Underflow is the double +0, and the sign of a negative zero drops.
   SKTest.expectEq("0", SKJS.normalizeJSNumber("1e-400"));
   SKTest.expectEq("0", SKJS.normalizeJSNumber("-1e-400"));
-  // Overflow to Infinity keeps the spelled form.
-  SKTest.expectEq("1e+309", SKJS.normalizeJSNumber("1e309"));
-  SKTest.expectEq(
-    "1e18446744073709551619",
-    SKJS.normalizeJSNumber("1e18446744073709551619"),
-  );
+  // Overflow is the double Infinity, named as String() prints it; the sign
+  // is kept.
+  SKTest.expectEq("Infinity", SKJS.normalizeJSNumber("1e309"));
+  SKTest.expectEq("-Infinity", SKJS.normalizeJSNumber("-1e309"));
+  SKTest.expectEq("Infinity", SKJS.normalizeJSNumber("1.7976931348623159e308"));
+  // An exponent past the exact pipeline's guard still parses to a double:
+  // Infinity here, as tsc names it.
+  SKTest.expectEq("Infinity", SKJS.normalizeJSNumber("1e18446744073709551619"));
   // 2^53 itself is exactly representable and normalizes as before.
   SKTest.expectEq(
     "9007199254740992",
