@@ -169,3 +169,14 @@ type List<T> = null | { head: T; tail: List<T> };
 function useList(x: List<string>): List<string> {
   return x;
 }
+
+// Classes and interfaces do not support optional type parameters: a default is
+// rejected at the declaration, and is never filled at a use. Filling a
+// circular one recursed until the checker crashed (issue #1025).
+// @skjs-expect-error Optional type parameters are not supported for classes and functions
+class SelfDefaultClass<T = SelfDefaultClass> {}
+function useSelfDefaultClass(x: SelfDefaultClass): void {}
+
+// @skjs-expect-error Optional type parameters are not supported for classes and functions
+interface SelfDefaultInterface<T = SelfDefaultInterface> {}
+function useSelfDefaultInterface(x: SelfDefaultInterface): void {}
