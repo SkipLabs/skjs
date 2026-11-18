@@ -120,3 +120,37 @@ function showBeyondPrecision(x: 9007199254740993, y: 1e-400, z: 2e309): void {
   __SKJS_show(y, "0");
   __SKJS_show(z, "2e+309");
 }
+
+// Infinity literals. tsc names them Infinity / -Infinity, so every spelling
+// of an overflowing value is one literal type, a template hole over it is
+// "Infinity", and it is the numeric property name "Infinity". Pinned at
+// current behavior: the spelled names 1e+309 and 2e+309 are distinct types,
+// the hole is rejected, and the key is "1e+309".
+function infinitySpellings(x: 2e309): 1e309 {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  return x;
+}
+
+function infinityShow(x: 1e309, y: -1e309): void {
+  __SKJS_show(x, "1e+309");
+  __SKJS_show(y, "-1e+309");
+}
+
+// +Infinity is not -Infinity (rejected by tsc too).
+function infinitySign(x: 1e309): -1e309 {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  return x;
+}
+
+function infinityKey(o: { 1e309: number }): { Infinity: number } {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  return o;
+}
+
+// Infinity is truthy, so `x` has a single falsy member.
+function infinityTruthy(x: 1e309 | ""): void {
+  if (x) {
+    return;
+  }
+  const z: "" = x;
+}
