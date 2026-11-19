@@ -186,3 +186,20 @@ type TypeofObjMember = typeof vObj;
 // A function return defers likewise.
 declare function fnRet(): TypeofFnReturn;
 type TypeofFnReturn = typeof fnRet;
+
+/////////////////////////////////////////////////////////////////////////////
+// A self-instantiation in a deferred position (issue #884).
+/////////////////////////////////////////////////////////////////////////////
+
+// A self-instantiation in a deferred position, with the alias's own arguments
+// growing on each turn. The self-reference sits behind an object member, so it
+// never requires the alias, and tsc accepts it — the growing arguments do not
+// matter, because the recursion bottoms out at the object clause rather than at
+// a reference the expansion must chase.
+type DeferredGrow<T> = { v: DeferredGrow<DeferredGrow<T>> };
+
+function useDeferredGrow(
+  x: DeferredGrow<string>,
+): DeferredGrow<DeferredGrow<string>> {
+  return x.v;
+}
