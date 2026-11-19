@@ -129,19 +129,18 @@ private fun enumIsFinite(f: Float): Bool {
   !f.isNaN() && f != Float::inf && f != -Float::inf
 }
 
-// An Int congruent modulo 2^32 to the integer part of a double (0 for NaN
-// and the infinities): enumToInt32 / enumToUint32 of it are JS ToInt32 /
-// ToUint32 of the double. Past 2^62 a double is an integer, and its exact
-// remainder by 2^32 is small (the stdlib Math.fmod, exact and correctly
-// rounded).
+// An Int congruent modulo 2^32 to the truncated integer part of a double (0
+// for NaN and the infinities): enumToInt32 / enumToUint32 of it are JS
+// ToInt32 / ToUint32 of the double. The stdlib Math.fmod is exact and
+// correctly rounded, and truncating its result gives the integer part for
+// every finite double, at any magnitude.
 private fun enumDoubleInt32Base(f: Float): Int {
-  if (!enumIsFinite(f)) {
-    0
-  } else if (f < 4.0e18 && f > -4.0e18) {
-    f.toInt()
-  } else {
-    Math.fmod(f, 4294967296.0).toInt()
-  }
+  if (!enumIsFinite(f)) 0 else Math.fmod(f, 4294967296.0).toInt()
+}
+
+// JS shift counts: ToUint32 of the shift amount, mod 32.
+private fun enumShiftCount(b: Float): Int {
+  enumToUint32(enumDoubleInt32Base(b)).and(31)
 }
 
 // The Int value of a double that is an integer within the double-safe
@@ -201,16 +200,16 @@ private fun enumFoldNumericBinop(
     enumFoldDouble(Math.fmod(a, b))
   | BOExponentiation() -> enumFoldPow(a, b)
   | BOLeftShift() ->
-    c = enumToUint32(enumDoubleInt32Base(b)).and(31);
+    c = enumShiftCount(b);
     EFNum(enumToInt32(enumToInt32(enumDoubleInt32Base(a)).shl(c)).toFloat())
   | BOSignedRightShift() ->
-    c = enumToUint32(enumDoubleInt32Base(b)).and(31);
+    c = enumShiftCount(b);
     one = 1;
     EFNum(
       enumFloorDiv(enumToInt32(enumDoubleInt32Base(a)), one.shl(c)).toFloat(),
     )
   | BOZeroFilledRightShift() ->
-    c = enumToUint32(enumDoubleInt32Base(b)).and(31);
+    c = enumShiftCount(b);
     one = 1;
     EFNum((enumToUint32(enumDoubleInt32Base(a)) / one.shl(c)).toFloat())
   | BOBitwiseAnd() ->
@@ -632,7 +631,7 @@ extension base class TEnv {
       members.all(m -> m.value is EMVLiteral _) &&
       members.all(m ->
         enumNumLiteralVal(m.value) match {
-        | Some(v) -> isJSNumberLiteralStringForm(v)
+        | Some(v) -> isExactJSNumberName(v)
         | None() -> true
         }
       );
