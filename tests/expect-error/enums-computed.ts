@@ -114,10 +114,8 @@ function fractionalMember(): 1.5 {
   return Frac.A;
 }
 
-// FIXME: tsc folds fractional auto-increment precisely (1.5 + 1 = 2.5);
-// SKJS over-approximates the member to number.
+// Auto-increment folds with double arithmetic, as in tsc: 1.5 + 1 = 2.5.
 function fractionalAutoIncrement(): 2.5 {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return Frac.B;
 }
 
@@ -435,4 +433,95 @@ function infinityReverse(): "Pos" {
 
 function negInfinityReverse(): "Neg" {
   return InfinityMembers[-1e309];
+}
+
+// Constant folding over doubles: tsc folds every arithmetic initializer to
+// the literal of its double. A NaN result has no literal type.
+enum FloatFold {
+  Sum = 0.1 + 0.2,
+  Product = 1.5 * 2,
+  Quotient = 10 / 3,
+  PastSafe = 2 ** 53 + 1,
+  Overflow = 1e308 * 10,
+  Cancel = 0.5 - 0.5,
+  NegZero = -0.5 * 0,
+  Or = 1.5 | 0,
+  Shift = -2.7 >> 0,
+  HugeOr = 1e300 | 0,
+  Tilde = ~1.5,
+  NotANumber = 0 / 0,
+}
+
+function floatFoldSum(): 0.30000000000000004 {
+  return FloatFold.Sum;
+}
+
+function floatFoldProduct(): 3 {
+  return FloatFold.Product;
+}
+
+function floatFoldQuotient(): 3.3333333333333335 {
+  return FloatFold.Quotient;
+}
+
+function floatFoldPastSafe(): 9007199254740992 {
+  return FloatFold.PastSafe;
+}
+
+function floatFoldOverflow(): 1e309 {
+  return FloatFold.Overflow;
+}
+
+function floatFoldCancel(): 0 {
+  return FloatFold.Cancel;
+}
+
+function floatFoldNegZero(): 0 {
+  return FloatFold.NegZero;
+}
+
+function floatFoldOr(): 1 {
+  return FloatFold.Or;
+}
+
+function floatFoldShift(): -2 {
+  return FloatFold.Shift;
+}
+
+function floatFoldHugeOr(): 0 {
+  return FloatFold.HugeOr;
+}
+
+function floatFoldTilde(): -2 {
+  return FloatFold.Tilde;
+}
+
+function floatFoldNaN(): number {
+  return FloatFold.NotANumber;
+}
+
+// A zero divisor's name drops the sign of -0 (1 / -0 is -Infinity), so
+// division by zero stays an untracked number.
+enum ZeroDivisor {
+  A = 1 / 0,
+  B = 1 / (-0.5 * 0),
+}
+
+function zeroDivisorPositive(): 1e309 {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  return ZeroDivisor.A;
+}
+
+function zeroDivisorNegative(): -1e309 {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  return ZeroDivisor.B;
+}
+
+// String concatenation renders a number by its String() form.
+enum FloatConcat {
+  A = "s" + 1e309,
+}
+
+function floatConcatInfinity(): "sInfinity" {
+  return FloatConcat.A;
 }
