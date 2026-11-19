@@ -19,6 +19,9 @@
 /*   Scientific: [-][1-9](.[0-9]*[1-9])?e[+-][1-9][0-9]*                 */
 /*               exponent >= 21 for e+, >= 7 for e-                        */
 /*                                                                         */
+/* Printing relies on the stdlib's Ryu-based Float.toString (shortest      */
+/* round-trip form, since std 0.5.0 / SkipLabs/skip#1288).                   */
+/*                                                                         */
 /* Limitations / TODO:                                                      */
 /*   - Literals whose decimal form is 250 characters or longer exceed the  */
 /*     runtime float parser and keep their spelled form, so two such       */
@@ -191,7 +194,7 @@ fun compactDecimal(s: String): String {
 // name. A precise name (isPreciseJSNumberLiteral) is exact without parsing.
 fun isExactJSNumberName(name: String): Bool {
   isPreciseJSNumberLiteral(name) ||
-    jsNumberLiteralDouble(name).flatMap(jsNumberToString) == Some(name)
+    jsNumberLiteralDouble(name).map(jsNumberToString) == Some(name)
 }
 
 // Whether a string is String(n) for some number n other than NaN: an exact
@@ -594,26 +597,20 @@ fun negateJSNumberLiteral(canonical: String): String {
 // the shortest digits that round-trip, laid out by formatCanonicalJSNumber.
 // The digits come from Float.toString, which is Ryu's shortest round-trip
 // form since Skip std 0.5.0 (SkipLabs/skip#1288) -- the same digits JS
-// prints. None only if the formatter's output cannot be read back to the
-// same double (an older formatter printing fewer digits): callers then keep
-// the literal's spelling rather than risk naming another double.
-fun jsNumberToString(f: Float): ?String {
-  if (f.isNaN()) return Some("NaN");
-  if (f == Float::inf) return Some("Infinity");
-  if (f == -Float::inf) return Some("-Infinity");
-  if (f == 0.0) return Some("0");
+// prints. Ryu guarantees those digits read back to this very double, and the
+// runtime parse is correctly rounded, while formatCanonicalJSNumber only
+// rearranges digits and exponent, so the name always denotes f: no
+// round-trip guard is needed.
+fun jsNumberToString(f: Float): String {
+  if (f.isNaN()) return "NaN";
+  if (f == Float::inf) return "Infinity";
+  if (f == -Float::inf) return "-Infinity";
+  if (f == 0.0) return "0";
   negative = f < 0.0;
   magnitude = if (negative) -f else f;
-  shortestFloatDigits(magnitude).flatMap(de -> {
-    (digits, exp10) = de;
-    unsigned = formatCanonicalJSNumber(digits, exp10 + 1);
-    // Round-trip guard: the name must denote this very double.
-    unsigned.toFloatOption() match {
-    | Some(back) if (back == magnitude) ->
-      Some(if (negative) "-" + unsigned else unsigned)
-    | _ -> None()
-    }
-  })
+  (digits, exp10) = shortestFloatDigits(magnitude);
+  unsigned = formatCanonicalJSNumber(digits, exp10 + 1);
+  if (negative) "-" + unsigned else unsigned
 }
 
 // Normalize a validated JS numeric literal (underscores, radix prefixes,
@@ -623,9 +620,8 @@ fun jsNumberToString(f: Float): ?String {
 // `9007199254740993` = `9007199254740992`, `1e-400` = `0`, `2e309` =
 // `Infinity` (issue #781). The double is computed exactly (radix digits are
 // converted to decimal first, then parsed correctly rounded), and printed by
-// jsNumberToString. A literal whose double cannot be computed or printed
-// keeps its spelling (see jsNumberToString), which is sound: names then only
-// fail to merge.
+// jsNumberToString. A literal whose double cannot be computed keeps its
+// spelling, which is sound: names then only fail to merge.
 fun normalizeJSNumber(raw: String): String {
   // Fast path: most literals ("0", "42", "1.5") are already canonical. A
   // precise canonical name (at most 15 significant digits, inside the double
@@ -639,7 +635,7 @@ fun normalizeJSNumber(raw: String): String {
   } else {
     (false, s0)
   };
-  jsNumberLiteralDouble(unsigned).flatMap(jsNumberToString) match {
+  jsNumberLiteralDouble(unsigned).map(jsNumberToString) match {
   | Some(name) -> if (negative && name != "0") "-" + name else name
   | None() -> if (negative) "-" + unsigned else unsigned
   }
@@ -647,17 +643,15 @@ fun normalizeJSNumber(raw: String): String {
 
 // The significant digits and decimal exponent of a positive finite double's
 // shortest round-trip representation: f = 0.d1d2...dn * 10^(exp10 + 1),
-// i.e. d1.d2...dn * 10^exp10. Parsed from Float.toString, whose layouts are
-// "123.45", "1.0", "1.2345e+20", "5.0e-324" (fixed or exponent notation).
-fun shortestFloatDigits(f: Float): ?(String, Int) {
+// i.e. d1.d2...dn * 10^exp10. Parsed from Float.toString, which since Skip
+// std 0.5.0 (Ryu, SkipLabs/skip#1288) always prints that shortest form in
+// one of the layouts "123.45", "1.0", "1.2345e+20", "5.0e-324" (fixed or
+// exponent notation).
+fun shortestFloatDigits(f: Float): (String, Int) {
   s = f.toString();
   (mantissa, exp) = s.splitFirst("e") match {
   | (m, "") -> (m, 0)
-  | (m, e) ->
-    e.stripPrefix("+").toIntOption() match {
-    | Some(n) -> (m, n)
-    | None() -> return None()
-    }
+  | (m, e) -> (m, e.stripPrefix("+").toIntOption().fromSome())
   };
   (intPart, fracPart) = mantissa.splitFirst(".");
   allDigits = intPart + fracPart;
@@ -670,11 +664,8 @@ fun shortestFloatDigits(f: Float): ?(String, Int) {
   trail = chars.size();
   while (trail > lead + 1 && chars[trail - 1] == '0') !trail = trail - 1;
   digits = String::fromChars(chars.slice(lead, trail).toArray());
-  if (digits == "0" || !digits.chars().all(c -> c >= '0' && c <= '9')) {
-    return None()
-  };
   // d1 sits at position `lead`, so its power of ten is point - lead - 1.
-  Some((digits, point - lead - 1))
+  (digits, point - lead - 1)
 }
 
 // 2^53: the largest Int an IEEE-754 double represents exactly (used by enum

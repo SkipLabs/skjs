@@ -441,6 +441,9 @@ enum FloatFold {
   Sum = 0.1 + 0.2,
   Product = 1.5 * 2,
   Quotient = 10 / 3,
+  Remainder = 5.5 % 2,
+  NegRemainder = -5.5 % 2,
+  InfRemainder = 1e309 % 2,
   PastSafe = 2 ** 53 + 1,
   Overflow = 1e308 * 10,
   Cancel = 0.5 - 0.5,
@@ -462,6 +465,24 @@ function floatFoldProduct(): 3 {
 
 function floatFoldQuotient(): 3.3333333333333335 {
   return FloatFold.Quotient;
+}
+
+function floatFoldRemainder(): 1.5 {
+  return FloatFold.Remainder;
+}
+
+function floatFoldNegRemainder(): -1.5 {
+  return FloatFold.NegRemainder;
+}
+
+// Infinity % 2 is NaN at runtime, so the member is an untracked number.
+function floatFoldInfRemainder(): number {
+  return FloatFold.InfRemainder;
+}
+
+function floatFoldInfRemainderNotLiteral(): 0 {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  return FloatFold.InfRemainder;
 }
 
 function floatFoldPastSafe(): 9007199254740992 {

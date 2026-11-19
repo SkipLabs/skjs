@@ -60,8 +60,8 @@ class EnumMember(name: Name, value: EnumMemberValue, initializer: ?Expr)
 // Result of constant-folding an enum member initializer expression.
 base class EnumFold {
   children =
-  // A number with this canonical literal value.
-  | EFNum(String)
+  // A number with this double value.
+  | EFNum(Float)
   // A string with this literal value.
   | EFStr(String)
   // Certainly a number, value not tracked precisely.
@@ -103,7 +103,11 @@ private fun enumFoldOfMemberValue(v: EnumMemberValue): EnumFold {
   v match {
   | EMVLiteral(TPrimValue(TNum(), Some(lits), _)) ->
     lits.singleElt() match {
-    | Some(lit) -> EFNum(lit.val)
+    | Some(lit) ->
+      jsNumberLiteralDouble(lit.val) match {
+      | Some(f) -> EFNum(f)
+      | None() -> EFNumUnknown()
+      }
     | None() -> EFNumUnknown()
     }
   | EMVLiteral(TPrimValue(TString(), Some(lits), _)) ->
@@ -116,49 +120,27 @@ private fun enumFoldOfMemberValue(v: EnumMemberValue): EnumFold {
   }
 }
 
-// A folded double, named by its String() form. NaN has no literal type, so
-// it is an untracked number.
+// A folded double. NaN has no literal type, so it is an untracked number.
 private fun enumFoldDouble(f: Float): EnumFold {
-  if (f.isNaN()) return EFNumUnknown();
-  jsNumberToString(f) match {
-  | Some(name) -> EFNum(name)
-  | None() -> EFNumUnknown()
-  }
+  if (f.isNaN()) EFNumUnknown() else EFNum(f)
 }
 
 private fun enumIsFinite(f: Float): Bool {
   !f.isNaN() && f != Float::inf && f != -Float::inf
 }
 
-// JS `%` on doubles: the truncated remainder, with the dividend's sign. The
-// exact result is always a double, and this computes it exactly: r stays
-// below 2t, and subtracting t from r when t <= r < 2t is exact (Sterbenz),
-// t running over |b| times decreasing powers of two.
-private fun enumJSRemainder(a: Float, b: Float): Float {
-  if (!enumIsFinite(a) || b.isNaN() || b == 0.0) return Float::nan;
-  if (!enumIsFinite(b) || a == 0.0) return a;
-  r = if (a < 0.0) -a else a;
-  d = if (b < 0.0) -b else b;
-  t = d;
-  while (t * 2.0 <= r) !t = t * 2.0;
-  while (t >= d) {
-    if (r >= t) !r = r - t;
-    !t = t / 2.0
-  };
-  if (a < 0.0) -r else r
-}
-
 // An Int congruent modulo 2^32 to the integer part of a double (0 for NaN
 // and the infinities): enumToInt32 / enumToUint32 of it are JS ToInt32 /
 // ToUint32 of the double. Past 2^62 a double is an integer, and its exact
-// remainder by 2^32 is small.
+// remainder by 2^32 is small (the stdlib Math.fmod, exact and correctly
+// rounded).
 private fun enumDoubleInt32Base(f: Float): Int {
   if (!enumIsFinite(f)) {
     0
   } else if (f < 4.0e18 && f > -4.0e18) {
     f.toInt()
   } else {
-    enumJSRemainder(f, 4294967296.0).toInt()
+    Math.fmod(f, 4294967296.0).toInt()
   }
 }
 
@@ -177,7 +159,7 @@ private fun enumSafeInt(f: Float): ?Int {
 // power 0 (which is 1). Other powers go through libm in JS engines, whose
 // last-bit rounding is not specified, so they stay an untracked number.
 private fun enumFoldPow(a: Float, b: Float): EnumFold {
-  if (b == 0.0) return EFNum("1");
+  if (b == 0.0) return EFNum(1.0);
   (enumSafeInt(a), enumSafeInt(b)) match {
   | (Some(x), Some(y)) if (y > 0 && y <= 60) ->
     r = 1;
@@ -190,71 +172,68 @@ private fun enumFoldPow(a: Float, b: Float): EnumFold {
       };
       !r = r * x
     };
-    EFNum(r.toString())
+    EFNum(r.toFloat())
   | _ -> EFNumUnknown()
   }
 }
 
-// Fold a numeric binary operator over two number literal names with JS
-// double semantics, as tsc does. A name that cannot be parsed, a NaN
-// result, and a power or a quotient whose value is not determined by the
-// names (see below) stay an untracked (sound) number.
+// Fold a numeric binary operator over two doubles with JS semantics, as tsc
+// does. A NaN result, and a power or a quotient whose value is not
+// determined by the operands (see below) stay an untracked (sound) number.
 private fun enumFoldNumericBinop(
   op: AssignableBinaryOperator,
-  aVal: String,
-  bVal: String,
+  a: Float,
+  b: Float,
 ): EnumFold {
-  (jsNumberLiteralDouble(aVal), jsNumberLiteralDouble(bVal)) match {
-  | (Some(a), Some(b)) ->
-    op match {
-    | BOAddition() -> enumFoldDouble(a + b)
-    | BOSubtraction() -> enumFoldDouble(a - b)
-    | BOMultiplication() -> enumFoldDouble(a * b)
-    | BODivision() ->
-      // The sign of a zero divisor decides the sign of the infinite
-      // quotient, but -0 is named "0": not determined by the names.
-      if (b == 0.0) EFNumUnknown() else enumFoldDouble(a / b)
-    | BORemainder() -> enumFoldDouble(enumJSRemainder(a, b))
-    | BOExponentiation() -> enumFoldPow(a, b)
-    | BOLeftShift() ->
-      c = enumToUint32(enumDoubleInt32Base(b)).and(31);
-      EFNum(enumToInt32(enumToInt32(enumDoubleInt32Base(a)).shl(c)).toString())
-    | BOSignedRightShift() ->
-      c = enumToUint32(enumDoubleInt32Base(b)).and(31);
-      one = 1;
-      EFNum(
-        enumFloorDiv(
-          enumToInt32(enumDoubleInt32Base(a)),
-          one.shl(c),
-        ).toString(),
-      )
-    | BOZeroFilledRightShift() ->
-      c = enumToUint32(enumDoubleInt32Base(b)).and(31);
-      one = 1;
-      EFNum((enumToUint32(enumDoubleInt32Base(a)) / one.shl(c)).toString())
-    | BOBitwiseAnd() ->
-      EFNum(
-        enumToInt32(enumDoubleInt32Base(a))
-          .and(enumToInt32(enumDoubleInt32Base(b)))
-          .toString(),
-      )
-    | BOBitwiseOr() ->
-      EFNum(
-        enumToInt32(enumDoubleInt32Base(a))
-          .or(enumToInt32(enumDoubleInt32Base(b)))
-          .toString(),
-      )
-    | BOBitwiseXor() ->
-      EFNum(
-        enumToInt32(enumDoubleInt32Base(a))
-          .xor(enumToInt32(enumDoubleInt32Base(b)))
-          .toString(),
-      )
-    | BONullishCoalescing()
-    | LazyLogicalOperator _ ->
-      EFNotConst()
-    }
-  | _ -> EFNumUnknown()
+  op match {
+  | BOAddition() -> enumFoldDouble(a + b)
+  | BOSubtraction() -> enumFoldDouble(a - b)
+  | BOMultiplication() -> enumFoldDouble(a * b)
+  | BODivision() ->
+    // The sign of a zero divisor decides the sign of the infinite quotient,
+    // but -0 is not distinguished from +0 in a double: not determined.
+    if (b == 0.0) EFNumUnknown() else enumFoldDouble(a / b)
+  | BORemainder() ->
+    // JS `%` on doubles is the truncated remainder with the dividend's sign,
+    // which is exactly C fmod (NaN for an infinite dividend or a zero
+    // divisor, the dividend for an infinite divisor): the stdlib's
+    // Math.fmod.
+    enumFoldDouble(Math.fmod(a, b))
+  | BOExponentiation() -> enumFoldPow(a, b)
+  | BOLeftShift() ->
+    c = enumToUint32(enumDoubleInt32Base(b)).and(31);
+    EFNum(enumToInt32(enumToInt32(enumDoubleInt32Base(a)).shl(c)).toFloat())
+  | BOSignedRightShift() ->
+    c = enumToUint32(enumDoubleInt32Base(b)).and(31);
+    one = 1;
+    EFNum(
+      enumFloorDiv(enumToInt32(enumDoubleInt32Base(a)), one.shl(c)).toFloat(),
+    )
+  | BOZeroFilledRightShift() ->
+    c = enumToUint32(enumDoubleInt32Base(b)).and(31);
+    one = 1;
+    EFNum((enumToUint32(enumDoubleInt32Base(a)) / one.shl(c)).toFloat())
+  | BOBitwiseAnd() ->
+    EFNum(
+      enumToInt32(enumDoubleInt32Base(a))
+        .and(enumToInt32(enumDoubleInt32Base(b)))
+        .toFloat(),
+    )
+  | BOBitwiseOr() ->
+    EFNum(
+      enumToInt32(enumDoubleInt32Base(a))
+        .or(enumToInt32(enumDoubleInt32Base(b)))
+        .toFloat(),
+    )
+  | BOBitwiseXor() ->
+    EFNum(
+      enumToInt32(enumDoubleInt32Base(a))
+        .xor(enumToInt32(enumDoubleInt32Base(b)))
+        .toFloat(),
+    )
+  | BONullishCoalescing()
+  | LazyLogicalOperator _ ->
+    EFNotConst()
   }
 }
 
@@ -283,26 +262,7 @@ extension base class TEnv {
       | None() ->
         prev match {
         | None() -> EMVLiteral(TPrimValue::single(TNum(), "0", name.pos))
-        | Some(prevValue) ->
-          enumNumLiteralVal(prevValue) match {
-          | Some(v) ->
-            enumFoldNumericBinop(BOAddition(), v, "1") match {
-            | EFNum(next) ->
-              EMVLiteral(TPrimValue::single(TNum(), next, name.pos))
-            | _ -> EMVNumber(ENRImprecise())
-            }
-          | None() ->
-            prevValue match {
-            | EMVNumber(ENRAmbient()) -> EMVNumber(ENRAmbient())
-            // The predecessor is certainly a number, just untracked
-            // (fractional/out-of-range/constant-reference): the increment is
-            // a number too, and tsc accepts it (it folds these precisely).
-            | EMVNumber(ENRImprecise())
-            | EMVNumber(ENRConstUnknown()) ->
-              EMVNumber(ENRImprecise())
-            | _ -> EMVNumber(ENRMissingInitializer())
-            }
-          }
+        | Some(prevValue) -> static::enumAutoIncrement(prevValue, name.pos)
         }
       };
       // Runtime last-write-wins: a reference to a duplicated name reads the
@@ -323,7 +283,8 @@ extension base class TEnv {
     e: Expr,
   ): EnumMemberValue {
     this.enumFold(tcenvb, en, byName, visiting, e) match {
-    | EFNum(v) -> EMVLiteral(TPrimValue::single(TNum(), v, e.pos))
+    | EFNum(f) ->
+      EMVLiteral(TPrimValue::single(TNum(), jsNumberToString(f), e.pos))
     | EFStr(s) -> EMVLiteral(TPrimValue::single(TString(), s, e.pos))
     | EFNumUnknown() -> EMVNumber(ENRConstUnknown())
     | EFForwardRef() -> EMVNumber(ENRSelfForwardReference())
@@ -337,8 +298,9 @@ extension base class TEnv {
   // (bare `A`, qualified `E.A`, element access `E["A"]`, and members of
   // other enums that are provably initialized first: same-file enums
   // declared earlier, or imported ones). Arithmetic folds with JS double
-  // semantics, naming the result by its String() form (see
-  // enumFoldNumericBinop for the cases that stay a plain `number`).
+  // semantics over the operand doubles (see enumFoldNumericBinop for the
+  // cases that stay a plain `number`); the result is named by its String()
+  // form when the member value is materialized.
   private fun enumFold(
     tcenvb: mutable TCEnvBase,
     en: Enum,
@@ -347,21 +309,22 @@ extension base class TEnv {
     e: Expr,
   ): EnumFold {
     e.value match {
-    | Number(n) -> EFNum(n)
+    | Number(n) ->
+      jsNumberLiteralDouble(n) match {
+      | Some(f) -> EFNum(f)
+      | None() -> EFNumUnknown()
+      }
     | EString(s) -> EFStr(s)
     | Unop(uop @ NumericUnaryOperator _, sub) ->
       this.enumFold(tcenvb, en, byName, visiting, sub) match {
-      | EFNum(v) ->
+      | EFNum(f) ->
         uop match {
-        | UOPlus() -> EFNum(v)
-        | UOMinus() -> EFNum(negateJSNumberLiteral(v))
+        | UOPlus() -> EFNum(f)
+        // -0.0 is named "0" by jsNumberToString, as String(-0) is "0".
+        | UOMinus() -> EFNum(-f)
         | UOTild() ->
-          jsNumberLiteralDouble(v) match {
-          | Some(f) ->
-            n = enumToInt32(enumDoubleInt32Base(f));
-            EFNum(enumToInt32(-(n + 1)).toString())
-          | None() -> EFNumUnknown()
-          }
+          n = enumToInt32(enumDoubleInt32Base(f));
+          EFNum(enumToInt32(-(n + 1)).toFloat())
         }
       | EFNumUnknown() -> EFNumUnknown()
       | fwd @ EFForwardRef() -> fwd
@@ -505,15 +468,15 @@ extension base class TEnv {
       | BOAddition() -> EFStr(a + b)
       | _ -> EFNotConst()
       }
-    // JS string concatenation with a number renders the canonical form.
+    // JS string concatenation with a number renders its String() form.
     | (EFStr(a), EFNum(b)) ->
       op match {
-      | BOAddition() -> EFStr(a + b)
+      | BOAddition() -> EFStr(a + jsNumberToString(b))
       | _ -> EFNotConst()
       }
     | (EFNum(a), EFStr(b)) ->
       op match {
-      | BOAddition() -> EFStr(a + b)
+      | BOAddition() -> EFStr(jsNumberToString(a) + b)
       | _ -> EFNotConst()
       }
     | (EFStr _, EFNumUnknown())
@@ -524,6 +487,37 @@ extension base class TEnv {
     | (EFNumUnknown(), EFNumUnknown()) ->
       EFNumUnknown()
     | (EFNum(a), EFNum(b)) -> enumFoldNumericBinop(op, a, b)
+    }
+  }
+
+  // The value of an uninitialized member: its predecessor's value + 1,
+  // folded with JS double semantics, as tsc folds it (1.5 + 1 = 2.5).
+  static fun enumAutoIncrement(
+    prevValue: EnumMemberValue,
+    pos: PosRange,
+  ): EnumMemberValue {
+    enumNumLiteralVal(prevValue) match {
+    | Some(v) ->
+      jsNumberLiteralDouble(v) match {
+      | Some(f) ->
+        enumFoldNumericBinop(BOAddition(), f, 1.0) match {
+        | EFNum(next) ->
+          EMVLiteral(TPrimValue::single(TNum(), jsNumberToString(next), pos))
+        | _ -> EMVNumber(ENRImprecise())
+        }
+      | None() -> EMVNumber(ENRImprecise())
+      }
+    | None() ->
+      prevValue match {
+      | EMVNumber(ENRAmbient()) -> EMVNumber(ENRAmbient())
+      // The predecessor is certainly a number, just untracked
+      // (fractional/out-of-range/constant-reference): the increment is
+      // a number too, and tsc accepts it (it folds these precisely).
+      | EMVNumber(ENRImprecise())
+      | EMVNumber(ENRConstUnknown()) ->
+        EMVNumber(ENRImprecise())
+      | _ -> EMVNumber(ENRMissingInitializer())
+      }
     }
   }
 
