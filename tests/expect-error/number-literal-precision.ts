@@ -10,14 +10,17 @@
 
 function hexWraparound(): void {
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-warning Number literal '0xffffffffffffffff' is rounded to 18446744073709552000 by IEEE-754 double precision
   const a: -1 = 0xffffffffffffffff;
 }
 
 function exponentWraparound(): void {
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-warning Number literal '1e18446744073709551619' overflows to Infinity
   const a: 1000 = 1e18446744073709551619;
 }
 
+// @skjs-expect-warning Number literal '0xffffffffffffffff' is rounded to 18446744073709552000 by IEEE-754 double precision
 function fieldWraparound(x: { 0xffffffffffffffff: string }): { "-1": string } {
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
@@ -26,12 +29,14 @@ function fieldWraparound(x: { 0xffffffffffffffff: string }): { "-1": string } {
 // Number literal names are the String() form of their double, so distinct
 // names are distinct values and comparing them is always false, as tsc
 // reports (TS2367): 0xffffffffffffffff is 18446744073709552000, never -1.
+// @skjs-expect-warning Number literal '0xffffffffffffffff' is rounded to 18446744073709552000 by IEEE-754 double precision
 function wraparoundAlwaysTrue(x: 0xffffffffffffffff, y: -1): boolean {
   // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   return x === y;
 }
 
 function distinctBeyondPrecision(
+  // @skjs-expect-warning Number literal '9007199254740993' is rounded to 9007199254740992 by IEEE-754 double precision
   x: 9007199254740993,
   y: 9007199254740994,
 ): boolean {
@@ -54,12 +59,14 @@ function distinctRangeEdges(x: 1e308, y: 1e-308): boolean {
 
 // Both literals are the double 9007199254740992 (2^53): one literal type.
 function hexVsDecimalSameDouble(): void {
+  // @skjs-expect-warning Number literal '0x20000000000001' is rounded to 9007199254740992 by IEEE-754 double precision
   const a: 9007199254740992 = 0x20000000000001;
 }
 
 // Both literals are the double 9007199254740992, one literal type, so the
 // operands always hold the same single value.
 function impreciseDecimalPair(
+  // @skjs-expect-warning Number literal '9007199254740993' is rounded to 9007199254740992 by IEEE-754 double precision
   x: 9007199254740993,
   y: 9007199254740992,
 ): boolean {
@@ -68,6 +75,8 @@ function impreciseDecimalPair(
 }
 
 // Both values are Infinity at runtime: one literal type, `Infinity`.
+// @skjs-expect-warning Number literal '1e309' overflows to Infinity
+// @skjs-expect-warning Number literal '2e309' overflows to Infinity
 function beyondRangePair(x: 1e309, y: 2e309): boolean {
   // @skjs-expect-warning This comparison is always true because the operands always hold the same single value
   return x === y;
@@ -76,6 +85,7 @@ function beyondRangePair(x: 1e309, y: 2e309): boolean {
 // #781: two spellings of one double. `x === y` is true at runtime (both are
 // 2^53), so the branch is reachable and must not narrow to never.
 function impreciseEqualityNarrowing(
+  // @skjs-expect-warning Number literal '9007199254740993' is rounded to 9007199254740992 by IEEE-754 double precision
   x: 9007199254740993 | "q",
   y: 9007199254740992 | "r",
 ): void {
@@ -88,6 +98,7 @@ function impreciseEqualityNarrowing(
 // Same with a radix spelling kept in source form (0x20000000000001 is 2^53+1,
 // which rounds to the double 2^53).
 function impreciseRadixEqualityNarrowing(
+  // @skjs-expect-warning Number literal '0x20000000000001' is rounded to 9007199254740992 by IEEE-754 double precision
   x: 0x20000000000001 | "q",
   y: 9007199254740992 | "r",
 ): void {
@@ -101,6 +112,7 @@ function impreciseRadixEqualityNarrowing(
 // falsy members and the condition is rejected, and the else branch keeps `0`
 // -- tsc likewise reports `"" | 0`. Both were accepted when 1e-400 was read
 // as a truthy literal.
+// @skjs-expect-warning Number literal '1e-400' underflows to 0
 function underflowIsFalsy(x: 1e-400 | ""): void {
   // @skjs-expect-error A condition is expected to be of type boolean or a type with a single falsy value
   if (x) {
@@ -111,29 +123,38 @@ function underflowIsFalsy(x: 1e-400 | ""): void {
 }
 
 // Spellings of one double are one literal type, as in tsc.
+// @skjs-expect-warning Number literal '9007199254740993' is rounded to 9007199254740992 by IEEE-754 double precision
 function sameDoubleDecimal(x: 9007199254740993): 9007199254740992 {
   return x;
 }
 
+// @skjs-expect-warning Number literal '123456789012345678901' is rounded to 123456789012345680000 by IEEE-754 double precision
 function sameDoubleLong(x: 123456789012345678901): 123456789012345680000 {
   return x;
 }
 
+// @skjs-expect-warning Number literal '0.300000000000000044' is rounded to 0.30000000000000004 by IEEE-754 double precision
 function fractionSameDouble(x: 0.300000000000000044): 0.30000000000000004 {
   return x;
 }
 
 // 1e-400 underflows to 0.
+// @skjs-expect-warning Number literal '1e-400' underflows to 0
 function underflowIsZero(x: 1e-400): 0 {
   return x;
 }
 
 // 1e309 and 2e309 both overflow to Infinity: one literal type.
+// @skjs-expect-warning Number literal '1e309' overflows to Infinity
+// @skjs-expect-warning Number literal '2e309' overflows to Infinity
 function overflowSpellings(x: 2e309): 1e309 {
   return x;
 }
 
 // A literal type prints as the String() form of its double.
+// @skjs-expect-warning Number literal '1e-400' underflows to 0
+// @skjs-expect-warning Number literal '2e309' overflows to Infinity
+// @skjs-expect-warning Number literal '9007199254740993' is rounded to 9007199254740992 by IEEE-754 double precision
 function showBeyondPrecision(x: 9007199254740993, y: 1e-400, z: 2e309): void {
   __SKJS_show(x, "9007199254740992");
   __SKJS_show(y, "0");
@@ -143,26 +164,34 @@ function showBeyondPrecision(x: 9007199254740993, y: 1e-400, z: 2e309): void {
 // Infinity literals are named Infinity / -Infinity, as in tsc: every
 // spelling of an overflowing value is one literal type, and it is the
 // numeric property name "Infinity".
+// @skjs-expect-warning Number literal '1e309' overflows to Infinity
+// @skjs-expect-warning Number literal '2e309' overflows to Infinity
 function infinitySpellings(x: 2e309): 1e309 {
   return x;
 }
 
+// @skjs-expect-warning Number literal '1e309' overflows to Infinity
+// @skjs-expect-warning Number literal '-1e309' overflows to -Infinity
 function infinityShow(x: 1e309, y: -1e309): void {
   __SKJS_show(x, "Infinity");
   __SKJS_show(y, "-Infinity");
 }
 
 // +Infinity is not -Infinity (rejected by tsc too).
+// @skjs-expect-warning Number literal '1e309' overflows to Infinity
+// @skjs-expect-warning Number literal '-1e309' overflows to -Infinity
 function infinitySign(x: 1e309): -1e309 {
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
+// @skjs-expect-warning Number literal '1e309' overflows to Infinity
 function infinityKey(o: { 1e309: number }): { Infinity: number } {
   return o;
 }
 
 // Infinity is truthy, so `x` has a single falsy member.
+// @skjs-expect-warning Number literal '1e309' overflows to Infinity
 function infinityTruthy(x: 1e309 | ""): void {
   if (x) {
     return;
@@ -172,7 +201,9 @@ function infinityTruthy(x: 1e309 | ""): void {
 
 // keyof sees the Infinity key both as the string "Infinity" and as the
 // number literal Infinity (the literal 1e309), as for any numeric key.
+// @skjs-expect-warning Number literal '1e309' overflows to Infinity
 function infinityKeyof(o: { 1e309: 1; 5: 2 }): void {
+  // @skjs-expect-warning Number literal '1e309' overflows to Infinity
   const k: keyof typeof o = 1e309;
   const s: keyof typeof o = "Infinity";
 }
