@@ -827,13 +827,14 @@ class Checker private {
             fileName,
           );
           errors = fileDefErrors.concat(results.errors);
+          warnings = parsedFile.parseWarnings.concat(results.warnings);
           writer.set(
             fileName,
             CheckResult(
               fileName,
               None(),
               errors,
-              results.warnings,
+              warnings,
               results.callgraph,
               results.classHierarchy,
               results.subtypingEdges,

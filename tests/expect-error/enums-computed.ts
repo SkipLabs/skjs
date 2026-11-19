@@ -258,6 +258,7 @@ function beyondDoubleMember(): number {
 }
 
 enum SpelledBig {
+  // @skjs-expect-warning Number literal '0x20000000000001' is rounded to 9007199254740992 by IEEE-754 double precision
   A = 0x20000000000001,
 }
 
@@ -269,6 +270,7 @@ function spelledBigCanonicalReverse(): string {
 // 0x20000000000001 is the double 2^53, so its reverse-mapping key is
 // "9007199254740992" whichever way it is spelled.
 function spelledBigSpelledReverse(): "A" {
+  // @skjs-expect-warning Number literal '0x20000000000001' is rounded to 9007199254740992 by IEEE-754 double precision
   return SpelledBig[0x20000000000001];
 }
 
@@ -423,15 +425,19 @@ function dupStringMember(): "x" {
 // "-Infinity", whichever way the value is spelled (tsc types the access as
 // plain string).
 enum InfinityMembers {
+  // @skjs-expect-warning Number literal '1e309' overflows to Infinity
   Pos = 1e309,
+  // @skjs-expect-warning Number literal '1e309' overflows to Infinity
   Neg = -1e309,
 }
 
 function infinityReverse(): "Pos" {
+  // @skjs-expect-warning Number literal '2e309' overflows to Infinity
   return InfinityMembers[2e309];
 }
 
 function negInfinityReverse(): "Neg" {
+  // @skjs-expect-warning Number literal '1e309' overflows to Infinity
   return InfinityMembers[-1e309];
 }
 
@@ -443,6 +449,7 @@ enum FloatFold {
   Quotient = 10 / 3,
   Remainder = 5.5 % 2,
   NegRemainder = -5.5 % 2,
+  // @skjs-expect-warning Number literal '1e309' overflows to Infinity
   InfRemainder = 1e309 % 2,
   PastSafe = 2 ** 53 + 1,
   Overflow = 1e308 * 10,
@@ -489,6 +496,7 @@ function floatFoldPastSafe(): 9007199254740992 {
   return FloatFold.PastSafe;
 }
 
+// @skjs-expect-warning Number literal '1e309' overflows to Infinity
 function floatFoldOverflow(): 1e309 {
   return FloatFold.Overflow;
 }
@@ -528,11 +536,13 @@ enum ZeroDivisor {
   B = 1 / (-0.5 * 0),
 }
 
+// @skjs-expect-warning Number literal '1e309' overflows to Infinity
 function zeroDivisorPositive(): 1e309 {
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return ZeroDivisor.A;
 }
 
+// @skjs-expect-warning Number literal '-1e309' overflows to -Infinity
 function zeroDivisorNegative(): -1e309 {
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return ZeroDivisor.B;
@@ -540,6 +550,7 @@ function zeroDivisorNegative(): -1e309 {
 
 // String concatenation renders a number by its String() form.
 enum FloatConcat {
+  // @skjs-expect-warning Number literal '1e309' overflows to Infinity
   A = "s" + 1e309,
 }
 

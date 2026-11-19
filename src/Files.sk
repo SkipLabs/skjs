@@ -21,9 +21,15 @@ class ParsedResultAndSymbolsFile(
   classFieldEntries: Map<ClassFieldRef, ClassFieldData> = Map[],
   typeDefBodies: Map<TypeDefBodyRef, TypeDefBodyData> = Map[],
   methodBodyEntries: Map<MethodBodyRef, MethodBodyData> = Map[],
+  // Non-fatal diagnostics recorded while parsing (e.g. surprising number
+  // literals); merged into the file's warnings at check time.
+  parseWarnings: Array<NamingError> = Array[],
 ) extends SKStore.File
 
-class ParsedResultFile(value: ParsedResult) extends SKStore.File
+class ParsedResultFile(
+  value: ParsedResult,
+  parseWarnings: Array<NamingError> = Array[],
+) extends SKStore.File
 
 base class ResolvedDef uses XXHashable {
   children =
@@ -208,6 +214,7 @@ class Files(
               Map::createFromItems(parser.classFieldEntries),
               Map::createFromItems(parser.typeDefBodies),
               Map::createFromItems(parser.methodBodyEntries),
+              parser.warnings.toArray(),
             ),
           ],
         )
@@ -264,7 +271,10 @@ fun removeSymbols(
     context,
     SKStore.DirName::create("/parsed/nosymbols/"),
     (_context, writer, key, values) ~> {
-      writer.set(key, ParsedResultFile(values.first.value))
+      writer.set(
+        key,
+        ParsedResultFile(values.first.value, values.first.parseWarnings),
+      )
     },
   )
 }

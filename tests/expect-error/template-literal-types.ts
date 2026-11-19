@@ -139,11 +139,13 @@ type SymbolBeatsNumberInHole = `${number | symbol}`;
 // A literal beyond double precision is named by the String() form of its
 // double (rule 30), so its hole reduces to that string, as in tsc: both
 // spellings below are the double 2^53.
+// @skjs-expect-warning Number literal '0x20000000000001' is rounded to 9007199254740992 by IEEE-754 double precision
 type RadixPastPrecision = `${0x20000000000001}`;
 function radixPastPrecision(x: RadixPastPrecision): "9007199254740992" {
   return x;
 }
 
+// @skjs-expect-warning Number literal '9007199254740993' is rounded to 9007199254740992 by IEEE-754 double precision
 type DecimalPastPrecision = `${9007199254740993}`;
 function decimalPastPrecision(x: DecimalPastPrecision): "9007199254740992" {
   return x;
@@ -151,6 +153,7 @@ function decimalPastPrecision(x: DecimalPastPrecision): "9007199254740992" {
 
 // An underflowing literal is the double 0 (its literal type is `0`), so its
 // hole reduces to "0".
+// @skjs-expect-warning Number literal '1e-400' underflows to 0
 type UnderflowHole = `${1e-400}`;
 function underflowHole(x: UnderflowHole): "0" {
   return x;
@@ -158,6 +161,7 @@ function underflowHole(x: UnderflowHole): "0" {
 
 // An overflowing literal is named Infinity, so its hole is "Infinity", as in
 // tsc.
+// @skjs-expect-warning Number literal '1e309' overflows to Infinity
 type OverflowHole = `${1e309}`;
 function overflowHole(x: OverflowHole): "Infinity" {
   return x;

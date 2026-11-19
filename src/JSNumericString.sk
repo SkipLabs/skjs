@@ -61,15 +61,7 @@ fun jsNumberLiteralDouble(name: String): ?Float {
   if (unsigned == "Infinity") {
     return Some(if (negative) -Float::inf else Float::inf)
   };
-  base = if (unsigned.startsWith("0x") || unsigned.startsWith("0X")) {
-    16
-  } else if (unsigned.startsWith("0o") || unsigned.startsWith("0O")) {
-    8
-  } else if (unsigned.startsWith("0b") || unsigned.startsWith("0B")) {
-    2
-  } else {
-    10
-  };
+  base = jsLiteralRadixBase(unsigned);
   decimal = if (base == 10) {
     // The runtime parser needs a digit before the point: `.5` is `0.5`.
     if (unsigned.startsWith(".")) "0" + unsigned else unsigned
@@ -529,6 +521,120 @@ fun shortestFloatDigits(f: Float): (String, Int) {
   digits = String::fromChars(chars.slice(lead, trail).toArray());
   // d1 sits at position `lead`, so its power of ten is point - lead - 1.
   (digits, point - lead - 1)
+}
+
+// The radix base of an unsigned literal spelling: 16/8/2 for the 0x/0o/0b
+// prefixes, else 10.
+fun jsLiteralRadixBase(unsigned: String): Int {
+  if (unsigned.startsWith("0x") || unsigned.startsWith("0X")) {
+    16
+  } else if (unsigned.startsWith("0o") || unsigned.startsWith("0O")) {
+    8
+  } else if (unsigned.startsWith("0b") || unsigned.startsWith("0B")) {
+    2
+  } else {
+    10
+  }
+}
+
+// The exact value of an unsigned validated numeric literal, as canonical
+// (digits, exp10) with value = 0.digits * 10^(exp10 + 1) and no leading or
+// trailing zeros in digits — the same convention shortestFloatDigits uses,
+// so an exact value and a double's shortest form compare directly. ("0", 0)
+// represents an exact zero. None when the exponent is not an Int (the value
+// is then 0 or infinite, decided via the double). Only called on validated
+// literals, so the radix conversion cannot fail.
+fun jsLiteralExactDigits(unsigned: String): ?(String, Int) {
+  base = jsLiteralRadixBase(unsigned);
+  rawDigits = if (base == 10) {
+    unsigned
+  } else {
+    radixToDecimalString(
+      unsigned.substring(unsigned.getIter().forward(2)),
+      base,
+    )
+  };
+  (chars, point) = if (base == 10) {
+    (mantissa, expPart) = rawDigits.splitFirst("e") match {
+    | (_, "") -> rawDigits.splitFirst("E")
+    | p -> p
+    };
+    exp = if (expPart == "") 0 else {
+      expPart.stripPrefix("+").toIntOption() match {
+      | Some(n) -> n
+      | None() -> return None()
+      }
+    };
+    (intPart, fracPart) = mantissa.splitFirst(".");
+    // Position of the decimal point within chars: value = 0.chars * 10^point.
+    ((intPart + fracPart).chars(), intPart.length() + exp)
+  } else {
+    (rawDigits.chars(), rawDigits.length())
+  };
+  lead = 0;
+  while (lead < chars.size() && chars[lead] == '0') !lead = lead + 1;
+  !point = point - lead;
+  trail = chars.size();
+  while (trail > lead && chars[trail - 1] == '0') !trail = trail - 1;
+  if (lead == trail) return Some(("0", 0));
+  digits = String::fromChars(chars.slice(lead, trail).toArray());
+  // d1 sits at position `lead` of the unstripped digits, whose point is now
+  // `point`: its power of ten is point - 1.
+  Some((digits, point - 1))
+}
+
+// Whether a validated numeric literal is read by JS as a different value than
+// the exact decimal it spells — String(double(raw)) differs from the literal's
+// exact value — and if so, the warning message and code. The three surprise
+// cases: overflow to ±Infinity, underflow to 0, and rounding (precision loss,
+// including in the denormal range). Cosmetic respellings of the same value
+// (1e3 = 1000, 0x10 = 16, 1.0 = 1, 1_000 = 1000, -0 = 0) and exactly
+// representable values (0.1, 1e21, 5e-324) stay silent, as does a literal too
+// long for the runtime parser (SKJS keeps its spelling; names then only fail
+// to merge).
+fun jsNumberLiteralSurprise(raw: String): ?(String, ErrorCode) {
+  s0 = raw.replace("_", "");
+  (negative, unsigned) = if (s0.startsWith("-")) {
+    (true, s0.stripPrefix("-"))
+  } else {
+    (false, s0)
+  };
+  f = jsNumberLiteralDouble(unsigned) match {
+  | Some(f) -> f
+  | None() -> return None()
+  };
+  // The signed double and its String() form, for the messages.
+  fSigned = if (negative) -f else f;
+  name = jsNumberToString(fSigned);
+  if (f == Float::inf || f == -Float::inf) {
+    return Some(
+      (`Number literal '${raw}' overflows to ${name}`, SKJSCode(2080)),
+    )
+  };
+  if (f == 0.0) {
+    // Underflow is silent exactly when the literal spells zero itself.
+    jsLiteralExactDigits(unsigned) match {
+    | Some((digits, _)) if (digits == "0") -> None()
+    | _ -> Some((`Number literal '${raw}' underflows to 0`, SKJSCode(2081)))
+    }
+  } else {
+    // f is the unsigned magnitude, a positive finite double here.
+    (digitsF, exp10F) = shortestFloatDigits(f);
+    jsLiteralExactDigits(unsigned) match {
+    | Some((digitsW, exp10W)) ->
+      if (digitsW == digitsF && exp10W == exp10F) {
+        None()
+      } else {
+        Some(
+          (
+            `Number literal '${raw}' is rounded to ${name} by IEEE-754 double precision`,
+            SKJSCode(2082),
+          ),
+        )
+      }
+    | None() -> None()
+    }
+  }
 }
 
 // 2^53: the largest Int an IEEE-754 double represents exactly (used by enum

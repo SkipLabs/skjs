@@ -228,8 +228,7 @@ extension class Parser {
       | Some(x) -> x
       };
       numTok.kind match {
-      | TKNumber() ->
-        TANumLiteral(negateJSNumberLiteral(this.getNumber(numTok)))
+      | TKNumber() -> TANumLiteral(this.getNumber(numTok, true))
       | TKBigInt() ->
         TABigIntLiteral(negateJSNumberLiteral(this.getBigInt(numTok)))
       | _ ->

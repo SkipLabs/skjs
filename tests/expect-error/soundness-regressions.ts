@@ -5,6 +5,7 @@
 // runtime value is "x0"; its literal type must not be "x1e-400". Fixed by the
 // beyond-precision literal canonicalization (#1067): the member is "x0".
 enum UnderflowConcat {
+  // @skjs-expect-warning Number literal '1e-400' underflows to 0
   A = "x" + 1e-400,
 }
 

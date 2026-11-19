@@ -519,4 +519,72 @@ fun testJSNumberToString(): void {
   );
 }
 
+// --- jsNumberLiteralSurprise tests -----------------------------------------
+
+fun surpriseMsg(raw: String): ?String {
+  SKJS.jsNumberLiteralSurprise(raw).map(p -> p.i0)
+}
+
+// A literal is surprising when JS reads it as a different value than the
+// exact decimal written: overflow to ±Infinity, underflow to 0, or rounding
+// (precision loss, including denormal rounding). Cosmetic respellings of the
+// same value and exactly representable values stay silent.
+@test
+fun testNumberLiteralSurprise(): void {
+  SKTest.expectEq(
+    Some("Number literal '1e309' overflows to Infinity"),
+    surpriseMsg("1e309"),
+  );
+  SKTest.expectEq(
+    Some("Number literal '-2e309' overflows to -Infinity"),
+    surpriseMsg("-2e309"),
+  );
+  SKTest.expectEq(
+    Some("Number literal '1e-400' underflows to 0"),
+    surpriseMsg("1e-400"),
+  );
+  SKTest.expectEq(
+    Some("Number literal '2e-324' underflows to 0"),
+    surpriseMsg("2e-324"),
+  );
+  SKTest.expectEq(
+    Some(
+      "Number literal '9007199254740993' is rounded to 9007199254740992 by IEEE-754 double precision",
+    ),
+    surpriseMsg("9007199254740993"),
+  );
+  SKTest.expectEq(
+    Some(
+      "Number literal '9e-324' is rounded to 1e-323 by IEEE-754 double precision",
+    ),
+    surpriseMsg("9e-324"),
+  );
+  SKTest.expectEq(
+    Some(
+      "Number literal '0x20000000000001' is rounded to 9007199254740992 by IEEE-754 double precision",
+    ),
+    surpriseMsg("0x20000000000001"),
+  );
+  SKTest.expectEq(
+    Some(
+      "Number literal '0.300000000000000044' is rounded to 0.30000000000000004 by IEEE-754 double precision",
+    ),
+    surpriseMsg("0.300000000000000044"),
+  );
+  // Controls: same value respelled, or exactly representable — silent.
+  SKTest.expectEq(None(), surpriseMsg("1e3"));
+  SKTest.expectEq(None(), surpriseMsg("0x10"));
+  SKTest.expectEq(None(), surpriseMsg("1.0"));
+  SKTest.expectEq(None(), surpriseMsg("1_000"));
+  SKTest.expectEq(None(), surpriseMsg(".5"));
+  SKTest.expectEq(None(), surpriseMsg("0.1"));
+  SKTest.expectEq(None(), surpriseMsg("1e21"));
+  SKTest.expectEq(None(), surpriseMsg("5e-324"));
+  SKTest.expectEq(None(), surpriseMsg("-0"));
+  SKTest.expectEq(None(), surpriseMsg("9007199254740992"));
+  SKTest.expectEq(None(), surpriseMsg("0.30000000000000004"));
+  SKTest.expectEq(None(), surpriseMsg("0"));
+  SKTest.expectEq(None(), surpriseMsg("0e999999"));
+}
+
 module end;
