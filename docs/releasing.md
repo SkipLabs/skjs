@@ -26,6 +26,8 @@ The workflow fails fast if the tag (with `v` stripped) doesn't match `version` i
 
 CircleCI no longer publishes any binaries — it's only used for testing on branch pushes.
 
+Both test pipelines cache the dev binaries (`target/host/dev/{skjs,test}`) keyed on a content hash of their build inputs (sources, `build.sk`, transitive `../skip` path deps, toolchain — see `bin/ci_build_cache.sh`). On a hit, `make test` runs the prebuilt test binary directly (`SKJS_PREBUILT=1`) instead of rebuilding via `skargo test`, skipping the multi-minute compile. The cache is saved only after tests pass, and only under an exact key, so a restored binary always matches the current inputs.
+
 ## Troubleshooting the release workflow
 
 ### Workflow fails on "Verify tag matches Skargo.toml version"

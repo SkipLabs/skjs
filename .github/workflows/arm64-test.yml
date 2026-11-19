@@ -36,5 +36,41 @@ jobs:
           git clone --depth=1 --shallow-submodules --recurse-submodules \
             https://github.com/SkipLabs/skip ../skip
 
+      # Cache the dev binaries keyed on a content hash of their build inputs
+      # (see bin/ci_build_cache.sh), so repeat runs skip the multi-minute
+      # skargo build. Exact key only: a restored binary must have been built
+      # from exactly these inputs.
+      - name: Compute dev binary build cache key
+        id: build-cache-key
+        run: echo "key=$(bin/ci_build_cache.sh key)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore dev binary build cache
+        id: build-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            target/host/dev/skjs
+            target/host/dev/test
+          key: skjs-dev-bin-v1-${{ steps.build-cache-key.outputs.key }}
+
+      - name: Detect dev binary build cache hit
+        run: |
+          if bin/ci_build_cache.sh restored; then
+            echo "SKJS_PREBUILT=1" >> "$GITHUB_ENV"
+            echo "build cache hit; make test will skip the skargo build"
+          else
+            echo "build cache miss; full skargo build"
+          fi
+
       - name: Test
         run: make test
+
+      # Runs only when the tests passed, so a broken binary is never cached.
+      - name: Save dev binary build cache
+        if: success() && steps.build-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            target/host/dev/skjs
+            target/host/dev/test
+          key: skjs-dev-bin-v1-${{ steps.build-cache-key.outputs.key }}

@@ -10,10 +10,22 @@ build:
 	skargo build
 
 JUNITXML_FLAGS=$(if $(JUNITXML),--junitxml $(JUNITXML))
+# Passed straight to the prebuilt test binary on a build-cache hit (skargo
+# test would forward it to the binary as --junitxml=...).
+JUNITXML_FLAGS_BIN=$(if $(JUNITXML),--junitxml=$(JUNITXML))
 
+SKJS_DEV_TEST=target/host/dev/test
+
+# SKJS_PREBUILT=1 is set by CI when the dev binaries were restored from the
+# build cache (see bin/ci_build_cache.sh); skip the skargo build and run the
+# prebuilt test binary directly.
 .PHONY: test
 test:
+ifeq ($(SKJS_PREBUILT),1)
+	SKARGO_BIN=test $(SKJS_DEV_TEST) $(JUNITXML_FLAGS_BIN) -j$(shell nproc)
+else
 	skargo test $(JUNITXML_FLAGS)
+endif
 	parallel --halt now,fail=1 ::: \
 		./tests/test_incremental.sh \
 		./tests/test_affected_files.sh \
