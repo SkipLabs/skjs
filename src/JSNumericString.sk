@@ -552,7 +552,10 @@ fun jsLiteralExactDigits(unsigned: String): ?(String, Int) {
     radixToDecimalString(
       unsigned.substring(unsigned.getIter().forward(2)),
       base,
-    )
+    ) match {
+    | Some(d) -> d
+    | None() -> return None()
+    }
   };
   (chars, point) = if (base == 10) {
     (mantissa, expPart) = rawDigits.splitFirst("e") match {
