@@ -49,10 +49,34 @@ jobs:
           command: |
             git clone --depth=1 --shallow-submodules --recurse-submodules https://github.com/SkipLabs/skip ../skip
       - run:
+          name: Compute dev binary build cache key
+          command: |
+            bin/ci_build_cache.sh key > /tmp/skjs-build-key
+      - restore_cache:
+          keys:
+            # Exact key only, no prefix fallback: a restored binary must have
+            # been built from exactly these inputs (see bin/ci_build_cache.sh).
+            - skjs-dev-bin-v1-{{ checksum "/tmp/skjs-build-key" }}
+      - run:
+          name: Detect dev binary build cache hit
+          command: |
+            if bin/ci_build_cache.sh restored; then
+              echo 'export SKJS_PREBUILT=1' >> "$BASH_ENV"
+              echo "build cache hit; make test will skip the skargo build"
+            else
+              echo "build cache miss; full skargo build"
+            fi
+      - run:
           name: Test
           command: |
             mkdir -p ~/test-results
             make test JUNITXML=~/test-results/skjs.xml
+      # Default when: on_success, so a broken binary is never cached.
+      - save_cache:
+          key: skjs-dev-bin-v1-{{ checksum "/tmp/skjs-build-key" }}
+          paths:
+            - target/host/dev/skjs
+            - target/host/dev/test
       - store_test_results:
           path: ~/test-results/skjs.xml
 
