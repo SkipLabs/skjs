@@ -38,11 +38,16 @@ fun testJSNumericStringValidScientific(): void {
   // Large numbers: single-digit integer + e+N
   SKTest.expectTrue(SKJS.isJSNumericString("1e+21"));
   SKTest.expectTrue(SKJS.isJSNumericString("5e+100"));
-  SKTest.expectTrue(SKJS.isJSNumericString("9e+308"));
+  SKTest.expectTrue(SKJS.isJSNumericString("1e+308"));
+  // 9e+308 overflows to Infinity: String(9e+308) is "Infinity", not "9e+308"
+  SKTest.expectFalse(SKJS.isJSNumericString("9e+308"));
   // Small numbers: single-digit integer + e-N
   SKTest.expectTrue(SKJS.isJSNumericString("1e-7"));
   SKTest.expectTrue(SKJS.isJSNumericString("5e-7"));
-  SKTest.expectTrue(SKJS.isJSNumericString("9e-324"));
+  SKTest.expectTrue(SKJS.isJSNumericString("5e-324"));
+  SKTest.expectTrue(SKJS.isJSNumericString("1e-323"));
+  // 9e-324 rounds to the denormal 1e-323: String(9e-324) is "1e-323"
+  SKTest.expectFalse(SKJS.isJSNumericString("9e-324"));
   // With decimal in significand
   SKTest.expectTrue(SKJS.isJSNumericString("1.5e+22"));
   SKTest.expectTrue(SKJS.isJSNumericString("3.14e-8"));
@@ -302,33 +307,40 @@ fun testNormalizeJSBigInt(): void {
   );
 }
 
-// --- isPreciseJSNumberLiteral tests ----------------------------------------
+// --- jsNumberLiteralDouble / isExactJSNumberName tests ---------------------
 
+// jsNumberLiteralDouble is total: invalid radix digits parse to None rather
+// than throwing, so arbitrary property-name strings are safe to probe.
 @test
-fun testPreciseJSNumberLiteral(): void {
-  SKTest.expectTrue(SKJS.isPreciseJSNumberLiteral("0"));
-  SKTest.expectTrue(SKJS.isPreciseJSNumberLiteral("1"));
-  SKTest.expectTrue(SKJS.isPreciseJSNumberLiteral("-1.5"));
-  SKTest.expectTrue(SKJS.isPreciseJSNumberLiteral("123456789012345"));
-  SKTest.expectTrue(SKJS.isPreciseJSNumberLiteral("1e+21"));
-  SKTest.expectTrue(SKJS.isPreciseJSNumberLiteral("1e-7"));
-  SKTest.expectTrue(SKJS.isPreciseJSNumberLiteral("1.5e+307"));
+fun testJSNumberLiteralDoubleRejectsInvalidRadixDigits(): void {
+  SKTest.expectEq(None(), SKJS.jsNumberLiteralDouble("0x1p3"));
+  SKTest.expectEq(None(), SKJS.jsNumberLiteralDouble("0b12"));
+  SKTest.expectEq(None(), SKJS.jsNumberLiteralDouble("0o8"));
+  SKTest.expectEq(Some(0.0), SKJS.jsNumberLiteralDouble("0x0"));
+  SKTest.expectEq(Some(16.0), SKJS.jsNumberLiteralDouble("0x10"));
+  SKTest.expectEq(Some(-2.0), SKJS.jsNumberLiteralDouble("-0b10"));
+  SKTest.expectEq(Some(Float::inf), SKJS.jsNumberLiteralDouble("Infinity"));
+  SKTest.expectEq(Some(-Float::inf), SKJS.jsNumberLiteralDouble("-Infinity"));
 }
 
+// An exact name is one that parses and prints back to itself; this is the
+// String() form of its double ("NaN" is never exact, "Infinity" is).
 @test
-fun testImpreciseJSNumberLiteral(): void {
-  // 16+ significant digits can collide on one double
-  SKTest.expectFalse(SKJS.isPreciseJSNumberLiteral("9007199254740993"));
-  SKTest.expectFalse(SKJS.isPreciseJSNumberLiteral("1234567890123456"));
-  // Trailing integer zeros count as significant for round-trip identity
-  SKTest.expectFalse(SKJS.isPreciseJSNumberLiteral("100000000000000000000"));
-  // Beyond the double range
-  SKTest.expectFalse(SKJS.isPreciseJSNumberLiteral("1e+308"));
-  SKTest.expectFalse(SKJS.isPreciseJSNumberLiteral("1e+309"));
-  SKTest.expectFalse(SKJS.isPreciseJSNumberLiteral("1e-308"));
-  // Non-canonical spelled forms kept raw by the normalizer
-  SKTest.expectFalse(SKJS.isPreciseJSNumberLiteral("0xFFFFFFFFFFFFFFFF"));
-  SKTest.expectFalse(SKJS.isPreciseJSNumberLiteral("1e18446744073709551619"));
+fun testExactJSNumberName(): void {
+  SKTest.expectTrue(SKJS.isExactJSNumberName("0"));
+  SKTest.expectTrue(SKJS.isExactJSNumberName("-1.5"));
+  SKTest.expectTrue(SKJS.isExactJSNumberName("1e+21"));
+  SKTest.expectTrue(SKJS.isExactJSNumberName("1e+308"));
+  SKTest.expectFalse(SKJS.isExactJSNumberName("9e+308"));
+  SKTest.expectTrue(SKJS.isExactJSNumberName("9007199254740992"));
+  SKTest.expectTrue(SKJS.isExactJSNumberName("Infinity"));
+  SKTest.expectTrue(SKJS.isExactJSNumberName("-Infinity"));
+  SKTest.expectFalse(SKJS.isExactJSNumberName("NaN"));
+  SKTest.expectFalse(SKJS.isExactJSNumberName("9007199254740993"));
+  SKTest.expectFalse(SKJS.isExactJSNumberName("1e+309"));
+  SKTest.expectFalse(SKJS.isExactJSNumberName("0x10"));
+  SKTest.expectFalse(SKJS.isExactJSNumberName("-0"));
+  SKTest.expectFalse(SKJS.isExactJSNumberName("0x1p3"));
 }
 
 // --- negateJSNumberLiteral tests ------------------------------------------
@@ -361,6 +373,15 @@ fun testJSNumericStringRejectsOutOfBoundsForms(): void {
   SKTest.expectTrue(SKJS.isJSNumericString("1e-7"));
   SKTest.expectTrue(SKJS.isJSNumericString("0.000001"));
   SKTest.expectTrue(SKJS.isJSNumericString("100000000000000000000"));
+  SKTest.expectTrue(SKJS.isJSNumericString("1e+308"));
+  // An exponent that overflows to Infinity is not a finite canonical form
+  // (tsc's numeric-name test, (+s).toString() === s, rejects it too)
+  SKTest.expectFalse(SKJS.isJSNumericString("9e+308"));
+  SKTest.expectFalse(SKJS.isJSNumericString("1e+309"));
+  SKTest.expectFalse(SKJS.isJSNumericString("1e18446744073709551619"));
+  // Radix spellings with invalid digits are rejected without throwing
+  SKTest.expectFalse(SKJS.isJSNumericString("0x1p3"));
+  SKTest.expectFalse(SKJS.isJSNumericString("0b12"));
 }
 
 // Literals beyond double precision normalize to the ECMAScript String() form
@@ -461,13 +482,11 @@ fun testNumberNamesCompareByName(): void {
   SKTest.expectFalse(SKJS.jsNumberLiteralMayBeFalsy("5e-324"));
   SKTest.expectTrue(SKJS.jsNumberLiteralMayBeFalsy("0"));
   SKTest.expectFalse(SKJS.jsNumberLiteralMayBeTruthy("0"));
-  SKTest.expectTrue(SKJS.isJSNumberLiteralStringForm("-Infinity"));
-  SKTest.expectTrue(
-    SKJS.isJSNumberLiteralStringForm("1.7976931348623157e+308"),
-  );
-  SKTest.expectFalse(SKJS.isJSNumberLiteralStringForm("NaN"));
-  SKTest.expectFalse(SKJS.isJSNumberLiteralStringForm("1e308"));
-  SKTest.expectFalse(SKJS.isJSNumberLiteralStringForm(long));
+  SKTest.expectTrue(SKJS.isExactJSNumberName("-Infinity"));
+  SKTest.expectTrue(SKJS.isExactJSNumberName("1.7976931348623157e+308"));
+  SKTest.expectFalse(SKJS.isExactJSNumberName("NaN"));
+  SKTest.expectFalse(SKJS.isExactJSNumberName("1e308"));
+  SKTest.expectFalse(SKJS.isExactJSNumberName(long));
 }
 
 // jsNumberToString is the ECMAScript String() form of a double: the digits

@@ -47,3 +47,12 @@ const koStrIdx: keyof "a" = 99;
 const koStrFld: keyof string = "charAt";
 // @skjs-expect-error Type of initializer is not assignable to the declared type annotation
 const koStrInvalid: keyof string = "notAFieldOfString";
+
+// String keys that look like radix literals with invalid digits are plain
+// string keys, not number names (tsc's numeric-name test rejects them too):
+// probing them must not crash the checker.
+type RadixLookalikeKeys = keyof { "0x1p3": number; "0b12": number };
+const radixKey1: RadixLookalikeKeys = "0x1p3";
+const radixKey2: RadixLookalikeKeys = "0b12";
+// @skjs-expect-error Type of initializer is not assignable to the declared type annotation
+const radixKeyNum: RadixLookalikeKeys = 16;
