@@ -470,4 +470,34 @@ fun testNumberNamesCompareByName(): void {
   SKTest.expectFalse(SKJS.isJSNumberLiteralStringForm(long));
 }
 
+// jsNumberToString is the ECMAScript String() form of a double: the digits
+// come from Float.toString, Ryu's shortest round-trip form since std 0.5.0
+// (SkipLabs/skip#1288), so the result always parses back to the same double.
+@test
+fun testJSNumberToString(): void {
+  SKTest.expectEq("NaN", SKJS.jsNumberToString(Float::nan));
+  SKTest.expectEq("Infinity", SKJS.jsNumberToString(Float::inf));
+  SKTest.expectEq("-Infinity", SKJS.jsNumberToString(-Float::inf));
+  SKTest.expectEq("0", SKJS.jsNumberToString(0.0));
+  SKTest.expectEq("0", SKJS.jsNumberToString(-0.0));
+  SKTest.expectEq("1", SKJS.jsNumberToString(1.0));
+  SKTest.expectEq("-1.5", SKJS.jsNumberToString(-1.5));
+  SKTest.expectEq("0.1", SKJS.jsNumberToString(0.1));
+  SKTest.expectEq(
+    "0.30000000000000004",
+    SKJS.jsNumberToString(0.30000000000000004),
+  );
+  SKTest.expectEq(
+    "9007199254740992",
+    SKJS.jsNumberToString(9007199254740993.0),
+  );
+  SKTest.expectEq("1e+21", SKJS.jsNumberToString(1.0e21));
+  SKTest.expectEq("1e-7", SKJS.jsNumberToString(1.0e-7));
+  SKTest.expectEq("5e-324", SKJS.jsNumberToString(5.0e-324));
+  SKTest.expectEq(
+    "1.7976931348623157e+308",
+    SKJS.jsNumberToString(1.7976931348623157e308),
+  );
+}
+
 module end;
