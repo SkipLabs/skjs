@@ -50,7 +50,18 @@ class RegularPublicNoType {
 // TS7008); SKJS is sound and rejects it.
 function readUntypedFieldIntoConcrete(x: AmbientWithUntyped): void {
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 Type 'field "pub" of class "AmbientWithUntyped" without a type annotation'
+  // @skjs-expect-error-line3 is not assignable to type 'string'
   const s: string = x.pub;
+}
+
+// Same on a generic ambient class: the diagnostic names the field and its
+// declaring class, not the internal placeholder (#1094).
+function readUntypedGenericFieldIntoConcrete(x: Box<number>): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 Type 'field "secret" of class "Box" without a type annotation'
+  // @skjs-expect-error-line3 is not assignable to type 'number'
+  const n: number = x.secret;
 }
 
 // Reading the field where its own (opaque) type or a wider `unknown` is
@@ -63,6 +74,8 @@ function readUntypedFieldAsUnknown(x: AmbientWithUntyped): unknown {
 // placeholder.
 function writeUntypedField(x: AmbientWithUntyped): void {
   // @skjs-expect-error Type is not assignable to the assignment target's type
+  // @skjs-expect-error-line2 Type 'string'
+  // @skjs-expect-error-line3 is not assignable to type 'field "pub" of class "AmbientWithUntyped" without a type annotation'
   x.pub = "hello";
 }
 
