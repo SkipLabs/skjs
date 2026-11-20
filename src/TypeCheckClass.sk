@@ -38,7 +38,8 @@ extension class TypeChecker {
       };
       for (ext in c.extends_) {
         ext.value match {
-        | TAInst(parentName, parentTArgs) ->
+        | TAInst(parentReference, parentTArgs) ->
+          parentName = this.heritageName(tcenvl, parentReference, isInterface);
           if (this.hasClassDef(tcenvl, parentName)) {
             parentClass = this.getClass(tcenvl, parentName);
             if (!isInterface && parentClass.kind is CKInterface()) {
@@ -64,6 +65,26 @@ extension class TypeChecker {
                   TSCode(2689),
                 )
               }
+            };
+            if (
+              !isInterface &&
+              parentClass.kind is CKClass() &&
+              !this.defMap.getAll(tcenvl, parentReference).any(def ->
+                def match {
+                | Class{name} -> name.pos == parentClass.name.pos
+                | _ -> false
+                }
+              )
+            ) {
+              tcenvl.error(
+                Array[
+                  (
+                    parentReference.pos,
+                    "The superclass name resolves to a different value",
+                  ),
+                ],
+                TSCode(2507),
+              )
             };
             // parentClass is already resolved above; pass it on rather than
             // resolving the same name twice more.

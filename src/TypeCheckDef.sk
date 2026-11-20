@@ -266,9 +266,12 @@ extension class TypeChecker {
       tcenv = TCEnv::mcreate(subst, CGNode::toplevel(pos.fileName));
       valueType = this.expr(tcenv, e, true);
       if (typeAnnotation is Some(Type(_, TAUniqueSymbol()))) {
-        e.value match {
-        | Call(Expr(_, Var(Name(_, "Symbol"))), _, _) -> void
-        | _ ->
+        isSymbolCall = e.value match {
+        | Call(Expr(_, Var(name @ Name(_, "Symbol"))), _, _) ->
+          this.defMap.isBuiltinValue(tcenv, name)
+        | _ -> false
+        };
+        if (!isSymbolCall) {
           tcenvl.error(
             Array[
               (

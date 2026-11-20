@@ -579,30 +579,43 @@ extension class TypeChecker {
     | Call(
       Expr(
         _,
-        Dot(NormalDot(), Expr(_, Var(Name(_, "Array"))), Name(_, "isArray")),
+        Dot(
+          NormalDot(),
+          Expr(_, Var(arrayName @ Name(_, "Array"))),
+          Name(_, "isArray"),
+        ),
       ),
       targs,
       args,
     ) if (targs.isEmpty() && args.size() == 1) ->
-      args[0] match {
-      | Expr(_, Var(local)) -> this.evalIsArray(tcenv, local, target)
-      | _ -> void
+      if (
+        tcenv.scope.maybeGet(arrayName) is None() &&
+        this.defMap.isBuiltinValue(tcenv, arrayName)
+      ) {
+        args[0] match {
+        | Expr(_, Var(local)) -> this.evalIsArray(tcenv, local, target)
+        | _ -> void
+        }
       }
 
     | InstanceOf(
       Expr(_, Var(local)),
       rhs @ Expr(_, Var(className)),
     ) if (target) ->
-      // Only a class/interface RHS can drive narrowing; a Function-like value
-      // (e.g. a `typeof Class` const) is a valid RHS but has no class def to
-      // build an instance type from, so it narrows nothing. A class with a
-      // custom `static [Symbol.hasInstance]` narrows nothing either: it
-      // overrides the runtime membership test (issue #776).
-      if (
-        this.hasClassDef(tcenv, className) &&
-        !this.rhsDeclaresHasInstance(tcenv, rhs)
-      ) {
-        this.evalInstanceof(tcenv, local, className)
+      // Only the class declaration selected in value space can supply an
+      // instance type. A custom hasInstance hook proves no class membership.
+      if (tcenv.scope.maybeGet(className) is None()) {
+        this.defMap.getAll(tcenv, className).find(def -> def.hasValue()) match {
+        | Some(cls @ Class{kind => CKClass()}) ->
+          if (!this.rhsDeclaresHasInstance(tcenv, rhs)) {
+            this.evalInstanceof(
+              tcenv,
+              local,
+              this.runtimeClassName(tcenv, className, cls),
+            )
+          }
+        | _ -> void
+        }
       }
 
     | In(e1, Expr(_, Var(local))) ->

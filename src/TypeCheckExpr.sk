@@ -2133,6 +2133,7 @@ extension class TypeChecker {
     e: Expr,
     mostPrecise: Bool,
     isLValue: Bool = false,
+    typeQuery: Bool = false,
   ): TType {
     key = (e.pos, mostPrecise, isLValue);
     tcenv.exprTypes.maybeGet(key) match {
@@ -2144,7 +2145,7 @@ extension class TypeChecker {
           e.pos.fileName.toString(),
       )
     | None() ->
-      ty = this.exprImpl(tcenv, e, mostPrecise, isLValue);
+      ty = this.exprImpl(tcenv, e, mostPrecise, isLValue, typeQuery);
       e.value match {
       | Call(Expr(_, Var(Name(_, "__SKJS_show"))), _, _)
       | Call(Expr(_, Var(Name(_, "__SKJS_show_expanded"))), _, _) ->
@@ -2191,6 +2192,7 @@ extension class TypeChecker {
     e: Expr,
     mostPrecise: Bool,
     isLValue: Bool,
+    typeQuery: Bool,
   ): TType {
     if (mostPrecise) {
       if (isLValue) {
@@ -2258,7 +2260,7 @@ extension class TypeChecker {
       tcenv.markLocalObjectUsed(local);
       tcenv.scope.maybeGet(local) match {
       | None() ->
-        defs = this.defMap.getAll(tcenv, local);
+        defs = this.defMap.getAll(tcenv, local, false, typeQuery);
         sawInterface = false;
         sawTypeAlias = false;
         for (def in defs) {
@@ -2887,12 +2889,12 @@ extension class TypeChecker {
         // Classify the definitions of `className` in a single pass.
         hasInterface = false;
         hasValue = false;
-        hasClass = false;
+        selectedClass: ?Class = None();
         for (def in this.defMap.getAll(tcenv, className)) {
           def match {
           | Class{kind => CKInterface()} -> !hasInterface = true
-          | Class _ ->
-            !hasClass = true;
+          | cls @ Class _ ->
+            if (!hasValue) !selectedClass = Some(cls);
             !hasValue = true
           | TypeDef _ -> void
           | _ -> !hasValue = true
@@ -2903,9 +2905,8 @@ extension class TypeChecker {
           // as if it were instantiable.
           interfaceAsValueError(tcenv, className);
           Some(className)
-        } else if (!hasInterface && hasClass) {
-          // A class uses the fast (type-space) constructor path.
-          Some(className)
+        } else if (!hasInterface) {
+          selectedClass.map(cls -> this.runtimeClassName(tcenv, className, cls))
         } else {
           // A merged interface+value, or a value-only binding (e.g. a
           // `declare const` whose type has a construct signature): resolve
@@ -3142,7 +3143,7 @@ extension class TypeChecker {
       | (false, OptionalDot()) -> AKOptionalChain()
       | (false, NormalDot()) -> AKNormal()
       };
-      receiverType = this.expr(tcenv, e1, mostPrecise);
+      receiverType = this.expr(tcenv, e1, mostPrecise, false, typeQuery);
       stableReceiver = if (isLValue) receiverType else {
         this.stableAliasExprType(tcenv, e1, receiverType)
       };

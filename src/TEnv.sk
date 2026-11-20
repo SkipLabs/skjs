@@ -596,12 +596,36 @@ base class TEnv{
     };
   }
 
-  // Whether `name` resolves to a class or interface definition (anything
-  // `getClass` would accept). Used to decide whether an `instanceof` RHS can
-  // drive narrowing without `getClass` raising a fatal error on a value-only
-  // name.
+  // Type-space class lookup is also used for interfaces and implements.
+  fun runtimeClassName(
+    tcenvb: mutable TCEnvBase,
+    reference: Name,
+    selected: Class,
+  ): Name {
+    definitions = this.defMap.getAll(tcenvb, reference, true);
+    definitions.maybeGet(0) match {
+    | Some(
+      Class{name},
+    ) if (definitions.size() == 1 && name.pos == selected.name.pos) ->
+      reference
+    | _ -> selected.name
+    }
+  }
+
+  fun heritageName(
+    tcenvb: mutable TCEnvBase,
+    reference: Name,
+    isInterface: Bool,
+  ): Name {
+    if (isInterface) return reference;
+    this.defMap.getAll(tcenvb, reference).find(def -> def.hasValue()) match {
+    | Some(cls @ Class _) -> this.runtimeClassName(tcenvb, reference, cls)
+    | _ -> reference
+    }
+  }
+
   fun hasClassDef(tcenvb: mutable TCEnvBase, name: Name): Bool {
-    this.defMap.getAll(tcenvb, name).any(def -> def is Class _)
+    this.defMap.getAll(tcenvb, name, true).any(def -> def is Class _)
   }
 
   // The type alias `name` denotes, or None() when it denotes something else (a
@@ -779,7 +803,7 @@ base class TEnv{
             context,
             results => TCResultsAcc::mcreate{errorHandling => EHKeepGoing()},
           };
-          this.defMap.getAll(probe, varName).maybeGet(0) match {
+          this.defMap.getAll(probe, varName, false, true).maybeGet(0) match {
           | Some(FDVar(_, _, Some(annotation), _)) ->
             this.requiresTypeDef(
               context,
@@ -1234,7 +1258,8 @@ base class TEnv{
       cls = todo.pop();
       for (extend in cls.extends_) {
         extend.value match {
-        | TAInst(parentName, _) ->
+        | TAInst(parentReference, _) ->
+          parentName = this.heritageName(tcenvb, parentReference, false);
           if (this.hasClassDef(tcenvb, parentName)) {
             parent = this.getClass(tcenvb, parentName);
             if (isNominal(parent) && !visited.contains(parent.name)) {
@@ -1443,7 +1468,7 @@ base class TEnv{
       );
     };
     !visitedClasses = visitedClasses.set(className.value);
-    defs = this.defMap.getAll(tcenvb, className);
+    defs = this.defMap.getAll(tcenvb, className, true);
     defsCls = defs.filterMap(def ->
       def match {
       | cls @ Class _ -> Some(cls)
@@ -1514,7 +1539,12 @@ base class TEnv{
     );
     for (extend in cls.extends_) {
       extend.value match {
-      | TAInst(parentName, paramTArgs) ->
+      | TAInst(parentReference, paramTArgs) ->
+        parentName = this.heritageName(
+          tcenvb,
+          parentReference,
+          cls.kind is CKInterface(),
+        );
         if (this.hasClassDef(tcenvb, parentName)) {
           _ = this.addFields(
             tcenvb,
@@ -1893,7 +1923,12 @@ base class TEnv{
     };
     for (extend in cls.extends_) {
       extend.value match {
-      | TAInst(parentName, paramTArgs) ->
+      | TAInst(parentReference, paramTArgs) ->
+        parentName = this.heritageName(
+          tcenvb,
+          parentReference,
+          cls.kind is CKInterface(),
+        );
         // A type-alias base cannot contribute a constructor (a call/construct
         // signature on an alias base is rejected by addFieldsFromAliasBase),
         // so skip it instead of resolving it as a class — recursing would
@@ -2854,7 +2889,7 @@ base class TEnv{
           SKJSCode(2052),
         )
       };
-      return tc.expr(tcenv, expr, false)
+      return tc.expr(tcenv, expr, false, false, true)
     | _ -> void
     };
     expr.value match {
@@ -2864,7 +2899,7 @@ base class TEnv{
       sawInterface = false;
       sawValueDef = false;
       sawTypeAlias = false;
-      for (def in this.defMap.getAll(tcenvb, varName)) {
+      for (def in this.defMap.getAll(tcenvb, varName, false, true)) {
         def match {
         | FDVar(kind, _, Some(t), _) ->
           if (this.typeofValues.contains(varName.value)) {
@@ -2897,12 +2932,13 @@ base class TEnv{
             TObject::createCall(this.funDecl(tcenvb, None(), fd, cgNode)),
           )
         | Class{kind => CKInterface()} -> !sawInterface = true
-        | Class _ ->
+        | cls @ Class _ ->
+          className = this.runtimeClassName(tcenvb, varName, cls);
           return this.materializeReadContext<TType>(
             tcenvb,
             varName.pos,
-            context -> context.classStatics(varName),
-            (scratch, readEnv) -> readEnv.newStatic(scratch, varName),
+            context -> context.classStatics(className),
+            (scratch, readEnv) -> readEnv.newStatic(scratch, className),
           )
         | TypeDef _ -> !sawTypeAlias = true
         | en @ Enum _ -> return this.enumStatic(tcenvb, en)
@@ -2993,16 +3029,32 @@ base class TEnv{
     }
   }
 
+  // Runtime protocols use the intrinsic Symbol even in a scope that shadows it.
+  fun builtinSymbolType(tcenvb: mutable TCEnvBase, pos: PosRange): TType {
+    this.defMap.getBuiltinValue(tcenvb, "Symbol") match {
+    | Some(FDVar(_, name, Some(ty), _)) ->
+      this.normalize(tcenvb, ty, true, Some(name.value))
+    | _ -> TType::bottom(pos)
+    }
+  }
+
   // Resolve a well-known Symbol's unique ID (e.g. `Symbol.iterator`,
-  // `Symbol.hasInstance`) via a synthetic `Symbol.<prop>` expression.
+  // `Symbol.hasInstance`) from the intrinsic declaration.
   fun getWellKnownSymbolUniqueId(
     subst: mutable Subst,
     pos: PosRange,
     prop: String,
   ): ?String {
-    symbolExpr = Expr(pos, Var(Name(pos, "Symbol")));
-    symExpr = Expr(pos, Dot(NormalDot(), symbolExpr, Name(pos, prop)));
-    symType = this.typeOfExpr(subst, symExpr);
+    symbolType = this.builtinSymbolType(subst, pos);
+    propertyName = Name(pos, prop);
+    symType = this.materializeReadContext<TType>(
+      subst,
+      pos,
+      context -> context.typeOfProperty(symbolType, propertyName, pos),
+      (scratch, readEnv) ->
+        readEnv.readTypeofProperty(scratch, symbolType, propertyName, pos)
+      ,
+    );
     symType.getSTypes(subst, this, Covariant()).flatMap(stypes ~>
       stypes.singleElt()
     ) match {

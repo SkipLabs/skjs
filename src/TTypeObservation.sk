@@ -601,10 +601,7 @@ mutable class TypeReadContext private {
   // Resolve the declaration's carrier, then use fixed-read property and type
   // projection. Carrier declaration evaluation borrows this observation.
   private mutable fun symbolId(pos: PosRange, property: String): ?String {
-    carrier = this.tenv.typeOfExpr(
-      this.declaration(),
-      Expr(pos, Var(Name(pos, "Symbol"))),
-    );
+    carrier = this.tenv.builtinSymbolType(this.declaration(), pos);
     symbolType = this.typeOfProperty(carrier, Name(pos, property), pos);
     this.concreteTypes(symbolType, Covariant()).flatMap(types ~>
       types.singleElt()
