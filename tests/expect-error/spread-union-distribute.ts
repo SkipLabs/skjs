@@ -105,8 +105,9 @@ function tooManyUnionSpreads(
 // An over-cap spread whose OVERFLOWING source shares a field across its
 // branches: `c` is present in both branches of `pl`. Under distribution `o.c`
 // is `number` (as in TypeScript). This literal overflows the branch cap on the
-// final `...pl` spread, so that spread degrades to an open object: `c` is
-// dropped and `o.c` becomes `unknown` — sound, but less precise than tsc here.
+// final `...pl` spread, so that spread degrades — but the degrade keeps fields
+// common to every source branch (construction A, #1091), so `o.c` stays
+// `number` here, matching tsc.
 function capDegradeDropsCommonSourceField(
   p0: { a0: 0 } | { b0: 1 },
   p1: { a1: 0 } | { b1: 1 },
@@ -140,12 +141,9 @@ function capDegradeDropsCommonSourceField(
     // @skjs-expect-warning This object spread distributes over more than 10000 union branches; its type is over-approximated to an open object, so some properties are typed 'unknown'
     ...pl,
   };
-  // PRECISION (SkipLabs/skjs#747 follow-up): once the cap degrades `...pl` to an
-  // open object, `c` is dropped and `o.c` is `unknown`, so `cc` errors — a more
-  // precise collapse that kept fields common to all of `pl`'s branches would
-  // keep `c: number` here (TypeScript does; skjs is soundly stricter). Reading
-  // `o.c` as `unknown` stays sound.
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // Construction A (SkipLabs/skjs#1091): the over-cap degrade keeps the fields
+  // common to every branch of `pl`, so `c` survives with its per-branch union
+  // type `number` (as in TypeScript) instead of degrading to `unknown`.
   const cc: number = o.c;
   const uc: unknown = o.c;
 }
@@ -187,8 +185,8 @@ function capDegradeCommonFieldUnionType(
     // @skjs-expect-warning This object spread distributes over more than 10000 union branches; its type is over-approximated to an open object, so some properties are typed 'unknown'
     ...pl,
   };
-  // Currently the degrade drops `c`, so `o.c` is `unknown` and this errors.
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // `c` is common to both branches with differing types, so the degrade keeps
+  // it as the union `number | string`.
   const cu: number | string = o.c;
   // @ts-expect-error Type of value is not assignable to the variable's type annotation
   const cn: number = o.c;
@@ -196,7 +194,7 @@ function capDegradeCommonFieldUnionType(
 
 // A field present in only ONE branch of the overflowing source is not common,
 // so the degrade still drops it: `o.c` stays `unknown` (sound — the other
-// branch may carry an excess `c` of any type).
+// branch may carry an excess `c` of any type). Pinned in both directions.
 function capDegradeFieldMissingInOneBranch(
   p0: { a0: 0 } | { b0: 1 },
   p1: { a1: 0 } | { b1: 1 },
@@ -272,8 +270,8 @@ function capDegradeKeepsCommonSymbolField(
     // @skjs-expect-warning This object spread distributes over more than 10000 union branches; its type is over-approximated to an open object, so some properties are typed 'unknown'
     ...pl,
   };
-  // Currently the degrade drops `[sym]`, so `o[sym]` is `unknown`.
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // Symbol fields are handled like named fields: `[sym]` is common to both
+  // branches, so it survives the degrade as `number`.
   const cs: number = o[sym];
 }
 
@@ -317,12 +315,12 @@ function capDegradeFoldsCommonIndex(
     // @skjs-expect-warning This object spread distributes over more than 10000 union branches; its type is over-approximated to an open object, so some properties are typed 'unknown'
     ...pl,
   };
-  // Currently the degrade widens every read to `unknown`, so this errors.
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
-  const ck: number = o["k"];
+  // The common `[string]: number` index is folded (SKJS index reads add
+  // `undefined`, so `o["k"]` is `number | undefined`), and the common field
+  // `c` survives as `0 | 1`.
+  const ck: number | undefined = o["k"];
   // @ts-expect-error Type of value is not assignable to the variable's type annotation
   const cs: string = o["k"];
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const cc: number = o.c;
 }
 
@@ -366,8 +364,9 @@ function capDegradeOptionalCommonField(
     // @skjs-expect-warning This object spread distributes over more than 10000 union branches; its type is over-approximated to an open object, so some properties are typed 'unknown'
     ...pl,
   };
-  // Currently the degrade drops `c`, so `o.c` is `unknown` and this errors.
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // `c` is optional in both branches, so the degrade keeps it optional; the
+  // accumulated states' `[string]: number` index also contributes, giving
+  // `number | undefined`.
   const cu: number | undefined = o.c;
 }
 
