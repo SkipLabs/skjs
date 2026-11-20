@@ -285,7 +285,9 @@ const binaryOperators: Map<
   /* 12, also: x in y, x instanceof y */
   TKStrictEquality() => (ALeft(), 11, BOStrictEquality()),
   TKStrictInequality() => (ALeft(), 11, BOStrictInequality()),
-  /* 11, also x == y, x != y (banned!) */
+  /* 11, also x == y, x != y (warned: eqeqeq) */
+  TKEquality() => (ALeft(), 11, BOEquality()),
+  TKInequality() => (ALeft(), 11, BOInequality()),
   TKBitwiseAnd() => (ALeft(), 10, BOBitwiseAnd()),
   /*              TYPE: T & U (intersection types) */
   TKBitwiseXor() => (ALeft(), 9, BOBitwiseXor()),
