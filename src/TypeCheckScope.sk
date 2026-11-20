@@ -783,6 +783,16 @@ mutable class Scope{
   // (innermost) value on the way up. Used to record the state at a `break` /
   // `continue`, which exits mid-block carrying exactly this, so the catcher can
   // union it into the state after the loop or switch.
+  //
+  // LATENT UNSOUNDNESS (SkipLabs/skjs#1018, activated by #1090): the snapshot
+  // is keyed by bare name. Now that nested block shadowing is allowed, a name
+  // declared below the baseline can shadow an outer binding of the same name:
+  // the innermost ref wins the `acc` entry and the below-baseline drop then
+  // removes the whole entry, so an outer same-named binding's edge value —
+  // recorded in a scope between the baseline and the shadowing declaration —
+  // is lost from the jump edge. Re-keying by binding identity (PosRange, as
+  // Scope::bindingPos / TCEnv.localObjects already do) is the follow-up;
+  // until then, treat snapshots over shadowed names as unsound.
   readonly fun snapshotTo(baselineId: Int): mutable Map<String, LocalRef> {
     acc = mutable Map<String, LocalRef>[];
     // Names declared below the baseline (a clause's own `const`/`let`): their
@@ -823,6 +833,12 @@ mutable class Scope{
   // the value the jump edge carried. Used by a loop to fold its break and
   // continue edges into the state its exit merge reads — one more way the code
   // after the loop can be reached, alongside the body completing normally.
+  //
+  // LATENT UNSOUNDNESS (SkipLabs/skjs#1018, activated by #1090): the snapshot
+  // is merged by bare name, so with nested block shadowing allowed a shadowed
+  // binding's edge value can be attributed to (or dropped from, in
+  // `snapshotTo`) an outer binding of the same name. See the note on
+  // `snapshotTo`; re-key by binding identity as the follow-up.
   mutable fun uniteSnapshot(
     subst: mutable Subst,
     tenv: TEnv,
