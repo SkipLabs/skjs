@@ -165,6 +165,11 @@ mutable class Scope{
   // capture: the lambda may run at any later time, so the write cannot narrow
   // and must be checked against the declared type (see `isThroughFunction`).
   private isFunction: Bool = false,
+  // Set on the scope that holds a function's parameters (see
+  // `markAsParamScope`). In JS the parameter list and the body's top-level
+  // block share one lexical scope, so a body-level declaration may not reuse
+  // a parameter name; a declaration in any deeper block may.
+  private mutable isParamScope: Bool = false,
   up: ?readonly Scope = None(),
   private mutable locals: SortedMap<String, Name> = SortedMap[],
   private mutable refs: SortedMap<String, LocalRef> = SortedMap[],
@@ -174,6 +179,14 @@ mutable class Scope{
 } {
   static fun mcreateToplevel(): mutable this {
     mutable static{id => 0, isLoop => false}
+  }
+
+  // Mark this scope as a function's parameter scope; called where the
+  // parameters are bound (TypeChecker::processParams). The function body's
+  // block is a direct subscope of it, which is what makes a body-level
+  // redeclaration of a parameter an error (SkipLabs/skjs#1090).
+  mutable fun markAsParamScope(): void {
+    this.!isParamScope = true
   }
 
   mutable fun setCaptureWrites(
@@ -294,6 +307,24 @@ mutable class Scope{
     this.maybeGetRefHelper(false, false, name)
   }
 
+  // Whether binding `name` in this scope collides with an existing binding.
+  // Only two cases collide: the existing binding is in this very scope (a
+  // same-block redeclaration), or it is a parameter of the function whose
+  // body block this scope is — parameters and the body's top level share a
+  // scope in JS, so `function f(x) { let x }` is a load-time SyntaxError. A
+  // binding in any other enclosing scope is legal shadowing, as in
+  // `const x = 1; { const x = 2; }` (SkipLabs/skjs#1090).
+  readonly private fun isRedeclaration(name: Name): Bool {
+    if (this.locals.containsKey(name.value)) {
+      true
+    } else {
+      this.up match {
+      | None() -> false
+      | Some(up) -> up.isParamScope && up.locals.containsKey(name.value)
+      }
+    }
+  }
+
   mutable fun bind(
     tcenvb: mutable TCEnvBase,
     name: Name,
@@ -314,7 +345,7 @@ mutable class Scope{
       // An inner binding remains distinct from a future outer declaration.
       // Pre-reservation must not turn that valid reuse into a redeclaration.
       void
-    | Some(otherDef) ->
+    | Some(otherDef) if (this.isRedeclaration(name)) ->
       tcenvb.error(
         Array[
           (name.pos, `Cannot redeclare block-scoped variable '${name}'`),
@@ -322,6 +353,8 @@ mutable class Scope{
         ],
         TSCode(2451),
       )
+    // A binding in an enclosing block is shadowed, not redeclared.
+    | Some(_) -> void
     };
     this.!locals[name.value] = name;
     this.!refs[name.value] = LocalRef(
