@@ -32,6 +32,8 @@ fun renderBinop(op: BinaryOperator): String {
   | BOOpAssignment(o) -> renderBinop(o) + "="
   | BOStrictEquality() -> "==="
   | BOStrictInequality() -> "!=="
+  | BOEquality() -> "=="
+  | BOInequality() -> "!="
   | BOExponentiation() -> "**"
   | BOMultiplication() -> "*"
   | BODivision() -> "/"

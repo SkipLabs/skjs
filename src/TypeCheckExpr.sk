@@ -3461,6 +3461,18 @@ extension class TypeChecker {
         this.checkComparisonOverlap(tcenv, pos, op_, e1, e2, ty1, ty2);
         TType::single(TPrimValue::boolean(pos))
 
+      | BOSloppyComparison() ->
+        // `==` / `!=` (reported as an `eqeqeq` warning at parse time). Loose
+        // equality is runtime-sound for any operand types — it coerces — so
+        // both operands are checked and the result is `boolean`. No overlap
+        // diagnostic: coercion can make disjoint-looking operands equal
+        // (`0 == ""`, `null == undefined`), so "always false" claims would be
+        // unsound. And no narrowing: `==` refines nothing (unlike `===`, see
+        // TypeCheckRefine.sk), since e.g. `x == "1"` holds for `x: 1` too.
+        _ = this.nonVoidExpr(pos, tcenv, e1, true);
+        _ = this.nonVoidExpr(pos, tcenv, e2, true);
+        TType::single(TPrimValue::boolean(pos))
+
       | op_ @ LazyLogicalOperator() ->
         (opStr, continuationTarget) = op_ match {
         | BOLogicalAnd() -> ("&&", true)

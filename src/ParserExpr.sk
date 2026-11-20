@@ -472,11 +472,22 @@ extension class Parser {
     | None() -> return left
     | Some(x) -> x
     };
+    // Loose equality is a lint concern (`eqeqeq`), not a soundness error:
+    // `==`/`!=` parse and type-check normally (as `boolean`, without
+    // narrowing), but each occurrence is reported as a warning.
     if (binopTok.kind is TKEquality()) {
-      this.error(this.lex.posStart(binopTok), DontUseEquality())
+      this.warn(
+        this.lex.posRange(binopTok),
+        DontUseEquality().toString(),
+        DontUseEquality::code,
+      )
     };
     if (binopTok.kind is TKInequality()) {
-      this.error(this.lex.posStart(binopTok), DontUseInequality())
+      this.warn(
+        this.lex.posRange(binopTok),
+        DontUseInequality().toString(),
+        DontUseInequality::code,
+      )
     };
     for (tryParse in Array[
       this.tryParseAccess,
