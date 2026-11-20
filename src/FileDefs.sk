@@ -16,6 +16,13 @@ module alias S = SKStore;
 
 module SKJS;
 
+private base class LookupKind {
+  children =
+  | LookupType()
+  | LookupTypeQuery()
+  | LookupRuntime()
+}
+
 base class IDefMap {
   fun getType(mutable TCEnvBase, Name): TypeOnlyDef;
   fun getBuiltinValue(mutable TCEnvBase, String): ?FileDef;
@@ -24,6 +31,7 @@ base class IDefMap {
     mutable TCEnvBase,
     Name,
     typeOnly: Bool = false,
+    typeQuery: Bool = false,
   ): Array<FileDefElt>;
   fun getNamingErrors(
     _context: mutable S.Context,
@@ -122,17 +130,37 @@ class DefMap(
     tcenvb: mutable TCEnvBase,
     path: Name,
     typeOnly: Bool = false,
+    typeQuery: Bool = false,
   ): Array<FileDefElt> {
     tupleKind(path.value) match {
     | Some(kind) -> return Array[synthesizeTupleClass(path, kind)]
     | None() -> void
     };
     fileName = path.pos.fileName;
-    tmp = this.getPath(tcenvb, fileName, path.value, typeOnly, path.pos);
+    lookup: LookupKind = if (typeOnly) LookupType() else {
+      if (typeQuery) LookupTypeQuery() else LookupRuntime()
+    };
+    tmp = this.getPath(tcenvb, fileName, path.value, lookup, path.pos);
+    hasValue = tmp.any(def -> def.hasValue());
     result = mutable Vector[];
     for (elt in tmp) {
       elt match {
       | e @ FileDefElt _ -> result.push(e)
+      | FDTypeOnlyEdge(isExport) ->
+        if (!hasValue) {
+          wording = if (isExport) "exported using 'export type'" else {
+            "imported using 'import type'"
+          };
+          fatalError(
+            Array[
+              (
+                path.pos,
+                `'${path}' cannot be used as a value because it was ${wording}.`,
+              ),
+            ],
+            TSCode(if (isExport) 1362 else 1361),
+          )
+        }
       | FDNamespace _ ->
         tcenvb.error(
           Array[
@@ -152,7 +180,7 @@ class DefMap(
     tcenvb: mutable TCEnvBase,
     fileName: FPath,
     path: String,
-    typeOnly: Bool,
+    lookup: LookupKind,
     // Span of the whole qualified reference, for diagnostics that must point
     // at the use site rather than at a resolved definition.
     refPos: PosRange,
@@ -162,8 +190,8 @@ class DefMap(
     ];
     pathElts = path.split(".");
     for (i => pathElt in pathElts) {
-      dotTypeOnly = typeOnly && i >= pathElts.size() - 1;
-      !defs = this.dot(tcenvb, defs, pathElt, dotTypeOnly, typeOnly, refPos)
+      dotTypeOnly = lookup is LookupType() && i >= pathElts.size() - 1;
+      !defs = this.dot(tcenvb, defs, pathElt, dotTypeOnly, lookup, refPos)
     };
     defs
   }
@@ -173,10 +201,10 @@ class DefMap(
     defs: readonly Vector<FileDef>,
     name: String,
     typeOnly: Bool,
-    inTypePath: Bool,
+    lookup: LookupKind,
     refPos: PosRange,
   ): readonly Vector<FileDef> {
-    result = mutable Vector[];
+    result = mutable Vector<FileDef>[];
     for (d in defs) {
       d match {
       // A member of an enum, in type position (`E.A`): resolve it to an
@@ -203,7 +231,8 @@ class DefMap(
         )
       | FDNamespace(nsTypeOnly, _posOpt, nsDefs) ->
         getTypeOnly = typeOnly || nsTypeOnly;
-        this.getInDefs(tcenvb, nsDefs, name, getTypeOnly, result, inTypePath)
+        this.getInDefs(tcenvb, nsDefs, name, getTypeOnly, result, lookup)
+      | edge @ FDTypeOnlyEdge _ -> result.push(edge)
       }
     };
     result
@@ -215,12 +244,15 @@ class DefMap(
     name: String,
     typeOnly: Bool,
     result: mutable Vector<FileDef>,
-    inTypePath: Bool = false,
+    lookup: LookupKind,
   ): void {
     invariant(name != "", "getInDefs expects a non-empty name");
     local = mutable Vector[];
-    this.getLocalDefs(tcenvb, fileDefs, name, typeOnly, inTypePath, local);
-    if (typeOnly || inTypePath || !local.any(def -> def.hasValue())) {
+    this.getLocalDefs(tcenvb, fileDefs, name, typeOnly, lookup, local);
+    if (
+      lookup is LookupType() ||
+      !local.any(def -> def.hasValue() || def is FDTypeOnlyEdge _)
+    ) {
       for (fileName in fileDefs.includes) {
         this.getInDefs(
           tcenvb,
@@ -228,7 +260,7 @@ class DefMap(
           name,
           typeOnly,
           result,
-          inTypePath,
+          lookup,
         )
       }
     };
@@ -240,20 +272,20 @@ class DefMap(
     fileDefs: FileDefs,
     name: String,
     typeOnly: Bool,
-    inTypePath: Bool,
+    lookup: LookupKind,
     result: mutable Vector<FileDef>,
   ): void {
     fileDefs.imports.maybeGet(name) match {
     | Some(imports) ->
       this.getFromImports(
         tcenvb,
-        if (typeOnly || inTypePath) imports else {
-          imports.filter(import -> !import.typeOnly)
-        },
+        imports,
         "",
         typeOnly,
         fileDefs.modules,
         result,
+        lookup,
+        false,
       )
     | None() -> void
     };
@@ -279,12 +311,13 @@ class DefMap(
     name: String,
     typeOnly: Bool,
     result: mutable Vector<FileDef>,
+    lookup: LookupKind,
   ): void {
     fileDefs = this.getFileDefs(tcenvb, fileName);
     if (name == "") {
       result.push(FDNamespace(typeOnly, None(), fileDefs))
     } else {
-      this.getExportedInDefs(tcenvb, fileDefs, name, typeOnly, result)
+      this.getExportedInDefs(tcenvb, fileDefs, name, typeOnly, result, lookup)
     }
   }
 
@@ -294,28 +327,58 @@ class DefMap(
     name: String,
     typeOnly: Bool,
     result: mutable Vector<FileDef>,
+    lookup: LookupKind,
   ): void {
     invariant(name != "", "getExportedInDefs expects a non-empty name");
-    fileDefs.reexports.maybeGet("") match {
-    | Some(wholeModuleReexports) ->
-      this.getFromImports(
-        tcenvb,
-        wholeModuleReexports,
-        name,
-        typeOnly,
-        fileDefs.modules,
-        result,
-      )
-    | None() -> void
+    localExports = fileDefs.exported.maybeGet(name);
+    namedReexports = fileDefs.reexports.maybeGet(name);
+    // An explicit export owns the name even if the binding is type-only.
+    if (localExports.isNone() && namedReexports.isNone()) {
+      fileDefs.reexports.maybeGet("").each(wholeModuleReexports ->
+        this.getFromImports(
+          tcenvb,
+          wholeModuleReexports,
+          name,
+          typeOnly,
+          fileDefs.modules,
+          result,
+          lookup,
+          true,
+        )
+      );
     };
-    fileDefs.exported.maybeGet(name) match {
+    localExports match {
     | Some(origNames) ->
-      for (origName in origNames) {
-        this.getInDefs(tcenvb, fileDefs, origName, typeOnly, result)
+      for ((origName, exportTypeOnly) in origNames) {
+        if (lookup is LookupRuntime() && exportTypeOnly) {
+          declared = mutable Vector<FileDef>[];
+          this.getLocalDefs(
+            tcenvb,
+            fileDefs,
+            origName,
+            false,
+            LookupTypeQuery(),
+            declared,
+          );
+          if (declared.any(def -> def.hasValue())) {
+            result.push(FDTypeOnlyEdge(true))
+          } else {
+            result.extend(declared)
+          }
+        } else {
+          this.getLocalDefs(
+            tcenvb,
+            fileDefs,
+            origName,
+            typeOnly,
+            lookup,
+            result,
+          )
+        }
       }
     | None() -> void
     };
-    fileDefs.reexports.maybeGet(name) match {
+    namedReexports match {
     | Some(reexports) ->
       this.getFromImports(
         tcenvb,
@@ -324,6 +387,8 @@ class DefMap(
         typeOnly,
         fileDefs.modules,
         result,
+        lookup,
+        true,
       )
     | None() -> void
     }
@@ -336,11 +401,39 @@ class DefMap(
     typeOnly: Bool,
     modules: Map<String, Vector<FileDefs>>,
     result: mutable Vector<FileDef>,
+    lookup: LookupKind,
+    isReexport: Bool,
   ): void {
     for (import in imports) {
       name = import.origName + suffix;
-      getTypeOnly = typeOnly || import.typeOnly;
-      this.getExported(tcenvb, import.from.fileName, name, getTypeOnly, result);
+      getTypeOnly = typeOnly || (import.typeOnly && lookup is LookupType());
+      if (lookup is LookupRuntime() && import.typeOnly) {
+        // A type-only edge blocks a runtime read only if its target has a
+        // value declaration. A pure type can coexist with an ambient value.
+        exported = mutable Vector<FileDef>[];
+        this.getExported(
+          tcenvb,
+          import.from.fileName,
+          name,
+          false,
+          exported,
+          LookupTypeQuery(),
+        );
+        if (exported.any(def -> def.hasValue())) {
+          result.push(FDTypeOnlyEdge(isReexport))
+        } else {
+          result.extend(exported)
+        };
+        continue
+      };
+      this.getExported(
+        tcenvb,
+        import.from.fileName,
+        name,
+        getTypeOnly,
+        result,
+        lookup,
+      );
       modules.maybeGet(import.from.name) match {
       | Some(augmentations) ->
         for (augmentation in augmentations) {
@@ -350,6 +443,7 @@ class DefMap(
             name,
             getTypeOnly,
             result,
+            lookup,
           )
         }
       | None() -> void
@@ -365,7 +459,7 @@ class DefMap(
 class FileDefs{
   defs: Map<String, Array<FileDef>>,
   imports: Map<String, Array<Imported>>,
-  exported: Map<String, Array<String>>,
+  exported: Map<String, Array<(String, Bool)>>,
   reexports: Map<String, Array<Imported>>,
   modules: Map<String, Vector/* Array makes skc fail */ <FileDefs>>,
   includes: Array<FPath>,
@@ -377,7 +471,8 @@ base class FileDef {
     this match {
     | Class{kind => CKInterface()}
     | TypeDef _
-    | EnumMemberDef _ ->
+    | EnumMemberDef _
+    | FDTypeOnlyEdge _ ->
       false
     | FDNamespace(typeOnly, _, _) -> !typeOnly
     | Class _
@@ -396,10 +491,12 @@ base class FileDef {
     | Enum(_, n, _, _) -> Some(n.pos)
     | FDVar(_, n, _, _) -> Some(n.pos)
     | FDNamespace(_, posOpt, _) -> posOpt
+    | FDTypeOnlyEdge _ -> None()
     | EnumMemberDef(_, member) -> Some(member.pos)
     }
   }
 }
+class FDTypeOnlyEdge(isExport: Bool) extends FileDef
 base class FileDefElt extends FileDef
 extension class TopLevelFunDef extends FileDefElt
 extension class TypeDef extends FileDefElt
@@ -454,6 +551,7 @@ value class DeclSpaces private {private val: Bool, private typ: Bool} {
     | FDVar _
     | FDNamespace _ ->
       static::value
+    | FDTypeOnlyEdge _
     | TypeDef _
     | Class{kind => CKInterface()}
     | EnumMemberDef _ ->
@@ -487,7 +585,7 @@ mutable class FileDefsState private {
   imports: mutable Map<String, mutable Vector<Imported>> = mutable Map[],
   exported: mutable Map<
     /* Empty string = whole module re-export */ String,
-    mutable Vector<String>,
+    mutable Vector<(String, Bool)>,
   > = mutable Map[],
   reexports: mutable Map<String, mutable Vector<Imported>> = mutable Map[],
   modules: mutable Map<String, mutable Vector<FileDefs>> = mutable Map[],
@@ -591,7 +689,7 @@ mutable class FileDefsState private {
       | ExportDeclare(d) ->
         this.newDef(true, d)
 
-      | ExportNames(_, names) -> this.exportNames(names)
+      | ExportNames(isType, names) -> this.exportNames(names, isType.isSome())
       | ExportNamesFrom(isType, names, mname) ->
         this.resolveName(mname).each(modName -> {
           static::addImportsFrom(
@@ -657,7 +755,7 @@ mutable class FileDefsState private {
   }
 
   private mutable fun pushDef(name: Name, d: FileDef, isExport: Bool): void {
-    if (isExport) mapPush(this.exported, name.value, name.value);
+    if (isExport) mapPush(this.exported, name.value, (name.value, false));
     this.defs.maybeGet(name.value) match {
     | None() -> this.defs![name.value] = mutable Vector[d]
     | Some(existingDefs) ->
@@ -744,7 +842,7 @@ mutable class FileDefsState private {
     }
   }
 
-  private mutable fun exportNames(names: MCurly): void {
+  private mutable fun exportNames(names: MCurly, typeOnly: Bool = false): void {
     names match {
     | MCurly(moduleDefNames) ->
       for (moduleDefName in moduleDefNames) {
@@ -752,7 +850,11 @@ mutable class FileDefsState private {
         | None() -> moduleDefName.name.value
         | Some(asName) -> asName.value
         };
-        mapPush(this.exported, exportName, moduleDefName.name.value)
+        mapPush(
+          this.exported,
+          exportName,
+          (moduleDefName.name.value, typeOnly || moduleDefName.isType.isSome()),
+        )
       }
     }
   }
