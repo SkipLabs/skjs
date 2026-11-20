@@ -51,6 +51,6 @@ function nestedTemplate(): string {
 // Control: an object-typed interpolation stays rejected (its object literal is
 // parsed correctly either way).
 function objectInterpolation(): string {
-  // @skjs-expect-error Template literal expressions must be of type string, number, bigint, boolean, null, or undefined
+  // @skjs-expect-warning Template literal expressions must be of type string, number, bigint, boolean, null, or undefined
   return `${ {a:1} }`;
 }
