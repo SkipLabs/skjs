@@ -579,14 +579,23 @@ extension class TypeChecker {
     | Call(
       Expr(
         _,
-        Dot(NormalDot(), Expr(_, Var(Name(_, "Array"))), Name(_, "isArray")),
+        Dot(
+          NormalDot(),
+          Expr(_, Var(arrayName @ Name(_, "Array"))),
+          Name(_, "isArray"),
+        ),
       ),
       targs,
       args,
     ) if (targs.isEmpty() && args.size() == 1) ->
-      args[0] match {
-      | Expr(_, Var(local)) -> this.evalIsArray(tcenv, local, target)
-      | _ -> void
+      if (
+        tcenv.scope.maybeGet(arrayName) is None() &&
+        this.defMap.isBuiltinValue(tcenv, arrayName)
+      ) {
+        args[0] match {
+        | Expr(_, Var(local)) -> this.evalIsArray(tcenv, local, target)
+        | _ -> void
+        }
       }
 
     | InstanceOf(
@@ -599,7 +608,10 @@ extension class TypeChecker {
       // custom `static [Symbol.hasInstance]` narrows nothing either: it
       // overrides the runtime membership test (issue #776).
       if (
-        this.hasClassDef(tcenv, className) &&
+        tcenv.scope.maybeGet(className) is None() &&
+        this.defMap.getAll(tcenv, className).any(def ->
+          def is Class{kind => CKClass()}
+        ) &&
         !this.rhsDeclaresHasInstance(tcenv, rhs)
       ) {
         this.evalInstanceof(tcenv, local, className)

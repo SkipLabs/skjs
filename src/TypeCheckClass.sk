@@ -65,6 +65,26 @@ extension class TypeChecker {
                 )
               }
             };
+            if (
+              !isInterface &&
+              parentClass.kind is CKClass() &&
+              !this.defMap.getAll(tcenvl, parentName).any(def ->
+                def match {
+                | Class{name} -> name.pos == parentClass.name.pos
+                | _ -> false
+                }
+              )
+            ) {
+              tcenvl.error(
+                Array[
+                  (
+                    parentName.pos,
+                    "The superclass name resolves to a different value",
+                  ),
+                ],
+                TSCode(2507),
+              )
+            };
             // parentClass is already resolved above; pass it on rather than
             // resolving the same name twice more.
             superCstr = this.newConstructorOf(

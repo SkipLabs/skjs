@@ -18,6 +18,8 @@ module SKJS;
 
 base class IDefMap {
   fun getType(mutable TCEnvBase, Name): TypeOnlyDef;
+  fun getBuiltinValue(mutable TCEnvBase, String): ?FileDef;
+  fun isBuiltinValue(mutable TCEnvBase, Name): Bool;
   fun getAll(
     mutable TCEnvBase,
     Name,
@@ -29,7 +31,10 @@ base class IDefMap {
   ): Array<NamingError>;
 }
 
-class DefMap(fileDefsDir: S.LHandle<FPath, FileDefs>) extends IDefMap {
+class DefMap(
+  fileDefsDir: S.LHandle<FPath, FileDefs>,
+  builtinsFileName: FPath,
+) extends IDefMap {
   static fun create(
     context: mutable S.Context,
     fs: Fs,
@@ -74,7 +79,22 @@ class DefMap(fileDefsDir: S.LHandle<FPath, FileDefs>) extends IDefMap {
           }
         },
       ),
+      builtinsFileName,
     )
+  }
+
+  fun getBuiltinValue(tcenvb: mutable TCEnvBase, name: String): ?FileDef {
+    this.getFileDefs(tcenvb, this.builtinsFileName)
+      .defs.maybeGet(name)
+      .flatMap(defs -> defs.find(def -> def.hasValue()))
+  }
+
+  fun isBuiltinValue(tcenvb: mutable TCEnvBase, name: Name): Bool {
+    this.getAll(tcenvb, name)
+      .find(def -> def.hasValue())
+      .flatMap(def -> def.getPos())
+      .map(pos -> pos.fileName == this.builtinsFileName)
+      .default(false)
   }
 
   fun getNamingErrors(
@@ -143,7 +163,7 @@ class DefMap(fileDefsDir: S.LHandle<FPath, FileDefs>) extends IDefMap {
     pathElts = path.split(".");
     for (i => pathElt in pathElts) {
       dotTypeOnly = typeOnly && i >= pathElts.size() - 1;
-      !defs = this.dot(tcenvb, defs, pathElt, dotTypeOnly, refPos)
+      !defs = this.dot(tcenvb, defs, pathElt, dotTypeOnly, typeOnly, refPos)
     };
     defs
   }
@@ -153,6 +173,7 @@ class DefMap(fileDefsDir: S.LHandle<FPath, FileDefs>) extends IDefMap {
     defs: readonly Vector<FileDef>,
     name: String,
     typeOnly: Bool,
+    inTypePath: Bool,
     refPos: PosRange,
   ): readonly Vector<FileDef> {
     result = mutable Vector[];
@@ -182,7 +203,7 @@ class DefMap(fileDefsDir: S.LHandle<FPath, FileDefs>) extends IDefMap {
         )
       | FDNamespace(nsTypeOnly, _posOpt, nsDefs) ->
         getTypeOnly = typeOnly || nsTypeOnly;
-        this.getInDefs(tcenvb, nsDefs, name, getTypeOnly, result)
+        this.getInDefs(tcenvb, nsDefs, name, getTypeOnly, result, inTypePath)
       }
     };
     result
@@ -194,22 +215,41 @@ class DefMap(fileDefsDir: S.LHandle<FPath, FileDefs>) extends IDefMap {
     name: String,
     typeOnly: Bool,
     result: mutable Vector<FileDef>,
+    inTypePath: Bool = false,
   ): void {
     invariant(name != "", "getInDefs expects a non-empty name");
-    for (fileName in fileDefs.includes) {
-      this.getInDefs(
-        tcenvb,
-        this.getFileDefs(tcenvb, fileName),
-        name,
-        typeOnly,
-        result,
-      )
+    local = mutable Vector[];
+    this.getLocalDefs(tcenvb, fileDefs, name, typeOnly, inTypePath, local);
+    if (typeOnly || inTypePath || !local.any(def -> def.hasValue())) {
+      for (fileName in fileDefs.includes) {
+        this.getInDefs(
+          tcenvb,
+          this.getFileDefs(tcenvb, fileName),
+          name,
+          typeOnly,
+          result,
+          inTypePath,
+        )
+      }
     };
+    result.extend(local)
+  }
+
+  private fun getLocalDefs(
+    tcenvb: mutable TCEnvBase,
+    fileDefs: FileDefs,
+    name: String,
+    typeOnly: Bool,
+    inTypePath: Bool,
+    result: mutable Vector<FileDef>,
+  ): void {
     fileDefs.imports.maybeGet(name) match {
     | Some(imports) ->
       this.getFromImports(
         tcenvb,
-        imports,
+        if (typeOnly || inTypePath) imports else {
+          imports.filter(import -> !import.typeOnly)
+        },
         "",
         typeOnly,
         fileDefs.modules,
@@ -333,6 +373,21 @@ class FileDefs{
 } extends S.File
 
 base class FileDef {
+  fun hasValue(): Bool {
+    this match {
+    | Class{kind => CKInterface()}
+    | TypeDef _
+    | EnumMemberDef _ ->
+      false
+    | FDNamespace(typeOnly, _, _) -> !typeOnly
+    | Class _
+    | TopLevelFunDef _
+    | Enum _
+    | FDVar _ ->
+      true
+    }
+  }
+
   fun getPos(): ?PosRange {
     this match {
     | TopLevelFunDef{name => FNNormal(n)} -> Some(n.pos)

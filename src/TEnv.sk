@@ -601,7 +601,7 @@ base class TEnv{
   // drive narrowing without `getClass` raising a fatal error on a value-only
   // name.
   fun hasClassDef(tcenvb: mutable TCEnvBase, name: Name): Bool {
-    this.defMap.getAll(tcenvb, name).any(def -> def is Class _)
+    this.defMap.getAll(tcenvb, name, true).any(def -> def is Class _)
   }
 
   // The type alias `name` denotes, or None() when it denotes something else (a
@@ -1443,7 +1443,7 @@ base class TEnv{
       );
     };
     !visitedClasses = visitedClasses.set(className.value);
-    defs = this.defMap.getAll(tcenvb, className);
+    defs = this.defMap.getAll(tcenvb, className, true);
     defsCls = defs.filterMap(def ->
       def match {
       | cls @ Class _ -> Some(cls)
@@ -2993,16 +2993,32 @@ base class TEnv{
     }
   }
 
+  // Runtime protocols use the intrinsic Symbol even in a scope that shadows it.
+  fun builtinSymbolType(tcenvb: mutable TCEnvBase, pos: PosRange): TType {
+    this.defMap.getBuiltinValue(tcenvb, "Symbol") match {
+    | Some(FDVar(_, name, Some(ty), _)) ->
+      this.normalize(tcenvb, ty, true, Some(name.value))
+    | _ -> TType::bottom(pos)
+    }
+  }
+
   // Resolve a well-known Symbol's unique ID (e.g. `Symbol.iterator`,
-  // `Symbol.hasInstance`) via a synthetic `Symbol.<prop>` expression.
+  // `Symbol.hasInstance`) from the intrinsic declaration.
   fun getWellKnownSymbolUniqueId(
     subst: mutable Subst,
     pos: PosRange,
     prop: String,
   ): ?String {
-    symbolExpr = Expr(pos, Var(Name(pos, "Symbol")));
-    symExpr = Expr(pos, Dot(NormalDot(), symbolExpr, Name(pos, prop)));
-    symType = this.typeOfExpr(subst, symExpr);
+    symbolType = this.builtinSymbolType(subst, pos);
+    propertyName = Name(pos, prop);
+    symType = this.materializeReadContext<TType>(
+      subst,
+      pos,
+      context -> context.typeOfProperty(symbolType, propertyName, pos),
+      (scratch, readEnv) ->
+        readEnv.readTypeofProperty(scratch, symbolType, propertyName, pos)
+      ,
+    );
     symType.getSTypes(subst, this, Covariant()).flatMap(stypes ~>
       stypes.singleElt()
     ) match {
