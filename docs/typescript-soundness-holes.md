@@ -351,7 +351,7 @@ function asNumber(x: string | number): number {
 }
 ```
 
-**Test:** no pin — verified directly against tsc 6.0.3 · **SKJS:** rejects at parse time — `error: Unexpected '=='; use '===' instead (SKJS forbids loose equality)`. This is a parser-level lint rule, not a soundness-argued rejection: SKJS never reaches the narrowing question ([skjs-rules.md](../skjs-rules.md), parser-level lint rules)
+**Test:** [tests/expect-error/loose-equality.ts](../tests/expect-error/loose-equality.ts) — verified directly against tsc 6.0.3 · **SKJS:** reports `==` as a non-fatal `eqeqeq` *warning* (`warning: Unexpected '=='; use '===' instead …`) but deliberately narrows nothing in either branch: the comparison types as `boolean` and the operands keep their types, which is the sound reading of `==` (tsc's narrowing is the unsound part above). See [skjs-rules.md](../skjs-rules.md), diagnostics errors vs warnings.
 
 ## Object literals, spread & excess properties
 

@@ -847,6 +847,15 @@ base class BOStrictComparison() extends BinaryOperator {
   | BOStrictInequality()
 }
 
+// Loose equality (`==` / `!=`). Parsed and type-checked (as `boolean`, with
+// no narrowing — the coercion rules of `==` make strict-equality refinement
+// unsound here), but reported as a warning (`eqeqeq`), never an error.
+base class BOSloppyComparison() extends BinaryOperator {
+  children =
+  | BOEquality()
+  | BOInequality()
+}
+
 /***************************************************************************/
 /* Body references and body data for incremental checking. */
 /***************************************************************************/

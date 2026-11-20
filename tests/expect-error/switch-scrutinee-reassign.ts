@@ -14,7 +14,7 @@ function reassignedScrutineeCarriesAcross(
 ): "a" | "b" {
   switch (y) {
     case "a":
-      // @skjs-expect-error Fallthrough case in switch; add a 'break'
+      // @skjs-expect-warning Fallthrough case in switch; add a 'break'
       y = c;
     case "b":
       // @skjs-expect-error Type of returned value is not assignable to the function's return type
@@ -31,7 +31,7 @@ function reassignedScrutineeCarriesAcross(
 function reassignedIntoLabelIsExact(y: "a" | "b", b: "b"): void {
   switch (y) {
     case "a":
-      // @skjs-expect-error Fallthrough case in switch; add a 'break'
+      // @skjs-expect-warning Fallthrough case in switch; add a 'break'
       y = b;
     case "b":
       const z: "b" = y;
@@ -45,7 +45,7 @@ function reassignedIntoLabelIsExact(y: "a" | "b", b: "b"): void {
 function unionOfLabelAndCarried(y: "a" | "b" | "c", c: "c"): void {
   switch (y) {
     case "a":
-      // @skjs-expect-error Fallthrough case in switch; add a 'break'
+      // @skjs-expect-warning Fallthrough case in switch; add a 'break'
       y = c;
     case "b":
       const z: "b" | "c" = y;
