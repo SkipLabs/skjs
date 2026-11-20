@@ -13,3 +13,18 @@ class NumberArray extends Array<number> {}
 function testInheritedConstructorNumber(): NumberArray {
   return new NumberArray();
 }
+
+class ValueBox<T> {
+  value: T;
+
+  // @skjs-expect-error Cannot find type 'T'
+  constructor(value: T) {
+    this.value = value;
+  }
+}
+
+class NumberValueBox extends ValueBox<number> {}
+
+function isNumberValueBox(value: unknown): boolean {
+  return value instanceof NumberValueBox;
+}
