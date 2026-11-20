@@ -423,13 +423,13 @@ class ExpectedParams() extends ParsingKind {
 
 class DontUseEquality() extends ParsingKind {
   fun toString(): String {
-    "Unexpected '=='; use '===' instead (SKJS forbids loose equality)"
+    "Unexpected '=='; use '===' instead (loose equality coerces its operands)"
   }
   const code: ErrorCode = ESLintCode("eqeqeq");
 }
 class DontUseInequality() extends ParsingKind {
   fun toString(): String {
-    "Unexpected '!='; use '!==' instead (SKJS forbids loose inequality)"
+    "Unexpected '!='; use '!==' instead (loose inequality coerces its operands)"
   }
   const code: ErrorCode = ESLintCode("eqeqeq");
 }

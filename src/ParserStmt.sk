@@ -131,7 +131,14 @@ extension class Parser {
         | None() -> this.error(this.lex.posEnd(), UnterminatedStmt())
         | Some(firstBlockStmt) ->
           if (firstBlockStmt.kind is TKSemi()) {
-            this.error(this.lex.posStart(firstBlockStmt), EmptyIfStmt())
+            // An empty `if` body is a lint concern (ESLint `no-empty`), not a
+            // soundness error: `if (c);` runs nothing when `c` holds, which is
+            // exactly what the parsed empty statement does. Warn and parse on.
+            this.warn(
+              this.lex.posRange(firstBlockStmt),
+              EmptyIfStmt().toString(),
+              EmptyIfStmt::code,
+            )
           }
         };
         ifBlock = this.blockOrStmt();
