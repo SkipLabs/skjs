@@ -1312,7 +1312,6 @@ base class TEnv{
       className,
       c.tparams,
       constructorArgs,
-      Some(this),
     );
     pos = className.pos;
     new = constructor match {
@@ -1878,7 +1877,6 @@ base class TEnv{
     className: Name,
     tparams: Array<TypeParam>,
     targs: Array<TType>,
-    signatureEnv: ?TEnv = None(),
   ): ?TFuns {
     this.findConstructorMethod(
       tcenvb,
@@ -1888,12 +1886,16 @@ base class TEnv{
       targs,
     ) match {
     | None() -> None()
-    | Some((tenv, fd)) ->
-      signatureEnv match {
-      | Some(env) ->
-        Some(env.makeConstructor(tcenvb, className, tparams, fd, Some(tenv)))
-      | None() -> Some(tenv.makeConstructor(tcenvb, className, tparams, fd))
-      }
+    | Some((tenv, fd, declaringTypeParams)) ->
+      Some(
+        this.makeConstructor(
+          tcenvb,
+          className,
+          tparams,
+          fd,
+          Some((tenv, declaringTypeParams)),
+        ),
+      )
     }
   }
 
@@ -1903,7 +1905,7 @@ base class TEnv{
     className: Name,
     tparams: Array<TypeParam>,
     targs: Array<TType>,
-  ): ?(this, ClassFieldMethod) {
+  ): ?(this, ClassFieldMethod, Array<TypeParam>) {
     (!this, cls) = this.processClassSetup(
       tcenvb,
       visitedClasses,
@@ -1917,7 +1919,7 @@ base class TEnv{
       | fd @ ClassFieldMethod _ if (
         fd.name is FNNormal(Name(_, "constructor"))
       ) ->
-        return Some((this, fd))
+        return Some((this, fd, cls.tparams))
       | _ -> void
       }
     };
@@ -1974,7 +1976,7 @@ base class TEnv{
     className: Name,
     tparams: Array<TypeParam>,
     fd: ClassFieldMethod,
-    parameterEnv: ?TEnv = None(),
+    parameterScope: ?(TEnv, Array<TypeParam>) = None(),
   ): TFuns {
     cgNode = CGNode::create(Method(fd.name, className, true));
     !tparams = tparams.map(TEnv::constructorTypeParam);
@@ -2010,7 +2012,7 @@ base class TEnv{
       false,
       false,
       None(),
-      parameterEnv,
+      parameterScope,
     )
   }
 
@@ -3220,7 +3222,7 @@ base class TEnv{
     isDeclaredSignature: Bool = false,
     isShapeMethod: Bool = false,
     implicitThisOpt: ?TType = None(),
-    parameterEnv: ?TEnv = None(),
+    parameterScope: ?(TEnv, Array<TypeParam>) = None(),
   ): TFuns {
     tafun match {
     | TAFun(isMethod, tParams, params, retType, cgNode) ->
@@ -3235,7 +3237,9 @@ base class TEnv{
       });
       // Inherited parameters use the instantiated base's bindings. The
       // construct signature still returns the derived class at its binders.
-      paramsEnv = parameterEnv.default(this);
+      (paramsEnv, declaringTypeParams) = parameterScope.default(
+        (this, tParams),
+      );
       normalParams = mutable Vector[];
       optionalParams = mutable Vector[];
       optionalWitness: ?PosRange = None();
@@ -3288,7 +3292,7 @@ base class TEnv{
             paramsEnv,
             restPos,
             paramTypeAst,
-            tParams,
+            declaringTypeParams,
           );
           if (i != params.size() - 1) {
             tcenvb.error(
