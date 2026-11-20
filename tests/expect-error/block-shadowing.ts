@@ -13,27 +13,27 @@ function shadowsModuleLevel(): void {
 function nestedConstBlock(): void {
   const x = 1;
   {
-    // @skjs-expect-error Cannot redeclare block-scoped variable 'x'
-    const x = 2;
+    const x = "s";
+    __SKJS_show_expanded(x, '"s"');
   }
+  __SKJS_show_expanded(x, "1");
 }
 
 function nestedLetBlock(): void {
   let x = 1;
   {
-    // @skjs-expect-error Cannot redeclare block-scoped variable 'x'
     let x = "s";
+    __SKJS_show_expanded(x, "string");
   }
+  __SKJS_show_expanded(x, "number");
 }
 
 function siblingBlocks(): void {
   const x = 1;
   {
-    // @skjs-expect-error Cannot redeclare block-scoped variable 'x'
     const x = 2;
   }
   {
-    // @skjs-expect-error Cannot redeclare block-scoped variable 'x'
     const x = 3;
   }
 }
@@ -41,19 +41,19 @@ function siblingBlocks(): void {
 function multiLevelNesting(): void {
   const x = 1;
   {
-    // @skjs-expect-error Cannot redeclare block-scoped variable 'x'
     const x = "a";
     {
-      // @skjs-expect-error Cannot redeclare block-scoped variable 'x'
       const x = true;
+      __SKJS_show_expanded(x, "true");
     }
+    __SKJS_show_expanded(x, '"a"');
   }
+  __SKJS_show_expanded(x, "1");
 }
 
 function ifBlockShadows(): void {
   const x = 1;
   if (x === 1) {
-    // @skjs-expect-error Cannot redeclare block-scoped variable 'x'
     const x = 2;
   }
 }
@@ -61,10 +61,8 @@ function ifBlockShadows(): void {
 function elseBlockShadows(): void {
   const x = 1;
   if (x !== 1) {
-    // @skjs-expect-error Cannot redeclare block-scoped variable 'x'
     const x = 2;
   } else {
-    // @skjs-expect-error Cannot redeclare block-scoped variable 'x'
     const x = 3;
   }
 }
@@ -72,21 +70,18 @@ function elseBlockShadows(): void {
 function whileBlockShadows(): void {
   let x = 1;
   while (x < 2) {
-    // @skjs-expect-error Cannot redeclare block-scoped variable 'x'
     const x = 3;
   }
 }
 
 function forBodyShadows(): void {
   for (let i = 0; i < 1; i++) {
-    // @skjs-expect-error Cannot redeclare block-scoped variable 'i'
     const i = 2;
   }
 }
 
 function forOfBodyShadows(): void {
   for (const k of ["a"]) {
-    // @skjs-expect-error Cannot redeclare block-scoped variable 'k'
     const k = "b";
   }
 }
@@ -94,13 +89,10 @@ function forOfBodyShadows(): void {
 function tryBlockShadows(): void {
   const x = 1;
   try {
-    // @skjs-expect-error Cannot redeclare block-scoped variable 'x'
     const x = 2;
   } catch (e) {
-    // @skjs-expect-error Cannot redeclare block-scoped variable 'x'
     const x = 3;
   } finally {
-    // @skjs-expect-error Cannot redeclare block-scoped variable 'x'
     const x = 4;
   }
 }
@@ -110,7 +102,6 @@ function catchBlockShadows(): void {
   try {
     const y = 1;
   } catch (e) {
-    // @skjs-expect-error Cannot redeclare block-scoped variable 'x'
     const x = 3;
   }
 }
@@ -119,12 +110,10 @@ function switchCaseBlockShadows(v: number): void {
   const x = 1;
   switch (v) {
     case 1: {
-      // @skjs-expect-error Cannot redeclare block-scoped variable 'x'
       const x = 2;
       break;
     }
     default: {
-      // @skjs-expect-error Cannot redeclare block-scoped variable 'x'
       const x = 3;
       break;
     }
@@ -133,9 +122,10 @@ function switchCaseBlockShadows(v: number): void {
 
 function paramVsNestedBlock(x: number): void {
   {
-    // @skjs-expect-error Cannot redeclare block-scoped variable 'x'
-    const x = 1;
+    const x = "s";
+    __SKJS_show_expanded(x, '"s"');
   }
+  __SKJS_show_expanded(x, "number");
 }
 
 function catchParamVsNestedBlock(): void {
@@ -143,7 +133,6 @@ function catchParamVsNestedBlock(): void {
     const y = 1;
   } catch (e) {
     {
-      // @skjs-expect-error Cannot redeclare block-scoped variable 'e'
       const e = 1;
     }
   }
@@ -152,7 +141,6 @@ function catchParamVsNestedBlock(): void {
 function lambdaShadowsOuterLocal(): void {
   const x = 1;
   const f = (): number => {
-    // @skjs-expect-error Cannot redeclare block-scoped variable 'x'
     const x = 2;
     return x;
   };
@@ -161,9 +149,18 @@ function lambdaShadowsOuterLocal(): void {
 function destructuringShadows(): void {
   const p = 1;
   {
-    // @skjs-expect-error Cannot redeclare block-scoped variable 'p'
     const { p } = { p: 2 };
+    __SKJS_show_expanded(p, "2");
   }
+  __SKJS_show_expanded(p, "1");
+}
+
+function innerBlockWritesOuterBinding(): void {
+  let x: number | string = 1;
+  {
+    x = "s";
+  }
+  __SKJS_show_expanded(x, "number | string");
 }
 
 function blockLocalNotVisibleAfter(): void {

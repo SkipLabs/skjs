@@ -118,6 +118,11 @@ extension class TypeChecker {
     allowThis: Bool,
     expectedParamTypes: Array<?TType> = Array[],
   ): Array<TType> {
+    // The parameters live in this scope, and in JS the function body's
+    // top-level block shares that scope: a body-level declaration reusing a
+    // parameter name is a redeclaration (SkipLabs/skjs#1090), while a
+    // declaration in a deeper block legally shadows it.
+    tcenv.scope.markAsParamScope();
     paramTypes = params.mapWithIndex((i, param) -> {
       param.name.value match {
       | PVar(n) if (allowThis && i == 0 && n.value == "this") ->
