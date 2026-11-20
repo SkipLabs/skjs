@@ -3194,27 +3194,6 @@ base class TEnv{
   // synthesis, callable/newable object types, and TAFun appearing as a
   // nested type annotation (e.g. a type alias or callback parameter type),
   // where `x is T` is never legal.
-  private fun bindSignatureTypeParam(
-    tcenvb: mutable TCEnvBase,
-    tparam: TypeParam,
-  ): (this, TParamWithConstraint) {
-    funTParam = this.makeTParam(tcenvb, tparam);
-    !this.bindings[tparam.name.value] = this.materializeReadContext<TType>(
-      tcenvb,
-      tparam.name.pos,
-      context -> context.constrainedParameter(tparam.name.pos, funTParam),
-      (scratch, readEnv) ->
-        TType::fromTParamWithConstraint(
-          scratch,
-          readEnv,
-          tparam.name.pos,
-          funTParam,
-        )
-      ,
-    );
-    (this, funTParam)
-  }
-
   fun normalizeFun(
     tcenvb: mutable TCEnvBase,
     pos: PosRange,
@@ -3377,6 +3356,30 @@ base class TEnv{
         TFuns::singleFun(tfun, pos)
       }
     }
+  }
+
+  // Bind a signature's own type parameter, overwriting any same-named
+  // outer class/type-def instantiation binding. This gives the signature
+  // its own scope for `tparam.name.value` within its parameters. (#606)
+  private fun bindSignatureTypeParam(
+    tcenvb: mutable TCEnvBase,
+    tparam: TypeParam,
+  ): (this, TParamWithConstraint) {
+    funTParam = this.makeTParam(tcenvb, tparam);
+    !this.bindings[tparam.name.value] = this.materializeReadContext<TType>(
+      tcenvb,
+      tparam.name.pos,
+      context -> context.constrainedParameter(tparam.name.pos, funTParam),
+      (scratch, readEnv) ->
+        TType::fromTParamWithConstraint(
+          scratch,
+          readEnv,
+          tparam.name.pos,
+          funTParam,
+        )
+      ,
+    );
+    (this, funTParam)
   }
 
   // Resolve a computed key expression to a FieldKey.
