@@ -1199,7 +1199,7 @@ base class TEnv{
     indexes = mutable Vector[];
     thisType = TType::inst(className, TArgs(targs));
     !this.bindings["this"] = thisType;
-    constructor = this.addFields(
+    this.addFields(
       tcenvb,
       fields,
       symbolFields,
@@ -1212,11 +1212,6 @@ base class TEnv{
         filter(fieldType) && !fieldType.isStatic()
       },
     );
-    constructor match {
-    | Some(constructorTy) ->
-      tcenvb.notSupported(constructorTy.pos, "new returning a constructor")
-    | None() -> void
-    };
     // An instance of a nominal class (one with a class identity) is a real
     // instance: never an array, callable or constructible. Every other
     // instance type is structural -- interfaces, and ambient classes from
@@ -1290,7 +1285,7 @@ base class TEnv{
     fields = mutable Map[];
     symbolFields = mutable Map[];
     indexes = mutable Vector[];
-    constructor = this.addFields(
+    this.addFields(
       tcenvb,
       fields,
       symbolFields,
@@ -1300,6 +1295,24 @@ base class TEnv{
       className,
       targs,
       fieldType ~> fieldType.isStatic(),
+    );
+    // Collect static members without instance arguments. The construct
+    // signature introduces its own class binders before walking the bases.
+    parameterEnv = this;
+    constructorArgs = c.tparams.map(tparam -> {
+      (!parameterEnv, _) = parameterEnv.bindSignatureTypeParam(
+        tcenvb,
+        TEnv::constructorTypeParam(tparam),
+      );
+      parameterEnv.bindings[tparam.name.value]
+    });
+    constructor = this.findConstructor(
+      tcenvb,
+      visitedClasses,
+      className,
+      c.tparams,
+      constructorArgs,
+      Some(this),
     );
     pos = className.pos;
     new = constructor match {
@@ -1518,7 +1531,6 @@ base class TEnv{
     (this, cls)
   }
 
-  // Returns the type of the constructor, if any.
   private fun addFields(
     tcenvb: mutable TCEnvBase,
     acc: mutable Map<FieldNameString, TField>,
@@ -1529,7 +1541,7 @@ base class TEnv{
     className: Name,
     targs: Array<TType>,
     filter: ClassFieldValue ~> Bool,
-  ): ?TFuns {
+  ): void {
     (!this, cls) = this.processClassSetup(
       tcenvb,
       visitedClasses,
@@ -1546,7 +1558,7 @@ base class TEnv{
           cls.kind is CKInterface(),
         );
         if (this.hasClassDef(tcenvb, parentName)) {
-          _ = this.addFields(
+          this.addFields(
             tcenvb,
             acc,
             symbolFields,
@@ -1586,7 +1598,6 @@ base class TEnv{
         )
       }
     };
-    constructor: ?TFuns = None();
     fields = this.getClassFields(tcenvb.context, cls);
     for (fieldType in fields) {
       fieldType match {
@@ -1704,22 +1715,7 @@ base class TEnv{
             SKJSCode(2024),
           )
         }
-      | fd @ ClassFieldMethod{name => FNNormal(Name(fdPos, "constructor"))} ->
-        if (isStatic is None()) continue;
-        constructor match {
-        | Some(constructorTy) ->
-          tcenvb.error(
-            Array[
-              (fdPos, "Multiple constructor implementations are not allowed."),
-              (constructorTy.pos, "Previous constructor was here"),
-            ],
-            TSCode(2392),
-          )
-        | None() -> void
-        };
-        !constructor = Some(
-          this.makeConstructor(tcenvb, className, isStatic.fromSome(), fd),
-        )
+      | ClassFieldMethod{name => FNNormal(Name(_, "constructor"))} -> void
       | fd @ ClassFieldMethod _ ->
         metIsStatic = fd.isStatic();
         if (metIsStatic != isStatic.isSome()) continue;
@@ -1778,8 +1774,7 @@ base class TEnv{
           acc![field.name] = field
         }
       }
-    };
-    constructor
+    }
   }
 
   // Merge the structural members of a type-alias base referenced by an
@@ -1883,6 +1878,7 @@ base class TEnv{
     className: Name,
     tparams: Array<TypeParam>,
     targs: Array<TType>,
+    signatureEnv: ?TEnv = None(),
   ): ?TFuns {
     this.findConstructorMethod(
       tcenvb,
@@ -1893,7 +1889,11 @@ base class TEnv{
     ) match {
     | None() -> None()
     | Some((tenv, fd)) ->
-      Some(tenv.makeConstructor(tcenvb, className, tparams, fd))
+      signatureEnv match {
+      | Some(env) ->
+        Some(env.makeConstructor(tcenvb, className, tparams, fd, Some(tenv)))
+      | None() -> Some(tenv.makeConstructor(tcenvb, className, tparams, fd))
+      }
     }
   }
 
@@ -1964,19 +1964,20 @@ base class TEnv{
   // constructor<T>(...): A<T> This ensures constructors reflect their
   // class's type parameters and return type.
 
+  private static fun constructorTypeParam(tparam: TypeParam): TypeParam {
+    // A construct signature binds its own parameters.
+    tparam with {id => tparam.id.prefixWith("$")}
+  }
+
   fun makeConstructor(
     tcenvb: mutable TCEnvBase,
     className: Name,
     tparams: Array<TypeParam>,
     fd: ClassFieldMethod,
+    parameterEnv: ?TEnv = None(),
   ): TFuns {
     cgNode = CGNode::create(Method(fd.name, className, true));
-    !tparams = tparams.map(x -> {
-      // We give the tparams a different name to make sure they are
-      // not confused with the type parameters of the class
-      !x.id = x.id.prefixWith("$");
-      x
-    });
+    !tparams = tparams.map(TEnv::constructorTypeParam);
     sig = this.getFunSig(tcenvb.context, fd);
     sig.retType.i1 match {
     | None() -> // constructor
@@ -2002,7 +2003,15 @@ base class TEnv{
       sig.params
     };
     tafun = TAFun(false, tparams, params, retType, cgNode);
-    this.normalizeFun(tcenvb, fd.name.getPos(), tafun)
+    this.normalizeFun(
+      tcenvb,
+      fd.name.getPos(),
+      tafun,
+      false,
+      false,
+      None(),
+      parameterEnv,
+    )
   }
 
   fun funDecl(
@@ -3183,6 +3192,27 @@ base class TEnv{
   // synthesis, callable/newable object types, and TAFun appearing as a
   // nested type annotation (e.g. a type alias or callback parameter type),
   // where `x is T` is never legal.
+  private fun bindSignatureTypeParam(
+    tcenvb: mutable TCEnvBase,
+    tparam: TypeParam,
+  ): (this, TParamWithConstraint) {
+    funTParam = this.makeTParam(tcenvb, tparam);
+    !this.bindings[tparam.name.value] = this.materializeReadContext<TType>(
+      tcenvb,
+      tparam.name.pos,
+      context -> context.constrainedParameter(tparam.name.pos, funTParam),
+      (scratch, readEnv) ->
+        TType::fromTParamWithConstraint(
+          scratch,
+          readEnv,
+          tparam.name.pos,
+          funTParam,
+        )
+      ,
+    );
+    (this, funTParam)
+  }
+
   fun normalizeFun(
     tcenvb: mutable TCEnvBase,
     pos: PosRange,
@@ -3190,6 +3220,7 @@ base class TEnv{
     isDeclaredSignature: Bool = false,
     isShapeMethod: Bool = false,
     implicitThisOpt: ?TType = None(),
+    parameterEnv: ?TEnv = None(),
   ): TFuns {
     tafun match {
     | TAFun(isMethod, tParams, params, retType, cgNode) ->
@@ -3199,30 +3230,12 @@ base class TEnv{
         OptionalTypeParamsForbidden(),
       );
       funTParams = tParams.map(tparam -> {
-        // invariant(
-        //   tparam.default is None(),
-        //   "no-default type parameter (already checked in checkTypeParams)",
-        // );
-        funTParam = this.makeTParam(tcenvb, tparam);
-        // Bind the method-local tparam, overwriting any same-named
-        // outer class/type-def instantiation binding. This gives the
-        // method its own scope for `tparam.name.value` within its
-        // signature. (#606)
-        !this.bindings[tparam.name.value] = this.materializeReadContext<TType>(
-          tcenvb,
-          tparam.name.pos,
-          context -> context.constrainedParameter(tparam.name.pos, funTParam),
-          (scratch, readEnv) ->
-            TType::fromTParamWithConstraint(
-              scratch,
-              readEnv,
-              tparam.name.pos,
-              funTParam,
-            )
-          ,
-        );
+        (!this, funTParam) = this.bindSignatureTypeParam(tcenvb, tparam);
         funTParam
       });
+      // Inherited parameters use the instantiated base's bindings. The
+      // construct signature still returns the derived class at its binders.
+      paramsEnv = parameterEnv.default(this);
       normalParams = mutable Vector[];
       optionalParams = mutable Vector[];
       optionalWitness: ?PosRange = None();
@@ -3230,7 +3243,7 @@ base class TEnv{
       thisParam: ?TType = None();
       for (i => param in params) {
         paramTypeAst = param.requiredType();
-        paramType = this.normalize(tcenvb, paramTypeAst);
+        paramType = paramsEnv.normalize(tcenvb, paramTypeAst);
         param.name.value match {
         | PVar(Name(thisPos, "this")) ->
           if (i > 0) {
@@ -3272,7 +3285,7 @@ base class TEnv{
           !spreadParam = Some(TType::arrayToReadonlyArray(paramType));
           VariadicTyping::checkRestParamReadonly(
             tcenvb,
-            this,
+            paramsEnv,
             restPos,
             paramTypeAst,
             tParams,
