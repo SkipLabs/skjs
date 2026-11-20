@@ -65,7 +65,7 @@ function fallthroughClauseIsNotItsOwnExit(x: 1 | 2, a: "a", b: "b"): void {
   y = a;
   switch (x) {
     case 1:
-      // @skjs-expect-error Fallthrough case in switch; add a 'break'
+      // @skjs-expect-warning Fallthrough case in switch; add a 'break'
       y = a;
     case 2:
       y = b;
