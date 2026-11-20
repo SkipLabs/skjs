@@ -2346,7 +2346,26 @@ const kFunctionBrandFieldName: String = "__SKJS_isFunction";
 // reports "Type annotation expected" at declaration time for non-ambient
 // classes; the placeholder lets ambient declarations (where class_
 // doesn't run) round-trip. See TEnv::addFields and TEnv::instantiate.
+// The rest of the name is "<class name>.<field name>" — class names are
+// identifiers and never contain '.', so the first '.' separates the two
+// (a quoted field name may itself contain '.').
 const kMissingTypeAnnotationPrefix: String = "Missing_type_annotation_for_";
+
+// If `name` is a synthetic missing-annotation placeholder (see
+// kMissingTypeAnnotationPrefix), returns an actionable noun phrase naming
+// the field and its class, e.g.
+// `field "x" of class "C" without a type annotation`. Diagnostics render
+// the placeholder through this instead of leaking the internal name
+// (#1094); the phrase is participial so it still reads grammatically
+// inside `Type '...' is not assignable to type '...'`.
+fun missingAnnotationPlaceholderDescription(name: String): ?String {
+  if (!name.startsWith(kMissingTypeAnnotationPrefix)) return None();
+  (className, fieldName) = name
+    .stripPrefix(kMissingTypeAnnotationPrefix)
+    .splitFirst(".");
+  if (fieldName == "") return None();
+  Some(`field "${fieldName}" of class "${className}" without a type annotation`)
+}
 // Synthetic index signatures on object literals.
 //
 // Object literals like `{ x: 1, y: 2 }` get fresh type variables as string

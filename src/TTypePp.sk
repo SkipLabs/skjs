@@ -1059,6 +1059,15 @@ mutable class TypePp{
     // Arrays print in tsc's shorthand: `T[]` and `readonly T[]`, with
     // composite element types parenthesized (`(A | B)[]`).
     name = inst.name.value;
+    // A missing-annotation placeholder (ambient class field declared
+    // without a type annotation) renders as an actionable phrase rather
+    // than the internal synthetic name (#1094).
+    missingAnnotationPlaceholderDescription(name) match {
+    | Some(description) ->
+      this.out(level, margin, description);
+      return void
+    | None() -> void
+    };
     if (
       (name == "Array" || name == "ReadonlyArray") &&
       inst.targs.targs.size() == 1
@@ -1131,7 +1140,12 @@ mutable class TypePp{
     // must not appear in user-visible printed types and is kept under
     // --verbose for debugging.
     if (!this.verbose) {
-      this.out(level, margin, name);
+      // Placeholder atoms for un-annotated ambient fields render as an
+      // actionable phrase, not the internal synthetic name (#1094).
+      missingAnnotationPlaceholderDescription(name) match {
+      | Some(description) -> this.out(level, margin, description)
+      | None() -> this.out(level, margin, name)
+      };
       // Marked apart only on a second pass, once the first established that
       // this name stood for more than one parameter in this message.
       this.names.each(sink -> {
