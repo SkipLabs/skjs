@@ -14,7 +14,7 @@ function breakSubpathWriteStaysOnItsEdge(
 ): void {
   switch (y) {
     case "a":
-      // @skjs-expect-error Fallthrough case in switch; add a 'break'
+      // @skjs-expect-warning Fallthrough case in switch; add a 'break'
       if (cond) {
         y = c;
         break;

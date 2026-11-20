@@ -72,7 +72,7 @@ function defaultDoesNotNarrowToCaseLabel(x: 1 | 2): void {
 function nonEmptyClauseFallsThrough(x: 1 | 2, log: (s: string) => void): void {
   switch (x) {
     case 1:
-      // @skjs-expect-error Fallthrough case in switch; add a 'break'
+      // @skjs-expect-warning Fallthrough case in switch; add a 'break'
       log("one");
     case 2:
       // @skjs-expect-error Type of value is not assignable to the variable's type annotation
@@ -90,7 +90,7 @@ function fallthroughCarriesItsWrites(x: 1 | 2, a: "a", b: "b"): void {
   y = a;
   switch (x) {
     case 1:
-      // @skjs-expect-error Fallthrough case in switch; add a 'break'
+      // @skjs-expect-warning Fallthrough case in switch; add a 'break'
       y = b;
     case 2:
       // @skjs-expect-error Type of value is not assignable to the variable's type annotation
@@ -106,7 +106,7 @@ function fallthroughWriteIsUnioned(x: 1 | 2, a: "a", b: "b"): void {
   y = a;
   switch (x) {
     case 1:
-      // @skjs-expect-error Fallthrough case in switch; add a 'break'
+      // @skjs-expect-warning Fallthrough case in switch; add a 'break'
       y = b;
     case 2:
       const y3: "a" | "b" = y;
@@ -144,7 +144,7 @@ function laterClauseDoesNotSeeTheWrite(
   y = a;
   switch (x) {
     case 1:
-      // @skjs-expect-error Fallthrough case in switch; add a 'break'
+      // @skjs-expect-warning Fallthrough case in switch; add a 'break'
       y = b;
     case 2:
       log("two");
@@ -165,7 +165,7 @@ function defaultWithStatementsFallsThrough(
   switch (x) {
     // @skjs-expect-warning The 'default' clause should be the last branch of a switch
     default:
-      // @skjs-expect-error Fallthrough case in switch; add a 'break'
+      // @skjs-expect-warning Fallthrough case in switch; add a 'break'
       log("default");
     case 1:
       log("one");

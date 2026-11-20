@@ -84,7 +84,7 @@ function testGroupedLabelsThatBreak(x: string): number {
 function testNonEmptyFallthrough(x: number): void {
   switch (x) {
     case 1:
-      // @skjs-expect-error Fallthrough case in switch; add a 'break'
+      // @skjs-expect-warning Fallthrough case in switch; add a 'break'
       const y: number = 1;
     case 2:
       break;
