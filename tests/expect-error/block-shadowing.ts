@@ -170,6 +170,7 @@ function blockLocalNotVisibleAfter(): void {
   {
     const y = 2;
   }
+  // @skjs-expect-error Cannot find name
   const z = y;
 }
 

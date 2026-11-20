@@ -187,7 +187,18 @@ extension class TypeChecker {
           bodyTerm.thenk(() ~> StmtTermination::expr(incr))
         )
       )
-    | Block(stmts) -> this.blockStatements(tcenv, stmts)
+    | Block(stmts) ->
+      // A bare block is its own lexical scope, like any other block: names
+      // declared in it shadow outer names inside it and are not visible
+      // after it. Writes it makes to outer bindings still reach the code
+      // after, via the pop merge below.
+      (blockScope, term) = this.block(tcenv, stmts);
+      if (term.mayFallthrough) {
+        tcenv.popScope(this, blockScope)
+      } else {
+        tcenv.popScopeReplace(blockScope)
+      };
+      term
     | ForInOf(kind, initStmt, iterable, block) ->
       scopeCopy = tcenv.scope;
       initScope = tcenv.mcreateSubScope{isLoop => false};
