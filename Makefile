@@ -61,6 +61,7 @@ check-fmt:
 .PHONY: check-sh
 check-sh:
 	git ls-files "*.sh" | xargs shellcheck
+	bin/merge-bot.sh --selftest
 
 # Docker targets: run skargo commands inside the Skip Docker image.
 # Override DOCKER_IMAGE or SKIP_DIR if needed:
