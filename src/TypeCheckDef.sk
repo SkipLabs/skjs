@@ -169,7 +169,11 @@ extension class TypeChecker {
       subst = Subst::createCheckingOwner(tcenvl);
       tcenv = TCEnv::mcreate(subst, CGNode::toplevel(def.pos.fileName));
       ty = this.expr(tcenv, e, true);
-      this.checkIsVoid(tcenv, e.pos, ty);
+      // Conformance mode: tsc allows any expression statement at the top
+      // level; SKJS's default requires it to be void.
+      if (!this.conformance) {
+        this.checkIsVoid(tcenv, e.pos, ty)
+      };
       tcenv.validateHiddenEscapes()
     | fd @ TopLevelFunDef _ ->
       subst = Subst::createCheckingOwner(tcenvl);
@@ -317,16 +321,61 @@ extension class TypeChecker {
     }
   }
 
+  // Conformance mode: validate a top-level `let`/`var` declaration. Unlike a
+  // top-level `const` (validateToplevelConst), the initializer is optional when
+  // a type annotation is present, and the type need not be primitive.
+  private fun validateToplevelVar(
+    tcenvl: mutable TCEnvLight,
+    pos: PosRange,
+    typeAnnotation: ?Type,
+    value: ?Expr,
+  ): void {
+    subst = Subst::createCheckingOwner(tcenvl);
+    typeOpt = typeAnnotation.map(x -> this.normalize(subst, x, false));
+    value.each(e -> {
+      tcenv = TCEnv::mcreate(subst, CGNode::toplevel(pos.fileName));
+      valueType = this.expr(tcenv, e, false);
+      typeOpt.each(annot -> {
+        this.checkSubType(
+          tcenv,
+          pos,
+          "Type of initializer is not assignable to the declared type annotation",
+          valueType,
+          annot,
+          TSCode(2322),
+        )
+      });
+      tcenv.validateHiddenEscapes()
+    });
+    if (typeOpt.isNone() && value.isNone()) {
+      tcenvl.error(
+        Array[
+          (
+            pos,
+            "A binding must have either a type annotation or an initializer",
+          ),
+        ],
+        SKJSCode(2030),
+      )
+    }
+  }
+
   fun varDefs(
     tcenvl: mutable TCEnvLight,
     kind: VarDefKind,
     varDefs: Array<VarDef>,
   ): void {
     for (varDef in varDefs) {
-      kind match {
-      | VDKConst() -> void
-      | VDKLet() -> tcenvl.notSupported(varDef.pat.pos, "toplevel let")
-      | VDKVar() -> tcenvl.notSupported(varDef.pat.pos, "toplevel var")
+      if (kind is VDKConst()) {
+        void
+      } else if (this.conformance) {
+        // Conformance mode: top-level let/var are real bindings, not rejected.
+        void
+      } else {
+        tcenvl.notSupported(
+          varDef.pat.pos,
+          if (kind is VDKLet()) "toplevel let" else "toplevel var",
+        )
       };
       // Check pattern is not destructuring first
       bindingName = varDef.pat.value match {
@@ -344,14 +393,23 @@ extension class TypeChecker {
           SKJSCode(1010),
         )
       };
-      // Validate the const declaration
-      this.validateToplevelConst(
-        tcenvl,
-        varDef.pat.pos,
-        varDef.type,
-        varDef.value,
-        bindingName,
-      )
+      if (kind is VDKConst() || !this.conformance) {
+        // Validate the const declaration
+        this.validateToplevelConst(
+          tcenvl,
+          varDef.pat.pos,
+          varDef.type,
+          varDef.value,
+          bindingName,
+        )
+      } else {
+        this.validateToplevelVar(
+          tcenvl,
+          varDef.pat.pos,
+          varDef.type,
+          varDef.value,
+        )
+      }
     }
   }
 

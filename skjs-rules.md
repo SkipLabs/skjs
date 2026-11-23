@@ -18,6 +18,7 @@ In tests, warnings are asserted with `// @skjs-expect-warning`; see [docs/testin
 SKJS-specific option — CLI `--conformance`, tsconfig `"conformance": true` — off by default. It relaxes SKJS-specific restrictions so that TypeScript files can be checked **verbatim, without modifications**, the way the TypeScript conformance suite (`tests/ts-conformance/`) requires:
 
 - `var` declarations are accepted instead of rejected with the `no-var` error (`Unexpected 'var'; use 'let' or 'const' instead`). Inside a function body a `var` is checked **like `let`**: block-scoped and mutable. Hoisting and function scoping are not modeled (tracked in SkipLabs/skjs#841), so code that relies on them is still rejected.
+- Top-level `let`/`var` are accepted instead of "toplevel let/var is not supported by SKJS". A top-level `var`/`let` reference reads at its annotation, else its widened initializer type, and top-level assignment to it is checked against that type (a top-level `const` stays read-only, TS2588). Top-level bindings do not narrow on write. Top-level expression statements of any type are also accepted (default mode requires them to be `void`).
 
 Conformance mode deliberately trades some of SKJS's stricter guarantees for tsc compatibility; the default mode remains strict.
 
