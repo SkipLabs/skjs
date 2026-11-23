@@ -165,11 +165,14 @@ mutable class Scope{
   // capture: the lambda may run at any later time, so the write cannot narrow
   // and must be checked against the declared type (see `isThroughFunction`).
   private isFunction: Bool = false,
-  // Set on the scope that holds a function's parameters (see
-  // `markAsParamScope`). In JS the parameter list and the body's top-level
-  // block share one lexical scope, so a body-level declaration may not reuse
-  // a parameter name; a declaration in any deeper block may.
-  private mutable isParamScope: Bool = false,
+  // Set at creation on the scope that holds a function's parameters (the
+  // fresh scope made by funDefSetup / the lambda path in TypeCheckExpr). In
+  // JS the parameter list and the body's top-level block share one lexical
+  // scope, so a body-level declaration may not reuse a parameter name; a
+  // declaration in any deeper block may. Immutable: a scope that holds
+  // parameters is created for exactly one function, so the flag never needs
+  // to be unset.
+  private isParamScope: Bool = false,
   up: ?readonly Scope = None(),
   private mutable locals: SortedMap<String, Name> = SortedMap[],
   private mutable refs: SortedMap<String, LocalRef> = SortedMap[],
@@ -177,16 +180,8 @@ mutable class Scope{
   private mutable captureWrites: ?SortedSet<String> = None(),
   private mutable capturedNames: ?SortedSet<String> = None(),
 } {
-  static fun mcreateToplevel(): mutable this {
-    mutable static{id => 0, isLoop => false}
-  }
-
-  // Mark this scope as a function's parameter scope; called where the
-  // parameters are bound (TypeChecker::processParams). The function body's
-  // block is a direct subscope of it, which is what makes a body-level
-  // redeclaration of a parameter an error (SkipLabs/skjs#1090).
-  mutable fun markAsParamScope(): void {
-    this.!isParamScope = true
+  static fun mcreateToplevel{isParamScope: Bool = false}: mutable this {
+    mutable static{id => 0, isLoop => false, isParamScope => isParamScope}
   }
 
   mutable fun setCaptureWrites(

@@ -215,10 +215,11 @@ mutable class TCEnv private {
   static fun mcreate(
     subst: mutable Subst,
     callingContext: CGNode,
+    isParamScope: Bool = false,
   ): mutable this {
     context = subst.context;
     results = subst.results;
-    scope = Scope::mcreateToplevel();
+    scope = Scope::mcreateToplevel{isParamScope => isParamScope};
     mutable static{context, subst, scope, callingContext, results}
   }
 
@@ -276,8 +277,15 @@ mutable class TCEnv private {
   mutable fun mcreateSubScope{
     isLoop: Bool,
     isFunction: Bool = false,
+    isParamScope: Bool = false,
   }: mutable Scope {
-    mutable Scope{id => this.next(), isLoop, isFunction, up => Some(this.scope)}
+    mutable Scope{
+      id => this.next(),
+      isLoop,
+      isFunction,
+      isParamScope,
+      up => Some(this.scope),
+    }
   }
 
   // localObjects is keyed by declaration position (Scope::bindingPos); these

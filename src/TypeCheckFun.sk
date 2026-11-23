@@ -9,7 +9,10 @@ extension class TypeChecker {
   ): (this, mutable TCEnv, Array<(Pattern, TType)>) {
     sig = this.getFunSig(subst.context, fd);
     static::checkTypeParams(subst, sig.tparams, OptionalTypeParamsForbidden());
-    tcenv = TCEnv::mcreate(subst, callingContext);
+    // The fresh scope holds this function's parameters, so it is created as
+    // a param scope: in JS the parameter list and the body's top-level block
+    // share one lexical scope (SkipLabs/skjs#1090).
+    tcenv = TCEnv::mcreate(subst, callingContext, true);
     writes = mutable CaptureWrites{};
     writes.params(sig.params);
     this.getFunBody(subst.context, fd) match {
@@ -118,11 +121,11 @@ extension class TypeChecker {
     allowThis: Bool,
     expectedParamTypes: Array<?TType> = Array[],
   ): Array<TType> {
-    // The parameters live in this scope, and in JS the function body's
-    // top-level block shares that scope: a body-level declaration reusing a
-    // parameter name is a redeclaration (SkipLabs/skjs#1090), while a
+    // The parameters live in this scope, which the caller created as a param
+    // scope (funDefSetup / the lambda path): in JS the function body's
+    // top-level block shares that scope, so a body-level declaration reusing
+    // a parameter name is a redeclaration (SkipLabs/skjs#1090), while a
     // declaration in a deeper block legally shadows it.
-    tcenv.scope.markAsParamScope();
     paramTypes = params.mapWithIndex((i, param) -> {
       param.name.value match {
       | PVar(n) if (allowThis && i == 0 && n.value == "this") ->
