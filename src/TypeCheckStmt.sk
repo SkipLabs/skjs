@@ -741,17 +741,23 @@ extension class TypeChecker {
         // statements and falls into the clause after it exactly as a `case` does,
         // and tsc reports it the same way.
         //
-        // Whether the rest is an error is that option's to say. SKJS turns it on
-        // where tsc leaves it off, but a switch that asks for the fallthrough
-        // gets it: only the diagnostic is withheld, never the typing of the
-        // clause fallen into, which is what keeps the fallthrough sound.
+        // Whether the rest is reported is that option's to say. SKJS turns it
+        // on where tsc leaves it off, but a switch that asks for the
+        // fallthrough gets it: only the diagnostic is withheld, never the
+        // typing of the clause fallen into, which is what keeps the
+        // fallthrough sound. Re-evaluated for #1093: `noFallthroughCasesInSwitch`
+        // is read nowhere else, so the flag controls only this diagnostic —
+        // reachability, narrowing, and the scope merge below all treat a
+        // falling clause exactly as before — hence a warning, not an error:
+        // falling through is runtime-sound (it just runs the next clause) and
+        // tsc itself leaves the flag off by default.
         if (
           this.noFallthroughCasesInSwitch &&
           blockTerm.mayFallthrough &&
           block.size() != 0 &&
           i != branches.size() - 1
         ) {
-          tcenv.error(
+          tcenv.warning(
             Array[
               (
                 block[block.size() - 1].pos,
