@@ -12,30 +12,31 @@ jobs:
     steps:
       - checkout
       - run:
-          name: Skip build for docs-only changes
+          name: Classify changes vs main
           command: |
-            # Skip the build when a feature branch's diff against main touches
-            # only documentation (docs/, any *.md, LICENSE). main always builds.
+            # Skip the expensive steps when the diff cannot change their
+            # outcome. bin/ci_classify_changes.sh prints one of:
+            #   docs-only   only docs/, root *.md, LICENSE changed
+            #   infra-only  only docs/infra changed (bin/, .vibe/, .github/,
+            #               scripts/, devtools/, npm/, Makefile, ...)
+            #   full        anything else — the fail-safe default
             #
-            # This job always runs and halts *green*, so the required
-            # `ci/circleci: build` check is still reported: docs-only PRs stay
-            # mergeable, while code PRs keep a real build gate.
+            # This job always runs and halts *green* on a skip, so the required
+            # `ci/circleci: build` check is still reported: skipped PRs stay
+            # mergeable, while code PRs keep a real build gate. A
+            # path-filtering/dynamic-config setup cannot do both — it drops
+            # the job entirely, so the required check never reports.
             #
-            # Fail safe: every uncertain path below exits 0 and builds. We never
-            # skip a change we could not prove is documentation-only.
-            if [ "$CIRCLE_BRANCH" = "main" ]; then exit 0; fi
-            # Guarantee full history so the merge base is exact. --unshallow
-            # errors on an already-complete clone, hence the `|| true`.
-            git fetch --quiet --unshallow origin 2>/dev/null || true
-            if ! git fetch --quiet origin main; then exit 0; fi
-            if ! base=$(git merge-base HEAD FETCH_HEAD); then exit 0; fi
-            if ! changed=$(git diff --name-only "$base" HEAD); then exit 0; fi
-            if [ -z "$changed" ]; then exit 0; fi
-            nondocs=$(printf '%s\n' "$changed" | grep -vE '^(docs/.*|.*\.md|LICENSE)$' || true)
-            if [ -n "$nondocs" ]; then exit 0; fi
-            echo "Docs-only change vs main; skipping build. Changed files:"
-            echo "$changed"
-            circleci-agent step halt
+            # Fail safe: every uncertain path classifies as `full` and builds.
+            # We never skip a change we could not prove is docs/infra-only.
+            class=$(bin/ci_classify_changes.sh 2>/dev/null) || class=full
+            case "$class" in docs-only|infra-only|full) ;; *) class=full ;; esac
+            echo "export SKJS_CI_CLASS=$class" >> "$BASH_ENV"
+            echo "Change class vs main: $class"
+            if [ "$class" = "docs-only" ]; then
+              echo "Docs-only change vs main; halting green before all checks."
+              circleci-agent step halt
+            fi
       - run:
           name: Check code is formatted
           command: |
@@ -44,6 +45,17 @@ jobs:
           name: Check shell scripts
           command: |
             make check-sh
+      - run:
+          name: Skip Skip clone/build/tests for infra-only changes
+          command: |
+            # Infra-only changes still got the cheap checks above (they can
+            # affect `make check-fmt` / `make check-sh`); the Skip clone, the
+            # skargo build and the test suite cannot be affected by them, so
+            # halt green instead of scheduling them.
+            if [ "${SKJS_CI_CLASS:-full}" = "infra-only" ]; then
+              echo "Infra-only change vs main; halting green before the Skip clone, build and tests."
+              circleci-agent step halt
+            fi
       - run:
           name: Clone Skip repository
           command: |
