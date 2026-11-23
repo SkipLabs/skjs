@@ -1,5 +1,14 @@
 # Commits and Pull Requests
 
+## Always Open PRs
+
+**Never push directly to `main` or any other shared branch — every change goes through a pull request.** This holds for small fixes and docs-only changes too; do not "just commit it". The expected flow:
+
+1. Work on a dedicated branch off `main` (a fresh worktree keeps your main checkout clean).
+2. Push the branch and open a PR with `gh pr create` — concise description (summary + motivation) plus the AI disclosure below.
+3. Enable auto-merge on the PR (`gh pr merge --auto --merge`) so the merge queue can land it once CI is green.
+4. Every commit in the PR must be green on its own; docs-only changes only need `make fmt` (prettier) to pass — see [Testing](testing.md).
+
 ## Commit Requirements
 
 - Each commit must pass formatting (`make fmt`) and tests (`make test-in-docker`)

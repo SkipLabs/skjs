@@ -67,6 +67,7 @@ Run it interactively through the `merge-bot` skill, or unattended with `bin/merg
 - **One error per definition**: SKJS reports only the first type error per function/definition unless passing `--keep-going` (best-effort — fatal errors may still hide subsequent ones)
 - **Match TypeScript**: SKJS should not be more permissive than TypeScript, but must not follow TypeScript when TypeScript is unsound. When in doubt, verify with `npx tsc --strict --noEmit`
 - **Living Skip-style notes**: [docs/skip-code-notes.md](docs/skip-code-notes.md) is a log of lessons about writing better Skip code. Read it before writing `.sk` code, and append to it whenever you learn a lesson — especially when the user tells you to do something differently.
+- **Always open PRs**: never push directly to `main` or other shared branches. Every change goes through a PR: dedicated branch → push → `gh pr create` → enable auto-merge (`gh pr merge --auto --merge`). See [Commits and PRs](docs/commits-and-prs.md).
 
 ## Detailed Guides
 
