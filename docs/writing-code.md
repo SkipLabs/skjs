@@ -14,7 +14,7 @@ Two-arm matches of the form `| SomePattern -> ... | _ -> ...` are acceptable: th
 
 Exhaustive matching is sometimes impractical because Skip does not support nested or-patterns. This typically arises when matching on a tuple of variant types: the cross-product of cases is large, but most combinations collapse to the same result, and without or-patterns they cannot be grouped. In those cases a wildcard is unavoidable; document why the default is correct for any future combination.
 
-For the growing, experience-derived specifics — especially corrections from the project owner — see [Skip Code Notes](skip-code-notes.md). Agents: append there whenever you learn a Skip style lesson, and read it before writing `.sk` code.
+For the growing, experience-derived specifics — especially corrections from the project owner — see the canonical [Skip Code Notes](https://github.com/SkipLabs/skip/blob/main/docs/skip-code-notes.md) in the Skip repo. Agents: read it before writing `.sk` code and append there whenever you learn a Skip style lesson.
 
 ## Error Messages
 
