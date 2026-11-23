@@ -131,8 +131,13 @@ base class LocalObjectState {
 mutable class JumpCatcher{
   catchesContinue: Bool,
   baselineScopeId: Int,
-  breaks: mutable Vector<mutable Map<String, LocalRef>> = mutable Vector[],
-  continues: mutable Vector<mutable Map<String, LocalRef>> = mutable Vector[],
+  // Jump-edge snapshots, keyed by binding PosRange (see Scope::snapshotTo).
+  breaks: mutable Vector<
+    mutable Map<PosRange, (String, LocalRef)>,
+  > = mutable Vector[],
+  continues: mutable Vector<
+    mutable Map<PosRange, (String, LocalRef)>,
+  > = mutable Vector[],
 }
 
 mutable class TCEnv private {
@@ -438,13 +443,13 @@ mutable class TCEnv private {
   // so distinct same-name bindings share an entry: a shadowed inner binding's
   // write unions into the outer binding's catch-entry view, which is sound
   // (only over-wide), but a binding identity (PosRange, as Scope::bindingPos /
-  // TCEnv.localObjects use) would keep it precise. Scope::snapshotTo /
-  // uniteSnapshot, the jump-edge snapshots, have the same name keying and are
-  // latently unsound there — flagged by SkipLabs/skjs#1018. Outer trys receive
-  // an inner construct's writes when it is popped, gated on whether an
-  // exception can actually escape it carrying them (see the Try arm): an inner
-  // try whose catch absorbs everything keeps its intermediate states to
-  // itself.
+  // TCEnv.localObjects use) would keep it precise. The jump-edge snapshots
+  // (Scope::snapshotTo / uniteSnapshot) had the same name keying and were
+  // latently unsound under shadowing (SkipLabs/skjs#1018); they are now keyed
+  // by binding PosRange. Outer trys receive an inner construct's writes when
+  // it is popped, gated on whether an exception can actually escape it
+  // carrying them (see the Try arm): an inner try whose catch absorbs
+  // everything keeps its intermediate states to itself.
   private mutable fun recordTryWrite(tenv: TEnv, name: Name, ty: TType): void {
     if (!this.tryWriteLogs.isEmpty()) {
       log = this.tryWriteLogs[this.tryWriteLogs.size() - 1];
@@ -591,7 +596,7 @@ mutable class TCEnv private {
   // Turn a recorded snapshot into a direct subscope of the current scope, so it
   // can join the sibling scopes a catcher merges at its exit.
   mutable fun snapshotScope(
-    snap: readonly Map<String, LocalRef>,
+    snap: readonly Map<PosRange, (String, LocalRef)>,
   ): readonly Scope {
     s = this.mcreateSubScope{isLoop => false};
     s.seedRefs(snap);

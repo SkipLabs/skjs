@@ -247,23 +247,33 @@ mutable class Scope{
     }
   }
 
-  readonly private fun maybeGetLocal(name: Name): ?Name {
-    this.locals.maybeGet(name.value) match {
+  readonly private fun maybeGetLocalValue(value: String): ?Name {
+    this.locals.maybeGet(value) match {
     | None() ->
       this.up match {
       | None() -> None()
-      | Some(up) -> up.maybeGetLocal(name)
+      | Some(up) -> up.maybeGetLocalValue(value)
       }
     | Some(x) -> Some(x)
     }
   }
 
+  readonly private fun maybeGetLocal(name: Name): ?Name {
+    this.maybeGetLocalValue(name.value)
+  }
+
   // The declaration position of the in-scope binding of `name`, or None if
   // `name` is not a lexical local. This is a stable per-binding identity
   // (distinct for shadowed / sibling / sequential same-name bindings), used to
-  // key per-binding state (see TCEnv.localObjects) instead of the bare name.
+  // key per-binding state (see TCEnv.localObjects, and the jump-edge snapshots
+  // below) instead of the bare name.
   readonly fun bindingPos(name: Name): ?PosRange {
-    this.maybeGetLocal(name).map(declName -> declName.pos)
+    this.bindingPosOf(name.value)
+  }
+
+  // `bindingPos` by bare name.
+  readonly fun bindingPosOf(value: String): ?PosRange {
+    this.maybeGetLocalValue(value).map(declName -> declName.pos)
   }
 
   readonly private fun maybeGetRefHelper(
@@ -779,46 +789,55 @@ mutable class Scope{
   // `continue`, which exits mid-block carrying exactly this, so the catcher can
   // union it into the state after the loop or switch.
   //
-  // LATENT UNSOUNDNESS (SkipLabs/skjs#1018, activated by #1090): the snapshot
-  // is keyed by bare name. Now that nested block shadowing is allowed, a name
-  // declared below the baseline can shadow an outer binding of the same name:
-  // the innermost ref wins the `acc` entry and the below-baseline drop then
-  // removes the whole entry, so an outer same-named binding's edge value —
-  // recorded in a scope between the baseline and the shadowing declaration —
-  // is lost from the jump edge. Re-keying by binding identity (PosRange, as
-  // Scope::bindingPos / TCEnv.localObjects already do) is the follow-up;
-  // until then, treat snapshots over shadowed names as unsound.
-  readonly fun snapshotTo(baselineId: Int): mutable Map<String, LocalRef> {
-    acc = mutable Map<String, LocalRef>[];
-    // Names declared below the baseline (a clause's own `const`/`let`): their
-    // refs are collected along the way but dropped at the end, since they do
-    // not escape to where the catcher merges and the merge cannot resolve them.
-    localNames = mutable Vector<String>[];
-    this.snapshotInto(baselineId, acc, localNames);
-    for (name in localNames) {
-      _ = acc.maybeRemove(name)
+  // The snapshot is keyed by binding identity (the declaration PosRange, as
+  // Scope::bindingPos / TCEnv.localObjects use), NOT by bare name: nested
+  // block shadowing (SkipLabs/skjs#1090) allows a name declared below the
+  // baseline to shadow an outer binding of the same name, and with name
+  // keying the innermost ref would win the entry and the below-baseline drop
+  // would remove it whole — losing an outer same-named binding's edge value
+  // recorded in a scope between the baseline and the shadowing declaration
+  // (latent unsoundness flagged by SkipLabs/skjs#1018). Keyed by PosRange,
+  // the two bindings hold separate entries and only the below-baseline one
+  // is dropped. Each entry also carries the name, so the merge sites can
+  // still write `refs` (keyed by name) without resolving the pos.
+  readonly fun snapshotTo(
+    baselineId: Int,
+  ): mutable Map<PosRange, (String, LocalRef)> {
+    acc = mutable Map<PosRange, (String, LocalRef)>[];
+    // Bindings declared below the baseline (a clause's own `const`/`let`):
+    // their refs are collected along the way but dropped at the end, since
+    // they do not escape to where the catcher merges and the merge cannot
+    // resolve them.
+    localPos = mutable Vector<PosRange>[];
+    this.snapshotInto(baselineId, acc, localPos);
+    for (pos in localPos) {
+      _ = acc.maybeRemove(pos)
     };
     acc
   }
 
   private readonly fun snapshotInto(
     baselineId: Int,
-    acc: mutable Map<String, LocalRef>,
-    localNames: mutable Vector<String>,
+    acc: mutable Map<PosRange, (String, LocalRef)>,
+    localPos: mutable Vector<PosRange>,
   ): void {
     if (this.id != baselineId) {
       for (kv in this.refs.items()) {
-        if (!acc.containsKey(kv.i0)) acc![kv.i0] = kv.i1
+        // The binding this ref belongs to: this scope's own local when it has
+        // the name, otherwise the nearest enclosing declaration (an escaping
+        // ref — a write to an outer binding materialized here).
+        pos = this.bindingPosOf(kv.i0).fromSome();
+        if (!acc.containsKey(pos)) acc![pos] = (kv.i0, kv.i1)
       };
       for (kv in this.locals.items()) {
-        localNames.push(kv.i0)
+        localPos.push(kv.i1.pos)
       };
       this.up match {
       // The baseline is the scope of the catcher this jump was routed to, so
       // it is necessarily an ancestor; running out of parents without meeting
       // it means the routing and the scope chain disagree.
       | None() -> internal_error("jump snapshot baseline is not an ancestor")
-      | Some(u) -> u.snapshotInto(baselineId, acc, localNames)
+      | Some(u) -> u.snapshotInto(baselineId, acc, localPos)
       }
     }
   }
@@ -829,29 +848,30 @@ mutable class Scope{
   // continue edges into the state its exit merge reads — one more way the code
   // after the loop can be reached, alongside the body completing normally.
   //
-  // LATENT UNSOUNDNESS (SkipLabs/skjs#1018, activated by #1090): the snapshot
-  // is merged by bare name, so with nested block shadowing allowed a shadowed
-  // binding's edge value can be attributed to (or dropped from, in
-  // `snapshotTo`) an outer binding of the same name. See the note on
-  // `snapshotTo`; re-key by binding identity as the follow-up.
+  // The snapshot is keyed by binding PosRange (see `snapshotTo`), and each
+  // entry carries its name: the name resolves to the same binding here as it
+  // did where the edge was recorded, because a shadowing declaration between
+  // this scope and the entry's owner would itself have been the owner of any
+  // ref recorded below it — so writing `refs[name]` cannot cross bindings.
   mutable fun uniteSnapshot(
     subst: mutable Subst,
     tenv: TEnv,
-    snap: readonly Map<String, LocalRef>,
+    snap: readonly Map<PosRange, (String, LocalRef)>,
   ): void {
     for (kv in snap.items()) {
-      (_, curRef) = this.maybeGetRef(kv.i0).fromSome();
-      this.!refs[kv.i0] = LocalRef(
-        TType::union(subst, tenv, kv.i1.type, curRef.type),
+      (name, edgeRef) = kv.i1;
+      (_, curRef) = this.maybeGetRef(name).fromSome();
+      this.!refs[name] = LocalRef(
+        TType::union(subst, tenv, edgeRef.type, curRef.type),
         tenv.preserveCopyProvenance(
           subst,
-          kv.i1.declaredType,
+          edgeRef.declaredType,
           curRef.declaredType,
         ),
         curRef.hasDeclaredContract,
-        kv.i1.isInitialized && curRef.isInitialized,
+        edgeRef.isInitialized && curRef.isInitialized,
         curRef.isMutable,
-        curRef.hasFieldRefinement || kv.i1.hasFieldRefinement,
+        curRef.hasFieldRefinement || edgeRef.hasFieldRefinement,
       )
     };
     // The edge speaks for every binding, not only the ones it mentions: one it
@@ -863,7 +883,8 @@ mutable class Scope{
     // (SkipLabs/skjs#969: a `continue` past the assignment must not leave the
     // for-increment reading the binding as assigned).
     for (nameRef in this.escapingRefs()) {
-      if (nameRef.ref.isInitialized && !snap.containsKey(nameRef.name)) {
+      ownerPos = this.bindingPosOf(nameRef.name).fromSome();
+      if (nameRef.ref.isInitialized && !snap.containsKey(ownerPos)) {
         this.up.fromSome().maybeGetRef(nameRef.name) match {
         | Some((_, upRef)) if (!upRef.isInitialized) ->
           this.!refs[nameRef.name] = LocalRef(
@@ -920,34 +941,40 @@ mutable class Scope{
   readonly fun foldFinallyIntoSnapshot(
     subst: mutable Subst,
     tenv: TEnv,
-    snap: mutable Map<String, LocalRef>,
+    snap: mutable Map<PosRange, (String, LocalRef)>,
     finallyScope: readonly Scope,
   ): void {
     for (nameRef in finallyScope.escapingRefs()) {
-      cur = snap.maybeGet(nameRef.name) match {
-      | Some(ref) -> ref
+      pos = finallyScope.bindingPosOf(nameRef.name).fromSome();
+      cur = snap.maybeGet(pos) match {
+      | Some((_, ref)) -> ref
       | None() -> this.maybeGetRef(nameRef.name).fromSome().i1
       };
-      snap![nameRef.name] = LocalRef(
-        TType::union(subst, tenv, cur.type, nameRef.ref.type),
-        tenv.preserveCopyProvenance(
-          subst,
-          nameRef.ref.declaredType,
-          cur.declaredType,
+      snap![pos] = (
+        nameRef.name,
+        LocalRef(
+          TType::union(subst, tenv, cur.type, nameRef.ref.type),
+          tenv.preserveCopyProvenance(
+            subst,
+            nameRef.ref.declaredType,
+            cur.declaredType,
+          ),
+          cur.hasDeclaredContract,
+          cur.isInitialized,
+          cur.isMutable,
+          cur.hasFieldRefinement || nameRef.ref.hasFieldRefinement,
         ),
-        cur.hasDeclaredContract,
-        cur.isInitialized,
-        cur.isMutable,
-        cur.hasFieldRefinement || nameRef.ref.hasFieldRefinement,
       )
     }
   }
 
   // Fill this (fresh, empty) scope with a recorded snapshot, so it can stand in
-  // as one more direct subscope for `mergeN`.
-  mutable fun seedRefs(snap: readonly Map<String, LocalRef>): void {
+  // as one more direct subscope for `mergeN`. The snapshot is keyed by binding
+  // PosRange and carries each entry's name (see `snapshotTo`).
+  mutable fun seedRefs(snap: readonly Map<PosRange, (String, LocalRef)>): void {
     for (kv in snap.items()) {
-      this.!refs[kv.i0] = kv.i1
+      (name, ref) = kv.i1;
+      this.!refs[name] = ref
     }
   }
 

@@ -229,3 +229,28 @@ function forHeadDeclarationList(): void {
     const j = i;
   }
 }
+
+// Jump-edge snapshots are keyed by binding identity, not bare name
+// (SkipLabs/skjs#1018, activated by #1090): a `break` recorded from inside a
+// clause block that shadows `x` must still carry the outer `x`'s write from
+// earlier in the clause. With name-keyed snapshots the shadowing entry won
+// the snapshot entry and the below-baseline drop removed it whole, so the
+// outer binding's edge value was lost and `x` read as `number` only after the
+// switch — unsound.
+function switchBreakEdgeKeepsOuterWrite(v: number, cond: boolean): void {
+  let x: number | string = 0;
+  switch (v) {
+    case 1:
+      if (cond) {
+        x = "s";
+        {
+          const x = true;
+          break;
+        }
+      }
+      break;
+    default:
+      break;
+  }
+  __SKJS_show_expanded(x, "number | string");
+}
