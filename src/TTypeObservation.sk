@@ -341,29 +341,9 @@ mutable class TypeReadContext private {
       TType::inst(name, targs)
     } else {
       key = ExpansionKey(identity, targs);
-      this.scratch.memoizedExpansion(key) match {
-      | Some(expanded) -> expanded
-      | None() ->
-        // Same sharing rule as TEnv.expandNamed (issue #1092): expansions
-        // free of inference variables are binding-independent, so they are
-        // shared across Subst states via the shared cache box.
-        shareable = !targs.targs.any(t -> this.scratch.caches().isVarFree(t));
-        shared = if (shareable) this.scratch.sharedExpansion(key) else None();
-        shared match {
-        | Some(expanded) ->
-          this.scratch.memoizeExpansion(key, expanded);
-          expanded
-        | None() ->
-          expanded = this.tenv.instantiateDeclaration(declaration, name, targs);
-          if (expanded != TType::inst(name, targs)) {
-            this.scratch.memoizeExpansion(key, expanded);
-            if (shareable && this.scratch.caches().isVarFree(expanded)) {
-              this.scratch.memoizeSharedExpansion(key, expanded)
-            }
-          };
-          expanded
-        }
-      }
+      expandNamedCached(this.scratch, key, name, targs, () ->
+        this.tenv.instantiateDeclaration(declaration, name, targs)
+      )
     }
   }
 
@@ -636,31 +616,18 @@ mutable class TypeReadContext private {
   private mutable fun subtype(u1: TType, u2: TType): STResult<TType> {
     this.lifetime.checkActive();
     if (u1 == u2) return STOk();
-    if (this.scratch.memoizedSubtype(u1, u2)) return STOk();
-    // Shared binding-independent judgments (issue #1092); only successes are
-    // recorded, so a failing pair re-runs and re-reports at every site.
-    if (this.scratch.sharedSubtypeOk(u1, u2)) {
-      this.scratch.memoizeSubtype(u1, u2);
-      return STOk()
-    };
+    // Known in either cache layer (per-Subst memo, then the shared box for
+    // binding-independent judgments; issue #1092).
+    if (this.scratch.knownSubtype(u1, u2)) return STOk();
     if (u2.isTop()) {
-      this.scratch.memoizeSubtype(u1, u2);
-      if (this.scratch.caches().isVarFree(u1)) {
-        this.scratch.memoizeSharedSubtype(u1, u2)
-      };
+      this.scratch.recordSubtypeSuccess(u1, u2);
       return STOk()
     };
     this.scratch.withTypeQuery(() -> {
       stamp = this.scratch.typeQueryReadStamp();
       result = this.subtype_(u1, u2);
       if (result is STOk() && this.scratch.canCacheTypeQuerySince(stamp)) {
-        this.scratch.memoizeSubtype(u1, u2);
-        if (
-          this.scratch.caches().isVarFree(u1) &&
-          this.scratch.caches().isVarFree(u2)
-        ) {
-          this.scratch.memoizeSharedSubtype(u1, u2)
-        }
+        this.scratch.recordSubtypeSuccess(u1, u2)
       };
       (result, result is STOk())
     })

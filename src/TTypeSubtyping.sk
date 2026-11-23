@@ -1898,8 +1898,7 @@ extension class TType {
   ): STResult<TType> {
     if (u1 == u2) return STOk();
     if (u2.isTop()) {
-      subst.memoizeSubtype(u1, u2);
-      if (subst.caches().isVarFree(u1)) subst.memoizeSharedSubtype(u1, u2);
+      subst.recordSubtypeSuccess(u1, u2);
       return STOk()
     };
     if (subst.isProposingSubtype()) {
@@ -1947,19 +1946,13 @@ extension class TType {
   ): STResult<TType> {
     invariant(subst.isProposingSubtype());
     if (u1 == u2) return STOk();
-    if (subst.memoizedSubtype(u1, u2)) return STOk();
-    // A judgment between inference-variable-free operands is structural and
-    // independent of any Subst's bindings, so it is shared across all Subst
-    // states of the checking root (issue #1092). Only successes are recorded,
-    // so a failing pair re-runs.
-    if (subst.sharedSubtypeOk(u1, u2)) {
-      subst.memoizeSubtype(u1, u2);
-      return STOk()
-    };
+    // Known in either cache layer: the per-Subst memo first, then the shared
+    // box, which holds binding-independent (var-free) judgments only
+    // (issue #1092). Only successes are recorded, so a failing pair re-runs.
+    if (subst.knownSubtype(u1, u2)) return STOk();
     // Top needs no recursive premise or substitution read.
     if (u2.isTop()) {
-      subst.memoizeSubtype(u1, u2);
-      if (subst.caches().isVarFree(u1)) subst.memoizeSharedSubtype(u1, u2);
+      subst.recordSubtypeSuccess(u1, u2);
       return STOk()
     };
     subst.withTypeQuery(() -> {
@@ -1968,10 +1961,7 @@ extension class TType {
       // Publish only after this query discharges its recursive premises and
       // establishes the existing frozen-candidate read requirement.
       if (res is STOk() && subst.canCacheTypeQuerySince(readStamp)) {
-        subst.memoizeSubtype(u1, u2);
-        if (subst.caches().isVarFree(u1) && subst.caches().isVarFree(u2)) {
-          subst.memoizeSharedSubtype(u1, u2)
-        }
+        subst.recordSubtypeSuccess(u1, u2)
       };
       (res, res is STOk())
     })

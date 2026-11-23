@@ -253,6 +253,30 @@ mutable class Subst private {
     )
   }
 
+  // The two cache layers for subtype judgments, in lookup order (issue
+  // #1092): the per-Subst memo first — it is the rollback-scoped cache, so
+  // restore rewinds it — then the shared box, which holds binding-independent
+  // (var-free) successes and deliberately survives restore.
+
+  // Whether a successful subtype judgment between source and target is
+  // already known, in either layer.
+  readonly fun knownSubtype(source: TType, target: TType): Bool {
+    this.memoizedSubtype(source, target) || this.sharedSubtypeOk(source, target)
+  }
+
+  // Records an already-qualified successful subtype judgment. The per-Subst
+  // memo always gets it (restore rewinds that layer); when both operands are
+  // free of inference variables the judgment is binding-independent, so the
+  // shared box gets it too and fresh cold Substs of the same checking root
+  // reuse it. Only successes are recorded, so a failing pair is re-run (and
+  // re-reported) at every site.
+  mutable fun recordSubtypeSuccess(source: TType, target: TType): void {
+    this.memoizeSubtype(source, target);
+    if (this.caches().isVarFree(source) && this.caches().isVarFree(target)) {
+      this.memoizeSharedSubtype(source, target)
+    }
+  }
+
   /* To ensure consistency in type variable identifiers, use mcreate only
      in functions that take no argument containing type variables and whose
      return value does not contain type variables. */
