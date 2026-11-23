@@ -129,11 +129,7 @@ class ArrayLitTyping() {
     tenv: TEnv,
     arrLit: TArrayLit,
   ): TType {
-    eltType = TType::bottom(arrLit.selector.pos());
-    for (elt in arrLit.tupleElts) {
-      !eltType = TType::union(subst, tenv, eltType, elt)
-    };
-    eltType
+    TType::unionN(subst, tenv, arrLit.selector.pos(), arrLit.tupleElts)
   }
 
   // Converts ArrayLit<α, elts> to Array<U> by unioning all elements.
