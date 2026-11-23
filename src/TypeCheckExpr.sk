@@ -4577,7 +4577,11 @@ extension class TypeChecker {
     // loop or switch, never an enclosing function's (see `recordBreak`).
     savedJumpCatchers = tcenv.jumpCatchers;
     tcenv.!jumpCatchers = mutable Vector[];
-    tcenv.!scope = tcenv.mcreateSubScope{isLoop => false, isFunction => true};
+    tcenv.!scope = tcenv.mcreateSubScope{
+      isLoop => false,
+      isFunction => true,
+      isParamScope => true,
+    };
     tcenv.!callingContext = callingContext;
 
     writes = mutable CaptureWrites{};
