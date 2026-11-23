@@ -20,6 +20,7 @@ function f3(): never {
   return 1;
 }
 
+// @ts-expect-error A function returning 'never' cannot have a reachable end point
 function f4(): never {}
 
 // @skjs-expect-error Function 'f5' must have an explicit return type annotation
