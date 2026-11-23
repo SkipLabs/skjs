@@ -245,7 +245,7 @@ def pipeline_wall:
 def path_est:
   ([.files[]?.path // empty] as $p |
    if ($p | length) == 0 then 600
-   elif ($p | all(test("\\.md$|^docs/|^LICENSE|^\\.github/|^\\.circleci/|^CHANGELOG"))) then 120
+   elif ($p | all(test("\\.md$|^docs/|^LICENSE|^\\.vibe/|^\\.github/|^\\.vscode/|^\\.claude/|^bin/|^scripts/|^devtools/|^npm/|^Makefile$|^package(-lock)?\\.json$|^\\.prettier|^\\.gitignore$"))) then 120
    elif ($p | any(test("^src/"))) then 1500
    elif ($p | any(test("^tests/|^examples/|^generated-examples/|^scripts/|^bin/|^import-stubs/|^Makefile|^build\\.sk|^Skargo\\.toml|^runtime\\.(cpp|h)$"))) then 900
    else 300 end);
@@ -1065,7 +1065,13 @@ cmd_selftest() {
        autoMergeRequest: {mergeMethod: "MERGE"}, maintainerCanModify: false,
        mergeStateStatus: "BEHIND", mergeable: "MERGEABLE", headRefOid: "mmm",
        statusCheckRollup: [{__typename: "StatusContext", context: "ci/circleci: build", state: "SUCCESS", startedAt: "2026-11-20T10:00:00Z", createdAt: "2026-11-20T10:05:00Z"}],
-       files: []}
+       files: []},
+      # 13: est-only fixture, no rollup, infra-only paths (bin/ + Makefile) -> 120:
+      # CI skips the Skip clone/build/tests for those (bin/ci_classify_changes.sh)
+      {number: 14, title: "est infra-only", headRefName: "n", author: {login: "x"},
+       headRepositoryOwner: {login: "SkipLabs"}, labels: [], isDraft: false, autoMergeRequest: {mergeMethod: "MERGE"},
+       mergeStateStatus: "BEHIND", mergeable: "MERGEABLE", headRefOid: "nnn", statusCheckRollup: [],
+       files: [{path: "bin/merge-bot.sh"}, {path: "Makefile"}]}
     ]')
 
     check "green+auto+up-to-date is considered" \
@@ -1093,6 +1099,8 @@ cmd_selftest() {
         "120" "$(jq "$JQ_EST" <<<"$(jq '.[10]' <<<"$fx")")"
     check "est: src/ heuristic" \
         "1500" "$(jq "$JQ_EST" <<<"$(jq '.[11]' <<<"$fx")")"
+    check "est: infra-only heuristic (CI skips the build)" \
+        "120" "$(jq "$JQ_EST" <<<"$(jq '.[13]' <<<"$fx")")"
 
     local scan
     scan=$(jq --arg owner SkipLabs --argjson skip '["do-not-merge"]' "$JQ_SCAN" <<<"$fx")

@@ -28,6 +28,10 @@ CircleCI no longer publishes any binaries — it's only used for testing on bran
 
 Both test pipelines cache the dev binaries (`target/host/dev/{skjs,test}`) keyed on a content hash of their build inputs (sources, `build.sk`, transitive `../skip` path deps, toolchain — see `bin/ci_build_cache.sh`). On a hit, `make test` runs the prebuilt test binary directly (`SKJS_PREBUILT=1`) instead of rebuilding via `skargo test`, skipping the multi-minute compile. The cache is saved only after tests pass, and only under an exact key, so a restored binary always matches the current inputs.
 
+### Skipping the expensive steps
+
+The CircleCI job first classifies the branch's diff against `main` (see `bin/ci_classify_changes.sh`, unit-tested via `make check-sh`). A docs-only diff (`docs/`, root `*.md`, `LICENSE`) halts the job green immediately; an infra-only diff (only `bin/`, `.vibe/`, `.github/`, `scripts/`, `devtools/`, `npm/`, `Makefile`, …) still runs the cheap checks (`make check-fmt`, `make check-sh`) and then halts green before the Skip clone, the build and the tests. The job always reports green when it halts, so the required `ci/circleci: build` check stays satisfied and the PR stays mergeable. Anything else — or any uncertainty — gets the full clone + build + test (fail safe).
+
 ## Troubleshooting the release workflow
 
 ### Workflow fails on "Verify tag matches Skargo.toml version"
