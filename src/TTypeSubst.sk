@@ -149,6 +149,38 @@ mutable class SavedSubst private {} extends SubstState {
   }
 }
 
+// Memo table for named-type expansions that do not depend on any particular
+// Subst's bindings, shared by all Subst states descended from one checking
+// root (see Subst::sharedCaches, issue #1092).
+mutable class SharedTypeCaches{
+  mutable expansionCache: SortedMap<ExpansionKey, TType> = SortedMap[],
+  // Successful subtype judgments between inference-variable-free operands,
+  // keyed by the operand pair. Such judgments are structural, so they too are
+  // shared across Subst states (issue #1092). Only successes are recorded, so
+  // a failing pair is re-run (and re-reported) at every site, matching the
+  // per-Subst seenSub behavior.
+  mutable subtypeCache: SortedSet<(TType, TType)> = SortedSet[],
+  // Hashes (xxhash values) of types already scanned and found free of
+  // inference variables. TType equality throughout the checker is hash-based
+  // (TType::compare compares precomputed hashes), so the hash is the type's
+  // identity here too. Memoizing the scan keeps it O(1) per distinct type
+  // instead of re-traversing shared structure on every cache store.
+  varFreeHashes: mutable Set<Int> = mutable Set[],
+} {
+  static fun mcreate(): mutable this {
+    mutable static{}
+  }
+
+  // Whether ty is free of inference variables, memoized per type identity.
+  mutable fun isVarFree(ty: TType): Bool {
+    h = ty.xxhash().value;
+    if (this.varFreeHashes.contains(h)) return true;
+    if (typeContainsTVar(ty)) return false;
+    this.varFreeHashes.insert(h);
+    true
+  }
+}
+
 mutable class Subst private {
   private queryReads: mutable TypeQueryReads = mutable TypeQueryReads{},
   // This purpose is not rollback state. A proposal/diagnostic computation may
@@ -185,7 +217,42 @@ mutable class Subst private {
   // of output only -- nothing reads it back into typing, and save/restore
   // never touch it.
   mutable ppNames: ?mutable PpNames = None(),
+  // Expansions of named types whose type arguments and result are free of
+  // inference variables are pure substitutions — independent of any one
+  // Subst's bindings — so they are shared by every Subst descended from the
+  // same checking root. Each reference-site constraint probe runs in a fresh
+  // cold Subst, so without this sharing the same expansion is recomputed once
+  // per reference (e.g. one expansion of a large interface per field that
+  // mentions it; issue #1092). Like queryReads, this is deliberately not
+  // rollback state: save/restore never touch it.
+  private sharedCaches: mutable SharedTypeCaches = SharedTypeCaches::mcreate(),
 } extends TCEnvBase, SubstState {
+  // The shared cache box, for binding-independent memo tables (issue #1092).
+  mutable fun caches(): mutable SharedTypeCaches {
+    this.sharedCaches
+  }
+
+  readonly fun sharedExpansion(key: ExpansionKey): ?TType {
+    this.sharedCaches.expansionCache.maybeGet(key)
+  }
+
+  mutable fun memoizeSharedExpansion(key: ExpansionKey, expanded: TType): void {
+    this.sharedCaches.!expansionCache = this.sharedCaches.expansionCache.set(
+      key,
+      expanded,
+    )
+  }
+
+  readonly fun sharedSubtypeOk(source: TType, target: TType): Bool {
+    this.sharedCaches.subtypeCache.contains((source, target))
+  }
+
+  mutable fun memoizeSharedSubtype(source: TType, target: TType): void {
+    this.sharedCaches.!subtypeCache = this.sharedCaches.subtypeCache.set(
+      (source, target),
+    )
+  }
+
   /* To ensure consistency in type variable identifiers, use mcreate only
      in functions that take no argument containing type variables and whose
      return value does not contain type variables. */
@@ -273,6 +340,9 @@ mutable class Subst private {
       queryReads => parentOpt
         .map(parent -> parent.queryReads)
         .default(mutable TypeQueryReads{}),
+      sharedCaches => parentOpt
+        .map(parent -> parent.sharedCaches)
+        .default(SharedTypeCaches::mcreate()),
       context => tcenvb.context,
       results => tcenvb.results,
       seenSub => state.seenSub,
@@ -299,6 +369,8 @@ mutable class Subst private {
     mutable Subst{
       computationPurpose => TCPDiagnostic(),
       context,
+      // Diagnostic-only state: no shared cache box to inherit.
+      sharedCaches => SharedTypeCaches::mcreate(),
       seenSub => state.seenSub,
       seenInter => state.seenInter,
       seenUnion => state.seenUnion,
@@ -466,6 +538,7 @@ mutable class Subst private {
       computationPurpose => purpose,
       context => this.context,
       results => this.results,
+      sharedCaches => this.sharedCaches,
       seenSub => if (reuseCaches) this.seenSub else SortedSet[],
       seenInter => if (reuseCaches) this.seenInter else SortedMap[],
       seenUnion => if (reuseCaches) this.seenUnion else SortedMap[],
@@ -630,6 +703,7 @@ mutable class Subst private {
       // Reported source errors still reject the program in keep-going mode;
       // this read result is not itself a whole-program acceptance certificate.
       results => parent.results,
+      sharedCaches => parent.sharedCaches,
       seenSub => SortedSet[],
       seenInter => SortedMap[],
       seenUnion => SortedMap[],
@@ -870,6 +944,10 @@ mutable class Subst private {
         scratch = mutable Subst{
           context,
           results,
+          // The region lambda cannot capture the shared cache box; proof
+          // search inside it starts cold (the proposal path, which shares the
+          // box via detachedTypeComputation, is the hot one).
+          sharedCaches => SharedTypeCaches::mcreate(),
           seenSub => SortedSet[],
           seenInter => SortedMap[],
           seenUnion => SortedMap[],

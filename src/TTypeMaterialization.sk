@@ -103,13 +103,28 @@ extension base class TEnv {
       subst.memoizedExpansion(key) match {
       | Some(expanded) -> expanded
       | None() ->
-        expanded = this.instantiate(subst, subst, name, targs);
-        if (expanded != TType::inst(name, targs)) {
-          // In scratch this remains local/provisional; in the live owner the
-          // outer observation has already established its inspected payloads.
-          subst.memoizeExpansion(key, expanded)
-        };
-        expanded
+        // An expansion whose type arguments and result are free of inference
+        // variables is a pure substitution, independent of the current
+        // bindings: it may be shared across every Subst a check creates, not
+        // only the one this call runs in (issue #1092).
+        shareable = !targs.targs.any(t -> subst.caches().isVarFree(t));
+        shared = if (shareable) subst.sharedExpansion(key) else None();
+        shared match {
+        | Some(expanded) ->
+          subst.memoizeExpansion(key, expanded);
+          expanded
+        | None() ->
+          expanded = this.instantiate(subst, subst, name, targs);
+          if (expanded != TType::inst(name, targs)) {
+            // In scratch this remains local/provisional; in the live owner the
+            // outer observation has already established its inspected payloads.
+            subst.memoizeExpansion(key, expanded);
+            if (shareable && subst.caches().isVarFree(expanded)) {
+              subst.memoizeSharedExpansion(key, expanded)
+            }
+          };
+          expanded
+        }
       }
     }
   }

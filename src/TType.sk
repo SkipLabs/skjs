@@ -4002,4 +4002,107 @@ class Clauses private (
   }
 }
 
+// Whether a type mentions an inference variable (TVar) anywhere in its
+// structure. An expansion of a named type whose type arguments — and whose
+// result — are free of inference variables is a pure substitution,
+// independent of every Subst's bindings, so it may be shared across Subst
+// states (see Subst::sharedCaches; issue #1092). TVars can only appear as
+// TVar insts, as array-literal selector bindings, or nested inside named-type
+// arguments, intersections, clauses (object fields, index signatures, call
+// and construct signatures), all covered below. Types are persistent DAGs
+// with heavy sharing, so the scan carries visited sets: without them a
+// highly shared type would be re-traversed exponentially.
+mutable class TVarScan{seen: mutable Set<Int> = mutable Set[]} {
+  // Returns true if this node was not visited before (callers then scan it).
+  mutable fun mark<T: XXHashable>(node: T): Bool {
+    this.seen.maybeInsert(node.xxhash().value)
+  }
+
+  mutable fun scanType(ty: TType): Bool {
+    if (!this.mark(ty)) return false;
+    for (inst in ty.insts) {
+      if (this.scanInst(inst)) return true
+    };
+    for (clause in ty.clauses) {
+      if (this.scanClause(clause)) return true
+    };
+    false
+  }
+
+  mutable fun scanInst(inst: TInst): Bool {
+    if (!this.mark(inst)) return false;
+    inst match {
+    | TVar _ -> true
+    // An array-literal selector owns a fresh TVar binding.
+    | TArrayLit _ -> true
+    | TSInst(_, targs) -> targs.targs.any(t -> this.scanType(t))
+    | TInter(tys) -> tys.any(t -> this.scanType(t))
+    }
+  }
+
+  mutable fun scanClause(clause: Clause): Bool {
+    if (!this.mark(clause)) return false;
+    // Clause.vars are rigid TParams and carry no types.
+    clause.stypes
+      .map(stypes -> stypes.any(st -> this.scanSType(st)))
+      .default(false)
+  }
+
+  mutable fun scanSType(st: SType): Bool {
+    if (!this.mark(st)) return false;
+    st match {
+    | obj @ TObject(_, unexpandedType, _) ->
+      obj.getBranches().any(fields -> this.scanTFields(fields)) ||
+        unexpandedType.map(inst -> this.scanInst(inst)).default(false)
+    | TPrimUnit _ -> false
+    | TPrimValue _ -> false
+    }
+  }
+
+  mutable fun scanTFields(fields: TFields): Bool {
+    if (!this.mark(fields)) return false;
+    fields.fields.values().any(f ->
+      this.scanType(f.get) || this.scanType(f.set)
+    ) ||
+      fields.symbolFields.values().any(f ->
+        this.scanType(f.get) || this.scanType(f.set)
+      ) ||
+      fields.stringIndex
+        .map(f -> this.scanType(f.get) || this.scanType(f.set))
+        .default(false) ||
+      fields.numberIndex
+        .map(f -> this.scanType(f.get) || this.scanType(f.set))
+        .default(false) ||
+      fields.symbolIndex
+        .map(f -> this.scanType(f.get) || this.scanType(f.set))
+        .default(false) ||
+      this.scanCallability(fields.new) ||
+      this.scanCallability(fields.call)
+  }
+
+  mutable fun scanCallability(call: Callability): Bool {
+    call match {
+    | CPresent(sig) -> this.scanTFun(sig.fun_)
+    | CAbsent() -> false
+    | CUnknown() -> false
+    | CFunction() -> false
+    }
+  }
+
+  mutable fun scanTFun(fun_: TFun): Bool {
+    if (!this.mark(fun_)) return false;
+    fun_.tparams.any(tp -> tp.cstr.map(t -> this.scanType(t)).default(false)) ||
+      fun_.thisParam.tyOpt().map(t -> this.scanType(t)).default(false) ||
+      fun_.params.any(t -> this.scanType(t)) ||
+      fun_.optionalParams.any(t -> this.scanType(t)) ||
+      fun_.spreadParam.map(t -> this.scanType(t)).default(false) ||
+      this.scanType(fun_.retType)
+  }
+}
+
+fun typeContainsTVar(ty: TType): Bool {
+  scan = mutable TVarScan{};
+  scan.scanType(ty)
+}
+
 module end;
