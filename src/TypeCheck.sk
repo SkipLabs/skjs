@@ -29,6 +29,13 @@ class TypeChecker{
   // tsconfig `noFallthroughCasesInSwitch`). Read in `switch` (TypeCheckStmt.sk);
   // the narrowing of the clause fallen into does not depend on it.
   noFallthroughCasesInSwitch: Bool = true,
+  // Conformance mode (CLI `--conformance` / tsconfig `conformance`): relax
+  // SKJS-specific restrictions so TypeScript files check verbatim — `var`
+  // (read in `Bind`, TypeCheckStmt.sk, and in top-level `Var` resolution,
+  // TypeCheckExpr.sk) and top-level `let`/`var` (TypeCheckDef.sk). See
+  // TsCompilerOptions.conformance; SkipLabs/skjs#841 tracks real `var`
+  // semantics.
+  conformance: Bool = false,
 } extends TEnv {
   // Apply the run's tracked config (see Config.sk). Persisted-dir closures
   // capture a TypeChecker from init time; they must call this with a fresh
@@ -38,6 +45,7 @@ class TypeChecker{
       errorHandling => config.errorHandling,
       truthiness => config.compilerOptions.truthiness,
       noFallthroughCasesInSwitch => config.compilerOptions.noFallthroughCasesInSwitch,
+      conformance => config.compilerOptions.conformance,
       verbose => config.verbose,
     }
   }

@@ -278,6 +278,13 @@ class TsCompilerOptions{
   // Whether a clause that falls into another is an error (TS7029). SKJS
   // defaults it on, where tsc defaults it off, and honours it either way.
   noFallthroughCasesInSwitch: Bool = true,
+  // SKJS-specific conformance mode (CLI `--conformance`, tsconfig
+  // `"conformance": true`): relax SKJS-specific restrictions so TypeScript
+  // files can be checked verbatim, as the TypeScript conformance suite
+  // requires — `var` declarations (checked like `let`: hoisting and
+  // function scoping are not modeled, SkipLabs/skjs#841) and top-level
+  // `let`/`var`. Off by default.
+  conformance: Bool = false,
 }
 
 class TsConfigDiag{line: Int, message: String, isWarning: Bool}
@@ -712,6 +719,10 @@ fun loadTsConfig(fs: Fs, path: String): (TsConfig, Array<TsConfigDiag>) {
       .maybeGetBool("allowImportingTsExtensions")
       .default(false);
 
+    // SKJS-specific option, not a tsc one: conformance mode (see
+    // TsCompilerOptions.conformance).
+    conformance = co.maybeGetBool("conformance").default(false);
+
     noFallthroughCasesInSwitch = co
       .maybeGetBool("noFallthroughCasesInSwitch")
       .default(true);
@@ -773,6 +784,7 @@ fun loadTsConfig(fs: Fs, path: String): (TsConfig, Array<TsConfigDiag>) {
       lib,
       truthiness,
       noFallthroughCasesInSwitch,
+      conformance,
     }
   | None() ->
     diags.push(

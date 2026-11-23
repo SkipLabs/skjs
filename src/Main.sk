@@ -241,6 +241,12 @@ const checkArgs: Array<Cli.Arg> = Array[
         Truthiness::default
       }).`,
     ),
+  Cli.Arg::bool("conformance")
+    .long("conformance")
+    .default(false)
+    .about(
+      "Conformance mode: relax SKJS-specific restrictions so TypeScript files check verbatim (`var` declarations, top-level `let`/`var`). `var` hoisting is not modeled (SkipLabs/skjs#841). Turns on the tsconfig 'conformance' option",
+    ),
   Cli.Arg::string("emit-cfg")
     .long("emit-cfg")
     .value_name("FORMAT")
@@ -432,7 +438,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   verbose = args.getBool("verbose", Some(false));
 
   // A CLI `--truthiness` value overrides the tsconfig `truthiness` option.
-  checkerCompilerOptions = args.maybeGetString("truthiness") match {
+  truthinessOptions = args.maybeGetString("truthiness") match {
   | None() -> compilerOptions
   | Some(s) ->
     Truthiness::fromString(s) match {
@@ -443,6 +449,13 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
       );
       throw Exit(2)
     }
+  };
+  // A CLI `--conformance` flag turns conformance mode on; it can only relax
+  // the tsconfig `conformance` option, never re-tighten it.
+  checkerCompilerOptions = if (args.getBool("conformance")) {
+    truthinessOptions with {conformance => true}
+  } else {
+    truthinessOptions
   };
 
   errorFormat = ErrorFormat::ofString(args.getString("error-format")) match {

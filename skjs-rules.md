@@ -13,6 +13,14 @@ Diagnostics currently reported as warnings: redundant optional chaining (`Useles
 
 In tests, warnings are asserted with `// @skjs-expect-warning`; see [docs/testing.md](docs/testing.md).
 
+## Conformance Mode
+
+SKJS-specific option — CLI `--conformance`, tsconfig `"conformance": true` — off by default. It relaxes SKJS-specific restrictions so that TypeScript files can be checked **verbatim, without modifications**, the way the TypeScript conformance suite (`tests/ts-conformance/`) requires:
+
+- `var` declarations are accepted instead of rejected with the `no-var` error (`Unexpected 'var'; use 'let' or 'const' instead`). Inside a function body a `var` is checked **like `let`**: block-scoped and mutable. Hoisting and function scoping are not modeled (tracked in SkipLabs/skjs#841), so code that relies on them is still rejected.
+
+Conformance mode deliberately trades some of SKJS's stricter guarantees for tsc compatibility; the default mode remains strict.
+
 ## Key Restrictions Discovered
 
 ### 1. No Toplevel `let` Declarations
