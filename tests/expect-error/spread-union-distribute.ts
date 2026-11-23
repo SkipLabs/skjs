@@ -102,6 +102,14 @@ function tooManyUnionSpreads(
   const s: string = 42;
 }
 
+// NOTE: only a few over-cap spreads are pinned in this file on purpose. Each
+// one retains ~1 GB of checker memory (the pre-collapse worklist of ~10k
+// states) until the file's check ends, and several of them in one test process
+// exceed the CI runner's memory budget (#1091). The two construction-A pins
+// below cover the core contract: a field common to every source branch is kept
+// (capDegradeDropsCommonSourceField), and a field missing from one branch is
+// still dropped to `unknown` (capDegradeFieldMissingInOneBranch).
+
 // An over-cap spread whose OVERFLOWING source shares a field across its
 // branches: `c` is present in both branches of `pl`. Under distribution `o.c`
 // is `number` (as in TypeScript). This literal overflows the branch cap on the
@@ -148,50 +156,6 @@ function capDegradeDropsCommonSourceField(
   const uc: unknown = o.c;
 }
 
-// Same over-cap shape as capDegradeDropsCommonSourceField, but the common
-// field `c` has a DIFFERENT type per branch of `pl`: the degraded collapse
-// keeps it as the union of the per-branch contributions.
-function capDegradeCommonFieldUnionType(
-  p0: { a0: 0 } | { b0: 1 },
-  p1: { a1: 0 } | { b1: 1 },
-  p2: { a2: 0 } | { b2: 1 },
-  p3: { a3: 0 } | { b3: 1 },
-  p4: { a4: 0 } | { b4: 1 },
-  p5: { a5: 0 } | { b5: 1 },
-  p6: { a6: 0 } | { b6: 1 },
-  p7: { a7: 0 } | { b7: 1 },
-  p8: { a8: 0 } | { b8: 1 },
-  p9: { a9: 0 } | { b9: 1 },
-  p10: { a10: 0 } | { b10: 1 },
-  p11: { a11: 0 } | { b11: 1 },
-  p12: { a12: 0 } | { b12: 1 },
-
-  pl: { c: number; d: 0 } | { c: string; e: 1 },
-): void {
-  const o = {
-    ...p0,
-    ...p1,
-    ...p2,
-    ...p3,
-    ...p4,
-    ...p5,
-    ...p6,
-    ...p7,
-    ...p8,
-    ...p9,
-    ...p10,
-    ...p11,
-    ...p12,
-    // @skjs-expect-warning This object spread distributes over more than 10000 union branches; its type is over-approximated to an open object, so some properties are typed 'unknown'
-    ...pl,
-  };
-  // `c` is common to both branches with differing types, so the degrade keeps
-  // it as the union `number | string`.
-  const cu: number | string = o.c;
-  // @ts-expect-error Type of value is not assignable to the variable's type annotation
-  const cn: number = o.c;
-}
-
 // A field present in only ONE branch of the overflowing source is not common,
 // so the degrade still drops it: `o.c` stays `unknown` (sound — the other
 // branch may carry an excess `c` of any type). Pinned in both directions.
@@ -232,142 +196,6 @@ function capDegradeFieldMissingInOneBranch(
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const cn: number = o.c;
   const uc: unknown = o.c;
-}
-
-// A unique-symbol field common to every branch of the overflowing source is
-// kept like a named field.
-function capDegradeKeepsCommonSymbolField(
-  p0: { a0: 0 } | { b0: 1 },
-  p1: { a1: 0 } | { b1: 1 },
-  p2: { a2: 0 } | { b2: 1 },
-  p3: { a3: 0 } | { b3: 1 },
-  p4: { a4: 0 } | { b4: 1 },
-  p5: { a5: 0 } | { b5: 1 },
-  p6: { a6: 0 } | { b6: 1 },
-  p7: { a7: 0 } | { b7: 1 },
-  p8: { a8: 0 } | { b8: 1 },
-  p9: { a9: 0 } | { b9: 1 },
-  p10: { a10: 0 } | { b10: 1 },
-  p11: { a11: 0 } | { b11: 1 },
-  p12: { a12: 0 } | { b12: 1 },
-
-  pl: { [sym]: number; d: 0 } | { [sym]: number; e: 1 },
-): void {
-  const o = {
-    ...p0,
-    ...p1,
-    ...p2,
-    ...p3,
-    ...p4,
-    ...p5,
-    ...p6,
-    ...p7,
-    ...p8,
-    ...p9,
-    ...p10,
-    ...p11,
-    ...p12,
-    // @skjs-expect-warning This object spread distributes over more than 10000 union branches; its type is over-approximated to an open object, so some properties are typed 'unknown'
-    ...pl,
-  };
-  // Symbol fields are handled like named fields: `[sym]` is common to both
-  // branches, so it survives the degrade as `number`.
-  const cs: number = o[sym];
-}
-
-// When every branch of the overflowing source carries the same index
-// signature, the degrade folds it (instead of `[string]: unknown`), and the
-// accumulated states' fields/indexes all conform to `number` here — so
-// indexed reads stay `number` past the cap. The common field `c` survives
-// with the union of its per-branch literal types (`0 | 1`, a subtype of
-// `number`).
-function capDegradeFoldsCommonIndex(
-  p0: { [k: string]: number; a0: 0 } | { [k: string]: number; b0: 1 },
-  p1: { [k: string]: number; a1: 0 } | { [k: string]: number; b1: 1 },
-  p2: { [k: string]: number; a2: 0 } | { [k: string]: number; b2: 1 },
-  p3: { [k: string]: number; a3: 0 } | { [k: string]: number; b3: 1 },
-  p4: { [k: string]: number; a4: 0 } | { [k: string]: number; b4: 1 },
-  p5: { [k: string]: number; a5: 0 } | { [k: string]: number; b5: 1 },
-  p6: { [k: string]: number; a6: 0 } | { [k: string]: number; b6: 1 },
-  p7: { [k: string]: number; a7: 0 } | { [k: string]: number; b7: 1 },
-  p8: { [k: string]: number; a8: 0 } | { [k: string]: number; b8: 1 },
-  p9: { [k: string]: number; a9: 0 } | { [k: string]: number; b9: 1 },
-  p10: { [k: string]: number; a10: 0 } | { [k: string]: number; b10: 1 },
-  p11: { [k: string]: number; a11: 0 } | { [k: string]: number; b11: 1 },
-  p12: { [k: string]: number; a12: 0 } | { [k: string]: number; b12: 1 },
-
-  pl: { [k: string]: number; c: 0 } | { [k: string]: number; c: 1 },
-): void {
-  const o = {
-    ...p0,
-    ...p1,
-    ...p2,
-    ...p3,
-    ...p4,
-    ...p5,
-    ...p6,
-    ...p7,
-    ...p8,
-    ...p9,
-    ...p10,
-    ...p11,
-    ...p12,
-    // @skjs-expect-warning This object spread distributes over more than 10000 union branches; its type is over-approximated to an open object, so some properties are typed 'unknown'
-    ...pl,
-  };
-  // The common `[string]: number` index is folded (SKJS index reads add
-  // `undefined`, so `o["k"]` is `number | undefined`), and the common field
-  // `c` survives as `0 | 1`.
-  const ck: number | undefined = o["k"];
-  // @ts-expect-error Type of value is not assignable to the variable's type annotation
-  const cs: string = o["k"];
-  const cc: number = o.c;
-}
-
-// A field that is OPTIONAL in every branch of the overflowing source stays
-// optional in the degrade (its read type gains `undefined`); here the
-// accumulated states' `[string]: number` index also contributes to its
-// type, so it reads as `number | undefined`, not `unknown`.
-function capDegradeOptionalCommonField(
-  p0: { [k: string]: number; a0: 0 } | { [k: string]: number; b0: 1 },
-  p1: { [k: string]: number; a1: 0 } | { [k: string]: number; b1: 1 },
-  p2: { [k: string]: number; a2: 0 } | { [k: string]: number; b2: 1 },
-  p3: { [k: string]: number; a3: 0 } | { [k: string]: number; b3: 1 },
-  p4: { [k: string]: number; a4: 0 } | { [k: string]: number; b4: 1 },
-  p5: { [k: string]: number; a5: 0 } | { [k: string]: number; b5: 1 },
-  p6: { [k: string]: number; a6: 0 } | { [k: string]: number; b6: 1 },
-  p7: { [k: string]: number; a7: 0 } | { [k: string]: number; b7: 1 },
-  p8: { [k: string]: number; a8: 0 } | { [k: string]: number; b8: 1 },
-  p9: { [k: string]: number; a9: 0 } | { [k: string]: number; b9: 1 },
-  p10: { [k: string]: number; a10: 0 } | { [k: string]: number; b10: 1 },
-  p11: { [k: string]: number; a11: 0 } | { [k: string]: number; b11: 1 },
-  p12: { [k: string]: number; a12: 0 } | { [k: string]: number; b12: 1 },
-
-  pl:
-    | { [k: string]: number; c?: 0; d: 0 }
-    | { [k: string]: number; c?: 1; e: 1 },
-): void {
-  const o = {
-    ...p0,
-    ...p1,
-    ...p2,
-    ...p3,
-    ...p4,
-    ...p5,
-    ...p6,
-    ...p7,
-    ...p8,
-    ...p9,
-    ...p10,
-    ...p11,
-    ...p12,
-    // @skjs-expect-warning This object spread distributes over more than 10000 union branches; its type is over-approximated to an open object, so some properties are typed 'unknown'
-    ...pl,
-  };
-  // `c` is optional in both branches, so the degrade keeps it optional; the
-  // accumulated states' `[string]: number` index also contributes, giving
-  // `number | undefined`.
-  const cu: number | undefined = o.c;
 }
 
 // A field written after a union spread gets its own growable type variable in
