@@ -434,19 +434,31 @@ extension class TypeChecker {
       | Some(retType) ->
         checkBody = () -> {
           (_, term) = this.block(tcenv, body);
-          if (
-            term.mayFallthrough &&
-            !this.isVoid(tcenv, this.isAsync, retType)
-          ) {
-            subst.error(
-              Array[
-                (
-                  fdPos,
-                  "Not all code paths return a value, and the return type does not include 'undefined'",
-                ),
-              ],
-              TSCode(2366),
-            )
+          if (term.mayFallthrough) {
+            if (retType.expand(tcenv.subst, this, None()).isBottom()) {
+              // tsc's TS2355: a `never`-annotated body that can complete
+              // normally would return `undefined` at runtime while every use
+              // of the call is typed `never` — unsound, so reject it.
+              subst.error(
+                Array[
+                  (
+                    fdPos,
+                    "A function returning 'never' cannot have a reachable end point",
+                  ),
+                ],
+                TSCode(2355),
+              )
+            } else if (!this.isVoid(tcenv, this.isAsync, retType)) {
+              subst.error(
+                Array[
+                  (
+                    fdPos,
+                    "Not all code paths return a value, and the return type does not include 'undefined'",
+                  ),
+                ],
+                TSCode(2366),
+              )
+            }
           };
           tcenv.validateHiddenEscapes();
           if (getConfig(tcenv.context).buildCfg) {
