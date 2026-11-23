@@ -372,6 +372,262 @@ class ObjectSpreadState{
       }
     }
   }
+
+  // True when idx is a real (non-synthetic) index signature of its kind.
+  private static fun isRealIndex(idx: ?TField): Bool {
+    idx match {
+    | Some(f) if (!f.isSynthetic()) -> true
+    | _ -> false
+    }
+  }
+
+  // Construction A for the over-cap degrade (SkipLabs/skjs#1091): instead of
+  // dropping every source field, keep the fields that are present in EVERY
+  // source branch of the overflowing spread, with the union of the per-branch
+  // getter contributions, plus the accumulated states' contributions when
+  // optionality forces them in (see below). Fields missing in some branch are
+  // dropped — they stay readable as `unknown` through the open excess index.
+  //
+  // Soundness: the degraded state D must be a supertype of every distributed
+  // result merge(s, b) (s in states, b in sourceBranches) and of the unchanged
+  // no-op-primitive state s. For a field name n present in every branch:
+  //   - if every branch's field is non-optional, merge's "non-optional source
+  //     field wins" rule makes the contribution exactly b.fields[n].get, so
+  //     D's n := union over b of b.fields[n].get (non-optional) subsumes every branch;
+  //   - if some branch's field is optional (or a no-op-primitive arm leaves the
+  //     state unchanged), the contribution can additionally be the state's own
+  //     field or covering index, so D widens n to optional and unions in
+  //     union over s of (s.fields[n].get or s's covering index get) — a superset of every
+  //     per-(s,b) contribution.
+  // Fields not present in every branch are covered by D's open
+  // `[string]/[symbol]: unknown` excess indexes (subtyping checks a source's
+  // extra fields against the target's index, and `unknown` accepts all).
+  private static fun degradeFieldMap(
+    subst: mutable Subst,
+    tenv: TEnv,
+    states: readonly Vector<ObjectSpreadState>,
+    sourceBranches: readonly Vector<TFields>,
+    sawNoopPrimitive: Bool,
+    branchFieldsOf: TFields -> InternalKeyedArrayMap<FieldNameString, TField>,
+    stateFieldsOf: ObjectSpreadState -> SortedMap<FieldNameString, TField>,
+    stateIndexFor: (ObjectSpreadState, String) -> ?TField,
+    _pos: PosRange,
+  ): SortedMap<FieldNameString, TField> {
+    result = SortedMap<FieldNameString, TField>[];
+    for (firstField in branchFieldsOf(sourceBranches[0])) {
+      name = firstField.name;
+      presentInAll = true;
+      anyOptional = firstField.isOptional;
+      get = firstField.get;
+      for (i in Range(1, sourceBranches.size())) {
+        if (presentInAll) {
+          branchFieldsOf(sourceBranches[i]).maybeGet(name) match {
+          | Some(branchField) ->
+            !get = TType::union(subst, tenv, get, branchField.get);
+            !anyOptional = anyOptional || branchField.isOptional
+          | None() -> !presentInAll = false
+          }
+        }
+      };
+      if (presentInAll) {
+        isOptional = anyOptional || sawNoopPrimitive;
+        if (isOptional) {
+          for (state in states) {
+            stateFieldsOf(state).maybeGet(name) match {
+            | Some(stateField) ->
+              !get = TType::union(subst, tenv, get, stateField.get)
+            | None() ->
+              stateIndexFor(state, name.value) match {
+              | Some(idx) if (static::isRealIndex(Some(idx))) ->
+                !get = TType::union(subst, tenv, get, idx.get)
+              | _ -> void
+              }
+            }
+          }
+        };
+        !result[name] = TField::create{
+          pos => firstField.pos,
+          name => name.value,
+          isOptional,
+          isReadonly => None(),
+          type => get,
+          access => FAPublic(),
+        }
+      }
+    };
+    result
+  }
+
+  // The fold type for a degraded index signature: the union of every index
+  // getter AND every named-field getter of every source branch and accumulated
+  // state. Soundness: when checking a distributed result merge(s, b) against
+  // the degraded D, subtyping checks (a) the source's index getter against
+  // D's index getter (covariant) and (b) each of the source's extra named
+  // fields against D's covering index — merge(s, b)'s fields and indexes are
+  // all unions of s's and b's, so this union subsumes them all.
+  private static fun degradeIndexGetUnion(
+    subst: mutable Subst,
+    tenv: TEnv,
+    states: readonly Vector<ObjectSpreadState>,
+    sourceBranches: readonly Vector<TFields>,
+    symbol: Bool,
+    pos: PosRange,
+  ): TType {
+    gets: mutable Vector<TType> = mutable Vector[];
+    for (branch in sourceBranches) {
+      if (symbol) {
+        if (static::isRealIndex(branch.symbolIndex)) {
+          gets.push(branch.symbolIndex.fromSome().get)
+        };
+        for (f in branch.symbolFields) gets.push(f.get)
+      } else {
+        if (static::isRealIndex(branch.stringIndex)) {
+          gets.push(branch.stringIndex.fromSome().get)
+        };
+        if (static::isRealIndex(branch.numberIndex)) {
+          gets.push(branch.numberIndex.fromSome().get)
+        };
+        for (f in branch.fields) gets.push(f.get)
+      }
+    };
+    for (state in states) {
+      if (symbol) {
+        if (static::isRealIndex(state.tIndexes.symbolIndex)) {
+          gets.push(state.tIndexes.symbolIndex.fromSome().get)
+        };
+        for (f in state.symbolFields) gets.push(f.get)
+      } else {
+        if (static::isRealIndex(state.tIndexes.stringIndex)) {
+          gets.push(state.tIndexes.stringIndex.fromSome().get)
+        };
+        if (static::isRealIndex(state.tIndexes.numberIndex)) {
+          gets.push(state.tIndexes.numberIndex.fromSome().get)
+        };
+        for (f in state.fields) gets.push(f.get)
+      }
+    };
+    TType::unionN(subst, tenv, pos, gets)
+  }
+
+  // Fold one index kind of the degraded state: if EVERY source branch carries
+  // a real index of that kind, D gets that index with the folded union type
+  // (so indexed reads keep their precision); otherwise D keeps the open
+  // `unknown` excess index (an absent index on some branch means the source
+  // may carry excess properties of any type, which only `unknown` subsumes).
+  private static fun degradeIndex(
+    subst: mutable Subst,
+    tenv: TEnv,
+    sourceBranches: readonly Vector<TFields>,
+    idxOf: TFields -> ?TField,
+    foldedGet: TType,
+    pos: PosRange,
+  ): ?TField {
+    if (sourceBranches.all(b -> static::isRealIndex(idxOf(b)))) {
+      Some(idxOf(sourceBranches[0]).fromSome().mapType(_ -> foldedGet))
+    } else {
+      Some(static::mergeSpreadIndex(subst, tenv, None(), None(), pos))
+    }
+  }
+
+  // Construction A for the over-cap degrade (SkipLabs/skjs#1091), replacing
+  // the old fully-open collapse: build ONE state (keeping the #756 memory
+  // win — the worklist collapses to size 1, further spreads stay bounded)
+  // that keeps the fields common to every source branch of the overflowing
+  // spread and folds an index signature common to every branch, while retaining
+  // the open `[string]/[symbol]: unknown` excess indexes so arbitrary extra
+  // fields stay covered. See degradeFieldMap/degradeIndexGetUnion for the
+  // soundness argument: the result is a supertype of every per-(state, branch)
+  // distributed result and of the unchanged no-op-primitive state.
+  static fun degrade(
+    subst: mutable Subst,
+    tenv: TEnv,
+    states: readonly Vector<ObjectSpreadState>,
+    sourceBranches: readonly Vector<TFields>,
+    sawNoopPrimitive: Bool,
+    pos: PosRange,
+  ): ObjectSpreadState {
+    fields = static::degradeFieldMap(
+      subst,
+      tenv,
+      states,
+      sourceBranches,
+      sawNoopPrimitive,
+      b -> b.fields,
+      s -> s.fields,
+      (s, name) -> s.tIndexes.indexForFieldName(name),
+      pos,
+    );
+    symbolFields = static::degradeFieldMap(
+      subst,
+      tenv,
+      states,
+      sourceBranches,
+      sawNoopPrimitive,
+      b -> b.symbolFields,
+      s -> s.symbolFields,
+      (s, _) -> s.tIndexes.symbolIndex,
+      pos,
+    );
+    // Compute each fold's union lazily — only when every source branch
+    // actually carries that index kind — so the common case (no common index)
+    // does not even scan the accumulated states (keeping the #756 memory win).
+    allStr = sourceBranches.all(b -> static::isRealIndex(b.stringIndex));
+    allNum = sourceBranches.all(b -> static::isRealIndex(b.numberIndex));
+    allSym = sourceBranches.all(b -> static::isRealIndex(b.symbolIndex));
+    strNumGet = if (allStr || allNum) {
+      static::degradeIndexGetUnion(
+        subst,
+        tenv,
+        states,
+        sourceBranches,
+        false,
+        pos,
+      )
+    } else {
+      TType::top(pos)
+    };
+    symGet = if (allSym) {
+      static::degradeIndexGetUnion(
+        subst,
+        tenv,
+        states,
+        sourceBranches,
+        true,
+        pos,
+      )
+    } else {
+      TType::top(pos)
+    };
+    stringIndex = static::degradeIndex(
+      subst,
+      tenv,
+      sourceBranches,
+      b -> b.stringIndex,
+      strNumGet,
+      pos,
+    );
+    symbolIndex = static::degradeIndex(
+      subst,
+      tenv,
+      sourceBranches,
+      b -> b.symbolIndex,
+      symGet,
+      pos,
+    );
+    // The number index folds only when every branch declares one; otherwise
+    // numeric keys fall back to the (folded or open) string index, exactly as
+    // the fully-open degrade did.
+    numberIndex = if (allNum) {
+      Some(sourceBranches[0].numberIndex.fromSome().mapType(_ -> strNumGet))
+    } else {
+      None()
+    };
+    ObjectSpreadState{
+      fields,
+      symbolFields,
+      tIndexes => TIndexes{stringIndex, numberIndex, symbolIndex},
+    }
+  }
 }
 
 extension class TypeChecker {
@@ -2528,20 +2784,24 @@ extension class TypeChecker {
           };
           if (overflow) {
             // The deduplicated cross-product would exceed kMaxObjectBranches.
-            // Collapse the whole worklist to a SINGLE fully open object: an
-            // arbitrary source (the empty TFields) drops every field name and
-            // widens every value to `unknown` — covered by the resulting
-            // `[string]/[symbol]: unknown` excess indexes — so all the per-state
-            // results are supertyped by this one open object. Collapsing to size
-            // 1 (rather than mapping every state) keeps any further union spreads
-            // in the same literal bounded, instead of re-materializing ~cap
-            // states each time (which drives peak memory up). A fully open object
-            // is a supertype of every distributed branch (any object inhabits it)
-            // and of the unchanged no-op-primitive state, so this stays sound —
-            // a fresh literal's value inhabits it by its getters; it is only
-            // imprecise, so warn rather than reject. A more precise collapse that
-            // keeps fields common to every source branch is a possible follow-up
-            // (SkipLabs/skjs#747).
+            // Collapse the whole worklist to a SINGLE degraded object
+            // (ObjectSpreadState::degrade, construction A of SkipLabs/skjs#1091):
+            // it keeps the fields present in EVERY source branch of this spread
+            // (unioning the per-branch getter types, widening to optional when
+            // any branch is optional or a no-op-primitive arm leaves the state
+            // unchanged) and folds an index signature common to every branch,
+            // while retaining the open `[string]/[symbol]: unknown` excess
+            // indexes so arbitrary extra fields stay covered. Collapsing to
+            // size 1 (rather than mapping every state) keeps any further union
+            // spreads in the same literal bounded, instead of re-materializing
+            // ~cap states each time (which drives peak memory up — the #756
+            // win). The degraded object is a supertype of every distributed
+            // branch merge(s, b) (any object inhabits its open indexes; kept
+            // fields subsume each branch's contribution per the per-field
+            // soundness argument in degradeFieldMap) and of the unchanged
+            // no-op-primitive state, so this stays sound — a fresh literal's
+            // value inhabits it by its getters; it is only imprecise for
+            // fields not common to all branches, so warn rather than reject.
             tcenv.warning(
               Array[
                 (
@@ -2555,11 +2815,12 @@ extension class TypeChecker {
               SKJSCode(9009),
             );
             !states = mutable Vector[
-              ObjectSpreadState::merge(
+              ObjectSpreadState::degrade(
                 tcenv.subst,
                 this,
-                ObjectSpreadState::empty,
-                TFields::empty(),
+                states,
+                sourceBranches,
+                sawNoopPrimitive,
                 spreadExpr.pos,
               ),
             ]

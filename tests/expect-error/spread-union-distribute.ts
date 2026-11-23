@@ -102,11 +102,20 @@ function tooManyUnionSpreads(
   const s: string = 42;
 }
 
+// NOTE: only a few over-cap spreads are pinned in this file on purpose. Each
+// one retains ~1 GB of checker memory (the pre-collapse worklist of ~10k
+// states) until the file's check ends, and several of them in one test process
+// exceed the CI runner's memory budget (#1091). The two construction-A pins
+// below cover the core contract: a field common to every source branch is kept
+// (capDegradeDropsCommonSourceField), and a field missing from one branch is
+// still dropped to `unknown` (capDegradeFieldMissingInOneBranch).
+
 // An over-cap spread whose OVERFLOWING source shares a field across its
 // branches: `c` is present in both branches of `pl`. Under distribution `o.c`
 // is `number` (as in TypeScript). This literal overflows the branch cap on the
-// final `...pl` spread, so that spread degrades to an open object: `c` is
-// dropped and `o.c` becomes `unknown` — sound, but less precise than tsc here.
+// final `...pl` spread, so that spread degrades — but the degrade keeps fields
+// common to every source branch (construction A, #1091), so `o.c` stays
+// `number` here, matching tsc.
 function capDegradeDropsCommonSourceField(
   p0: { a0: 0 } | { b0: 1 },
   p1: { a1: 0 } | { b1: 1 },
@@ -140,13 +149,52 @@ function capDegradeDropsCommonSourceField(
     // @skjs-expect-warning This object spread distributes over more than 10000 union branches; its type is over-approximated to an open object, so some properties are typed 'unknown'
     ...pl,
   };
-  // PRECISION (SkipLabs/skjs#747 follow-up): once the cap degrades `...pl` to an
-  // open object, `c` is dropped and `o.c` is `unknown`, so `cc` errors — a more
-  // precise collapse that kept fields common to all of `pl`'s branches would
-  // keep `c: number` here (TypeScript does; skjs is soundly stricter). Reading
-  // `o.c` as `unknown` stays sound.
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // Construction A (SkipLabs/skjs#1091): the over-cap degrade keeps the fields
+  // common to every branch of `pl`, so `c` survives with its per-branch union
+  // type `number` (as in TypeScript) instead of degrading to `unknown`.
   const cc: number = o.c;
+  const uc: unknown = o.c;
+}
+
+// A field present in only ONE branch of the overflowing source is not common,
+// so the degrade still drops it: `o.c` stays `unknown` (sound — the other
+// branch may carry an excess `c` of any type). Pinned in both directions.
+function capDegradeFieldMissingInOneBranch(
+  p0: { a0: 0 } | { b0: 1 },
+  p1: { a1: 0 } | { b1: 1 },
+  p2: { a2: 0 } | { b2: 1 },
+  p3: { a3: 0 } | { b3: 1 },
+  p4: { a4: 0 } | { b4: 1 },
+  p5: { a5: 0 } | { b5: 1 },
+  p6: { a6: 0 } | { b6: 1 },
+  p7: { a7: 0 } | { b7: 1 },
+  p8: { a8: 0 } | { b8: 1 },
+  p9: { a9: 0 } | { b9: 1 },
+  p10: { a10: 0 } | { b10: 1 },
+  p11: { a11: 0 } | { b11: 1 },
+  p12: { a12: 0 } | { b12: 1 },
+
+  pl: { c: number; d: 0 } | { e: 1 },
+): void {
+  const o = {
+    ...p0,
+    ...p1,
+    ...p2,
+    ...p3,
+    ...p4,
+    ...p5,
+    ...p6,
+    ...p7,
+    ...p8,
+    ...p9,
+    ...p10,
+    ...p11,
+    ...p12,
+    // @skjs-expect-warning This object spread distributes over more than 10000 union branches; its type is over-approximated to an open object, so some properties are typed 'unknown'
+    ...pl,
+  };
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  const cn: number = o.c;
   const uc: unknown = o.c;
 }
 
