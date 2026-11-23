@@ -337,8 +337,9 @@ base class TEnv{
     // here instead would let the expansion worklist's seen-set dedup drop
     // the re-emitted inst, collapsing the field to `never` (bottom) so a
     // read is unsoundly accepted into any target type (issue #775). The
-    // unexpanded field type stays a TInst named for the missing annotation,
-    // so error messages and `__SKJS_show` still surface that name.
+    // unexpanded field type stays a TInst named for the missing annotation;
+    // diagnostics render that name as an actionable phrase (see
+    // missingAnnotationPlaceholderDescription, #1094).
     if (name.value.startsWith(kMissingTypeAnnotationPrefix)) {
       return TType::missingAnnotationPlaceholder(name);
     };
@@ -1671,7 +1672,7 @@ base class TEnv{
               field.pos,
               `${kMissingTypeAnnotationPrefix}${
                 className.value
-              }_${field.name.getName()}`,
+              }.${field.name.getName()}`,
             ),
             TArgs(targs),
           )
