@@ -66,6 +66,8 @@ Run it interactively through the `merge-bot` skill, or unattended with `bin/merg
 - **SKJS is a typechecker, not a runtime**: Tests exercise type-checking only — no `console.log()` calls or function invocations
 - **One error per definition**: SKJS reports only the first type error per function/definition unless passing `--keep-going` (best-effort — fatal errors may still hide subsequent ones)
 - **Match TypeScript**: SKJS should not be more permissive than TypeScript, but must not follow TypeScript when TypeScript is unsound. When in doubt, verify with `npx tsc --strict --noEmit`
+- **Living Skip-style notes**: [docs/skip-code-notes.md](docs/skip-code-notes.md) is a log of lessons about writing better Skip code. Read it before writing `.sk` code, and append to it whenever you learn a lesson — especially when the user tells you to do something differently.
+- **Always open PRs**: never push directly to `main` or other shared branches. Every change goes through a PR: dedicated branch → push → `gh pr create` → enable auto-merge (`gh pr merge --auto --merge`). See [Commits and PRs](docs/commits-and-prs.md).
 
 ## Detailed Guides
 
@@ -77,5 +79,6 @@ Read these before starting the relevant task:
 | [TypeScript Subset Rules](skjs-rules.md) | Before changing what SKJS accepts or rejects — this is the source of truth |
 | [TypeScript Soundness Holes](docs/typescript-soundness-holes.md) | Before deciding whether to follow tsc — catalogues the programs tsc accepts unsoundly |
 | [Writing Code](docs/writing-code.md) | Before writing or modifying `.sk` or `.ts` files |
+| [Skip Code Notes](docs/skip-code-notes.md) | Living log of Skip-writing lessons — read before writing `.sk` code, and append whenever you learn one (especially from user corrections) |
 | [Testing](docs/testing.md) | Before writing or modifying tests |
 | [Commits and PRs](docs/commits-and-prs.md) | Before committing or opening a pull request |
