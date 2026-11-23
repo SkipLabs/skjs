@@ -637,15 +637,30 @@ mutable class TypeReadContext private {
     this.lifetime.checkActive();
     if (u1 == u2) return STOk();
     if (this.scratch.memoizedSubtype(u1, u2)) return STOk();
+    // Shared binding-independent judgments (issue #1092); only successes are
+    // recorded, so a failing pair re-runs and re-reports at every site.
+    if (this.scratch.sharedSubtypeOk(u1, u2)) {
+      this.scratch.memoizeSubtype(u1, u2);
+      return STOk()
+    };
     if (u2.isTop()) {
       this.scratch.memoizeSubtype(u1, u2);
+      if (this.scratch.caches().isVarFree(u1)) {
+        this.scratch.memoizeSharedSubtype(u1, u2)
+      };
       return STOk()
     };
     this.scratch.withTypeQuery(() -> {
       stamp = this.scratch.typeQueryReadStamp();
       result = this.subtype_(u1, u2);
       if (result is STOk() && this.scratch.canCacheTypeQuerySince(stamp)) {
-        this.scratch.memoizeSubtype(u1, u2)
+        this.scratch.memoizeSubtype(u1, u2);
+        if (
+          this.scratch.caches().isVarFree(u1) &&
+          this.scratch.caches().isVarFree(u2)
+        ) {
+          this.scratch.memoizeSharedSubtype(u1, u2)
+        }
       };
       (result, result is STOk())
     })
