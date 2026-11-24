@@ -16,9 +16,9 @@
 #                               this also works with a pre-reuse skip bot)
 #
 # Everything else — readiness rules, scan/pick/prepare/push/wait/run, fixer
-# sub-agents, --selftest — is skip's bot, unchanged. See ../skip/HACKING.md
-# ("Merge bot") and ../skip/.vibe/skills/merge-bot/SKILL.md (the operator
-# manual; this repo's skill is a pointer to it).
+# sub-agents, --selftest — is skip's bot, unchanged. The merge-bot skill here
+# is likewise shared: .vibe/skills/merge-bot/SKILL.md symlinks to skip's.
+# See ../skip/HACKING.md ("Merge bot") and ../skip/.vibe/skills/merge-bot/SKILL.md.
 #
 # Usage: bin/merge-bot.sh [options] <command> [args]   (passed straight through;
 # see ../skip/bin/merge-bot.sh --help)
