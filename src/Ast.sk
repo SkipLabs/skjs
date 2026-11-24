@@ -603,6 +603,10 @@ class ClassFieldValue{
   optional: ?PosRange,
   type: ?Type,
   value: ?Expr,
+  // `foo!: T` (definite assignment assertion). Parsed always; outside
+  // conformance mode the checker rejects it with a non-fatal error, and in
+  // conformance mode the field is treated as definitely assigned.
+  definiteAssignment: Bool = false,
 } extends ClassField, WithModifiers
 
 class ClassFieldMethod extends
