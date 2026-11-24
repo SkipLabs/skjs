@@ -95,8 +95,9 @@ enum Ec {
 
 // A declaration colliding with a lib/stub type is a duplicate identifier too
 // (tsc TS2300, issue #887): the stub's definition is what resolves, so the
-// collision must be reported at the declaration — not left to surface as a
-// confusing downstream error.
+// collision is reported at the declaration — the use below still fails
+// downstream because the stub's alias is what `NonNullable` denotes.
+// @skjs-expect-error Duplicate identifier 'NonNullable'
 interface NonNullable<T> {
   v: T;
 }
