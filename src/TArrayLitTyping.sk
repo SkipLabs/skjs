@@ -729,8 +729,26 @@ class ArrayLitTyping() {
             i,
             targetElts[i],
           );
+          // Snapshot the element as it stands before the check runs, through
+          // the untraced diagnostic view so the read cannot poison an
+          // observation. A failing check covariantly seals the element's
+          // commitment variable with the target it was checked against, and
+          // an error captured from that grown state renders their union — a
+          // type that appears nowhere in the program — instead of the
+          // rejected element (#935).
+          eltTyBefore = eltTy.expand(
+            subst.diagnosticComputation(),
+            tenv,
+            Some(Covariant()),
+          );
           !result = TType::isSub(subst, tenv, eltTy, targetElts[i]);
           if (result is STError _) {
+            // Re-run the failed check against the pre-check expansion, which
+            // carries no commitment variables, so the returned error names
+            // the element that was actually rejected. Restoring first puts
+            // the substitution back into the pre-check state.
+            subst.restore(savedSubst);
+            !result = TType::isSub(subst, tenv, eltTyBefore, targetElts[i]);
             break void
           }
         };

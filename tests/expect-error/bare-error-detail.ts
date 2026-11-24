@@ -58,14 +58,66 @@ function readonlyTupleConstraint(): void {
   const r = gr([0, 2]);
 }
 
-// A direct tuple annotation checks element-by-element. The failing element's
-// commitment variable is covariantly sealed with the target it was checked
-// against, so today the pair renders as their union `1 | 2` — a type that
-// appears nowhere in the program — rather than the rejected element (issue
-// #935).
+// A direct tuple annotation checks element-by-element, and the error names
+// the element that was actually rejected — not the union the failed check
+// grew the element's commitment variable into (issue #935).
 function directTupleElementMismatch(): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 Type '2'
+  // @skjs-expect-error-line3 is not assignable to type '1'
+  const x: [0, 1] = [0, 2];
+}
+
+// The #935 fix is not literal-kind-specific: same-kind string and boolean
+// literal elements name the rejected element too (tsc agrees).
+function directTupleStringMismatch(): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 Type '"c"'
+  // @skjs-expect-error-line3 is not assignable to type '"b"'
+  const x: ["a", "b"] = ["a", "c"];
+}
+
+function directTupleBoolMismatch(): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 Type 'true'
+  // @skjs-expect-error-line3 is not assignable to type 'false'
+  const x: [true, false] = [true, true];
+}
+
+// A union target element is named as the union, and the rejected literal as
+// the source (tsc agrees).
+function directTupleUnionTargetMismatch(): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 Type '2'
+  // @skjs-expect-error-line3 is not assignable to type '0 | 1'
+  const x: [0 | 1] = [2];
+}
+
+// A genuine union source is NOT set-subtracted against the target: `1 | 2`
+// really is the source element, and tsc reports the whole union here too.
+function directTupleUnionSource(decl: 1 | 2): void {
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   // @skjs-expect-error-line2 Type '1 | 2'
   // @skjs-expect-error-line3 is not assignable to type '1'
-  const x: [0, 1] = [0, 2];
+  const x: [1] = [decl];
+}
+
+// ...but the grown-state contamination is deeper than the top-level element:
+// inside an object element, the failing field check grows the field's
+// commitment variable, and the nested error still renders the union `0 | 1`
+// where tsc reports `1` (#935 family, not fixed at depth).
+function directTupleObjectFieldMismatch(): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 Type '0 | 1'
+  // @skjs-expect-error-line3 is not assignable to type '0'
+  const x: [{ a: 0 }, number] = [{ a: 1 }, 0];
+}
+
+// Same at a nested tuple element: tsc reports `1`, SKJS still renders the
+// grown `0 | 1` (#935 family).
+function directTupleNestedMismatch(): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 Type '0 | 1'
+  // @skjs-expect-error-line3 is not assignable to type '0'
+  const x: [[0], number] = [[1], 0];
 }
