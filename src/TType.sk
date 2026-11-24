@@ -1725,7 +1725,11 @@ return type.
 
 In SKJS, we decided (see https://github.com/SkipLabs/skjs/issues/75) that void
 would be a distinct type from undefined. It contains the value undefined but
-with no operations permitted on it.
+with no operations permitted on it. The one edge #75's discussion settled as
+safe is `undefined` assignable to `void` — tsc's lattice puts void directly
+above undefined, and `void`'s only runtime value is `undefined` — so that
+direction is allowed (issue #871); `void` remains NOT assignable to
+`undefined`, and no operations are permitted on a `void` value either way.
 
 We should ensure that nothing non-undefined can be of type void. */
 base class TPrimUnitKind uses XXHashable, Orderable {
