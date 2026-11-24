@@ -1,5 +1,12 @@
-Except for README.txt, the files in this directory are copied from the official
-TypeScript repository: https://github.com/microsoft/TypeScript
+Except for README.txt, the files in this directory are copied VERBATIM (no
+modifications) from the official TypeScript repository:
+https://github.com/microsoft/TypeScript
+(tsc/testdata/tests/cases/conformance for the cases, and
+tsc/testdata/baselines/reference/conformance for the .errors.txt references).
 
 They fall under Microsoft copyright, see CopyrightNotice.txt, and
 the Apache license, see LICENSE.txt.
+
+Layout: cases/ holds files that check as-is (in conformance mode),
+not-supported/ holds verbatim files that still need unsupported features.
+See docs/testing.md "TypeScript Conformance Tests".

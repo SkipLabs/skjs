@@ -1,4 +1,5 @@
-const x: boolean = true;
+// @target: es2015
+var x = true;
 
-const a: string = x.toString();
-const b: string = x['toString']();
+var a = x.toString();
+var b = x['toString']();

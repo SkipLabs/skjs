@@ -1,2 +1,3 @@
-const x: string = '';
-const d: string = x['charAt']('invalid'); // error
+// @target: es2015
+var x = '';
+var d = x['charAt']('invalid'); // error

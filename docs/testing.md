@@ -5,6 +5,24 @@
 - **Runnable examples**: `examples/src/*.ts` — demonstrate working features and patterns
 - **Unit tests**: `tests/expect-error/*.ts` — both positive (valid code) and negative (invalid code with error annotations) tests
 - **Test projects**: `tests/projects/*/` — multi-file projects, auto-discovered (all must pass at every commit)
+- **TypeScript conformance tests**: `tests/ts-conformance/` — see below
+
+## TypeScript Conformance Tests
+
+`tests/ts-conformance/` holds files copied **verbatim** from the official TypeScript test suite (https://github.com/microsoft/TypeScript, `tsc/testdata/tests/cases/conformance/`, baselines in `tsc/testdata/baselines/reference/conformance/`). Do not modify them — that is the point: SKJS runs them as-is.
+
+- `cases/` — files that type-check exactly as the TypeScript reference baselines say (matched by error line numbers against `reference/<name>.errors.txt`). Checked in **conformance mode** (`conformance: true`, see [skjs-rules.md](../skjs-rules.md)), which relaxes SKJS-specific restrictions (`var`, top-level `let`/`var`/statements) so TS files need no rewrites. `// @param: value` header directives are allow-listed (`allowedConfig` in `tests/Main.sk`); tsc strips those lines before compiling, so the harness adds the header count back to reference line numbers.
+- `not-supported/` — verbatim files that still need features SKJS lacks (e.g. `any`, wrapper types like `Boolean`, disallowed `// @` flags); each must produce at least one error.
+- `reference/` — the `.errors.txt` baselines, copied flat by basename.
+
+To add cases from a TypeScript checkout (from the SKJS root):
+
+```bash
+devtools/copy-ts-tests.sh path/to/.../cases/conformance/some/dir            # into cases/
+devtools/copy-ts-tests.sh path/to/.../cases/conformance/some/dir not-supported  # into not-supported/
+```
+
+Then run `make test-in-docker` (`testTypeScriptConformance` / `testNotSupportedTypeScriptConformance`) and move any failing `cases/` files into `not-supported/` — or, better, implement the missing support and keep them in `cases/`.
 
 ## Running Tests
 

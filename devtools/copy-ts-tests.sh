@@ -25,8 +25,17 @@ if [ ! -d "$REF_DEST" ]; then
 fi
 
 if [ -z "$1" ]; then
-    echo "Usage: devtools/copy-ts-tests.sh path/to/conformance/tests/to/copy'"
+    echo "Usage: devtools/copy-ts-tests.sh path/to/conformance/tests/to/copy [not-supported]"
+    echo "Copies verbatim .ts cases (and their reference .errors.txt) into"
+    echo "tests/ts-conformance/cases/, or into tests/ts-conformance/not-supported/"
+    echo "when the second argument is 'not-supported'."
     exit 1
+fi
+
+# Optional destination: 'not-supported' for cases that cannot be checked as-is yet
+DEST_BASE="$CASES_DEST"
+if [ "$2" = "not-supported" ]; then
+    DEST_BASE="./tests/ts-conformance/not-supported"
 fi
 
 TO_COPY="$(realpath --canonicalize-existing "$1")"
@@ -52,11 +61,18 @@ TESTS_ROOT="${TESTS_ROOT%/cases/conformance}"
 REF_DIR="$TESTS_ROOT/baselines/reference"
 
 if [ ! -d "$REF_DIR" ]; then
+    # New TypeScript repo layout (tsgo-era): cases live under
+    # <root>/tests/cases/conformance and baselines are flat under
+    # <root>/baselines/reference/conformance (no per-directory nesting).
+    REF_DIR="${TESTS_ROOT%/tests}/baselines/reference/conformance"
+fi
+
+if [ ! -d "$REF_DIR" ]; then
     echo "Cannot find reference directory $REF_DIR"
     exit 1
 fi
 
-DEST="$CASES_DEST/$RELATIVE_PATH"
+DEST="$DEST_BASE/$RELATIVE_PATH"
 mkdir --parents "$DEST"
 
 cp --recursive --interactive --verbose "$TO_COPY"/* "$DEST"

@@ -1,4 +1,3 @@
-function _(): void {
-    let x: typeof undefined;
-    x = undefined;
-}
+// @target: es2015
+var x: typeof undefined;
+x = undefined;
