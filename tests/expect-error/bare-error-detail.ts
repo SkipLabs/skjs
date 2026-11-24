@@ -57,3 +57,15 @@ function readonlyTupleConstraint(): void {
   // @skjs-expect-error-line3 is not assignable to type 'readonly [0, 1]'
   const r = gr([0, 2]);
 }
+
+// A direct tuple annotation checks element-by-element. The failing element's
+// commitment variable is covariantly sealed with the target it was checked
+// against, so today the pair renders as their union `1 | 2` — a type that
+// appears nowhere in the program — rather than the rejected element (issue
+// #935).
+function directTupleElementMismatch(): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 Type '1 | 2'
+  // @skjs-expect-error-line3 is not assignable to type '1'
+  const x: [0, 1] = [0, 2];
+}
