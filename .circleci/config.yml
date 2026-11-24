@@ -42,6 +42,13 @@ jobs:
           command: |
             make check-fmt
       - run:
+          # Cloned before `make check-sh`: bin/merge-bot.sh is a wrapper around
+          # ../skip/bin/merge-bot.sh, so the merge-bot selftest needs the skip
+          # checkout to exist already.
+          name: Clone Skip repository
+          command: |
+            git clone --depth=1 --shallow-submodules --recurse-submodules https://github.com/SkipLabs/skip ../skip
+      - run:
           name: Check shell scripts
           command: |
             make check-sh
@@ -49,17 +56,14 @@ jobs:
           name: Skip Skip clone/build/tests for infra-only changes
           command: |
             # Infra-only changes still got the cheap checks above (they can
-            # affect `make check-fmt` / `make check-sh`); the Skip clone, the
-            # skargo build and the test suite cannot be affected by them, so
-            # halt green instead of scheduling them.
+            # affect `make check-fmt` / `make check-sh`); the skargo build and
+            # the test suite cannot be affected by them, so halt green instead
+            # of scheduling them (the Skip clone above is cheap and already
+            # done).
             if [ "${SKJS_CI_CLASS:-full}" = "infra-only" ]; then
-              echo "Infra-only change vs main; halting green before the Skip clone, build and tests."
+              echo "Infra-only change vs main; halting green before the build and tests."
               circleci-agent step halt
             fi
-      - run:
-          name: Clone Skip repository
-          command: |
-            git clone --depth=1 --shallow-submodules --recurse-submodules https://github.com/SkipLabs/skip ../skip
       - run:
           name: Compute dev binary build cache key
           command: |
