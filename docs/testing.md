@@ -12,17 +12,16 @@
 `tests/ts-conformance/` holds files copied **verbatim** from the official TypeScript test suite (https://github.com/microsoft/TypeScript, `tsc/testdata/tests/cases/conformance/`, baselines in `tsc/testdata/baselines/reference/conformance/`). Do not modify them — that is the point: SKJS runs them as-is.
 
 - `cases/` — files that type-check exactly as the TypeScript reference baselines say (matched by error line numbers against `reference/<name>.errors.txt`). Checked in **conformance mode** (`conformance: true`, see [skjs-rules.md](../skjs-rules.md)), which relaxes SKJS-specific restrictions (`var`, top-level `let`/`var`/statements) so TS files need no rewrites. `// @param: value` header directives are allow-listed (`allowedConfig` in `tests/Main.sk`); tsc strips those lines before compiling, so the harness adds the header count back to reference line numbers.
-- `not-supported/` — verbatim files that still need features SKJS lacks (e.g. `any`, wrapper types like `Boolean`, disallowed `// @` flags); each must produce at least one error.
+- `not-supported/` — verbatim files we **tried to support and could not yet**; each must produce at least one error. A file only lands here after a genuine attempt (identify the blocker, try to implement it); note the blocker in the PR description when moving it. Never copy files straight into `not-supported/`.
 - `reference/` — the `.errors.txt` baselines, copied flat by basename.
 
-To add cases from a TypeScript checkout (from the SKJS root):
+To add cases from a TypeScript checkout (from the SKJS root), copy them into `cases/` and **try to make them pass** — the default is to support them, implementing whatever is missing:
 
 ```bash
-devtools/copy-ts-tests.sh path/to/.../cases/conformance/some/dir            # into cases/
-devtools/copy-ts-tests.sh path/to/.../cases/conformance/some/dir not-supported  # into not-supported/
+devtools/copy-ts-tests.sh path/to/.../cases/conformance/some/dir   # into cases/
 ```
 
-Then run `make test-in-docker` (`testTypeScriptConformance` / `testNotSupportedTypeScriptConformance`) and move any failing `cases/` files into `not-supported/` — or, better, implement the missing support and keep them in `cases/`.
+Then run `make test-in-docker` (`testTypeScriptConformance` / `testNotSupportedTypeScriptConformance`). If a `cases/` file fails, first try to implement the missing support and keep it in `cases/`; only if we genuinely don't support it yet, move it (with `mv`, verbatim) into `not-supported/` and say what blocks it.
 
 ## Running Tests
 
