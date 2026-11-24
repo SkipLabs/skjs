@@ -242,6 +242,16 @@ extension class Parser {
       | Some(x) -> x.posStart
       };
       fieldName = this.getFieldName();
+      // `foo!: T` definite assignment assertion. Parsed unconditionally; the
+      // checker rejects it with a non-fatal error outside conformance mode.
+      definiteAssignment = if (
+        this.lex.peekKind() is Some(TKExclamationMark())
+      ) {
+        _ = this.lex.next();
+        true
+      } else {
+        false
+      };
       isOptional = if (this.lex.peekKind() is Some(TKQuestionMark())) {
         Some(this.lex.posRange(this.lex.next().fromSome()));
       } else {
@@ -297,6 +307,7 @@ extension class Parser {
           optional => isOptional,
           type,
           value => fieldValue,
+          definiteAssignment,
         }
       };
       fields.push(field);
