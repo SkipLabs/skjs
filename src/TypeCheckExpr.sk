@@ -2534,7 +2534,7 @@ extension class TypeChecker {
           // returned by a value-position (typeOnly=false) lookup.
           | EnumMemberDef _ -> void
           | FDVar(kind, name, type, value) ->
-            if (!(kind is VDKConst _)) {
+            if (!(kind is VDKConst _) && !this.conformance) {
               tcenv.error(
                 Array[
                   (
@@ -2547,17 +2547,26 @@ extension class TypeChecker {
             };
             break type match {
             | None() ->
-              value.flatMap(e ->
-                (e.value match {
-                | AsConst(sub) -> this.maybeAsConstType(tcenv, sub)
-                | _ -> None()
-                }) match {
-                | some @ Some _ -> some
-                | None() -> this.asConstExpr(tcenv, e)
+              if (this.conformance && !(kind is VDKConst _)) {
+                // Conformance mode: a top-level let/var reference reads at its
+                // (widened) initializer's type.
+                value match {
+                | Some(init) -> this.toplevelVarInitType(tcenv, init)
+                | None() -> this.newTVar(tcenv, pos, FromUntypedVar(pos))
                 }
-              ) match {
-              | None() -> this.newTVar(tcenv, pos, FromUntypedVar(pos))
-              | Some(ty) -> ty
+              } else {
+                value.flatMap(e ->
+                  (e.value match {
+                  | AsConst(sub) -> this.maybeAsConstType(tcenv, sub)
+                  | _ -> None()
+                  }) match {
+                  | some @ Some _ -> some
+                  | None() -> this.asConstExpr(tcenv, e)
+                  }
+                ) match {
+                | None() -> this.newTVar(tcenv, pos, FromUntypedVar(pos))
+                | Some(ty) -> ty
+                }
               }
             | Some(ty) ->
               this.normalize(tcenv, ty, kind is VDKConst _, Some(name.value))
@@ -4438,6 +4447,31 @@ extension class TypeChecker {
    *
    * Returns a full TType rather than a single SType only to spare the callers a
    * `TType::single` wrapper. */
+  // Conformance mode: the type of a reference to a top-level `var`/`let` is
+  // its initializer's type, widened like a `let` binding. Computed in a
+  // throwaway env so initializer diagnostics are not repeated at every
+  // reference — the declaration site (TypeCheckDef.validateToplevelVar)
+  // reports them once. Re-entering an initializer already being resolved
+  // (circular `var a = b; var b = a;`) yields top instead of looping forever.
+  private fun toplevelVarInitType(tcenv: mutable TCEnv, e: Expr): TType {
+    if (this.resolvingToplevelVarInits.contains(e.pos)) {
+      return TType::top(e.pos)
+    };
+    !this.resolvingToplevelVarInits = this.resolvingToplevelVarInits.set(e.pos);
+    results = TCResultsAcc::mcreate{errorHandling => EHKeepGoing()};
+    tcenvl = mutable TCEnvLight{context => tcenv.context, results => results};
+    subst = Subst::createCheckingOwner(tcenvl);
+    scratch = TCEnv::mcreate(subst, tcenv.callingContext);
+    cell = SubstReadCell<TType>::mcreate();
+    _ = catchError(() -> {
+      !cell.value = Some(this.expr(scratch, e, false))
+    });
+    !this.resolvingToplevelVarInits = this.resolvingToplevelVarInits.remove(
+      e.pos,
+    );
+    cell.value.default(TType::top(e.pos))
+  }
+
   fun asConstExpr(tcenv: mutable TCEnv, e: Expr): ?TType {
     pos = e.pos;
     e.value match {
@@ -5036,21 +5070,28 @@ extension class TypeChecker {
     e1.value match {
     | Var(n) ->
       ty2 = this.expr(tcenv, e2, mostPrecise);
-      storedType = tcenv.stableExprTypes.maybeGet((e2.pos, ty2)).default(ty2);
-      tcenv.writeVar(this, n, storedType, (x, y) ->
-        this.checkSubType(
-          tcenv,
-          pos,
-          "Type is not assignable to the variable's type",
-          this.stableAliasExprType(tcenv, e2, x),
-          y,
-          TSCode(2322),
-        )
-      );
-      e2.value match {
-      | Var(source) if (tcenv.scope.hasFieldRefinement(source)) ->
-        tcenv.scope.markFieldRefinement(n)
-      | _ -> void
+      if (this.conformance && tcenv.scope.maybeGet(n) is None _) {
+        // Conformance mode: assignment to a top-level let/var — top-level
+        // names are not scope locals, so check the write against the
+        // binding's type instead of going through writeVar.
+        this.assignToplevelVar(tcenv, pos, n, e2, ty2)
+      } else {
+        storedType = tcenv.stableExprTypes.maybeGet((e2.pos, ty2)).default(ty2);
+        tcenv.writeVar(this, n, storedType, (x, y) ->
+          this.checkSubType(
+            tcenv,
+            pos,
+            "Type is not assignable to the variable's type",
+            this.stableAliasExprType(tcenv, e2, x),
+            y,
+            TSCode(2322),
+          )
+        );
+        e2.value match {
+        | Var(source) if (tcenv.scope.hasFieldRefinement(source)) ->
+          tcenv.scope.markFieldRefinement(n)
+        | _ -> void
+        }
       };
       ty2
     | Dot(
@@ -5107,6 +5148,53 @@ extension class TypeChecker {
       );
       ty1
     }
+  }
+
+  // Conformance mode: assignment to a top-level `let`/`var` (a name with no
+  // local binding). The write is checked against the binding's type —
+  // annotation, else the widened initializer type — but does not narrow:
+  // top-level names are not scope locals, so reads keep resolving through the
+  // def map. A top-level `const` is rejected with TS2588 like a local const.
+  private fun assignToplevelVar(
+    tcenv: mutable TCEnv,
+    pos: PosRange,
+    n: Name,
+    e2: Expr,
+    ty2: TType,
+  ): void {
+    for (def in this.defMap.getAll(tcenv, n, false, false)) {
+      def match {
+      | FDVar(kind, _, type, value) ->
+        target = type match {
+        | Some(t) -> this.normalize(tcenv, t, false, Some(n.value))
+        | None() ->
+          value match {
+          | Some(e) -> this.toplevelVarInitType(tcenv, e)
+          | None() -> TType::top(n.pos)
+          }
+        };
+        if (kind is VDKConst()) {
+          tcenv.error(
+            Array[
+              (n.pos, `Cannot assign to '${n.value}' because it is a constant`),
+            ],
+            TSCode(2588),
+          )
+        } else {
+          this.checkSubType(
+            tcenv,
+            pos,
+            "Type is not assignable to the variable's type",
+            this.stableAliasExprType(tcenv, e2, ty2),
+            target,
+            TSCode(2322),
+          )
+        };
+        return void
+      | _ -> void
+      }
+    };
+    tcenv.error(Array[(n.pos, `Cannot find name '${n.value}'`)], TSCode(2304))
   }
 
   // Split a destructuring pattern's elements into the positional targets and

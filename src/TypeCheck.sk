@@ -36,6 +36,11 @@ class TypeChecker{
   // TsCompilerOptions.conformance; SkipLabs/skjs#841 tracks real `var`
   // semantics.
   conformance: Bool = false,
+  // Positions of top-level let/var initializers currently being resolved in
+  // conformance mode (toplevelVarInitType, TypeCheckExpr.sk); guards circular
+  // initializers (`var a = b; var b = a;`) — re-entry yields top instead of
+  // looping forever.
+  resolvingToplevelVarInits: SortedSet<PosRange> = SortedSet[],
 } extends TEnv {
   // Apply the run's tracked config (see Config.sk). Persisted-dir closures
   // capture a TypeChecker from init time; they must call this with a fresh
