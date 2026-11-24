@@ -305,6 +305,23 @@ fun testNormalizeJSBigInt(): void {
     "340282366920938463463374607431768211455n",
     SKJS.normalizeJSBigInt("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFn"),
   );
+  // 64 hex digits (2^256 - 1): exact far beyond any Int, via skbigint.
+  SKTest.expectEq(
+    "115792089237316195423570985008687907853269984665640564039457584007913129639935n",
+    SKJS.normalizeJSBigInt(
+      "0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFn",
+    ),
+  );
+  // 65 binary digits with separators (2^65 - 1).
+  SKTest.expectEq(
+    "36893488147419103231n",
+    SKJS.normalizeJSBigInt(
+      "0b11111111111111111111111111111111111111111111111111111111111111111n",
+    ),
+  );
+  // Separators inside a radix literal are stripped before conversion.
+  SKTest.expectEq("4n", SKJS.normalizeJSBigInt("0b1_0_0n"));
+  SKTest.expectEq("255n", SKJS.normalizeJSBigInt("0xF_Fn"));
 }
 
 // --- jsNumberLiteralDouble / isExactJSNumberName tests ---------------------
@@ -321,6 +338,17 @@ fun testJSNumberLiteralDoubleRejectsInvalidRadixDigits(): void {
   SKTest.expectEq(Some(-2.0), SKJS.jsNumberLiteralDouble("-0b10"));
   SKTest.expectEq(Some(Float::inf), SKJS.jsNumberLiteralDouble("Infinity"));
   SKTest.expectEq(Some(-Float::inf), SKJS.jsNumberLiteralDouble("-Infinity"));
+  // Radix names beyond 2^53 convert exactly to decimal via skbigint, then
+  // parse to the correctly-rounded double: 0x10000000000000000 is 2^64.
+  SKTest.expectEq(
+    Some(18446744073709551616.0),
+    SKJS.jsNumberLiteralDouble("0x10000000000000000"),
+  );
+  // 2^53 + 1 rounds to 2^53.
+  SKTest.expectEq(
+    Some(9007199254740992.0),
+    SKJS.jsNumberLiteralDouble("0x20000000000001"),
+  );
 }
 
 // An exact name is one that parses and prints back to itself; this is the

@@ -1,10 +1,11 @@
 [package]
 name = "skjs"
-version = "1.29.3"
+version = "1.29.4"
 
 [dependencies]
 std = { path = "../skip/skiplang/prelude" }
 cli = { path = "../skip/skiplang/cli" }
+skbigint = { path = "../skip/skiplang/skbigint" }
 
 [build-dependencies]
 cc = { path = "../skip/skiplang/cc" }

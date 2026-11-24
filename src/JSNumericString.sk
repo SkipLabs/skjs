@@ -22,7 +22,9 @@
 /*   - Literals whose decimal form is 250 characters or longer exceed the  */
 /*     runtime float parser and keep their spelled form, so two such       */
 /*     spellings of one double stay distinct (sound, stricter than tsc)    */
-/*   - BigInt normalization is out of scope (handled separately)           */
+/*   - Radix-to-decimal conversion of validated 0x/0o/0b literals goes     */
+/*     through the skbigint library (SKBigInt.BigInt::fromStringRadix),    */
+/*     so it is exact at any magnitude (SkipLabs/skip#1731, #1740)         */
 /***************************************************************************/
 
 module SKJS;
@@ -60,10 +62,12 @@ fun jsNumberLiteralDouble(name: String): ?Float {
     // The runtime parser needs a digit before the point: `.5` is `0.5`.
     if (unsigned.startsWith(".")) "0" + unsigned else unsigned
   } else {
-    radixToDecimalString(
+    // Exact radix-to-decimal conversion via skbigint (the digits are
+    // validated, so this cannot fail; None would mean any value).
+    SKBigInt.BigInt::fromStringRadix(
       unsigned.substring(unsigned.getIter().forward(2)),
       base,
-    ) match {
+    ).map(bi -> bi.toString()) match {
     | Some(d) -> d
     | None() -> return None()
     }
@@ -375,20 +379,20 @@ fun validateJSBigIntLiteral(raw: String): ?ParsingKind {
 }
 
 // Normalize a validated bigint literal to its canonical form: underscores
-// stripped and radix forms converted to decimal (exactly — bigints are
-// arbitrary precision, so no magnitude guard is needed). The trailing 'n'
-// is preserved.
+// stripped and radix forms converted to decimal via skbigint (exactly —
+// bigints are arbitrary precision, so no magnitude guard is needed). The
+// trailing 'n' is preserved.
 fun normalizeJSBigInt(raw: String): String {
   s = raw.stripSuffix("n").replace("_", "");
   base = jsLiteralRadixBase(s);
   if (base != 10) {
-    // The digits are validated, so the conversion cannot fail; a failure
-    // would keep the spelled form, which is sound.
-    return radixToDecimalString(
+    // The digits are validated, so the skbigint conversion cannot fail; a
+    // failure would keep the spelled form, which is sound.
+    return SKBigInt.BigInt::fromStringRadix(
       s.substring(s.getIter().forward(2)),
       base,
-    ) match {
-    | Some(d) -> d + "n"
+    ).map(bi -> bi.toString() + "n") match {
+    | Some(d) -> d
     | None() -> s + "n"
     }
   };
@@ -408,38 +412,6 @@ fun radixDigitValue(c: Char, base: Int): ?Int {
     return None()
   };
   if (d >= base) None() else Some(d)
-}
-
-// Exact radix-to-decimal conversion of digits, via schoolbook multiply-add
-// on a little-endian decimal digit vector (no magnitude limit). None when a
-// digit is invalid for the base.
-fun radixToDecimalString(digits: String, base: Int): ?String {
-  acc = mutable Vector[0];
-  for (c in digits) {
-    carry = radixDigitValue(c, base) match {
-    | Some(d) -> d
-    | None() -> return None()
-    };
-    for (i in Range(0, acc.size())) {
-      v = acc[i] * base + carry;
-      acc.set(i, v % 10);
-      !carry = v / 10;
-    };
-    while (carry > 0) {
-      acc.push(carry % 10);
-      !carry = carry / 10;
-    };
-  };
-  // acc is little-endian; leading zeros only occur for the value 0 itself.
-  out = mutable Vector[];
-  top = acc.size() - 1;
-  while (top > 0 && acc[top] == 0) {
-    !top = top - 1;
-  };
-  for (i in Range(0, top + 1)) {
-    out.push(Char::fromCode(acc[top - i] + '0'.code()));
-  };
-  Some(String::fromChars(out.toArray()))
 }
 
 // Negate a canonical numeric literal name. Negative literals are built by
@@ -545,10 +517,10 @@ fun jsLiteralExactDigits(unsigned: String): ?(String, Int) {
     // Position of the decimal point within the digits: value = 0.chars * 10^point.
     ((intPart + fracPart).chars(), intPart.length() + exp)
   } else {
-    decimal = radixToDecimalString(
+    decimal = SKBigInt.BigInt::fromStringRadix(
       unsigned.substring(unsigned.getIter().forward(2)),
       base,
-    ) match {
+    ).map(bi -> bi.toString()) match {
     | Some(d) -> d
     | None() -> return None()
     };
