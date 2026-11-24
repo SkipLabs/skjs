@@ -269,6 +269,10 @@ fun validateTSConformance(
   fileContents = checker.files.filesContent.get(context, fileName).value;
   config = parseConfigComments(fileContents).collect(Array);
   checkConfig(config, allowedConfig);
+  // tsc strips the leading `// @param: value` directive lines before
+  // compiling, so reference .errors.txt line numbers exclude them. skjs keeps
+  // the file verbatim, so add the header count back when comparing.
+  headerCount = config.size();
 
   absFileName = fileName.toAbsolute(checker.files.rootMap);
   dir = absFileName.dirName;
@@ -284,7 +288,19 @@ fun validateTSConformance(
       `${fileName.relative.baseName.stripSuffix(".ts")}.errors.txt`,
     );
   referenceErrors = if (FileSystem.exists(errorsFile.toString())) {
-    parseTSConformanceReferenceErrors(errorsFile.toString());
+    parseTSConformanceReferenceErrors(errorsFile.toString())
+      .map(ref ->
+        TSConformanceReferenceError{
+          fileName => ref.fileName,
+          column => ref.column,
+          errorCode => ref.errorCode,
+          message => ref.message,
+          extraMessages => ref.extraMessages,
+          line => ref.line + headerCount,
+        }
+      )
+      .collect(Array)
+      .iterator()
   } else {
     Array[].iterator()
   };
@@ -360,6 +376,7 @@ fun testFiles(
   validateResult: Validator,
   update: UpdateMode = UMValidateOnly(),
   buildCfg: Bool = false,
+  compilerOptions: SKJS.TsCompilerOptions = SKJS.TsCompilerOptions{},
 ): void {
   reportExpectationErrors(
     checkFilesWithRoot(
@@ -369,6 +386,7 @@ fun testFiles(
       validateResult,
       buildCfg,
       update,
+      compilerOptions,
     ),
   )
 }
@@ -422,10 +440,18 @@ fun testFile(
   fileName: String,
   validateResult: Validator = validateExpectErrorComments,
   update: UpdateMode = UMValidateOnly(),
+  compilerOptions: SKJS.TsCompilerOptions = SKJS.TsCompilerOptions{},
 ): void {
   srcFiles = Array[fileName];
   importStubs = Array["./import-stubs"];
-  testFiles(srcFiles, importStubs, validateResult, update)
+  testFiles(
+    srcFiles,
+    importStubs,
+    validateResult,
+    update,
+    false,
+    compilerOptions,
+  )
 }
 
 fun testDirectory(
@@ -469,7 +495,14 @@ fun testTypeScriptConformance(): void {
   dir = Path.resolve("./tests/ts-conformance/cases/");
   cases = FileSystem.readFilesRecursive(dir);
   for (case in cases) {
-    testFile(case, validateTSConformance);
+    // Conformance mode: cases are verbatim copies of the TypeScript suite,
+    // so they need the relaxed restrictions (`var`, top-level let/var, ...).
+    testFile(
+      case,
+      validateTSConformance,
+      UMValidateOnly(),
+      SKJS.TsCompilerOptions{conformance => true},
+    );
   }
 }
 
