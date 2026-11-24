@@ -38,6 +38,20 @@ const x3: void = {};
 // @skjs-expect-error Type of initializer is not assignable to the declared type annotation
 const x4: () => void = () => null;
 
+// `undefined` is the one value that inhabits `void`, and tsc accepts it in
+// every configuration, so SKJS must too (issue #871). `null` stays rejected
+// under SKJS's strict-null semantics (x3 above, returningVoid7 below).
+function assignUndefinedToVoid(): void {
+  let x: void;
+  // @skjs-expect-error Type is not assignable to the variable's type
+  x = undefined;
+}
+
+function arrowReturningUndefined(): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  const f: () => void = () => undefined;
+}
+
 // @skjs-expect-error Property access is not allowed on this type
 const x5: undefined = returningVoid()["bla"];
 
