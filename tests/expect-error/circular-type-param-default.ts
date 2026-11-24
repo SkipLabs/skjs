@@ -186,3 +186,13 @@ function useSelfDefaultClass(x: SelfDefaultClass): void {}
 // @skjs-expect-error Optional type parameters are not supported for classes and functions
 interface SelfDefaultInterface<T = SelfDefaultInterface> {}
 function useSelfDefaultInterface(x: SelfDefaultInterface): void {}
+
+/////////////////////////////////////////////////////////////////////////////
+// Ambient (`declare`d) aliases are checked too (issue #1026).
+/////////////////////////////////////////////////////////////////////////////
+
+// tsc reports TS2716 here as well; SKJS used to accept the declaration
+// silently (the alias still resolves to `unknown`, so this is a missing
+// diagnostic, not a soundness hole).
+declare type AmbientSelfDefault<T = AmbientSelfDefault> = [T];
+function useAmbientSelfDefault(x: AmbientSelfDefault): void {}
