@@ -206,9 +206,7 @@ export function f4(x: number): number {
 EOF
 
 out=$(run_check --data)
-# Current behavior: the alias's positions are file-absolute, so the shift
-# re-checks its users (#1031).
-expect_markers "commentAboveTypeAliasRecomputesUser" "\"f1\"" "$out"
+expect_markers "commentAboveTypeAliasNotRecomputed" "" "$out"
 
 ########################################################################
 # Type alias body change → only its users recomputed

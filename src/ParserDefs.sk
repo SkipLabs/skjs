@@ -814,6 +814,18 @@ extension class Parser {
 
   // Parse type definitions
   mutable fun typeDef(): TypeDef {
+    // Record the alias definition and set context, so the alias body's
+    // positions are relative to the alias itself: inserting a line above the
+    // declaration then leaves its PosRanges (and hash) unchanged and does not
+    // re-check every user of the alias (issue #1031). Same pattern as class_
+    // and topLevelFunDef.
+    prevSymbolContext = this.getCurrentSymbolContext();
+    aliasSymbol = SPTypeAlias(this.peekNameStr());
+    symbolContextPos = this.lex.pos;
+    this.recordSymbolDefinitionAndSetSymbolContext(
+      aliasSymbol,
+      symbolContextPos,
+    );
     name = this.bindingName();
     tdefParams = if (this.lex.peekKind() is Some(TKLessThan())) {
       _ = this.lex.next();
@@ -826,6 +838,8 @@ extension class Parser {
     if (this.lex.peekKind() is Some(TKSemi())) {
       _ = this.lex.next();
     };
+    // Restore previous context
+    this.setSymbolContext(prevSymbolContext);
     nameStr = name.value;
     occ = this.nameCounts.maybeGet(nameStr).default(0);
     this.nameCounts.set(nameStr, occ + 1);
