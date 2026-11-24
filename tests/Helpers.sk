@@ -735,7 +735,7 @@ fun isAlNum(c: Char): Bool {
 }
 
 fun isFileNameChar(c: Char): Bool {
-  isAlNum(c) || c == '.'
+  isAlNum(c) || c == '.' || c == '_' || c == '-'
 }
 
 fun isNotEOL(c: Char): Bool {
@@ -833,8 +833,8 @@ mutable class TSConformanceReferenceErrorsParser private {
       this.eatString("): error TS");
       errorCode = this.readInt();
       invariant(
-        errorCode >= 1000 && errorCode <= 9999,
-        `${this.currentPosition()}: Error code ${errorCode} is expected to be between 1000 and 9999`,
+        errorCode >= 1000 && errorCode <= 99999,
+        `${this.currentPosition()}: Error code ${errorCode} is expected to be between 1000 and 99999`,
       );
       this.eatString(": ");
       message = this.readString(isNotEOL);
@@ -947,6 +947,10 @@ fun parseTSConformanceReferenceErrors(
 fun parseConfigComments(contents: String): mutable Iterator<(String, String)> {
   chars = contents.chars().toArray();
   pos = 0;
+  // tsc strips a leading UTF-8 BOM before scanning directive lines
+  if (pos < chars.size() && chars[pos] == '\uFEFF') {
+    !pos = pos + 1
+  };
   lineNumber = 1;
 
   while (pos + 4 < chars.size()) {
@@ -969,19 +973,26 @@ fun parseConfigComments(contents: String): mutable Iterator<(String, String)> {
     );
     name = String::fromChars(chars.slice(nameStart, pos));
     invariant(
-      pos + 1 < chars.size() && chars[pos] == ':' && chars[pos + 1] == ' ',
-      `Line ${lineNumber}: expected parameter name to be followed by colon and space`,
+      pos < chars.size() && chars[pos] == ':',
+      `Line ${lineNumber}: expected parameter name to be followed by colon`,
     );
-    !pos = pos + 2;
+    !pos = pos + 1;
+    // tsc accepts both `// @name: value` and `// @name:value`
+    if (pos < chars.size() && chars[pos] == ' ') {
+      !pos = pos + 1
+    };
     valueStart = pos;
-    while (pos < chars.size() && isAlNum(chars[pos])) {
+    // The value runs to the end of the line and may be a comma-separated
+    // list (e.g. `// @target: es5, es2015`), so read everything, not just
+    // alphanumerics.
+    while (pos < chars.size() && chars[pos] != '\r' && chars[pos] != '\n') {
       !pos = pos + 1;
     };
     invariant(
       pos > valueStart,
       `Line ${lineNumber}: expected parameter value to be non-empty`,
     );
-    value = String::fromChars(chars.slice(valueStart, pos));
+    value = String::fromChars(chars.slice(valueStart, pos)).trim();
     invariant(
       pos < chars.size(),
       `Line ${lineNumber}: unexpected EOF after parameter value`,

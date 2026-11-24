@@ -267,12 +267,17 @@ fun validateTSConformance(
   SKTest.expectEq(parseErrorOpt is None(), true, "Expected no parse errors");
 
   fileContents = checker.files.filesContent.get(context, fileName).value;
-  config = parseConfigComments(fileContents).collect(Array);
-  checkConfig(config, allowedConfig);
+  configLines = parseConfigComments(fileContents).collect(Array);
   // tsc strips the leading `// @param: value` directive lines before
   // compiling, so reference .errors.txt line numbers exclude them. skjs keeps
   // the file verbatim, so add the header count back when comparing.
-  headerCount = config.size();
+  headerCount = configLines.size();
+  // Values may be comma-separated lists (e.g. `// @target: es5, es2015`);
+  // check each element against the allowed set.
+  config = configLines
+    .flatMap(pair -> pair.i1.split(",").map(v -> (pair.i0, v.trim())))
+    .collect(Array);
+  checkConfig(config, allowedConfig);
 
   absFileName = fileName.toAbsolute(checker.files.rootMap);
   dir = absFileName.dirName;
