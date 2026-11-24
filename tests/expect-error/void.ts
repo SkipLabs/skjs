@@ -12,8 +12,9 @@ function returningVoid4(): void {
   throw {};
 }
 
+// `return undefined;` from a void function is valid: undefined is the value
+// that inhabits void (issue #871).
 function returningVoid5(): void {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return undefined;
 }
 
@@ -28,7 +29,6 @@ function returningVoid7(): void {
 
 const x: void = returningVoid();
 
-// @skjs-expect-error Type of initializer is not assignable to the declared type annotation
 const x2: void = undefined;
 
 // @ts-expect-error Type of initializer is not assignable to the declared type annotation
@@ -37,6 +37,18 @@ const x3: void = {};
 // @skjs-expect-error The type of a top-level constant must be a primitive type, not an object
 // @skjs-expect-error Type of initializer is not assignable to the declared type annotation
 const x4: () => void = () => null;
+
+// `undefined` is the one value that inhabits `void`, and tsc accepts it in
+// every configuration (issue #871). `null` stays rejected under SKJS's
+// strict-null semantics (x3 above, returningVoid7 below).
+function assignUndefinedToVoid(): void {
+  let x: void;
+  x = undefined;
+}
+
+function arrowReturningUndefined(): void {
+  const f: () => void = () => undefined;
+}
 
 // @skjs-expect-error Property access is not allowed on this type
 const x5: undefined = returningVoid()["bla"];

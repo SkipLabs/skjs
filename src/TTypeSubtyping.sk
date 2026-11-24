@@ -1434,7 +1434,19 @@ extension class STypes {
         | STOk() -> Success(void)
         | err @ STErrorOnSTypeBase _ -> Failure(err)
         }
-      | None() -> Failure(STTooManySType(sty1, stypes2))
+      | None() ->
+        // `undefined` is assignable to `void`: tsc accepts it in every
+        // configuration, and `void`'s only runtime value is `undefined`, so
+        // the judgment is sound (issue #871). `null` stays rejected — SKJS's
+        // strict-null semantics keep `void` and `null` disjoint.
+        if (
+          sty1 is TPrimUnit(TUndefined(), _) &&
+          stypes2.any(st -> st is TPrimUnit(TVoid(), _))
+        ) {
+          Success(void)
+        } else {
+          Failure(STTooManySType(sty1, stypes2))
+        }
       }
     ) match {
     | Success(void) -> STOk()
