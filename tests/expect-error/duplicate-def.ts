@@ -92,3 +92,16 @@ const Ec: number = 1;
 enum Ec {
   X,
 }
+
+// A declaration colliding with a lib/stub type is a duplicate identifier too
+// (tsc TS2300, issue #887): the stub's definition is what resolves, so the
+// collision is reported at the declaration — the use below still fails
+// downstream because the stub's alias is what `NonNullable` denotes.
+// @skjs-expect-error Duplicate identifier 'NonNullable'
+interface NonNullable<T> {
+  v: T;
+}
+function stubCollision(a: NonNullable<number>): number {
+  // @skjs-expect-error Property 'v' does not exist on this type
+  return a.v;
+}

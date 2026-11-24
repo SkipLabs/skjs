@@ -1,3 +1,5 @@
+// Collides with the builtin `process` value (TS2300, issue #887).
+// @skjs-expect-error Duplicate identifier 'process'
 function process(n: number): number {
   return n + 1;
 }

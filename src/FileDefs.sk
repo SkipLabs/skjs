@@ -72,6 +72,14 @@ class DefMap(
           };
           parsedFile.value match {
           | PROk(defs) ->
+            // The builtins (lib stubs) that every other file includes, so a
+            // user declaration colliding with a stub definition can be
+            // reported as a duplicate identifier (TS2300, issue #887).
+            stubDefs = if (fileName != builtinsFileName) {
+              _self.maybeGet(context, builtinsFileName)
+            } else {
+              None()
+            };
             Array[
               FileDefsState::createFileDefs(
                 context,
@@ -81,6 +89,7 @@ class DefMap(
                 rootMap,
                 getConfig(context).compilerOptions,
                 defs,
+                stubDefs,
               ),
             ]
           | _ -> Array[]
@@ -591,6 +600,10 @@ mutable class FileDefsState private {
   modules: mutable Map<String, mutable Vector<FileDefs>> = mutable Map[],
   includes: mutable Vector<FPath> = mutable Vector[],
   fileErrors: mutable Vector<NamingError> = mutable Vector[],
+  // The builtins (lib stubs) this file includes, when it is not the builtins
+  // file itself: a local declaration colliding with one of theirs is a
+  // duplicate identifier (TS2300, issue #887).
+  stubDefs: ?FileDefs = None(),
 } {
   static fun createFileDefs(
     context: mutable S.Context,
@@ -600,8 +613,16 @@ mutable class FileDefsState private {
     rootMap: RootMap,
     compilerOptions: TsCompilerOptions,
     parsedDefs: Array<Def>,
+    stubDefs: ?FileDefs = None(),
   ): FileDefs {
-    state = mutable static{context, fs, dirName, rootMap, compilerOptions};
+    state = mutable static{
+      context,
+      fs,
+      dirName,
+      rootMap,
+      compilerOptions,
+      stubDefs,
+    };
     state.includes.extend(includes);
     state.processDefs(parsedDefs)
   }
@@ -750,12 +771,52 @@ mutable class FileDefsState private {
       dirName => this.dirName,
       rootMap => this.rootMap,
       compilerOptions => this.compilerOptions,
+      stubDefs => this.stubDefs,
     };
     state.processDefs(defs)
   }
 
+  // Whether a lib/stub definition and a local one merge instead of colliding
+  // (tsc declaration merging, issue #887): an interface merges with a
+  // same-named interface or class — `declare interface Date {}` against the
+  // lib's `declare class Date` augments it rather than duplicating it. Any
+  // other overlapping pair (alias against anything, class against class,
+  // value-space against value-space) is a duplicate identifier. This applies
+  // only against stubs, where augmentation is the norm; two user
+  // declarations in one file always collide (see pushDef).
+  private static fun mergeableWithStub(stubDef: FileDef, d: FileDef): Bool {
+    isInterface = (fd: FileDef) -> fd is Class{kind => CKInterface()};
+    isClass = (fd: FileDef) ->
+      fd is Class{kind => CKClass()} || fd is Class{kind => CKAbstract()};
+    (isInterface(d) && (isInterface(stubDef) || isClass(stubDef))) ||
+      (isClass(d) && isInterface(stubDef))
+  }
+
   private mutable fun pushDef(name: Name, d: FileDef, isExport: Bool): void {
     if (isExport) mapPush(this.exported, name.value, (name.value, false));
+    // A declaration colliding with a lib/stub definition (the builtins every
+    // file includes) is a duplicate identifier as well (tsc TS2300, issue
+    // #887): the stub's definition is the one name resolution reaches, so the
+    // collision is reported at both declarations instead of surfacing only as
+    // a confusing downstream error at a use.
+    this.stubDefs.each(stubFileDefs ->
+      stubFileDefs.defs.maybeGet(name.value).each(stubDefVec ->
+        stubDefVec
+          .find(stubDef ->
+            DeclSpaces::ofFileDef(stubDef).overlaps(DeclSpaces::ofFileDef(d)) &&
+              !static::mergeableWithStub(stubDef, d)
+          )
+          .each(stubDef -> {
+            msg1 = (name.pos, `Duplicate identifier '${name}'`);
+            msgs = stubDef.getPos() match {
+            | None() -> Array[msg1]
+            | Some(stubPos) ->
+              Array[msg1, (stubPos, "Previous definition was here")]
+            };
+            this.fileErrors.push(NamingError(msgs, TSCode(2300)))
+          })
+      )
+    );
     this.defs.maybeGet(name.value) match {
     | None() -> this.defs![name.value] = mutable Vector[d]
     | Some(existingDefs) ->
