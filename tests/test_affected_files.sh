@@ -274,7 +274,9 @@ export function helperC(x?: string): number {
 EOF
 
 out=$(run_affected "$C" "$B" "$A" "$UNRELATED")
-expect_affected "unrelatedErrorStillLogsAffected" "" "$out"
+expect_affected "unrelatedErrorStillLogsAffected" "a.ts
+b.ts
+c.ts" "$out"
 
 ########################################################################
 # Summary

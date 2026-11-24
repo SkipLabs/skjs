@@ -607,11 +607,12 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
       );
       tick = context.getTick();
       context.update();
-      hasErrors = context
-        .maybeGetEagerDir(errorsDirName)
-        .map(dir -> dir.getArrayRaw(SKStore.UnitID::singleton).size() != 0)
-        .default(true);
-      if (logAffectedFiles && !hasErrors) {
+      // Log affected files even when the run has type errors (issue #1032):
+      // the flag answers "what do I need to re-run after this change?", and
+      // an empty list is indistinguishable from "nothing was affected" —
+      // silently wrong exactly when a codebase is mid-edit. --keep-going
+      // keeps the call graph complete enough to answer through the errors.
+      if (logAffectedFiles) {
         CallGraph::create(context).each(callgraph -> {
           handle = SKStore.EHandle(
             ResolvedDefKey::keyType,
