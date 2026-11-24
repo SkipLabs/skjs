@@ -58,11 +58,13 @@ extension class TypeChecker {
       StmtTermination::exprOpt(eOpt).then(StmtTermination::return_)
 
     | Bind(bkind, bindings) ->
-      if (bkind is BKVar()) {
+      if (bkind is BKVar() && !this.conformance) {
         // `var` stays an error rather than a warning: unlike `let`/`const` it is
         // function-scoped and hoisted, which SKJS's block-scoped narrow-on-write
         // typing does not yet model. Supporting it soundly is tracked in
-        // SkipLabs/skjs#841.
+        // SkipLabs/skjs#841. In conformance mode it is accepted and checked
+        // like `let` (block-scoped, mutable) so TypeScript files can be
+        // checked verbatim.
         tcenv.error(
           Array[(st.pos, "Unexpected 'var'; use 'let' or 'const' instead")],
           ESLintCode("no-var"),
