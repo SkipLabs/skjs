@@ -947,6 +947,10 @@ fun parseTSConformanceReferenceErrors(
 fun parseConfigComments(contents: String): mutable Iterator<(String, String)> {
   chars = contents.chars().toArray();
   pos = 0;
+  // tsc strips a leading UTF-8 BOM before scanning directive lines
+  if (pos < chars.size() && chars[pos] == '\uFEFF') {
+    !pos = pos + 1
+  };
   lineNumber = 1;
 
   while (pos + 4 < chars.size()) {
