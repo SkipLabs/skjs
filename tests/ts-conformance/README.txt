@@ -7,6 +7,7 @@ tsc/testdata/baselines/reference/conformance for the .errors.txt references).
 They fall under Microsoft copyright, see CopyrightNotice.txt, and
 the Apache license, see LICENSE.txt.
 
-Layout: cases/ holds files that check as-is (in conformance mode),
-not-supported/ holds verbatim files that still need unsupported features.
+Layout: cases/ holds files that check as-is (in conformance mode).
+not-supported/ holds verbatim files we tried to support but could not yet —
+files are moved there manually, never copied in directly.
 See docs/testing.md "TypeScript Conformance Tests".

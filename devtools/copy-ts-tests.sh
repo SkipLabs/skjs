@@ -25,18 +25,14 @@ if [ ! -d "$REF_DEST" ]; then
 fi
 
 if [ -z "$1" ]; then
-    echo "Usage: devtools/copy-ts-tests.sh path/to/conformance/tests/to/copy [not-supported]"
+    echo "Usage: devtools/copy-ts-tests.sh path/to/conformance/tests/to/copy"
     echo "Copies verbatim .ts cases (and their reference .errors.txt) into"
-    echo "tests/ts-conformance/cases/, or into tests/ts-conformance/not-supported/"
-    echo "when the second argument is 'not-supported'."
+    echo "tests/ts-conformance/cases/. Files only move to not-supported/ manually,"
+    echo "after we tried to support them (see docs/testing.md)."
     exit 1
 fi
 
-# Optional destination: 'not-supported' for cases that cannot be checked as-is yet
 DEST_BASE="$CASES_DEST"
-if [ "$2" = "not-supported" ]; then
-    DEST_BASE="./tests/ts-conformance/not-supported"
-fi
 
 TO_COPY="$(realpath --canonicalize-existing "$1")"
 
