@@ -226,6 +226,15 @@ extension class TypeChecker {
           }
         }
       }
+    | Declare(td @ TypeDef _)
+    | ExportDeclare(td @ TypeDef _) ->
+      // An ambient alias's defaults are filled the same way as a plain
+      // alias's when the alias is referenced with too few arguments, so a
+      // circular default denotes nothing here either and is reported at
+      // the declaration, as tsc reports it (TS2716, issue #1026). Resolving
+      // the default still recovers to `unknown`, so this is a diagnostic
+      // gap, not a soundness hole.
+      this.checkCircularDefault(tcenvl, td)
     | Declare _
     | ExportDeclare _ ->
       void
