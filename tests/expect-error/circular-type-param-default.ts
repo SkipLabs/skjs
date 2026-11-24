@@ -50,6 +50,12 @@ type KeyofDefault<T = keyof KeyofDefault> = T;
 // @skjs-expect-error Type parameter 'T' has a circular default
 type RefArgDefault<T = Array<RefArgDefault>> = T;
 
+// Several circular defaults in one alias: tsc flags every parameter, not just
+// the first (issue #1027), so each gets its own TS2716 at its own position.
+// @skjs-expect-error Type parameter 'T' has a circular default
+// @skjs-expect-error Type parameter 'U' has a circular default
+type MultiDefault<T = MultiDefault, U = MultiDefault> = [T, U];
+
 /////////////////////////////////////////////////////////////////////////////
 // The alias resolves to `unknown`: a value cannot be drawn out of it.
 /////////////////////////////////////////////////////////////////////////////

@@ -456,19 +456,19 @@ extension class TypeChecker {
     }
   }
 
-  // Reports a type parameter whose default circularly references the alias
-  // (TS2716, issue #886). `type A<T = A>` needs A's own default to compute A's
-  // default, so it denotes nothing; the alias resolves to `unknown` and the
-  // mistake is caught here, as tsc catches it. A self-referential constraint is
-  // legal in tsc and is not reported — it is refused only where SKJS cannot
-  // check it (see instantiateTParams). TEnv::circularDefaultTParam defines what
-  // counts.
+  // Reports every type parameter whose default circularly references the alias
+  // (TS2716, issues #886 and #1027), one error per parameter at that
+  // parameter's position — the same shape tsc flags them in. `type A<T = A>`
+  // needs A's own default to compute A's default, so it denotes nothing; the
+  // alias resolves to `unknown` and the mistake is caught here, as tsc catches
+  // it. A self-referential constraint is legal in tsc and is not reported —
+  // it is refused only where SKJS cannot check it (see instantiateTParams).
+  // TEnv::circularDefaultTParams defines what counts.
   private fun checkCircularDefault(
     tcenvl: mutable TCEnvLight,
     typeDef: TypeDef,
   ): void {
-    this.circularDefaultTParam(tcenvl.context, typeDef) match {
-    | Some(tparam) ->
+    for (tparam in this.circularDefaultTParams(tcenvl.context, typeDef)) {
       tcenvl.error(
         Array[
           (
@@ -478,7 +478,6 @@ extension class TypeChecker {
         ],
         TSCode(2716),
       )
-    | None() -> void
     }
   }
 
