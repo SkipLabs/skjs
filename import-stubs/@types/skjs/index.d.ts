@@ -185,6 +185,7 @@ declare const Math: {
 
 declare class boolean {
   toString(this: boolean): string;
+  hasOwnProperty(this: boolean, prop: string): boolean;
 }
 
 declare class number {
@@ -193,6 +194,7 @@ declare class number {
   toExponential(this: number, fractionDigits?: number): string;
   toPrecision(this: number, precision?: number): string;
   valueOf(this: number): number;
+  hasOwnProperty(this: number, prop: string): boolean;
 }
 
 // Number object for static access (e.g., Number.MAX_VALUE)
@@ -251,6 +253,7 @@ declare class string {
   trimEnd(this: string): string;
   trimStart(this: string): string;
   valueOf(this: string): string;
+  hasOwnProperty(this: string, prop: string): boolean;
 }
 
 declare const String: {
@@ -263,6 +266,7 @@ declare const String: {
 declare class symbol {
   toString(this: symbol): string;
   valueOf(this: symbol): symbol;
+  hasOwnProperty(this: symbol, prop: string): boolean;
 }
 
 declare const Symbol: {
@@ -536,6 +540,7 @@ declare class bigint {
   toString(this: bigint, radix?: number): string;
   valueOf(this: bigint): bigint;
   toLocaleString(this: bigint): string;
+  hasOwnProperty(this: bigint, prop: string): boolean;
 }
 
 // BigInt constructor function
