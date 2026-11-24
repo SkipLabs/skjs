@@ -172,6 +172,65 @@ out=$(run_check --data)
 expect_markers "anotherBodyChangeRecomputesOnlyThatFunction" "\"f1\"" "$out"
 
 ########################################################################
+# Comment inserted above a type alias → its users are not recomputed (#1031)
+########################################################################
+
+reset_cache
+cat > "$FILE" <<'EOF'
+export type Rec = { readonly n: number };
+export function f1(r: Rec): number {
+  __SKJS_show("f1");
+  return r.n;
+}
+export function f4(x: number): number {
+  __SKJS_show("f4");
+  return x + 1;
+}
+EOF
+
+out=$(run_check --init)
+expect_markers "typeAliasGroupInit" "\"f1\"
+\"f4\"" "$out"
+
+cat > "$FILE" <<'EOF'
+// leading comment shifts the alias down
+export type Rec = { readonly n: number };
+export function f1(r: Rec): number {
+  __SKJS_show("f1");
+  return r.n;
+}
+export function f4(x: number): number {
+  __SKJS_show("f4");
+  return x + 1;
+}
+EOF
+
+out=$(run_check --data)
+# Current behavior: the alias's positions are file-absolute, so the shift
+# re-checks its users (#1031).
+expect_markers "commentAboveTypeAliasRecomputesUser" "\"f1\"" "$out"
+
+########################################################################
+# Type alias body change → only its users recomputed
+########################################################################
+
+cat > "$FILE" <<'EOF'
+// leading comment shifts the alias down
+export type Rec = { readonly n: number; readonly tag: string };
+export function f1(r: Rec): number {
+  __SKJS_show("f1");
+  return r.n;
+}
+export function f4(x: number): number {
+  __SKJS_show("f4");
+  return x + 1;
+}
+EOF
+
+out=$(run_check --data)
+expect_markers "typeAliasBodyChangeRecomputesUsersOnly" "\"f1\"" "$out"
+
+########################################################################
 # Class method body change → class recomputed
 ########################################################################
 
