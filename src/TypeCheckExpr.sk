@@ -4434,19 +4434,6 @@ extension class TypeChecker {
     }
   }
 
-  /* The precise type of a const-foldable expression -- a primitive literal, a
-   * unary operator on one, or an `as const` around such a thing -- or None for
-   * anything else.
-   *
-   * Pure: it never type-checks a sub-expression (no `this.expr`), so a None
-   * result can be discarded and the caller can fall back to the full typing in
-   * exprImpl without any duplicated work or re-typing crash. In particular it
-   * does NOT build the readonly tuple for `[...] as const` -- that requires
-   * type-checking the elements, so the AsConst case in exprImpl does it (via
-   * constArrayLit) once None comes back here.
-   *
-   * Returns a full TType rather than a single SType only to spare the callers a
-   * `TType::single` wrapper. */
   // Conformance mode: the type of a reference to a top-level `var`/`let` is
   // its initializer's type, widened like a `let` binding. Computed in a
   // throwaway env so initializer diagnostics are not repeated at every
@@ -4472,6 +4459,19 @@ extension class TypeChecker {
     cell.value.default(TType::top(e.pos))
   }
 
+  /* The precise type of a const-foldable expression -- a primitive literal, a
+   * unary operator on one, or an `as const` around such a thing -- or None for
+   * anything else.
+   *
+   * Pure: it never type-checks a sub-expression (no `this.expr`), so a None
+   * result can be discarded and the caller can fall back to the full typing in
+   * exprImpl without any duplicated work or re-typing crash. In particular it
+   * does NOT build the readonly tuple for `[...] as const` -- that requires
+   * type-checking the elements, so the AsConst case in exprImpl does it (via
+   * constArrayLit) once None comes back here.
+   *
+   * Returns a full TType rather than a single SType only to spare the callers a
+   * `TType::single` wrapper. */
   fun asConstExpr(tcenv: mutable TCEnv, e: Expr): ?TType {
     pos = e.pos;
     e.value match {
