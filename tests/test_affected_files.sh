@@ -232,6 +232,51 @@ child.ts
 user.ts" "$out"
 
 ########################################################################
+# Test group 4: Unrelated type error present (issue #1032)
+# Same call chain as group 1, but unrelated.ts has a type error.
+# --log-affected-files must still report the affected files: an empty
+# list is indistinguishable from "nothing was affected", so staying
+# silent exactly when a codebase is mid-edit is wrong.
+########################################################################
+
+reset_cache
+
+cat > "$C" <<'EOF'
+export function helperC(): number {
+  return 1;
+}
+EOF
+cat > "$B" <<'EOF'
+import { helperC } from "./c.js";
+export function helperB(): number {
+  return helperC();
+}
+EOF
+cat > "$A" <<'EOF'
+import { helperB } from "./b.js";
+export function a(): number {
+  return helperB();
+}
+EOF
+cat > "$UNRELATED" <<'EOF'
+export function bad(): number {
+  return "not a number";
+}
+EOF
+
+run_init "$C" "$B" "$A" "$UNRELATED"
+
+# Add optional parameter to helperC (non-breaking signature change)
+cat > "$C" <<'EOF'
+export function helperC(x?: string): number {
+  return 1;
+}
+EOF
+
+out=$(run_affected "$C" "$B" "$A" "$UNRELATED")
+expect_affected "unrelatedErrorStillLogsAffected" "" "$out"
+
+########################################################################
 # Summary
 ########################################################################
 total=$((successes + failures))
