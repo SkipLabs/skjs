@@ -1,1 +1,1 @@
-../../../skip/.vibe/skills/merge-bot/SKILL.md
+../../../../skip/.vibe/skills/merge-bot/SKILL.md
