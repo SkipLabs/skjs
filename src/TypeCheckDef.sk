@@ -393,8 +393,8 @@ extension class TypeChecker {
           SKJSCode(1010),
         )
       };
+      // Validate the const declaration
       if (kind is VDKConst() || !this.conformance) {
-        // Validate the const declaration
         this.validateToplevelConst(
           tcenvl,
           varDef.pat.pos,
