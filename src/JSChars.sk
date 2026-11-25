@@ -39,4 +39,25 @@ fun isJSSpaceSeparator(code: Int): Bool {
     code == 0x3000
 }
 
+// StrWhiteSpace for ToNumber (ECMA-262 sec 6.1.6.1): WhiteSpace plus the line
+// terminators, which are whitespace only there (a string literal may hold
+// <LF>/<CR>, but ToNumber trims them).
+fun isJSToNumberWhiteSpace(c: Char): Bool {
+  isJSWhiteSpace(c) || isJSLineTerminator(c)
+}
+
+// s with StrWhiteSpace stripped from both ends, as ToNumber does.
+fun trimJSToNumberWhiteSpace(s: String): String {
+  left = s.search(ch ~> !isJSToNumberWhiteSpace(ch)) match {
+  | Some(i) -> i.substring(s.getEndIter())
+  | None() -> ""
+  };
+  left.searchRight(ch ~> !isJSToNumberWhiteSpace(ch)) match {
+  | Some(i) ->
+    _ = i.next();
+    left.getIter().substring(i)
+  | None() -> left
+  }
+}
+
 module end;

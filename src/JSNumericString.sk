@@ -612,4 +612,116 @@ fun formatCanonicalJSNumber(digits: String, n: Int): String {
   }
 }
 
+// Whether s is a finite ToNumber(s) value with s != "": exactly tsc's
+// isValidNumberString(s, /*roundTripOnly*/ false), the predicate behind a
+// `${number}` template-literal placeholder. ToNumber(s) is NaN for anything
+// outside the StrNumericLiteral grammar (whitespace-trimmed), and infinite
+// only for "Infinity" or a magnitude past the largest double; only finiteness
+// is needed here, so the grammar is validated and the magnitude decided from
+// the decimal exponent rather than the value computed exactly.
+fun isFiniteJSNumberString(s: String): Bool {
+  if (s == "") return false;
+  t = trimJSToNumberWhiteSpace(s);
+  if (t == "") return true; // +"" == +"  " == 0
+  u = t;
+  if (u.startsWith("+")) {
+    !u = u.stripPrefix("+")
+  } else if (u.startsWith("-")) {
+    !u = u.stripPrefix("-")
+  };
+  if (u == "Infinity") return false;
+  if (u.length() >= 2 && u.startsWith("0")) {
+    base = radixPrefixBase(u.chars()[1]);
+    if (base != 0) {
+      digits = u.substring(u.getIter().forward(2));
+      // ToNumber's string grammar has no numeric separators.
+      if (digits == "") return false;
+      if (!digits.chars().all(c -> radixDigitValue(c, base).isSome())) {
+        return false
+      };
+      // base^digits.length as a double: the radix bases are powers of two, so
+      // the overflow threshold is an exact digit count (2^1024 overflows).
+      bitsPerDigit = base match {
+      | 16 -> 4
+      | 8 -> 3
+      | _ -> 1
+      };
+      return digits.length() * bitsPerDigit <= 1023
+    }
+  };
+  // StrDecimalLiteral: digits ["." digits] [exponent], or "." digits [exponent].
+  chars = u.chars();
+  sz = chars.size();
+  i = 0;
+  intDigits = mutable Vector<Char>[];
+  while (i < sz && isDecimalDigit(chars[i])) {
+    intDigits.push(chars[i]);
+    !i = i + 1
+  };
+  fracDigits = mutable Vector<Char>[];
+  if (i < sz && chars[i] == '.') {
+    !i = i + 1;
+    while (i < sz && isDecimalDigit(chars[i])) {
+      fracDigits.push(chars[i]);
+      !i = i + 1
+    }
+  };
+  if (intDigits.isEmpty() && fracDigits.isEmpty()) return false;
+  exp: Int = 0;
+  if (i < sz && (chars[i] == 'e' || chars[i] == 'E')) {
+    !i = i + 1;
+    negExp = false;
+    if (i < sz && (chars[i] == '+' || chars[i] == '-')) {
+      !negExp = chars[i] == '-';
+      !i = i + 1
+    };
+    expDigits = mutable Vector<Char>[];
+    while (i < sz && isDecimalDigit(chars[i])) {
+      expDigits.push(chars[i]);
+      !i = i + 1
+    };
+    if (expDigits.isEmpty()) return false;
+    expStr = String::fromChars(expDigits.toArray());
+    !exp = expStr.toIntOption() match {
+    | Some(n) if (n <= 1000000) -> if (negExp) -n else n
+    // Beyond any double's range in either direction.
+    | _ -> if (negExp) -1000000000 else 1000000000
+    }
+  };
+  if (i != sz) return false;
+  (digits, point) = decimalDigitsExp(
+    intDigits.concat(fracDigits),
+    intDigits.size() + exp,
+  );
+  if (digits == "0") return true;
+  if (point >= 310) return false;
+  if (point <= 308) return true;
+  // point == 309: value = 0.digits * 10^309 is finite iff it does not exceed
+  // the largest double, 0.17976931348623157 * 10^309. Compare the digit
+  // string against that 17-digit prefix, which is exact because trailing
+  // zeros were stripped above (so a longer digit string with the same prefix
+  // is strictly greater than the max double).
+  if (digits.length() > 17) {
+    return digits.take(17).compare("17976931348623157") is LT()
+  };
+  padded = digits + "0".repeat(17 - digits.length());
+  padded.compare("17976931348623157") != GT()
+}
+
+// Whether s + "n" scans as a single BigIntLiteral token with no separator:
+// tsc's isValidBigIntString(s, /*roundTripOnly*/ false), the predicate behind
+// a `${bigint}` template-literal placeholder. The scanner accepts an optional
+// leading '-' and then one unsigned bigint lexeme (decimal without a leading
+// zero, or 0x/0o/0b), so "+10", "010" and "1_000" are all rejected.
+fun isBigIntString(s: String): Bool {
+  if (s == "") return false;
+  t = if (s.startsWith("-")) s.stripPrefix("-") else s;
+  if (t == "") return false;
+  if (t.contains("_")) return false;
+  validateJSBigIntLiteral(t + "n") match {
+  | None() -> true
+  | Some _ -> false
+  }
+}
+
 module end;

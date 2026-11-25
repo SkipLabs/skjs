@@ -124,14 +124,29 @@ base class TemplateHole {
   children =
   // Finitely many values, listed. Empty means the hole is `never`.
   | THFinite(SortedSet<String>)
-  // Exactly `string`. Unbounded, but a template that is nothing but bare string
-  // holes still reduces -- to `string` itself.
-  | THBareString()
-  // Unboundedly many values (`number`, `bigint`, an abstract type parameter):
-  // representing the result needs a pattern type SKJS does not have.
-  | THIrreducible()
   // A type that may not be interpolated at all (object, symbol, void, unknown).
   | THNotStringifiable()
+  // An abstract type parameter or unresolvable named type: no known values at
+  // the definition. The result would be a pattern mentioning the type
+  // variable, which SKJS does not represent — rejected (issue #897).
+  | THAbstract()
+  // A whole-primitive hole (`string`, `number`, `bigint`, or `number | bigint`),
+  // plus any finite siblings (`${number | "auto"}`). A `string` sibling
+  // absorbs everything: the hole is just `string`.
+  | THPrim(hole: PatHole, lits: SortedSet<String>)
+  // The hole is itself a string type carrying template literal patterns (e.g.
+  // `${`#${string}`}px`), plus any finite siblings.
+  | THPats(pats: TemplatePats, lits: SortedSet<String>)
+}
+
+// One alternative a template hole contributes when the template reduces to
+// patterns (issue #897): a finite literal value, a whole-primitive hole, or a
+// nested pattern to splice into the surrounding text.
+base class HoleOption {
+  children =
+  | HOLit(s: String)
+  | HOPrim(hole: PatHole)
+  | HOSplice(pat: TemplatePattern)
 }
 
 base class TEnv{
@@ -2686,18 +2701,16 @@ base class TEnv{
     }
   }
 
-  // Reduces a template literal type, as tsc does, to a type in the existing
-  // string domain. A template has no type of its own here: it either names a
-  // finite set of strings (then it IS that literal union) or it names the whole
-  // `string` primitive.
+  // Reduces a template literal type, as tsc does, to a type in the string
+  // domain. A template either names a finite set of strings (then it IS that
+  // literal union), or the whole `string` primitive, or -- new in #897 -- an
+  // infinite but partial set of strings, kept as a template literal pattern
+  // inside TPrimValue(TString, PDMixed(...)): a whole-primitive hole
+  // (`string`/`number`/`bigint`) surrounded by text of its own, as in
+  // `#${string}` or `${number}px`.
   //
-  // Not reduced, and rejected: a `number` or `bigint` hole, or an abstract one,
-  // whatever surrounds it (`\`${number}\``); and a bare `string` hole when the
-  // template has text of its own (`\`a${string}b\``), the text being what stops
-  // it from simply being `string`.
-  // Such a type is an infinite but partial set of strings, which needs a pattern
-  // representation SKJS does not have -- TPrimValue holds either the whole
-  // primitive or a finite literal set, and nothing in between.
+  // Still rejected: an abstract hole (a type parameter), whose result would be
+  // a pattern mentioning the type variable.
   private fun normalizeTemplate(
     tcenvb: mutable TCEnvBase,
     pos: PosRange,
@@ -2741,7 +2754,25 @@ base class TEnv{
           TSCode(2322),
         )
       };
-      return TType::single(TPrimValue(TString(), None(), pos))
+      return TType::single(TPrimValue(TString(), PDFull(), pos))
+    };
+
+    // An abstract hole (a type parameter) has no known values at the
+    // definition; the reduced type would have to mention it. Rejected.
+    abstractHoles = types.zip(holes).filter(p -> p.i1 is THAbstract _);
+    if (!abstractHoles.isEmpty()) {
+      for (p in abstractHoles) {
+        (ty, _) = p;
+        fatalError(
+          Array[
+            (
+              ty.pos,
+              "Template literal types are only supported when every interpolation has finitely many values, which this one does not",
+            ),
+          ],
+          SKJSCode(9018),
+        )
+      }
     };
 
     // `never` has no values, so a template containing it has none either: no
@@ -2763,57 +2794,164 @@ base class TEnv{
     if (
       strings.all(s -> s == "") &&
       !holes.isEmpty() &&
-      holes.all(h -> h is THBareString _)
+      holes.all(h ->
+        h match {
+        | THPrim(PHString(), _) -> true
+        | _ -> false
+        }
+      )
     ) {
-      return TType::single(TPrimValue(TString(), None(), pos))
+      return TType::single(TPrimValue(TString(), PDFull(), pos))
     };
 
-    values = mutable Vector<String>[strings[0]];
-    for (i in Range(0, holes.size())) {
-      holes[i] match {
-      | THFinite(holeValues) ->
-        // Guard before materializing: the product is multiplicative, so an
-        // unguarded expansion can exhaust memory on a type tsc rejects cleanly.
-        if (values.size() * holeValues.size() >= kMaxTemplateUnionSize) {
-          tcenvb.error(
-            Array[
-              (
-                pos,
-                "Expression produces a union type that is too complex to represent",
-              ),
-            ],
-            TSCode(2590),
-          );
-          return TType::single(TPrimValue(TString(), None(), pos))
-        };
-        next = mutable Vector<String>[];
-        for (prefix in values) {
-          for (v in holeValues) {
-            next.push(prefix + v + strings[i + 1])
-          }
-        };
-        !values = next
-      | THBareString()
-      | THIrreducible() ->
-        fatalError(
-          Array[
-            (
-              types[i].pos,
-              "Template literal types are only supported when every interpolation has finitely many values, which this one does not",
-            ),
-          ],
-          SKJSCode(9018),
-        )
-      | THNotStringifiable() -> invariant_violation("reported above")
+    // Every hole finite: the template IS the finite cross-product of its
+    // holes' values, as a string literal union.
+    if (holes.all(h -> h is THFinite _)) {
+      values = mutable Vector<String>[strings[0]];
+      for (i in Range(0, holes.size())) {
+        holes[i] match {
+        | THFinite(holeValues) ->
+          // Guard before materializing: the product is multiplicative, so an
+          // unguarded expansion can exhaust memory on a type tsc rejects cleanly.
+          if (values.size() * holeValues.size() >= kMaxTemplateUnionSize) {
+            tcenvb.error(
+              Array[
+                (
+                  pos,
+                  "Expression produces a union type that is too complex to represent",
+                ),
+              ],
+              TSCode(2590),
+            );
+            return TType::single(TPrimValue(TString(), PDFull(), pos))
+          };
+          next = mutable Vector<String>[];
+          for (prefix in values) {
+            for (v in holeValues) {
+              next.push(prefix + v + strings[i + 1])
+            }
+          };
+          !values = next
+        | _ -> invariant_violation("all holes are finite here")
+        }
+      };
+      PrimLiterals::ofSet(SortedSet::createFromItems(values), pos) match {
+      | Some(lits) ->
+        return TType::single(TPrimValue(TString(), PDLits(lits), pos))
+      // Unreachable: `values` starts non-empty and only grows, and an empty hole
+      // is handled by the `never` case above. Guarded because an empty literal set
+      // would silently mean the WHOLE `string` primitive, not `never`.
+      | None() -> return TType::bottom(pos)
       }
     };
 
-    PrimLiterals::ofSet(SortedSet::createFromItems(values), pos) match {
-    | Some(lits) -> TType::single(TPrimValue(TString(), Some(lits), pos))
-    // Unreachable: `values` starts non-empty and only grows, and an empty hole
-    // is handled by the `never` case above. Guarded because an empty literal set
-    // would silently mean the WHOLE `string` primitive, not `never`.
-    | None() -> TType::bottom(pos)
+    // Otherwise at least one hole is a whole primitive or a pattern: the
+    // template is an infinite but partial set of strings. Reduce it to the
+    // cross product over each hole's options -- finite values splice into the
+    // text as literals, primitive holes and nested patterns stay as holes --
+    // giving a set of patterns plus the all-literal combinations.
+    optionsVec = mutable Vector<mutable Vector<HoleOption>>[];
+    total = 1;
+    for (h in holes) {
+      opts = mutable Vector<HoleOption>[];
+      h match {
+      | THFinite(vs) ->
+        for (v in vs.values()) {
+          opts.push(HOLit(v))
+        }
+      | THPrim(ph, lits) ->
+        opts.push(HOPrim(ph));
+        for (v in lits.values()) {
+          opts.push(HOLit(v))
+        }
+      | THPats(pats, lits) ->
+        for (p in pats.values()) {
+          opts.push(HOSplice(p))
+        };
+        for (v in lits.values()) {
+          opts.push(HOLit(v))
+        }
+      | THNotStringifiable() -> invariant_violation("reported above")
+      | THAbstract() -> invariant_violation("reported above")
+      };
+      !total = total * opts.size();
+      if (total >= kMaxTemplateUnionSize) {
+        tcenvb.error(
+          Array[
+            (
+              pos,
+              "Expression produces a union type that is too complex to represent",
+            ),
+          ],
+          TSCode(2590),
+        );
+        return TType::single(TPrimValue(TString(), PDFull(), pos))
+      };
+      optionsVec.push(opts)
+    };
+    combos = mutable Vector<mutable Vector<HoleOption>>[];
+    combos.push(mutable Vector[]);
+    for (opts in optionsVec) {
+      next = mutable Vector<mutable Vector<HoleOption>>[];
+      for (combo in combos) {
+        for (o in opts) {
+          c = mutable Vector<HoleOption>[];
+          c.extend(combo);
+          c.push(o);
+          next.push(c)
+        }
+      };
+      !combos = next
+    };
+    litValues = mutable Vector<String>[];
+    patVec = mutable Vector<TemplatePattern>[];
+    for (combo in combos) {
+      curPart = strings[0];
+      pParts = mutable Vector<String>[];
+      pHoles = mutable Vector<PatHole>[];
+      isPattern = false;
+      for (i in Range(0, combo.size())) {
+        combo[i] match {
+        | HOLit(v) -> !curPart = curPart + v
+        | HOPrim(ph) ->
+          !isPattern = true;
+          pParts.push(curPart);
+          pHoles.push(ph);
+          !curPart = ""
+        | HOSplice(pat) ->
+          !isPattern = true;
+          !curPart = curPart + pat.parts[0];
+          for (j in Range(0, pat.holes.size())) {
+            pParts.push(curPart);
+            pHoles.push(pat.holes[j]);
+            !curPart = pat.parts[j + 1]
+          }
+        };
+        !curPart = curPart + strings[i + 1]
+      };
+      pParts.push(curPart);
+      if (isPattern) {
+        pat = TemplatePattern(pParts.toArray(), pHoles.toArray());
+        if (pat.isDegenerateString()) {
+          // `string` itself is in the language, and it absorbs the union.
+          return TType::single(TPrimValue(TString(), PDFull(), pos))
+        };
+        patVec.push(pat)
+      } else {
+        litValues.push(curPart)
+      }
+    };
+    lits = PrimLiterals::ofSet(SortedSet::createFromItems(litValues), pos);
+    pats = TemplatePats::create(patVec);
+    (lits, pats) match {
+    | (Some(l), Some(p)) ->
+      TType::single(TPrimValue(TString(), PDMixed(Some(l), p), pos))
+    | (Some(l), None()) -> TType::single(TPrimValue(TString(), PDLits(l), pos))
+    | (None(), Some(p)) ->
+      TType::single(TPrimValue(TString(), PDMixed(None(), p), pos))
+    // Unreachable: every hole has at least one option, so there is at least
+    // one combination.
+    | (None(), None()) -> TType::bottom(pos)
     }
   }
 
@@ -2833,7 +2971,9 @@ base class TEnv{
       // is a constraint error, not an unsupported one), so returning on the
       // first unbounded member would decide by stype order.
       notStringifiable = false;
-      bareString = false;
+      // Whole-primitive bits the hole covers: Number=1, BigInt=2, String=4.
+      primMask = 0;
+      patsVec = mutable Vector<TemplatePattern>[];
       // A residual named or type-variable type resolves to no values here.
       irreducible = !insts.isEmpty();
       for (clause in clauses) {
@@ -2844,12 +2984,12 @@ base class TEnv{
         | Some(stypes) ->
           for (stype in stypes) {
             stype match {
-            | TPrimValue(TString(), Some(lits), _)
-            | TPrimValue(TBool(), Some(lits), _) ->
+            | TPrimValue(TString(), PDLits(lits), _)
+            | TPrimValue(TBool(), PDLits(lits), _) ->
               // A string literal's value is already cooked, and a boolean's is
               // its runtime spelling, so both are used verbatim.
               for (lit in lits.values()) values.push(lit.val)
-            | TPrimValue(TNum(), Some(lits), _) ->
+            | TPrimValue(TNum(), PDLits(lits), _) ->
               for (lit in lits.values()) {
                 // A number literal's name is the ECMAScript String() form of
                 // its double whenever it is exact: the normalizer names every
@@ -2861,23 +3001,33 @@ base class TEnv{
                   !irreducible = true
                 }
               }
-            | TPrimValue(TBigInt(), Some(lits), _) ->
+            | TPrimValue(TBigInt(), PDLits(lits), _) ->
               // Exact at any magnitude, unlike a number: only the `n` suffix,
               // which the runtime string lacks, has to come off.
               for (lit in lits.values()) values.push(lit.val.stripSuffix("n"))
-            | TPrimValue(TBool(), None(), _) ->
+            | TPrimValue(TBool(), PDFull(), _) ->
               // `boolean` is the saturated two-literal set, which union
-              // normalizes to None().
+              // normalizes to PDFull().
               values.push("false");
               values.push("true")
-            | TPrimValue(TString(), None(), _) ->
+            | TPrimValue(TString(), PDFull(), _) ->
               // T & string is only a bound when this clause carries an
               // abstract parameter. Only a genuine string union member
               // absorbs the hole's other alternatives.
-              if (clause.vars.isEmpty()) !bareString = true
-            | TPrimValue(TNum(), None(), _)
-            | TPrimValue(TBigInt(), None(), _) ->
-              !irreducible = true
+              if (clause.vars.isEmpty()) !primMask = primMask.or(4)
+            | TPrimValue(TString(), PDMixed(lits, pats), _) ->
+              // The hole is itself a pattern-carrying string type (e.g.
+              // `${`#${string}`}px`): its patterns splice into the template.
+              lits.each(l ->
+                for (lit in l.values()) {
+                  values.push(lit.val)
+                }
+              );
+              for (pat in pats.values()) {
+                patsVec.push(pat)
+              }
+            | TPrimValue(TNum(), PDFull(), _) -> !primMask = primMask.or(1)
+            | TPrimValue(TBigInt(), PDFull(), _) -> !primMask = primMask.or(2)
             | TPrimUnit(TNull(), _) -> values.push("null")
             | TPrimUnit(TUndefined(), _) -> values.push("undefined")
             | _ -> !notStringifiable = true
@@ -2885,16 +3035,24 @@ base class TEnv{
           }
         }
       };
+      lits = SortedSet::createFromItems(values);
       if (notStringifiable) {
         THNotStringifiable()
-      } else if (bareString) {
+      } else if (primMask.and(4) != 0) {
         // Every string is in `string`, so a hole that is `string` at all is
-        // `string`, whatever else it also is.
-        THBareString()
+        // `string`, whatever else it also is (finite siblings absorbed).
+        THPrim(PHString(), SortedSet[])
       } else if (irreducible) {
-        THIrreducible()
+        THAbstract()
       } else {
-        THFinite(SortedSet::createFromItems(values))
+        PatHole::fromMask(primMask) match {
+        | Some(ph) -> THPrim(ph, lits)
+        | None() ->
+          TemplatePats::create(patsVec) match {
+          | Some(pats) -> THPats(pats, lits)
+          | None() -> THFinite(lits)
+          }
+        }
       }
     }
   }
@@ -3255,7 +3413,7 @@ base class TEnv{
     symType.getSTypes(subst, this, Covariant()).flatMap(stypes ~>
       stypes.singleElt()
     ) match {
-    | Some(TPrimValue(TSymbol(), Some(lits), _)) ->
+    | Some(TPrimValue(TSymbol(), PDLits(lits), _)) ->
       lits.singleElt().map(lit -> lit.val)
     | _ -> None()
     }
@@ -3296,13 +3454,13 @@ base class TEnv{
     | Some(stypes) ->
       stypes.all(stype ->
         stype match {
-        | TPrimValue(TString(), None(), _) ->
+        | TPrimValue(TString(), PDFull(), _) ->
           !hasString = true;
           true
-        | TPrimValue(TNum(), None(), _) ->
+        | TPrimValue(TNum(), PDFull(), _) ->
           !hasNumber = true;
           true
-        | TPrimValue(TSymbol(), None(), _) ->
+        | TPrimValue(TSymbol(), PDFull(), _) ->
           !hasSymbol = true;
           true
         | _ -> false
@@ -3631,13 +3789,13 @@ base class TEnv{
         | Some(stypes) ->
           for (stype in stypes) {
             stype match {
-            | TPrimValue(TString(), None(), _) -> !hasString = true
-            | TPrimValue(TNum(), None(), _) -> !hasNumber = true
-            | TPrimValue(TSymbol(), None(), _) -> !hasSymbol = true
-            | TPrimValue(TString(), Some(lits), _)
-            | TPrimValue(TNum(), Some(lits), _) ->
+            | TPrimValue(TString(), PDFull(), _) -> !hasString = true
+            | TPrimValue(TNum(), PDFull(), _) -> !hasNumber = true
+            | TPrimValue(TSymbol(), PDFull(), _) -> !hasSymbol = true
+            | TPrimValue(TString(), PDLits(lits), _)
+            | TPrimValue(TNum(), PDLits(lits), _) ->
               for (lit in lits.values()) namedLiterals.push(lit.val)
-            | TPrimValue(TSymbol(), Some(lits), _) ->
+            | TPrimValue(TSymbol(), PDLits(lits), _) ->
               for (lit in lits.values()) symbolLiterals.push(lit.val)
             // Any other primitive/object shape is unsupported, including
             // future additions until their key semantics are supplied here.
@@ -4087,8 +4245,8 @@ base class TEnv{
       clauses.any(clause -> (!clause.vars.isEmpty() || clause.stypes is None()))
     ) {
       return TType::unionStructural(
-        TType::single(TPrimValue(TString(), None(), pos)),
-        TType::single(TPrimValue(TNum(), None(), pos)),
+        TType::single(TPrimValue(TString(), PDFull(), pos)),
+        TType::single(TPrimValue(TNum(), PDFull(), pos)),
       )
     };
     allStrings = false;
@@ -4140,7 +4298,9 @@ base class TEnv{
     } else {
       stringsAndNumbers = strings.union(numbers);
       PrimLiterals::ofSet(stringsAndNumbers, pos).each(strLits ->
-        resultTys.push(TType::single(TPrimValue(TString(), Some(strLits), pos)))
+        resultTys.push(
+          TType::single(TPrimValue(TString(), PDLits(strLits), pos)),
+        )
       )
     };
     if (allNumbers) {
@@ -4153,14 +4313,16 @@ base class TEnv{
         if (isExactJSNumberName(str)) !numbers = numbers.set(str)
       };
       PrimLiterals::ofSet(numbers, pos).each(nbrLits ->
-        resultTys.push(TType::single(TPrimValue(TNum(), Some(nbrLits), pos)))
+        resultTys.push(TType::single(TPrimValue(TNum(), PDLits(nbrLits), pos)))
       )
     };
     if (allSymbols) {
       resultTys.push(TType::single(TPrimValue::symbol(pos)))
     } else {
       PrimLiterals::ofSet(symbols, pos).each(symLits ->
-        resultTys.push(TType::single(TPrimValue(TSymbol(), Some(symLits), pos)))
+        resultTys.push(
+          TType::single(TPrimValue(TSymbol(), PDLits(symLits), pos)),
+        )
       )
     };
     TType::unionStructuralN(pos, resultTys)

@@ -416,17 +416,107 @@ extension class TPrimValue {
       // Different kinds (e.g. number and string) have no common values
       return None()
     };
-    (t1.literals, t2.literals) match {
-    | (_, None()) -> Some(t1)
-    | (None(), Some _) -> Some(t2)
-    | (Some(lits1), Some(lits2)) ->
+    (t1.dom, t2.dom) match {
+    | (_, PDFull()) -> Some(t1)
+    | (PDFull(), _) -> Some(t2)
+    | (PDLits(lits1), PDLits(lits2)) ->
       // Two number literal names can denote one double (beyond-precision
       // spellings, issue #781), so number literals meet by value: an empty
       // name intersection is not proof of disjointness.
       (t1.kind match {
       | TNum() -> lits1.interMayEqual(lits2, jsNumberLiteralsMayCollide)
       | _ -> lits1.inter(lits2)
-      }).map(lits -> TPrimValue(t1.kind, Some(lits), t1.pos))
+      }).map(lits -> TPrimValue(t1.kind, PDLits(lits), t1.pos))
+    | (PDLits(lits1), PDMixed(lits2, pats2)) ->
+      // Literals meet the mixed domain by set membership or by matching one
+      // of its patterns (tsc's literal-vs-template matcher).
+      static::litsMeetDomain(lits1, lits2, pats2).map(lits ->
+        TPrimValue(t1.kind, PDLits(lits), t1.pos)
+      )
+    | (PDMixed(lits1, pats1), PDLits(lits2)) ->
+      static::litsMeetDomain(lits2, lits1, pats1).map(lits ->
+        TPrimValue(t1.kind, PDLits(lits), t1.pos)
+      )
+    | (PDMixed(lits1, pats1), PDMixed(lits2, pats2)) ->
+      // Values in both: literals meeting either side's literals or patterns,
+      // plus the patterns included in some pattern of the other side (tsc's
+      // template-to-template relation). A pair of patterns that is not
+      // included either way has an intersection that is not representable, so
+      // it is dropped: the intersection is under-approximated, which is the
+      // sound direction (a value typed as the intersection is in both).
+      lits = static::unionLitsOpt(
+        static::unionLitsOpt(
+          static::interLitsOpt(t1.kind, lits1, lits2),
+          static::litsMeetDomainOpt(lits1, lits2, pats2),
+        ),
+        static::litsMeetDomainOpt(lits2, lits1, pats1),
+      );
+      pats = mutable Vector<TemplatePattern>[];
+      for (p1 in pats1.values()) {
+        if (pats2.values().any(q -> p1.isSubPattern(q))) pats.push(p1)
+      };
+      for (p2 in pats2.values()) {
+        if (pats1.values().any(q -> p2.isSubPattern(q))) pats.push(p2)
+      };
+      TemplatePats::create(pats) match {
+      | Some(ps) -> Some(TPrimValue(t1.kind, PDMixed(lits, ps), t1.pos))
+      | None() -> lits.map(l -> TPrimValue(t1.kind, PDLits(l), t1.pos))
+      }
+    }
+  }
+
+  // The literals of `lits` that also belong to the (lits2, pats2) domain: in
+  // lits2 or matching some pattern in pats2.
+  private static fun litsMeetDomain(
+    lits: PrimLiterals,
+    lits2: ?PrimLiterals,
+    pats2: TemplatePats,
+  ): ?PrimLiterals {
+    static::litsMeetDomainOpt(Some(lits), lits2, pats2)
+  }
+
+  private static fun litsMeetDomainOpt(
+    lits1: ?PrimLiterals,
+    lits2: ?PrimLiterals,
+    pats2: TemplatePats,
+  ): ?PrimLiterals {
+    lits1 match {
+    | None() -> None()
+    | Some(l1) ->
+      l1.filterLiterals(lit ->
+        (lits2 match {
+        | Some(l2) -> l2.contains(lit.val)
+        | None() -> false
+        }) || pats2.anyMatches(lit.val)
+      )
+    }
+  }
+
+  private static fun interLitsOpt(
+    kind: TPrimValueKind,
+    lits1: ?PrimLiterals,
+    lits2: ?PrimLiterals,
+  ): ?PrimLiterals {
+    (lits1, lits2) match {
+    | (Some(l1), Some(l2)) ->
+      if (kind == TNum()) {
+        l1.interMayEqual(l2, jsNumberLiteralsMayCollide)
+      } else {
+        l1.inter(l2)
+      }
+    | _ -> None()
+    }
+  }
+
+  private static fun unionLitsOpt(
+    a: ?PrimLiterals,
+    b: ?PrimLiterals,
+  ): ?PrimLiterals {
+    (a, b) match {
+    | (Some(l1), Some(l2)) -> Some(l1.union(l2))
+    | (Some(l1), None()) -> Some(l1)
+    | (None(), Some(l2)) -> Some(l2)
+    | (None(), None()) -> None()
     }
   }
 }
@@ -456,7 +546,18 @@ extension base class SType {
     | (_, TPrimUnit _) ->
       false
     | (prim1 @ TPrimValue _, prim2 @ TPrimValue _) ->
-      TPrimValue::inter(prim1, prim2).isSome()
+      // A pattern on either side of a same-kind pair always overlaps (its
+      // language is infinite and the other side is a string type, which can
+      // name pattern-matching strings), so report overlap without computing
+      // the intersection.
+      if (
+        prim1.kind == prim2.kind &&
+        (prim1.pats().isSome() || prim2.pats().isSome())
+      ) {
+        true
+      } else {
+        TPrimValue::inter(prim1, prim2).isSome()
+      }
     | (prim @ TPrimValue _, obj @ TObject _)
     | (obj @ TObject _, prim @ TPrimValue _) ->
       // A primitive overlaps an object type only through its boxed class:

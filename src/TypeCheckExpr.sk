@@ -1756,7 +1756,7 @@ extension class TypeChecker {
         // the TTuple arm emits.
         obj.isTuple().each(arity -> {
           idxSType match {
-          | TPrimValue(TNum(), Some(numbers), _) ->
+          | TPrimValue(TNum(), PDLits(numbers), _) ->
             numbers.singleElt().flatMap(lit -> lit.val.toIntOption()) match {
             | Some(n) if (n < 0 || n >= arity) ->
               tcenv.error(
@@ -1776,9 +1776,10 @@ extension class TypeChecker {
           // property — so it resolves through the symbol index AND unions/
           // intersects every declared symbol field (read: union getters;
           // write: intersect setters).
-          idxSType.literals match {
-          | None() -> Some(idxSType)
-          | Some(lits) ->
+          idxSType.dom match {
+          | PDFull() -> Some(idxSType)
+          | PDMixed _ -> Some(idxSType)
+          | PDLits(lits) ->
             lits
               .filterLiterals(symLit ->
                 obj.maybeGetSymbol(tcenv.subst, this, symLit.val) match {
@@ -1798,7 +1799,7 @@ extension class TypeChecker {
                 }
               )
               .map(remainingLits ->
-                idxSType with {literals => Some(remainingLits)}
+                idxSType with {dom => PDLits(remainingLits)}
               )
           } match {
           | None() -> void
@@ -1811,7 +1812,7 @@ extension class TypeChecker {
             | None() ->
               // Unique symbols naming no declared field, or a general symbol,
               // with no symbol index to resolve through.
-              if (remainingIdxSType.literals.isNone()) {
+              if (!remainingIdxSType.hasOnlyLits()) {
                 fatalError(
                   Array[
                     (
@@ -1837,7 +1838,7 @@ extension class TypeChecker {
               };
               addResultCase(ty);
               // A general symbol may also name any declared symbol field.
-              if (remainingIdxSType.literals.isNone()) {
+              if (!remainingIdxSType.hasOnlyLits()) {
                 for (symFd in obj.namedFieldsForKeyKind(TSymbol())) {
                   addResultCase(
                     TFields::resolveFieldType(
@@ -1853,12 +1854,15 @@ extension class TypeChecker {
             }
           }
         } else {
-          idxSType.literals match {
+          // The key type's literal part resolves against declared fields;
+          // whatever remains (unresolved literals, the full primitive, or
+          // template literal patterns) goes to the index signature.
+          partials: mutable Vector<String> = mutable Vector[];
+          remainingOpt: ?TPrimValue = idxSType.lits() match {
           | None() -> Some(idxSType)
           | Some(lits) ->
             // Keys present in some branches but not all: collected here and
             // reported once below, rather than once per literal.
-            partials: mutable Vector<String> = mutable Vector[];
             remaining = lits.filterLiterals(fieldLit ->
               obj.resolveLiteralAccess(tcenv.subst, this, fieldLit.val) match {
               | Some((fd, allBranches)) ->
@@ -1919,10 +1923,25 @@ extension class TypeChecker {
                 TSCode(2339),
               )
             };
-            remaining.map(remainingLits ->
-              idxSType with {literals => Some(remainingLits)}
-            )
-          } match {
+            // Rebuild the domain, keeping any patterns (they are not literal
+            // keys and fall through to the index signature below).
+            idxSType.dom match {
+            | PDLits _ ->
+              remaining.map(l ->
+                TPrimValue(idxSType.kind, PDLits(l), idxSType.pos)
+              )
+            | PDMixed(_, pats) ->
+              Some(
+                TPrimValue(
+                  idxSType.kind,
+                  PDMixed(remaining, pats),
+                  idxSType.pos,
+                ),
+              )
+            | PDFull _ -> Some(idxSType)
+            }
+          };
+          remainingOpt match {
           | None() -> void
           | Some(remainingIdxSType) ->
             matchedIndex = obj.maybeGetAccessibleIndexForKeyKind(
@@ -1937,7 +1956,7 @@ extension class TypeChecker {
               !matchedIndex = remainingIdxSType match {
               | TPrimValue(
                 TString(),
-                Some(lits),
+                PDLits(lits),
                 _,
               ) if (lits.values().all(lit -> isJSNumberKeyName(lit.val))) ->
                 // TODO: when both indexes exist, we should split the remainingIdxSType into the numeric and non-numeric parts
@@ -1965,8 +1984,12 @@ extension class TypeChecker {
             };
             matchedIndex match {
             | None() ->
-              remainingIdxSType.literals match {
-              | None() ->
+              if (remainingIdxSType.hasOnlyLits()) {
+                obj.getTypeTypingError(
+                  remainingIdxSType.lits().fromSome().toStringList(),
+                  pos,
+                )
+              } else {
                 fatalError(
                   Array[
                     (
@@ -1981,7 +2004,6 @@ extension class TypeChecker {
                   ],
                   TSCode(7053),
                 )
-              | Some(lits) -> obj.getTypeTypingError(lits.toStringList(), pos)
               }
             | Some(index) ->
               ty = if (isLValue) index.set else {
@@ -2005,7 +2027,7 @@ extension class TypeChecker {
               // non-literal keys: specific literals that reach here were already
               // checked against the declared fields and found absent, so they
               // only hit the index.
-              if (remainingIdxSType.literals.isNone()) {
+              if (!remainingIdxSType.hasOnlyLits()) {
                 for (namedFd in obj.namedFieldsForKeyKind(
                   remainingIdxSType.kind,
                 )) {
@@ -2282,7 +2304,7 @@ extension class TypeChecker {
   private fun hasImpreciseNumberLiteral(stypes: STypes): Bool {
     stypes.any(sty ->
       sty match {
-      | TPrimValue(TNum(), Some(lits), _) ->
+      | TPrimValue(TNum(), PDLits(lits), _) ->
         lits.values().any(lit -> !isExactJSNumberName(lit.val))
       | _ -> false
       }
@@ -2301,8 +2323,8 @@ extension class TypeChecker {
       | (TPrimUnit(TUndefined(), _), TPrimUnit(TUndefined(), _)) ->
         true
       | (
-        TPrimValue(kind1, Some(lits1), _),
-        TPrimValue(kind2, Some(lits2), _),
+        TPrimValue(kind1, PDLits(lits1), _),
+        TPrimValue(kind2, PDLits(lits2), _),
       ) ->
         kind1 == kind2 &&
           ((lits1.singleElt(), lits2.singleElt()) match {
@@ -3353,7 +3375,7 @@ extension class TypeChecker {
               stypes.mapSTypes(stype ->
                 stype match {
                 | TPrimValue(k @ TNum(), _, primPos) ->
-                  TPrimValue(k, None(), primPos)
+                  TPrimValue(k, PDFull(), primPos)
                 | TPrimValue(k @ TBigInt(), _, primPos) ->
                   // Unary '+' performs ToNumber, which throws on a bigint at
                   // runtime; '-' and '~' stay valid on bigints. Widened even
@@ -3362,13 +3384,16 @@ extension class TypeChecker {
                   if (nuop is UOPlus()) {
                     !plusOnBigInt = true;
                   };
-                  TPrimValue(k, None(), primPos)
-                | TPrimValue(k, Some _, primPos) ->
+                  TPrimValue(k, PDFull(), primPos)
+                | TPrimValue(k, PDLits _, primPos) ->
                   // Invalid for the operator, but still widened so the
                   // TS2736 headline below names base types like tsc
                   // ('a' | bigint reads 'bigint | string').
                   !invalid = true;
-                  TPrimValue(k, None(), primPos)
+                  TPrimValue(k, PDFull(), primPos)
+                | TPrimValue(k, PDMixed _, primPos) ->
+                  !invalid = true;
+                  TPrimValue(k, PDFull(), primPos)
                 | _ ->
                   !invalid = true;
                   stype
@@ -4534,8 +4559,8 @@ extension class TypeChecker {
     | Unop(UOExclamationMark(), subE) ->
       this.asConstExpr(tcenv, subE).map(ty ->
         ty.getSingleConstant() match {
-        | Some(TPrimValue(TBool(), lits, _)) ->
-          lits.flatMap(v -> v.singleElt()) match {
+        | Some(TPrimValue(TBool(), PDLits(lits), _)) ->
+          lits.singleElt() match {
           | Some(lit) ->
             // Negating a boolean literal is redundant, not wrong: `!true` is a
             // valid, sound way to write `false`. So this is a warning (a
@@ -4580,8 +4605,8 @@ extension class TypeChecker {
     | Unop(nuop @ ArithmeticUnaryOperator(), subE) ->
       this.asConstExpr(tcenv, subE).flatMap(ty ->
         ty.getSingleConstant() match {
-        | Some(TPrimValue(k @ TNum(), valuesOpt, _))
-        | Some(TPrimValue(k @ TBigInt(), valuesOpt, _)) ->
+        | Some(TPrimValue(k @ TNum(), PDLits(values), _))
+        | Some(TPrimValue(k @ TBigInt(), PDLits(values), _)) ->
           Some(
             nuop match {
             | UOPlus() ->
@@ -4602,7 +4627,7 @@ extension class TypeChecker {
                 ty
               }
             | UOMinus() ->
-              valuesOpt.flatMap(v -> v.singleElt()) match {
+              values.singleElt() match {
               | None() ->
                 internal_error(
                   "asConstExpr should return literals with a single value",
@@ -4965,7 +4990,7 @@ extension class TypeChecker {
                 }
               } else {
                 indexBranch match {
-                | TPrimValue(kind, None(), _) ->
+                | TPrimValue(kind, PDFull(), _) ->
                   add(
                     fields
                       .nonSyntheticIndexForKeyKind(kind)
@@ -5974,15 +5999,17 @@ extension class TypeChecker {
       symLitsOpt: ??PrimLiterals = None();
       for (stype1 in stypes1) {
         stype1 match {
-        | TPrimValue(TNum(), lits, _)
-        | TPrimValue(TString(), lits, _) ->
+        | prim @ TPrimValue(TNum(), _, _)
+        | prim @ TPrimValue(TString(), _, _) ->
+          lits = prim.keyLits();
           !fieldLitsOpt = fieldLitsOpt match {
           | Some(None()) -> Some(None())
           | None() -> Some(lits)
           | Some(Some(_)) if (lits.isNone()) -> Some(None())
           | Some(Some(existing)) -> Some(lits.map(more -> existing.union(more)))
           }
-        | TPrimValue(TSymbol(), symLits, _) ->
+        | prim @ TPrimValue(TSymbol(), _, _) ->
+          symLits = prim.keyLits();
           !symLitsOpt = symLitsOpt match {
           | Some(None()) -> Some(None())
           | None() -> Some(symLits)

@@ -194,6 +194,7 @@ base class STErrorOnTPrimValue(
   children =
   | STPrimValueFullSpecific()
   | STPrimMissingValue(elt: PrimLiteral)
+  | STPrimUnmatchedPattern(pat: TemplatePattern)
 
   fun toError(
     subst: mutable Subst,
@@ -230,6 +231,17 @@ base class STErrorOnTPrimValue(
         )}`,
       ),
       (elt.pos, `Value ${displayVal} is missing`),
+    ].concat(STError::readonlyHint(suggestReadonly))
+  | STPrimUnmatchedPattern(pat, prim1, prim2, suggestReadonly) ->
+    List[
+      (prim1.pos, `Type ${quoteRenderedType(prim1.toString(subst, tenv))}`),
+      (
+        prim2.pos,
+        `is not assignable to type ${quoteRenderedType(
+          prim2.toString(subst, tenv),
+        )}`,
+      ),
+      (prim1.pos, `Pattern ${quoteRenderedType(pat.render())} is not matched`),
     ].concat(STError::readonlyHint(suggestReadonly))
 }
 
@@ -2256,13 +2268,71 @@ extension class TPrimValue {
       prim1.tag() == prim2.tag(),
       "TPrimValue::isSub expects to be called with identical tags",
     );
-    (prim1.literals, prim2.literals) match {
-    | (_, None()) -> STOk()
-    | (None(), Some _) -> STPrimValueFullSpecific(prim1, prim2)
-    | (Some(lits1), Some(lits2)) ->
+    (prim1.dom, prim2.dom) match {
+    // Every string type is a subtype of the full primitive, and only of it.
+    | (_, PDFull()) -> STOk()
+    | (PDFull(), PDLits _)
+    | (PDFull(), PDMixed _) ->
+      STPrimValueFullSpecific(prim1, prim2)
+    | (PDLits(lits1), PDLits(lits2)) ->
       for (elt in lits1.values()) {
         if (!lits2.contains(elt.val)) {
           return STPrimMissingValue(elt, prim1, prim2)
+        }
+      };
+      STOk()
+    | (PDLits(lits1), PDMixed(lits2, pats2)) ->
+      // A literal is in the mixed domain iff it is one of its literals or
+      // matches one of its patterns (tsc's literal-vs-template matcher).
+      for (elt in lits1.values()) {
+        inLits = lits2 match {
+        | Some(l2) -> l2.contains(elt.val)
+        | None() -> false
+        };
+        if (!inLits && !pats2.anyMatches(elt.val)) {
+          return STPrimMissingValue(elt, prim1, prim2)
+        }
+      };
+      STOk()
+    | (PDMixed(lits1, pats1), PDLits(lits2)) ->
+      // A pattern is infinite, so it can never be a subtype of a finite
+      // literal set.
+      missing: ?PrimLiteral = None();
+      lits1.each(l1 ->
+        for (elt in l1.values()) {
+          if (missing.isNone() && !lits2.contains(elt.val)) {
+            !missing = Some(elt)
+          }
+        }
+      );
+      missing match {
+      | Some(elt) -> return STPrimMissingValue(elt, prim1, prim2)
+      | None() -> void
+      };
+      pats1.values().find(_p -> true) match {
+      | Some(pat) -> STPrimUnmatchedPattern(pat, prim1, prim2)
+      | None() -> STOk()
+      }
+    | (PDMixed(lits1, pats1), PDMixed(lits2, pats2)) ->
+      missing: ?PrimLiteral = None();
+      lits1.each(l1 ->
+        for (elt in l1.values()) {
+          inLits = lits2 match {
+          | Some(l2) -> l2.contains(elt.val)
+          | None() -> false
+          };
+          if (missing.isNone() && !inLits && !pats2.anyMatches(elt.val)) {
+            !missing = Some(elt)
+          }
+        }
+      );
+      missing match {
+      | Some(elt) -> return STPrimMissingValue(elt, prim1, prim2)
+      | None() -> void
+      };
+      for (pat in pats1.values()) {
+        if (!pats2.values().any(q -> pat.isSubPattern(q))) {
+          return STPrimUnmatchedPattern(pat, prim1, prim2)
         }
       };
       STOk()

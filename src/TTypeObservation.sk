@@ -600,7 +600,7 @@ mutable class TypeReadContext private {
     this.concreteTypes(symbolType, Covariant()).flatMap(types ~>
       types.singleElt()
     ) match {
-    | Some(TPrimValue(TSymbol(), Some(literals), _)) ->
+    | Some(TPrimValue(TSymbol(), PDLits(literals), _)) ->
       literals.singleElt().map(literal -> literal.val)
     | _ -> None()
     }

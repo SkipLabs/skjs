@@ -294,6 +294,10 @@ class TType private {
   // For TPrimValue full TBool (no literals): computes exact complement
   // (boolean - true = false) since the full set is {true, false}.
   // For TPrimValue full of other kinds: keeps unchanged (over-approximation).
+  // For a template literal pattern (PDMixed): the pattern is kept unchanged —
+  // pattern \ literal is not representable (an infinite non-pattern
+  // language), so diff over-approximates by keeping the pattern, exactly as
+  // the full-primitive arm does.
   static fun removeConstant(
     subst: mutable Subst,
     tenv: TEnv,
@@ -318,16 +322,29 @@ class TType private {
           (stype, prim) match {
           | (TPrimUnit(k1, _), TPrimUnit(k2, _)) if (k1 == k2) -> None()
           | (
-            TPrimValue(k1, Some(lits1), pos),
-            TPrimValue(k2, Some(lits2), _),
+            TPrimValue(k1, PDLits(lits1), pos),
+            TPrimValue(k2, PDLits(lits2), _),
           ) if (k1 == k2) ->
-            lits1.diff(lits2).map(l -> TPrimValue(k1, Some(l), pos))
+            lits1.diff(lits2).map(l -> TPrimValue(k1, PDLits(l), pos))
           | (
-            TPrimValue(k1 @ TBool _, None(), pos),
-            TPrimValue(k2, Some(lits2), _),
+            TPrimValue(k1, PDMixed(lits1, pats), pos),
+            TPrimValue(k2, PDLits(lits2), _),
+          ) if (k1 == k2) ->
+            // Subtract the literals; keep every pattern (over-approximation,
+            // see above).
+            Some(
+              TPrimValue(
+                k1,
+                PDMixed(lits1.flatMap(l -> l.diff(lits2)), pats),
+                pos,
+              ),
+            )
+          | (
+            TPrimValue(k1 @ TBool _, PDFull(), pos),
+            TPrimValue(k2, PDLits(lits2), _),
           ) if (k1 == k2) ->
             // lits2 is a non-empty subset of {true, false}; a size-2 lits2
-            // should have been normalized to None() (full).
+            // should have been normalized to PDFull() (full).
             invariant(lits2.size() == 1);
             other = if (lits2.contains("true")) "false" else {
               invariant(lits2.contains("false"));
@@ -336,7 +353,7 @@ class TType private {
             Some(
               TPrimValue(
                 k1,
-                Some(PrimLiterals::single(PrimLiteral(pos, other))),
+                PDLits(PrimLiterals::single(PrimLiteral(pos, other))),
                 pos,
               ),
             )
@@ -1820,10 +1837,10 @@ base class FieldKey {
 
   static fun ofSType(pos: PosRange, stype: SType): ?FieldKey {
     stype match {
-    | TPrimValue(k @ TString(), Some(lits), _)
-    | TPrimValue(k @ TNum(), Some(lits), _) ->
+    | TPrimValue(k @ TString(), PDLits(lits), _)
+    | TPrimValue(k @ TNum(), PDLits(lits), _) ->
       lits.singleElt().map(lit -> FKName(Name(pos, lit.val), k))
-    | TPrimValue(TSymbol(), Some(lits), _) ->
+    | TPrimValue(TSymbol(), PDLits(lits), _) ->
       lits.singleElt().map(lit -> FKSymbol(pos, lit.val))
     | _ -> None()
     }
@@ -1832,10 +1849,10 @@ base class FieldKey {
   // Like ofSType but returns all literals, not just when there's exactly one.
   static fun allOfSType(pos: PosRange, stype: SType): Array<FieldKey> {
     stype match {
-    | TPrimValue(k @ TString(), Some(lits), _)
-    | TPrimValue(k @ TNum(), Some(lits), _) ->
+    | TPrimValue(k @ TString(), PDLits(lits), _)
+    | TPrimValue(k @ TNum(), PDLits(lits), _) ->
       lits.values().map(lit -> FKName(Name(pos, lit.val), k)).collect(Array)
-    | TPrimValue(TSymbol(), Some(lits), _) ->
+    | TPrimValue(TSymbol(), PDLits(lits), _) ->
       lits.values().map(lit -> FKSymbol(pos, lit.val)).collect(Array)
     | _ -> Array[]
     }
@@ -1972,15 +1989,33 @@ base class SType private (
     | TObject _
     | TPrimValue(TSymbol(), _, _) ->
       SFValues(FZero(), true)
-    | TPrimValue(TBool(), None(), _)
-    | TPrimValue(TString(), None(), _)
-    | TPrimValue(TBigInt(), None(), _) ->
+    | TPrimValue(TBool(), PDFull(), _)
+    | TPrimValue(TString(), PDFull(), _)
+    | TPrimValue(TBigInt(), PDFull(), _) ->
       // boolean has only `false`, string only `""`, bigint only `0n`.
       SFValues(FOne(), true)
-    | TPrimValue(TNum(), None(), _) ->
+    | TPrimValue(TNum(), PDFull(), _) ->
       // number ranges over the falsy values 0, -0 and NaN (i.e. more than one).
       SFValues(FMany(), true)
-    | TPrimValue(kind, Some(lits), _) ->
+    | TPrimValue(kind, PDMixed(lits, pats), _) ->
+      // A pattern's language is infinite, so it always has a truthy value;
+      // its only possible falsy value is "" (no pattern matches "": the
+      // degenerate all-empty pattern is canonicalized to full `string`).
+      // Patterns only occur under TString, so kind is TString here.
+      falsyCount = lits match {
+      | Some(ls) ->
+        count: FalsyCount = FZero();
+        for (lit in ls.values()) {
+          if (kind.mayBeFalsy(lit.val)) !count = count.plus(FOne())
+        };
+        count
+      | None() -> FZero()
+      };
+      if (pats.values().any(pat -> pat.matchesLiteral(""))) {
+        !falsyCount = falsyCount.plus(FOne())
+      };
+      SFValues(falsyCount, true)
+    | TPrimValue(kind, PDLits(lits), _) ->
       falsyCount: FalsyCount = FZero();
       hasTruthy = false;
       for (lit in lits) {
@@ -2018,20 +2053,32 @@ base class SType private (
     | TObject _
     | TPrimValue(TSymbol(), _, _) ->
       if (target) Some(this) else None()
-    | TPrimValue(TString(), None(), _)
-    | TPrimValue(TNum(), None(), _)
-    | TPrimValue(TBigInt(), None(), _) ->
+    | TPrimValue(TString(), PDFull(), _)
+    | TPrimValue(TNum(), PDFull(), _)
+    | TPrimValue(TBigInt(), PDFull(), _) ->
       Some(this)
-    | TPrimValue(TBool(), None(), pos) ->
+    | TPrimValue(TBool(), PDFull(), pos) ->
       Some(TPrimValue::single(TBool(), if (target) "true" else "false", pos))
-    | TPrimValue(kind, Some(lits), pos) ->
+    | TPrimValue(kind, PDMixed(lits, _pats), pos) ->
+      // A pattern cannot be split by truthiness: the truthy side keeps the
+      // whole type (as tsc does), and the falsy side can only be "" — which no
+      // pattern matches — so the patterns drop out and only the literals that
+      // may be falsy remain. Patterns only occur under TString.
+      if (target) {
+        Some(this)
+      } else {
+        lits
+          .flatMap(ls -> ls.filterLiterals(lit -> kind.mayBeFalsy(lit.val)))
+          .map(l -> TPrimValue(kind, PDLits(l), pos))
+      }
+    | TPrimValue(kind, PDLits(lits), pos) ->
       // Each side keeps the literals that may take it (a literal whose value
       // cannot be determined is kept on both sides).
       lits
         .filterLiterals(lit ->
           if (target) kind.mayBeTruthy(lit.val) else kind.mayBeFalsy(lit.val)
         )
-        .map(l -> TPrimValue(kind, Some(l), pos))
+        .map(l -> TPrimValue(kind, PDLits(l), pos))
     }
   }
 
@@ -2046,9 +2093,9 @@ base class SType private (
   // `NaN`). All other cases are shared with `truthinessResidue`.
   fun truthinessValueResidue(target: Bool): ?SType {
     this match {
-    | TPrimValue(TString(), None(), pos) if (!target) ->
+    | TPrimValue(TString(), PDFull(), pos) if (!target) ->
       Some(TPrimValue::single(TString(), "", pos))
-    | TPrimValue(TBigInt(), None(), pos) if (!target) ->
+    | TPrimValue(TBigInt(), PDFull(), pos) if (!target) ->
       Some(TPrimValue::single(TBigInt(), "0n", pos))
     | _ -> this.truthinessResidue(target)
     }
@@ -2059,7 +2106,7 @@ base class TPrim extends SType {
   fun sameConstant(other: TPrim): Bool {
     (this, other) match {
     | (TPrimUnit(k1, _), TPrimUnit(k2, _)) -> k1 == k2
-    | (TPrimValue(k1, Some(l1), _), TPrimValue(k2, Some(l2), _)) ->
+    | (TPrimValue(k1, PDLits(l1), _), TPrimValue(k2, PDLits(l2), _)) ->
       k1 == k2 && l1.size() == 1 && l1 == l2
     | _ -> false
     }
@@ -2070,17 +2117,17 @@ extension class TPrimValue extends TPrim
 
 class TPrimUnit(kind: TPrimUnitKind) extends SType
 
-class TPrimValue(kind: TPrimValueKind, literals: ?PrimLiterals) extends SType {
+class TPrimValue(kind: TPrimValueKind, dom: PrimDomain) extends SType {
   static fun single(
     kind: TPrimValueKind,
     value: String,
     pos: PosRange,
   ): TPrimValue {
-    TPrimValue(kind, Some(PrimLiterals::single(PrimLiteral(pos, value))), pos)
+    TPrimValue(kind, PDLits(PrimLiterals::single(PrimLiteral(pos, value))), pos)
   }
 
   static fun full(kind: TPrimValueKind, pos: PosRange): TPrimValue {
-    TPrimValue(kind, None(), pos)
+    TPrimValue(kind, PDFull(), pos)
   }
 
   static fun boolean(pos: PosRange): TPrimValue {
@@ -2105,6 +2152,64 @@ class TPrimValue(kind: TPrimValueKind, literals: ?PrimLiterals) extends SType {
 
   fun asClassName(): Name {
     Name(this.pos, this.kind.toString())
+  }
+}
+
+extension class TPrimValue {
+  // The finite literal part of the domain: None when the type is the full
+  // primitive or (for strings) pattern-only.
+  fun lits(): ?PrimLiterals {
+    this.dom match {
+    | PDFull() -> None()
+    | PDLits(l) -> Some(l)
+    | PDMixed(l, _) -> l
+    }
+  }
+
+  // The pattern part: None unless the domain is PDMixed (patterns only ever
+  // occur under TString).
+  fun pats(): ?TemplatePats {
+    this.dom match {
+    | PDFull() -> None()
+    | PDLits _ -> None()
+    | PDMixed(_, p) -> Some(p)
+    }
+  }
+
+  // Whether the domain is exactly the full primitive.
+  fun isFull(): Bool {
+    this.dom is PDFull()
+  }
+
+  // Whether the domain is exactly a finite literal set (no patterns, not
+  // full): only such a key is a literal field/index key.
+  fun hasOnlyLits(): Bool {
+    this.dom is PDLits _
+  }
+
+  // The finite literal part, treating any pattern as non-literal: a pattern
+  // is not a finite key set (used where a key's literal set matters).
+  fun keyLits(): ?PrimLiterals {
+    this.dom match {
+    | PDFull() -> None()
+    | PDLits(l) -> Some(l)
+    | PDMixed _ -> None()
+    }
+  }
+
+  // The same type with the literal part replaced by `l` (None = no literals),
+  // preserving full-ness and patterns. Callers must handle a PDLits domain
+  // becoming empty (bottom) themselves.
+  fun withLits(l: ?PrimLiterals): TPrimValue {
+    this.dom match {
+    | PDFull() -> this
+    | PDLits _ ->
+      l match {
+      | Some(lits) -> TPrimValue(this.kind, PDLits(lits), this.pos)
+      | None() -> this
+      }
+    | PDMixed(_, p) -> TPrimValue(this.kind, PDMixed(l, p), this.pos)
+    }
   }
 }
 
@@ -2709,7 +2814,7 @@ class TFields protected {
     | Some(brandField) ->
       fields.remove(brandKey);
       brandField.get.getSingleConstant() match {
-      | Some(TPrimValue(TBool(), Some(lits), _)) ->
+      | Some(TPrimValue(TBool(), PDLits(lits), _)) ->
         lits.singleElt() match {
         | Some(PrimLiteral(_pos, "true")) -> Some(true)
         | Some(PrimLiteral(_pos, "false")) -> Some(false)
@@ -2739,7 +2844,7 @@ class TFields protected {
     | Some(brandField) ->
       fields.remove(functionBrandKey);
       isTrue = brandField.get.getSingleConstant() match {
-      | Some(TPrimValue(TBool(), Some(lits), _)) ->
+      | Some(TPrimValue(TBool(), PDLits(lits), _)) ->
         lits.singleElt() match {
         | Some(PrimLiteral(_pos, "true")) -> true
         | _ -> false
@@ -3066,7 +3171,7 @@ class TFields protected {
     | None() -> return None()
     };
     length = lengthField.get.getSingleConstant() match {
-    | Some(TPrimValue(TNum(), Some(lits), _)) ->
+    | Some(TPrimValue(TNum(), PDLits(lits), _)) ->
       lits.singleElt() match {
       | Some(PrimLiteral(_, v)) -> v.toIntOption()
       | None() -> None()
@@ -3320,7 +3425,7 @@ class STypes private (
 
   fun getConstantString(): ?PrimLiteral {
     this.singleElt() match {
-    | Some(TPrimValue(TString(), Some(lits), _)) -> lits.singleElt()
+    | Some(TPrimValue(TString(), PDLits(lits), _)) -> lits.singleElt()
     | _ -> None()
     }
   }
@@ -3328,7 +3433,8 @@ class STypes private (
   fun getSingleConstant(): ?TPrim {
     this.singleElt().flatMap(stype ->
       stype match {
-      | prim @ TPrimValue(_, Some(lits), _) if (lits.size() == 1) -> Some(prim)
+      | prim @ TPrimValue(_, PDLits(lits), _) if (lits.size() == 1) ->
+        Some(prim)
       | prim @ TPrimUnit _ -> Some(prim)
       | _ -> None()
       }
@@ -3377,7 +3483,8 @@ class STypes private (
 
   fun staticValue(): ?String {
     this.singleElt() match {
-    | Some(TPrimValue(_, Some(lits), _)) -> lits.singleElt().map(lit -> lit.val)
+    | Some(TPrimValue(_, PDLits(lits), _)) ->
+      lits.singleElt().map(lit -> lit.val)
     | _ -> None()
     }
   }

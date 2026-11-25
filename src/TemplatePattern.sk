@@ -1,0 +1,458 @@
+/* Template literal patterns (issue #897).                                  */
+/*                                                                         */
+/* A template literal type that denotes an infinite but PARTIAL set of     */
+/* strings (`#${string}`, `${number}px`, `a${string}b${number}c`) has no    */
+/* representation in the finite-literal domain, so it is kept as a pattern: */
+/* the cooked literal text parts with a whole-primitive hole between each   */
+/* pair. It lives inside TPrimValue(TString, PDMixed(...)) — see            */
+/* PrimLiterals.sk for the widened domain — never as its own SType child,  */
+/* because STypes keys by tag and every string form collapses to TagString.*/
+/*                                                                         */
+/* The match and inclusion predicates are ports of tsc's, deliberately      */
+/* replicating its incompleteness: the literal matcher is greedy-leftmost   */
+/* indexOf with no backtracking, so "a-b-1" does NOT match                  */
+/* `${string}-${number}` even though it is in the language, exactly as tsc. */
+/***************************************************************************/
+
+module SKJS;
+
+// s.substring(start, end) by character index.
+private fun substringIdx(s: String, start: Int, end: Int): String {
+  s.getIter().forward(start).slice(s.getIter().forward(end))
+}
+
+// JS String.prototype.indexOf(sub, from): the first index >= from at which
+// sub occurs in s, else -1 (from < 0 counts from 0; the empty sub yields
+// min(from, length)).
+fun jsIndexOf(s: String, sub: String, from: Int): Int {
+  n = s.length();
+  m = sub.length();
+  if (m == 0) {
+    if (from <= 0) return 0;
+    if (from > n) return -1;
+    return from
+  };
+  i = if (from < 0) 0 else from;
+  while (i + m <= n) {
+    if (substringIdx(s, i, i + m) == sub) return i;
+    !i = i + 1
+  };
+  -1
+}
+
+// A hole in a template literal pattern: the whole primitive the hole stands
+// for. Finite holes are reduced to literals before a pattern is built, so a
+// pattern's holes are always whole primitives (a union of them collapses to
+// one of these four: `string` absorbs any string sibling).
+base class PatHole uses XXHashable, Orderable {
+  children =
+  | PHString() // `string`
+  | PHNumber() // `number`
+  | PHBigInt() // `bigint`
+  | PHNumBig() // `number | bigint`
+
+  fun toString(): String {
+    this match {
+    | PHString() -> "string"
+    | PHNumber() -> "number"
+    | PHBigInt() -> "bigint"
+    | PHNumBig() -> "number | bigint"
+    }
+  }
+
+  // Primitive bit mask: Number=1, BigInt=2, String=4 (String is its own bit so
+  // that a `string` hole is a subset of no non-string hole).
+  fun mask(): Int {
+    this match {
+    | PHString() -> 4
+    | PHNumber() -> 1
+    | PHBigInt() -> 2
+    | PHNumBig() -> 3
+    }
+  }
+
+  static fun fromMask(mask: Int): ?PatHole {
+    mask match {
+    | 1 -> Some(PHNumber())
+    | 2 -> Some(PHBigInt())
+    | 3 -> Some(PHNumBig())
+    | 4 -> Some(PHString())
+    | _ -> None()
+    }
+  }
+
+  // tsc's isValidTypeForTemplateLiteralPlaceholder for the string literal s
+  // against this hole type.
+  fun matchesString(s: String): Bool {
+    this match {
+    | PHString() -> true
+    | PHNumber() -> isFiniteJSNumberString(s)
+    | PHBigInt() -> isBigIntString(s)
+    | PHNumBig() -> isFiniteJSNumberString(s) || isBigIntString(s)
+    }
+  }
+
+  // Span-type assignability between two holes, as tsc computes it between two
+  // patterns with identical text parts: a `string` target accepts every hole
+  // (a `${x}`-wrapped span is assignable to `string`), otherwise the source's
+  // primitives must be a subset of the target's.
+  fun isSubOf(that: PatHole): Bool {
+    if (that is PHString _) {
+      true
+    } else {
+      (this.mask().and(that.mask().xor(-1)) == 0)
+    }
+  }
+}
+
+// One piece carved out of the source for one target hole: either a plain
+// literal, or a sub-pattern over the source's own holes.
+base class PatMatch {
+  children =
+  | PMLit(s: String)
+  | PMSub(parts: Array<String>, holes: Array<PatHole>)
+}
+
+// A template literal pattern: the cooked literal text `parts` with `holes`
+// between them (parts.size() == holes.size() + 1). Invariants:
+//  - holes is non-empty;
+//  - not (every part == "" and every hole is PHString): that is the whole
+//    `string` primitive, canonicalized away before a pattern is built.
+// Positions are deliberately not stored, so hashing and comparison (via the
+// derived traits over these two fields) are position-independent, like
+// PrimLiterals.
+class TemplatePattern(
+  parts: Array<String>,
+  holes: Array<PatHole>,
+) uses XXHashable, Orderable, Projectable<String> {
+  fun project(): String {
+    this.render()
+  }
+
+  // The canonical spelling, e.g. `#${string}px`. Also the dedup key (through
+  // Projectable): backslashes, backticks and "${" inside the text parts are
+  // escaped, so distinct patterns never share a rendering.
+  fun render(): String {
+    chars = mutable Vector['`'];
+    static::appendEscaped(chars, this.parts[0]);
+    for (i in Range(0, this.holes.size())) {
+      chars.push('$');
+      chars.push('{');
+      for (c in this.holes[i].toString()) {
+        chars.push(c)
+      };
+      chars.push('}');
+      static::appendEscaped(chars, this.parts[i + 1])
+    };
+    chars.push('`');
+    String::fromChars(chars.toArray())
+  }
+
+  private static fun appendEscaped(
+    chars: mutable Vector<Char>,
+    s: String,
+  ): void {
+    i = 0;
+    n = s.length();
+    while (i < n) {
+      c = s.chars()[i];
+      if (c == '\\') {
+        chars.push('\\');
+        chars.push('\\')
+      } else if (c == '`') {
+        chars.push('\\');
+        chars.push('`')
+      } else if (c == '$' && i + 1 < n && s.chars()[i + 1] == '{') {
+        chars.push('\\');
+        chars.push('$')
+      } else {
+        chars.push(c)
+      };
+      !i = i + 1
+    }
+  }
+
+  fun isDegenerateString(): Bool {
+    this.parts.all(p -> p == "") && this.holes.all(h -> h is PHString _)
+  }
+
+  // tsc's literal-vs-template-literal matcher (inferFromLiteralPartsToTemplateLiteral
+  // plus isValidTypeForTemplateLiteralPlaceholder): whether the string literal
+  // s belongs to this pattern's language, under the greedy-leftmost,
+  // no-backtracking scan.
+  fun matchesLiteral(s: String): Bool {
+    static::greedyMatch(Array[s], Array[], this) match {
+    | None() -> false
+    | Some(matches) ->
+      for (i in Range(0, matches.size())) {
+        matches[i] match {
+        | PMLit(str) -> if (!this.holes[i].matchesString(str)) return false
+        // No source holes, so every match is a literal.
+        | PMSub _ -> return false
+        }
+      };
+      true
+    }
+  }
+
+  // tsc's isTypeMatchedByTemplateLiteralType between two patterns: whether
+  // this pattern's language is included in `that`'s, as tsc decides it (equal
+  // text parts compare span-wise; otherwise the source's texts are matched
+  // greedily against the target's delimiters).
+  fun isSubPattern(that: TemplatePattern): Bool {
+    if (static::arraysEqual(this.parts, that.parts)) {
+      for (i in Range(0, this.holes.size())) {
+        if (!this.holes[i].isSubOf(that.holes[i])) return false
+      };
+      true
+    } else {
+      static::greedyMatch(this.parts, this.holes, that) match {
+      | None() -> false
+      | Some(matches) ->
+        for (i in Range(0, matches.size())) {
+          valid = matches[i] match {
+          | PMLit(str) -> that.holes[i].matchesString(str)
+          | PMSub(parts, holes) ->
+            // A matched sub-pattern is valid for the target hole iff the
+            // hole is `string` (any template is) or the sub-pattern is a bare
+            // `${span}` whose span is assignable to the hole.
+            (that.holes[i] is PHString _) ||
+              (parts.all(p -> p == "") &&
+                holes.size() == 1 &&
+                holes[0].isSubOf(that.holes[i]))
+          };
+          if (!valid) return false
+        };
+        true
+      }
+    }
+  }
+
+  private static fun arraysEqual(a: Array<String>, b: Array<String>): Bool {
+    if (a.size() != b.size()) return false;
+    for (i in Range(0, a.size())) {
+      if (a[i] != b[i]) return false
+    };
+    true
+  }
+
+  private static fun getSrcText(
+    srcTexts: Array<String>,
+    lastSrc: Int,
+    remainingEnd: String,
+    idx: Int,
+  ): String {
+    if (idx < lastSrc) srcTexts[idx] else remainingEnd
+  }
+
+  // Port of tsc's inferFromLiteralPartsToTemplateLiteral: match the source's
+  // text parts (srcTexts, with span holes srcHoles between them) against the
+  // target pattern, greedily and leftmost, with no reconsideration of an
+  // earlier hole once a later delimiter matched. Returns one match per target
+  // hole, or None when the texts cannot line up.
+  private static fun greedyMatch(
+    srcTexts: Array<String>,
+    srcHoles: Array<PatHole>,
+    tgt: TemplatePattern,
+  ): ?Array<PatMatch> {
+    lastSrc = srcTexts.size() - 1;
+    srcStart = srcTexts[0];
+    srcEnd = srcTexts[lastSrc];
+    tgtParts = tgt.parts;
+    lastTgt = tgtParts.size() - 1;
+    tgtStart = tgtParts[0];
+    tgtEnd = tgtParts[lastTgt];
+    if (
+      lastSrc == 0 &&
+      srcStart.length() < tgtStart.length() + tgtEnd.length()
+    ) {
+      return None()
+    };
+    if (!srcStart.startsWith(tgtStart)) return None();
+    if (!srcEnd.endsWith(tgtEnd)) return None();
+    remainingEnd = substringIdx(srcEnd, 0, srcEnd.length() - tgtEnd.length());
+    matches = mutable Vector<PatMatch>[];
+    seg = 0;
+    pos = tgtStart.length();
+    for (i in Range(1, lastTgt)) {
+      delim = tgtParts[i];
+      (s, p) = if (delim.length() > 0) {
+        s0 = seg;
+        p0 = pos;
+        res: ?(Int, Int) = None();
+        while (res.isNone()) {
+          !p0 = jsIndexOf(
+            static::getSrcText(srcTexts, lastSrc, remainingEnd, s0),
+            delim,
+            p0,
+          );
+          if (p0 >= 0) {
+            !res = Some((s0, p0))
+          } else {
+            !s0 = s0 + 1;
+            if (s0 == srcTexts.size()) return None();
+            !p0 = 0
+          }
+        };
+        res.fromSome()
+      } else if (
+        pos < static::getSrcText(srcTexts, lastSrc, remainingEnd, seg).length()
+      ) {
+        (seg, pos + 1)
+      } else if (seg < lastSrc) {
+        (seg + 1, 0)
+      } else {
+        return None()
+      };
+      matches.push(
+        static::makeMatch(
+          srcTexts,
+          srcHoles,
+          lastSrc,
+          remainingEnd,
+          seg,
+          pos,
+          s,
+          p,
+        ),
+      );
+      !seg = s;
+      !pos = p;
+      if (delim.length() > 0) !pos = pos + delim.length()
+    };
+    matches.push(
+      static::makeMatch(
+        srcTexts,
+        srcHoles,
+        lastSrc,
+        remainingEnd,
+        seg,
+        pos,
+        lastSrc,
+        static::getSrcText(srcTexts, lastSrc, remainingEnd, lastSrc).length(),
+      ),
+    );
+    Some(matches.toArray())
+  }
+
+  // tsc's addMatch: the piece of the source between (seg, pos) and (s, p) is
+  // a plain literal when no source span was crossed, else a sub-pattern.
+  private static fun makeMatch(
+    srcTexts: Array<String>,
+    srcHoles: Array<PatHole>,
+    lastSrc: Int,
+    remainingEnd: String,
+    seg: Int,
+    pos: Int,
+    s: Int,
+    p: Int,
+  ): PatMatch {
+    if (s == seg) {
+      PMLit(
+        substringIdx(
+          static::getSrcText(srcTexts, lastSrc, remainingEnd, s),
+          pos,
+          p,
+        ),
+      )
+    } else {
+      subParts = mutable Vector<String>[];
+      subParts.push(
+        substringIdx(
+          static::getSrcText(srcTexts, lastSrc, remainingEnd, seg),
+          pos,
+          static::getSrcText(srcTexts, lastSrc, remainingEnd, seg).length(),
+        ),
+      );
+      for (k in Range(seg + 1, s)) {
+        subParts.push(srcTexts[k])
+      };
+      subParts.push(
+        substringIdx(
+          static::getSrcText(srcTexts, lastSrc, remainingEnd, s),
+          0,
+          p,
+        ),
+      );
+      subHoles = mutable Vector<PatHole>[];
+      for (k in Range(seg, s)) {
+        subHoles.push(srcHoles[k])
+      };
+      PMSub(subParts.toArray(), subHoles.toArray())
+    }
+  }
+}
+
+// A non-empty set of patterns, keyed by their canonical rendering (so dedup
+// and hashing ignore positions, mirroring PrimLiterals).
+class TemplatePats private (
+  private inner: InternalKeyedArrayMap<String, TemplatePattern>,
+) extends Sequence<TemplatePattern> uses XXHashable, Orderable {
+  // Invariant: inner is not empty
+
+  static fun single(pat: TemplatePattern): TemplatePats {
+    TemplatePats(InternalKeyedArrayMap::single(pat))
+  }
+
+  // Dedups by rendering. None when `pats` is empty.
+  static fun create(pats: mutable Vector<TemplatePattern>): ?TemplatePats {
+    if (pats.isEmpty()) {
+      None()
+    } else {
+      byRender = SortedMap<String, TemplatePattern>[];
+      for (p in pats) {
+        !byRender[p.render()] = p
+      };
+      Some(
+        TemplatePats(
+          InternalKeyedArrayMap::createFromSortedIterator(
+            byRender.items().map(x -> x.i1).iterator(),
+          ),
+        ),
+      )
+    }
+  }
+
+  fun xxhash(): XXHash {
+    // Custom xxhash over the renderings only: positions never enter (the
+    // patterns themselves store none), mirroring PrimLiterals.
+    result = 0;
+    for (pat in this.inner.values()) {
+      !result = XXHash64.xxHash64(result, pat.render().xxhash().value)
+    };
+    XXHash(result)
+  }
+
+  fun size(): Int {
+    this.inner.size()
+  }
+
+  fun isEmpty(): Bool {
+    this.inner.isEmpty()
+  }
+
+  fun union(that: TemplatePats): TemplatePats {
+    TemplatePats(this.inner.union(that.inner))
+  }
+
+  // Whether some pattern in the set matches the string literal s.
+  fun anyMatches(s: String): Bool {
+    this.inner.any(pat -> pat.matchesLiteral(s))
+  }
+
+  // Whether some pattern in the set is included in `that` pattern (tsc's
+  // template-to-template relation).
+  fun anySubOf(that: TemplatePattern): Bool {
+    this.inner.any(pat -> pat.isSubPattern(that))
+  }
+
+  fun values(): mutable Iterator<TemplatePattern> {
+    this.inner.values()
+  }
+
+  fun toString(): String {
+    this.inner.values().map(pat -> pat.render()).collect(Array).join(" | ")
+  }
+}
+
+module end;

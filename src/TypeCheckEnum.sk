@@ -93,7 +93,7 @@ private fun enumFloorDiv(a: Int, b: Int): Int {
 // The single canonical value string of a known numeric member, if any.
 private fun enumNumLiteralVal(v: EnumMemberValue): ?String {
   v match {
-  | EMVLiteral(TPrimValue(TNum(), Some(lits), _)) ->
+  | EMVLiteral(TPrimValue(TNum(), PDLits(lits), _)) ->
     lits.singleElt().map(lit -> lit.val)
   | _ -> None()
   }
@@ -101,7 +101,7 @@ private fun enumNumLiteralVal(v: EnumMemberValue): ?String {
 
 private fun enumFoldOfMemberValue(v: EnumMemberValue): EnumFold {
   v match {
-  | EMVLiteral(TPrimValue(TNum(), Some(lits), _)) ->
+  | EMVLiteral(TPrimValue(TNum(), PDLits(lits), _)) ->
     lits.singleElt() match {
     | Some(lit) ->
       jsNumberLiteralDouble(lit.val) match {
@@ -110,7 +110,7 @@ private fun enumFoldOfMemberValue(v: EnumMemberValue): EnumFold {
       }
     | None() -> EFNumUnknown()
     }
-  | EMVLiteral(TPrimValue(TString(), Some(lits), _)) ->
+  | EMVLiteral(TPrimValue(TString(), PDLits(lits), _)) ->
     lits.singleElt() match {
     | Some(lit) -> EFStr(lit.val)
     | None() -> EFNumUnknown()
@@ -547,15 +547,15 @@ extension base class TEnv {
     strings = SortedSet<String>[];
     for (m in this.enumMembers(tcenvb, en)) {
       static::enumMemberPrim(m) match {
-      | TPrimValue(TNum(), Some(lits), _) ->
+      | TPrimValue(TNum(), PDLits(lits), _) ->
         numbers.each(nums -> {
           for (lit in lits.values()) {
             !nums = nums.set(lit.val)
           };
           !numbers = Some(nums)
         })
-      | TPrimValue(TNum(), None(), _) -> !numbers = None()
-      | TPrimValue(TString(), Some(lits), _) ->
+      | TPrimValue(TNum(), PDFull(), _) -> !numbers = None()
+      | TPrimValue(TString(), PDLits(lits), _) ->
         for (lit in lits.values()) {
           !strings = strings.set(lit.val)
         }
@@ -567,11 +567,11 @@ extension base class TEnv {
     | None() -> stypes.push(TPrimValue::full(TNum(), pos))
     | Some(nums) ->
       PrimLiterals::ofSet(nums, pos).each(lits ->
-        stypes.push(TPrimValue(TNum(), Some(lits), pos))
+        stypes.push(TPrimValue(TNum(), PDLits(lits), pos))
       )
     };
     PrimLiterals::ofSet(strings, pos).each(lits ->
-      stypes.push(TPrimValue(TString(), Some(lits), pos))
+      stypes.push(TPrimValue(TString(), PDLits(lits), pos))
     );
     if (stypes.isEmpty()) {
       return TType::bottom(pos)
@@ -682,7 +682,7 @@ extension class TypeChecker {
     | Var(name) ->
       keyOpt = this.directLiteralSType(idx).flatMap(stype ->
         stype match {
-        | TPrimValue(TNum(), Some(lits), _) ->
+        | TPrimValue(TNum(), PDLits(lits), _) ->
           lits.singleElt().map(lit -> lit.val)
         | _ -> None()
         }

@@ -18,7 +18,7 @@ fun namedInst(name: String): SKJS.TType {
 fun numberLiteralUnion(): SKJS.TType {
   pos = SKJS.PosRange::none;
   lits = SKJS.PrimLiterals::ofSet(SortedSet["1", "2"], pos).fromSome();
-  SKJS.TType::single(SKJS.TPrimValue(SKJS.TNum(), Some(lits), pos))
+  SKJS.TType::single(SKJS.TPrimValue(SKJS.TNum(), SKJS.PDLits(lits), pos))
 }
 
 @test

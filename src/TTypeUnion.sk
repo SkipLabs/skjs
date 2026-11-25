@@ -228,15 +228,38 @@ extension class TPrimValue {
         "Union must be called on primitive value types of same kind",
       )
     };
-    (t1.literals, t2.literals) match {
-    | (None(), _) -> t1
-    | (Some _, None()) -> t2
-    | (Some(lits1), Some(lits2)) ->
+    (t1.dom, t2.dom) match {
+    | (PDFull(), _)
+    | (_, PDFull()) ->
+      TPrimValue(t1.kind, PDFull(), t1.pos)
+    | (PDLits(lits1), PDLits(lits2)) ->
       litsUnion = lits1.union(lits2);
-      lits = if (t1.kind == TBool() && litsUnion.size() >= 2) None() else {
-        Some(litsUnion)
+      dom = if (t1.kind == TBool() && litsUnion.size() >= 2) {
+        PDFull()
+      } else {
+        PDLits(litsUnion)
       };
-      TPrimValue(t1.kind, lits, t1.pos)
+      TPrimValue(t1.kind, dom, t1.pos)
+    | (PDLits(lits1), PDMixed(lits2, pats)) ->
+      TPrimValue(
+        t1.kind,
+        PDMixed(Some(lits1.union(lits2.default(lits1))), pats),
+        t1.pos,
+      )
+    | (PDMixed(lits1, pats), PDLits(lits2)) ->
+      TPrimValue(
+        t1.kind,
+        PDMixed(Some(lits1.default(lits2).union(lits2)), pats),
+        t1.pos,
+      )
+    | (PDMixed(lits1, pats1), PDMixed(lits2, pats2)) ->
+      lits = (lits1, lits2) match {
+      | (Some(l1), Some(l2)) -> Some(l1.union(l2))
+      | (Some(l1), None()) -> Some(l1)
+      | (None(), Some(l2)) -> Some(l2)
+      | (None(), None()) -> None()
+      };
+      TPrimValue(t1.kind, PDMixed(lits, pats1.union(pats2)), t1.pos)
     }
   }
 }
