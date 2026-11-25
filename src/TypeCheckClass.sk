@@ -343,6 +343,22 @@ extension class TypeChecker {
             void
           | (Some(e), Some(type)) ->
             tcenv = TCEnv::mcreate(subst, CGNode::toplevel(fileName));
+            // Field initializers run in declaration order with `this` bound
+            // to the instance, so bind `this` here — as the partially
+            // initialized instance (only fields with initializers declared
+            // before this one, mirroring the constructor's partialThisType)
+            // so a read of a not-yet-initialized field stays rejected.
+            fieldPos = field.pos;
+            tcenv.scope.bind(
+              tcenv,
+              Name(field.pos, "this"),
+              this.new(subst, c.name, targs.targs, ft ~>
+                (ft.value is Some _ && ft.pos < fieldPos)
+              ),
+              true,
+              true,
+              false,
+            );
             this.checkSubType(
               tcenv,
               e.pos,

@@ -1,6 +1,5 @@
 class ArrowField {
   n: number = 1;
-  // @skjs-expect-error 'this' is not available in this context
   m: () => number = (): number => this.n;
 }
 export function probeArrow(c: ArrowField): number {
@@ -9,13 +8,14 @@ export function probeArrow(c: ArrowField): number {
 
 class PlainField {
   n: number = 1;
-  // @skjs-expect-error 'this' is not available in this context
   k: number = this.n;
 }
 
 class LaterField {
   a: number = 1;
-  // @skjs-expect-error 'this' is not available in this context
+  // FIXME: tsc accepts this, but `c` is still undefined when `b`'s
+  // initializer runs, so SKJS rejects the read (soundness).
+  // @skjs-expect-error Property 'c' does not exist on this type
   b: number = this.c;
   c: number = 2;
 }
