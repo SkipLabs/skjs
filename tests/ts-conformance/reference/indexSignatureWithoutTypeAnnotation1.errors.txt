@@ -1,0 +1,9 @@
+indexSignatureWithoutTypeAnnotation1.ts(2,3): error TS7062: Index signature, which lacks type annotation, implicitly has an 'any' type.
+
+
+==== indexSignatureWithoutTypeAnnotation1.ts (1 errors) ====
+    class C {
+      [a: number];
+      ~~~~~~~~~~~~
+!!! error TS7062: Index signature, which lacks type annotation, implicitly has an 'any' type.
+    }
