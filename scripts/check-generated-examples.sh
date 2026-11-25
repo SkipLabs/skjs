@@ -131,28 +131,54 @@ now_ms() {
 ONLY_PROJECT="${ONLY_PROJECT:-}"
 
 # Map known stub modules explicitly (Node16 module resolution requires the file).
+# The overlay is written into a temp dir, so `include`/`exclude` (which tsc
+# resolves against the config file's own directory) must be made absolute
+# against the project dir, or tsc finds zero inputs (TS18003).
 mk_tsc_overlay() {
   project_dir="$1"
   project_tsconfig="${project_dir}/tsconfig.json"
   overlay="${tmpdir}/tsconfig-overlay-$(echo "${project_dir}" | tr '/:' '__').json"
 
-  cat > "${overlay}" <<EOF
-{
-  "extends": "${project_tsconfig}",
-  "compilerOptions": {
-    "baseUrl": "${PROJECT_ROOT}",
-    "paths": {
-      "@skipruntime/core": ["import-stubs/@skipruntime/core/index.d.ts"],
-      "@skipruntime/helpers": ["import-stubs/@skipruntime/helpers/index.d.ts"],
-      "@skipruntime/server": ["import-stubs/@skipruntime/server/index.d.ts"],
-      "@skip-adapter/fastify": ["import-stubs/@skip-adapter/fastify/index.d.ts"],
-      "@fastify/*": ["import-stubs/@fastify/*/index.d.ts"],
-      "fastify": ["import-stubs/fastify/index.d.ts"],
-      "pino": ["import-stubs/pino/index.d.ts"]
+  node - "${project_tsconfig}" "${project_dir}" "${PROJECT_ROOT}" "${overlay}" <<'NODE'
+const fs = require('fs');
+const path = require('path');
+const [,, projectTsconfig, projectDir, projectRoot, outFile] = process.argv;
+const base = JSON.parse(fs.readFileSync(projectTsconfig, 'utf8'));
+
+// include/exclude in a config resolve against that config's directory; the
+// overlay lives in a temp dir, so anchor them at the project directory.
+const abs = (p) => (path.isAbsolute(p) ? p : path.join(projectDir, p));
+const include = (Array.isArray(base.include) && base.include.length ? base.include : ['**/*']).map(abs);
+const exclude = (Array.isArray(base.exclude) && base.exclude.length
+  ? base.exclude
+  : ['node_modules', 'bower_components', 'jspm_packages', 'dist']
+).map(abs).concat([path.join(projectDir, '**/node_modules'), path.join(projectDir, 'dist')]);
+
+const overlay = {
+  extends: projectTsconfig,
+  compilerOptions: {
+    noEmit: true,
+    // Project configs ask for bun-types, which is not installed in this repo.
+    types: [],
+    baseUrl: projectRoot,
+    paths: {
+      '@skipruntime/core': ['import-stubs/@skipruntime/core/index.d.ts'],
+      // Subpath imports like '@skipruntime/core/json.js' resolve to the
+      // matching directory's index.d.ts (import-stubs/@skipruntime/core/json.js/index.d.ts).
+      '@skipruntime/core/*': ['import-stubs/@skipruntime/core/*/index.d.ts'],
+      '@skipruntime/helpers': ['import-stubs/@skipruntime/helpers/index.d.ts'],
+      '@skipruntime/server': ['import-stubs/@skipruntime/server/index.d.ts'],
+      '@skip-adapter/fastify': ['import-stubs/@skip-adapter/fastify/index.d.ts'],
+      '@fastify/*': ['import-stubs/@fastify/*/index.d.ts'],
+      fastify: ['import-stubs/fastify/index.d.ts'],
+      pino: ['import-stubs/pino/index.d.ts']
     }
-  }
-}
-EOF
+  },
+  include,
+  exclude
+};
+fs.writeFileSync(outFile, JSON.stringify(overlay, null, 2) + '\n');
+NODE
   echo "${overlay}"
 }
 
