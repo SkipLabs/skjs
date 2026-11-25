@@ -1826,7 +1826,7 @@ base class TEnv{
   // Record a member declared directly by one of the declarations of a merged
   // name (declaration merging) and diagnose a re-declaration that disagrees
   // with an earlier one, like tsc:
-  // - TS2687 when the modifiers (optional / readonly) differ;
+  // - TS2687 when the modifiers (optional / readonly / access) differ;
   // - TS2717 when a non-method member's type differs.
   // Two methods with the same name would accumulate as overloads in tsc; a
   // TFuns holds a single signature, so SKJS keeps the later declaration
@@ -1845,29 +1845,33 @@ base class TEnv{
       if (isMethod) ownMethods.insert(f.name)
     | Some(prev) ->
       prevIsMethod = ownMethods.contains(f.name);
+      // TS2687: re-declared members must have identical modifiers — optional,
+      // readonly, and access (a private re-declared as public must not
+      // silently relax, so access is compared too; compared by kind, since
+      // FAPrivate carries the declaring name whose position differs across
+      // files). The optional/readonly part applies only to same-kind members;
+      // a method colliding with a property is a type conflict (TS2717 below).
+      modifiersDiffer =
+        static::accessKind(prev.access) != static::accessKind(f.access) ||
+        (isMethod == prevIsMethod &&
+          (prev.isOptional != f.isOptional ||
+            prev.set.isBottom() != f.set.isBottom()));
+      if (modifiersDiffer) {
+        tcenvb.error(
+          Array[
+            (
+              f.pos,
+              `All declarations of '${
+                f.name.value
+              }' must have identical modifiers.`,
+            ),
+          ],
+          TSCode(2687),
+        )
+      };
       if (isMethod && prevIsMethod) {
         ownFields![f.name] = f
       } else {
-        // TS2687 compares modifiers of same-kind members; a method colliding
-        // with a property is a type conflict (TS2717 below), not a modifier
-        // conflict.
-        if (
-          isMethod == prevIsMethod &&
-          (prev.isOptional != f.isOptional ||
-            prev.set.isBottom() != f.set.isBottom())
-        ) {
-          tcenvb.error(
-            Array[
-              (
-                f.pos,
-                `All declarations of '${
-                  f.name.value
-                }' must have identical modifiers.`,
-              ),
-            ],
-            TSCode(2687),
-          )
-        };
         if (prev.get != f.get) {
           prevTy = this.describeDeclarationType(tcenvb, prev.get);
           newTy = this.describeDeclarationType(tcenvb, f.get);
@@ -1886,6 +1890,18 @@ base class TEnv{
           )
         }
       }
+    }
+  }
+
+  // The access kind of a field, for comparing modifiers across merged
+  // declarations (FAPrivate's owner name carries a position, so the raw
+  // values are not comparable across files).
+  private static fun accessKind(access: FieldAccess): String {
+    access match {
+    | FAPublic() -> "public"
+    | FAPrivate(_) -> "private"
+    | FANever() -> "never"
+    | FAPhantom(_) -> "phantom"
     }
   }
 
