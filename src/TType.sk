@@ -2189,10 +2189,6 @@ base class FieldAccess uses XXHashable, Orderable, Equality {
     | _ -> false
     }
   }
-
-  fun !=(other: FieldAccess): Bool {
-    !(this == other)
-  }
 }
 
 class TField{
