@@ -1579,26 +1579,85 @@ extension class TypeChecker {
     | Some(tf) -> tf
     | None() -> return None()
     };
-    f = tfuns.fun_();
-    // A generic call signature loses its type parameters through .call/.apply/
-    // .bind in TS (they resolve to `unknown`), so rather than diverge we leave
-    // those as "Unbound field" — a sound under-approximation. For an overload
-    // set only the primary signature is synthesized: the implementation is a
-    // subtype of every overload, hence of the primary, so calls through the
-    // synthesized signature are sound.
+    // Synthesize one .call/.apply/.bind signature PER overload signature, so
+    // the rebound function keeps the whole overload set and call resolution
+    // dispatches over it as usual. Sound: each synthesized signature accepts
+    // exactly what the corresponding original overload accepts.
+    if (fieldName == "bind") {
+      // bind(thisArg) => the WHOLE overload set with `this` removed from
+      // every signature: the rebound function keeps all overloads.
+      boundSigs = mutable Vector[];
+      for (f in tfuns.allFuns()) {
+        if (!f.tparams.isEmpty()) return None();
+        if (f.thisParam is ImplicitShape _) return None();
+        boundSigs.push(f with {thisParam => NoThis()})
+      };
+      if (boundSigs.isEmpty()) return None();
+      thisType = tfuns.fun_().thisParam.tyOpt().default(TType::top(pos));
+      neverRest = TType::inst(
+        Name(pos, "ReadonlyArray"),
+        TArgs(Array[TType::bottom(pos)]),
+      );
+      boundTy = TType::single(
+        TObject::createCall(TFuns::multiple(boundSigs.toArray(), pos)),
+      );
+      // TODO: partial application `bind(thisArg, ...args)` is not modeled —
+      // a `never[]` rest makes any extra bound argument fail (rejecting it
+      // like TS's TS2554) rather than be silently ignored.
+      return Some(
+        TType::single(
+          TObject::createCall(
+            TFuns::singleFun(
+              TFun(
+                Array[],
+                NoThis(),
+                Array[thisType],
+                Array[],
+                Some(neverRest),
+                boundTy,
+                tfuns.fun_().cgNodes,
+              ),
+              pos,
+            ),
+          ),
+        ),
+      )
+    };
+    synthOne = (f: TFun) -> this.synthCallBindSig(fieldName, f, pos);
+    synths = mutable Vector[];
+    for (f in tfuns.allFuns()) {
+      synthOne(f).each(s -> synths.push(s))
+    };
+    if (synths.isEmpty()) return None();
+    Some(
+      TType::single(
+        TObject::createCall(TFuns::multiple(synths.toArray(), pos)),
+      ),
+    )
+  }
+
+  // Synthesize the .call/.apply/.bind signature for ONE call signature `f`.
+  private fun synthCallBindSig(
+    fieldName: String,
+    f: TFun,
+    pos: PosRange,
+  ): ?TFun {
+    // A generic call signature loses its type parameters through
+    // .call/.apply/.bind in TS (they resolve to `unknown`), so rather than
+    // diverge we leave those as "Unbound field" — a sound
+    // under-approximation.
     if (!f.tparams.isEmpty()) return None();
     // A shape method's carrier type is erased, so no sound thisArg check is
     // possible for a rebind — do not synthesize .call/.apply/.bind on it
     // (a sound under-approximation: the fields stay unbound).
     if (f.thisParam is ImplicitShape _) return None();
-    // The thisArg of `.call`/`.apply`/`.bind` is checked against the function's
-    // `this`: an implicit class `this` requires the receiver to be the class
-    // instance (sound; TS resolves it to `unknown`), an explicit `this: T`
-    // constrains to T, and no declared `this` accepts anything.
+    // The thisArg of `.call`/`.apply`/`.bind` is checked against the
+    // function's `this`: an implicit class `this` requires the receiver to
+    // be the class instance (sound; TS resolves it to `unknown`), an
+    // explicit `this: T` constrains to T, and no declared `this` accepts
+    // anything.
     thisType = f.thisParam.tyOpt().default(TType::top(pos));
-    funType = (tfun: TFun) ->
-      TType::single(TObject::createCall(TFuns::singleFun(tfun, pos)));
-    synthOpt: ?TFun = if (fieldName == "call") {
+    if (fieldName == "call") {
       // (thisArg, ...params) => R — mirrors the function's optional/rest params.
       Some(
         TFun(
@@ -1612,8 +1671,8 @@ extension class TypeChecker {
         ),
       )
     } else if (fieldName == "apply") {
-      // (thisArg, [params]) => R. The argument tuple is exact, so only required
-      // positional parameters are modeled; fall back otherwise.
+      // (thisArg, [params]) => R. The argument tuple is exact, so only
+      // required positional parameters are modeled; fall back otherwise.
       if (!f.optionalParams.isEmpty() || f.spreadParam.isSome()) {
         None()
       } else {
@@ -1621,9 +1680,10 @@ extension class TypeChecker {
         // parameters, so `g.apply(thisArg)` type-checks for a zero-arg `g`.
         (applyParams, applyOptional) = if (f.params.isEmpty()) {
           // ...and the canonical empty array `[]` supplies the same zero
-          // arguments. Model the optional array as `ReadonlyArray<never>` (like
-          // `.bind`'s rest) so both `g.apply(t)` and `g.apply(t, [])` type-check
-          // while any element still over-supplies and is rejected.
+          // arguments. Model the optional array as `ReadonlyArray<never>`
+          // (like `.bind`'s rest) so both `g.apply(t)` and `g.apply(t, [])`
+          // type-check while any element still over-supplies and is
+          // rejected.
           emptyArgs = TType::inst(
             Name(pos, "ReadonlyArray"),
             TArgs(Array[TType::bottom(pos)]),
@@ -1646,31 +1706,9 @@ extension class TypeChecker {
         )
       }
     } else {
-      // bind(thisArg) => the function with its `this` removed, preserving the
-      // remaining (incl. optional/rest) parameters.
-      // TODO: partial application `bind(thisArg, ...args)` is not modeled (it
-      // would drop the bound parameters from the result, an OmitThisParameter
-      // variant). For now a `never[]` rest makes any extra bound argument fail
-      // (rejecting it like TS's TS2554) rather than be silently ignored.
-      bound = f with {thisParam => NoThis()};
-      boundTy = funType(bound);
-      neverRest = TType::inst(
-        Name(pos, "ReadonlyArray"),
-        TArgs(Array[TType::bottom(pos)]),
-      );
-      Some(
-        TFun(
-          Array[],
-          NoThis(),
-          Array[thisType],
-          Array[],
-          Some(neverRest),
-          boundTy,
-          f.cgNodes,
-        ),
-      )
-    };
-    synthOpt.map(synth -> funType(synth))
+      // bind is handled by the caller (it wraps the whole overload set).
+      None()
+    }
   }
 
   fun get(
@@ -6301,6 +6339,11 @@ extension class TypeChecker {
   // call — bindings and publication are kept — and (None, msgs) otherwise,
   // with every effect of the trial rolled back. msgs are the trial's
   // diagnostic lines, for the aggregated "no overload matches" error.
+  // Try ONE overload signature in a full sandbox (subst, publication, and
+  // diagnostics). Returns (Some(result), _) when the signature accepts the
+  // call — bindings and publication are kept — and (None, msgs) otherwise,
+  // with every effect of the trial rolled back. msgs are the trial's
+  // diagnostic lines, for the aggregated "no overload matches" error.
   private fun tryCallSignature(
     tcenv: mutable TCEnv,
     pos: PosRange,
@@ -6312,6 +6355,37 @@ extension class TypeChecker {
     thisArgOpt: ?TType,
     argumentCheck: TypeArgumentCheck,
   ): (?TType, Array<(PosRange, String)>) {
+    (accepted, result, msgs) = this.runCallTrial(tcenv, pos, () ->
+      this.proposeAndValidateCall(
+        tcenv,
+        pos,
+        tfun,
+        fPos,
+        targs,
+        args,
+        moreArgs,
+        thisArgOpt,
+        argumentCheck,
+        tcenv.results.errors.size(),
+      )
+    );
+    if (accepted) (Some(result), Array[]) else (None(), msgs)
+  }
+
+  // Run one call trial in a full sandbox. Returns (accepted, result, msgs):
+  // when f returns with no new diagnostics, the trial is accepted and its
+  // effects are kept; otherwise everything (subst, publication, diagnostics)
+  // is rolled back and msgs carries the trial's diagnostic lines. In the
+  // default/backtrace error modes the first diagnostic throws ErrorExn,
+  // which is captured into msgs; any other exception rolls back and is
+  // rethrown (genuine internal errors are never swallowed). `result` is
+  // f's return value when f returned, else `top` (error recovery only — the
+  // program is already rejected at that point).
+  private fun runCallTrial(
+    tcenv: mutable TCEnv,
+    pos: PosRange,
+    f: () -> TType,
+  ): (Bool, TType, Array<(PosRange, String)>) {
     saved = tcenv.subst.save();
     publication = tcenv.results.savePublication();
     entryErrors = tcenv.results.errors.size();
@@ -6319,30 +6393,17 @@ extension class TypeChecker {
     exnMsgs: ?Array<(PosRange, String)> = None();
     result: ?TType = None();
     try {
-      !result = Some(
-        this.proposeAndValidateCall(
-          tcenv,
-          pos,
-          tfun,
-          fPos,
-          targs,
-          args,
-          moreArgs,
-          thisArgOpt,
-          argumentCheck,
-          entryErrors,
-        ),
-      )
+      !result = Some(f())
     } catch {
-    // Default/backtrace mode: the first diagnostic aborts the trial.
     | ErrorExn(err) -> !exnMsgs = Some(this.trialErrorMessages(tcenv, err))
     | exn ->
       tcenv.subst.restore(saved);
       tcenv.results.restorePublication(publication);
       throw exn
     };
-    if (result.isSome() && tcenv.results.errors.size() == entryErrors) {
-      return (result, Array[])
+    accepted = result.isSome() && tcenv.results.errors.size() == entryErrors;
+    if (accepted) {
+      return (true, result.fromSome(), Array[])
     };
     // Rejected: capture the trial's diagnostics, then roll everything back.
     trialMsgs = mutable Vector<(PosRange, String)>[];
@@ -6360,7 +6421,7 @@ extension class TypeChecker {
     while (tcenv.results.warnings.size() > entryWarnings) {
       _ = tcenv.results.warnings.pop()
     };
-    (None(), msgs)
+    (false, result.default(TType::top(pos)), msgs)
   }
 
   // The messages of a trial failure, including a subtyping error's rendered
@@ -6424,7 +6485,10 @@ extension class TypeChecker {
   }
 
   // Run the last overload signature purely for its return type, discarding
-  // all effects (used for error recovery after "No overload matches").
+  // all effects (used for error recovery after "No overload matches"; that
+  // error has already rejected the program, so the recovery type only needs
+  // to keep the rest of the definition checkable — tsc likewise falls back
+  // to the last overload's type).
   private fun recoverCallSignature(
     tcenv: mutable TCEnv,
     pos: PosRange,
@@ -6436,11 +6500,7 @@ extension class TypeChecker {
     thisArgOpt: ?TType,
     argumentCheck: TypeArgumentCheck,
   ): TType {
-    saved = tcenv.subst.save();
-    publication = tcenv.results.savePublication();
-    entryErrors = tcenv.results.errors.size();
-    entryWarnings = tcenv.results.warnings.size();
-    result = try {
+    (_accepted, result, _msgs) = this.runCallTrial(tcenv, pos, () ->
       this.proposeAndValidateCall(
         tcenv,
         pos,
@@ -6451,23 +6511,9 @@ extension class TypeChecker {
         moreArgs,
         thisArgOpt,
         argumentCheck,
-        entryErrors,
+        tcenv.results.errors.size(),
       )
-    } catch {
-    | ErrorExn _ -> TType::top(pos)
-    | exn ->
-      tcenv.subst.restore(saved);
-      tcenv.results.restorePublication(publication);
-      throw exn
-    };
-    tcenv.subst.restore(saved);
-    tcenv.results.restorePublication(publication);
-    while (tcenv.results.errors.size() > entryErrors) {
-      _ = tcenv.results.errors.pop()
-    };
-    while (tcenv.results.warnings.size() > entryWarnings) {
-      _ = tcenv.results.warnings.pop()
-    };
+    );
     result
   }
 
