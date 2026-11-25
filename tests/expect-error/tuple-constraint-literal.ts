@@ -148,11 +148,9 @@ function unionArmCrossProduct(): void {
 // A union of tuples: an argument matching one arm exactly (tsc infers
 // K = that arm).
 function unionArmValidFirst(): void {
-  // @skjs-expect-error Argument is not assignable to the parameter's type
   const r = arms([0, 1]);
 }
 function unionArmValidSecond(): void {
-  // @skjs-expect-error Argument is not assignable to the parameter's type
   const r = arms([2, 3]);
 }
 
