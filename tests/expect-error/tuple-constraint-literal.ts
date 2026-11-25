@@ -145,6 +145,17 @@ function unionArmCrossProduct(): void {
   const r = arms([0, 3]);
 }
 
+// A union of tuples: an argument matching one arm exactly (tsc infers
+// K = that arm).
+function unionArmValidFirst(): void {
+  // @skjs-expect-error Argument is not assignable to the parameter's type
+  const r = arms([0, 1]);
+}
+function unionArmValidSecond(): void {
+  // @skjs-expect-error Argument is not assignable to the parameter's type
+  const r = arms([2, 3]);
+}
+
 // An intersection with a member the literal does not have -- `foo` would
 // otherwise be readable but absent at runtime.
 declare function branded<K extends [0, 1] & { foo: string }>(x: K): K;
