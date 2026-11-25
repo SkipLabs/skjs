@@ -1463,6 +1463,12 @@ base class TEnv{
     }
   }
 
+  // Whether `cls` is declared in a .d.ts file (a library/stub declaration,
+  // ambient by SKJS rule 35).
+  private static fun isDtsDecl(cls: Class): Bool {
+    cls.name.pos.fileName.toString().endsWith(".d.ts")
+  }
+
   private fun processClassSetup(
     tcenvb: mutable TCEnvBase,
     visitedClasses: SortedSet<String>,
@@ -1497,13 +1503,28 @@ base class TEnv{
     };
     // Several declarations of one name are fine when every one of them is an
     // interface: interfaces merge their members (declaration merging), within
-    // a file, across files, and against the import stubs. Any other
-    // combination colliding is a duplicate class declaration.
-    if (defsCls.size() > 1 && !defsCls.all(cls -> cls.kind is CKInterface())) {
-      tcenvb.error(
-        Array[(className.pos, `Duplicate class declaration '${className}'`)],
-        TSCode(2300),
-      )
+    // a file and across files. Any other combination colliding is a duplicate
+    // class declaration. Merging a user declaration with a library declaration
+    // from a .d.ts stub is rejected: augmenting a library type (e.g.
+    // `interface Array<T> { ... }` in a user file) is not supported — tsc only
+    // allows it deliberately, via `declare global`, which SKJS rejects.
+    if (defsCls.size() > 1) {
+      if (!defsCls.all(cls -> cls.kind is CKInterface())) {
+        tcenvb.error(
+          Array[(className.pos, `Duplicate class declaration '${className}'`)],
+          TSCode(2300),
+        )
+      };
+      libDefs = defsCls.filter(cls -> static::isDtsDecl(cls));
+      if (libDefs.size() > 0 && libDefs.size() < defsCls.size()) {
+        userCls = defsCls.find(cls -> !static::isDtsDecl(cls)).fromSome();
+        tcenvb.notSupported(
+          userCls.name.pos,
+          `Merging '${
+            className.value
+          }' with its library declaration in a .d.ts stub`,
+        )
+      }
     };
     cls = defsCls[0];
     if (
@@ -1556,7 +1577,15 @@ base class TEnv{
     // A name declared by several interfaces (declaration merging) inherits
     // the union of its declarations' base lists. Walk each base once per
     // call, before any own members, so own members override inherited ones.
-    walkedBases = mutable Set<String>[];
+    // tsc TS2320: a name (merged from several declarations, or with several
+    // entries in one extends list) cannot simultaneously extend two different
+    // instantiations of the same base. `baseTypes` maps a base name to the
+    // extends clause it was first extended with; a repeated base renders both
+    // clauses and errors if they differ (rendering is lazy: only repeated
+    // bases pay for it, and normalizing an extends clause can disturb the
+    // tparam bindings of the enclosing class). An identical repeat is walked
+    // only once.
+    baseTypes = mutable Map<String, Type>[];
     for (cls in clss) {
       for (extend in cls.extends_) {
         extend.value match {
@@ -1566,7 +1595,31 @@ base class TEnv{
             parentReference,
             cls.kind is CKInterface(),
           );
-          if (walkedBases.maybeInsert(parentName.value)) {
+          baseTypes.maybeGet(parentName.value) match {
+          | Some(firstExtend) ->
+            renderedFirst = this.describeDeclarationType(
+              tcenvb,
+              this.normalize(tcenvb, firstExtend),
+            );
+            renderedBase = this.describeDeclarationType(
+              tcenvb,
+              this.normalize(tcenvb, extend),
+            );
+            if (renderedFirst != renderedBase) {
+              tcenvb.error(
+                Array[
+                  (
+                    extend.pos,
+                    `Interface '${
+                      className.value
+                    }' cannot simultaneously extend types '${renderedFirst}' and '${renderedBase}'.`,
+                  ),
+                ],
+                TSCode(2320),
+              )
+            }
+          | None() ->
+            baseTypes![parentName.value] = extend;
             if (this.hasClassDef(tcenvb, parentName)) {
               this.addFields(
                 tcenvb,

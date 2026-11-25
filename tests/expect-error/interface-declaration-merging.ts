@@ -120,3 +120,16 @@ interface TParams<U> {}
 function useTParams(v: TParams<number>): void {
   const n: number = v.x;
 }
+
+// tsc TS2320: a merged interface cannot simultaneously extend two different
+// instantiations of the same base.
+interface Base2<T> {
+  v: T;
+}
+interface ExtendsTwice extends Base2<string> {}
+// @ts-expect-error Interface 'ExtendsTwice' cannot simultaneously extend types 'Base2<string>' and 'Base2<number>'.
+// @skjs-expect-error This class incorrectly extends its base class
+interface ExtendsTwice extends Base2<number> {}
+function useExtendsTwice(e: ExtendsTwice): void {
+  const s: string = e.v;
+}
