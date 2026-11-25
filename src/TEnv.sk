@@ -1847,12 +1847,12 @@ base class TEnv{
       prevIsMethod = ownMethods.contains(f.name);
       // TS2687: re-declared members must have identical modifiers — optional,
       // readonly, and access (a private re-declared as public must not
-      // silently relax, so access is compared too; compared by kind, since
-      // FAPrivate carries the declaring name whose position differs across
-      // files). The optional/readonly part applies only to same-kind members;
-      // a method colliding with a property is a type conflict (TS2717 below).
+      // silently relax, so access is compared too; FieldAccess's == ignores
+      // the declaration position, which differs across merged declarations).
+      // The optional/readonly part applies only to same-kind members; a
+      // method colliding with a property is a type conflict (TS2717 below).
       modifiersDiffer =
-        static::accessKind(prev.access) != static::accessKind(f.access) ||
+        prev.access != f.access ||
         (isMethod == prevIsMethod &&
           (prev.isOptional != f.isOptional ||
             prev.set.isBottom() != f.set.isBottom()));
@@ -1890,18 +1890,6 @@ base class TEnv{
           )
         }
       }
-    }
-  }
-
-  // The access kind of a field, for comparing modifiers across merged
-  // declarations (FAPrivate's owner name carries a position, so the raw
-  // values are not comparable across files).
-  private static fun accessKind(access: FieldAccess): String {
-    access match {
-    | FAPublic() -> "public"
-    | FAPrivate(_) -> "private"
-    | FANever() -> "never"
-    | FAPhantom(_) -> "phantom"
     }
   }
 

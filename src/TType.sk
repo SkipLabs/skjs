@@ -2122,7 +2122,7 @@ class TPrimValue(kind: TPrimValueKind, literals: ?PrimLiterals) extends SType {
 // the underlying declaration (and visibility) is unknown. Carries the
 // position of the `in` check so diagnostics can cite it. Access through a
 // phantom always errors — it might be a private field of some class.
-base class FieldAccess uses XXHashable, Orderable {
+base class FieldAccess uses XXHashable, Orderable, Equality {
   children =
   | FAPublic()
   | FAPrivate(owner: Name)
@@ -2171,6 +2171,27 @@ base class FieldAccess uses XXHashable, Orderable {
     | FAPublic() -> this is FAPublic _
     | FAPhantom _ -> this is FAPhantom _
     }
+  }
+
+  // Equality by access kind, ignoring the declaration position: a private
+  // owner is the same access when it names the same class in the same file
+  // (merged interface declarations sit at different positions by
+  // definition). Lets callers write `f1.access == f2.access` directly
+  // instead of converting the access to a string. The wildcard arm is
+  // correct for any mixed-kind pair: different kinds are never equal.
+  fun ==(other: FieldAccess): Bool {
+    (this, other) match {
+    | (FAPublic(), FAPublic()) -> true
+    | (FAPrivate(o1), FAPrivate(o2)) ->
+      o1.value == o2.value && o1.pos.fileName == o2.pos.fileName
+    | (FANever(), FANever()) -> true
+    | (FAPhantom(_), FAPhantom(_)) -> true
+    | _ -> false
+    }
+  }
+
+  fun !=(other: FieldAccess): Bool {
+    !(this == other)
   }
 }
 
