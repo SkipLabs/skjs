@@ -1183,7 +1183,10 @@ extension class Parser {
   ): TopLevelFunDef {
     // Record the function definition and set context
     prevSymbolContext = this.getCurrentSymbolContext();
-    funcSymbol = SPFunction(this.peekNameStr());
+    funNameStr = this.peekNameStr();
+    funOcc = this.funSymbolCounts.maybeGet(funNameStr).default(0);
+    this.funSymbolCounts.set(funNameStr, funOcc + 1);
+    funcSymbol = SPFunction(funNameStr, funOcc);
     symbolContextPos = this.lex.pos;
     this.recordSymbolDefinitionAndSetSymbolContext(
       funcSymbol,
