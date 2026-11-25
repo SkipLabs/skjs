@@ -4160,10 +4160,10 @@ extension class TypeChecker {
         subExpr.value match {
         // `[e0, e1, ...] as const` is a readonly tuple of the elements' const
         // types. asConstExpr stays pure (it does not type-check the elements),
-        // so the tuple is built here. Spread elements are not yet supported and
-        // fall through to the TS1355 arm below.
-        | EArray(elts) if (elts.all(x -> !(x.value is Spread _))) ->
-          this.constArrayLit(tcenv, subExpr.pos, elts)
+        // so the tuple is built here. Spreads of tuples are spliced in by
+        // constArrayLit (#957); a spread of a non-tuple value is reported there
+        // and typed as a plain array.
+        | EArray(elts) -> this.constArrayLit(tcenv, subExpr.pos, elts)
         | _ ->
           tcenv.error(
             Array[
@@ -4316,26 +4316,65 @@ extension class TypeChecker {
   // readonly tuple, and everything else takes its most-precise type (which
   // already routes a literal, or a redundant element-level `as const`, through
   // the most-precise shortcut, so each element is type-checked exactly once).
-  // Kept out of asConstExpr so that asConstExpr never type-checks a
-  // sub-expression. The caller guarantees `elts` has no spread elements.
+  // A spread of a tuple splices the tuple's element types into the result
+  // (#957). A spread of anything else is not representable as a fixed readonly
+  // tuple (tsc gives it a variadic tuple type, e.g. `readonly [...T[], 3]`,
+  // which SKJS cannot express), so it is reported as not supported and the
+  // result falls back to a plain array of the union of element types (the
+  // diagnostic is already emitted; the fallback type only lets checking
+  // continue). Kept out of asConstExpr so that asConstExpr never type-checks a
+  // sub-expression.
   fun constArrayLit(
     tcenv: mutable TCEnv,
     pos: PosRange,
     elts: Array<Expr>,
   ): TType {
-    TType::tuple(
-      pos,
-      elts.map(elt ->
-        elt.value match {
-        | EArray(nested) if (nested.all(x -> !(x.value is Spread _))) ->
-          this.constArrayLit(tcenv, elt.pos, nested)
-        | _ ->
-          ty = this.expr(tcenv, elt, true);
-          this.stableAliasExprType(tcenv, elt, ty)
+    resultElts = mutable Vector[];
+    eltUnion = TType::bottom(pos);
+    hasNonTupleSpread = false;
+    for (elt in elts) {
+      elt.value match {
+      | Spread(spreadExpr) ->
+        spreadTy = this.expr(tcenv, spreadExpr, true);
+        stableSpreadTy = this.stableAliasExprType(tcenv, spreadExpr, spreadTy);
+        spliced = stableSpreadTy
+          .expand(tcenv.subst, this, Some(Covariant()))
+          .clauses.getSingleTuple(tcenv.subst, this);
+        spliced match {
+        | Some(tupleElts) ->
+          for (tupleElt in tupleElts) {
+            resultElts.push(tupleElt);
+            !eltUnion = TType::union(tcenv.subst, this, eltUnion, tupleElt)
+          }
+        | None() ->
+          tcenv.notSupported(
+            elt.pos,
+            "spread of a non-tuple value in an 'as const' array literal",
+          );
+          !hasNonTupleSpread = true;
+          !eltUnion = TType::union(
+            tcenv.subst,
+            this,
+            eltUnion,
+            this.getValueType(tcenv, elt.pos, stableSpreadTy, "spread"),
+          )
         }
-      ),
-      true,
-    )
+      | EArray(nested) ->
+        nestedTy = this.constArrayLit(tcenv, elt.pos, nested);
+        resultElts.push(nestedTy);
+        !eltUnion = TType::union(tcenv.subst, this, eltUnion, nestedTy)
+      | _ ->
+        ty = this.expr(tcenv, elt, true);
+        eltTy = this.stableAliasExprType(tcenv, elt, ty);
+        resultElts.push(eltTy);
+        !eltUnion = TType::union(tcenv.subst, this, eltUnion, eltTy)
+      }
+    };
+    if (hasNonTupleSpread) {
+      TType::inst(Name(pos, "Array"), TArgs(Array[eltUnion]))
+    } else {
+      TType::tuple(pos, resultElts.toArray(), true)
+    }
   }
 
   // `as const` on an object literal (#801): the deeply-frozen CLOSED type —
@@ -4412,7 +4451,7 @@ extension class TypeChecker {
     | Some(ty) -> ty
     | None() ->
       e.value match {
-      | EArray(elts) if (elts.all(x -> !(x.value is Spread _))) ->
+      | EArray(elts) ->
         // A nested array literal freezes to a readonly tuple, exactly as a
         // top-level `[...] as const` does (constArrayLit).
         this.constArrayLit(tcenv, e.pos, elts)
