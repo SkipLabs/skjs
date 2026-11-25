@@ -4196,6 +4196,13 @@ extension class TypeChecker {
       // Create scopes for the true and false branches with type refinements
       scopeCopy = tcenv.scope;
 
+      // As in the `if` statement, each arm is checked against the effect epoch
+      // as of the condition's evaluation: a call in one arm is not on the other
+      // arm's path and must not suppress its guard narrowing (#970). After the
+      // ternary, a call from either arm may have run, so the epoch advances to
+      // the arms' maximum.
+      guardEpoch = tcenv.effectEpoch;
+
       // True branch - evaluate e2 with refinements from e1 being true
       trueScope = tcenv.mcreateSubScope{isLoop => false};
       tcenv.!scope = trueScope;
@@ -4203,14 +4210,18 @@ extension class TypeChecker {
       left = this.expr(tcenv, e2, mostPrecise);
       stableLeft = this.stableAliasExprType(tcenv, e2, left);
       tcenv.!scope = scopeCopy;
+      thenEpoch = tcenv.effectEpoch;
 
       // False branch - evaluate e3 with refinements from e1 being false
+      tcenv.!effectEpoch = guardEpoch;
       falseScope = tcenv.mcreateSubScope{isLoop => false};
       tcenv.!scope = falseScope;
       this.evalCond(tcenv, e1, false);
       right = this.expr(tcenv, e3, mostPrecise);
       stableRight = this.stableAliasExprType(tcenv, e3, right);
       tcenv.!scope = scopeCopy;
+      elseEpoch = tcenv.effectEpoch;
+      tcenv.!effectEpoch = if (thenEpoch > elseEpoch) thenEpoch else elseEpoch;
 
       // Exactly one branch runs. Retain either branch's writes and establish
       // definite assignment only when both branches establish it.

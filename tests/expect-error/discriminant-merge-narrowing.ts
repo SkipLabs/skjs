@@ -82,7 +82,6 @@ function callInThenMergedStates(): number {
   if (x.kind === "b") {
     return x.bv.toString().length;
   }
-  // @skjs-expect-error Property 'av' exists on some but not all members of the union type, so it may be absent
   return x.av;
 }
 
@@ -91,13 +90,11 @@ function callInThenParameter(value: U): number {
   if (value.kind === "b") {
     return value.bv.toString().length;
   }
-  // @skjs-expect-error Property 'av' exists on some but not all members of the union type, so it may be absent
   return value.av;
 }
 
 // Same, in the arms of a ternary.
 function callInTernaryArm(value: U): number {
-  // @skjs-expect-error Property 'av' exists on some but not all members of the union type, so it may be absent
   const t: number = value.kind === "b" ? value.bv.length + act() : value.av;
   return t;
 }
@@ -109,10 +106,8 @@ function callInEarlierClause(value: U3): number {
     case "a":
       return value.av + act();
     case "b":
-      // @skjs-expect-error Property 'bv' exists on some but not all members of the union type, so it may be absent
       return value.bv.length;
     default:
-      // @skjs-expect-error Property 'dv' exists on some but not all members of the union type, so it may be absent
       return value.dv ? 1 : 0;
   }
 }
@@ -125,7 +120,6 @@ function callInElseIfChain(value: U3): number {
   } else if (value.kind === "d") {
     return value.dv ? 1 : 0;
   } else {
-    // @skjs-expect-error Property 'av' exists on some but not all members of the union type, so it may be absent
     return value.av;
   }
 }
