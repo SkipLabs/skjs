@@ -484,16 +484,36 @@ mutable class TypePp{
     if (!fields.fields.isEmpty() || fields.hasNonSyntheticIndex()) {
       return None()
     };
-    (fields.call, fields.new) match {
-    | (CPresent(TFuns(tfun, _pos)), CAbsent())
-    | (CPresent(TFuns(tfun, _pos)), CUnknown())
-    | (CPresent(TFuns(tfun, _pos)), CFunction()) ->
-      Some((false, tfun))
-    | (CAbsent(), CPresent(TFuns(tfun, _pos)))
-    | (CUnknown(), CPresent(TFuns(tfun, _pos)))
-    // A construct signature next to provable-but-signatureless callability
-    // still renders bare: the [[Call]] evidence IS the construct signature.
-    | (CFunction(), CPresent(TFuns(tfun, _pos))) ->
+    // A bare `(params) => ret` rendering only fits a SINGLE signature; an
+    // overload set renders as a braced object with one call member per
+    // signature instead.
+    callSig = fields.call match {
+    | CPresent(tfuns) if (tfuns.allFuns().size() == 1) -> Some(tfuns.fun_())
+    | _ -> None()
+    };
+    newSig = fields.new match {
+    | CPresent(tfuns) if (tfuns.allFuns().size() == 1) -> Some(tfuns.fun_())
+    | _ -> None()
+    };
+    newIsBare = fields.new match {
+    | CAbsent()
+    | CUnknown()
+    | CFunction() ->
+      true
+    | CPresent _ -> false
+    };
+    callIsBare = fields.call match {
+    | CAbsent()
+    | CUnknown()
+    | CFunction() ->
+      true
+    | CPresent _ -> false
+    };
+    (callSig, newSig) match {
+    | (Some(tfun), None()) if (newIsBare) -> Some((false, tfun))
+    | (None(), Some(tfun)) if (callIsBare) ->
+      // A construct signature next to provable-but-signatureless callability
+      // still renders bare: the [[Call]] evidence IS the construct signature.
       Some((true, tfun))
     | _ -> None()
     }
@@ -646,21 +666,27 @@ mutable class TypePp{
     // renders as `Function` via TypePp::object instead.
     | CFunction() ->
       void
-    | CPresent(TFuns(tfun, _pos)) ->
-      this.beginMember(level, margin, multiLine);
-      this.tfun(level, margin, (true, tfun));
-      this.out(level, margin, ";")
+    | CPresent(tfuns) ->
+      // Each overload signature prints as its own call member, in
+      // declaration order (tsc renders overloads the same way).
+      for (tfun in tfuns.allFuns()) {
+        this.beginMember(level, margin, multiLine);
+        this.tfun(level, margin, (true, tfun));
+        this.out(level, margin, ";")
+      }
     };
     fields.new match {
     | CAbsent()
     | CUnknown()
     | CFunction() ->
       void
-    | CPresent(TFuns(tfun, _pos)) ->
-      this.beginMember(level, margin, multiLine);
-      this.out(level, margin, "new ");
-      this.tfun(level, margin, (true, tfun));
-      this.out(level, margin, ";")
+    | CPresent(tfuns) ->
+      for (tfun in tfuns.allFuns()) {
+        this.beginMember(level, margin, multiLine);
+        this.out(level, margin, "new ");
+        this.tfun(level, margin, (true, tfun));
+        this.out(level, margin, ";")
+      }
     };
     // The debugging view: expose the raw callability modes that the normal
     // rendering elides. CPresent needs no line — its signature member above

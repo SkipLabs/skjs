@@ -194,6 +194,11 @@ base class FunDef<+N: FunDefName>{
   optional: ?PosRange,
   sig: FunSig,
   body: FunBody,
+  // Whether the declaration has an implementation body (vs an overload /
+  // ambient signature). Recorded at parse time so consumers can tell without
+  // reading the deferred body map (which would add a body dependency to
+  // incremental type computation — see TEnv::funDefsType).
+  hasBody: Bool,
   cgNode: ?CGNode,
 } uses XXHashable
 

@@ -231,13 +231,28 @@ extension class TType {
 }
 
 extension class TFuns {
+  // The intersection reading (a value callable as BOTH signature sets, so a
+  // call's arguments must be accepted by each side): keep the pairwise
+  // intersections across the two overload sets. Every kept signature is
+  // accepted by both sides, so the result is a sound (possibly
+  // over-restrictive) set of shared signatures.
   static fun inter(
     subst: mutable Subst,
     tenv: TEnv,
     f1: TFuns,
     f2: TFuns,
   ): ?TFuns {
-    TFun::inter(subst, tenv, f1.fun_, f2.fun_).map(f -> TFuns(f, f1.pos))
+    merged = mutable Vector[];
+    for (a in f1.allFuns()) {
+      for (b in f2.allFuns()) {
+        TFun::inter(subst, tenv, a, b).each(f -> merged.push(f))
+      }
+    };
+    if (merged.isEmpty()) {
+      None()
+    } else {
+      Some(TFuns::multiple(merged.toArray(), f1.pos))
+    }
   }
 }
 

@@ -1547,24 +1547,49 @@ class TObject private (
 /* Use only as the call and new 'fields' of objects (TFields) */
 /***************************************************************************/
 
-class TFuns private (fun_: TFun, pos: PosRange) uses XXHashable, Orderable {
+// A call (or construct) signature set: one or more TFun, in declaration
+// order. A single signature is the common case; several signatures are a
+// TypeScript overload set, resolved first-match-wins at call sites (see
+// TypeChecker#call) and matched per-target-signature in subtyping (see
+// STypes::isSubFuns). The list is never empty.
+class TFuns private (
+  funs: Array<TFun>,
+  pos: PosRange,
+) uses XXHashable, Orderable {
   static fun singleFun(x: TFun, pos: PosRange): TFuns {
-    TFuns(x, pos)
+    TFuns(Array[x], pos)
   }
 
   static fun singleMethod(x: TFun, pos: PosRange): TFuns {
-    TFuns(x, pos)
+    TFuns(Array[x], pos)
+  }
+
+  static fun multiple(funs: Array<TFun>, pos: PosRange): TFuns {
+    invariant(!funs.isEmpty(), "TFuns must hold at least one signature");
+    TFuns(funs, pos)
+  }
+
+  // The primary (first) signature. Single-signature consumers (contextual
+  // typing of closure arguments, .call/.apply/.bind synthesis) use it.
+  fun fun_(): TFun {
+    this.funs[0]
+  }
+
+  fun allFuns(): Array<TFun> {
+    this.funs
   }
 
   fun mapFuns(f: TFun -> TFun): TFuns {
-    TFuns(f(this.fun_), this.pos)
+    TFuns(this.funs.map(f), this.pos)
   }
 
   // The declared type of the positional parameter at index i (counting the
   // required parameters first, then the optional ones), or None if i is beyond
-  // them (i.e. only covered by the rest/spread parameter).
+  // them (i.e. only covered by the rest/spread parameter). Reads the primary
+  // signature: with overloads, call-site resolution tries each signature in
+  // turn, so this is only a contextual-typing hint for the first overload.
   fun paramTypeAt(i: Int): ?TType {
-    f = this.fun_;
+    f = this.fun_();
     if (i < f.params.size()) {
       Some(f.params[i])
     } else {
@@ -1683,7 +1708,7 @@ private fun maybeGetFirstCallParam(
   | Some(obj @ TObject(_, _, _)) ->
     obj.maybeGetCall(subst, tenv) match {
     | Some(tFuns) ->
-      fun_ = tFuns.fun_;
+      fun_ = tFuns.fun_();
       fun_.params.maybeGet(0) match {
       | p @ Some _ -> p
       | None() -> fun_.optionalParams.maybeGet(0)
@@ -3097,7 +3122,11 @@ class TFields protected {
 
   fun callReturnType(): ?TType {
     this.call match {
-    | CPresent(TFuns(fun_, _)) -> Some(fun_.retType)
+    // With overloads the call resolves to a single signature, so the return is
+    // that signature's; absent resolution (no call site) the union of all
+    // overload returns is the sound over-approximation.
+    | CPresent(sig) ->
+      Some(TType::unionStructuralN(sig.pos, sig.allFuns().map(f -> f.retType)))
     | CAbsent()
     | CUnknown()
     | CFunction() ->
@@ -4103,7 +4132,7 @@ mutable class TVarScan{seen: mutable Set<Int> = mutable Set[]} {
 
   mutable fun scanCallability(call: Callability): Bool {
     call match {
-    | CPresent(sig) -> this.scanTFun(sig.fun_)
+    | CPresent(sig) -> sig.allFuns().any(f -> this.scanTFun(f))
     | CAbsent() -> false
     | CUnknown() -> false
     | CFunction() -> false

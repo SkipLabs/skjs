@@ -1868,12 +1868,19 @@ extension class TType {
             // the return seeds that bound first, tightening the subsequent
             // per-param isSub calls. Params themselves are skipped here:
             // TFun::isSub_ pairs them positionally, which is strictly more
-            // precise than the bulk grow this pre-pass would do.
+            // precise than the bulk grow this pre-pass would do. With overload
+            // sets, grow over the union of each side's return types.
             rConstraintErr = static::growTVars(
               subst,
               tenv,
-              boundFuns.fun_.retType,
-              openFuns.fun_.retType,
+              TType::unionStructuralN(
+                boundFuns.pos,
+                boundFuns.allFuns().map(f -> f.retType),
+              ),
+              TType::unionStructuralN(
+                openFuns.pos,
+                openFuns.allFuns().map(f -> f.retType),
+              ),
               variance,
             );
             if (constraintErr is None()) !constraintErr = rConstraintErr
@@ -1888,8 +1895,14 @@ extension class TType {
             rConstraintErr = static::growTVars(
               subst,
               tenv,
-              boundFuns.fun_.retType,
-              openFuns.fun_.retType,
+              TType::unionStructuralN(
+                boundFuns.pos,
+                boundFuns.allFuns().map(f -> f.retType),
+              ),
+              TType::unionStructuralN(
+                openFuns.pos,
+                openFuns.allFuns().map(f -> f.retType),
+              ),
               variance,
             );
             if (constraintErr is None()) !constraintErr = rConstraintErr
@@ -1993,10 +2006,30 @@ extension class TType {
     funs1: TFuns,
     funs2: TFuns,
   ): STResult<TFuns> {
-    static::isSubFun(subst, tenv, funs1.fun_, funs2.fun_) match {
-    | STOk() -> STOk()
-    | err @ STErrorOnTFun _ -> STRecTFuns(err, funs1, funs2)
-    }
+    // Overload rule: source signature set is assignable to the target set iff
+    // EVERY target signature is matched by SOME source signature. This is
+    // sound for calls through the target type: a call accepted by target
+    // signature t is accepted by the matching source signature s (params
+    // contravariant), and s's return is a subtype of t's return. Each failed
+    // trial rolls its own bindings back (isSubFun restores on STError), so the
+    // search is backtracking-safe.
+    for (t in funs2.allFuns()) {
+      matched = false;
+      firstErr: ?STErrorOnTFun = None();
+      for (s in funs1.allFuns()) {
+        if (!matched) {
+          static::isSubFun(subst, tenv, s, t) match {
+          | STOk() -> !matched = true
+          | err @ STErrorOnTFun _ ->
+            if (firstErr is None()) !firstErr = Some(err)
+          }
+        }
+      };
+      if (!matched) {
+        return STRecTFuns(firstErr.fromSome(), funs1, funs2)
+      }
+    };
+    STOk()
   }
 
   private static fun isSubFields(

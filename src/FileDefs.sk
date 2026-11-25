@@ -646,10 +646,14 @@ private fun isInterfaceDef(d: FileDef): Bool {
 // Whether two same-name definitions collide in a declaration space. Two
 // interface declarations do not: like tsc, SKJS merges their members
 // (declaration merging, across files and against the import stubs), so only
-// definitions that are not both interfaces count as duplicates.
+// definitions that are not both interfaces count as duplicates. Two top-level
+// function declarations do not either: they form one overload group (the
+// group's shape — at most one implementation, and it last — is validated at
+// check time in checkDef_).
 private fun defsCollide(a: FileDef, b: FileDef): Bool {
   DeclSpaces::ofFileDef(a).overlaps(DeclSpaces::ofFileDef(b)) &&
-    !(isInterfaceDef(a) && isInterfaceDef(b))
+    !(isInterfaceDef(a) && isInterfaceDef(b)) &&
+    !(a is TopLevelFunDef _ && b is TopLevelFunDef _)
 }
 
 mutable class FileDefsState private {

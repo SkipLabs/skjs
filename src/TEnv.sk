@@ -3071,6 +3071,39 @@ base class TEnv{
     }
   }
 
+  // The value type of a name whose definitions include top-level function
+  // declarations: the overload group as ONE callable with the whole signature
+  // set, in declaration order. The callable set is the overload signatures
+  // (the body-less declarations); the implementation signature (the one with
+  // a body) is NOT callable from outside, matching tsc. A lone declaration
+  // with a body is an ordinary function: its single signature is the set.
+  // None when `defs` contains no TopLevelFunDef.
+  fun funDefsType(
+    tcenvb: mutable TCEnvBase,
+    defs: Array<FileDefElt>,
+    pos: PosRange,
+  ): ?TType {
+    funDefs = mutable Vector[];
+    for (def in defs) {
+      def match {
+      | fd @ TopLevelFunDef _ -> funDefs.push(fd)
+      | _ -> void
+      }
+    };
+    if (funDefs.isEmpty()) return None();
+    arr = funDefs.toArray();
+    // hasBody is recorded at parse time — reading the deferred body map here
+    // would add a body dependency to this type computation and break
+    // incremental checking (a body change must not re-check users).
+    overloadOnly = arr.filter(fd -> !fd.hasBody);
+    sigDefs = if (overloadOnly.isEmpty()) arr else overloadOnly;
+    sigs = sigDefs.map(fd -> {
+      cgNode = fd.cgNode.fromSome();
+      this.funDecl(tcenvb, None(), fd, cgNode).fun_()
+    });
+    Some(TType::single(TObject::createCall(TFuns::multiple(sigs, pos))))
+  }
+
   fun typeOfExpr(tcenvb: mutable TCEnvBase, expr: Expr): TType {
     (this, tcenvb) match {
     | (tc @ TypeChecker _, tcenv @ TCEnv _) ->
@@ -3093,10 +3126,17 @@ base class TEnv{
     | Var(Name(_, "undefined")) ->
       TType::single(TPrimUnit(TUndefined(), expr.pos))
     | Var(varName) ->
+      allDefs = this.defMap.getAll(tcenvb, varName, false, true);
+      // Same-named top-level function declarations form one overload group:
+      // type the name as a callable with the whole signature set.
+      this.funDefsType(tcenvb, allDefs, varName.pos) match {
+      | Some(ty) -> return ty
+      | None() -> void
+      };
       sawInterface = false;
       sawValueDef = false;
       sawTypeAlias = false;
-      for (def in this.defMap.getAll(tcenvb, varName, false, true)) {
+      for (def in allDefs) {
         def match {
         | FDVar(kind, _, Some(t), _) ->
           if (this.typeofValues.contains(varName.value)) {
@@ -3123,11 +3163,7 @@ base class TEnv{
             kind is VDKConst _,
             Some(varName.value),
           )
-        | fd @ TopLevelFunDef _ ->
-          cgNode = fd.cgNode.fromSome();
-          return TType::single(
-            TObject::createCall(this.funDecl(tcenvb, None(), fd, cgNode)),
-          )
+        | TopLevelFunDef _ -> void /* handled above by funDefsType */
         | Class{kind => CKInterface()} -> !sawInterface = true
         | cls @ Class _ ->
           className = this.runtimeClassName(tcenvb, varName, cls);

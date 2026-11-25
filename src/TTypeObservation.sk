@@ -732,13 +732,31 @@ mutable class TypeReadContext private {
       left,
       right,
       (a, b) -> this.subtype(a, b),
-      (a, b) ->
-        this.functionSubtype(a.fun_, b.fun_) match {
-        | STOk() -> STOk()
-        | err @ STErrorOnTFun _ -> STRecTFuns(err, a, b)
-        },
+      (a, b) -> this.funsSubtype(a, b),
       (pos, name) -> this.symbolId(pos, name),
     )
+  }
+
+  // Overload rule, mirroring STypes::isSubFuns: every target signature must be
+  // matched by some source signature.
+  private mutable fun funsSubtype(a: TFuns, b: TFuns): STResult<TFuns> {
+    for (t in b.allFuns()) {
+      matched = false;
+      firstErr: ?STErrorOnTFun = None();
+      for (s in a.allFuns()) {
+        if (!matched) {
+          this.functionSubtype(s, t) match {
+          | STOk() -> !matched = true
+          | err @ STErrorOnTFun _ ->
+            if (firstErr is None()) !firstErr = Some(err)
+          }
+        }
+      };
+      if (!matched) {
+        return STRecTFuns(firstErr.fromSome(), a, b)
+      }
+    };
+    STOk()
   }
 
   private mutable fun functionSubtype(left: TFun, right: TFun): STResult<TFun> {
@@ -880,10 +898,20 @@ mutable class TypeReadContext private {
           this.retainedIntersection(a.get, b.get, narrowing),
           TType::unionStructural(a.set, b.set),
         ),
-      (a, b) ->
+      (a, b) -> this.funsInter(a, b, narrowing),
+    )
+  }
+
+  // Pairwise intersection across two overload sets: every kept signature is
+  // accepted by both sides, so the result is a sound set of shared
+  // signatures.
+  private mutable fun funsInter(a: TFuns, b: TFuns, narrowing: Bool): ?TFuns {
+    merged = mutable Vector[];
+    for (x in a.allFuns()) {
+      for (y in b.allFuns()) {
         TFun::interWith(
-          a.fun_,
-          b.fun_,
+          x,
+          y,
           (f, g) -> this.functionSubtype(f, g) is STOk(),
           // Incomparable signatures are not disjoint: one function can
           // inhabit both via parameter contravariance, so refinement must
@@ -891,10 +919,15 @@ mutable class TypeReadContext private {
           // left signature as a sound over-approximation of the shared
           // values. Intersection-type construction (narrowing == false)
           // keeps bottom, so a materialized `A & B` stays a subtype of both.
-          if (narrowing) Some(a.fun_) else None(),
-        ).map(f -> TFuns::singleFun(f, a.pos))
-      ,
-    )
+          if (narrowing) Some(x) else None(),
+        ).each(f -> merged.push(f))
+      }
+    };
+    if (merged.isEmpty()) {
+      None()
+    } else {
+      Some(TFuns::multiple(merged.toArray(), a.pos))
+    }
   }
 
   mutable fun restElement(type: TType, variance: Variance): ?TType {

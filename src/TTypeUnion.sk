@@ -96,14 +96,23 @@ extension class TType {
 }
 
 extension class TFuns {
+  // The callable-union reading (a value that is one of two function types, so
+  // a call's arguments must be accepted by BOTH): merge every pair of
+  // signatures across the two overload sets with TFun::union (which
+  // intersects parameters and unions returns — sound for the union reading).
   static fun union(
     subst: mutable Subst,
     tenv: TEnv,
     f1: TFuns,
     f2: TFuns,
   ): TFuns {
-    f = TFun::union(subst, tenv, f1.fun_, f2.fun_);
-    TFuns(f, f1.pos)
+    merged = mutable Vector[];
+    for (a in f1.allFuns()) {
+      for (b in f2.allFuns()) {
+        merged.push(TFun::union(subst, tenv, a, b))
+      }
+    };
+    TFuns::multiple(merged.toArray(), f1.pos)
   }
 }
 

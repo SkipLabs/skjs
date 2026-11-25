@@ -164,9 +164,11 @@ let s1: 'urgent' = save(['urgent' as const]);  // ✓ T = 'urgent'
 let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
 ```
 
-### 10. Function Overloading Not Supported
-- **Rule**: Function overloading is not supported in SKJS
-- **Workaround**: Use different function names or union types with type guards
+### 10. Function Overloading (Top-Level and Ambient)
+- **Rule**: Same-named top-level/`declare` function declarations form one overload set. Call sites resolve first-match-wins in declaration order; assignability of an overloaded source requires every target signature to be matched by some source overload. The implementation signature (the one with a body, required to come last in non-ambient groups) is not callable from outside.
+- **Soundness**: the implementation is checked against EVERY overload signature — either its signature is a subtype of the overload, or its body re-checks under the overload's signature. This is stricter than tsc's loose "comparable" rule (a known tsc soundness hole, see docs/typescript-soundness-holes.md): an implementation declared `number | string` under a `(): number` overload is rejected. Consequence: an implementation whose dead branches return types outside a given overload's return type is rejected even when path-insensitively fine — restructure the body so every return conforms per overload.
+- **Not yet supported**: method overloads in class/interface bodies, construct signatures, and call signatures in object type literals (those still take the last declaration only). Class/object overloads are a follow-up.
+- **Test**: [tests/expect-error/overloads.ts](tests/expect-error/overloads.ts)
 
 ### 11. Generic Type Method Calls
 - **Rule**: Cannot call methods like `.toString()` on unconstrained generic types

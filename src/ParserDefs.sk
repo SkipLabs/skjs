@@ -272,6 +272,7 @@ extension class Parser {
               optional => isOptional,
               sig => FSInline(tparams, params, retType),
               body => FBInline(body),
+              hasBody => body is FDBSome _,
               cgNode => None(),
             },
           methodName,
@@ -1199,6 +1200,7 @@ extension class Parser {
           optional => None(),
           sig => FSInline(tparams, params, retType),
           body => FBInline(body),
+          hasBody => body is FDBSome _,
           cgNode => Some(
             CGNode::create(
               TopLevelFunction(FNNormal(funName), funName.pos.fileName),

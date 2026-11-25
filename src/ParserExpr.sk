@@ -579,6 +579,7 @@ extension class Parser {
               optional => None(),
               sig => FSInline(tparams, params, retType),
               body => FBInline(body),
+              hasBody => body is FDBSome _,
               cgNode => None(),
             },
           FNNormal(fieldName),
