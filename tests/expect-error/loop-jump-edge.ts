@@ -165,3 +165,120 @@ function breakInLoopBindsToTheLoop(
   }
   const z9: "a" = y;
 }
+
+// SkipLabs/skjs#968 — a `continue` re-enters the loop header, so the header's
+// effects apply to the folded edge state, not only to the pre-body entry:
+// its writes run again before the loop can exit through that re-entry, and
+// its test is checked against values the edge can carry.
+type LoopHeaderN = { go(): boolean };
+
+// The header test sees the continue edge's value: `x` is null on that edge,
+// so `x.go()` in the header is rejected (tsc: 'x' is possibly 'null').
+function whileHeaderTestSeesTheContinueEdge(c: boolean, n: LoopHeaderN): void {
+  let x: LoopHeaderN | null = null;
+  x = n;
+  // @skjs-expect-error Property access is not allowed on this type
+  while (x.go()) {
+    if (c) {
+      x = null;
+      continue;
+    }
+    x = n;
+  }
+}
+
+function forHeaderTestSeesTheContinueEdge(c: boolean, n: LoopHeaderN): void {
+  let x: LoopHeaderN | null = null;
+  x = n;
+  // @skjs-expect-error Property access is not allowed on this type
+  for (let i = 0; x.go(); i = i + 1) {
+    if (c) {
+      x = null;
+      continue;
+    }
+    x = n;
+  }
+}
+
+// The header's write `(x = a)` runs again on the continue edge, so the edge's
+// "b" is overwritten before the loop can exit through it (tsc accepts).
+function whileHeaderWriteReRunsOnContinueEdge(
+  d: boolean,
+  a: "a",
+  b: "b",
+): void {
+  let x: "a" | "b" = a;
+  x = a;
+  while ((x = a) !== "a") {
+    if (d) {
+      x = b;
+      continue;
+    }
+    x = a;
+  }
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  const y: "a" = x;
+}
+
+// The entry path exits through the header as well: its write has run before
+// the first test can turn false (tsc accepts).
+function whileHeaderWriteRunsOnTheEntryExit(a: "a", b: "b"): void {
+  let x: "a" | "b" = b;
+  while ((x = a) !== "a") {}
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  const y: "a" = x;
+}
+
+// Same in a `for`: a continue edge runs the increment, then the header.
+function forHeaderWriteReRunsOnContinueEdge(d: boolean, a: "a", b: "b"): void {
+  let x: "a" | "b" = a;
+  for (let i = 0; (x = a) !== "a"; i = i + 1) {
+    if (d) {
+      x = b;
+      continue;
+    }
+    x = a;
+  }
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  const y: "a" = x;
+}
+
+function forHeaderWriteRunsOnTheEntryExit(a: "a", b: "b"): void {
+  let x: "a" | "b" = b;
+  for (let i = 0; (x = a) !== "a"; i = i + 1) {}
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  const y: "a" = x;
+}
+
+// A `break` skips the header, so its edge's "b" does reach the code after the
+// loop (tsc rejects too) — the header write must not overwrite a break edge.
+function whileBreakSkipsTheHeaderWrite(d: boolean, a: "a", b: "b"): void {
+  let x: "a" | "b" = a;
+  while ((x = a) !== "a") {
+    if (d) {
+      x = b;
+      break;
+    }
+    x = a;
+  }
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  const y: "a" = x;
+}
+
+// With a header increment write, the increment already re-runs on the
+// continue edge, so the exit is "a" (tsc agrees).
+function forIncrementWriteReRunsOnContinueEdge(
+  d: boolean,
+  a: "a",
+  b: "b",
+): void {
+  let x: "a" | "b" = a;
+  for (x = a; (x = a) !== "a"; x = a) {
+    if (d) {
+      x = b;
+      continue;
+    }
+    x = a;
+  }
+  const y: "a" = x;
+}
