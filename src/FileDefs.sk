@@ -584,6 +584,23 @@ fun mapPush<K: Hashable & Equality, V>(
   }
 }
 
+// Whether `d` is an interface declaration (`interface Foo { ... }`).
+private fun isInterfaceDef(d: FileDef): Bool {
+  d match {
+  | Class{kind => CKInterface()} -> true
+  | _ -> false
+  }
+}
+
+// Whether two same-name definitions collide in a declaration space. Two
+// interface declarations do not: like tsc, SKJS merges their members
+// (declaration merging, across files and against the import stubs), so only
+// definitions that are not both interfaces count as duplicates.
+private fun defsCollide(a: FileDef, b: FileDef): Bool {
+  DeclSpaces::ofFileDef(a).overlaps(DeclSpaces::ofFileDef(b)) &&
+    !(isInterfaceDef(a) && isInterfaceDef(b))
+}
+
 mutable class FileDefsState private {
   context: mutable S.Context,
   fs: Fs,
@@ -820,11 +837,8 @@ mutable class FileDefsState private {
     this.defs.maybeGet(name.value) match {
     | None() -> this.defs![name.value] = mutable Vector[d]
     | Some(existingDefs) ->
-      dSpaces = DeclSpaces::ofFileDef(d);
       existingDefs
-        .find(existingDef ->
-          DeclSpaces::ofFileDef(existingDef).overlaps(dSpaces)
-        )
+        .find(existingDef -> defsCollide(existingDef, d))
         .each(existingDef -> {
           msg1 = (name.pos, `Duplicate identifier '${name}'`);
           msgs = existingDef.getPos() match {

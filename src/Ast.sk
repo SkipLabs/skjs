@@ -897,6 +897,10 @@ value class TypeDefBodyData(
 value class ClassFieldRef(
   fileName: FPath,
   className: String,
+  // Which declaration of the class name this field belongs to (the same name
+  // can be declared several times — interface declaration merging — and each
+  // declaration's fields are numbered from 0).
+  classOccurrence: Int,
   index: Int,
 ) uses XXHashable, Hashable, Orderable
 
