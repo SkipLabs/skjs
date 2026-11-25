@@ -73,7 +73,7 @@ digraph "fn:useCallback" {
   BB_2 [label="exn", shape=doublecircle];
 }
 
-digraph "lambda:function(classify)@47" {
+digraph "lambda:function(classify#0)@47" {
   label="(m: number): string";
   labelloc=t;
   node [shape=box, fontname="monospace"];
@@ -90,7 +90,7 @@ digraph "lambda:function(classify)@47" {
   BB_5 -> BB_1;
 }
 
-digraph "lambda:function(iife)@36" {
+digraph "lambda:function(iife#0)@36" {
   label="(n: number): number";
   labelloc=t;
   node [shape=box, fontname="monospace"];
@@ -100,7 +100,7 @@ digraph "lambda:function(iife)@36" {
   BB_2 [label="exn", shape=doublecircle];
 }
 
-digraph "lambda:function(incrTwice)@47" {
+digraph "lambda:function(incrTwice#0)@47" {
   label="(n: number): number";
   labelloc=t;
   node [shape=box, fontname="monospace"];
@@ -110,7 +110,7 @@ digraph "lambda:function(incrTwice)@47" {
   BB_2 [label="exn", shape=doublecircle];
 }
 
-digraph "lambda:function(makeAdder)@60" {
+digraph "lambda:function(makeAdder#0)@60" {
   label="(n: number): number";
   labelloc=t;
   node [shape=box, fontname="monospace"];
@@ -120,7 +120,7 @@ digraph "lambda:function(makeAdder)@60" {
   BB_2 [label="exn", shape=doublecircle];
 }
 
-digraph "lambda:function(makeAdderFactory)@69" {
+digraph "lambda:function(makeAdderFactory#0)@69" {
   label="(a: number): (number)=>number";
   labelloc=t;
   node [shape=box, fontname="monospace"];
@@ -130,7 +130,7 @@ digraph "lambda:function(makeAdderFactory)@69" {
   BB_2 [label="exn", shape=doublecircle];
 }
 
-digraph "lambda:function(makeAdderFactory)@84" {
+digraph "lambda:function(makeAdderFactory#0)@84" {
   label="(b: number): number";
   labelloc=t;
   node [shape=box, fontname="monospace"];
@@ -140,7 +140,7 @@ digraph "lambda:function(makeAdderFactory)@84" {
   BB_2 [label="exn", shape=doublecircle];
 }
 
-digraph "lambda:function(useCallback)@49" {
+digraph "lambda:function(useCallback#0)@49" {
   label="(n: number): number";
   labelloc=t;
   node [shape=box, fontname="monospace"];

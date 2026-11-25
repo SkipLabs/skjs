@@ -120,3 +120,41 @@ declare function collides(x: string): number;
 declare function collides(x: number): string;
 // @ts-expect-error Duplicate identifier 'collides'
 const collides: number = 1;
+
+// ---------------------------------------------------------------------------
+// More group-shape and compatibility cases.
+// ---------------------------------------------------------------------------
+
+// A lone body-less non-ambient signature has no implementation (tsc TS2391).
+// @skjs-expect-error Function implementation is missing or not immediately following the declaration
+function lone(x: string): number;
+
+// A group that mixes `declare` and plain members is NOT fully ambient: the
+// plain member still needs an implementation (tsc TS2391).
+// @skjs-expect-error Function implementation is missing or not immediately following the declaration
+declare function mixed(x: string): number;
+function mixed(x: number): number;
+
+// The implementation-compatibility check is positional, not by parameter
+// name: the implementation may use different parameter names than the
+// overloads.
+function named(x: string): string;
+function named(value: string | number): string {
+  return typeof value === "string" ? value : "n";
+}
+
+function testNamedImpl(): void {
+  const a: string = named("hi");
+}
+
+// .call/.apply/.bind keep the whole overload set: each rebound call resolves
+// first-match-wins over all overloads.
+declare function g2(x: string): number;
+declare function g2(x: number): string;
+
+function testCallApplyBind(): void {
+  const a: number = g2.call(undefined, "hi");
+  const b: string = g2.call(undefined, 42);
+  const c: number = g2.apply(undefined, ["hi"]);
+  const d: string = g2.bind(undefined)(42);
+}

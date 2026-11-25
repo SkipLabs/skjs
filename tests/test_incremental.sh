@@ -568,14 +568,14 @@ expect_markers "multiFileSharedDepSignatureChangePropagates" "\"getNum\"
 
 reset_cache
 cat > "$FILE" <<'EOF'
-function ov(x: string): number;
+function ov(x: string): string;
 function ov(x: number): string;
-function ov(x: string | number): number | string {
-  return typeof x === "string" ? x.length : "n";
+function ov(x: string | number): string {
+  return typeof x === "string" ? x : "n";
 }
 function user(): void {
   __SKJS_show("user");
-  let _a: number = ov("hi");
+  let _a: string = ov("hi");
 }
 function independent(): void {
   __SKJS_show("independent");
@@ -592,10 +592,10 @@ expect_markers "overloadGroupNoChangeNotRecomputed" "" "$out"
 # Body-only edit of the implementation: must NOT re-check users (users
 # depend on the signatures, not the body).
 cat > "$FILE" <<'EOF'
-function ov(x: string): number;
+function ov(x: string): string;
 function ov(x: number): string;
-function ov(x: string | number): number | string {
-  return typeof x === "string" ? x.length + 1 : "n";
+function ov(x: string | number): string {
+  return typeof x === "string" ? x + "!" : "n";
 }
 function user(): void {
   __SKJS_show("user");
@@ -613,14 +613,14 @@ expect_markers "overloadGroupBodyChangeDoesNotPropagate" "" "$out"
 # member has its own symbolic anchor, so only the group and its users
 # recompute - unrelated defs stay cached.
 cat > "$FILE" <<'EOF'
-function ov(x: string | boolean): number;
+function ov(x: string | boolean): string;
 function ov(x: number): string;
-function ov(x: string | number | boolean): number | string {
-  return typeof x === "string" ? x.length : "n";
+function ov(x: string | number | boolean): string {
+  return typeof x === "string" ? x : "n";
 }
 function user(): void {
   __SKJS_show("user");
-  let _a: number = ov("hi");
+  let _a: string = ov("hi");
 }
 function independent(): void {
   __SKJS_show("independent");
