@@ -13,7 +13,6 @@ function spreadTupleAtEnd(): void {
   // @skjs-expect-warning This 'as const' is unnecessary
   const xs = [1, 2] as const;
   // @skjs-expect-warning This 'as const' is unnecessary
-  // @skjs-expect-error A 'const' assertion can only be applied to a string, number, boolean, array, or object literal
   const t = [...xs, 3] as const;
 }
 
@@ -21,12 +20,11 @@ function spreadTupleInMiddle(): void {
   // @skjs-expect-warning This 'as const' is unnecessary
   const xs = [1, 2] as const;
   // @skjs-expect-warning This 'as const' is unnecessary
-  // @skjs-expect-error A 'const' assertion can only be applied to a string, number, boolean, array, or object literal
   const t = [0, ...xs, "a"] as const;
 }
 
 function spreadNonTuple(arr: number[]): void {
   // @skjs-expect-warning This 'as const' is unnecessary
-  // @skjs-expect-error A 'const' assertion can only be applied to a string, number, boolean, array, or object literal
+  // @skjs-expect-error spread of a non-tuple value in an 'as const' array literal is not supported by SKJS (ignored)
   const u = [...arr, 3] as const;
 }
