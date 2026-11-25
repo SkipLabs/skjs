@@ -8,11 +8,7 @@ extension class TypeChecker {
     a: Array<TypeParam>,
     b: Array<TypeParam>,
   ): Bool {
-    if (a.size() != b.size()) {
-      false
-    } else {
-      a.mapWithIndex((i, tp) -> tp.name.value == b[i].name.value).all(x -> x)
-    }
+    a.map(tp -> tp.name.value) == b.map(tp -> tp.name.value)
   }
 
   fun class_(tcenvl: mutable TCEnvLight, c: Class): void {
