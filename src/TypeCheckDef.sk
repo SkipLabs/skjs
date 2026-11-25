@@ -178,7 +178,7 @@ extension class TypeChecker {
     | fd @ TopLevelFunDef _ ->
       subst = Subst::createCheckingOwner(tcenvl);
       this.funDef(subst, None(), fd, fd.cgNode.fromSome());
-      this.checkFunOverloadGroup(tcenvl, fd, false)
+      this.checkFunOverloadGroup(tcenvl, fd)
     | Declare(VarDefs(_, varDefs))
     | ExportDeclare(VarDefs(_, varDefs)) ->
       for (varDef in varDefs) {
@@ -194,7 +194,7 @@ extension class TypeChecker {
       // (`Id<number>` for `type Id<P extends string>`) escapes detection.
       subst = Subst::createCheckingOwner(tcenvl);
       this.funDef(subst, None(), fd, fd.cgNode.fromSome());
-      this.checkFunOverloadGroup(tcenvl, fd, true)
+      this.checkFunOverloadGroup(tcenvl, fd)
     | Declare(en @ Enum _)
     | ExportDeclare(en @ Enum _) ->
       this.checkEnum(tcenvl, en)
@@ -267,12 +267,11 @@ extension class TypeChecker {
   // non-conforming values; SKJS rejects those.
   //
   // Runs only for the first declaration of the group, so each group error is
-  // reported once. isAmbient marks `declare` groups, which need no
-  // implementation.
+  // reported once. A group is ambient only when every member is (`declare`
+  // or .d.ts — see FunDef.isAmbient); ambient groups need no implementation.
   private fun checkFunOverloadGroup(
     tcenvl: mutable TCEnvLight,
     fd: TopLevelFunDef,
-    isAmbient: Bool,
   ): void {
     name = fd.name match {
     | FNNormal(n) -> n
@@ -293,11 +292,14 @@ extension class TypeChecker {
       }
     };
     group = deduped.toArray();
-    if (group.size() <= 1) return void;
     // Only the first declaration of the group reports group-level errors.
     if (fd.getPos() != group[0].getPos()) return void;
     hasBody = (f: TopLevelFunDef) -> f.hasBody;
     bodies = group.filter(hasBody);
+    // A group is ambient only if EVERY member is (`declare ...` or .d.ts);
+    // a mixed group still needs an implementation (tsc TS2391 on the
+    // non-ambient member).
+    allAmbient = group.all(f -> f.isAmbient);
     if (bodies.size() > 1) {
       // tsc TS2393, reported at every implementation after the first.
       for (i in Range(1, bodies.size())) {
@@ -324,7 +326,9 @@ extension class TypeChecker {
         )
       )
     };
-    if (bodies.isEmpty() && !isAmbient) {
+    // No implementation at all in a non-ambient group — including a LONE
+    // body-less signature, which tsc also rejects with TS2391.
+    if (bodies.isEmpty() && !allAmbient) {
       group[0].getPos().each(pos ->
         tcenvl.error(
           Array[
@@ -372,8 +376,24 @@ extension class TypeChecker {
             if (!sigOk) {
               // (b): re-check the body with the overload's signature, in an
               // isolated results sink; inner diagnostics are discarded and
-              // replaced by the single TS2394 below.
-              trialFd = implFd with {sig => ovFd.sig};
+              // replaced by the single TS2394 below. The overload's parameter
+              // TYPES are mapped positionally onto the implementation's
+              // parameter NAMES, so the body sees the same lexical
+              // environment it was written against (tsc checks compatibility
+              // by position, never by name).
+              implSig = this.getFunSig(tcenvl.context, implFd);
+              ovSig = this.getFunSig(tcenvl.context, ovFd);
+              renamedParams = ovSig.params.mapWithIndex((i, p) ->
+                if (i < implSig.params.size()) {
+                  p with {name => implSig.params[i].name}
+                } else {
+                  p
+                }
+              );
+              // getFunSig materializes both inline and ref'd signatures.
+              trialFd = implFd with {
+                sig => FSInline(ovSig.tparams, renamedParams, ovSig.retType),
+              };
               trialResults = TCResultsAcc::mcreate{
                 errorHandling => this.errorHandling,
               };
