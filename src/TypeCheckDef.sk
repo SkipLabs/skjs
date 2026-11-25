@@ -284,7 +284,15 @@ extension class TypeChecker {
       | _ -> void
       }
     };
-    group = groupVec.toArray();
+    // Deduplicate by declaration position (exported groups can arrive through
+    // several export mentions, each resolving to the whole same-name vector).
+    deduped = mutable Vector[];
+    for (f in groupVec) {
+      if (!deduped.any(other -> other.getPos() == f.getPos())) {
+        deduped.push(f)
+      }
+    };
+    group = deduped.toArray();
     if (group.size() <= 1) return void;
     // Only the first declaration of the group reports group-level errors.
     if (fd.getPos() != group[0].getPos()) return void;

@@ -872,7 +872,13 @@ mutable class FileDefsState private {
   }
 
   private mutable fun pushDef(name: Name, d: FileDef, isExport: Bool): void {
-    if (isExport) mapPush(this.exported, name.value, (name.value, false));
+    // Record the exported mention once per name: declaration-merged groups
+    // (overloaded functions, merged interfaces) push several same-name defs,
+    // and a mention per declaration would multiply the def list K times for
+    // importers (each mention resolves to the whole same-name def vector).
+    if (isExport && this.exported.maybeGet(name.value) is None()) {
+      mapPush(this.exported, name.value, (name.value, false))
+    };
     // A declaration colliding with a lib/stub definition (the builtins every
     // file includes) is a duplicate identifier as well (tsc TS2300, issue
     // #887): the stub's definition is the one name resolution reaches, so the

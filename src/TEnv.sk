@@ -3091,7 +3091,16 @@ base class TEnv{
       }
     };
     if (funDefs.isEmpty()) return None();
-    arr = funDefs.toArray();
+    // Deduplicate by declaration position: an exported group can reach us
+    // through several export mentions, each resolving to the whole same-name
+    // def vector — the same declaration must not appear twice in the set.
+    deduped = mutable Vector[];
+    for (fd in funDefs) {
+      if (!deduped.any(other -> other.getPos() == fd.getPos())) {
+        deduped.push(fd)
+      }
+    };
+    arr = deduped.toArray();
     // hasBody is recorded at parse time — reading the deferred body map here
     // would add a body dependency to this type computation and break
     // incremental checking (a body change must not re-check users).
