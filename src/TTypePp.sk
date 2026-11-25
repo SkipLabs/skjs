@@ -182,7 +182,7 @@ fun tupleShorthand(fields: TFields): ?(Array<TType>, Bool) {
       if (!kTupleProtocolFieldNames.contains(name)) return None();
       if (name == "length") {
         !arity = field.get.getSingleConstant() match {
-        | Some(TPrimValue(TNum(), Some(lits), _)) ->
+        | Some(TPrimValue(TNum(), PDLits(lits), _)) ->
           lits.singleElt().flatMap(lit -> lit.val.toIntOption())
         | _ -> None()
         }
@@ -317,14 +317,23 @@ mutable class TypePp{
         this.object(level, margin, fields)
       }
     | TPrimUnit(k, _) -> this.out(level, margin, k.toString())
-    | TPrimValue(k, None(), _) -> this.out(level, margin, k.toString())
-    | TPrimValue(k, Some(arr), _) ->
+    | TPrimValue(k, PDFull(), _) -> this.out(level, margin, k.toString())
+    | TPrimValue(k, PDLits(arr), _) ->
       rendered = arr
         .values()
         .map(lit -> TypePp::renderPrimLiteral(k, lit.val))
         .collect(Array)
         .join(" | ");
       this.out(level, margin, rendered)
+    | TPrimValue(k, PDMixed(lits, pats), _) ->
+      members = mutable Vector<String>[];
+      lits.each(ls ->
+        ls.values().each(lit ->
+          members.push(TypePp::renderPrimLiteral(k, lit.val))
+        )
+      );
+      pats.values().each(pat -> members.push(pat.render()));
+      this.out(level, margin, members.toArray().join(" | "))
     }
   }
 
@@ -1041,8 +1050,10 @@ mutable class TypePp{
       if (branches.size() != 1) true else {
         TypePp::bareSignature(branches[0]).isSome()
       }
-    | TPrimValue(_, Some(arr), _) -> arr.size() > 1
-    | TPrimValue(_, None(), _)
+    | TPrimValue(_, PDLits(arr), _) -> arr.size() > 1
+    | TPrimValue(_, PDMixed(lits, pats), _) ->
+      lits.map(l -> l.size()).default(0) + pats.size() > 1
+    | TPrimValue(_, PDFull(), _)
     | TPrimUnit _ ->
       false
     }

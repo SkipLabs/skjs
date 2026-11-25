@@ -246,7 +246,8 @@ class ArrayLitTyping() {
     | Some(stypes) ->
       stypes.any(stype ->
         stype match {
-        | TPrimValue(_, Some _, _) -> true
+        | TPrimValue(_, PDLits _, _) -> true
+        | TPrimValue(_, PDMixed _, _) -> true
         | _ -> false
         }
       )
@@ -303,7 +304,7 @@ class ArrayLitTyping() {
     idxSType match {
     | TPrimValue(TString(), _, _) -> true
     | TPrimValue(TSymbol(), _, _) -> true
-    | TPrimValue(TNum(), None(), _) -> true
+    | TPrimValue(TNum(), PDFull(), _) -> true
     | _ -> false
     }
   }

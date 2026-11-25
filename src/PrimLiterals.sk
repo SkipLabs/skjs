@@ -14,6 +14,35 @@ class PrimLiteral(
   }
 }
 
+// The values a TPrimValue denotes, widened (issue #897) from the two-state
+// `?PrimLiterals` (None = the whole primitive, Some = a finite non-empty
+// literal set) to a three-child domain: a template literal pattern is
+// neither, and a union like `"a" | `#${string}`` must be representable in the
+// single string SType a clause can hold (STypes keys by tag).
+base class PrimDomain uses XXHashable, Orderable {
+  children =
+  // The whole primitive (the old None()).
+  | PDFull()
+  // A finite non-empty literal set (the old Some(lits)).
+  | PDLits(lits: PrimLiterals)
+  // A mixed disjunction: any literals plus at least one template literal
+  // pattern (patterns only ever occur under TString).
+  | PDMixed(lits: ?PrimLiterals, pats: TemplatePats)
+
+  // Hashes exactly like the old `?PrimLiterals` field for the two pre-existing
+  // cases, so TPrimValue (and therefore TType, whose compare is hash-based)
+  // keeps its hash — and every hash-derived ordering — unchanged. Only the new
+  // PDMixed case hashes differently.
+  fun xxhash(): XXHash {
+    this match {
+    | PDFull() -> (None() : ?PrimLiterals).xxhash()
+    | PDLits(l) -> Some(l).xxhash()
+    | PDMixed(l, p) ->
+      XXHash(XXHash64.xxHash64(l.xxhash().value, p.xxhash().value))
+    }
+  }
+}
+
 class PrimLiterals private (
   private inner: InternalKeyedArrayMap<String, PrimLiteral>,
 ) extends Sequence<PrimLiteral> uses XXHashable, Orderable, Show {

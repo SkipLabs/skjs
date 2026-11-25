@@ -106,18 +106,29 @@ function twoBareStrings(x: TwoBareStrings, y: string): string {
   return x;
 }
 
-// --- Irreducible holes: an infinite, partial set of strings ---
+// --- Holes over whole primitives: an infinite, partial set of strings ---
+// These reduce to template literal PATTERNS (issue #897), covered in
+// template-literal-pattern-types.ts.
 
-// @skjs-expect-error Template literal types are only supported when every interpolation has finitely many values, which this one does not
 type Prefixed = `a${string}b`;
+function prefixed(x: Prefixed): `a${string}b` {
+  return x;
+}
 
-// @skjs-expect-error Template literal types are only supported when every interpolation has finitely many values, which this one does not
 type NumberHole = `${number}`;
+function numberHole(x: NumberHole, y: `${number}`): `${number}` {
+  const back: NumberHole = y;
+  return x;
+}
 
-// @skjs-expect-error Template literal types are only supported when every interpolation has finitely many values, which this one does not
 type BigIntHole = `${bigint}`;
+function bigintHole(x: BigIntHole): `${bigint}` {
+  return x;
+}
 
-// An abstract type parameter has no known values at the definition.
+// An abstract type parameter has no known values at the definition: the
+// result would be a pattern mentioning the type variable, which SKJS does not
+// represent.
 // @skjs-expect-error Template literal types are only supported when every interpolation has finitely many values, which this one does not
 type Deferred<T extends string> = `a${T}b`;
 
@@ -202,8 +213,10 @@ type NotStringifiableBeatsIrreducible = `${object}${number}`;
 
 // A template type inside a parenthesized function type: the parser's only blind
 // token-scanning lookahead (isTypeFunParams) must step over the template whole.
-// @skjs-expect-error Template literal types are only supported when every interpolation has finitely many values, which this one does not
 type InFunctionParams = (x: `a${string}b`) => void;
+function inFunctionParams(f: InFunctionParams): (x: `a${string}b`) => void {
+  return f;
+}
 
 // The same, with a hole that itself contains parens, which blind paren counting
 // would miscount. The template reduces, so the parameter type is exactly "a(b".

@@ -275,8 +275,8 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
   Line 2: ${age}`;
   ```
 
-### 18b. Template Literal Types (Partially Supported)
-- **Rule**: a template literal type has no type of its own. It **reduces** to a type that already exists in the string domain: either the finite set of strings it can produce (a string literal union) or the `string` primitive itself. Every reduction below is identical to tsc's, not merely assignable to it
+### 18b. Template Literal Types (Supported)
+- **Rule**: a template literal type **reduces** to a type in the string domain: the finite set of strings it can produce (a string literal union), the `string` primitive itself, or — since #897 — a **template literal pattern** for the infinite but partial sets. Every reduction below is identical to tsc's, not merely assignable to it
 - **Reduced** (all supported):
   - **No live hole** → one string literal, cooked exactly as an expression template is (rule 18: escapes decoded, line terminators normalized): `` `abc` `` and `` `a${"b"}c` `` are the type `"abc"`; `` `\x61` `` is `"a"`
   - **Finite holes distribute** into the cross-product: `` `${"a" | "b"}-${"x" | "y"}` `` is `"a-x" | "a-y" | "b-x" | "b-y"`
@@ -284,7 +284,10 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
   - **`never` absorbs**: `` `x${never}y` `` is `never`, since no string can be built
   - **Bare `string` holes with no text** are `string` itself, not a pattern over it: `` `${string}` `` and `` `${string}${string}` `` are both exactly `string`. `string` absorbs any sibling still a string, so `` `${string | number}` `` is `string` too
   - Number and bigint literal holes stringify with ECMAScript semantics, not source text: `` `${1e21}` `` is `"1e+21"`, `` `${0xff}` `` is `"255"`, `` `${1n}` `` is `"1"`
-- **Not supported (error)**: a hole with unboundedly many values, where the result is an infinite but *partial* set of strings. That is a `` `${number}` ``, `` `${bigint}` `` or abstract-type-parameter hole (`` type W<T> = `a${T}b` ``) whatever surrounds it, and a bare `string` hole once the template has text of its own (`` `a${string}b` ``) — the text being exactly what stops it from reducing to `string`. SKJS represents a string type as either the whole primitive or a finite literal set, with nothing in between, so this needs a pattern representation it does not have. Rejecting is sound — it never widens the annotation to `string`, which would silently accept `` const x: `a${string}` = "zzz" ``
+- **Whole-primitive holes become patterns** (issue #897): a `string`, `number` or `bigint` hole with text of its own, as in `` `#${string}` `` or `` `${number}px` ``, is an infinite but *partial* set of strings, kept as a pattern. A hole mixing a primitive with finite literals distributes, as in tsc: `` `${number | "auto"}px` `` is `` `${number}px` | "autopx" ``. Nested patterns splice in: `` `${`#${string}`}px` `` is `` `#${string}px` ``
+  - **Literal-vs-pattern assignability is tsc's greedy-leftmost matcher, with no backtracking**: `` const h: `#${string}` = "#ff" `` is accepted and `"ff"` is rejected, but `"a-b-1"` is rejected by `` `${string}-${number}` `` even though it is in the language — exactly as tsc. `${number}` accepts `s` iff `s != "" && isFinite(+s)` (so `" 1"`, `"0x10"`, `"+5"` are accepted; `"Infinity"`, `"NaN"`, `"1_000"` are not), and `${bigint}` accepts `s` iff `s + "n"` scans as one BigInt literal (hex accepted; `"+10"`, `"010"`, `"1_000"` rejected)
+  - **Pattern-to-pattern** follows tsc's relation: same texts compare hole-wise (`` `a${number}` `` <: `` `a${string}` ``), different texts go through the greedy matcher (`` `${number}px` `` <: `` `${string}x` ``, but `` `a${string}` `` ⋢ `` `${string}a` ``). A pattern is a subtype of `string` and `string` is not a subtype of it; `string` absorbs a pattern in a union
+  - **Not supported (error)**: an abstract-type-parameter hole (`` type W<T> = `a${T}b` ``) — the result would be a pattern mentioning the type variable itself (SKJS9018). Also not supported: a pattern as an index-signature key type (`` { [k: `#${string}`]: number } ``), which tsc 4.4+ accepts — SKJS rejects it like a literal key type, since it cannot check each accessed key against the pattern
 - **Number literal holes reduce through the double**: a beyond-precision literal is named by the `String()` form of its double (rule 30), so `` `${9007199254740993}` `` and `` `${0x20000000000001}` `` both reduce to `"9007199254740992"`, and `` `${1e-400}` `` to `"0"`, as in tsc
 - An overflowing literal is named `Infinity` (rule 30), so `` `${1e309}` `` reduces to `"Infinity"`, as in tsc
 - **Hole constraint**: as in tsc, a hole must be `string`, `number`, `bigint`, `boolean`, `null`, or `undefined`. `object`, `symbol`, `unknown`, `void` and function types are rejected (TS2322, naming the offending type as tsc does). Any type *parses* in a hole — the restriction is a typecheck rule, not a syntactic one. The constraint outranks reducibility both across holes (`` `${object}${number}` `` reports the object) and within one (`` `${number | symbol}` `` reports the symbol)
@@ -297,11 +300,13 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
   type Handler = `on${"Click" | "Hover"}`;                 // "onClick" | "onHover"
   const c: Corner = "top-left";
 
-  // ✗ Error - an infinite, partial set of strings
-  // type Hex = `#${string}`;
-  // type Px = `${number}px`;
+  // ✓ CORRECT - an infinite, partial set of strings, kept as a pattern
+  type Hex = `#${string}`;
+  type Px = `${number}px`;
+  const h: Hex = "#ff";   // accepted
+  // const bad: Hex = "ff"; // rejected, as in tsc
   ```
-- **Verified by**: `tests/expect-error/template-literal-types.ts`
+- **Verified by**: `tests/expect-error/template-literal-types.ts`, `tests/expect-error/template-literal-pattern-types.ts`
 
 ### 19. Boolean Literal Type Casting Not Supported
 - **Rule**: Casting boolean values to literal boolean types is not supported
