@@ -34,6 +34,46 @@ function tupleAndObjectCall(): void {
   const s: string = tupleAndObject([0, 1]);
 }
 
+// More shapes of the same two #932 holes, all rejected as well: a call
+// argument, a return position, a nested literal, a three-arm union, and
+// readonly arms.
+declare function tupleUnionCrossArg(x: [0, 1] | [2, 3]): void;
+function tupleUnionCrossCall(): void {
+  // @skjs-expect-error Argument is not assignable to the parameter's type
+  tupleUnionCrossArg([0, 3]);
+}
+
+function tupleUnionCrossReturn(): [0, 1] | [2, 3] {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  return [0, 3];
+}
+
+function tupleUnionCrossNested(): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  const v: [[0, 1]] | [[2, 3]] = [[0, 3]];
+}
+
+function tupleUnionThreeArms(): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  const v: [0, 1] | [2, 3] | [4, 5] = [0, 5];
+}
+
+function tupleUnionReadonlyArms(): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  const v: readonly [0, 1] | readonly [2, 3] = [0, 3];
+}
+
+declare function tupleAndObjectArg(k: [0, 1] & { foo: string }): void;
+function tupleAndObjectCallArg(): void {
+  // @skjs-expect-error Argument is not assignable to the parameter's type
+  tupleAndObjectArg([0, 1]);
+}
+
+function tupleAndObjectReturn(): [0, 1] & { foo: string } {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  return [0, 1];
+}
+
 // #903: an instanceof hidden type argument must not pool across executions
 // through an inferred container.
 class PoolBox<T> {
