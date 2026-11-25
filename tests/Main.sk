@@ -264,7 +264,11 @@ fun validateTSConformance(
   parseErrorOpt = checkResult.parseError;
   typeErrors = checkResult.errors;
 
-  SKTest.expectEq(parseErrorOpt is None(), true, "Expected no parse errors");
+  SKTest.expectEq(
+    parseErrorOpt is None(),
+    true,
+    `Expected no parse errors in ${fileName.toString()}`,
+  );
 
   fileContents = checker.files.filesContent.get(context, fileName).value;
   configLines = parseConfigComments(fileContents).collect(Array);
