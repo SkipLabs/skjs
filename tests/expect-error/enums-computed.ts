@@ -94,6 +94,7 @@ enum Same {
 // tsc types Same[0] as plain string; SKJS knows the runtime reverse entry
 // is the last member with that value.
 function duplicateValueReverse(): "B" {
+  // @skjs-expect-warning Ambiguous enum reverse mapping for value 0: it resolves to the last-declared member 'B'
   return Same[0];
 }
 

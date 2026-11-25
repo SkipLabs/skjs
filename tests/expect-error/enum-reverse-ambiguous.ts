@@ -11,6 +11,7 @@ enum Same {
 }
 
 function readAmbiguous(): string {
+  // @skjs-expect-warning Ambiguous enum reverse mapping for value 0: it resolves to the last-declared member 'B'
   return Same[0];
 }
 
