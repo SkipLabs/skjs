@@ -668,6 +668,60 @@ extension base class TEnv {
 }
 
 extension class TypeChecker {
+  // #787: warn when reading an enum reverse mapping whose statically-known
+  // literal key names more than one member (`Same[0]` with `A = 0, B = 0`): at
+  // runtime the reverse mapping keeps only the last-declared member, so the
+  // earlier ones are unreachable through it. Only a literal key is checked —
+  // a computed key is not statically known to be ambiguous.
+  fun warnAmbiguousEnumReverseAccess(
+    tcenv: mutable TCEnv,
+    arr: Expr,
+    idx: Expr,
+  ): void {
+    arr.value match {
+    | Var(name) ->
+      keyOpt = this.directLiteralSType(idx).flatMap(stype ->
+        stype match {
+        | TPrimValue(TNum(), Some(lits), _) ->
+          lits.singleElt().map(lit -> lit.val)
+        | _ -> None()
+        }
+      );
+      keyOpt.each(key -> {
+        for (def in this.defMap.getAll(tcenv, name, false, false)) {
+          def match {
+          | en @ Enum _ ->
+            matching = mutable Vector[];
+            for (m in this.enumMembers(tcenv, en)) {
+              if (
+                enumNumLiteralVal(m.value).map(v -> v == key).default(false)
+              ) {
+                matching.push(m)
+              }
+            };
+            if (matching.size() > 1) {
+              matched = matching.toArray();
+              tcenv.warning(
+                Array[
+                  (
+                    idx.pos,
+                    `Ambiguous enum reverse mapping for value ${key}: it resolves to the last-declared member '${
+                      matched[matched.size() - 1].name.value
+                    }'`,
+                  ),
+                  (matched[0].name.pos, "The value is first assigned here"),
+                ],
+                ESLintCode("@typescript-eslint/no-duplicate-enum-values"),
+              )
+            }
+          | _ -> void
+          }
+        }
+      })
+    | _ -> void
+    }
+  }
+
   // Check an enum declaration: duplicate member names, members that need an
   // initializer, and computed initializers (typed, and required to be
   // numbers; constant expressions required in const enums).

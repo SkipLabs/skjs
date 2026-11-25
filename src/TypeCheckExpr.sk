@@ -3243,6 +3243,9 @@ extension class TypeChecker {
       }
 
     | Get(arr, idx) ->
+      // #787: a literal-key reverse-mapping read on an enum with duplicate
+      // values is ambiguous (only the last-declared member is reachable).
+      this.warnAmbiguousEnumReverseAccess(tcenv, arr, idx);
       objOrArray = this.expr(tcenv, arr, mostPrecise);
       stableReceiver = if (isLValue) objOrArray else {
         this.stableAliasExprType(tcenv, arr, objOrArray)
