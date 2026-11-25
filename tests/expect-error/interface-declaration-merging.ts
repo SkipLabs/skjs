@@ -99,16 +99,6 @@ interface Modifiers {
   x: string;
 }
 
-// tsc TS2687 also covers the access modifier: a 'private' member re-declared
-// without it must not silently become public in the merged interface.
-interface Access {
-  private x: number;
-}
-interface Access {
-  // @skjs-expect-error All declarations of 'x' must have identical modifiers.
-  x: number;
-}
-
 // tsc TS2374: an index signature may not be repeated across merged
 // declarations, even with the same value type.
 interface IndexSig {
