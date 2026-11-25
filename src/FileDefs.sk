@@ -259,6 +259,12 @@ class DefMap(
     local = mutable Vector[];
     this.getLocalDefs(tcenvb, fileDefs, name, typeOnly, lookup, local);
     if (
+      fileDefs.imports.maybeGet(name).isSome() &&
+      fileDefs.defs.maybeGet(name).isSome()
+    ) {
+      this.checkImportLocalConflict(tcenvb, fileDefs, name)
+    };
+    if (
       lookup is LookupType() ||
       !local.any(def -> def.hasValue() || def is FDTypeOnlyEdge _)
     ) {
@@ -274,6 +280,49 @@ class DefMap(
       }
     };
     result.extend(local)
+  }
+
+  // tsc TS2440: an import binding whose name is also declared locally
+  // conflicts when the two occupy the same declaration space (an imported
+  // interface conflicts with a local interface or class, an imported
+  // function or variable with a local value declaration, but not with a
+  // purely type- or value-space local on the other side).
+  private fun checkImportLocalConflict(
+    tcenvb: mutable TCEnvBase,
+    fileDefs: FileDefs,
+    name: String,
+  ): void {
+    localDefs = fileDefs.defs.maybeGet(name).default(Array[]);
+    for (import in fileDefs.imports.maybeGet(name).default(Array[])) {
+      exported = mutable Vector<FileDef>[];
+      this.getExported(
+        tcenvb,
+        import.from.fileName,
+        import.origName,
+        false,
+        exported,
+        LookupTypeQuery(),
+      );
+      for (exportedDef in exported) {
+        for (localDef in localDefs) {
+          if (
+            DeclSpaces::ofFileDef(exportedDef).overlaps(
+              DeclSpaces::ofFileDef(localDef),
+            )
+          ) {
+            tcenvb.error(
+              Array[
+                (
+                  import.pos,
+                  `Import declaration conflicts with local declaration of '${name}'.`,
+                ),
+              ],
+              TSCode(2440),
+            )
+          }
+        }
+      }
+    }
   }
 
   private fun getLocalDefs(
@@ -538,6 +587,8 @@ value class Imported{
   typeOnly: Bool,
   origName: /* Empty string = whole module */ String,
   from: ModuleName,
+  // Where the imported name is written, for diagnostics (TS2440).
+  pos: PosRange,
 }
 
 value class ModuleName{name: String, fileName: FPath}
@@ -582,6 +633,23 @@ fun mapPush<K: Hashable & Equality, V>(
   | None() -> m![k] = mutable Vector<V>[x]
   | Some(v) -> v.push(x)
   }
+}
+
+// Whether `d` is an interface declaration (`interface Foo { ... }`).
+private fun isInterfaceDef(d: FileDef): Bool {
+  d match {
+  | Class{kind => CKInterface()} -> true
+  | _ -> false
+  }
+}
+
+// Whether two same-name definitions collide in a declaration space. Two
+// interface declarations do not: like tsc, SKJS merges their members
+// (declaration merging, across files and against the import stubs), so only
+// definitions that are not both interfaces count as duplicates.
+private fun defsCollide(a: FileDef, b: FileDef): Bool {
+  DeclSpaces::ofFileDef(a).overlaps(DeclSpaces::ofFileDef(b)) &&
+    !(isInterfaceDef(a) && isInterfaceDef(b))
 }
 
 mutable class FileDefsState private {
@@ -718,6 +786,7 @@ mutable class FileDefsState private {
             isType.isSome(),
             Array[names],
             modName,
+            def.pos,
           )
         })
 
@@ -733,7 +802,13 @@ mutable class FileDefsState private {
 
       | Import(isType, names, importName) ->
         this.resolveName(importName).each(modName -> {
-          static::addImportsFrom(this.imports, isType.isSome(), names, modName)
+          static::addImportsFrom(
+            this.imports,
+            isType.isSome(),
+            names,
+            modName,
+            def.pos,
+          )
         })
 
       | ExportAs _
@@ -820,11 +895,8 @@ mutable class FileDefsState private {
     this.defs.maybeGet(name.value) match {
     | None() -> this.defs![name.value] = mutable Vector[d]
     | Some(existingDefs) ->
-      dSpaces = DeclSpaces::ofFileDef(d);
       existingDefs
-        .find(existingDef ->
-          DeclSpaces::ofFileDef(existingDef).overlaps(dSpaces)
-        )
+        .find(existingDef -> defsCollide(existingDef, d))
         .each(existingDef -> {
           msg1 = (name.pos, `Duplicate identifier '${name}'`);
           msgs = existingDef.getPos() match {
@@ -925,13 +997,22 @@ mutable class FileDefsState private {
     typeOnly: Bool,
     namesList: Array<ModuleNames>,
     from: ModuleName,
+    stmtPos: PosRange,
   ): void {
     for (names in namesList) {
       names match {
       | MStar() ->
-        mapPush(imports, "", Imported{typeOnly, origName => "", from})
+        mapPush(
+          imports,
+          "",
+          Imported{typeOnly, origName => "", from, pos => stmtPos},
+        )
       | MStarAs(asName) ->
-        mapPush(imports, asName.value, Imported{typeOnly, origName => "", from})
+        mapPush(
+          imports,
+          asName.value,
+          Imported{typeOnly, origName => "", from, pos => asName.pos},
+        )
       | MCurly(moduleDefNames) ->
         for (moduleDefName in moduleDefNames) {
           importName = moduleDefName.asName match {
@@ -943,14 +1024,19 @@ mutable class FileDefsState private {
           mapPush(
             imports,
             importName,
-            Imported{typeOnly => eltTypeOnly, origName, from},
+            Imported{
+              typeOnly => eltTypeOnly,
+              origName,
+              from,
+              pos => moduleDefName.name.pos,
+            },
           )
         }
       | MName(asName) ->
         mapPush(
           imports,
           asName.value,
-          Imported{typeOnly, origName => "default", from},
+          Imported{typeOnly, origName => "default", from, pos => asName.pos},
         )
       }
     }

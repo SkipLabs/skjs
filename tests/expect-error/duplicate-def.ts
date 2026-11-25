@@ -18,14 +18,25 @@ function f(): void {}
 // @skjs-expect-error Duplicate identifier 'f'
 function f(): void {}
 
-// @skjs-expect-error Duplicate class declaration 'I'
+// Interfaces with the same name do NOT collide: they merge their members,
+// like tsc — see interface-declaration-merging.ts.
 interface I {
   a: number;
 }
-// @skjs-expect-error Duplicate class declaration 'I'
-// @skjs-expect-error Duplicate identifier 'I'
 interface I {
   b: string;
+}
+
+// interface + class: tsc merges the two as well, but SKJS does not support
+// class/interface merging yet, so the collision is still reported.
+// @skjs-expect-error Duplicate class declaration 'Ic2'
+interface Ic2 {
+  a: number;
+}
+// @skjs-expect-error Duplicate class declaration 'Ic2'
+// @skjs-expect-error Duplicate identifier 'Ic2'
+class Ic2 {
+  b: number = 1;
 }
 
 enum E {

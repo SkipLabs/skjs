@@ -1,8 +1,45 @@
 module SKJS;
 
 extension class TypeChecker {
+  // Whether two declarations of the same name declare the same type
+  // parameters (names in order; arity included). tsc additionally compares
+  // constraints and defaults; SKJS compares names only.
+  private static fun tparamsIdentical(
+    a: Array<TypeParam>,
+    b: Array<TypeParam>,
+  ): Bool {
+    a.map(tp -> tp.name.value) == b.map(tp -> tp.name.value)
+  }
+
   fun class_(tcenvl: mutable TCEnvLight, c: Class): void {
     !this.enclosingClass = Some(c.name);
+    if (c.kind is CKInterface()) {
+      // tsc TS2428: all declarations of a merged interface must declare
+      // identical type parameters. class_ runs once per declaration (the
+      // DefKey occurrence), so each offending declaration reports its own
+      // error here.
+      for (def in this.defMap.getAll(tcenvl, c.name, true)) {
+        def match {
+        | other @ Class{kind => CKInterface()} if (
+          other.bodyRef != c.bodyRef
+        ) ->
+          if (!static::tparamsIdentical(c.tparams, other.tparams)) {
+            tcenvl.error(
+              Array[
+                (
+                  c.name.pos,
+                  `All declarations of '${
+                    c.name.value
+                  }' must have identical type parameters.`,
+                ),
+              ],
+              TSCode(2428),
+            )
+          }
+        | _ -> void
+        }
+      }
+    };
     classFields = this.getClassFields(tcenvl.context, c);
     constructor: ?ClassFieldMethod = None();
     for (fieldType in classFields) {

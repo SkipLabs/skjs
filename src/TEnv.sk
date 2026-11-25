@@ -1463,13 +1463,19 @@ base class TEnv{
     }
   }
 
+  // Whether `cls` is declared in a .d.ts file (a library/stub declaration,
+  // ambient by SKJS rule 35).
+  private static fun isDtsDecl(cls: Class): Bool {
+    cls.name.pos.fileName.toString().endsWith(".d.ts")
+  }
+
   private fun processClassSetup(
     tcenvb: mutable TCEnvBase,
     visitedClasses: SortedSet<String>,
     withTParams: Bool,
     className: Name,
     targs: Array<TType>,
-  ): (this, Class) {
+  ): (this, Array<Class>) {
     if (visitedClasses.contains(className.value)) {
       fatalError(
         Array[
@@ -1489,18 +1495,36 @@ base class TEnv{
       | _ -> None()
       }
     );
-    defsCls.size() match {
-    | 0 ->
+    if (defsCls.isEmpty()) {
       fatalError(
         Array[(className.pos, `Cannot find name '${className.value}'`)],
         TSCode(2304),
       )
-    | 1 -> void
-    | _ ->
-      tcenvb.error(
-        Array[(className.pos, `Duplicate class declaration '${className}'`)],
-        TSCode(2300),
-      )
+    };
+    // Several declarations of one name are fine when every one of them is an
+    // interface: interfaces merge their members (declaration merging), within
+    // a file and across files. Any other combination colliding is a duplicate
+    // class declaration. Merging a user declaration with a library declaration
+    // from a .d.ts stub is rejected: augmenting a library type (e.g.
+    // `interface Array<T> { ... }` in a user file) is not supported — tsc only
+    // allows it deliberately, via `declare global`, which SKJS rejects.
+    if (defsCls.size() > 1) {
+      if (!defsCls.all(cls -> cls.kind is CKInterface())) {
+        tcenvb.error(
+          Array[(className.pos, `Duplicate class declaration '${className}'`)],
+          TSCode(2300),
+        )
+      };
+      libDefs = defsCls.filter(cls -> static::isDtsDecl(cls));
+      if (libDefs.size() > 0 && libDefs.size() < defsCls.size()) {
+        userCls = defsCls.find(cls -> !static::isDtsDecl(cls)).fromSome();
+        tcenvb.notSupported(
+          userCls.name.pos,
+          `Merging '${
+            className.value
+          }' with its library declaration in a .d.ts stub`,
+        )
+      }
     };
     cls = defsCls[0];
     if (
@@ -1529,7 +1553,7 @@ base class TEnv{
         false,
       );
     };
-    (this, cls)
+    (this, defsCls)
   }
 
   private fun addFields(
@@ -1543,64 +1567,118 @@ base class TEnv{
     targs: Array<TType>,
     filter: ClassFieldValue ~> Bool,
   ): void {
-    (!this, cls) = this.processClassSetup(
+    (!this, clss) = this.processClassSetup(
       tcenvb,
       visitedClasses,
       isStatic is None(),
       className,
       targs,
     );
-    for (extend in cls.extends_) {
-      extend.value match {
-      | TAInst(parentReference, paramTArgs) ->
-        parentName = this.heritageName(
-          tcenvb,
-          parentReference,
-          cls.kind is CKInterface(),
-        );
-        if (this.hasClassDef(tcenvb, parentName)) {
-          this.addFields(
+    // A name declared by several interfaces (declaration merging) inherits
+    // the union of its declarations' base lists. Walk each base once per
+    // call, before any own members, so own members override inherited ones.
+    // tsc TS2320: a name (merged from several declarations, or with several
+    // entries in one extends list) cannot simultaneously extend two different
+    // instantiations of the same base. `baseTypes` maps a base name to the
+    // extends clause it was first extended with; a repeated base renders both
+    // clauses and errors if they differ (rendering is lazy: only repeated
+    // bases pay for it, and normalizing an extends clause can disturb the
+    // tparam bindings of the enclosing class). An identical repeat is walked
+    // only once.
+    baseTypes = mutable Map<String, Type>[];
+    for (cls in clss) {
+      for (extend in cls.extends_) {
+        extend.value match {
+        | TAInst(parentReference, paramTArgs) ->
+          parentName = this.heritageName(
             tcenvb,
-            acc,
-            symbolFields,
-            indexes,
-            visitedClasses,
-            isStatic,
-            parentName,
-            if (isStatic is Some _) Array[] else {
-              paramTArgs.map(targ -> this.normalize(tcenvb, targ))
-            },
-            filter,
-          )
-        } else {
-          // The extends target is not a class or interface. tsc allows an
-          // interface to extend a type alias as long as the alias resolves to
-          // an object type (or an intersection of object types with statically
-          // known members); the alias's members are merged structurally, as if
-          // intersected with the interface body. Resolve and merge them here.
-          this.addFieldsFromAliasBase(
-            tcenvb,
-            acc,
-            symbolFields,
-            indexes,
-            isStatic,
-            extend,
+            parentReference,
+            cls.kind is CKInterface(),
+          );
+          baseTypes.maybeGet(parentName.value) match {
+          | Some(firstExtend) ->
+            renderedFirst = this.describeDeclarationType(
+              tcenvb,
+              this.normalize(tcenvb, firstExtend),
+            );
+            renderedBase = this.describeDeclarationType(
+              tcenvb,
+              this.normalize(tcenvb, extend),
+            );
+            if (renderedFirst != renderedBase) {
+              tcenvb.error(
+                Array[
+                  (
+                    extend.pos,
+                    `Interface '${
+                      className.value
+                    }' cannot simultaneously extend types '${renderedFirst}' and '${renderedBase}'.`,
+                  ),
+                ],
+                TSCode(2320),
+              )
+            }
+          | None() ->
+            baseTypes![parentName.value] = extend;
+            if (this.hasClassDef(tcenvb, parentName)) {
+              this.addFields(
+                tcenvb,
+                acc,
+                symbolFields,
+                indexes,
+                visitedClasses,
+                isStatic,
+                parentName,
+                if (isStatic is Some _) Array[] else {
+                  paramTArgs.map(targ -> this.normalize(tcenvb, targ))
+                },
+                filter,
+              )
+            } else {
+              // The extends target is not a class or interface. tsc allows an
+              // interface to extend a type alias as long as the alias resolves to
+              // an object type (or an intersection of object types with statically
+              // known members); the alias's members are merged structurally, as if
+              // intersected with the interface body. Resolve and merge them here.
+              this.addFieldsFromAliasBase(
+                tcenvb,
+                acc,
+                symbolFields,
+                indexes,
+                isStatic,
+                extend,
+              )
+            }
+          }
+        | _ ->
+          tcenvb.error(
+            Array[
+              (
+                extend.pos,
+                "An 'extends' clause must reference a class instantiation",
+              ),
+            ],
+            TSCode(2507),
           )
         }
-      | _ ->
-        tcenvb.error(
-          Array[
-            (
-              extend.pos,
-              "An 'extends' clause must reference a class instantiation",
-            ),
-          ],
-          TSCode(2507),
-        )
       }
     };
-    fields = this.getClassFields(tcenvb.context, cls);
-    for (fieldType in fields) {
+    // The members declared directly by the declarations of `className`
+    // itself. A member re-declared by another declaration of the same name
+    // must agree with the earlier one (TS2717/TS2687, see recordOwnField);
+    // `ownFields`/`ownMethods`/`ownIndexKinds` track what this call has
+    // already declared, so a base member overridden by an own one is not
+    // mistaken for a conflict.
+    ownFields = mutable Map<FieldNameString, TField>[];
+    ownMethods = mutable Set<FieldNameString>[];
+    ownIndexKinds = mutable Set<String>[];
+    ownFieldEntries = mutable Vector<(Class, ClassField)>[];
+    for (cls in clss) {
+      for (field in this.getClassFields(tcenvb.context, cls)) {
+        ownFieldEntries.push((cls, field))
+      }
+    };
+    for ((cls, fieldType) in ownFieldEntries) {
       fieldType match {
       | field @ ClassFieldValue _ ->
         if (!filter(field)) continue;
@@ -1690,10 +1768,28 @@ base class TEnv{
             access => fieldAccess,
           };
 
+          this.recordOwnField(tcenvb, ownFields, ownMethods, f, false);
           acc![f.name] = f
         | FNColon(indexName, indexType) ->
           keyType = this.normalize(tcenvb, indexType);
           keyKinds = this.resolveIndexKeyKinds(tcenvb, indexName.pos, keyType);
+          // tsc TS2374: repeating an index signature of a key kind already
+          // declared by another declaration of the same merged interface is
+          // an error, even when the value types agree. An index inherited
+          // through `extends` is fine, so only own declarations count here.
+          for (kindName in static::indexKindNames(keyKinds)) {
+            if (!ownIndexKinds.maybeInsert(kindName)) {
+              tcenvb.error(
+                Array[
+                  (
+                    indexName.pos,
+                    `Duplicate index signature for type '${kindName}'.`,
+                  ),
+                ],
+                TSCode(2374),
+              )
+            }
+          };
           indexes.push(
             (
               keyKinds,
@@ -1760,6 +1856,7 @@ base class TEnv{
             mayBeOmittedByCopy => true,
           };
 
+          this.recordOwnField(tcenvb, ownFields, ownMethods, field, true);
           symbolFields![field.name] = field
         | FKName(name, _) ->
           field = TField::create{
@@ -1772,10 +1869,90 @@ base class TEnv{
             mayBeOmittedByCopy => true,
           };
 
+          this.recordOwnField(tcenvb, ownFields, ownMethods, field, true);
           acc![field.name] = field
         }
       }
     }
+  }
+
+  // Record a member declared directly by one of the declarations of a merged
+  // name (declaration merging) and diagnose a re-declaration that disagrees
+  // with an earlier one, like tsc:
+  // - TS2687 when the modifiers (optional / readonly / access) differ;
+  // - TS2717 when a non-method member's type differs.
+  // Two methods with the same name would accumulate as overloads in tsc; a
+  // TFuns holds a single signature, so SKJS keeps the later declaration
+  // silently — sound, since dropping an overload only rejects programs tsc
+  // accepts, never accepts one tsc rejects.
+  private fun recordOwnField(
+    tcenvb: mutable TCEnvBase,
+    ownFields: mutable Map<FieldNameString, TField>,
+    ownMethods: mutable Set<FieldNameString>,
+    f: TField,
+    isMethod: Bool,
+  ): void {
+    ownFields.maybeGet(f.name) match {
+    | None() ->
+      ownFields![f.name] = f;
+      if (isMethod) ownMethods.insert(f.name)
+    | Some(prev) ->
+      prevIsMethod = ownMethods.contains(f.name);
+      // TS2687: re-declared members must have identical modifiers — optional,
+      // readonly, and access (a private re-declared as public must not
+      // silently relax, so access is compared too; FieldAccess's == ignores
+      // the declaration position, which differs across merged declarations).
+      // The optional/readonly part applies only to same-kind members; a
+      // method colliding with a property is a type conflict (TS2717 below).
+      modifiersDiffer =
+        prev.access != f.access ||
+        (isMethod == prevIsMethod &&
+          (prev.isOptional != f.isOptional ||
+            prev.set.isBottom() != f.set.isBottom()));
+      if (modifiersDiffer) {
+        tcenvb.error(
+          Array[
+            (
+              f.pos,
+              `All declarations of '${
+                f.name.value
+              }' must have identical modifiers.`,
+            ),
+          ],
+          TSCode(2687),
+        )
+      };
+      if (isMethod && prevIsMethod) {
+        ownFields![f.name] = f
+      } else {
+        if (prev.get != f.get) {
+          prevTy = this.describeDeclarationType(tcenvb, prev.get);
+          newTy = this.describeDeclarationType(tcenvb, f.get);
+          tcenvb.error(
+            Array[
+              (
+                f.pos,
+                `Subsequent property declarations must have the same type. Property '${
+                  f.name.value
+                }' must be of type ${quoteRenderedType(
+                  prevTy,
+                )}, but here has type ${quoteRenderedType(newTy)}.`,
+              ),
+            ],
+            TSCode(2717),
+          )
+        }
+      }
+    }
+  }
+
+  // The key-kind names an index signature covers, for diagnostics.
+  private static fun indexKindNames(kinds: IndexKeyKinds): Array<String> {
+    result = mutable Vector[];
+    if (kinds.hasString) result.push("string");
+    if (kinds.hasNumber) result.push("number");
+    if (kinds.hasSymbol) result.push("symbol");
+    result.toArray()
   }
 
   // Merge the structural members of a type-alias base referenced by an
@@ -1908,55 +2085,62 @@ base class TEnv{
     tparams: Array<TypeParam>,
     targs: Array<TType>,
   ): ?(this, ClassFieldMethod, Array<TypeParam>) {
-    (!this, cls) = this.processClassSetup(
+    (!this, clss) = this.processClassSetup(
       tcenvb,
       visitedClasses,
       true,
       className,
       targs,
     );
-    clsFields = this.getClassFields(tcenvb.context, cls);
-    for (fieldType in clsFields) {
-      fieldType match {
-      | fd @ ClassFieldMethod _ if (
-        fd.name is FNNormal(Name(_, "constructor"))
-      ) ->
-        return Some((this, fd, cls.tparams))
-      | _ -> void
-      }
-    };
-    for (extend in cls.extends_) {
-      extend.value match {
-      | TAInst(parentReference, paramTArgs) ->
-        parentName = this.heritageName(
-          tcenvb,
-          parentReference,
-          cls.kind is CKInterface(),
-        );
-        // A type-alias base cannot contribute a constructor (a call/construct
-        // signature on an alias base is rejected by addFieldsFromAliasBase),
-        // so skip it instead of resolving it as a class — recursing would
-        // fatal "Cannot find name" on the alias (#798). Mirrors the
-        // hasClassDef guard in addFields' extends walk.
-        if (this.hasClassDef(tcenvb, parentName)) {
-          return this.findConstructorMethod(
+    walkedBases = mutable Set<String>[];
+    for (cls in clss) {
+      clsFields = this.getClassFields(tcenvb.context, cls);
+      for (fieldType in clsFields) {
+        fieldType match {
+        | fd @ ClassFieldMethod _ if (
+          fd.name is FNNormal(Name(_, "constructor"))
+        ) ->
+          return Some((this, fd, cls.tparams))
+        | _ -> void
+        }
+      };
+      for (extend in cls.extends_) {
+        extend.value match {
+        | TAInst(parentReference, paramTArgs) ->
+          parentName = this.heritageName(
             tcenvb,
-            visitedClasses,
-            parentName,
-            tparams,
-            paramTArgs.map(targ -> this.normalize(tcenvb, targ)),
+            parentReference,
+            cls.kind is CKInterface(),
+          );
+          // A type-alias base cannot contribute a constructor (a call/construct
+          // signature on an alias base is rejected by addFieldsFromAliasBase),
+          // so skip it instead of resolving it as a class — recursing would
+          // fatal "Cannot find name" on the alias (#798). Mirrors the
+          // hasClassDef guard in addFields' extends walk. Each base is
+          // visited once per call across the merged declarations.
+          if (
+            walkedBases.maybeInsert(parentName.value) &&
+            this.hasClassDef(tcenvb, parentName)
+          ) {
+            return this.findConstructorMethod(
+              tcenvb,
+              visitedClasses,
+              parentName,
+              tparams,
+              paramTArgs.map(targ -> this.normalize(tcenvb, targ)),
+            )
+          }
+        | _ ->
+          tcenvb.error(
+            Array[
+              (
+                extend.pos,
+                "An 'extends' clause must reference a class instantiation",
+              ),
+            ],
+            TSCode(2507),
           )
         }
-      | _ ->
-        tcenvb.error(
-          Array[
-            (
-              extend.pos,
-              "An 'extends' clause must reference a class instantiation",
-            ),
-          ],
-          TSCode(2507),
-        )
       }
     };
     None()
