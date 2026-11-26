@@ -842,6 +842,55 @@ mutable class Scope{
     }
   }
 
+  // A copy of this scope's own refs, to diff around a loop-header check.
+  readonly fun copyRefs(): SortedMap<String, LocalRef> {
+    acc = SortedMap[];
+    for (kv in this.refs.items()) {
+      !acc = acc.set(kv.i0, kv.i1)
+    };
+    acc
+  }
+
+  // The write effects of running a loop header once: the own refs the check
+  // changed, as it left them. A `continue` — and the body's normal end —
+  // re-enters the header, so by the time control leaves the loop through such
+  // a re-entry, these writes have run again and overwritten whatever the
+  // folded state carried (SkipLabs/skjs#968). Only definite effects show up
+  // here: a write on a conditional branch of the header merges back into the
+  // widened pre-check value and leaves the ref unchanged, so it is not
+  // mistaken for an overwrite.
+  readonly fun headerWriteEffects(
+    before: SortedMap<String, LocalRef>,
+  ): SortedMap<String, LocalRef> {
+    acc = SortedMap[];
+    for (kv in this.refs.items()) {
+      changed = before.maybeGet(kv.i0) match {
+      | None() -> true
+      | Some(old) ->
+        old.type != kv.i1.type ||
+          old.declaredType != kv.i1.declaredType ||
+          old.hasDeclaredContract != kv.i1.hasDeclaredContract ||
+          old.isInitialized != kv.i1.isInitialized ||
+          old.hasFieldRefinement != kv.i1.hasFieldRefinement
+      };
+      if (changed) {
+        !acc = acc.set(kv.i0, kv.i1)
+      }
+    };
+    acc
+  }
+
+  // Re-run a loop header's write effects on this scope: the folded back edges
+  // (the body's end and every `continue`) re-enter the header before the loop
+  // can exit through them, so the header's writes overwrite the folded state.
+  // The entry path uses the same effects: the first header evaluation runs
+  // them before its test can turn false and exit the loop.
+  mutable fun applyHeaderWrites(writes: SortedMap<String, LocalRef>): void {
+    for (kv in writes.items()) {
+      this.!refs[kv.i0] = kv.i1
+    }
+  }
+
   // Union a recorded jump snapshot into this scope: each binding becomes what
   // this scope already holds for it (walking up when it does not touch it) or
   // the value the jump edge carried. Used by a loop to fold its break and

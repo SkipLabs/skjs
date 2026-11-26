@@ -216,7 +216,6 @@ function whileHeaderWriteReRunsOnContinueEdge(
     }
     x = a;
   }
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const y: "a" = x;
 }
 
@@ -225,7 +224,6 @@ function whileHeaderWriteReRunsOnContinueEdge(
 function whileHeaderWriteRunsOnTheEntryExit(a: "a", b: "b"): void {
   let x: "a" | "b" = b;
   while ((x = a) !== "a") {}
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const y: "a" = x;
 }
 
@@ -239,14 +237,12 @@ function forHeaderWriteReRunsOnContinueEdge(d: boolean, a: "a", b: "b"): void {
     }
     x = a;
   }
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const y: "a" = x;
 }
 
 function forHeaderWriteRunsOnTheEntryExit(a: "a", b: "b"): void {
   let x: "a" | "b" = b;
   for (let i = 0; (x = a) !== "a"; i = i + 1) {}
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const y: "a" = x;
 }
 
