@@ -159,7 +159,14 @@ extension class TypeChecker {
       writes.stmts(block);
       tcenv.beginLoopWrites(loopScope.widenLoopBindings(writes.result()));
       tcenv.!scope = loopScope;
+      preHeader = loopScope.copyRefs();
       this.checkBool(tcenv, cond);
+      // The header's write effects, to re-run on the back edges below: a
+      // `continue` (and the body's normal end) re-enters the header — the
+      // increment first, then the condition — so by the time the loop exits
+      // through that re-entry, the condition's writes have run again
+      // (SkipLabs/skjs#968).
+      headerWrites = loopScope.headerWriteEffects(preHeader);
       // The loop catches the `break`/`continue` inside its body — they bind to
       // it, not to an enclosing switch — and its exits carry their edges: a
       // jump leaves mid-body with the state at the jump, which the body's
@@ -175,11 +182,17 @@ extension class TypeChecker {
         loopScope.uniteSnapshot(tcenv.subst, this, snap)
       };
       _ = this.expr(tcenv, incr, false);
+      // The increment runs before the condition on the way back, so the
+      // condition's writes are the last to land on the folded back edges.
+      loopScope.applyHeaderWrites(headerWrites);
       for (snap in catcher.breaks) {
         loopScope.uniteSnapshot(tcenv.subst, this, snap)
       };
       this.checkHiddenBindingEscape(tcenv, st.pos, firstLocalSkolem, initScope);
       loopScope.limitLoopExit(tcenv.subst, this, tcenv.loopWriteBounds.pop());
+      // The entry path exits through the header too: its writes ran before the
+      // first test could turn false (the increment does not run on that path).
+      initScope.applyHeaderWrites(headerWrites);
       tcenv.!scope = initScope;
       tcenv.popScope(this, loopScope);
       tcenv.!scope = scopeCopy;
@@ -313,7 +326,13 @@ extension class TypeChecker {
       writes.stmts(block);
       tcenv.beginLoopWrites(loopScope.widenLoopBindings(writes.result()));
       tcenv.!scope = loopScope;
+      preHeader = loopScope.copyRefs();
       this.checkBool(tcenv, cond);
+      // The header's write effects, to re-run on the back edges below: a
+      // `continue` (and the body's normal end) re-enters the header, so by
+      // the time the loop exits through that re-entry, the header's writes
+      // have run again and overwritten the folded state (SkipLabs/skjs#968).
+      headerWrites = loopScope.headerWriteEffects(preHeader);
       // See the `For` case: the loop catches its body's jumps and folds their
       // edges into its exit. A `continue` re-enters the header, whose
       // condition turning false then leaves the loop with the edge's state, so
@@ -325,11 +344,19 @@ extension class TypeChecker {
       for (snap in catcher.continues) {
         loopScope.uniteSnapshot(tcenv.subst, this, snap)
       };
+      // The folded back edges (the body's end and every `continue`) re-enter
+      // the header before the loop can exit through them, so the header's
+      // writes run again on the folded state. A `break` skips the header, so
+      // its edges join after, unrewritten.
+      loopScope.applyHeaderWrites(headerWrites);
       for (snap in catcher.breaks) {
         loopScope.uniteSnapshot(tcenv.subst, this, snap)
       };
       this.checkHiddenBindingEscape(tcenv, st.pos, firstLocalSkolem, scopeCopy);
       loopScope.limitLoopExit(tcenv.subst, this, tcenv.loopWriteBounds.pop());
+      // The entry path exits through the header as well: its writes ran before
+      // the first test could turn false.
+      scopeCopy.applyHeaderWrites(headerWrites);
       tcenv.!scope = scopeCopy;
       tcenv.popScope(this, loopScope);
       StmtTermination::cond(cond).loop_(() -> bodyTerm)
