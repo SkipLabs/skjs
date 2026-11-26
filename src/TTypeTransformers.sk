@@ -84,7 +84,8 @@ mutable base class ApplyType(
   overridable deferred mutable fun stype(env: this::Env, stype: SType): SType {
     stype match {
     | x @ TPrimUnit _
-    | x @ TPrimValue _ ->
+    | x @ TPrimValue _
+    | x @ TPrimString _ ->
       x
     | obj @ TObject _ -> this.object(env, obj)
     }

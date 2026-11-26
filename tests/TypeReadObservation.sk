@@ -92,7 +92,7 @@ fun observationNumber(): SKJS.TType {
 }
 
 fun observationString(): SKJS.TType {
-  SKJS.TType::single(SKJS.TPrimValue::string(SKJS.PosRange::none))
+  SKJS.TType::single(SKJS.TPrimString::full(SKJS.PosRange::none))
 }
 
 // Fixture construction uses the same growth and sealing operations as the
@@ -1529,9 +1529,7 @@ fun testDeclarationNormalizationBorrowsFrameAndLifetime(): void {
   SKTest.expectEq(true, owner.isUnbound(second));
   observationBind(owner, second, object, false);
   result = query();
-  expected = SKJS.TType::single(
-    SKJS.TPrimValue::single(SKJS.TString(), "value", pos),
-  );
+  expected = SKJS.TType::single(SKJS.TPrimString::single("value", pos));
   SKTest.expectEq(
     true,
     result match {

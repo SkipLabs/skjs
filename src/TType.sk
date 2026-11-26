@@ -337,6 +337,8 @@ class TType private {
             TPrimValue(k2, Some(lits2), _),
           ) if (k1 == k2) ->
             lits1.diff(lits2).map(l -> TPrimValue(k1, Some(l), pos))
+          | (TPrimString(Some(lits1), pos), TPrimString(Some(lits2), _)) ->
+            lits1.diff(lits2).map(l -> TPrimString(Some(l), pos))
           | (
             TPrimValue(k1 @ TBool _, None(), pos),
             TPrimValue(k2, Some(lits2), _),
@@ -668,7 +670,11 @@ class TType private {
       | None() -> return false
       | Some(stypes) ->
         if (
-          !stypes.all(stype -> stype is TPrimUnit _ || stype is TPrimValue _)
+          !stypes.all(stype ->
+            stype is TPrimUnit _ ||
+              stype is TPrimValue _ ||
+              stype is TPrimString _
+          )
         ) {
           return false
         }
@@ -684,7 +690,8 @@ class TType private {
       for (stype in stypes) {
         stype match {
         | TPrimUnit _
-        | TPrimValue _ ->
+        | TPrimValue _
+        | TPrimString _ ->
           continue
         | TObject _ -> return false
         }
@@ -2014,7 +2021,8 @@ base class FieldKey {
 
   static fun ofSType(pos: PosRange, stype: SType): ?FieldKey {
     stype match {
-    | TPrimValue(k @ TString(), Some(lits), _)
+    | TPrimString(Some(lits), _) ->
+      lits.singleElt().map(lit -> FKName(Name(pos, lit.val), TString()))
     | TPrimValue(k @ TNum(), Some(lits), _) ->
       lits.singleElt().map(lit -> FKName(Name(pos, lit.val), k))
     | TPrimValue(TSymbol(), Some(lits), _) ->
@@ -2026,7 +2034,11 @@ base class FieldKey {
   // Like ofSType but returns all literals, not just when there's exactly one.
   static fun allOfSType(pos: PosRange, stype: SType): Array<FieldKey> {
     stype match {
-    | TPrimValue(k @ TString(), Some(lits), _)
+    | TPrimString(Some(lits), _) ->
+      lits
+        .values()
+        .map(lit -> FKName(Name(pos, lit.val), TString()))
+        .collect(Array)
     | TPrimValue(k @ TNum(), Some(lits), _) ->
       lits.values().map(lit -> FKName(Name(pos, lit.val), k)).collect(Array)
     | TPrimValue(TSymbol(), Some(lits), _) ->
@@ -2036,9 +2048,12 @@ base class FieldKey {
   }
 
   fun toType(): TType {
-    TType::single(
-      TPrimValue::single(this.toPrimValueKind(), this.value(), this.pos()),
-    )
+    kind = this.toPrimValueKind();
+    if (kind is TString()) {
+      TType::single(TPrimString::single(this.value(), this.pos()))
+    } else {
+      TType::single(TPrimValue::single(kind, this.value(), this.pos()))
+    }
   }
 
   fun toPrimValueKind(): TPrimValueKind {
@@ -2132,6 +2147,8 @@ base class SType private (
     | TPrimUnit(TNull(), _) -> TagNull()
     | TPrimValue(TBool(), _, _) -> TagBool()
     | TPrimValue(TNum(), _, _) -> TagNum()
+    | TPrimString(_, _) -> TagString()
+    // Unreachable since strings moved to TPrimString, kept for exhaustiveness.
     | TPrimValue(TString(), _, _) -> TagString()
     | TPrimValue(TBigInt(), _, _) -> TagBigInt()
     | TPrimValue(TSymbol(), _, _) -> TagSymbol()
@@ -2167,26 +2184,36 @@ base class SType private (
     | TPrimValue(TSymbol(), _, _) ->
       SFValues(FZero(), true)
     | TPrimValue(TBool(), None(), _)
-    | TPrimValue(TString(), None(), _)
-    | TPrimValue(TBigInt(), None(), _) ->
+    | TPrimString(None(), _)
+    | TPrimValue(TBigInt(), None(), _)
+    // Unreachable since strings moved to TPrimString, kept for exhaustiveness.
+    | TPrimValue(TString(), None(), _) ->
       // boolean has only `false`, string only `""`, bigint only `0n`.
       SFValues(FOne(), true)
     | TPrimValue(TNum(), None(), _) ->
       // number ranges over the falsy values 0, -0 and NaN (i.e. more than one).
       SFValues(FMany(), true)
-    | TPrimValue(kind, Some(lits), _) ->
-      falsyCount: FalsyCount = FZero();
-      hasTruthy = false;
-      for (lit in lits) {
-        if (kind.mayBeFalsy(lit.val)) {
-          !falsyCount = falsyCount.plus(FOne())
-        };
-        if (kind.mayBeTruthy(lit.val)) {
-          !hasTruthy = true
-        }
-      };
-      SFValues(falsyCount, hasTruthy)
+    | TPrimValue(kind, Some(lits), _) -> this.litsFalsiness(kind, lits)
+    | TPrimString(Some(lits), _) -> this.litsFalsiness(TString(), lits)
     }
+  }
+
+  // Falsiness classification of a literal set of the given primitive kind.
+  private fun litsFalsiness(
+    kind: TPrimValueKind,
+    lits: PrimLiterals,
+  ): SFalsiness {
+    falsyCount: FalsyCount = FZero();
+    hasTruthy = false;
+    for (lit in lits) {
+      if (kind.mayBeFalsy(lit.val)) {
+        !falsyCount = falsyCount.plus(FOne())
+      };
+      if (kind.mayBeTruthy(lit.val)) {
+        !hasTruthy = true
+      }
+    };
+    SFValues(falsyCount, hasTruthy)
   }
 
   // The part of this single type whose values are truthy (`target == true`) or
@@ -2212,9 +2239,11 @@ base class SType private (
     | TObject _
     | TPrimValue(TSymbol(), _, _) ->
       if (target) Some(this) else None()
-    | TPrimValue(TString(), None(), _)
+    | TPrimString(None(), _)
     | TPrimValue(TNum(), None(), _)
-    | TPrimValue(TBigInt(), None(), _) ->
+    | TPrimValue(TBigInt(), None(), _)
+    // Unreachable since strings moved to TPrimString, kept for exhaustiveness.
+    | TPrimValue(TString(), None(), _) ->
       Some(this)
     | TPrimValue(TBool(), None(), pos) ->
       Some(TPrimValue::single(TBool(), if (target) "true" else "false", pos))
@@ -2226,6 +2255,14 @@ base class SType private (
           if (target) kind.mayBeTruthy(lit.val) else kind.mayBeFalsy(lit.val)
         )
         .map(l -> TPrimValue(kind, Some(l), pos))
+    | TPrimString(Some(lits), pos) ->
+      lits
+        .filterLiterals(lit ->
+          if (target) TString().mayBeTruthy(lit.val) else {
+            TString().mayBeFalsy(lit.val)
+          }
+        )
+        .map(l -> TPrimString(Some(l), pos))
     }
   }
 
@@ -2240,8 +2277,8 @@ base class SType private (
   // `NaN`). All other cases are shared with `truthinessResidue`.
   fun truthinessValueResidue(target: Bool): ?SType {
     this match {
-    | TPrimValue(TString(), None(), pos) if (!target) ->
-      Some(TPrimValue::single(TString(), "", pos))
+    | TPrimString(None(), pos) if (!target) ->
+      Some(TPrimString::single("", pos))
     | TPrimValue(TBigInt(), None(), pos) if (!target) ->
       Some(TPrimValue::single(TBigInt(), "0n", pos))
     | _ -> this.truthinessResidue(target)
@@ -2250,17 +2287,41 @@ base class SType private (
 }
 
 base class TPrim extends SType {
+  // The boxed class name (`Number`, `String`, ...); only value prims have one.
+  overridable fun asClassName(): Name {
+    internal_error("asClassName called on a unit prim")
+  }
+
+  // The TPrimValueKind of a value prim, for rendering literals and index
+  // key kinds. Unit prims have none.
+  overridable fun asPrimValueKind(): TPrimValueKind {
+    internal_error("asPrimValueKind called on a unit prim")
+  }
+
+  // The literal set of a value prim (None = the full primitive).
+  overridable fun primLiterals(): ?PrimLiterals {
+    None()
+  }
+
+  // This prim with a different literal set.
+  overridable fun withPrimLiterals(_literals: ?PrimLiterals): TPrim {
+    internal_error("withPrimLiterals called on a unit prim")
+  }
+
   fun sameConstant(other: TPrim): Bool {
     (this, other) match {
     | (TPrimUnit(k1, _), TPrimUnit(k2, _)) -> k1 == k2
     | (TPrimValue(k1, Some(l1), _), TPrimValue(k2, Some(l2), _)) ->
       k1 == k2 && l1.size() == 1 && l1 == l2
+    | (TPrimString(Some(l1), _), TPrimString(Some(l2), _)) ->
+      l1.size() == 1 && l1 == l2
     | _ -> false
     }
   }
 }
 extension class TPrimUnit extends TPrim
 extension class TPrimValue extends TPrim
+extension class TPrimString extends TPrim
 
 class TPrimUnit(kind: TPrimUnitKind) extends SType
 
@@ -2290,10 +2351,6 @@ class TPrimValue(kind: TPrimValueKind, literals: ?PrimLiterals) extends SType {
     TPrimValue::full(TNum(), pos)
   }
 
-  static fun string(pos: PosRange): TPrimValue {
-    TPrimValue::full(TString(), pos)
-  }
-
   static fun bigint(pos: PosRange): TPrimValue {
     TPrimValue::full(TBigInt(), pos)
   }
@@ -2304,6 +2361,59 @@ class TPrimValue(kind: TPrimValueKind, literals: ?PrimLiterals) extends SType {
 
   fun asClassName(): Name {
     Name(this.pos, this.kind.toString())
+  }
+
+  fun asPrimValueKind(): TPrimValueKind {
+    this.kind
+  }
+
+  fun primLiterals(): ?PrimLiterals {
+    this.literals
+  }
+
+  fun withPrimLiterals(literals: ?PrimLiterals): TPrim {
+    this with {literals => literals}
+  }
+}
+
+// The string primitive: either the full `string` (`literals == None()`) or a
+// finite set of string literals. Split out of TPrimValue (which keeps the
+// other kinds: number, boolean, bigint, symbol) so that template literal
+// pattern types (issue #897) can extend the string side only.
+class TPrimString(literals: ?PrimLiterals) extends SType {
+  static fun single(
+    value: String,
+    pos: PosRange,
+    userVal: ?String = None(),
+  ): TPrimString {
+    TPrimString(
+      Some(PrimLiterals::single(PrimLiteral(pos, value, userVal))),
+      pos,
+    )
+  }
+
+  static fun full(pos: PosRange): TPrimString {
+    TPrimString(None(), pos)
+  }
+
+  fun kind(): TPrimValueKind {
+    TString()
+  }
+
+  fun asClassName(): Name {
+    Name(this.pos, this.kind().toString())
+  }
+
+  fun asPrimValueKind(): TPrimValueKind {
+    TString()
+  }
+
+  fun primLiterals(): ?PrimLiterals {
+    this.literals
+  }
+
+  fun withPrimLiterals(literals: ?PrimLiterals): TPrim {
+    this with {literals => literals}
   }
 }
 
@@ -3541,7 +3651,7 @@ class STypes private (
 
   fun getConstantString(): ?PrimLiteral {
     this.singleElt() match {
-    | Some(TPrimValue(TString(), Some(lits), _)) -> lits.singleElt()
+    | Some(TPrimString(Some(lits), _)) -> lits.singleElt()
     | _ -> None()
     }
   }
@@ -3550,6 +3660,7 @@ class STypes private (
     this.singleElt().flatMap(stype ->
       stype match {
       | prim @ TPrimValue(_, Some(lits), _) if (lits.size() == 1) -> Some(prim)
+      | prim @ TPrimString(Some(lits), _) if (lits.size() == 1) -> Some(prim)
       | prim @ TPrimUnit _ -> Some(prim)
       | _ -> None()
       }
@@ -3599,6 +3710,7 @@ class STypes private (
   fun staticValue(): ?String {
     this.singleElt() match {
     | Some(TPrimValue(_, Some(lits), _)) -> lits.singleElt().map(lit -> lit.val)
+    | Some(TPrimString(Some(lits), _)) -> lits.singleElt().map(lit -> lit.val)
     | _ -> None()
     }
   }
@@ -4218,7 +4330,7 @@ class Clauses private (
   }
 
   fun primKind(): ?Name {
-    cand: ?TPrimValue = None();
+    cand: ?TPrim = None();
     for (clause in this.clauses) {
       clause.stypes match {
       | None() -> return None()
@@ -4226,11 +4338,13 @@ class Clauses private (
         for (stype in stypes) {
           (stype, cand) match {
           | (prim @ TPrimValue _, None()) -> !cand = Some(prim)
+          | (prim @ TPrimString _, None()) -> !cand = Some(prim)
           | (
             TPrimValue(kind, _, _),
             Some(TPrimValue(candKind, _, _)),
           ) if (kind == candKind) ->
             void
+          | (TPrimString(_, _), Some(TPrimString _)) -> void
           | _ -> return None()
           }
         }
@@ -4318,6 +4432,7 @@ mutable class TVarScan{seen: mutable Set<Int> = mutable Set[]} {
         unexpandedType.map(inst -> this.scanInst(inst)).default(false)
     | TPrimUnit _ -> false
     | TPrimValue _ -> false
+    | TPrimString _ -> false
     }
   }
 

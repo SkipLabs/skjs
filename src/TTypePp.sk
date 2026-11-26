@@ -420,10 +420,18 @@ mutable class TypePp{
       }
     | TPrimUnit(k, _) -> this.out(level, margin, k.toString())
     | TPrimValue(k, None(), _) -> this.out(level, margin, k.toString())
+    | TPrimString(None(), _) -> this.out(level, margin, TString().toString())
     | TPrimValue(k, Some(arr), _) ->
       rendered = arr
         .values()
         .map(lit -> TypePp::renderPrimLiteral(k, lit))
+        .collect(Array)
+        .join(" | ");
+      this.out(level, margin, rendered)
+    | TPrimString(Some(arr), _) ->
+      rendered = arr
+        .values()
+        .map(lit -> TypePp::renderPrimLiteral(TString(), lit))
         .collect(Array)
         .join(" | ");
       this.out(level, margin, rendered)
@@ -1246,8 +1254,11 @@ mutable class TypePp{
       if (branches.size() != 1) true else {
         TypePp::bareSignature(branches[0]).isSome()
       }
-    | TPrimValue(_, Some(arr), _) -> arr.size() > 1
+    | TPrimValue(_, Some(arr), _)
+    | TPrimString(Some(arr), _) ->
+      arr.size() > 1
     | TPrimValue(_, None(), _)
+    | TPrimString(None(), _)
     | TPrimUnit _ ->
       false
     }

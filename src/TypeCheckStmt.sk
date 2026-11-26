@@ -256,7 +256,7 @@ extension class TypeChecker {
       ty = kind match {
       | ForIn() ->
         this.checkForInIterable(tcenv, iterable.pos, iterableType);
-        TType::single(TPrimValue::string(st.pos))
+        TType::single(TPrimString::full(st.pos))
       | ForOf() ->
         this.getValueType(tcenv, iterable.pos, iterableType, "for-of loop")
       };
@@ -1047,12 +1047,12 @@ extension class TypeChecker {
             TSCode(2488),
           )
         }
-      | TPrimValue(TString(), _, _) ->
+      | TPrimString(_, _) ->
         !result = TType::union(
           tcenv.subst,
           this,
           result,
-          TType::single(TPrimValue::string(pos)),
+          TType::single(TPrimString::full(pos)),
         )
       | _ ->
         tcenv.error(

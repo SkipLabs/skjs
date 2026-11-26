@@ -1806,7 +1806,7 @@ extension class TypeChecker {
     idxSType = idxType
       .getSTypes(tcenv.subst, this, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
-    | Some(ty @ TPrimValue(TString(), _, _))
+    | Some(ty @ TPrimString(_, _))
     | Some(ty @ TPrimValue(TNum(), _, _))
     | Some(ty @ TPrimValue(TSymbol(), _, _)) ->
       ty
@@ -1892,7 +1892,7 @@ extension class TypeChecker {
           // property — so it resolves through the symbol index AND unions/
           // intersects every declared symbol field (read: union getters;
           // write: intersect setters).
-          idxSType.literals match {
+          idxSType.primLiterals() match {
           | None() -> Some(idxSType)
           | Some(lits) ->
             lits
@@ -1914,7 +1914,7 @@ extension class TypeChecker {
                 }
               )
               .map(remainingLits ->
-                idxSType with {literals => Some(remainingLits)}
+                idxSType.withPrimLiterals(Some(remainingLits))
               )
           } match {
           | None() -> void
@@ -1927,7 +1927,7 @@ extension class TypeChecker {
             | None() ->
               // Unique symbols naming no declared field, or a general symbol,
               // with no symbol index to resolve through.
-              if (remainingIdxSType.literals.isNone()) {
+              if (remainingIdxSType.primLiterals().isNone()) {
                 fatalError(
                   Array[
                     (
@@ -1953,7 +1953,7 @@ extension class TypeChecker {
               };
               addResultCase(ty);
               // A general symbol may also name any declared symbol field.
-              if (remainingIdxSType.literals.isNone()) {
+              if (remainingIdxSType.primLiterals().isNone()) {
                 for (symFd in obj.namedFieldsForKeyKind(TSymbol())) {
                   addResultCase(
                     TFields::resolveFieldType(
@@ -1969,7 +1969,7 @@ extension class TypeChecker {
             }
           }
         } else {
-          idxSType.literals match {
+          idxSType.primLiterals() match {
           | None() -> Some(idxSType)
           | Some(lits) ->
             // Keys present in some branches but not all: collected here and
@@ -2036,7 +2036,7 @@ extension class TypeChecker {
               )
             };
             remaining.map(remainingLits ->
-              idxSType with {literals => Some(remainingLits)}
+              idxSType.withPrimLiterals(Some(remainingLits))
             )
           } match {
           | None() -> void
@@ -2044,15 +2044,14 @@ extension class TypeChecker {
             matchedIndex = obj.maybeGetAccessibleIndexForKeyKind(
               tcenv.subst,
               this,
-              remainingIdxSType.kind,
+              remainingIdxSType.asPrimValueKind(),
             );
             // If string literal access fails on a number index, retry as
             // number for keys a number could produce (e.g. obj["0"] or
             // obj["Infinity"] on { [x: number]: T }).
             if (matchedIndex.isNone()) {
               !matchedIndex = remainingIdxSType match {
-              | TPrimValue(
-                TString(),
+              | TPrimString(
                 Some(lits),
                 _,
               ) if (lits.values().all(lit -> isJSNumberKeyName(lit.val))) ->
@@ -2071,9 +2070,7 @@ extension class TypeChecker {
                 Array[
                   (
                     pos,
-                    `This index key is not assignable to the index signature: expected '${obj.accessibleIndexKeyKindsString()}', got '${
-                      remainingIdxSType.kind
-                    }'`,
+                    `This index key is not assignable to the index signature: expected '${obj.accessibleIndexKeyKindsString()}', got '${remainingIdxSType.asPrimValueKind()}'`,
                   ),
                 ],
                 TSCode(2345),
@@ -2081,7 +2078,7 @@ extension class TypeChecker {
             };
             matchedIndex match {
             | None() ->
-              remainingIdxSType.literals match {
+              remainingIdxSType.primLiterals() match {
               | None() ->
                 fatalError(
                   Array[
@@ -2091,7 +2088,7 @@ extension class TypeChecker {
                     ),
                     (
                       idxPos,
-                      `Index has non-literal type '${remainingIdxSType.kind}'`,
+                      `Index has non-literal type '${remainingIdxSType.asPrimValueKind()}'`,
                     ),
                     (objectPos, "But object has no index field"),
                   ],
@@ -2121,9 +2118,9 @@ extension class TypeChecker {
               // non-literal keys: specific literals that reach here were already
               // checked against the declared fields and found absent, so they
               // only hit the index.
-              if (remainingIdxSType.literals.isNone()) {
+              if (remainingIdxSType.primLiterals().isNone()) {
                 for (namedFd in obj.namedFieldsForKeyKind(
-                  remainingIdxSType.kind,
+                  remainingIdxSType.asPrimValueKind(),
                 )) {
                   addResultCase(
                     TFields::resolveFieldType(
@@ -2139,7 +2136,8 @@ extension class TypeChecker {
             }
           }
         }
-      | prim @ TPrimValue _ ->
+      | prim @ TPrimValue _
+      | prim @ TPrimString _ ->
         obj = this.newObject(tcenv.subst, prim.asClassName(), Array[]);
         stypes.push(obj)
 
@@ -2425,6 +2423,11 @@ extension class TypeChecker {
           | (Some(lit1), Some(lit2)) -> lit1.val == lit2.val
           | _ -> false
           })
+      | (TPrimString(Some(lits1), _), TPrimString(Some(lits2), _)) ->
+        (lits1.singleElt(), lits2.singleElt()) match {
+        | (Some(lit1), Some(lit2)) -> lit1.val == lit2.val
+        | _ -> false
+        }
       | _ -> false
       }
     | _ -> false
@@ -2598,10 +2601,10 @@ extension class TypeChecker {
     e.value match {
     | Number(_) -> TType::single(TPrimValue::number(pos))
     | BigInt(_) -> TType::single(TPrimValue::bigint(pos))
-    | EString(_) -> TType::single(TPrimValue::string(pos))
+    | EString(_) -> TType::single(TPrimString::full(pos))
     | TemplateLiteral(_parts, exprs) ->
       // Type check all embedded expressions - allow primitive types that can be converted to strings
-      strType = TType::single(TPrimValue::string(pos));
+      strType = TType::single(TPrimString::full(pos));
       for (expr in exprs) {
         ety = this.expr(tcenv, expr, true);
         this.checkStringifiable(tcenv, expr.pos, ety);
@@ -2824,7 +2827,7 @@ extension class TypeChecker {
                   ),
                 )
               | TPrimUnit(TVoid(), _)
-              | TPrimValue(TString(), _, _) ->
+              | TPrimString(_, _) ->
                 !invalid = true
               | TPrimValue _
               | TPrimUnit _ ->
@@ -3496,6 +3499,9 @@ extension class TypeChecker {
                   // ('a' | bigint reads 'bigint | string').
                   !invalid = true;
                   TPrimValue(k, None(), primPos)
+                | TPrimString(Some _, primPos) ->
+                  !invalid = true;
+                  TPrimString(None(), primPos)
                 | _ ->
                   !invalid = true;
                   stype
@@ -3681,6 +3687,7 @@ extension class TypeChecker {
             stypes.singleElt()
           ) match {
           | Some(TPrimValue(k, _, _)) -> Some(k)
+          | Some(TPrimString(_, _)) -> Some(TString())
           | _ ->
             tcenv.error(
               Array[
@@ -3855,7 +3862,8 @@ extension class TypeChecker {
         for (stype2 in stypes2) {
           stype2 match {
           | TPrimUnit _
-          | TPrimValue _ ->
+          | TPrimValue _
+          | TPrimString _ ->
             tcenv.error(
               Array[
                 (
@@ -3987,7 +3995,7 @@ extension class TypeChecker {
       TType::single(TPrimValue::boolean(pos))
     | TypeOf(subExpr) ->
       _ = this.nonVoidExpr(pos, tcenv, subExpr, true);
-      TType::single(TPrimValue::string(pos))
+      TType::single(TPrimString::full(pos))
     | VoidOp(subExpr) ->
       _ = this.expr(tcenv, subExpr, true);
       TType::single(TPrimUnit(TUndefined(), pos))
@@ -5626,10 +5634,21 @@ extension class TypeChecker {
         stypes.singleElt()
       ) match {
       | Some(TPrimValue(k @ TNum(), _, primPos))
-      | Some(TPrimValue(k @ TString(), _, primPos))
       | Some(TPrimValue(k @ TBigInt(), _, primPos)) ->
         ty2 = this.expr(tcenv, e2, true);
         res = TType::single(TPrimValue::full(k, primPos));
+        this.checkSubType(
+          tcenv,
+          e2.pos,
+          "Right operand of '+' is not assignable to the left operand's type",
+          ty2,
+          res,
+          TSCode(2365),
+        );
+        res
+      | Some(TPrimString(_, primPos)) ->
+        ty2 = this.expr(tcenv, e2, true);
+        res = TType::single(TPrimString::full(primPos));
         this.checkSubType(
           tcenv,
           e2.pos,
@@ -6133,7 +6152,7 @@ extension class TypeChecker {
       for (stype1 in stypes1) {
         stype1 match {
         | TPrimValue(TNum(), lits, _)
-        | TPrimValue(TString(), lits, _) ->
+        | TPrimString(lits, _) ->
           !fieldLitsOpt = fieldLitsOpt match {
           | Some(None()) -> Some(None())
           | None() -> Some(lits)
@@ -6912,7 +6931,7 @@ extension base class TEnv {
     e.value match {
     | Number(n) -> Some(TPrimValue::single(TNum(), n.val, pos, n.userVal))
     | BigInt(n) -> Some(TPrimValue::single(TBigInt(), n.val, pos, n.userVal))
-    | EString(n) -> Some(TPrimValue::single(TString(), n, pos))
+    | EString(n) -> Some(TPrimString::single(n, pos))
     | Var(Name(_, "true")) -> Some(TPrimValue::single(TBool(), "true", pos))
     | Var(Name(_, "false")) -> Some(TPrimValue::single(TBool(), "false", pos))
     | Unop(nuop @ ArithmeticUnaryOperator(), subE) ->

@@ -21,7 +21,7 @@ module SKJS;
 base class EnumMemberValue {
   children =
   // A single number or string literal.
-  | EMVLiteral(TPrimValue)
+  | EMVLiteral(TPrim)
   // A statically-unknown number.
   | EMVNumber(EnumNumberReason)
 }
@@ -110,7 +110,7 @@ private fun enumFoldOfMemberValue(v: EnumMemberValue): EnumFold {
       }
     | None() -> EFNumUnknown()
     }
-  | EMVLiteral(TPrimValue(TString(), Some(lits), _)) ->
+  | EMVLiteral(TPrimString(Some(lits), _)) ->
     lits.singleElt() match {
     | Some(lit) -> EFStr(lit.val)
     | None() -> EFNumUnknown()
@@ -290,7 +290,7 @@ extension base class TEnv {
       this.enumFold(tcenvb, en, byName, visiting, e) match {
       | EFNum(f) ->
         EMVLiteral(TPrimValue::single(TNum(), jsNumberToString(f), e.pos))
-      | EFStr(s) -> EMVLiteral(TPrimValue::single(TString(), s, e.pos))
+      | EFStr(s) -> EMVLiteral(TPrimString::single(s, e.pos))
       | EFNumUnknown() -> EMVNumber(ENRConstUnknown())
       | EFForwardRef() -> EMVNumber(ENRSelfForwardReference())
       | EFNotConst() -> EMVNumber(ENRComputed())
@@ -529,7 +529,7 @@ extension base class TEnv {
 
   // The primitive value type of one member: its number/string literal, or a
   // full `number` for a member whose value is not statically tracked.
-  static fun enumMemberPrim(m: EnumMember): TPrimValue {
+  static fun enumMemberPrim(m: EnumMember): TPrim {
     m.value match {
     | EMVLiteral(st) -> st
     | EMVNumber _ -> TPrimValue::full(TNum(), m.name.pos)
@@ -564,7 +564,7 @@ extension base class TEnv {
           },
         )
       | TPrimValue(TNum(), None(), _) -> !numberFull = true
-      | TPrimValue(TString(), Some(lits), _) ->
+      | TPrimString(Some(lits), _) ->
         for (lit in lits.values()) {
           !strings = strings.set(lit.val)
         }
@@ -578,7 +578,7 @@ extension base class TEnv {
       nums.each(lits -> stypes.push(TPrimValue(TNum(), Some(lits), pos)))
     };
     PrimLiterals::ofSet(strings, pos).each(lits ->
-      stypes.push(TPrimValue(TString(), Some(lits), pos))
+      stypes.push(TPrimString(Some(lits), pos))
     );
     if (stypes.isEmpty()) {
       return TType::bottom(pos)
@@ -651,7 +651,7 @@ extension base class TEnv {
             isOptional => false,
             isReadonly => Some(m.name.pos),
             type => TType::single(
-              TPrimValue::single(TString(), m.name.value, m.name.pos),
+              TPrimString::single(m.name.value, m.name.pos),
             ),
             access => FAPublic(),
           }
