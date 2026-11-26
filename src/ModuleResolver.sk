@@ -415,19 +415,21 @@ base class StubResolveResult uses Equality, Show {
   }
 }
 
-// Check if `relTarget` (relative to `pkgRel` inside `rootDir`) resolves to a
-// file (not a directory) that stays within `rootDir`, trying exact path first
-// and then TS/index extensions (matching TypeScript's package.json `types`
-// target resolution).
+// Check if `relTarget` (relative to `pkgDir`) resolves to a file (not a
+// directory) that stays within `boundaryDir` (e.g. the stub or `node_modules`
+// directory), trying exact path first and then TS/index extensions (matching
+// TypeScript's package.json `types` target resolution). The returned `FPath`
+// is measured relative to `rootDir` under `rootId`.
 private fun tryPackageTarget(
   fs: Fs,
   rootId: RootId,
   rootDir: DAbsolute,
-  pkgRel: DRelative,
+  boundaryDir: DAbsolute,
+  pkgDir: DAbsolute,
   relTarget: String,
 ): ?FPath {
+  boundaryStr = boundaryDir.toString();
   rootStr = rootDir.toString();
-  pkgDir = rootDir / pkgRel;
   for (ext in Array[
     "",
     ".d.ts",
@@ -440,8 +442,8 @@ private fun tryPackageTarget(
     candidate = relTarget + ext;
     if (candidate == "" || candidate.endsWith("/")) continue;
     absPath = Path.resolve(Path.join(pkgDir.toString(), candidate));
-    // Reject paths escaping the stub root (e.g. "../../outside.d.ts").
-    if (!absPath.startsWith(rootStr)) continue;
+    // Reject paths escaping the stub / node_modules directory (e.g. "../../outside.d.ts").
+    if (!absPath.startsWith(boundaryStr)) continue;
     if (fs.exists(absPath) && !fs.isDirectory(absPath)) {
       relToRoot = Path.relativeTo{path => absPath, base => rootStr};
       return Some(FPath::create(rootId, relToRoot))
@@ -587,7 +589,11 @@ private fun lookupExportsEntry(
 }
 
 // Resolve a bare package `moduleName` (which may include a subpath such as
-// `"pkg/utils"` or `"@scope/pkg/sub"`) inside a single stub/node_modules root.
+// `"pkg/utils"` or `"@scope/pkg/sub"`) inside `searchDir` (a stub root or a
+// `<ancestor>/node_modules` directory). Resolved files are returned as `FPath`s
+// relative to `rootDir` under `rootId` (`rootDir` equals `searchDir` for
+// `--import-stubs` roots, and `projectRoot` when walking nested `node_modules/`
+// under the project).
 // Order:
 //   1. If `<pkg>/package.json` exists:
 //      a. If `exports` is present, it is authoritative (allowlist): resolve
@@ -602,6 +608,7 @@ fun resolvePackageInDir(
   fs: Fs,
   rootId: RootId,
   rootDir: DAbsolute,
+  searchDir: DAbsolute,
   moduleName: String,
 ): StubResolveResult {
   (pkgName, subpathKey) = splitBarePackageSpecifier(moduleName) match {
@@ -609,7 +616,7 @@ fun resolvePackageInDir(
   | None() -> return StubNotFound()
   };
   pkgRel = DRelative::create(pkgName);
-  pkgDir = rootDir / pkgRel;
+  pkgDir = searchDir / pkgRel;
   pkgJsonPath = FAbsolute(pkgDir, "package.json").toString();
 
   if (fs.exists(pkgJsonPath) && !fs.isDirectory(pkgJsonPath)) {
@@ -631,7 +638,7 @@ fun resolvePackageInDir(
     | Some(exportsVal) ->
       lookupExportsEntry(exportsVal, subpathKey) match {
       | Some(target) if (target != "") ->
-        tryPackageTarget(fs, rootId, rootDir, pkgRel, target) match {
+        tryPackageTarget(fs, rootId, rootDir, searchDir, pkgDir, target) match {
         | Some(fpath) -> return StubFound(fpath)
         | None() ->
           return StubError(
@@ -656,7 +663,7 @@ fun resolvePackageInDir(
       };
       typesField match {
       | Some(target) if (target != "") ->
-        tryPackageTarget(fs, rootId, rootDir, pkgRel, target) match {
+        tryPackageTarget(fs, rootId, rootDir, searchDir, pkgDir, target) match {
         | Some(fpath) -> return StubFound(fpath)
         | None() -> void
         }
@@ -665,17 +672,19 @@ fun resolvePackageInDir(
     }
   };
 
+  rootStr = rootDir.toString();
   if (subpathKey == ".") {
     for (entry in Array["index.d.ts", "index.ts", "index.tsx"]) {
       path = FAbsolute(pkgDir, entry);
       pathStr = path.toString();
       if (fs.exists(pathStr) && !fs.isDirectory(pathStr)) {
-        return StubFound(FPath::create(rootId, `${pkgName}/${entry}`))
+        relToRoot = Path.relativeTo{path => pathStr, base => rootStr};
+        return StubFound(FPath::create(rootId, relToRoot))
       }
     };
     StubNotFound()
   } else {
-    tryPackageTarget(fs, rootId, rootDir, pkgRel, subpathKey) match {
+    tryPackageTarget(fs, rootId, rootDir, searchDir, pkgDir, subpathKey) match {
     | Some(fpath) -> StubFound(fpath)
     | None() -> StubNotFound()
     }
@@ -703,6 +712,72 @@ fun atTypesPackageName(moduleName: String): ?String {
   }
 }
 
+// Whether `dir` is equal to `ancestor` or a subdirectory of it.
+fun isDirWithin(dir: DAbsolute, ancestor: DAbsolute): Bool {
+  dir.toString().startsWith(ancestor.toString())
+}
+
+// Whether `fpath` points inside a `node_modules/` directory (any path segment
+// named `"node_modules"`). Used to treat project-local `node_modules/` files
+// as import-target dependencies rather than user source files to typecheck.
+fun isInNodeModules(fpath: FPath): Bool {
+  fpath.relative.dirName.path.any(seg -> seg == "node_modules")
+}
+
+// Walk ancestor directories starting from `fromDir` up to `rootMap.projectRoot`
+// (inclusive), checking `<ancestor>/node_modules/<moduleName>` at each level
+// and short-circuiting on the first `StubFound` or `StubError`.
+//
+// Bound: the walk stops at `rootMap.projectRoot` (rather than the filesystem
+// root) for predictability and because SKStore only loads files under the
+// project root and explicit `--import-stubs` roots. When an ancestor's
+// `node_modules` directory matches an entry in `rootMap.importStubs` (e.g.
+// `<projectRoot>/node_modules`), resolution uses that `RootId::stub(i)` so the
+// returned `FPath` matches the loaded stub key. Otherwise it uses
+// `RootId::project` relative to `projectRoot`.
+fun resolveNodeModulesWalk(
+  fs: Fs,
+  fromDir: DPath,
+  rootMap: RootMap,
+  moduleName: String,
+): StubResolveResult {
+  projectRoot = rootMap.projectRoot;
+  absDir = fromDir.toAbsolute(rootMap);
+  if (!isDirWithin(absDir, projectRoot)) {
+    return StubNotFound()
+  };
+
+  nodeModulesRel = DRelative::create("node_modules");
+  cur = absDir;
+  loop {
+    nmDir = cur / nodeModulesRel;
+    if (fs.isDirectory(nmDir.toString())) {
+      // If this node_modules dir is also an explicit import-stubs root,
+      // resolve under that stub RootId so the FPath matches its loaded key.
+      (rootId, rootDir) = {
+        matched: ?(RootId, DAbsolute) = None();
+        for (i => stubDir in rootMap.importStubs) {
+          if (stubDir == nmDir) {
+            !matched = Some((RootId::stub(i), stubDir));
+            break void
+          }
+        };
+        matched.default((RootId::project, projectRoot))
+      };
+      resolvePackageInDir(fs, rootId, rootDir, nmDir, moduleName) match {
+      | found @ StubFound _ -> return found
+      | err @ StubError _ -> return err
+      | StubNotFound() -> void
+      }
+    };
+    if (cur == projectRoot || cur.isRoot()) {
+      break void
+    };
+    !cur = cur.parent()
+  };
+  StubNotFound()
+}
+
 private fun resolveStubsDirect(
   fs: Fs,
   importStubs: Array<DAbsolute>,
@@ -711,7 +786,13 @@ private fun resolveStubsDirect(
   res: ?FPath = None();
   firstErr: ?String = None();
   for (i => importStub in importStubs) {
-    resolvePackageInDir(fs, RootId::stub(i), importStub, moduleName) match {
+    resolvePackageInDir(
+      fs,
+      RootId::stub(i),
+      importStub,
+      importStub,
+      moduleName,
+    ) match {
     | StubFound(fpath) ->
       res match {
       | Some(existing) ->
@@ -750,6 +831,24 @@ fun resolveStubs(
     | None() -> StubNotFound()
     }
   | other -> other
+  }
+}
+
+// Resolve a bare module specifier:
+//   1. Walk `<ancestor>/node_modules/<moduleName>` from `fromDir` up to
+//      `rootMap.projectRoot` (first match wins).
+//   2. Fall back to flat `--import-stubs` lookup so non-`node_modules` stub
+//      directories continue to work unchanged.
+fun resolveBareModule(
+  fs: Fs,
+  fromDir: DPath,
+  rootMap: RootMap,
+  moduleName: String,
+): StubResolveResult {
+  resolveNodeModulesWalk(fs, fromDir, rootMap, moduleName) match {
+  | found @ StubFound _ -> found
+  | err @ StubError _ -> err
+  | StubNotFound() -> resolveStubs(fs, rootMap.importStubs, moduleName)
   }
 }
 

@@ -844,6 +844,12 @@ class Checker private {
       context,
       checkResultsDirName,
       (context, writer, fileName, valueIter) ~> {
+        // Project-local `node_modules/` files are loaded as import targets for
+        // upward `node_modules` resolution, not as user source files to report
+        // standalone errors on.
+        if (fileName.rootId.isProject() && isInNodeModules(fileName)) {
+          return void
+        };
         parsedFile = valueIter.first;
         parsedFile.value match {
         | PROk(defs) ->
