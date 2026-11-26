@@ -351,7 +351,12 @@ extension class TypeChecker {
     //       type-checks (path-sensitive proof that under O's parameter types
     //       every return conforms to O's return type).
     // Either proof is sound; tsc only has the (unsound) comparable rule.
-    if (bodies.size() == 1) {
+    // Signature-only overloads the implementation must be compatible with.
+    // A lone function with a body has no overloads, so there is nothing to
+    // check here (and funDecl below would re-emit signature-level diagnostics
+    // for a plain function that funDef already reports via processParams).
+    overloadSigs = group.filter(f -> !hasBody(f));
+    if (bodies.size() == 1 && !overloadSigs.isEmpty()) {
       implFd = bodies[0];
       implTFuns = this.funDecl(
         tcenvl,
@@ -360,70 +365,63 @@ extension class TypeChecker {
         implFd.cgNode.fromSome(),
       );
       implTy = TType::single(TObject::createCall(implTFuns));
-      for (ovFd in group) {
-        if (!hasBody(ovFd)) {
-          ovFd.getPos().each(ovPos -> {
-            ovTFuns = this.funDecl(
-              tcenvl,
-              None(),
-              ovFd,
-              ovFd.cgNode.fromSome(),
+      for (ovFd in overloadSigs) {
+        ovFd.getPos().each(ovPos -> {
+          ovTFuns = this.funDecl(tcenvl, None(), ovFd, ovFd.cgNode.fromSome());
+          ovTy = TType::single(TObject::createCall(ovTFuns));
+          subst = Subst::createCheckingOwner(tcenvl);
+          sigOk = TType::isSub(subst, this, implTy, ovTy) is STOk();
+          bodyOk = false;
+          if (!sigOk) {
+            // (b): re-check the body with the overload's signature, in an
+            // isolated results sink; inner diagnostics are discarded and
+            // replaced by the single TS2394 below. The overload's parameter
+            // TYPES are mapped positionally onto the implementation's
+            // parameter NAMES, so the body sees the same lexical
+            // environment it was written against (tsc checks compatibility
+            // by position, never by name).
+            implSig = this.getFunSig(tcenvl.context, implFd);
+            ovSig = this.getFunSig(tcenvl.context, ovFd);
+            renamedParams = ovSig.params.mapWithIndex((i, p) ->
+              if (i < implSig.params.size()) {
+                p with {name => implSig.params[i].name}
+              } else {
+                p
+              }
             );
-            ovTy = TType::single(TObject::createCall(ovTFuns));
-            subst = Subst::createCheckingOwner(tcenvl);
-            sigOk = TType::isSub(subst, this, implTy, ovTy) is STOk();
-            bodyOk = false;
-            if (!sigOk) {
-              // (b): re-check the body with the overload's signature, in an
-              // isolated results sink; inner diagnostics are discarded and
-              // replaced by the single TS2394 below. The overload's parameter
-              // TYPES are mapped positionally onto the implementation's
-              // parameter NAMES, so the body sees the same lexical
-              // environment it was written against (tsc checks compatibility
-              // by position, never by name).
-              implSig = this.getFunSig(tcenvl.context, implFd);
-              ovSig = this.getFunSig(tcenvl.context, ovFd);
-              renamedParams = ovSig.params.mapWithIndex((i, p) ->
-                if (i < implSig.params.size()) {
-                  p with {name => implSig.params[i].name}
-                } else {
-                  p
-                }
-              );
-              // getFunSig materializes both inline and ref'd signatures.
-              trialFd = implFd with {
-                sig => FSInline(ovSig.tparams, renamedParams, ovSig.retType),
-              };
-              trialResults = TCResultsAcc::mcreate{
-                errorHandling => this.errorHandling,
-              };
-              trialEnvl = mutable TCEnvLight{
-                context => tcenvl.context,
-                results => trialResults,
-              };
-              subst2 = Subst::createCheckingOwner(trialEnvl);
-              exn = catchError(() ->
-                this.funDef(subst2, None(), trialFd, implFd.cgNode.fromSome())
-              );
-              !bodyOk = exn.isNone() && trialResults.errors.isEmpty()
+            // getFunSig materializes both inline and ref'd signatures.
+            trialFd = implFd with {
+              sig => FSInline(ovSig.tparams, renamedParams, ovSig.retType),
             };
-            if (!sigOk && !bodyOk) {
-              tcenvl.error(
-                Array[
-                  (
-                    ovPos,
-                    "Overload signature is not compatible with its implementation signature",
-                  ),
-                  (
-                    implFd.getPos().fromSome(),
-                    "The implementation signature is declared here",
-                  ),
-                ],
-                TSCode(2394),
-              )
-            }
-          })
-        }
+            trialResults = TCResultsAcc::mcreate{
+              errorHandling => this.errorHandling,
+            };
+            trialEnvl = mutable TCEnvLight{
+              context => tcenvl.context,
+              results => trialResults,
+            };
+            subst2 = Subst::createCheckingOwner(trialEnvl);
+            exn = catchError(() ->
+              this.funDef(subst2, None(), trialFd, implFd.cgNode.fromSome())
+            );
+            !bodyOk = exn.isNone() && trialResults.errors.isEmpty()
+          };
+          if (!sigOk && !bodyOk) {
+            tcenvl.error(
+              Array[
+                (
+                  ovPos,
+                  "Overload signature is not compatible with its implementation signature",
+                ),
+                (
+                  implFd.getPos().fromSome(),
+                  "The implementation signature is declared here",
+                ),
+              ],
+              TSCode(2394),
+            )
+          }
+        })
       }
     }
   }

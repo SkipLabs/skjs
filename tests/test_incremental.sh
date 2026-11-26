@@ -599,7 +599,7 @@ function ov(x: string | number): string {
 }
 function user(): void {
   __SKJS_show("user");
-  let _a: number = ov("hi");
+  let _a: string = ov("hi");
 }
 function independent(): void {
   __SKJS_show("independent");
