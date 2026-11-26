@@ -176,6 +176,9 @@ class Files(
         content = contentIter.first.value;
         lexer = Lexer::mcreate(fileName, content);
         parser = mutable Parser(lexer);
+        !parser.userLiteralSpelling = getConfig(
+          context,
+        ).compilerOptions.userLiteralSpelling;
         // Tracked read: error handling is config, not capturable state
         parsingResult = getConfig(context).errorHandling match {
         | EHBacktrace() -> PROk(parser.toplevelDefs())

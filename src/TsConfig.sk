@@ -285,6 +285,10 @@ class TsCompilerOptions{
   // function scoping are not modeled, SkipLabs/skjs#841) and top-level
   // `let`/`var`. Off by default.
   conformance: Bool = false,
+  // SKJS-specific option, not a tsc one: keep the user-written spelling of
+  // number/bigint literals (e.g. `0xf`) for diagnostics instead of printing
+  // the canonical value (rule 30, e.g. `15`). Off by default.
+  userLiteralSpelling: Bool = false,
 }
 
 class TsConfigDiag{line: Int, message: String, isWarning: Bool}
@@ -723,6 +727,10 @@ fun loadTsConfig(fs: Fs, path: String): (TsConfig, Array<TsConfigDiag>) {
     // TsCompilerOptions.conformance).
     conformance = co.maybeGetBool("conformance").default(false);
 
+    // SKJS-specific option, not a tsc one: user-written literal spelling in
+    // diagnostics (see TsCompilerOptions.userLiteralSpelling).
+    userLiteralSpelling = co.maybeGetBool("userLiteralSpelling").default(false);
+
     noFallthroughCasesInSwitch = co
       .maybeGetBool("noFallthroughCasesInSwitch")
       .default(true);
@@ -785,6 +793,7 @@ fun loadTsConfig(fs: Fs, path: String): (TsConfig, Array<TsConfigDiag>) {
       truthiness,
       noFallthroughCasesInSwitch,
       conformance,
+      userLiteralSpelling,
     }
   | None() ->
     diags.push(

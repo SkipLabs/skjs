@@ -37,7 +37,10 @@ extension class Parser {
         };
         result = normalizeJSNumber(raw0);
         if (negative) !result = negateJSNumberLiteral(result);
-        NumLit::ofUserWritten(result, raw)
+        NumLit::ofUserWritten(
+          result,
+          if (this.userLiteralSpelling) raw else result,
+        )
       }
     } else {
       this.error(this.lex.posStart(tok), ExpectedToken(TKNumber()))
@@ -49,7 +52,11 @@ extension class Parser {
       raw = this.lex.getTokenRawStringContent(tok);
       validateJSBigIntLiteral(raw) match {
       | Some(kind) -> this.error(EPRange(this.lex.posRange(tok)), kind)
-      | None() -> NumLit::ofUserWritten(normalizeJSBigInt(raw), raw)
+      | None() ->
+        NumLit::ofUserWritten(
+          normalizeJSBigInt(raw),
+          if (this.userLiteralSpelling) raw else normalizeJSBigInt(raw),
+        )
       }
     } else {
       this.error(this.lex.posStart(tok), ExpectedToken(TKBigInt()))
