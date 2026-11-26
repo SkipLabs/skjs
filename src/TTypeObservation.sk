@@ -904,7 +904,12 @@ mutable class TypeReadContext private {
 
   // Pairwise intersection across two overload sets: every kept signature is
   // accepted by both sides, so the result is a sound set of shared
-  // signatures.
+  // signatures. NOTE: unlike a materialized `A & B` (see TFuns::inter in
+  // TTypeInter, which concatenates), the OBSERVATION/refinement path must NOT
+  // concatenate: the observed value has to satisfy BOTH sides, so a call
+  // through the result must be accepted by both — keeping only the shared
+  // signatures (or, when narrowing, the left signature as a sound
+  // over-approximation of the shared values) is required for soundness.
   private mutable fun funsInter(a: TFuns, b: TFuns, narrowing: Bool): ?TFuns {
     merged = mutable Vector[];
     for (x in a.allFuns()) {
