@@ -2,40 +2,29 @@
 
 ## Commit Requirements
 
-- Each commit must pass formatting (`make fmt`) and tests (`make test-in-docker`)
-- Make one commit per logical change — never two concerns in one commit, even when they feel related. Natural seams: fix vs. feature, refactor vs. behavior change, infrastructure vs. consumer. An "and", "also", or ";" in the commit subject is a red flag. Before committing, ask: could a reviewer want to approve one half and reject the other? If yes, split.
-- Bump the semantic version in `Skargo.toml` in every PR (patch for bug fixes, minor for new features or behavior changes, major for breaking changes). Do this as part of the PR, not a separate release commit.
+- Every commit must pass formatting (`make fmt`) and tests (`make test-in-docker`).
+- **One logical change per commit** — never bundle two concerns (fix vs. feature, refactor vs. behavior change, infrastructure vs. consumer). An "and", "also", or ";" in the subject is a red flag; if a reviewer could approve one half and reject the other, split.
+- **Version bump**: Bump the semver `version` in `Skargo.toml` in every code PR (patch = bug fix, minor = feature/behavior change, major = breaking) as part of the PR, not a separate release commit. (Pure docs-only PRs under `docs/` or root `*.md` do not need to touch `Skargo.toml` — touching it triggers a full CI build instead of the docs-only fast path.)
 
 ## Commit Ordering
 
-- **Tests before code.** Introduce test cases in a commit _before_ the code change that affects them, annotated for the then-current behavior (`@skjs-expect-error` with the pre-change message, or no annotation if the case is silently accepted). The code commit then only flips the annotations, so its diff demonstrates the behavior change. This is always possible with expect-error tests: "the asserted error doesn't exist yet" just means the pre-change annotation is different or absent, not that the test can't be introduced first.
-- **Pinning tests, never same-commit.** Every behavior change — especially every fix — starts with a pinning test in its OWN commit that demonstrates the current (wrong) behavior: the test fails, or is annotated with the pre-change error, before the fix lands. Never add the test in the same commit as the change that fixes it. The only exception is when the pre-change test makes the test runner itself crash (then test and fix may share a commit, with a comment saying why). Every fix commit must be preceded by a test commit demonstrating exactly what the fix changes, so each commit stays green and the fix's diff is self-explanatory.
-- **Fixes and infrastructure before the feature that depends on them.** When work spans a fix or refactor and a new feature, commit the fix/infrastructure first, so each commit is self-contained, green, and reviewable in order.
+1. **Pinning test commit first (never same-commit with the fix).** Every behavior change — especially every fix — starts with a pinning test in its **own** commit demonstrating the current (pre-change) behavior (annotated with the pre-change `@skjs-expect-error`, or unannotated if currently accepted). The code commit then flips the annotations, making the diff self-explanatory while every commit stays green. Sole exception: the pre-change test crashes the test runner itself (then test and fix may share a commit, with a comment explaining why).
+2. **Fixes and infrastructure before dependent features.** Commit fixes/refactors/infrastructure before the feature that builds on them so each commit is self-contained and reviewable in order.
 
 ## AI Disclosure
 
-Never mask the use of AI. When AI wrote or co-wrote a change:
+Never mask AI assistance. When AI wrote or co-wrote a change:
 
-- Credit it in the commit with a `Co-Authored-By` trailer naming the provider, model, version, and effort/reasoning setting, e.g.:
+- Add a `Co-Authored-By` trailer naming provider, model, version, and (only when actually known — never guess) effort/reasoning setting:
 
   ```text
   Co-Authored-By: Claude Fable 5 (Anthropic claude-fable-5[1m], effort high) <noreply@anthropic.com>
   ```
 
-- Include the effort/reasoning setting only when it is actually known. When the tool does not expose it, omit it rather than padding with a guess — "default effort" conveys nothing.
-
-- Report the model and settings that were in effect **when the code was written**, not when the commit was created — e.g. code written by one model but committed later (split, cherry-picked, rebased) under another still credits the model that wrote it. Use one trailer per AI that contributed.
+- Report the model/settings in effect **when the code was written** (not when later rebased/split/committed). Use one trailer per contributing AI.
 - Disclose AI assistance in PR descriptions the same way.
 
-## When to Update Documentation
+## Documentation & PR Descriptions
 
-- Update `skjs-rules.md` when adding or removing restrictions/features that differ from TypeScript
-- Don't document standard TypeScript features that work identically in SKJS
-- Include examples for new restrictions
-- Update in the same commit or PR as the feature/restriction change
-
-## Pull Request Guidelines
-
-- Keep PR descriptions concise — focus on the summary and motivation
-- Don't list every file change in the PR description — reviewers will see the files in the diff
-- Example: "Add tests for error messages and fix comment style" is sufficient; no need to enumerate each test file
+- Update `skjs-rules.md` (and `docs/typescript-soundness-holes.md` when relevant) in the same commit or PR when changing what SKJS accepts or rejects. Only document differences from standard TypeScript, with concrete examples.
+- Keep PR descriptions concise: summary and motivation only — don't enumerate every changed file.

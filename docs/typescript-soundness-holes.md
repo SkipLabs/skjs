@@ -825,7 +825,7 @@ function go(): string {
 }
 ```
 
-**Test:** [tests/expect-error/this-parameter-static.ts](../tests/expect-error/this-parameter-static.ts) · **SKJS:** rejects — `error: This expression is not constructable` / `'void' is not an object`; SKJS gives a static method no `this` at all, so `new this()` never type-checks. SKJS additionally closes the underlying hole by rule ([skjs-rules.md](../skjs-rules.md): child class constructors must have the same signature as the parent), but its rejection of this repro is the no-`this`-in-statics gap
+**Test:** [tests/expect-error/this-parameter-static.ts](../tests/expect-error/this-parameter-static.ts) · **SKJS:** rejects — `error: This expression is not constructable` / `'void' is not an object`; SKJS gives a static method no `this` at all, so `new this()` never type-checks. Note that child class constructors in SKJS may have a different signature from the parent (as long as `super(...)` matches), so the no-`this`-in-statics gap is what rejects this repro.
 
 ### An interface merged into a class invents members with no runtime existence
 

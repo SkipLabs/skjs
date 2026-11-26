@@ -8,11 +8,11 @@ The default human-readable format.
 
 ```text
 File "path/to/file.ts", line 2, character 10-11:
-error: Invalid return type
+error: Type of returned value is not assignable to the function's return type
 File "path/to/file.ts", line 1, character 16-22:
-Type number
+Type 'number'
 File "path/to/file.ts", line 1, character 25-31:
-is not assignable to type string
+is not assignable to type 'string'
 ```
 
 Each diagnostic is a sequence of `<position>\n<message>` pairs; the primary (first) message is prefixed with its severity, `error:` or `warning:`. Diagnostics are separated by a blank line, with all errors printed before any warnings.
@@ -22,9 +22,9 @@ Each diagnostic is a sequence of `<position>\n<message>` pairs; the primary (fir
 Compact format with `file:line:col` positions. The first message of each diagnostic starts at the left margin, prefixed with its severity (`error:` / `warning:`); subsequent context messages are indented by 2 spaces.
 
 ```text
-path/to/file.ts:2:10: error: Invalid return type
-  path/to/file.ts:1:16: Type number
-  path/to/file.ts:1:25: is not assignable to type string
+path/to/file.ts:2:10: error: Type of returned value is not assignable to the function's return type
+  path/to/file.ts:1:16: Type 'number'
+  path/to/file.ts:1:25: is not assignable to type 'string'
 ```
 
 Diagnostics are separated by a blank line.
@@ -77,7 +77,7 @@ Position = {
         "col": 10,
         "endCol": 11
       },
-      "message": "Invalid return type",
+      "message": "Type of returned value is not assignable to the function's return type",
       "severity": "error"
     },
     {
@@ -87,7 +87,7 @@ Position = {
         "col": 16,
         "endCol": 22
       },
-      "message": "Type number"
+      "message": "Type 'number'"
     },
     {
       "pos": {
@@ -96,7 +96,7 @@ Position = {
         "col": 25,
         "endCol": 31
       },
-      "message": "is not assignable to type string"
+      "message": "is not assignable to type 'string'"
     }
   ]
 ]
