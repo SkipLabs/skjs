@@ -228,4 +228,54 @@ fun testResolveStubsAtTypesFallback(): void {
   );
 }
 
+@test
+fun testResolveStubsPackageJsonExports(): void {
+  stubs = Array[SKJS.DAbsolute::create("/stubs")];
+
+  fs = mkStubMem(
+    Array[
+      (
+        "/stubs/dual/package.json",
+        `{
+          "types": "./legacy.d.ts",
+          "exports": {
+            ".": { "types": "./lib/index.d.ts", "import": "./lib/index.mjs" },
+            "./utils": { "types": "./lib/utils.d.ts", "default": "./lib/utils.js" },
+            "./sub/*": { "types": "./lib/sub/*.d.ts" }
+          }
+        }`,
+      ),
+      ("/stubs/dual/legacy.d.ts", "export declare const old: number;"),
+      ("/stubs/dual/lib/index.d.ts", "export declare const cur: string;"),
+      ("/stubs/dual/lib/utils.d.ts", "export declare const u: number;"),
+      ("/stubs/dual/lib/sub/a.d.ts", "export declare const a: boolean;"),
+      ("/stubs/dual/internal.d.ts", "export declare const s: string;"),
+    ],
+  );
+
+  // Pre-#611: `exports` is ignored; root falls back to `types`, subpaths fail as StubNotFound.
+  SKTest.expectEq(
+    SKJS.resolveStubs(fs, stubs, "dual"),
+    SKJS.StubFound(
+      SKJS.FPath::create(SKJS.RootId::stub(0), "dual/legacy.d.ts"),
+    ),
+    "pre-#611: root ignores exports and uses types",
+  );
+  SKTest.expectEq(
+    SKJS.resolveStubs(fs, stubs, "dual/utils"),
+    SKJS.StubNotFound(),
+    "pre-#611: subpath not resolved",
+  );
+  SKTest.expectEq(
+    SKJS.resolveStubs(fs, stubs, "dual/sub/a"),
+    SKJS.StubNotFound(),
+    "pre-#611: pattern subpath not resolved",
+  );
+  SKTest.expectEq(
+    SKJS.resolveStubs(fs, stubs, "dual/internal"),
+    SKJS.StubNotFound(),
+    "pre-#611: unexported subpath returns StubNotFound (no exports diagnostic)",
+  );
+}
+
 module end;
