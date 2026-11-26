@@ -7,6 +7,22 @@ base class AccessKind uses XXHashable {
   | AKOptionalChain()
 }
 
+// A call argument that is a closure with at least one un-annotated parameter
+// at an unambiguous position of an overloaded call. Deferred from `call()` so
+// each candidate overload can re-contextualize the closure's parameters with
+// its own expected callback type inside the call-trial sandbox.
+private class DeferredClosureArg(
+  index: Int,
+  argExpr: Expr,
+  isAsync: ?PosRange,
+  closurePos: PosRange,
+  closure: Closure,
+  tparams: Array<TypeParam>,
+  params: Array<Param>,
+  retTyAstOpt: ?Type,
+  body: ClosureBody,
+)
+
 // The stdlib gives SortedMap Hashable/Equality/Orderable but not XXHashable;
 // add it (when keys and values are XXHashable) so records that accumulate into
 // SortedMaps — e.g. ObjectSpreadState — can derive XXHashable. Folds over the
@@ -6283,6 +6299,8 @@ extension class TypeChecker {
   ): TType {
     args = mutable Vector<TType>[];
     moreArgs: ?TType = None();
+    isOverloaded = tfuns.allFuns().size() > 1;
+    deferredClosures = mutable Vector<DeferredClosureArg>[];
 
     for (argExpr in argExprs) {
       argExpr.value match {
@@ -6335,21 +6353,73 @@ extension class TypeChecker {
           )
         }
       | _ ->
-        // `args.size()` is this argument's positional index; `moreArgs is
-        // None()` means no spread has been seen yet, so the position is
-        // unambiguous and contextual typing of a closure argument is sound.
-        argTy = this.typeCallArg(
-          tcenv,
-          argExpr,
-          tfuns,
-          args.size(),
-          moreArgs is None(),
-          mostPrecise,
-        );
-        moreArgs match {
-        | None() -> args.push(argTy)
-        | Some(ma) ->
-          !moreArgs = Some(TType::union(tcenv.subst, this, ma, argTy))
+        // For overloaded calls, defer closures with un-annotated parameters at
+        // unambiguous positions so each candidate overload can supply its own
+        // contextual parameter types inside the call-trial sandbox.
+        deferredOpt = if (isOverloaded && moreArgs is None()) {
+          argExpr match {
+          | Expr(
+            closurePos,
+            c @ Closure(tparams, ps, retTyAstOpt, body),
+          ) if (ps.any(p -> p.type.isNone())) ->
+            Some(
+              DeferredClosureArg(
+                args.size(),
+                argExpr,
+                None(),
+                closurePos,
+                c,
+                tparams,
+                ps,
+                retTyAstOpt,
+                body,
+              ),
+            )
+          | Expr(
+            asyncPos,
+            Async(
+              Expr(closurePos, c @ Closure(tparams, ps, retTyAstOpt, body)),
+            ),
+          ) if (ps.any(p -> p.type.isNone())) ->
+            Some(
+              DeferredClosureArg(
+                args.size(),
+                argExpr,
+                Some(asyncPos),
+                closurePos,
+                c,
+                tparams,
+                ps,
+                retTyAstOpt,
+                body,
+              ),
+            )
+          | _ -> None()
+          }
+        } else {
+          None()
+        };
+        deferredOpt match {
+        | Some(dc) ->
+          deferredClosures.push(dc);
+          args.push(TType::top(argExpr.pos))
+        | None() ->
+          // `args.size()` is this argument's positional index; `moreArgs is
+          // None()` means no spread has been seen yet, so the position is
+          // unambiguous and contextual typing of a closure argument is sound.
+          argTy = this.typeCallArg(
+            tcenv,
+            argExpr,
+            tfuns,
+            args.size(),
+            moreArgs is None(),
+            mostPrecise,
+          );
+          moreArgs match {
+          | None() -> args.push(argTy)
+          | Some(ma) ->
+            !moreArgs = Some(TType::union(tcenv.subst, this, ma, argTy))
+          }
         }
       }
     };
@@ -6363,11 +6433,54 @@ extension class TypeChecker {
       moreArgs,
       thisArgOpt,
       argumentCheck,
+      deferredClosures.toArray(),
     )
   }
 
+  // Type any deferred closure arguments against candidate overload `sig`,
+  // returning a fresh argument vector with their typed closures substituted
+  // into their slots. Runs inside `runCallTrial`, so any errors or state
+  // mutations from a mismatched overload are rolled back on failure.
+  private fun resolveDeferredClosures(
+    tcenv: mutable TCEnv,
+    sig: TFun,
+    fPos: PosRange,
+    args: readonly Vector<TType>,
+    deferredClosures: Array<DeferredClosureArg>,
+  ): readonly Vector<TType> {
+    if (deferredClosures.isEmpty()) return args;
+    resolved = args.clone();
+    singleFuns = TFuns::singleFun(sig, fPos);
+    for (dc in deferredClosures) {
+      expectedParamTypes = if (sig.tparams.isEmpty()) {
+        singleFuns.paramTypeAt(dc.index) match {
+        | Some(expectedFnTy) ->
+          this.expectedCallbackParamTypes(tcenv, expectedFnTy, dc.params)
+        | None() -> Array[]
+        }
+      } else {
+        Array[]
+      };
+      closureTy = this.anonFunction(
+        tcenv,
+        dc.isAsync,
+        dc.closurePos,
+        dc.closure,
+        dc.tparams,
+        dc.params,
+        dc.retTyAstOpt,
+        dc.body,
+        expectedParamTypes,
+      );
+      resolved![dc.index] = closureTy
+    };
+    resolved
+  }
+
   // Both explicit and implicit calls use the same receiver, generic and
-  // argument obligations. Callers have evaluated each operand exactly once.
+  // argument obligations. Callers have evaluated each operand exactly once
+  // (except deferred un-annotated closure arguments of overloaded calls, which
+  // are re-contextualized per candidate overload inside the trial sandbox).
   //
   // With several signatures (an overload set) this dispatches resolution:
   // signatures are tried in declaration order and the first one that accepts
@@ -6383,6 +6496,7 @@ extension class TypeChecker {
     moreArgs: ?TType,
     thisArgOpt: ?TType,
     argumentCheck: TypeArgumentCheck,
+    deferredClosures: Array<DeferredClosureArg> = Array[],
   ): TType {
     sigs = tfuns.allFuns();
     if (sigs.size() == 1) {
@@ -6430,6 +6544,7 @@ extension class TypeChecker {
         moreArgs,
         thisArgOpt,
         argumentCheck,
+        deferredClosures,
       );
       result match {
       | Some(rty) -> return rty
@@ -6472,11 +6587,6 @@ extension class TypeChecker {
   // call — bindings and publication are kept — and (None, msgs) otherwise,
   // with every effect of the trial rolled back. msgs are the trial's
   // diagnostic lines, for the aggregated "no overload matches" error.
-  // Try ONE overload signature in a full sandbox (subst, publication, and
-  // diagnostics). Returns (Some(result), _) when the signature accepts the
-  // call — bindings and publication are kept — and (None, msgs) otherwise,
-  // with every effect of the trial rolled back. msgs are the trial's
-  // diagnostic lines, for the aggregated "no overload matches" error.
   private fun tryCallSignature(
     tcenv: mutable TCEnv,
     pos: PosRange,
@@ -6487,33 +6597,41 @@ extension class TypeChecker {
     moreArgs: ?TType,
     thisArgOpt: ?TType,
     argumentCheck: TypeArgumentCheck,
+    deferredClosures: Array<DeferredClosureArg> = Array[],
   ): (?TType, Array<(PosRange, String)>) {
-    (accepted, result, msgs) = this.runCallTrial(tcenv, pos, () ->
+    (accepted, result, msgs) = this.runCallTrial(tcenv, pos, () -> {
+      trialArgs = this.resolveDeferredClosures(
+        tcenv,
+        tfun,
+        fPos,
+        args,
+        deferredClosures,
+      );
       this.proposeAndValidateCall(
         tcenv,
         pos,
         tfun,
         fPos,
         targs,
-        args,
+        trialArgs,
         moreArgs,
         thisArgOpt,
         argumentCheck,
         tcenv.results.errors.size(),
       )
-    );
+    });
     if (accepted) (Some(result), Array[]) else (None(), msgs)
   }
 
   // Run one call trial in a full sandbox. Returns (accepted, result, msgs):
   // when f returns with no new diagnostics, the trial is accepted and its
-  // effects are kept; otherwise everything (subst, publication, diagnostics)
-  // is rolled back and msgs carries the trial's diagnostic lines. In the
-  // default/backtrace error modes the first diagnostic throws ErrorExn,
-  // which is captured into msgs; any other exception rolls back and is
-  // rethrown (genuine internal errors are never swallowed). `result` is
-  // f's return value when f returned, else `top` (error recovery only — the
-  // program is already rejected at that point).
+  // effects are kept; otherwise everything (subst, publication, diagnostics,
+  // expression caches, scope pointers) is rolled back and msgs carries the
+  // trial's diagnostic lines. In the default/backtrace error modes the first
+  // diagnostic throws ErrorExn, which is captured into msgs; any other
+  // exception rolls back and is rethrown (genuine internal errors are never
+  // swallowed). `result` is f's return value when f returned, else `top`
+  // (error recovery only — the program is already rejected at that point).
   private fun runCallTrial(
     tcenv: mutable TCEnv,
     pos: PosRange,
@@ -6525,6 +6643,61 @@ extension class TypeChecker {
     entryErrors = tcenv.results.errors.size();
     entryWarnings = tcenv.results.warnings.size();
     entryHiddenChecks = tcenv.hiddenEscapeChecks.size();
+    // Snapshot expression-checking state that deferred closures may touch
+    // (including scope/context pointers in case anonFunction throws ErrorExn
+    // before restoring them).
+    savedScope = tcenv.scope;
+    savedCallingContext = tcenv.callingContext;
+    savedJumpCatchers = tcenv.jumpCatchers;
+    savedExprTypes = tcenv.exprTypes;
+    savedExprEffectEpochs = tcenv.exprEffectEpochs;
+    savedStableExprTypes = tcenv.stableExprTypes;
+    savedStmtTerminations = tcenv.stmtTerminations;
+    savedEffectEpoch = tcenv.effectEpoch;
+    savedPendingBindings = tcenv.pendingBindings;
+    savedForInContext = tcenv.forInContext;
+    savedLocalObjects = tcenv.localObjects.clone();
+    savedLocalObjectContracts = tcenv.localObjectContracts.clone();
+    savedTryWriteLogs = tcenv.tryWriteLogs.map(m -> m.clone());
+    savedLoopWriteBounds = tcenv.loopWriteBounds.map(m -> m.clone());
+    restoreEnv = () -> {
+      tcenv.subst.restore(saved);
+      tcenv.results.restorePublication(publication);
+      tcenv.!callAssertPredicates = savedCallAssertPredicates;
+      tcenv.!scope = savedScope;
+      tcenv.!callingContext = savedCallingContext;
+      tcenv.!jumpCatchers = savedJumpCatchers;
+      tcenv.!exprTypes = savedExprTypes;
+      tcenv.!exprEffectEpochs = savedExprEffectEpochs;
+      tcenv.!stableExprTypes = savedStableExprTypes;
+      tcenv.!stmtTerminations = savedStmtTerminations;
+      tcenv.!effectEpoch = savedEffectEpoch;
+      tcenv.!pendingBindings = savedPendingBindings;
+      tcenv.!forInContext = savedForInContext;
+      tcenv.localObjects.clear();
+      for (kv in savedLocalObjects.items()) {
+        tcenv.localObjects![kv.i0] = kv.i1
+      };
+      tcenv.localObjectContracts.clear();
+      for (kv in savedLocalObjectContracts.items()) {
+        tcenv.localObjectContracts![kv.i0] = kv.i1
+      };
+      for (i in Range(0, savedTryWriteLogs.size())) {
+        tcenv.tryWriteLogs[i].clear();
+        for (kv in savedTryWriteLogs[i].items()) {
+          tcenv.tryWriteLogs[i]![kv.i0] = kv.i1
+        }
+      };
+      for (i in Range(0, savedLoopWriteBounds.size())) {
+        tcenv.loopWriteBounds[i].clear();
+        for (kv in savedLoopWriteBounds[i].items()) {
+          tcenv.loopWriteBounds[i]![kv.i0] = kv.i1
+        }
+      };
+      while (tcenv.hiddenEscapeChecks.size() > entryHiddenChecks) {
+        _ = tcenv.hiddenEscapeChecks.pop()
+      }
+    };
     exnMsgs: ?Array<(PosRange, String)> = None();
     result: ?TType = None();
     try {
@@ -6532,12 +6705,7 @@ extension class TypeChecker {
     } catch {
     | ErrorExn(err) -> !exnMsgs = Some(this.trialErrorMessages(tcenv, err))
     | exn ->
-      tcenv.subst.restore(saved);
-      tcenv.results.restorePublication(publication);
-      tcenv.!callAssertPredicates = savedCallAssertPredicates;
-      while (tcenv.hiddenEscapeChecks.size() > entryHiddenChecks) {
-        _ = tcenv.hiddenEscapeChecks.pop()
-      };
+      restoreEnv();
       throw exn
     };
     accepted = result.isSome() && tcenv.results.errors.size() == entryErrors;
@@ -6552,12 +6720,7 @@ extension class TypeChecker {
       }
     };
     msgs = exnMsgs.default(trialMsgs.toArray());
-    tcenv.subst.restore(saved);
-    tcenv.results.restorePublication(publication);
-    tcenv.!callAssertPredicates = savedCallAssertPredicates;
-    while (tcenv.hiddenEscapeChecks.size() > entryHiddenChecks) {
-      _ = tcenv.hiddenEscapeChecks.pop()
-    };
+    restoreEnv();
     while (tcenv.results.errors.size() > entryErrors) {
       _ = tcenv.results.errors.pop()
     };
@@ -6634,7 +6797,9 @@ extension class TypeChecker {
   // all effects (used for error recovery after "No overload matches"; that
   // error has already rejected the program, so the recovery type only needs
   // to keep the rest of the definition checkable — tsc likewise falls back
-  // to the last overload's type).
+  // to the last overload's type). Deferred closures keep their placeholder
+  // types so recovery still reaches the signature's return type rather than
+  // aborting inside a failing closure body.
   private fun recoverCallSignature(
     tcenv: mutable TCEnv,
     pos: PosRange,

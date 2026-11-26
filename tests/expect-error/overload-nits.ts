@@ -128,19 +128,18 @@ function testOnEventNum(): void {
 }
 
 function testOnEventStr(): void {
-  const r: number = onEvent(
-    "str",
-    // @skjs-expect-error Property 'length' does not exist on this type
-    (x) => x.length,
-  );
+  const r: number = onEvent("str", (x) => x.length);
+  // @ts-expect-error No overload matches this call
+  const bad: number = onEvent("str", (x) => x.nonexistent);
 }
 
 declare function withOptionalCb(x: string): number;
 declare function withOptionalCb(x: string, cb: (s: string) => number): number;
 
 function testOptionalCb(): void {
-  // @skjs-expect-error A parameter must have an explicit type annotation
   const n: number = withOptionalCb("hi", (s) => s.length);
+  // @ts-expect-error No overload matches this call
+  const bad: number = withOptionalCb("hi", (s) => s + 1);
 }
 
 // ---------------------------------------------------------------------------
