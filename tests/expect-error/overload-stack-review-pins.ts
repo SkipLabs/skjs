@@ -29,9 +29,8 @@ interface BaseB {
 interface SubAB extends BaseA, BaseB {}
 declare const subAB: SubAB;
 export function testExtendsBaseOrder(): void {
-  // Currently infers `string` (BaseB) instead of `number` (BaseA).
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const a: number = subAB("hi");
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const b: string = subAB("hi");
 }
 

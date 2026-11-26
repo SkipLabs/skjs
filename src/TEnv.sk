@@ -1684,6 +1684,13 @@ base class TEnv{
     // bases pay for it, and normalizing an extends clause can disturb the
     // tparam bindings of the enclosing class). An identical repeat is walked
     // only once.
+    // Collect each base's call/construct signatures into fresh vectors and
+    // append them in left-to-right `extends` order. Sharing the caller's
+    // vectors directly would let a second base prepend its own signatures
+    // ahead of the first base's (`interface C extends A, B` must keep A
+    // before B, matching tsc).
+    baseCallSigs = mutable Vector<TFun>[];
+    baseNewSigs = mutable Vector<TFun>[];
     baseTypes = mutable Map<String, Type>[];
     for (cls in clss) {
       for (extend in cls.extends_) {
@@ -1720,6 +1727,8 @@ base class TEnv{
           | None() ->
             baseTypes![parentName.value] = extend;
             if (this.hasClassDef(tcenvb, parentName)) {
+              extCallSigs = mutable Vector<TFun>[];
+              extNewSigs = mutable Vector<TFun>[];
               this.addFields(
                 tcenvb,
                 acc,
@@ -1731,10 +1740,12 @@ base class TEnv{
                 if (isStatic is Some _) Array[] else {
                   paramTArgs.map(targ -> this.normalize(tcenvb, targ))
                 },
-                callSigs,
-                newSigs,
+                extCallSigs,
+                extNewSigs,
                 filter,
-              )
+              );
+              for (tf in extCallSigs) baseCallSigs.push(tf);
+              for (tf in extNewSigs) baseNewSigs.push(tf);
             } else {
               // The extends target is not a class or interface. tsc allows an
               // interface to extend a type alias as long as the alias resolves to
@@ -2048,14 +2059,12 @@ base class TEnv{
         }
       }
     };
-    // Own call/construct signatures go before inherited ones (the base walk
-    // above already appended theirs), so resolution is derived-first.
-    for (i in Range(0, ownCallSigs.size())) {
-      callSigs.insert(i, ownCallSigs[i])
-    };
-    for (i in Range(0, ownNewSigs.size())) {
-      newSigs.insert(i, ownNewSigs[i])
-    };
+    // Emit own call/construct signatures first (derived-first), then inherited
+    // ones in left-to-right `extends` order — matching tsc.
+    for (tf in ownCallSigs) callSigs.push(tf);
+    for (tf in baseCallSigs) callSigs.push(tf);
+    for (tf in ownNewSigs) newSigs.push(tf);
+    for (tf in baseNewSigs) newSigs.push(tf);
     // Rebuild overloaded method fields now that every declaration of the
     // merged name has been seen: the sig-only/impl split is only final once
     // all members are in, and the callable set excludes the implementation
