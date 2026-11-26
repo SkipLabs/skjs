@@ -737,8 +737,8 @@ extension class TypeChecker {
     });
     // Constructor overload group: same rules as methods, on the `new`
     // signatures. TS2392 (duplicate implementation) is reported in class_'s
-    // preamble; TS2391 (missing / not-last implementation) comes from
-    // constructor() per declaration.
+    // preamble; missing implementation on a body-less group comes from
+    // constructor() per declaration; a non-last implementation is checked here.
     ctors = mutable Vector[];
     for (decl in decls) {
       for (f in this.getClassFields(tcenvl.context, decl)) {
@@ -756,6 +756,22 @@ extension class TypeChecker {
     ctorArr = ctors.toArray();
     ctorBodies = ctorArr.filter(fd -> fd.hasBody);
     ctorSigs = ctorArr.filter(fd -> !fd.hasBody);
+    if (
+      !classIsAmbient &&
+      ctorBodies.size() == 1 &&
+      !ctorArr[ctorArr.size() - 1].hasBody
+    ) {
+      // tsc TS2390 / TS2391: the constructor implementation must come last.
+      tcenvl.error(
+        Array[
+          (
+            ctorArr[ctorArr.size() - 1].name.getPos(),
+            "Constructor implementation is missing",
+          ),
+        ],
+        TSCode(2390),
+      )
+    };
     if (!classIsAmbient && ctorBodies.size() == 1 && !ctorSigs.isEmpty()) {
       implFd = ctorBodies[0];
       implTFuns = this.makeConstructor(tcenvl, c.name, c.tparams, implFd);

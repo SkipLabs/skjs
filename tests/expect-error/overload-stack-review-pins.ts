@@ -55,11 +55,9 @@ export function testOptNewObj(): void {
   const _m = ono.new;
 }
 
-// 5. Constructor implementation not last in an overload group must error (TS2391).
+// 5. Constructor implementation not last in an overload group must error (TS2390).
 class CtorImplNotLast {
   constructor(x: string) {}
-  // Currently silent because constructor() received allowMissing=true whenever
-  // any constructor body existed, and checkMethodOverloadGroups didn't check
-  // that the implementation comes last.
+  // @skjs-expect-error Constructor implementation is missing
   constructor(x: string);
 }
