@@ -372,7 +372,20 @@ extension class TypeChecker {
           | ModPublic _
           | ModPrivate _
           | ModProtected _ ->
-            void /* private is recorded in TField in addFields; protected is treated as public */
+            // private is recorded in TField in addFields; protected is
+            // treated as public — but on an index signature (`[k: string]: T`)
+            // tsc TS1071 rejects any accessibility modifier
+            if (field.name is IndexFieldName _) {
+              tcenvl.error(
+                Array[
+                  (
+                    modifier.pos,
+                    `'${modifier}' modifier cannot appear on an index signature.`,
+                  ),
+                ],
+                TSCode(1071),
+              )
+            }
           | mod ->
             tcenvl.error(
               Array[
@@ -542,9 +555,15 @@ extension class TypeChecker {
       for (fieldType in classFields) {
         fieldType match {
         | field @ ClassFieldValue _ ->
-          // Skip static fields (already validated) and `foo!: T` definite
-          // assignment assertions (conformance mode)
-          if (!field.isStatic() && !field.definiteAssignment) {
+          // Skip static fields (already validated), `foo!: T` definite
+          // assignment assertions (conformance mode), and index signatures
+          // (`[k: string]: T`), which are not properties and never need an
+          // initializer.
+          if (
+            !field.isStatic() &&
+            !field.definiteAssignment &&
+            !(field.name is IndexFieldName _)
+          ) {
             field.value match {
             | None() ->
               if (field.optional is None()) {
