@@ -483,6 +483,7 @@ extension class TypeChecker {
               | ClassFieldMethod{name} ->
                 name match {
                 | FNNormal(Name(_, methodName)) -> Some(methodName)
+                | FNEmpty(_) -> None() /* call signatures are not methods */
                 | _ ->
                   tcenvl.error(
                     Array[

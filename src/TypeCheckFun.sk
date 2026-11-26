@@ -4,7 +4,7 @@ extension class TypeChecker {
   fun funDefSetup(
     subst: mutable Subst,
     thisTypeOpt: ?TType,
-    fd: FunDef<SimpleFieldName>,
+    fd: FunDef<FunDefName>,
     callingContext: CGNode,
   ): (this, mutable TCEnv, Array<(Pattern, TType)>) {
     sig = this.getFunSig(subst.context, fd);
@@ -327,7 +327,7 @@ extension class TypeChecker {
   fun funDef(
     subst: mutable Subst,
     thisTypeOpt: ?(ClassKind, TType),
-    fd: FunDefWithModifiers<SimpleFieldName>,
+    fd: FunDefWithModifiers<FunDefName>,
     cgNode: CGNode,
     inOverloadTrial: Bool = false,
   ): void {
