@@ -156,9 +156,9 @@ function overflowSpellings(x: 2e309): 1e309 {
 // @skjs-expect-warning Number literal '2e309' overflows to Infinity
 // @skjs-expect-warning Number literal '9007199254740993' is rounded to 9007199254740992 by IEEE-754 double precision
 function showBeyondPrecision(x: 9007199254740993, y: 1e-400, z: 2e309): void {
-  __SKJS_show(x, "9007199254740992");
-  __SKJS_show(y, "0");
-  __SKJS_show(z, "Infinity");
+  __SKJS_show(x, "9007199254740993");
+  __SKJS_show(y, "1e-400");
+  __SKJS_show(z, "2e309");
 }
 
 // Infinity literals are named Infinity / -Infinity, as in tsc: every
@@ -173,8 +173,8 @@ function infinitySpellings(x: 2e309): 1e309 {
 // @skjs-expect-warning Number literal '1e309' overflows to Infinity
 // @skjs-expect-warning Number literal '-1e309' overflows to -Infinity
 function infinityShow(x: 1e309, y: -1e309): void {
-  __SKJS_show(x, "Infinity");
-  __SKJS_show(y, "-Infinity");
+  __SKJS_show(x, "1e309");
+  __SKJS_show(y, "-1e309");
 }
 
 // +Infinity is not -Infinity (rejected by tsc too).

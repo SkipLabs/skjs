@@ -121,8 +121,8 @@ fun renderField(field: Field): String {
 
 fun renderExpr(e: Expr): String {
   e.value match {
-  | Number(s) -> s
-  | BigInt(s) -> s
+  | Number(s) -> s.val
+  | BigInt(s) -> s.val
   | Var(name) -> name.value
   | Spread(e1) -> `...${renderExpr(e1)}`
   | EString(s) -> JSON.String(s).encode()

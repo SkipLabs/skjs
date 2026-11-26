@@ -2342,7 +2342,8 @@ base class TEnv{
   ): TType {
     pos = typeAst.pos;
     typeAst.value match {
-    | TABigIntLiteral(x) -> TType::single(TPrimValue::single(TBigInt(), x, pos))
+    | TABigIntLiteral(x) ->
+      TType::single(TPrimValue::single(TBigInt(), x.val, pos, x.userVal))
     | TAAssertIs _ ->
       fatalError(
         Array[(pos, "'asserts' type predicates are not yet supported by SKJS")],
@@ -2499,7 +2500,8 @@ base class TEnv{
     | TATemplate(strings, types) ->
       this.normalizeTemplate(tcenvb, pos, strings, types)
     | TAStringLiteral(x) -> TType::single(TPrimValue::single(TString(), x, pos))
-    | TANumLiteral(x) -> TType::single(TPrimValue::single(TNum(), x, pos))
+    | TANumLiteral(x) ->
+      TType::single(TPrimValue::single(TNum(), x.val, pos, x.userVal))
     | TATypeOf(expr) -> this.typeOfExpr(tcenvb, expr)
     | TAPrim(kind) ->
       TType::single(

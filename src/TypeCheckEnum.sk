@@ -281,13 +281,20 @@ extension base class TEnv {
     visiting: SortedSet<PosRange>,
     e: Expr,
   ): EnumMemberValue {
-    this.enumFold(tcenvb, en, byName, visiting, e) match {
-    | EFNum(f) ->
-      EMVLiteral(TPrimValue::single(TNum(), jsNumberToString(f), e.pos))
-    | EFStr(s) -> EMVLiteral(TPrimValue::single(TString(), s, e.pos))
-    | EFNumUnknown() -> EMVNumber(ENRConstUnknown())
-    | EFForwardRef() -> EMVNumber(ENRSelfForwardReference())
-    | EFNotConst() -> EMVNumber(ENRComputed())
+    // A plain numeric literal keeps its user-written spelling for
+    // diagnostics; everything else folds to a Float and back.
+    e.value match {
+    | Number(n) ->
+      EMVLiteral(TPrimValue::single(TNum(), n.val, e.pos, n.userVal))
+    | _ ->
+      this.enumFold(tcenvb, en, byName, visiting, e) match {
+      | EFNum(f) ->
+        EMVLiteral(TPrimValue::single(TNum(), jsNumberToString(f), e.pos))
+      | EFStr(s) -> EMVLiteral(TPrimValue::single(TString(), s, e.pos))
+      | EFNumUnknown() -> EMVNumber(ENRConstUnknown())
+      | EFForwardRef() -> EMVNumber(ENRSelfForwardReference())
+      | EFNotConst() -> EMVNumber(ENRComputed())
+      }
     }
   }
 
@@ -309,7 +316,7 @@ extension base class TEnv {
   ): EnumFold {
     e.value match {
     | Number(n) ->
-      jsNumberLiteralDouble(n) match {
+      jsNumberLiteralDouble(n.val) match {
       | Some(f) -> EFNum(f)
       | None() -> EFNumUnknown()
       }
@@ -543,18 +550,20 @@ extension base class TEnv {
   // general TType::union machinery.
   fun enumUnionType(tcenvb: mutable TCEnvBase, en: Enum): TType {
     pos = en.name.pos;
-    numbers: ?SortedSet<String> = Some(SortedSet[]);
+    numberFull = false;
+    nums: ?PrimLiterals = None();
     strings = SortedSet<String>[];
     for (m in this.enumMembers(tcenvb, en)) {
       static::enumMemberPrim(m) match {
       | TPrimValue(TNum(), Some(lits), _) ->
-        numbers.each(nums -> {
-          for (lit in lits.values()) {
-            !nums = nums.set(lit.val)
-          };
-          !numbers = Some(nums)
-        })
-      | TPrimValue(TNum(), None(), _) -> !numbers = None()
+        // Union the PrimLiterals directly so member spellings survive.
+        !nums = Some(
+          nums match {
+          | Some(n) -> n.union(lits)
+          | None() -> lits
+          },
+        )
+      | TPrimValue(TNum(), None(), _) -> !numberFull = true
       | TPrimValue(TString(), Some(lits), _) ->
         for (lit in lits.values()) {
           !strings = strings.set(lit.val)
@@ -563,12 +572,10 @@ extension base class TEnv {
       }
     };
     stypes = mutable Vector<SType>[];
-    numbers match {
-    | None() -> stypes.push(TPrimValue::full(TNum(), pos))
-    | Some(nums) ->
-      PrimLiterals::ofSet(nums, pos).each(lits ->
-        stypes.push(TPrimValue(TNum(), Some(lits), pos))
-      )
+    if (numberFull) {
+      stypes.push(TPrimValue::full(TNum(), pos))
+    } else {
+      nums.each(lits -> stypes.push(TPrimValue(TNum(), Some(lits), pos)))
     };
     PrimLiterals::ofSet(strings, pos).each(lits ->
       stypes.push(TPrimValue(TString(), Some(lits), pos))

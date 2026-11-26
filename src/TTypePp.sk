@@ -321,7 +321,7 @@ mutable class TypePp{
     | TPrimValue(k, Some(arr), _) ->
       rendered = arr
         .values()
-        .map(lit -> TypePp::renderPrimLiteral(k, lit.val))
+        .map(lit -> TypePp::renderPrimLiteral(k, lit))
         .collect(Array)
         .join(" | ");
       this.out(level, margin, rendered)
@@ -752,16 +752,17 @@ mutable class TypePp{
     }
   }
 
-  // Renders a primitive literal (a value as stored in PrimLiterals for
-  // `kind`) as TypeScript source syntax, matching tsc's error messages:
-  // string literals double-quoted with escapes, all other kinds bare (`1`,
-  // `true`, `1n`); symbol literals are internal ids and render via
+  // Renders a primitive literal as TypeScript source syntax, matching tsc's
+  // error messages: string literals double-quoted with escapes, all other
+  // kinds bare using the user-written spelling when known (`0xf`, `1_000`,
+  // `1n`); symbol literals are internal ids and render via
   // displayUniqueSymbolId. Quoted string literal values are stored decoded
   // (equal to their runtime value; see decodeJSStringLiteral) and template
   // literal values are stored raw (ParserExpr), so either way a value may
   // hold control characters; appendControlEscape re-escapes them (its
   // `\n`/`\r`/`\t` arms are load-bearing: TypePp::out rejects those raw).
-  static fun renderPrimLiteral(kind: TPrimValueKind, literal: String): String {
+  static fun renderPrimLiteral(kind: TPrimValueKind, lit: PrimLiteral): String {
+    literal = lit.displayVal();
     kind match {
     | TSymbol() -> TypePp::displayUniqueSymbolId(literal)
     | TString() ->

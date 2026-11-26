@@ -479,9 +479,10 @@ class ConstantProp() uses AbstractDomain<CPEnv> {
   ): CPVal {
     e.value match {
     | Number(s) ->
+      // canonical value only
       // Number literals are stored in canonical `String(Number(x))` form, which
       // `toFloatOption` parses directly.
-      s.toFloatOption() match {
+      s.val.toFloatOption() match {
       | Some(f) -> CPVNumber(f)
       | None() -> CPVTop()
       }

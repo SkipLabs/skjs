@@ -22,7 +22,7 @@ extension class Parser {
   // `negative` is set when the literal is the operand of a unary minus (the
   // sign is then part of the written literal for diagnostics, and applied
   // after normalization so -0 collapses to 0).
-  mutable fun getNumber(tok: Token, negative: Bool = false): String {
+  mutable fun getNumber(tok: Token, negative: Bool = false): NumLit {
     if (tok.kind is TKNumber()) {
       raw0 = this.lex.getTokenRawStringContent(tok);
       validateJSNumericLiteral(raw0) match {
@@ -36,19 +36,20 @@ extension class Parser {
         | None() -> void
         };
         result = normalizeJSNumber(raw0);
-        if (negative) negateJSNumberLiteral(result) else result
+        if (negative) !result = negateJSNumberLiteral(result);
+        NumLit::ofUserWritten(result, raw)
       }
     } else {
       this.error(this.lex.posStart(tok), ExpectedToken(TKNumber()))
     }
   }
 
-  readonly fun getBigInt(tok: Token): String {
+  readonly fun getBigInt(tok: Token): NumLit {
     if (tok.kind is TKBigInt()) {
       raw = this.lex.getTokenRawStringContent(tok);
       validateJSBigIntLiteral(raw) match {
       | Some(kind) -> this.error(EPRange(this.lex.posRange(tok)), kind)
-      | None() -> normalizeJSBigInt(raw)
+      | None() -> NumLit::ofUserWritten(normalizeJSBigInt(raw), raw)
       }
     } else {
       this.error(this.lex.posStart(tok), ExpectedToken(TKBigInt()))
