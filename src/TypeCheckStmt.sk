@@ -128,8 +128,19 @@ extension class TypeChecker {
     | If(e, block1, block2opt) ->
       block2 = block2opt.default(Array[]);
       this.checkBool(tcenv, e);
+      // The guard's reads were observed while it was evaluated, before either
+      // branch ran. Check each branch against that epoch, not the running one:
+      // a call in one branch is not on the other branch's path, so it must not
+      // make the guard's reads look stale and suppress the other branch's
+      // narrowing (#970). After the `if`, a call from either branch may have
+      // run, so the epoch advances to the branches' maximum.
+      guardEpoch = tcenv.effectEpoch;
       (scope1, term1) = this.block(tcenv, block1, Some((e, true)));
+      thenEpoch = tcenv.effectEpoch;
+      tcenv.!effectEpoch = guardEpoch;
       (scope2, term2) = this.block(tcenv, block2, Some((e, false)));
+      elseEpoch = tcenv.effectEpoch;
+      tcenv.!effectEpoch = if (thenEpoch > elseEpoch) thenEpoch else elseEpoch;
       // A branch that cannot complete normally is not a path out of the `if`:
       // a return/throw branch never re-joins the flow, one that loops forever
       // never leaves, and a break/continue branch re-joins after the enclosing
@@ -632,6 +643,15 @@ extension class TypeChecker {
     // complete normally and never reach the ones after it. Starting from
     // `skip` costs nothing: it is what a clause chains onto unchanged.
     branchesTerm = StmtTermination::skip;
+    // Each clause's own-label entry happens before any clause body runs, so
+    // a call in one clause's body is not on another clause's entry path and
+    // must not make the scrutinee's reads look stale and suppress the other
+    // clause's label narrowing (#970). The labels themselves were all
+    // evaluated before this loop, so their effects stay in the epoch. After
+    // the switch, a call from any clause may have run, so the epoch advances
+    // to the clauses' maximum.
+    guardEpoch = tcenv.effectEpoch;
+    maxEpoch = guardEpoch;
     // Catch the `break` edges out of this switch: a mid-clause break leaves with
     // a state the clause's end-of-block scope no longer holds, so it is recorded
     // as a snapshot and unioned into the post-switch merge below, rather than
@@ -763,6 +783,7 @@ extension class TypeChecker {
           | Some(noCase) -> Some((noCase, true))
           }
         };
+        tcenv.!effectEpoch = guardEpoch;
         (scopeBranch, blockTerm) = this.block(
           tcenv,
           block,
@@ -770,6 +791,7 @@ extension class TypeChecker {
           fallenFrom,
           reservations,
         );
+        if (tcenv.effectEpoch > maxEpoch) !maxEpoch = tcenv.effectEpoch;
         tcenv.!pendingBindings = savedPendingBindings;
         // Falling *through* means running one clause's statements and then
         // running the next clause's too. An empty clause has none to run — it is
@@ -824,6 +846,7 @@ extension class TypeChecker {
         }
       }
     });
+    tcenv.!effectEpoch = maxEpoch;
     // A `default` covers exactly the values matched by no `case`, before or
     // after it in source order, so its reachability depends on the full set of
     // cases and is settled only now: judging it inline would let a non-last

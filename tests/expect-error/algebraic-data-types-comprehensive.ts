@@ -593,7 +593,6 @@ function testThreeVariantElimination(value: ThreeVariantADT): string {
     return "Second: " + value.info;
   } else {
     // This should infer that value is { kind: 'third', flag: boolean }
-    // @skjs-expect-error Property 'flag' exists on some but not all members of the union type, so it may be absent
     return "Third: " + value.flag.toString();
   }
 }
@@ -615,7 +614,6 @@ function testComplexElimination(value: ComplexElimination): string {
     return "Gamma: " + nested.a.toString() + ", " + nested.b.toString();
   } else {
     // This should infer that value is { kind: 'delta', fn: (n: number) => string }
-    // @skjs-expect-error Property 'fn' exists on some but not all members of the union type, so it may be absent
     return "Delta: " + value.fn(42);
   }
 }
@@ -634,12 +632,10 @@ function testNestedElimination(value: NestedElimination): string {
       return "Outer-Inner1: " + inner.val.toString();
     } else {
       // This should infer inner is { kind: 'inner2', text: string }
-      // @skjs-expect-error Property 'text' exists on some but not all members of the union type, so it may be absent
       return "Outer-Inner2: " + inner.text;
     }
   } else {
     // This should infer that value is { kind: 'simple', value: boolean }
-    // @skjs-expect-error Property 'value' exists on some but not all members of the union type, so it may be absent
     return "Simple: " + value.value.toString();
   }
 }
@@ -684,7 +680,6 @@ function testFourBranchElimination(value: FourBranchADT): string {
     );
   } else {
     // This should infer that value is { kind: 'delta', callback: (x: number) => boolean, priority: number }
-    // @skjs-expect-error Property 'callback' exists on some but not all members of the union type, so it may be absent
     let result = value.callback(42);
     return (
       "Delta: priority=" +
@@ -710,7 +705,6 @@ function testFourBranchPartialElimination(value: FourBranchADT): string {
         return "Found gamma: " + value.flag.toString();
       } else {
         // This should infer that value is { kind: 'delta', callback: (x: number) => boolean, priority: number }
-        // @skjs-expect-error Property 'priority' exists on some but not all members of the union type, so it may be absent
         return "Found delta with priority: " + value.priority.toString();
       }
     }
@@ -730,7 +724,6 @@ function testFourBranchMiddleElimination(value: FourBranchADT): string {
       return "Remaining: Alpha " + value.metadata;
     } else {
       // This should infer that value is { kind: 'delta', callback: (x: number) => boolean, priority: number }
-      // @skjs-expect-error Property 'priority' exists on some but not all members of the union type, so it may be absent
       return "Remaining: Delta priority " + value.priority.toString();
     }
   }
@@ -754,7 +747,6 @@ function testChainedElimination(value: ChainedElimination): string {
           return "Type4: " + value.d.length.toString() + " strings";
         } else {
           // This should infer that value is { kind: 'type5', e: { x: number, y: number } }
-          // @skjs-expect-error Property 'e' exists on some but not all members of the union type, so it may be absent
           let e = value.e;
           return "Type5: (" + e.x.toString() + ", " + e.y.toString() + ")";
         }
@@ -795,7 +787,6 @@ function testGenericEliminationNumber(
     return "Number success: " + value.result.toString();
   } else {
     // This should infer that value is { kind: 'failure', error: string }
-    // @skjs-expect-error Property 'error' exists on some but not all members of the union type, so it may be absent
     return "Number failure: " + value.error;
   }
 }
