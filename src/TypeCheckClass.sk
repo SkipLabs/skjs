@@ -372,7 +372,20 @@ extension class TypeChecker {
           | ModPublic _
           | ModPrivate _
           | ModProtected _ ->
-            void /* private is recorded in TField in addFields; protected is treated as public */
+            // private is recorded in TField in addFields; protected is
+            // treated as public — but on an index signature (`[k: string]: T`)
+            // tsc TS1071 rejects any accessibility modifier
+            if (field.name is IndexFieldName _) {
+              tcenvl.error(
+                Array[
+                  (
+                    modifier.pos,
+                    `'${modifier}' modifier cannot appear on an index signature.`,
+                  ),
+                ],
+                TSCode(1071),
+              )
+            }
           | mod ->
             tcenvl.error(
               Array[
