@@ -499,41 +499,61 @@ class ArrayLitTyping() {
   // `foo`), and a constraint that is itself an abstract type parameter cannot
   // be reduced at all. Checking a literal against such a projection would
   // accept values the real constraint rejects, so the element-wise path is
-  // only taken when the projection provably means what the constraint means
-  // (see projectionIsFaithful); otherwise the caller checks the literal
+  // only taken for arms whose projection provably means what the constraint
+  // means (see projectionIsFaithful); otherwise the caller checks the literal
   // against the whole constrained variable, which sees the union arms, the
   // intersection members, and the type parameter.
-  static private fun faithfulTupleConstraint(
+  //
+  // Returns the faithful tuple arms of matching arity, one per tuple branch
+  // of the constraints -- NOT a positional merge of them. A union of tuples
+  // like `[0, 1] | [2, 3]` yields the two arms `[0, 1]` and `[2, 3]`; merging
+  // them position-wise would give `[0 | 2, 1 | 3]`, admitting the
+  // cross-product `[0, 3]` that matches neither arm (#932). Each arm is kept
+  // only if a tuple built from it satisfies every constraint, so an
+  // intersection arm like `[0, 1]` from `[0, 1] & { foo: string }` is dropped
+  // (it lacks `foo`) and the whole-constraint path below stays in charge.
+  static private fun faithfulTupleConstraintArms(
     subst: mutable Subst,
     tenv: TEnv,
     constraints: SortedSet<TType>,
     arity: Int,
     pos: PosRange,
-  ): ?Array<TType> {
-    constraints
-      .values()
-      .findMap(cstr ->
-        cstr
-          .getSTypes(subst, tenv, Covariant())
-          .flatMap(sTypes -> sTypes.getSingleTuple(subst, tenv))
-          .flatMap(elts -> if (elts.size() == arity) Some(elts) else None())
-      )
-      .flatMap(elts ->
-        if (
-          ArrayLitTyping::projectionIsFaithful(
-            subst,
-            tenv,
-            pos,
-            elts,
-            constraints.collect(Array),
-            kProjectionDepth,
-          )
-        ) {
-          Some(elts)
-        } else {
-          None()
+  ): Array<Array<TType>> {
+    candidates = mutable Vector[];
+    constraints.values().each(cstr -> {
+      cstr.getSTypes(subst, tenv, Covariant()).each(stypes -> {
+        for (stype in stypes) {
+          stype match {
+          | obj @ TObject _ ->
+            for (fields in obj.getAllFields()) {
+              fields.asTuple().each(elts -> {
+                if (elts.size() == arity) {
+                  candidates.push(elts)
+                }
+              })
+            }
+          | _ -> void
+          }
         }
-      )
+      })
+    });
+    allConstraints = constraints.collect(Array);
+    arms = mutable Vector[];
+    for (elts in candidates.toArray()) {
+      if (
+        ArrayLitTyping::projectionIsFaithful(
+          subst,
+          tenv,
+          pos,
+          elts,
+          allConstraints,
+          kProjectionDepth,
+        )
+      ) {
+        arms.push(elts)
+      }
+    };
+    arms.toArray()
   }
 
   // Handles subtyping when u1 or u2 contains ArrayLit<α, elts>.
@@ -593,14 +613,18 @@ class ArrayLitTyping() {
         // their own positions (#942; see checkTupleTarget). Arrays keep the
         // isSub path below: growing every element to the shared element type
         // is exactly the widening the array case needs.
-        ArrayLitTyping::faithfulTupleConstraint(
+        //
+        // A union-of-tuples constraint contributes one arm per tuple branch,
+        // and the element-wise check runs per arm, accepting when some arm
+        // accepts (#933) -- a positional merge of the arms would admit
+        // cross-products matching no arm (#932).
+        for (targetElts in ArrayLitTyping::faithfulTupleConstraintArms(
           subst,
           tenv,
           tvar.constraints,
           arrLit.tupleElts.size(),
           arrLit.selector.pos(),
-        ) match {
-        | Some(targetElts) ->
+        )) {
           // Freeze the constraint's own inference candidates for the element
           // checks. A constraint can name a variable that is still open --
           // `<B, K extends [B]>` where B was inferred from another argument --
@@ -636,9 +660,10 @@ class ArrayLitTyping() {
             // Not necessarily a rejection: the element check runs frozen, so
             // it also fails when deciding would have required moving one of
             // the constraint's inference candidates. Falling through to the
-            // whole-tuple check below is therefore load-bearing and not just
-            // cosmetic -- that path is unfrozen and resolves those cases
-            // (correctly for the flat literals they involve, since #948).
+            // next arm / the whole-tuple check below is therefore
+            // load-bearing and not just cosmetic -- that path is unfrozen and
+            // resolves those cases (correctly for the flat literals they
+            // involve, since #948).
             //
             // It is also the better diagnostic when the literal really is
             // wrong: the per-element error names a single position, and the
@@ -652,7 +677,6 @@ class ArrayLitTyping() {
             // fall-through starts from a clean state.
             void
           }
-        | None() -> void
         };
         // Either no matching tuple constraint (an array or intersection
         // constraint, or an arity mismatch), or a tuple constraint the
