@@ -186,3 +186,28 @@ function openConstraintVariable(): void {
   // @skjs-expect-error Argument is not assignable to the parameter's type
   const bad = viaVar("a", [1]);
 }
+
+// A constraint whose positions are unions of literals: tsc infers K = [2, 3]
+// (the argument's own element types), not the constraint's [0 | 2, 1 | 3]
+// (#934). FIXME: SKJS pins K to the constraint's projection. Binding K to
+// the narrower [2, 3] is rejected because SKJS checks mutable array-method
+// parameters strictly, so [2, 3] is not a subtype of [0 | 2, 1 | 3] here
+// ("would not be an error if this field were readonly"); the binding must
+// satisfy the constraint, so K stays wide and the assignment below fails.
+declare function unionLit<K extends [0 | 2, 1 | 3]>(x: K): K;
+function unionLiteralConstraintKeepsArgument(): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 Type '0 | 2'
+  // @skjs-expect-error-line3 is not assignable to type '2'
+  // @skjs-expect-error-line4 Value '0' is missing
+  const r: [2, 3] = unionLit([2, 3]);
+  const wide: [0 | 2, 1 | 3] = unionLit([2, 3]);
+}
+
+// An element outside its constraint position is still rejected.
+function unionLiteralConstraintStillRejects(): void {
+  // @skjs-expect-error Argument is not assignable to the parameter's type
+  // @skjs-expect-error-line2 Type '[1, 3]'
+  // @skjs-expect-error-line3 is not assignable to type '[0 | 2, 1 | 3]'
+  const r = unionLit([1, 3]);
+}
