@@ -88,13 +88,10 @@ type CallB = (x: number) => string;
 type CallAB = CallA & CallB;
 
 function useCallInter(f: CallAB): void {
-  // @skjs-expect-error This expression is not callable
   const n: number = f("hi");
-}
-
-function useCallInter2(f: CallAB): void {
-  // @skjs-expect-error This expression is not callable
   const s: string = f(42);
+  // @ts-expect-error No overload matches this call
+  const bad = f(true);
 }
 
 type NewA = new (x: string) => { a: string };
@@ -102,13 +99,10 @@ type NewB = new (x: number) => { b: number };
 type NewAB = NewA & NewB;
 
 function useNewInter(C: NewAB): void {
-  // @skjs-expect-error This expression is not constructable
   const a: { a: string } = new C("hi");
-}
-
-function useNewInter2(C: NewAB): void {
-  // @skjs-expect-error This expression is not constructable
   const b: { b: number } = new C(42);
+  // @ts-expect-error No overload matches this call
+  const bad = new C(true);
 }
 
 type ObjCallA = { (x: string): number; tag: "a" };
@@ -116,13 +110,10 @@ type ObjCallB = { (x: number): string; extra: boolean };
 type ObjCallAB = ObjCallA & ObjCallB;
 
 function useObjCallInter(o: ObjCallAB): void {
-  // @skjs-expect-error This expression is not callable
   const n: number = o("hi");
-}
-
-function useObjCallInter2(o: ObjCallAB): void {
-  // @skjs-expect-error This expression is not callable
   const s: string = o(42);
+  const t: "a" = o.tag;
+  const e: boolean = o.extra;
 }
 
 // ---------------------------------------------------------------------------

@@ -947,41 +947,51 @@ mutable class TypeReadContext private {
           this.retainedIntersection(a.get, b.get, narrowing),
           TType::unionStructural(a.set, b.set),
         ),
-      (a, b) -> this.funsInter(a, b, narrowing),
+      (a, b) -> this.funsInter(a, b),
     )
   }
 
-  // Pairwise intersection across two overload sets: every kept signature is
-  // accepted by both sides, so the result is a sound set of shared
-  // signatures. NOTE: unlike a materialized `A & B` (see TFuns::inter in
-  // TTypeInter, which concatenates), the OBSERVATION/refinement path must NOT
-  // concatenate: the observed value has to satisfy BOTH sides, so a call
-  // through the result must be accepted by both — keeping only the shared
-  // signatures (or, when narrowing, the left signature as a sound
-  // over-approximation of the shared values) is required for soundness.
-  private mutable fun funsInter(a: TFuns, b: TFuns, narrowing: Bool): ?TFuns {
-    merged = mutable Vector[];
-    for (x in a.allFuns()) {
-      for (y in b.allFuns()) {
-        TFun::interWith(
-          x,
-          y,
-          (f, g) -> this.functionSubtype(f, g) is STOk(),
-          // Incomparable signatures are not disjoint: one function can
-          // inhabit both via parameter contravariance, so refinement must
-          // not collapse the branch to bottom (SkipLabs/skjs#768). Keep the
-          // left signature as a sound over-approximation of the shared
-          // values. Intersection-type construction (narrowing == false)
-          // keeps bottom, so a materialized `A & B` stays a subtype of both.
-          if (narrowing) Some(x) else None(),
-        ).each(f -> merged.push(f))
-      }
+  // Overloaded intersection (matching tsc): an inhabitant of `A & B`
+  // satisfies EVERY signature of `A` AND EVERY signature of `B`, so
+  // concatenating both sets (left-then-right, preserving first-match order)
+  // is both sound (`A & B <: A` and `A & B <: B`) and non-empty (two
+  // function types are never disjoint — `(x: unknown) => never` inhabits
+  // both, SkipLabs/skjs#768).
+  //
+  // Subsumption cleanup: whenever one signature is already a subtype of
+  // another (e.g. `() => IterableIterator<number>` <: `() => IterableIterator<unknown>`
+  // when intersecting `readonly number[] & readonly unknown[]`), keep the
+  // more specific one and drop the subsumed supertype (merging cgNodes). That
+  // keeps `F & G` collapsed to the single stronger signature whenever one
+  // absorbs the other, so `iteratorElement` / `callReturnType` stays precise
+  // (returning `number`, not `unknown | number`) while genuinely distinct
+  // signatures still concatenate into a callable overload set.
+  private mutable fun funsInter(a: TFuns, b: TFuns): ?TFuns {
+    raw = a.allFuns().concat(b.allFuns());
+    allCgs = raw.foldl((acc, f) -> acc.union(f.cgNodes), CGNodes(SortedSet[]));
+    kept = mutable Vector<TFun>[];
+    for (f in raw) {
+      // If an already-kept signature is a subtype of `f`, `f` is redundant.
+      if (kept.any(g -> this.functionSubtype(g, f) is STOk())) {
+        continue
+      };
+      // Otherwise, drop any already-kept signature that `f` strictly subsumes
+      // (so the more specific signature replaces the weaker one).
+      next = mutable Vector<TFun>[];
+      for (g in kept) {
+        if (!(this.functionSubtype(f, g) is STOk())) {
+          next.push(g)
+        }
+      };
+      next.push(f);
+      !kept = next
     };
-    if (merged.isEmpty()) {
-      None()
-    } else {
-      Some(TFuns::multiple(merged.toArray(), a.pos))
-    }
+    Some(
+      TFuns::multiple(
+        kept.toArray().map(f -> f with {cgNodes => allCgs}),
+        a.pos,
+      ),
+    )
   }
 
   mutable fun restElement(type: TType, variance: Variance): ?TType {
@@ -1032,7 +1042,28 @@ mutable class TypeReadContext private {
       callable ->
         callable.projectBranches(
           callable.pos,
-          fields -> fields.callReturnType(),
+          fields ->
+            fields.call match {
+            // Intersecting two iterators (e.g. `number[] & boolean[]`) yields
+            // an overloaded `[Symbol.iterator]` whose signatures return each
+            // member's iterator: a value of the intersection satisfies BOTH
+            // iterators, so its iterator return type is the intersection of
+            // all overload returns (not their union).
+            | CPresent(sig) ->
+              retTypes = sig.allFuns().map(f -> f.retType);
+              Some(
+                retTypes
+                  .slice(1)
+                  .foldl(
+                    (acc, ty) -> this.intersection(acc, ty, false),
+                    retTypes[0],
+                  ),
+              )
+            | CAbsent()
+            | CUnknown()
+            | CFunction() ->
+              None()
+            },
           (position, types) -> TType::unionStructuralN(position, types),
         ),
       (object, name) ->

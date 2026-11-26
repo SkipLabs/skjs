@@ -261,14 +261,16 @@ function testIncompatibleReturnTypes(): void {
   const inter: IntersectionIncompatible2 = wrongReturn;
 }
 
-// Test 24: Incompatible parameter types (Dog vs Cat)
-function wrongParam(_x: Animal): string {
+// Test 24: Overloaded intersection of two parameter types (Dog vs Cat):
+// `((x: Dog) => string) & ((x: Cat) => string)` is satisfied by a function
+// accepting `Animal` (since `Animal` is a supertype of both `Dog` and `Cat`,
+// matching tsc).
+function animalParam(_x: Animal): string {
   return "animal";
 }
 
-function testIncompatibleDogCat(): void {
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
-  const inter: IntersectionIncompatible3 = wrongParam;
+function testContravariantOverloadedInter(): void {
+  const inter: IntersectionIncompatible3 = animalParam;
 }
 
 // Test 25: Union of intersections

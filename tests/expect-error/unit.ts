@@ -86,9 +86,14 @@ function check5(t1: [number] | [boolean]): number | boolean {
   return x;
 }
 
+// Mutable tuples are invariant: `[{ field1: number }] & [{ field2: boolean }]`
+// has overloaded `pop(): { field1: number } | undefined & { field2: boolean } | undefined`
+// (and similarly for `push`/`concat`), which does not satisfy `[{ field1: number; field2: boolean }]`
+// (matching tsc TS2322).
 function check6(
   t1: [{ field1: number }] & [{ field2: boolean }],
 ): [{ field1: number; field2: boolean }] {
+  // @ts-expect-error Type of returned value is not assignable to the function's return type
   return t1;
 }
 

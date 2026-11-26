@@ -32,12 +32,11 @@ function testDoubleCollapse<V>(v: V): void {
   const x: V = result.value;
 }
 
-// FIXME: SKJS treats { (): string } & { (): number } as never (incompatible
-// call signatures), while TypeScript treats it as an overloaded callable.
-// Before commit 520787bb, TObject#inter returned an empty TObject instead of
-// None (bottom), keeping a phantom empty type in the union.
+// { (): string } & { (): number } is an overloaded callable (matching tsc),
+// not never — so the union with `string` is not assignable to `string`.
 declare function getCallableInter(): ({ (): string } & { (): number }) | string;
 
 function testCallableInter(): string {
+  // @ts-expect-error Type of returned value is not assignable to the function's return type
   return getCallableInter();
 }
