@@ -68,41 +68,34 @@ class GenericKnown<T> {
 
 // Readonly omitted optional field: provably absent on exact `new KnownClass()`.
 function freshKnownToReadonlyOpt(): FooReadonly {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return new KnownClass();
 }
 
 function freshKnownChildToReadonlyOpt(): FooReadonly {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return new KnownChild();
 }
 
 function freshKnownFromAbstractToReadonlyOpt(): FooReadonly {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return new KnownFromAbstract();
 }
 
 function freshGenericKnownToReadonlyOpt(): FooReadonly {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return new GenericKnown(1);
 }
 
 // Readonly omitted optional symbol field: provably absent on exact `new KnownClass()`.
 function freshKnownToReadonlyOptSymbol(): FooReadonlySymbol {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return new KnownClass();
 }
 
 // Fresh `new KnownClass()` satisfies Closed<KnownClass> and readonly-index
 // supertypes when all fields match.
 function freshKnownToClosed(): Closed<KnownClass> {
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const c: Closed<KnownClass> = new KnownClass();
   return c;
 }
 
 function freshKnownToReadonlyIndex(): { readonly [k: string]: number } {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return new KnownClass();
 }
 
@@ -232,7 +225,6 @@ class WithPrivateField {
 }
 
 function freshWithPrivateToReadonlyOptOtherKey(): FooReadonly {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return new WithPrivateField();
 }
 
@@ -246,13 +238,14 @@ function freshWithPrivateToSameNameOpt(): {
 
 function freshWithPrivateToReadonlyIndex(): { readonly [k: string]: number } {
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  // @skjs-expect-error-line4 Field 'secret' has incompatible accessibility with the target type
   return new WithPrivateField();
 }
 
 function closedWithPrivateToReadonlyIndex(x: Closed<WithPrivateField>): {
   readonly [k: string]: number;
 } {
-  // Pre-fix bug: Left(f1) in isSub_NamedFields does not check f1.access
-  // against idx2, allowing private fields to leak through an index signature.
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  // @skjs-expect-error-line4 Field 'secret' has incompatible accessibility with the target type
   return x;
 }

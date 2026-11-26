@@ -1284,6 +1284,59 @@ base class TEnv{
     Some(ClassIdentity::create(c.name, ancestors))
   }
 
+  // True when `c` is a concrete, non-ambient class whose entire transitive
+  // `extends` chain consists of resolved, non-interface, non-ambient classes.
+  // A fresh `new C(...)` of such a class is guaranteed at runtime to be an
+  // exact instance of `C` (never a subclass, and no ambient base can attach
+  // undeclared runtime properties), so its type can be closed when it has no
+  // declared index signatures.
+  fun isFullyKnownClass(tcenvb: mutable TCEnvBase, c: Class): Bool {
+    if (!(c.kind is CKClass()) || c.isAmbient) return false;
+    visited = mutable Set[c.name];
+    todo = mutable Vector[c];
+    while (!todo.isEmpty()) {
+      cls = todo.pop();
+      for (extend in cls.extends_) {
+        extend.value match {
+        | TAInst(parentReference, _) ->
+          parentName = this.heritageName(tcenvb, parentReference, false);
+          if (!this.hasClassDef(tcenvb, parentName)) return false;
+          parent = this.getClass(tcenvb, parentName);
+          if (parent.kind is CKInterface() || parent.isAmbient) return false;
+          if (!visited.contains(parent.name)) {
+            visited.insert(parent.name);
+            todo.push(parent)
+          }
+        | _ -> return false
+        }
+      }
+    };
+    true
+  }
+
+  // Type of a fresh `new C(...)` expression. For a fully-known class with no
+  // declared index signatures, the freshly constructed object is guaranteed to
+  // be an exact instance of `C` (never a subclass and with no ambient base),
+  // so every unnamed key is provably absent and we close the instance with
+  // never string/symbol indexes (while keeping open `C` types unclosed for
+  // subclass soundness).
+  fun newFreshOf(
+    tcenvb: mutable TCEnvBase,
+    c: Class,
+    className: Name,
+    targs: Array<TType>,
+    pos: PosRange,
+  ): TType {
+    fields = this.newFieldsOf(tcenvb, c, className, targs);
+    if (this.isFullyKnownClass(tcenvb, c) && !fields.hasNonSyntheticIndex()) {
+      !fields = fields.withNeverIndexes(
+        TField::createNeverIndex("k", pos),
+        TField::createNeverIndex("s", pos),
+      )
+    };
+    TType::single(this.objectOfFields(fields, className, targs))
+  }
+
   fun newStatic(tcenvb: mutable TCEnvBase, className: Name): TType {
     obj = this.newStaticObject(tcenvb, className);
     TType::single(obj)
