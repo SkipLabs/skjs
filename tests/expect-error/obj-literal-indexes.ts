@@ -242,17 +242,14 @@ function testArrayOfLiteralsToArrayOfIndexed(): void {
   const arr: Array<{ [k: string]: number }> = [{ x: 1 }];
 }
 
-// Same index view inside a branch and again after it: the in-branch view `f` is
-// a first view and stays accepted, but it marks `t` used, so the post-branch
-// view `g` is rejected by the second-view index gate. Conservative (it rejects
-// even the identical repeat), but sound. TODO(#1056).
+// Same index view inside a branch and again after it: the in-branch view `f`
+// records its index view on `t`, and the post-branch view `g` is a compatible
+// repeat (`prevView <: annot`), so both are accepted soundly.
 function testSameViewInBranchThenAfter(c: boolean): void {
   const t = {};
   if (c) {
     const f: { [k: string]: number } = t;
   }
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
-  // @skjs-expect-error-line2 But this object has already been used here
   const g: { [k: string]: number } = t;
 }
 
@@ -276,15 +273,12 @@ function testConflictingViewInBranchThenAfter(c: boolean): void {
   const g: { [k: string]: string } = t;
 }
 
-// Identical index view in two sibling branches.
-// TODO(#1056): currently over-rejected by the second-view gate.
+// Identical index view in two sibling branches: accepted.
 function testSameViewInSiblingBranches(c: boolean): void {
   const t = {};
   if (c) {
     const f: { [k: string]: number } = t;
   } else {
-    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
-    // @skjs-expect-error-line2 But this object has already been used here
     const g: { [k: string]: number } = t;
   }
 }
@@ -302,45 +296,33 @@ function testConflictingViewInSiblingBranches(c: boolean): void {
   }
 }
 
-// Sequential identical index views.
-// TODO(#1056): currently over-rejected by the second-view gate.
+// Sequential identical index views: accepted.
 function testSequentialSameView(): void {
   const t = {};
   const f: { [k: string]: number } = t;
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
-  // @skjs-expect-error-line2 But this object has already been used here
   const g: { [k: string]: number } = t;
 }
 
-// Sequential identical index views where one uses a type alias.
-// TODO(#1056): currently over-rejected by the second-view gate.
+// Sequential identical index views where one uses a type alias: accepted.
 function testSequentialSameViewViaAlias(): void {
   const t = {};
   const f: NumMap = t;
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
-  // @skjs-expect-error-line2 But this object has already been used here
   const g: { [k: string]: number } = t;
 }
 
 // Mutable index view followed by a readonly view of the same type: sound
 // (`{ [k: string]: number } <: { readonly [k: string]: number }`).
-// TODO(#1056): currently over-rejected by the second-view gate.
 function testMutableThenReadonlySame(): void {
   const t = {};
   const f: { [k: string]: number } = t;
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
-  // @skjs-expect-error-line2 But this object has already been used here
   const g: { readonly [k: string]: number } = t;
 }
 
 // Mutable index view followed by a wider readonly view: sound (writes through
 // `f` produce `number`, which `g` soundly reads as `number | string`).
-// TODO(#1056): currently over-rejected by the second-view gate.
 function testMutableThenReadonlyWider(): void {
   const t = {};
   const f: { [k: string]: number } = t;
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
-  // @skjs-expect-error-line2 But this object has already been used here
   const g: { readonly [k: string]: number | string } = t;
 }
 
@@ -375,12 +357,9 @@ function testReadonlyThenMutableWider(): void {
 }
 
 // Readonly index view followed by a wider readonly view: sound.
-// TODO(#1056): currently over-rejected by the second-view gate.
 function testReadonlyThenReadonlyWider(): void {
   const t = {};
   const f: { readonly [k: string]: number } = t;
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
-  // @skjs-expect-error-line2 But this object has already been used here
   const g: { readonly [k: string]: number | string } = t;
 }
 
@@ -397,37 +376,28 @@ function testReadonlyWiderThenReadonlyNarrower(): void {
 // Identical repeat with an existing field mutated between views (`t.x` stays
 // `number` after the first view widens it, so `t.x = 2` is valid and the
 // repeated view stays sound).
-// TODO(#1056): currently over-rejected by the second-view gate.
 function testSameViewWithFieldMutationBetween(): void {
   const t = { x: 1 };
   const f: { [k: string]: number } = t;
   t.x = 2;
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
-  // @skjs-expect-error-line2 But this object has already been used here
   const g: { [k: string]: number } = t;
 }
 
 // Identical repeat after a branch when `t` carries an initialized field.
-// TODO(#1056): currently over-rejected by the second-view gate.
 function testSameViewInBranchWithFieldThenAfter(c: boolean): void {
   const t = { x: 1 };
   if (c) {
     const f: { [k: string]: number } = t;
   }
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
-  // @skjs-expect-error-line2 But this object has already been used here
   const g: { [k: string]: number } = t;
 }
 
 // Three views: the first two match, the third conflicts and must still fail.
-// TODO(#1056): currently `g` already errors before `h` is reached.
 function testThreeViewsThirdConflicts(c: boolean): void {
   const t = {};
   if (c) {
     const f: { [k: string]: number } = t;
   }
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
-  // @skjs-expect-error-line2 But this object has already been used here
   const g: { [k: string]: number } = t;
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   // @skjs-expect-error-line2 But this object has already been used here
@@ -436,22 +406,17 @@ function testThreeViewsThirdConflicts(c: boolean): void {
 
 // Number index views: identical repeat is sound; string index covers number
 // index, while number index does not cover string index.
-// TODO(#1056): identical repeat and string->number are currently over-rejected.
 function testSameNumberIndexView(c: boolean): void {
   const t = {};
   if (c) {
     const f: { [n: number]: number } = t;
   }
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
-  // @skjs-expect-error-line2 But this object has already been used here
   const g: { [n: number]: number } = t;
 }
 
 function testStringIndexThenNumberIndex(): void {
   const t = {};
   const f: { [k: string]: number } = t;
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
-  // @skjs-expect-error-line2 But this object has already been used here
   const g: { [n: number]: number } = t;
 }
 
@@ -463,15 +428,12 @@ function testNumberIndexThenStringIndex(): void {
   const g: { [k: string]: number } = t;
 }
 
-// Symbol index view repeated after a branch.
-// TODO(#1056): currently over-rejected by the second-view gate.
+// Symbol index view repeated after a branch: accepted.
 function testSameSymbolIndexView(c: boolean): void {
   const t = {};
   if (c) {
     const f: { [s: symbol]: number } = t;
   }
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
-  // @skjs-expect-error-line2 But this object has already been used here
   const g: { [s: symbol]: number } = t;
 }
 
@@ -482,7 +444,7 @@ function testLoopViewAfterPriorSameView(): void {
   const f: { [k: string]: number } = t;
   for (const i of [1, 2]) {
     // @skjs-expect-error Type of value is not assignable to the variable's type annotation
-    // @skjs-expect-error-line2 But this object has already been used here
+    // @skjs-expect-error-line2 But this object is declared outside the loop
     const g: { [k: string]: number } = t;
   }
 }
