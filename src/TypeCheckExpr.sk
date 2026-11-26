@@ -4754,8 +4754,9 @@ extension class TypeChecker {
                   "asConstExpr should return literals with a single value",
                 )
               | Some(lit) ->
+                negated = NumLit(lit.val, lit.userVal).negated();
                 TType::single(
-                  TPrimValue::single(k, negateJSNumberLiteral(lit.val), pos),
+                  TPrimValue::single(k, negated.val, pos, negated.userVal),
                 )
               }
             },
@@ -5121,6 +5122,16 @@ extension class TypeChecker {
                   for (field in fields.namedFieldsForKeyKind(kind)) {
                     add(field.get)
                   }
+                | TPrimString(None(), _) ->
+                  add(
+                    fields
+                      .nonSyntheticIndexForKeyKind(TString())
+                      .map(field -> field.get)
+                      .default(TType::top(pos)),
+                  );
+                  for (field in fields.namedFieldsForKeyKind(TString())) {
+                    add(field.get)
+                  }
                 | _ -> add(TType::top(pos))
                 }
               }
@@ -5167,7 +5178,16 @@ extension class TypeChecker {
           }
         };
       projectIndex = (field: TField, kind: TPrimValueKind) ->
-        project(field, TType::single(TPrimValue::full(kind, field.pos)));
+        project(
+          field,
+          TType::single(
+            if (kind is TString()) {
+              TPrimString::full(field.pos)
+            } else {
+              TPrimValue::full(kind, field.pos)
+            },
+          ),
+        );
       TFields::createFromSorted{
         fields => SortedMap::createFromItems(
           copied.fields.toArray().map(field ->

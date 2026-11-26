@@ -478,22 +478,24 @@ extension class Expr(pos: PosRange, value: Expr_) extends Def_ {
 
 // A numeric literal in source: `val` is the canonical name (rule 30) that
 // identifies the literal, and `userVal` the user-written spelling when it
-// differs ("0xf" for val "15"). userVal is display-only: it never takes part
-// in identity, hashing or comparison.
+// differs ("0xf" for val "15"). `userVal` is display-only in the type system
+// (PrimLiteral's compare/xxhash ignore it), though included in the AST's
+// default XXHashable so changing the spelling invalidates parse outputs when
+// userLiteralSpelling is on.
 value class NumLit(val: String, userVal: ?String) uses XXHashable {
   // `raw` is the literal exactly as written (sign included).
   static fun ofUserWritten(val: String, raw: String): NumLit {
     NumLit(val, if (raw == val) None() else Some(raw))
   }
 
-  // The literal with the sign flipped, as a unary minus/plus would produce.
+  // The literal with the sign flipped, as a unary minus would produce.
   fun negated(): NumLit {
-    NumLit(
-      negateJSNumberLiteral(this.val),
-      this.userVal.map(u ->
-        if (u.startsWith("-")) u.stripPrefix("-") else "-" + u
-      ),
-    )
+    negVal = negateJSNumberLiteral(this.val);
+    negUser = this.userVal.flatMap(u -> {
+      flipped = if (u.startsWith("-")) u.stripPrefix("-") else "-" + u;
+      if (flipped == negVal) None() else Some(flipped)
+    });
+    NumLit(negVal, negUser)
   }
 }
 

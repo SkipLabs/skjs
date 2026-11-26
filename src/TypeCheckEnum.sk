@@ -282,9 +282,11 @@ extension base class TEnv {
     e: Expr,
   ): EnumMemberValue {
     // A plain numeric literal keeps its user-written spelling for
-    // diagnostics; everything else folds to a Float and back.
+    // diagnostics when it is a representable double; everything else
+    // (including unrepresentable literals that fold to EFNumUnknown) goes
+    // through enumFold.
     e.value match {
-    | Number(n) ->
+    | Number(n) if (jsNumberLiteralDouble(n.val).isSome()) ->
       EMVLiteral(TPrimValue::single(TNum(), n.val, e.pos, n.userVal))
     | _ ->
       this.enumFold(tcenvb, en, byName, visiting, e) match {

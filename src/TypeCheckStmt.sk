@@ -561,7 +561,8 @@ extension class TypeChecker {
     (cases, casesKnown) = condType
       .getSTypes(tcenv.subst, this, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
-    | Some(TPrimValue(_, Some(lits), _)) ->
+    | Some(TPrimValue(_, Some(lits), _))
+    | Some(TPrimString(Some(lits), _)) ->
       (Map::mcreateFromIterator(lits.values().map(x -> (x.val, x.pos))), true)
     | Some(TPrimValue(TBool _, None(), pos)) ->
       // A boolean carries no literals when it can be either, so listing its

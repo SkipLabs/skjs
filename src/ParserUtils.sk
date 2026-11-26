@@ -53,9 +53,10 @@ extension class Parser {
       validateJSBigIntLiteral(raw) match {
       | Some(kind) -> this.error(EPRange(this.lex.posRange(tok)), kind)
       | None() ->
+        result = normalizeJSBigInt(raw);
         NumLit::ofUserWritten(
-          normalizeJSBigInt(raw),
-          if (this.userLiteralSpelling) raw else normalizeJSBigInt(raw),
+          result,
+          if (this.userLiteralSpelling) raw else result,
         )
       }
     } else {

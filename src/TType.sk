@@ -2332,6 +2332,10 @@ class TPrimValue(kind: TPrimValueKind, literals: ?PrimLiterals) extends SType {
     pos: PosRange,
     userVal: ?String = None(),
   ): TPrimValue {
+    invariant(
+      !(kind is TString()),
+      "Use TPrimString::single for string literals",
+    );
     TPrimValue(
       kind,
       Some(PrimLiterals::single(PrimLiteral(pos, value, userVal))),
@@ -2340,6 +2344,7 @@ class TPrimValue(kind: TPrimValueKind, literals: ?PrimLiterals) extends SType {
   }
 
   static fun full(kind: TPrimValueKind, pos: PosRange): TPrimValue {
+    invariant(!(kind is TString()), "Use TPrimString::full for string");
     TPrimValue(kind, None(), pos)
   }
 
@@ -2381,27 +2386,16 @@ class TPrimValue(kind: TPrimValueKind, literals: ?PrimLiterals) extends SType {
 // other kinds: number, boolean, bigint, symbol) so that template literal
 // pattern types (issue #897) can extend the string side only.
 class TPrimString(literals: ?PrimLiterals) extends SType {
-  static fun single(
-    value: String,
-    pos: PosRange,
-    userVal: ?String = None(),
-  ): TPrimString {
-    TPrimString(
-      Some(PrimLiterals::single(PrimLiteral(pos, value, userVal))),
-      pos,
-    )
+  static fun single(value: String, pos: PosRange): TPrimString {
+    TPrimString(Some(PrimLiterals::single(PrimLiteral(pos, value))), pos)
   }
 
   static fun full(pos: PosRange): TPrimString {
     TPrimString(None(), pos)
   }
 
-  fun kind(): TPrimValueKind {
-    TString()
-  }
-
   fun asClassName(): Name {
-    Name(this.pos, this.kind().toString())
+    Name(this.pos, TString().toString())
   }
 
   fun asPrimValueKind(): TPrimValueKind {
