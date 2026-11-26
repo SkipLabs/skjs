@@ -123,6 +123,7 @@ base class Exportable extends Declarable {
 fun markAmbientEnumsExportable(d: Exportable): Exportable {
   d match {
   | en @ Enum _ -> en with {isAmbient => true}
+  | fd @ TopLevelFunDef _ -> fd with {isAmbient => true}
   | Namespace(n, defs) -> Namespace(n, defs.map(markAmbientEnumsDef))
   | other -> other
   }
@@ -194,6 +195,14 @@ base class FunDef<+N: FunDefName>{
   optional: ?PosRange,
   sig: FunSig,
   body: FunBody,
+  // Whether the declaration has an implementation body (vs an overload /
+  // ambient signature). Recorded at parse time so consumers can tell without
+  // reading the deferred body map (which would add a body dependency to
+  // incremental type computation — see TEnv::funDefsType).
+  hasBody: Bool,
+  // Whether the declaration is ambient (`declare ...`, or anywhere in a
+  // .d.ts file). Ambient overload groups need no implementation (TS2391).
+  isAmbient: Bool,
   cgNode: ?CGNode,
 } uses XXHashable
 

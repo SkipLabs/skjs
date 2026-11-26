@@ -272,6 +272,8 @@ extension class Parser {
               optional => isOptional,
               sig => FSInline(tparams, params, retType),
               body => FBInline(body),
+              hasBody => body is FDBSome _,
+              isAmbient => false,
               cgNode => None(),
             },
           methodName,
@@ -1181,7 +1183,10 @@ extension class Parser {
   ): TopLevelFunDef {
     // Record the function definition and set context
     prevSymbolContext = this.getCurrentSymbolContext();
-    funcSymbol = SPFunction(this.peekNameStr());
+    funNameStr = this.peekNameStr();
+    funOcc = this.funSymbolCounts.maybeGet(funNameStr).default(0);
+    this.funSymbolCounts.set(funNameStr, funOcc + 1);
+    funcSymbol = SPFunction(funNameStr, funOcc);
     symbolContextPos = this.lex.pos;
     this.recordSymbolDefinitionAndSetSymbolContext(
       funcSymbol,
@@ -1199,6 +1204,10 @@ extension class Parser {
           optional => None(),
           sig => FSInline(tparams, params, retType),
           body => FBInline(body),
+          hasBody => body is FDBSome _,
+          // .d.ts files are ambient throughout (tsc rule), even without an
+          // explicit `declare`.
+          isAmbient => this.lex.fileName.toString().endsWith(".d.ts"),
           cgNode => Some(
             CGNode::create(
               TopLevelFunction(FNNormal(funName), funName.pos.fileName),
@@ -1283,7 +1292,10 @@ extension class Parser {
     prevSymbolContext = this.getCurrentSymbolContext();
     (funName, this.getCurrentSymbol()) match {
     | (FNNormal(name), SPClass(className)) ->
-      methodSymbol = SPMethod(className, name.value);
+      methodKey = `${className}.${name.value}`;
+      metOcc = this.methodSymbolCounts.maybeGet(methodKey).default(0);
+      this.methodSymbolCounts.set(methodKey, metOcc + 1);
+      methodSymbol = SPMethod(className, name.value, metOcc);
       symbolContextPos = this.lex.pos;
       this.recordSymbolDefinitionAndSetSymbolContext(
         methodSymbol,

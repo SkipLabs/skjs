@@ -231,13 +231,26 @@ extension class TType {
 }
 
 extension class TFuns {
+  // tsc's overloaded-intersection meaning: the intersection of two overload
+  // sets is the concatenation of both sets, in order (first-match-wins over
+  // the combined list). That is a subtype of each side — isSubFuns matches
+  // every target signature against its own copy — so dropping signatures
+  // (the old pairwise merge, which could return None or lose pairs) would
+  // make `A & B` not a subtype of `A`, unsound for calls through the
+  // intersection.
   static fun inter(
-    subst: mutable Subst,
-    tenv: TEnv,
+    _subst: mutable Subst,
+    _tenv: TEnv,
     f1: TFuns,
     f2: TFuns,
   ): ?TFuns {
-    TFun::inter(subst, tenv, f1.fun_, f2.fun_).map(f -> TFuns(f, f1.pos))
+    all = f1.allFuns().concat(f2.allFuns());
+    // A value of the intersection may be ANY member function at runtime, so
+    // every signature carries the union of all members' cgNodes — otherwise a
+    // call resolved to the first matching signature would fail to record the
+    // other members in the call graph.
+    allCgs = all.foldl((acc, f) -> acc.union(f.cgNodes), CGNodes(SortedSet[]));
+    Some(TFuns::multiple(all.map(f -> f with {cgNodes => allCgs}), f1.pos))
   }
 }
 

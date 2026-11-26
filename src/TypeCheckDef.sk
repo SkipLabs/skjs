@@ -177,7 +177,8 @@ extension class TypeChecker {
       tcenv.validateHiddenEscapes()
     | fd @ TopLevelFunDef _ ->
       subst = Subst::createCheckingOwner(tcenvl);
-      this.funDef(subst, None(), fd, fd.cgNode.fromSome())
+      this.funDef(subst, None(), fd, fd.cgNode.fromSome());
+      this.checkFunOverloadGroup(tcenvl, fd)
     | Declare(VarDefs(_, varDefs))
     | ExportDeclare(VarDefs(_, varDefs)) ->
       for (varDef in varDefs) {
@@ -192,7 +193,8 @@ extension class TypeChecker {
       // normalized anywhere and a constraint violation in its signature
       // (`Id<number>` for `type Id<P extends string>`) escapes detection.
       subst = Subst::createCheckingOwner(tcenvl);
-      this.funDef(subst, None(), fd, fd.cgNode.fromSome())
+      this.funDef(subst, None(), fd, fd.cgNode.fromSome());
+      this.checkFunOverloadGroup(tcenvl, fd)
     | Declare(en @ Enum _)
     | ExportDeclare(en @ Enum _) ->
       this.checkEnum(tcenvl, en)
@@ -249,6 +251,235 @@ extension class TypeChecker {
     | en @ Enum _ -> this.checkEnum(tcenvl, en)
     | VarDefs(kind, varDefs) -> this.varDefs(tcenvl, kind, varDefs)
     | td @ TypeDef _ -> this.typeDef(tcenvl, td)
+    }
+  }
+
+  // Build the parameter list for an implementation-compatibility trial
+  // (TS2394): the IMPLEMENTATION's own parameters — names, patterns,
+  // defaults, optional/rest markers, `this` — with type annotations replaced
+  // positionally from the overload's non-`this` parameters. Positions beyond
+  // the overload's arity are typed `unknown` (a call through the overload
+  // supplies no argument there — the runtime value is the default or
+  // undefined — so the body must not rely on a declared type). An overload
+  // rest parameter maps to its element type when the implementation's
+  // parameter is not itself a rest.
+  static fun overloadTrialParams(
+    implSig: FunDefSigData,
+    ovSig: FunDefSigData,
+  ): Array<Param> {
+    ovParams = ovSig.params.filter(p -> !p.isThisParam());
+    implSig.params.mapWithIndex((i, p) ->
+      if (p.isThisParam()) {
+        p
+      } else {
+        ovIdx = implSig.params.slice(0, i).filter(q -> !q.isThisParam()).size();
+        ovp = if (ovIdx < ovParams.size()) {
+          Some(ovParams[ovIdx])
+        } else {
+          None()
+        };
+        unknownType = Type(p.pos, TAInst(Name(p.pos, "unknown"), Array[]));
+        newType: ?Type = ovp match {
+        | None() -> Some(unknownType)
+        | Some(q) ->
+          if (q.isRest.isSome()) {
+            if (p.isRest.isSome()) {
+              // both rest: the array annotation carries over
+              q.type
+            } else {
+              // overload rest maps to its element type
+              q.type match {
+              | Some(Type(_, TAArray(elt))) -> Some(elt)
+              | _ -> Some(unknownType)
+              }
+            }
+          } else if (p.isRest.isSome()) {
+            // implementation rest, overload plain: array of the overload type
+            q.type.map(t -> Type(p.pos, TAArray(t)))
+          } else {
+            q.type
+          }
+        };
+        p with {type => newType}
+      }
+    )
+  }
+
+  // Validate a same-named group of top-level function declarations as one
+  // overload set (pushDef lets them coexist instead of reporting a duplicate
+  // identifier). When the group has an implementation, the implementation
+  // BODY is also checked against every overload signature — the sound version
+  // of tsc's loose "comparable" implementation check
+  // (docs/typescript-soundness-holes.md): a call resolved to overload O runs
+  // the implementation with O's argument types, so the body must be
+  // well-typed with O's parameter types and return a subtype of O's return
+  // type. tsc instead only requires the declared implementation return type
+  // to be *comparable* to each overload's, which accepts bodies that return
+  // non-conforming values; SKJS rejects those.
+  //
+  // Runs only for the first declaration of the group, so each group error is
+  // reported once. A group is ambient only when every member is (`declare`
+  // or .d.ts — see FunDef.isAmbient); ambient groups need no implementation.
+  private fun checkFunOverloadGroup(
+    tcenvl: mutable TCEnvLight,
+    fd: TopLevelFunDef,
+  ): void {
+    name = fd.name match {
+    | FNNormal(n) -> n
+    };
+    groupVec = mutable Vector[];
+    for (d in this.defMap.getAll(tcenvl, name, false, true)) {
+      d match {
+      | f @ TopLevelFunDef _ -> groupVec.push(f)
+      | _ -> void
+      }
+    };
+    // Deduplicate by declaration position (exported groups can arrive through
+    // several export mentions, each resolving to the whole same-name vector).
+    deduped = mutable Vector[];
+    for (f in groupVec) {
+      if (!deduped.any(other -> other.getPos() == f.getPos())) {
+        deduped.push(f)
+      }
+    };
+    group = deduped.toArray();
+    // Only the first declaration of the group reports group-level errors.
+    if (fd.getPos() != group[0].getPos()) return void;
+    hasBody = (f: TopLevelFunDef) -> f.hasBody;
+    bodies = group.filter(hasBody);
+    // A group is ambient only if EVERY member is (`declare ...` or .d.ts);
+    // a mixed group still needs an implementation (tsc TS2391 on the
+    // non-ambient member).
+    allAmbient = group.all(f -> f.isAmbient);
+    if (bodies.size() > 1) {
+      // tsc TS2393, reported at every implementation after the first.
+      for (i in Range(1, bodies.size())) {
+        bodies[i].getPos().each(pos ->
+          tcenvl.error(
+            Array[(pos, "Duplicate function implementation")],
+            TSCode(2393),
+          )
+        )
+      }
+    };
+    if (bodies.size() == 1 && !hasBody(group[group.size() - 1])) {
+      // tsc TS2391: the implementation must immediately follow the overload
+      // signatures.
+      group[group.size() - 1].getPos().each(pos ->
+        tcenvl.error(
+          Array[
+            (
+              pos,
+              "Function implementation is missing or not immediately following the declaration",
+            ),
+          ],
+          TSCode(2391),
+        )
+      )
+    };
+    // No implementation at all in a non-ambient group — including a LONE
+    // body-less signature, which tsc also rejects with TS2391.
+    if (bodies.isEmpty() && !allAmbient) {
+      group[0].getPos().each(pos ->
+        tcenvl.error(
+          Array[
+            (
+              pos,
+              "Function implementation is missing or not immediately following the declaration",
+            ),
+          ],
+          TSCode(2391),
+        )
+      )
+    };
+    // Implementation compatibility (sound, stricter than tsc's loose
+    // "comparable" rule — docs/typescript-soundness-holes.md): for each
+    // overload signature O, the implementation must be usable wherever O is,
+    // i.e. either
+    //   (a) the implementation SIGNATURE is a subtype of O (params
+    //       contravariant, return covariant), or
+    //   (b) the implementation BODY re-checked with O's signature swapped in
+    //       type-checks (path-sensitive proof that under O's parameter types
+    //       every return conforms to O's return type).
+    // Either proof is sound; tsc only has the (unsound) comparable rule.
+    // Signature-only overloads the implementation must be compatible with.
+    // A lone function with a body has no overloads, so there is nothing to
+    // check here (and funDecl below would re-emit signature-level diagnostics
+    // for a plain function that funDef already reports via processParams).
+    overloadSigs = group.filter(f -> !hasBody(f));
+    if (bodies.size() == 1 && !overloadSigs.isEmpty()) {
+      implFd = bodies[0];
+      implTFuns = this.funDecl(
+        tcenvl,
+        None(),
+        implFd,
+        implFd.cgNode.fromSome(),
+      );
+      implTy = TType::single(TObject::createCall(implTFuns));
+      for (ovFd in overloadSigs) {
+        ovFd.getPos().each(ovPos -> {
+          ovTFuns = this.funDecl(tcenvl, None(), ovFd, ovFd.cgNode.fromSome());
+          ovTy = TType::single(TObject::createCall(ovTFuns));
+          subst = Subst::createCheckingOwner(tcenvl);
+          sigOk = TType::isSub(subst, this, implTy, ovTy) is STOk();
+          bodyOk = false;
+          if (!sigOk) {
+            // (b): re-check the body with the overload's signature, in an
+            // isolated results sink; inner diagnostics are discarded and
+            // replaced by the single TS2394 below. The overload's parameter
+            // TYPES are mapped positionally onto the implementation's
+            // parameter NAMES, so the body sees the same lexical
+            // environment it was written against (tsc checks compatibility
+            // by position, never by name).
+            implSig = this.getFunSig(tcenvl.context, implFd);
+            ovSig = this.getFunSig(tcenvl.context, ovFd);
+            // getFunSig materializes both inline and ref'd signatures. The
+            // trial runs the implementation BODY under the overload's
+            // signature, so it keeps the implementation's own parameter list
+            // (names, defaults, `this`) and only swaps the types.
+            trialFd = implFd with {
+              sig => FSInline(
+                ovSig.tparams,
+                static::overloadTrialParams(implSig, ovSig),
+                ovSig.retType,
+              ),
+            };
+            trialResults = TCResultsAcc::mcreate{
+              errorHandling => this.errorHandling,
+            };
+            trialEnvl = mutable TCEnvLight{
+              context => tcenvl.context,
+              results => trialResults,
+            };
+            subst2 = Subst::createCheckingOwner(trialEnvl);
+            exn = catchError(() ->
+              this.funDef(
+                subst2,
+                None(),
+                trialFd,
+                implFd.cgNode.fromSome(),
+                true,
+              )
+            );
+            !bodyOk = exn.isNone() && trialResults.errors.isEmpty()
+          };
+          if (!sigOk && !bodyOk) {
+            tcenvl.error(
+              Array[
+                (
+                  ovPos,
+                  "Overload signature is not compatible with its implementation signature",
+                ),
+                (
+                  implFd.getPos().fromSome(),
+                  "The implementation signature is declared here",
+                ),
+              ],
+              TSCode(2394),
+            )
+          }
+        })
+      }
     }
   }
 

@@ -1678,6 +1678,17 @@ base class TEnv{
         ownFieldEntries.push((cls, field))
       }
     };
+    // Same-name method declarations accumulate as an overload set (tsc
+    // merges them within a class body and across merged interface
+    // declarations). methodGroups[name] tracks the first member's field plus
+    // every member's signature, in declaration order; the field stored in
+    // `acc` is rebuilt after the loop with the merged TFuns. Like top-level
+    // functions, the implementation (body-bearing) signature is excluded
+    // from the callable set when signature-only overloads exist.
+    methodGroups = mutable Map<
+      FieldNameString,
+      (TField, Array<TFun>, Array<TFun>),
+    >[];
     for ((cls, fieldType) in ownFieldEntries) {
       fieldType match {
       | field @ ClassFieldValue _ ->
@@ -1769,7 +1780,11 @@ base class TEnv{
           };
 
           this.recordOwnField(tcenvb, ownFields, ownMethods, f, false);
-          acc![f.name] = f
+          acc![f.name] = f;
+          // A property declared after same-name methods supersedes the
+          // overload group (recordOwnField already reports TS2717 for the
+          // method/property clash), so the group is not rebuilt below.
+          _ = methodGroups.maybeRemove(f.name)
         | FNColon(indexName, indexType) ->
           keyType = this.normalize(tcenvb, indexType);
           keyKinds = this.resolveIndexKeyKinds(tcenvb, indexName.pos, keyType);
@@ -1870,10 +1885,41 @@ base class TEnv{
           };
 
           this.recordOwnField(tcenvb, ownFields, ownMethods, field, true);
-          acc![field.name] = field
+          acc![field.name] = field;
+          // Accumulate same-name methods into one overload set, in
+          // declaration order. Get/set accessors are not overloads, so they
+          // never merge.
+          if (fd.isGetSet is None()) {
+            entry = methodGroups.maybeGet(field.name);
+            (firstField, allFuns, sigFuns) = entry match {
+            | Some(e) -> e
+            | None() -> (field, Array[], Array[])
+            };
+            newAll = allFuns.concat(metTFuns.allFuns());
+            newSig = if (fd.hasBody) {
+              sigFuns
+            } else {
+              sigFuns.concat(metTFuns.allFuns())
+            };
+            methodGroups![field.name] = (firstField, newAll, newSig)
+          }
         }
       }
-    }
+    };
+    // Rebuild overloaded method fields now that every declaration of the
+    // merged name has been seen: the sig-only/impl split is only final once
+    // all members are in, and the callable set excludes the implementation
+    // signature whenever at least one signature-only overload exists.
+    methodGroups.each((name, grp) -> {
+      firstField = grp.i0;
+      allFuns = grp.i1;
+      sigFuns = grp.i2;
+      finalFuns = if (sigFuns.isEmpty()) allFuns else sigFuns;
+      mergedType = TType::single(
+        TObject::createCall(TFuns::multiple(finalFuns, firstField.pos)),
+      );
+      acc![name] = firstField with {get => mergedType}
+    })
   }
 
   // Record a member declared directly by one of the declarations of a merged
@@ -1881,10 +1927,9 @@ base class TEnv{
   // with an earlier one, like tsc:
   // - TS2687 when the modifiers (optional / readonly / access) differ;
   // - TS2717 when a non-method member's type differs.
-  // Two methods with the same name would accumulate as overloads in tsc; a
-  // TFuns holds a single signature, so SKJS keeps the later declaration
-  // silently — sound, since dropping an overload only rejects programs tsc
-  // accepts, never accepts one tsc rejects.
+  // Two methods with the same name accumulate as overloads (see methodGroups
+  // in addFields), so no error is reported for method/method re-declaration
+  // beyond the modifier check.
   private fun recordOwnField(
     tcenvb: mutable TCEnvBase,
     ownFields: mutable Map<FieldNameString, TField>,
@@ -2057,7 +2102,7 @@ base class TEnv{
     tparams: Array<TypeParam>,
     targs: Array<TType>,
   ): ?TFuns {
-    this.findConstructorMethod(
+    this.findConstructorMethods(
       tcenvb,
       visitedClasses,
       className,
@@ -2065,26 +2110,57 @@ base class TEnv{
       targs,
     ) match {
     | None() -> None()
-    | Some((tenv, fd, declaringTypeParams)) ->
-      Some(
+    | Some((tenv, ctors)) ->
+      funs = ctors.map(elt ->
         this.makeConstructor(
           tcenvb,
           className,
           tparams,
-          fd,
-          Some((tenv, declaringTypeParams)),
-        ),
+          elt.i0,
+          Some((tenv, elt.i1)),
+        )
+      );
+      // Constructor overloads: the signature-only declarations form the
+      // callable `new` signatures; the implementation signature is excluded
+      // when at least one signature-only overload exists (mirrors
+      // funDefsType for top-level functions). All members are kept otherwise.
+      sigIdxs = ctors
+        .mapWithIndex((i, elt) -> (i, !elt.i0.hasBody))
+        .filter(elt -> elt.i1)
+        .map(elt -> elt.i0);
+      finalFuns = mutable Vector[];
+      idxs = if (sigIdxs.isEmpty()) {
+        funs.mapWithIndex((i, _) -> i)
+      } else {
+        sigIdxs
+      };
+      for (i in idxs) {
+        for (f in funs[i].allFuns()) {
+          finalFuns.push(f)
+        }
+      };
+      arr = finalFuns.toArray();
+      Some(
+        if (arr.size() == 1) {
+          TFuns::singleFun(arr[0], className.pos)
+        } else {
+          TFuns::multiple(arr, className.pos)
+        },
       )
     }
   }
 
-  private fun findConstructorMethod(
+  // All constructor declarations of `className` itself (a class body may
+  // declare constructor overloads), in declaration order; if the class
+  // declares none, the first base class that does (mirroring the previous
+  // first-match walk).
+  private fun findConstructorMethods(
     tcenvb: mutable TCEnvBase,
     visitedClasses: SortedSet<String>,
     className: Name,
     tparams: Array<TypeParam>,
     targs: Array<TType>,
-  ): ?(this, ClassFieldMethod, Array<TypeParam>) {
+  ): ?(this, Array<(ClassFieldMethod, Array<TypeParam>)>) {
     (!this, clss) = this.processClassSetup(
       tcenvb,
       visitedClasses,
@@ -2092,6 +2168,7 @@ base class TEnv{
       className,
       targs,
     );
+    ownCtors = mutable Vector[];
     walkedBases = mutable Set<String>[];
     for (cls in clss) {
       clsFields = this.getClassFields(tcenvb.context, cls);
@@ -2100,10 +2177,15 @@ base class TEnv{
         | fd @ ClassFieldMethod _ if (
           fd.name is FNNormal(Name(_, "constructor"))
         ) ->
-          return Some((this, fd, cls.tparams))
+          ownCtors.push((fd, cls.tparams))
         | _ -> void
         }
-      };
+      }
+    };
+    if (!ownCtors.isEmpty()) {
+      return Some((this, ownCtors.toArray()))
+    };
+    for (cls in clss) {
       for (extend in cls.extends_) {
         extend.value match {
         | TAInst(parentReference, paramTArgs) ->
@@ -2122,13 +2204,16 @@ base class TEnv{
             walkedBases.maybeInsert(parentName.value) &&
             this.hasClassDef(tcenvb, parentName)
           ) {
-            return this.findConstructorMethod(
+            this.findConstructorMethods(
               tcenvb,
               visitedClasses,
               parentName,
               tparams,
               paramTArgs.map(targ -> this.normalize(tcenvb, targ)),
-            )
+            ) match {
+            | Some(res) -> return Some(res)
+            | None() -> void
+            }
           }
         | _ ->
           tcenvb.error(
@@ -3071,6 +3156,63 @@ base class TEnv{
     }
   }
 
+  // The value type of a name whose definitions include top-level function
+  // declarations: the overload group as ONE callable with the whole signature
+  // set, in declaration order. The callable set is the overload signatures
+  // (the body-less declarations); the implementation signature (the one with
+  // a body) is NOT callable from outside, matching tsc. A lone declaration
+  // with a body is an ordinary function: its single signature is the set.
+  // None when `defs` contains no TopLevelFunDef.
+  fun funDefsType(
+    tcenvb: mutable TCEnvBase,
+    defs: Array<FileDefElt>,
+    pos: PosRange,
+  ): ?TType {
+    funDefs = mutable Vector[];
+    for (def in defs) {
+      def match {
+      | fd @ TopLevelFunDef _ -> funDefs.push(fd)
+      | _ -> void
+      }
+    };
+    if (funDefs.isEmpty()) return None();
+    // Deduplicate by declaration position: an exported group can reach us
+    // through several export mentions, each resolving to the whole same-name
+    // def vector — the same declaration must not appear twice in the set.
+    deduped = mutable Vector[];
+    for (fd in funDefs) {
+      if (!deduped.any(other -> other.getPos() == fd.getPos())) {
+        deduped.push(fd)
+      }
+    };
+    arr = deduped.toArray();
+    // hasBody is recorded at parse time — reading the deferred body map here
+    // would add a body dependency to this type computation and break
+    // incremental checking (a body change must not re-check users).
+    // The implementation signature is hidden only within ONE file's
+    // declaration group. A group spanning files (e.g. a `declare module`
+    // augmentation of an imported function) must not hide the implementation
+    // without checking the foreign signatures against its body — and that
+    // check cannot run here — so in that case the callable set is exactly the
+    // body-bearing definitions (the real implementation signatures), which
+    // is sound.
+    bodyDefs = arr.filter(fd -> fd.hasBody);
+    sigDefs = if (bodyDefs.isEmpty()) {
+      arr
+    } else {
+      bodyFiles = bodyDefs.map(fd -> fd.getPos().fromSome().fileName);
+      sameFileSigs = arr.filter(fd ->
+        !fd.hasBody && bodyFiles.contains(fd.getPos().fromSome().fileName)
+      );
+      if (sameFileSigs.isEmpty()) bodyDefs else sameFileSigs
+    };
+    sigs = sigDefs.map(fd -> {
+      cgNode = fd.cgNode.fromSome();
+      this.funDecl(tcenvb, None(), fd, cgNode).fun_()
+    });
+    Some(TType::single(TObject::createCall(TFuns::multiple(sigs, pos))))
+  }
+
   fun typeOfExpr(tcenvb: mutable TCEnvBase, expr: Expr): TType {
     (this, tcenvb) match {
     | (tc @ TypeChecker _, tcenv @ TCEnv _) ->
@@ -3093,10 +3235,17 @@ base class TEnv{
     | Var(Name(_, "undefined")) ->
       TType::single(TPrimUnit(TUndefined(), expr.pos))
     | Var(varName) ->
+      allDefs = this.defMap.getAll(tcenvb, varName, false, true);
+      // Same-named top-level function declarations form one overload group:
+      // type the name as a callable with the whole signature set.
+      this.funDefsType(tcenvb, allDefs, varName.pos) match {
+      | Some(ty) -> return ty
+      | None() -> void
+      };
       sawInterface = false;
       sawValueDef = false;
       sawTypeAlias = false;
-      for (def in this.defMap.getAll(tcenvb, varName, false, true)) {
+      for (def in allDefs) {
         def match {
         | FDVar(kind, _, Some(t), _) ->
           if (this.typeofValues.contains(varName.value)) {
@@ -3123,11 +3272,7 @@ base class TEnv{
             kind is VDKConst _,
             Some(varName.value),
           )
-        | fd @ TopLevelFunDef _ ->
-          cgNode = fd.cgNode.fromSome();
-          return TType::single(
-            TObject::createCall(this.funDecl(tcenvb, None(), fd, cgNode)),
-          )
+        | TopLevelFunDef _ -> void /* handled above by funDefsType */
         | Class{kind => CKInterface()} -> !sawInterface = true
         | cls @ Class _ ->
           className = this.runtimeClassName(tcenvb, varName, cls);
@@ -3659,6 +3804,19 @@ base class TEnv{
     )
   }
 
+  // Append a signature to a call/construct signature set, preserving
+  // declaration order (first-match-wins overload resolution).
+  private static fun mergeSigSet(
+    prev: ?TFuns,
+    tFuns: TFuns,
+    pos: PosRange,
+  ): TFuns {
+    prev match {
+    | Some(p) -> TFuns::multiple(p.allFuns().concat(tFuns.allFuns()), pos)
+    | None() -> tFuns
+    }
+  }
+
   private fun createTFields(
     tcenvb: mutable TCEnvBase,
     fieldTypes: Array<ObjectField>,
@@ -3669,6 +3827,9 @@ base class TEnv{
     indexes = mutable Vector[];
     call: ?TFuns = None();
     new: ?TFuns = None();
+    // Same-name method-syntax members of an object type literal accumulate
+    // as an overload set, in declaration order (see addFields for classes).
+    objMethodGroups = mutable Map<FieldNameString, (TField, Array<TFun>)>[];
 
     for (elt in fieldTypes) {
       elt match {
@@ -3844,7 +4005,8 @@ base class TEnv{
               type => normalizedType,
               access => FAPublic(),
             };
-            fieldsMap![field.name] = field
+            fieldsMap![field.name] = field;
+            _ = objMethodGroups.maybeRemove(field.name)
           }
         | FNColon(indexName, indexType) ->
           keyType = this.normalize(tcenvb, indexType);
@@ -3877,8 +4039,13 @@ base class TEnv{
         };
         tFuns = this.funDecl(tcenvb, None(), fd, cgNode, isShapeMethod);
         fd.name match {
-        | FNNormal(Name(_, "new")) -> !new = Some(tFuns)
-        | FNEmpty(_) -> !call = Some(tFuns)
+        | FNNormal(Name(_, "new")) ->
+          // Construct signatures accumulate: `{ new (x: string): A; new (x: number): A }`
+          // is a construct overload set, resolved like call overloads.
+          !new = Some(static::mergeSigSet(new, tFuns, fd.name.getPos()))
+        | FNEmpty(_) ->
+          // Call signatures accumulate the same way.
+          !call = Some(static::mergeSigSet(call, tFuns, fd.name.getPos()))
         | simpleFieldName @ SimpleFieldName _ ->
           decl = TType::single(TObject::createCall(tFuns));
           simpleFieldName match {
@@ -3905,11 +4072,28 @@ base class TEnv{
               type => decl,
               access => FAPublic(),
             };
-            fieldsMap![field.name] = field
+            fieldsMap![field.name] = field;
+            entry = objMethodGroups.maybeGet(field.name);
+            (firstField, funs) = entry match {
+            | Some(e) -> e
+            | None() -> (field, Array[])
+            };
+            objMethodGroups![field.name] = (
+              firstField,
+              funs.concat(tFuns.allFuns()),
+            )
           }
         }
       }
     };
+    objMethodGroups.each((name, grp) -> {
+      firstField = grp.i0;
+      funs = grp.i1;
+      mergedType = TType::single(
+        TObject::createCall(TFuns::multiple(funs, firstField.pos)),
+      );
+      fieldsMap![name] = firstField with {get => mergedType}
+    });
     tIndexes = TIndexes::create(tcenvb, this, indexes);
     tFields = TFields::create{
       fields => fieldsMap,

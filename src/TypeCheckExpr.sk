@@ -1579,23 +1579,94 @@ extension class TypeChecker {
     | Some(tf) -> tf
     | None() -> return None()
     };
-    f = tfuns.fun_;
-    // A generic call signature loses its type parameters through .call/.apply/
-    // .bind in TS (they resolve to `unknown`), so rather than diverge we leave
-    // those as "Unbound field" — a sound under-approximation.
+    // Synthesize one .call/.apply/.bind signature PER overload signature, so
+    // the rebound function keeps the whole overload set and call resolution
+    // dispatches over it as usual. Sound: each synthesized signature accepts
+    // exactly what the corresponding original overload accepts.
+    if (fieldName == "bind") {
+      // bind(thisArg) => the WHOLE overload set with `this` removed from
+      // every signature: the rebound function keeps all overloads.
+      boundSigs = mutable Vector[];
+      for (f in tfuns.allFuns()) {
+        if (!f.tparams.isEmpty()) return None();
+        if (f.thisParam is ImplicitShape _) return None();
+        boundSigs.push(f with {thisParam => NoThis()})
+      };
+      if (boundSigs.isEmpty()) return None();
+      // The rebound function keeps EVERY overload, so thisArg must be
+      // accepted by every overload's `this`: intersect them all (a missing
+      // `this` counts as unknown). Checking only the first overload's `this`
+      // would let a later overload run with an unchecked receiver.
+      thisType = TType::interN(
+        tcenv.subst,
+        this,
+        pos,
+        tfuns.allFuns().map(f -> f.thisParam.tyOpt().default(TType::top(pos))),
+      );
+      neverRest = TType::inst(
+        Name(pos, "ReadonlyArray"),
+        TArgs(Array[TType::bottom(pos)]),
+      );
+      boundTy = TType::single(
+        TObject::createCall(TFuns::multiple(boundSigs.toArray(), pos)),
+      );
+      // TODO: partial application `bind(thisArg, ...args)` is not modeled —
+      // a `never[]` rest makes any extra bound argument fail (rejecting it
+      // like TS's TS2554) rather than be silently ignored.
+      return Some(
+        TType::single(
+          TObject::createCall(
+            TFuns::singleFun(
+              TFun(
+                Array[],
+                NoThis(),
+                Array[thisType],
+                Array[],
+                Some(neverRest),
+                boundTy,
+                tfuns.fun_().cgNodes,
+              ),
+              pos,
+            ),
+          ),
+        ),
+      )
+    };
+    synthOne = (f: TFun) -> this.synthCallBindSig(fieldName, f, pos);
+    synths = mutable Vector[];
+    for (f in tfuns.allFuns()) {
+      synthOne(f).each(s -> synths.push(s))
+    };
+    if (synths.isEmpty()) return None();
+    Some(
+      TType::single(
+        TObject::createCall(TFuns::multiple(synths.toArray(), pos)),
+      ),
+    )
+  }
+
+  // Synthesize the .call/.apply/.bind signature for ONE call signature `f`.
+  private fun synthCallBindSig(
+    fieldName: String,
+    f: TFun,
+    pos: PosRange,
+  ): ?TFun {
+    // A generic call signature loses its type parameters through
+    // .call/.apply/.bind in TS (they resolve to `unknown`), so rather than
+    // diverge we leave those as "Unbound field" — a sound
+    // under-approximation.
     if (!f.tparams.isEmpty()) return None();
     // A shape method's carrier type is erased, so no sound thisArg check is
     // possible for a rebind — do not synthesize .call/.apply/.bind on it
     // (a sound under-approximation: the fields stay unbound).
     if (f.thisParam is ImplicitShape _) return None();
-    // The thisArg of `.call`/`.apply`/`.bind` is checked against the function's
-    // `this`: an implicit class `this` requires the receiver to be the class
-    // instance (sound; TS resolves it to `unknown`), an explicit `this: T`
-    // constrains to T, and no declared `this` accepts anything.
+    // The thisArg of `.call`/`.apply`/`.bind` is checked against the
+    // function's `this`: an implicit class `this` requires the receiver to
+    // be the class instance (sound; TS resolves it to `unknown`), an
+    // explicit `this: T` constrains to T, and no declared `this` accepts
+    // anything.
     thisType = f.thisParam.tyOpt().default(TType::top(pos));
-    funType = (tfun: TFun) ->
-      TType::single(TObject::createCall(TFuns::singleFun(tfun, pos)));
-    synthOpt: ?TFun = if (fieldName == "call") {
+    if (fieldName == "call") {
       // (thisArg, ...params) => R — mirrors the function's optional/rest params.
       Some(
         TFun(
@@ -1609,8 +1680,8 @@ extension class TypeChecker {
         ),
       )
     } else if (fieldName == "apply") {
-      // (thisArg, [params]) => R. The argument tuple is exact, so only required
-      // positional parameters are modeled; fall back otherwise.
+      // (thisArg, [params]) => R. The argument tuple is exact, so only
+      // required positional parameters are modeled; fall back otherwise.
       if (!f.optionalParams.isEmpty() || f.spreadParam.isSome()) {
         None()
       } else {
@@ -1618,9 +1689,10 @@ extension class TypeChecker {
         // parameters, so `g.apply(thisArg)` type-checks for a zero-arg `g`.
         (applyParams, applyOptional) = if (f.params.isEmpty()) {
           // ...and the canonical empty array `[]` supplies the same zero
-          // arguments. Model the optional array as `ReadonlyArray<never>` (like
-          // `.bind`'s rest) so both `g.apply(t)` and `g.apply(t, [])` type-check
-          // while any element still over-supplies and is rejected.
+          // arguments. Model the optional array as `ReadonlyArray<never>`
+          // (like `.bind`'s rest) so both `g.apply(t)` and `g.apply(t, [])`
+          // type-check while any element still over-supplies and is
+          // rejected.
           emptyArgs = TType::inst(
             Name(pos, "ReadonlyArray"),
             TArgs(Array[TType::bottom(pos)]),
@@ -1643,31 +1715,9 @@ extension class TypeChecker {
         )
       }
     } else {
-      // bind(thisArg) => the function with its `this` removed, preserving the
-      // remaining (incl. optional/rest) parameters.
-      // TODO: partial application `bind(thisArg, ...args)` is not modeled (it
-      // would drop the bound parameters from the result, an OmitThisParameter
-      // variant). For now a `never[]` rest makes any extra bound argument fail
-      // (rejecting it like TS's TS2554) rather than be silently ignored.
-      bound = f with {thisParam => NoThis()};
-      boundTy = funType(bound);
-      neverRest = TType::inst(
-        Name(pos, "ReadonlyArray"),
-        TArgs(Array[TType::bottom(pos)]),
-      );
-      Some(
-        TFun(
-          Array[],
-          NoThis(),
-          Array[thisType],
-          Array[],
-          Some(neverRest),
-          boundTy,
-          f.cgNodes,
-        ),
-      )
-    };
-    synthOpt.map(synth -> funType(synth))
+      // bind is handled by the caller (it wraps the whole overload set).
+      None()
+    }
   }
 
   fun get(
@@ -1717,18 +1767,29 @@ extension class TypeChecker {
       objType,
       idxSType,
     );
-    stypes = objType2.getSTypes(tcenv.subst, this, Covariant()) match {
-    | Some(stypes) if (!stypes.isEmpty()) -> Vector::mcreateFromItems(stypes)
-    | _ ->
-      fatalError(
-        Array[
-          (
-            pos,
-            `Cannot access a property on type ${this.ppType(tcenv, objType2)}`,
-          ),
-        ],
-        TSCode(2339),
-      )
+    stypes = if (objType2.isBottom() && tcenv.inOverloadTrial) {
+      // Inside an overload trial, member access on a `never` receiver (a
+      // parameter narrowed to never in a branch unreachable through this
+      // overload) yields never without an error. Outside a trial the error
+      // stands (tsc TS2339 on reachable never receivers).
+      return TType::bottom(pos)
+    } else {
+      objType2.getSTypes(tcenv.subst, this, Covariant()) match {
+      | Some(stypes) if (!stypes.isEmpty()) -> Vector::mcreateFromItems(stypes)
+      | _ ->
+        fatalError(
+          Array[
+            (
+              pos,
+              `Cannot access a property on type ${this.ppType(
+                tcenv,
+                objType2,
+              )}`,
+            ),
+          ],
+          TSCode(2339),
+        )
+      }
     };
     isOptionalChaining = accessKind is AKOptionalChain _;
     isLValue = accessKind is AKLValue _;
@@ -2517,70 +2578,74 @@ extension class TypeChecker {
       tcenv.scope.maybeGet(local) match {
       | None() ->
         defs = this.defMap.getAll(tcenv, local, false, typeQuery);
-        sawInterface = false;
-        sawTypeAlias = false;
-        for (def in defs) {
-          def match {
-          | fd @ TopLevelFunDef _ ->
-            tFuns = this.funDecl(tcenv, None(), fd, fd.cgNode.fromSome());
-            break TType::single(TObject::createCall(tFuns))
-          | Class{kind => CKInterface()} -> !sawInterface = true
-          | TypeDef _ -> !sawTypeAlias = true
-          | c @ Class _ ->
-            staticClass = this.newStatic(tcenv.subst, c.name);
-            break staticClass
-          | en @ Enum _ -> break this.enumStatic(tcenv, en)
-          // EnumMemberDef is only synthesized in type position, never
-          // returned by a value-position (typeOnly=false) lookup.
-          | EnumMemberDef _ -> void
-          | FDVar(kind, name, type, value) ->
-            if (!(kind is VDKConst _) && !this.conformance) {
-              tcenv.error(
-                Array[
-                  (
-                    name.pos,
-                    "Only 'const' members are supported in this position by SKJS",
-                  ),
-                ],
-                SKJSCode(2073),
-              );
-            };
-            break type match {
-            | None() ->
-              if (this.conformance && !(kind is VDKConst _)) {
-                // Conformance mode: a top-level let/var reference reads at its
-                // (widened) initializer's type.
-                value match {
-                | Some(init) -> this.toplevelVarInitType(tcenv, init)
-                | None() -> this.newTVar(tcenv, pos, FromUntypedVar(pos))
-                }
-              } else {
-                value.flatMap(e ->
-                  (e.value match {
-                  | AsConst(sub) -> this.maybeAsConstType(tcenv, sub)
-                  | _ -> None()
-                  }) match {
-                  | some @ Some _ -> some
-                  | None() -> this.asConstExpr(tcenv, e)
+        // Same-named top-level function declarations form one overload group:
+        // type the name as a callable with the whole signature set.
+        this.funDefsType(tcenv, defs, local.pos) match {
+        | Some(ty) -> ty
+        | None() ->
+          sawInterface = false;
+          sawTypeAlias = false;
+          for (def in defs) {
+            def match {
+            | TopLevelFunDef _ -> void /* handled above by funDefsType */
+            | Class{kind => CKInterface()} -> !sawInterface = true
+            | TypeDef _ -> !sawTypeAlias = true
+            | c @ Class _ ->
+              staticClass = this.newStatic(tcenv.subst, c.name);
+              break staticClass
+            | en @ Enum _ -> break this.enumStatic(tcenv, en)
+            // EnumMemberDef is only synthesized in type position, never
+            // returned by a value-position (typeOnly=false) lookup.
+            | EnumMemberDef _ -> void
+            | FDVar(kind, name, type, value) ->
+              if (!(kind is VDKConst _) && !this.conformance) {
+                tcenv.error(
+                  Array[
+                    (
+                      name.pos,
+                      "Only 'const' members are supported in this position by SKJS",
+                    ),
+                  ],
+                  SKJSCode(2073),
+                );
+              };
+              break type match {
+              | None() ->
+                if (this.conformance && !(kind is VDKConst _)) {
+                  // Conformance mode: a top-level let/var reference reads at its
+                  // (widened) initializer's type.
+                  value match {
+                  | Some(init) -> this.toplevelVarInitType(tcenv, init)
+                  | None() -> this.newTVar(tcenv, pos, FromUntypedVar(pos))
                   }
-                ) match {
-                | None() -> this.newTVar(tcenv, pos, FromUntypedVar(pos))
-                | Some(ty) -> ty
+                } else {
+                  value.flatMap(e ->
+                    (e.value match {
+                    | AsConst(sub) -> this.maybeAsConstType(tcenv, sub)
+                    | _ -> None()
+                    }) match {
+                    | some @ Some _ -> some
+                    | None() -> this.asConstExpr(tcenv, e)
+                    }
+                  ) match {
+                  | None() -> this.newTVar(tcenv, pos, FromUntypedVar(pos))
+                  | Some(ty) -> ty
+                  }
                 }
+              | Some(ty) ->
+                this.normalize(tcenv, ty, kind is VDKConst _, Some(name.value))
               }
-            | Some(ty) ->
-              this.normalize(tcenv, ty, kind is VDKConst _, Some(name.value))
             }
-          }
-        } else {
-          if (sawInterface) {
-            interfaceAsValueError(tcenv, local);
-            // Continue as if the interface name were a value.
-            this.newStatic(tcenv.subst, local)
-          } else if (sawTypeAlias) {
-            typeAliasAsValueError(local)
           } else {
-            fatalError(Array[(pos, "Cannot find name")], TSCode(2304))
+            if (sawInterface) {
+              interfaceAsValueError(tcenv, local);
+              // Continue as if the interface name were a value.
+              this.newStatic(tcenv.subst, local)
+            } else if (sawTypeAlias) {
+              typeAliasAsValueError(local)
+            } else {
+              fatalError(Array[(pos, "Cannot find name")], TSCode(2304))
+            }
           }
         }
       | Some(localDef) -> localDef
@@ -2966,6 +3031,13 @@ extension class TypeChecker {
       normTargs = targs.map(ty -> this.normalize(tcenv, ty));
       // Resolve a callable value and invoke it with the given receiver.
       dispatchCall = (fty: TType, thisArgOpt: ?TType) -> {
+        // Inside an overload trial, a call whose callee has type `never` (a
+        // branch unreachable through this overload) yields never without a
+        // "not callable" error. Outside a trial the error stands (tsc
+        // TS2349 on reachable never callees).
+        if (fty.isBottom() && tcenv.inOverloadTrial) {
+          return TType::bottom(pos)
+        };
         calleeObj = fty
           .getSTypes(tcenv.subst, this, Covariant())
           .flatMap(stypes ->
@@ -5472,6 +5544,13 @@ extension class TypeChecker {
     ty1: TType,
     e2: Expr,
   ): TType {
+    // A `never` operand (e.g. a parameter narrowed to never in a dead branch)
+    // makes the operation unreachable: yield never without an error. Sound
+    // because no value can have type never.
+    if (ty1.isBottom()) {
+      _ = this.expr(tcenv, e2, true);
+      return TType::bottom(pos)
+    };
     if (addition) {
       ty1.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
         stypes.singleElt()
@@ -5500,6 +5579,12 @@ extension class TypeChecker {
         )
       }
     } else {
+      // A `never` operand makes the operation unreachable: yield never, no
+      // error (tsc accepts arithmetic on never operands).
+      if (ty1.isBottom()) {
+        _ = this.expr(tcenv, e2, true);
+        return TType::bottom(pos)
+      };
       kind1 = this.checkIsNumeric(
         tcenv,
         leftPos,
@@ -5507,6 +5592,9 @@ extension class TypeChecker {
         ty1,
       );
       ty2 = this.expr(tcenv, e2, true);
+      if (ty2.isBottom()) {
+        return TType::bottom(pos)
+      };
       kind2 = this.checkIsNumeric(
         tcenv,
         e2.pos,
@@ -6040,8 +6128,11 @@ extension class TypeChecker {
       | obj @ TObject _ ->
         obj.maybeGetCall(tcenv.subst, this) match {
         | Some(
-          tfuns @ TFuns(f, _),
-        ) if (f.tparams.isEmpty() && cbFuns is None()) ->
+          tfuns,
+        ) if (
+          tfuns.allFuns().all(f -> f.tparams.isEmpty()) &&
+          cbFuns is None()
+        ) ->
           !cbFuns = Some(tfuns)
         | _ -> return Array[]
         }
@@ -6074,7 +6165,10 @@ extension class TypeChecker {
   ): TType {
     if (positionUnambiguous) {
       tfuns match {
-      | TFuns(calleeTFun, _) if (calleeTFun.tparams.isEmpty()) ->
+      // Contextual typing reads the primary (first) signature: arguments are
+      // typed once, before overload resolution, so a closure argument gets
+      // the first overload's parameter type as its context.
+      | _ if (tfuns.fun_().tparams.isEmpty()) ->
         argExpr match {
         | Expr(closurePos, c @ Closure(tparams, ps, retTyAstOpt, body))
         | Expr(
@@ -6204,10 +6298,227 @@ extension class TypeChecker {
 
   // Both explicit and implicit calls use the same receiver, generic and
   // argument obligations. Callers have evaluated each operand exactly once.
+  //
+  // With several signatures (an overload set) this dispatches resolution:
+  // signatures are tried in declaration order and the first one that accepts
+  // the call wins (tsc's rule, and sound because the implementation is checked
+  // against every overload — see checkDef_). If none accepts, a single
+  // "No overload matches this call" error is reported for the whole call.
   private fun callWithArgumentTypes(
     tcenv: mutable TCEnv,
     pos: PosRange,
     tfuns: TFuns,
+    targs: Array<TType>,
+    args: readonly Vector<TType>,
+    moreArgs: ?TType,
+    thisArgOpt: ?TType,
+    argumentCheck: TypeArgumentCheck,
+  ): TType {
+    sigs = tfuns.allFuns();
+    if (sigs.size() == 1) {
+      return this.callSingleSignature(
+        tcenv,
+        pos,
+        sigs[0],
+        tfuns.pos,
+        targs,
+        args,
+        moreArgs,
+        thisArgOpt,
+        argumentCheck,
+      )
+    };
+    failureMsgs = mutable Vector<(PosRange, String)>[];
+    for (i in Range(0, sigs.size())) {
+      sig = sigs[i];
+      // tsc's arity filter: with several overloads, a candidate that cannot
+      // accept this many arguments (no rest parameter) is skipped — extra
+      // arguments are exactly what dispatches to a later overload at
+      // runtime, so accepting them here would pick the wrong return type.
+      if (
+        moreArgs.isNone() &&
+        sig.spreadParam.isNone() &&
+        args.size() > sig.params.size() + sig.optionalParams.size()
+      ) {
+        failureMsgs.push(
+          (
+            tfuns.pos,
+            `Overload ${i +
+              1} of ${sigs.size()} expects at most ${sig.params.size() +
+              sig.optionalParams.size()} arguments, but got ${args.size()}`,
+          ),
+        );
+        continue
+      };
+      (result, msgs) = this.tryCallSignature(
+        tcenv,
+        pos,
+        sig,
+        tfuns.pos,
+        targs,
+        args,
+        moreArgs,
+        thisArgOpt,
+        argumentCheck,
+      );
+      result match {
+      | Some(rty) -> return rty
+      | None() ->
+        failureMsgs.push(
+          (
+            tfuns.pos,
+            `Overload ${i + 1} of ${sigs.size()}, '${sig.toString(
+              tcenv.subst,
+              this,
+            )}', gave the following error:`,
+          ),
+        );
+        for (m in msgs) failureMsgs.push(m)
+      }
+    };
+    msgs = mutable Vector[(pos, "No overload matches this call")];
+    for (m in failureMsgs) msgs.push(m);
+    // In the default error mode this throws, making it the one reported error
+    // for the call; in keep-going mode it records and checking continues.
+    tcenv.error(msgs.toArray(), TSCode(2769));
+    // Recovery (keep-going mode only): type the call as the LAST overload,
+    // discarding its diagnostics — the error above already rejects the
+    // program, and tsc likewise falls back to the last overload's type.
+    this.recoverCallSignature(
+      tcenv,
+      pos,
+      sigs[sigs.size() - 1],
+      tfuns.pos,
+      targs,
+      args,
+      moreArgs,
+      thisArgOpt,
+      argumentCheck,
+    )
+  }
+
+  // Try ONE overload signature in a full sandbox (subst, publication, and
+  // diagnostics). Returns (Some(result), _) when the signature accepts the
+  // call — bindings and publication are kept — and (None, msgs) otherwise,
+  // with every effect of the trial rolled back. msgs are the trial's
+  // diagnostic lines, for the aggregated "no overload matches" error.
+  // Try ONE overload signature in a full sandbox (subst, publication, and
+  // diagnostics). Returns (Some(result), _) when the signature accepts the
+  // call — bindings and publication are kept — and (None, msgs) otherwise,
+  // with every effect of the trial rolled back. msgs are the trial's
+  // diagnostic lines, for the aggregated "no overload matches" error.
+  private fun tryCallSignature(
+    tcenv: mutable TCEnv,
+    pos: PosRange,
+    tfun: TFun,
+    fPos: PosRange,
+    targs: Array<TType>,
+    args: readonly Vector<TType>,
+    moreArgs: ?TType,
+    thisArgOpt: ?TType,
+    argumentCheck: TypeArgumentCheck,
+  ): (?TType, Array<(PosRange, String)>) {
+    (accepted, result, msgs) = this.runCallTrial(tcenv, pos, () ->
+      this.proposeAndValidateCall(
+        tcenv,
+        pos,
+        tfun,
+        fPos,
+        targs,
+        args,
+        moreArgs,
+        thisArgOpt,
+        argumentCheck,
+        tcenv.results.errors.size(),
+      )
+    );
+    if (accepted) (Some(result), Array[]) else (None(), msgs)
+  }
+
+  // Run one call trial in a full sandbox. Returns (accepted, result, msgs):
+  // when f returns with no new diagnostics, the trial is accepted and its
+  // effects are kept; otherwise everything (subst, publication, diagnostics)
+  // is rolled back and msgs carries the trial's diagnostic lines. In the
+  // default/backtrace error modes the first diagnostic throws ErrorExn,
+  // which is captured into msgs; any other exception rolls back and is
+  // rethrown (genuine internal errors are never swallowed). `result` is
+  // f's return value when f returned, else `top` (error recovery only — the
+  // program is already rejected at that point).
+  private fun runCallTrial(
+    tcenv: mutable TCEnv,
+    pos: PosRange,
+    f: () -> TType,
+  ): (Bool, TType, Array<(PosRange, String)>) {
+    saved = tcenv.subst.save();
+    publication = tcenv.results.savePublication();
+    entryErrors = tcenv.results.errors.size();
+    entryWarnings = tcenv.results.warnings.size();
+    entryHiddenChecks = tcenv.hiddenEscapeChecks.size();
+    exnMsgs: ?Array<(PosRange, String)> = None();
+    result: ?TType = None();
+    try {
+      !result = Some(f())
+    } catch {
+    | ErrorExn(err) -> !exnMsgs = Some(this.trialErrorMessages(tcenv, err))
+    | exn ->
+      tcenv.subst.restore(saved);
+      tcenv.results.restorePublication(publication);
+      while (tcenv.hiddenEscapeChecks.size() > entryHiddenChecks) {
+        _ = tcenv.hiddenEscapeChecks.pop()
+      };
+      throw exn
+    };
+    accepted = result.isSome() && tcenv.results.errors.size() == entryErrors;
+    if (accepted) {
+      return (true, result.fromSome(), Array[])
+    };
+    // Rejected: capture the trial's diagnostics, then roll everything back.
+    trialMsgs = mutable Vector<(PosRange, String)>[];
+    for (i in Range(entryErrors, tcenv.results.errors.size())) {
+      for (m in this.trialErrorMessages(tcenv, tcenv.results.errors[i])) {
+        trialMsgs.push(m)
+      }
+    };
+    msgs = exnMsgs.default(trialMsgs.toArray());
+    tcenv.subst.restore(saved);
+    tcenv.results.restorePublication(publication);
+    while (tcenv.hiddenEscapeChecks.size() > entryHiddenChecks) {
+      _ = tcenv.hiddenEscapeChecks.pop()
+    };
+    while (tcenv.results.errors.size() > entryErrors) {
+      _ = tcenv.results.errors.pop()
+    };
+    while (tcenv.results.warnings.size() > entryWarnings) {
+      _ = tcenv.results.warnings.pop()
+    };
+    (false, result.default(TType::top(pos)), msgs)
+  }
+
+  // The messages of a trial failure, including a subtyping error's rendered
+  // detail lines (e.g. "Type '42' is not assignable to type 'string'").
+  private fun trialErrorMessages(
+    tcenv: mutable TCEnv,
+    err: Error,
+  ): Array<(PosRange, String)> {
+    err match {
+    | NamingError(messages, _) -> messages
+    | se @ SubtypingError(_, _, messages, _, _) ->
+      getConfig(tcenv.context).errorDetailConfig.getDefault() match {
+      | ErrorDetailHide()
+      | ErrorDetailMinimal() ->
+        messages
+      | d @ STErrorDetail _ ->
+        messages.concat(se.renderDetail(tcenv.context, d))
+      }
+    | _ -> Array[]
+    }
+  }
+
+  private fun callSingleSignature(
+    tcenv: mutable TCEnv,
+    pos: PosRange,
+    tfun: TFun,
+    fPos: PosRange,
     targs: Array<TType>,
     args: readonly Vector<TType>,
     moreArgs: ?TType,
@@ -6221,7 +6532,8 @@ extension class TypeChecker {
       this.proposeAndValidateCall(
         tcenv,
         pos,
-        tfuns,
+        tfun,
+        fPos,
         targs,
         args,
         moreArgs,
@@ -6242,10 +6554,44 @@ extension class TypeChecker {
     result
   }
 
+  // Run the last overload signature purely for its return type, discarding
+  // all effects (used for error recovery after "No overload matches"; that
+  // error has already rejected the program, so the recovery type only needs
+  // to keep the rest of the definition checkable — tsc likewise falls back
+  // to the last overload's type).
+  private fun recoverCallSignature(
+    tcenv: mutable TCEnv,
+    pos: PosRange,
+    tfun: TFun,
+    fPos: PosRange,
+    targs: Array<TType>,
+    args: readonly Vector<TType>,
+    moreArgs: ?TType,
+    thisArgOpt: ?TType,
+    argumentCheck: TypeArgumentCheck,
+  ): TType {
+    (_accepted, result, _msgs) = this.runCallTrial(tcenv, pos, () ->
+      this.proposeAndValidateCall(
+        tcenv,
+        pos,
+        tfun,
+        fPos,
+        targs,
+        args,
+        moreArgs,
+        thisArgOpt,
+        argumentCheck,
+        tcenv.results.errors.size(),
+      )
+    );
+    result
+  }
+
   private fun proposeAndValidateCall(
     tcenv: mutable TCEnv,
     pos: PosRange,
-    tfuns: TFuns,
+    tfun: TFun,
+    fPos: PosRange,
     targs: Array<TType>,
     args: readonly Vector<TType>,
     moreArgs: ?TType,
@@ -6253,82 +6599,188 @@ extension class TypeChecker {
     argumentCheck: TypeArgumentCheck,
     entryErrors: Int,
   ): TType {
-    tfuns match {
-    | TFuns(tfun, fPos) ->
-      plan = CallSubtypePlan::mcreate();
-      if (targs.size() != 0 && targs.size() != tfun.tparams.size()) {
-        tcenv.error(
+    plan = CallSubtypePlan::mcreate();
+    if (targs.size() != 0 && targs.size() != tfun.tparams.size()) {
+      tcenv.error(
+        Array[
+          (
+            pos,
+            `Expected ${tfun.tparams.size()} type arguments, but got ${targs.size()}`,
+          ),
+          (fPos, `Expected: ${tfun.tparams.size()}`),
+        ],
+        TSCode(2558),
+      )
+    };
+    map = SortedMap[];
+    newTVars = mutable Vector[];
+    for (i => tparamDecl in tfun.tparams) {
+      !map[tparamDecl.id] = if (i < targs.size()) {
+        targs[i]
+      } else {
+        tv = tcenv.subst.gen(pos);
+        newTVars.push(tv);
+        TType::var(tv)
+      };
+    };
+    if (!newTVars.isEmpty()) {
+      allNewTVars = newTVars.collect(Array);
+      for (tv in allNewTVars) {
+        tcenv.subst.setOrigin(tv, FromGenericCall(pos, allNewTVars))
+      }
+    };
+    frozenMap = map.chill();
+    // Retain bounds as original symbolic obligations. Constructor arguments
+    // may need a detached compatibility proposal before argument inference;
+    // the final call still proves their bounds in the live fixed snapshot.
+    for (i => tparamDecl in tfun.tparams) {
+      if (i < targs.size()) {
+        tparamDecl.cstr match {
+        | None() -> void
+        | Some(cstr) ->
+          tArg = targs[i];
+          cstrTy = (mutable Instantiate()).type(
+            (tcenv.subst, this, frozenMap),
+            cstr,
+          );
+          plan.propose(
+            tcenv,
+            this,
+            tArg,
+            cstrTy,
+            Array[
+              (pos, "Type argument does not satisfy the constraint"),
+              (tArg.pos, `This is of type: ${this.ppType(tcenv, tArg)}`),
+              (
+                cstr.pos,
+                `It does not satisfy the constraint: ${this.ppType(
+                  tcenv,
+                  cstrTy,
+                )}`,
+              ),
+            ],
+            TSCode(2344),
+            argumentCheck,
+          )
+        }
+      }
+    };
+    !tfun = (mutable Instantiate()).fun_(
+      (tcenv.subst, this, frozenMap),
+      tfun with {tparams => Array[]},
+    );
+    totalSize = tfun.params.size() + tfun.optionalParams.size();
+    // Unified rest-argument mechanism (Stage A): if spreadParam is an unbound generic
+    // type variable, infer/bind it from call-site arguments before param checking.
+    callInvalid = VariadicTyping::inferRestTypeVar(
+      tcenv,
+      plan,
+      this,
+      pos,
+      tfun.spreadParam,
+      totalSize,
+      args,
+      moreArgs,
+    );
+
+    if (callInvalid) {
+      // Skip further param checking and return the function's return type
+      // to avoid cascading diagnostics from void/return-type mismatches.
+      return tfun.retType
+    };
+
+    // Proposals can iterate, but none of these passes publishes acceptance.
+    // Retain earlier operands when rest or positional inference changes them.
+    version = tcenv.subst.inferenceVersion();
+    loop {
+      // Check the receiver against the declared `this` parameter, if any.
+      // A call with no receiver (free call) uses `this: void`, matching TS.
+      tfun.thisParam match {
+      | NoThis() -> void
+      // A shape method is attach-only: at an attached call the receiver is
+      // the object it was accessed on; a free call has lost it.
+      | ImplicitShape() ->
+        if (thisArgOpt is None _) {
+          tcenv.error(
+            Array[
+              (
+                pos,
+                "A shape method can only be called on the object it was accessed on",
+              ),
+            ],
+            SKJSCode(2075),
+          )
+        }
+      // An implicit class `this` is the type of the object the method was
+      // resolved from, so an attached call (`e1.m()` / `e1[k]()`, which supplies
+      // `thisArgOpt`) inherently satisfies it. Skip the check there: for a union
+      // receiver the method's `this` is the *intersection* of the branches, and
+      // `union <: intersection` would spuriously fail even though each branch
+      // trivially satisfies its own `this`. Only a free/detached call (receiver
+      // `void`) needs the check, to reject `const g = o.m; g()`.
+      | ImplicitClass _ if (thisArgOpt.isSome()) -> void
+      // Explicit `this: T`, or a detached call on an implicit this.
+      | tp ->
+        expectedThis = tp.tyOpt().fromSome();
+        actualThis = thisArgOpt match {
+        | Some(t) -> t
+        | None() -> TType::single(TPrimUnit(TVoid(), pos))
+        };
+        plan.propose(
+          tcenv,
+          this,
+          actualThis,
+          expectedThis,
           Array[
             (
               pos,
-              `Expected ${tfun.tparams.size()} type arguments, but got ${targs.size()}`,
+              "The 'this' context is not assignable to method's 'this' type",
             ),
-            (fPos, `Expected: ${tfun.tparams.size()}`),
           ],
-          TSCode(2558),
+          TSCode(2684),
         )
       };
-      map = SortedMap[];
-      newTVars = mutable Vector[];
-      for (i => tparamDecl in tfun.tparams) {
-        !map[tparamDecl.id] = if (i < targs.size()) {
-          targs[i]
+      for (i in Range(0, tfun.params.size())) {
+        if (i >= args.size()) {
+          tcenv.error(
+            Array[
+              (pos, "Too few arguments for this call"),
+              (fPos, `This function has ${tfun.params.size()} parameters`),
+            ],
+            TSCode(2554),
+          );
+          break void
         } else {
-          tv = tcenv.subst.gen(pos);
-          newTVars.push(tv);
-          TType::var(tv)
-        };
-      };
-      if (!newTVars.isEmpty()) {
-        allNewTVars = newTVars.collect(Array);
-        for (tv in allNewTVars) {
-          tcenv.subst.setOrigin(tv, FromGenericCall(pos, allNewTVars))
+          plan.propose(
+            tcenv,
+            this,
+            args[i],
+            tfun.params[i],
+            Array[(pos, "Argument is not assignable to the parameter's type")],
+            TSCode(2345),
+          );
         }
       };
-      frozenMap = map.chill();
-      // Retain bounds as original symbolic obligations. Constructor arguments
-      // may need a detached compatibility proposal before argument inference;
-      // the final call still proves their bounds in the live fixed snapshot.
-      for (i => tparamDecl in tfun.tparams) {
-        if (i < targs.size()) {
-          tparamDecl.cstr match {
-          | None() -> void
-          | Some(cstr) ->
-            tArg = targs[i];
-            cstrTy = (mutable Instantiate()).type(
-              (tcenv.subst, this, frozenMap),
-              cstr,
-            );
-            plan.propose(
-              tcenv,
-              this,
-              tArg,
-              cstrTy,
-              Array[
-                (pos, "Type argument does not satisfy the constraint"),
-                (tArg.pos, `This is of type: ${this.ppType(tcenv, tArg)}`),
-                (
-                  cstr.pos,
-                  `It does not satisfy the constraint: ${this.ppType(
-                    tcenv,
-                    cstrTy,
-                  )}`,
-                ),
-              ],
-              TSCode(2344),
-              argumentCheck,
-            )
+      for (j in Range(0, tfun.optionalParams.size())) {
+        i = tfun.params.size() + j;
+        arg = if (i < args.size()) {
+          args[i]
+        } else {
+          moreArgs match {
+          | None() -> break void
+          | Some(ma) -> ma
           }
-        }
+        };
+        plan.propose(
+          tcenv,
+          this,
+          arg,
+          tfun.optionalParams[j],
+          Array[(pos, "Argument is not assignable to the parameter's type")],
+          TSCode(2345),
+        );
       };
-      !tfun = (mutable Instantiate()).fun_(
-        (tcenv.subst, this, frozenMap),
-        tfun with {tparams => Array[]},
-      );
-      totalSize = tfun.params.size() + tfun.optionalParams.size();
-      // Unified rest-argument mechanism (Stage A): if spreadParam is an unbound generic
-      // type variable, infer/bind it from call-site arguments before param checking.
-      callInvalid = VariadicTyping::inferRestTypeVar(
+      VariadicTyping::proposeRestArgs(
         tcenv,
         plan,
         this,
@@ -6338,129 +6790,18 @@ extension class TypeChecker {
         args,
         moreArgs,
       );
-
-      if (callInvalid) {
-        // Skip further param checking and return the function's return type
-        // to avoid cascading diagnostics from void/return-type mismatches.
-        return tfun.retType
+      if (tcenv.subst.inferenceVersion() == version) {
+        break void
       };
-
-      // Proposals can iterate, but none of these passes publishes acceptance.
-      // Retain earlier operands when rest or positional inference changes them.
-      version = tcenv.subst.inferenceVersion();
-      loop {
-        // Check the receiver against the declared `this` parameter, if any.
-        // A call with no receiver (free call) uses `this: void`, matching TS.
-        tfun.thisParam match {
-        | NoThis() -> void
-        // A shape method is attach-only: at an attached call the receiver is
-        // the object it was accessed on; a free call has lost it.
-        | ImplicitShape() ->
-          if (thisArgOpt is None _) {
-            tcenv.error(
-              Array[
-                (
-                  pos,
-                  "A shape method can only be called on the object it was accessed on",
-                ),
-              ],
-              SKJSCode(2075),
-            )
-          }
-        // An implicit class `this` is the type of the object the method was
-        // resolved from, so an attached call (`e1.m()` / `e1[k]()`, which supplies
-        // `thisArgOpt`) inherently satisfies it. Skip the check there: for a union
-        // receiver the method's `this` is the *intersection* of the branches, and
-        // `union <: intersection` would spuriously fail even though each branch
-        // trivially satisfies its own `this`. Only a free/detached call (receiver
-        // `void`) needs the check, to reject `const g = o.m; g()`.
-        | ImplicitClass _ if (thisArgOpt.isSome()) -> void
-        // Explicit `this: T`, or a detached call on an implicit this.
-        | tp ->
-          expectedThis = tp.tyOpt().fromSome();
-          actualThis = thisArgOpt match {
-          | Some(t) -> t
-          | None() -> TType::single(TPrimUnit(TVoid(), pos))
-          };
-          plan.propose(
-            tcenv,
-            this,
-            actualThis,
-            expectedThis,
-            Array[
-              (
-                pos,
-                "The 'this' context is not assignable to method's 'this' type",
-              ),
-            ],
-            TSCode(2684),
-          )
-        };
-        for (i in Range(0, tfun.params.size())) {
-          if (i >= args.size()) {
-            tcenv.error(
-              Array[
-                (pos, "Too few arguments for this call"),
-                (fPos, `This function has ${tfun.params.size()} parameters`),
-              ],
-              TSCode(2554),
-            );
-            break void
-          } else {
-            plan.propose(
-              tcenv,
-              this,
-              args[i],
-              tfun.params[i],
-              Array[
-                (pos, "Argument is not assignable to the parameter's type"),
-              ],
-              TSCode(2345),
-            );
-          }
-        };
-        for (j in Range(0, tfun.optionalParams.size())) {
-          i = tfun.params.size() + j;
-          arg = if (i < args.size()) {
-            args[i]
-          } else {
-            moreArgs match {
-            | None() -> break void
-            | Some(ma) -> ma
-            }
-          };
-          plan.propose(
-            tcenv,
-            this,
-            arg,
-            tfun.optionalParams[j],
-            Array[(pos, "Argument is not assignable to the parameter's type")],
-            TSCode(2345),
-          );
-        };
-        VariadicTyping::proposeRestArgs(
-          tcenv,
-          plan,
-          this,
-          pos,
-          tfun.spreadParam,
-          totalSize,
-          args,
-          moreArgs,
-        );
-        if (tcenv.subst.inferenceVersion() == version) {
-          break void
-        };
-        !version = tcenv.subst.inferenceVersion();
-      };
-      if (
-        tcenv.results.errors.size() == entryErrors &&
-        plan.validate(tcenv, this)
-      ) {
-        tcenv.recordCalls(tfun.cgNodes)
-      };
-      tfun.retType
-    }
+      !version = tcenv.subst.inferenceVersion();
+    };
+    if (
+      tcenv.results.errors.size() == entryErrors &&
+      plan.validate(tcenv, this)
+    ) {
+      tcenv.recordCalls(tfun.cgNodes)
+    };
+    tfun.retType
   }
 }
 

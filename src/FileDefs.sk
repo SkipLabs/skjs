@@ -646,10 +646,14 @@ private fun isInterfaceDef(d: FileDef): Bool {
 // Whether two same-name definitions collide in a declaration space. Two
 // interface declarations do not: like tsc, SKJS merges their members
 // (declaration merging, across files and against the import stubs), so only
-// definitions that are not both interfaces count as duplicates.
+// definitions that are not both interfaces count as duplicates. Two top-level
+// function declarations do not either: they form one overload group (the
+// group's shape — at most one implementation, and it last — is validated at
+// check time in checkDef_).
 private fun defsCollide(a: FileDef, b: FileDef): Bool {
   DeclSpaces::ofFileDef(a).overlaps(DeclSpaces::ofFileDef(b)) &&
-    !(isInterfaceDef(a) && isInterfaceDef(b))
+    !(isInterfaceDef(a) && isInterfaceDef(b)) &&
+    !(a is TopLevelFunDef _ && b is TopLevelFunDef _)
 }
 
 mutable class FileDefsState private {
@@ -868,7 +872,13 @@ mutable class FileDefsState private {
   }
 
   private mutable fun pushDef(name: Name, d: FileDef, isExport: Bool): void {
-    if (isExport) mapPush(this.exported, name.value, (name.value, false));
+    // Record the exported mention once per name: declaration-merged groups
+    // (overloaded functions, merged interfaces) push several same-name defs,
+    // and a mention per declaration would multiply the def list K times for
+    // importers (each mention resolves to the whole same-name def vector).
+    if (isExport && this.exported.maybeGet(name.value) is None()) {
+      mapPush(this.exported, name.value, (name.value, false))
+    };
     // A declaration colliding with a lib/stub definition (the builtins every
     // file includes) is a duplicate identifier as well (tsc TS2300, issue
     // #887): the stub's definition is the one name resolution reaches, so the

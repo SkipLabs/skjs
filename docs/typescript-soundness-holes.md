@@ -691,7 +691,7 @@ function boom(): void {
 }
 ```
 
-**Test:** no pin for the tsc hole — [skjs-rules.md](../skjs-rules.md) rule 10 pins only that SKJS has no overload support · **SKJS:** rejects with `error: Duplicate identifier 'f'` — a feature gap (overloads are unsupported), not a soundness argument
+**Test:** [tests/expect-error/overloads.ts](../tests/expect-error/overloads.ts) (`bad`) · **SKJS:** overloads are supported (skjs-rules.md rule 10), and the implementation is checked strictly against every overload signature (signature subtype, or body re-check under the overload's signature), so this hole is closed: `bad` is rejected with TS2394 "Overload signature is not compatible with its implementation signature"
 
 ## Generics & type parameters
 

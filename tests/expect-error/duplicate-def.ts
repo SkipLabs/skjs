@@ -15,7 +15,7 @@ class A {}
 class A {}
 
 function f(): void {}
-// @skjs-expect-error Duplicate identifier 'f'
+// @ts-expect-error Duplicate function implementation
 function f(): void {}
 
 // Interfaces with the same name do NOT collide: they merge their members,

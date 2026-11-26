@@ -164,9 +164,14 @@ let s1: 'urgent' = save(['urgent' as const]);  // ✓ T = 'urgent'
 let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
 ```
 
-### 10. Function Overloading Not Supported
-- **Rule**: Function overloading is not supported in SKJS
-- **Workaround**: Use different function names or union types with type guards
+### 10. Function Overloading (Functions, Methods, Constructors, Call Signatures)
+- **Rule**: Same-named function declarations form one overload set — top-level/`declare` functions, class/interface method declarations (including across merged interface declarations), constructor declarations (the class's `new` signatures), and call/construct signatures in object type literals. Call sites resolve first-match-wins in declaration order, with an arity filter: an overload that cannot accept the argument count (no rest parameter) is skipped. Assignability of an overloaded source requires every target signature to be matched by some source overload whose arity covers the target's parameters. The implementation signature (the one with a body, required to come last in non-ambient groups) is not callable from outside; hiding it is only done within one file's declaration group, never across files (a cross-file `declare module` augmentation cannot hide the implementation without checking against it).
+- **Group rules** (tsc-compatible): duplicate implementations -> TS2393 (TS2392 for constructors); implementation not last or missing in a non-ambient group -> TS2391; overload incompatible with the implementation -> TS2394.
+- **Soundness**: the implementation is checked against EVERY overload signature — either its signature is a subtype of the overload, or its body re-checks under the overload's signature (the trial keeps the implementation's own parameter list — names, defaults, `this` — and only swaps the types positionally; inside the trial, branches narrowed to `never` are unreachable and yield `never` without diagnostics). This is stricter than tsc's loose "comparable" rule (a known tsc soundness hole, see docs/typescript-soundness-holes.md): an implementation declared `number | string` under a `(): number` overload is rejected. Consequence: an implementation whose dead branches return types outside a given overload's return type is rejected even when path-insensitively fine — restructure the body so every return conforms per overload.
+- **Intersections/unions**: a materialized intersection of overload sets is the concatenation of both sets (tsc's overloaded-intersection meaning; each signature carries the union of all members' call-graph nodes). A union of two differently-shaped overload sets is not callable (tsc TS2349); pairs with different type-parameter counts are skipped rather than merged.
+- **`.call`/`.apply`/`.bind`** keep the whole overload set; `.bind` checks the `this` argument against the intersection of every overload's `this`.
+- **Not yet supported**: call/construct signatures inside `interface` bodies (parse-level gap; object type literals support them).
+- **Test**: [tests/expect-error/overloads.ts](tests/expect-error/overloads.ts)
 
 ### 11. Generic Type Method Calls
 - **Rule**: Cannot call methods like `.toString()` on unconstrained generic types
