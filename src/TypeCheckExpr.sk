@@ -1593,7 +1593,16 @@ extension class TypeChecker {
         boundSigs.push(f with {thisParam => NoThis()})
       };
       if (boundSigs.isEmpty()) return None();
-      thisType = tfuns.fun_().thisParam.tyOpt().default(TType::top(pos));
+      // The rebound function keeps EVERY overload, so thisArg must be
+      // accepted by every overload's `this`: intersect them all (a missing
+      // `this` counts as unknown). Checking only the first overload's `this`
+      // would let a later overload run with an unchecked receiver.
+      thisType = TType::interN(
+        tcenv.subst,
+        this,
+        pos,
+        tfuns.allFuns().map(f -> f.thisParam.tyOpt().default(TType::top(pos))),
+      );
       neverRest = TType::inst(
         Name(pos, "ReadonlyArray"),
         TArgs(Array[TType::bottom(pos)]),
@@ -1758,18 +1767,29 @@ extension class TypeChecker {
       objType,
       idxSType,
     );
-    stypes = objType2.getSTypes(tcenv.subst, this, Covariant()) match {
-    | Some(stypes) if (!stypes.isEmpty()) -> Vector::mcreateFromItems(stypes)
-    | _ ->
-      fatalError(
-        Array[
-          (
-            pos,
-            `Cannot access a property on type ${this.ppType(tcenv, objType2)}`,
-          ),
-        ],
-        TSCode(2339),
-      )
+    stypes = if (objType2.isBottom() && tcenv.inOverloadTrial) {
+      // Inside an overload trial, member access on a `never` receiver (a
+      // parameter narrowed to never in a branch unreachable through this
+      // overload) yields never without an error. Outside a trial the error
+      // stands (tsc TS2339 on reachable never receivers).
+      return TType::bottom(pos)
+    } else {
+      objType2.getSTypes(tcenv.subst, this, Covariant()) match {
+      | Some(stypes) if (!stypes.isEmpty()) -> Vector::mcreateFromItems(stypes)
+      | _ ->
+        fatalError(
+          Array[
+            (
+              pos,
+              `Cannot access a property on type ${this.ppType(
+                tcenv,
+                objType2,
+              )}`,
+            ),
+          ],
+          TSCode(2339),
+        )
+      }
     };
     isOptionalChaining = accessKind is AKOptionalChain _;
     isLValue = accessKind is AKLValue _;
@@ -3011,6 +3031,13 @@ extension class TypeChecker {
       normTargs = targs.map(ty -> this.normalize(tcenv, ty));
       // Resolve a callable value and invoke it with the given receiver.
       dispatchCall = (fty: TType, thisArgOpt: ?TType) -> {
+        // Inside an overload trial, a call whose callee has type `never` (a
+        // branch unreachable through this overload) yields never without a
+        // "not callable" error. Outside a trial the error stands (tsc
+        // TS2349 on reachable never callees).
+        if (fty.isBottom() && tcenv.inOverloadTrial) {
+          return TType::bottom(pos)
+        };
         calleeObj = fty
           .getSTypes(tcenv.subst, this, Covariant())
           .flatMap(stypes ->
@@ -5517,6 +5544,13 @@ extension class TypeChecker {
     ty1: TType,
     e2: Expr,
   ): TType {
+    // A `never` operand (e.g. a parameter narrowed to never in a dead branch)
+    // makes the operation unreachable: yield never without an error. Sound
+    // because no value can have type never.
+    if (ty1.isBottom()) {
+      _ = this.expr(tcenv, e2, true);
+      return TType::bottom(pos)
+    };
     if (addition) {
       ty1.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
         stypes.singleElt()
@@ -5545,6 +5579,12 @@ extension class TypeChecker {
         )
       }
     } else {
+      // A `never` operand makes the operation unreachable: yield never, no
+      // error (tsc accepts arithmetic on never operands).
+      if (ty1.isBottom()) {
+        _ = this.expr(tcenv, e2, true);
+        return TType::bottom(pos)
+      };
       kind1 = this.checkIsNumeric(
         tcenv,
         leftPos,
@@ -5552,6 +5592,9 @@ extension class TypeChecker {
         ty1,
       );
       ty2 = this.expr(tcenv, e2, true);
+      if (ty2.isBottom()) {
+        return TType::bottom(pos)
+      };
       kind2 = this.checkIsNumeric(
         tcenv,
         e2.pos,
@@ -6287,10 +6330,30 @@ extension class TypeChecker {
     };
     failureMsgs = mutable Vector<(PosRange, String)>[];
     for (i in Range(0, sigs.size())) {
+      sig = sigs[i];
+      // tsc's arity filter: with several overloads, a candidate that cannot
+      // accept this many arguments (no rest parameter) is skipped — extra
+      // arguments are exactly what dispatches to a later overload at
+      // runtime, so accepting them here would pick the wrong return type.
+      if (
+        moreArgs.isNone() &&
+        sig.spreadParam.isNone() &&
+        args.size() > sig.params.size() + sig.optionalParams.size()
+      ) {
+        failureMsgs.push(
+          (
+            tfuns.pos,
+            `Overload ${i +
+              1} of ${sigs.size()} expects at most ${sig.params.size() +
+              sig.optionalParams.size()} arguments, but got ${args.size()}`,
+          ),
+        );
+        continue
+      };
       (result, msgs) = this.tryCallSignature(
         tcenv,
         pos,
-        sigs[i],
+        sig,
         tfuns.pos,
         targs,
         args,
@@ -6304,7 +6367,7 @@ extension class TypeChecker {
         failureMsgs.push(
           (
             tfuns.pos,
-            `Overload ${i + 1} of ${sigs.size()}, '${sigs[i].toString(
+            `Overload ${i + 1} of ${sigs.size()}, '${sig.toString(
               tcenv.subst,
               this,
             )}', gave the following error:`,
@@ -6390,6 +6453,7 @@ extension class TypeChecker {
     publication = tcenv.results.savePublication();
     entryErrors = tcenv.results.errors.size();
     entryWarnings = tcenv.results.warnings.size();
+    entryHiddenChecks = tcenv.hiddenEscapeChecks.size();
     exnMsgs: ?Array<(PosRange, String)> = None();
     result: ?TType = None();
     try {
@@ -6399,6 +6463,9 @@ extension class TypeChecker {
     | exn ->
       tcenv.subst.restore(saved);
       tcenv.results.restorePublication(publication);
+      while (tcenv.hiddenEscapeChecks.size() > entryHiddenChecks) {
+        _ = tcenv.hiddenEscapeChecks.pop()
+      };
       throw exn
     };
     accepted = result.isSome() && tcenv.results.errors.size() == entryErrors;
@@ -6415,6 +6482,9 @@ extension class TypeChecker {
     msgs = exnMsgs.default(trialMsgs.toArray());
     tcenv.subst.restore(saved);
     tcenv.results.restorePublication(publication);
+    while (tcenv.hiddenEscapeChecks.size() > entryHiddenChecks) {
+      _ = tcenv.hiddenEscapeChecks.pop()
+    };
     while (tcenv.results.errors.size() > entryErrors) {
       _ = tcenv.results.errors.pop()
     };

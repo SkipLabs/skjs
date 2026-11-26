@@ -2013,11 +2013,22 @@ extension class TType {
     // contravariant), and s's return is a subtype of t's return. Each failed
     // trial rolls its own bindings back (isSubFun restores on STError), so the
     // search is backtracking-safe.
+    multiSource = funs1.allFuns().size() > 1;
     for (t in funs2.allFuns()) {
       matched = false;
       firstErr: ?STErrorOnTFun = None();
       for (s in funs1.allFuns()) {
-        if (!matched) {
+        // With an overloaded source, argument-count dispatch matters at
+        // runtime: only a source signature whose arity covers the target's
+        // parameters may match it. Otherwise a call through the target could
+        // dispatch to a different overload of the source and get a different
+        // return type than the target promises.
+        covers =
+          !multiSource ||
+          s.spreadParam.isSome() ||
+          s.params.size() + s.optionalParams.size() >=
+            t.params.size() + t.optionalParams.size();
+        if (!matched && covers) {
           static::isSubFun(subst, tenv, s, t) match {
           | STOk() -> !matched = true
           | err @ STErrorOnTFun _ ->
