@@ -629,6 +629,89 @@ extension class TypeChecker {
         }
       }
     };
+    // Enforce tsc TS2391 / TS2390 contiguity for non-ambient class method
+    // and constructor overload groups: every body-less overload signature must
+    // be immediately followed by another overload signature or the
+    // implementation of the same member (same name and staticness), with no
+    // intervening fields or other methods. Interfaces and ambient classes are
+    // exempt. Trailing signatures after an implementation are handled below.
+    if (!classIsAmbient) {
+      for (decl in decls) {
+        fields = this.getClassFields(tcenvl.context, decl);
+        memberKey = (field: ClassField) -> {
+          field match {
+          | fd @ ClassFieldMethod _ ->
+            fd.name match {
+            | FNNormal(n) ->
+              Some(
+                (
+                  if (n.value == "constructor") {
+                    "constructor"
+                  } else if (fd.isStatic()) {
+                    `static:${n.value}`
+                  } else {
+                    n.value
+                  },
+                  fd,
+                ),
+              )
+            | _ -> None()
+            }
+          | _ -> None()
+          }
+        };
+        for (i in Range(0, fields.size())) {
+          memberKey(fields[i]) match {
+          | Some((key, fd)) if (!fd.hasBody) ->
+            nextIsSame = if (i + 1 < fields.size()) {
+              memberKey(fields[i + 1]) match {
+              | Some((nextKey, _)) -> nextKey == key
+              | None() -> false
+              }
+            } else {
+              false
+            };
+            if (!nextIsSame) {
+              implAfter = false;
+              for (j in Range(i + 1, fields.size())) {
+                memberKey(fields[j]) match {
+                | Some(
+                  (laterKey, laterFd),
+                ) if (laterKey == key && laterFd.hasBody) ->
+                  !implAfter = true;
+                  break void
+                | _ -> void
+                }
+              };
+              if (implAfter) {
+                if (key == "constructor") {
+                  tcenvl.error(
+                    Array[
+                      (
+                        fd.name.getPos(),
+                        "Constructor implementation is missing",
+                      ),
+                    ],
+                    TSCode(2390),
+                  )
+                } else {
+                  tcenvl.error(
+                    Array[
+                      (
+                        fd.name.getPos(),
+                        "Function implementation is missing or not immediately following the declaration",
+                      ),
+                    ],
+                    TSCode(2391),
+                  )
+                }
+              }
+            }
+          | _ -> void
+          }
+        }
+      }
+    };
     groups.each((_, members) -> {
       bodies = members.filter(fd -> fd.hasBody);
       if (bodies.size() > 1) {

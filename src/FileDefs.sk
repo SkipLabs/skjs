@@ -852,7 +852,93 @@ mutable class FileDefsState private {
         )
       }
     };
+    this.checkFunOverloadContiguity(parsedDefs);
     this.toFileDefs()
+  }
+
+  // Enforce tsc TS2391 contiguity for non-ambient top-level function overload
+  // groups: every body-less overload signature must be immediately followed
+  // (with no other declarations or statements in between) by another overload
+  // signature or the implementation of the same function. Ambient (`declare`
+  // or `.d.ts`) signatures are exempt. Groups with no implementation at all or
+  // with a trailing body-less signature after the implementation are already
+  // reported by `checkFunOverloadGroup`; here we only flag the interleaved
+  // case where an implementation DOES exist later in the file.
+  private mutable fun checkFunOverloadContiguity(parsedDefs: Array<Def>): void {
+    topLevelFunOf = (d: Def) -> {
+      d.value match {
+      | fd @ TopLevelFunDef _ -> Some(fd)
+      | Export(fd @ TopLevelFunDef _) -> Some(fd)
+      | _ -> None()
+      }
+    };
+    for (i in Range(0, parsedDefs.size())) {
+      topLevelFunOf(parsedDefs[i]) match {
+      | Some(fd) if (!fd.hasBody && !fd.isAmbient) ->
+        name = fd.name.getName();
+        // Only check groups that have a single implementation in this file;
+        // missing-implementation groups are already flagged by
+        // checkFunOverloadGroup.
+        hasImpl = this.defs.maybeGet(name)
+          .map(vec ->
+            vec.any(d ->
+              d match {
+              | f @ TopLevelFunDef _ -> f.hasBody
+              | _ -> false
+              }
+            )
+          )
+          .default(false);
+        if (!hasImpl) continue;
+        // Walk contiguous same-name non-ambient top-level function
+        // declarations starting at i; if this run ends before hitting an
+        // implementation, the signature is separated from its implementation.
+        isLastOfSeparatedRun = false;
+        nextIsSame = if (i + 1 < parsedDefs.size()) {
+          topLevelFunOf(parsedDefs[i + 1]) match {
+          | Some(
+            nextFd,
+          ) if (!nextFd.isAmbient && nextFd.name.getName() == name) ->
+            true
+          | _ -> false
+          }
+        } else {
+          false
+        };
+        if (!nextIsSame) {
+          // A trailing signature after the implementation is already reported
+          // by checkFunOverloadGroup; only report when an implementation
+          // appears AFTER index i (i.e. something intervened between this
+          // signature and the implementation).
+          implAfter = false;
+          for (j in Range(i + 1, parsedDefs.size())) {
+            topLevelFunOf(parsedDefs[j]) match {
+            | Some(
+              laterFd,
+            ) if (laterFd.hasBody && laterFd.name.getName() == name) ->
+              !implAfter = true;
+              break void
+            | _ -> void
+            }
+          };
+          !isLastOfSeparatedRun = implAfter
+        };
+        if (isLastOfSeparatedRun) {
+          this.fileErrors.push(
+            NamingError(
+              Array[
+                (
+                  fd.name.getPos(),
+                  "Function implementation is missing or not immediately following the declaration",
+                ),
+              ],
+              TSCode(2391),
+            ),
+          )
+        }
+      | _ -> void
+      }
+    }
   }
 
   private readonly fun toFileDefs(): FileDefs {

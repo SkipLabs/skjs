@@ -31,11 +31,12 @@ function useNewWithThis(
 }
 
 // ---------------------------------------------------------------------------
-// 2. Interleaved overload contiguity (should be TS2391 / TS2390)
+// 2. Interleaved overload contiguity (TS2391 / TS2390)
 // ---------------------------------------------------------------------------
 
-// Currently silently accepted when another declaration sits between an
-// overload signature and its implementation.
+// Interleaving another declaration between an overload signature and its
+// implementation is rejected (TS2391 for functions/methods, TS2390 for ctors).
+// @ts-expect-error Function implementation is missing or not immediately following the declaration
 function interleavedFn(x: string): string;
 const sepFn = 1;
 function interleavedFn(x: string): string {
@@ -43,6 +44,7 @@ function interleavedFn(x: string): string {
 }
 
 function interleavedTwoSigs(x: string): string;
+// @ts-expect-error Function implementation is missing or not immediately following the declaration
 function interleavedTwoSigs(x: number): number;
 const sepFn2 = 1;
 function interleavedTwoSigs(x: string | number): string | number {
@@ -55,6 +57,7 @@ const sepAmbient = 1;
 declare function ambientSeparated(x: number): number;
 
 class InterleavedMethod {
+  // @ts-expect-error Function implementation is missing or not immediately following the declaration
   m(x: string): string;
   x: number = 1;
   m(x: string): string {
@@ -63,6 +66,7 @@ class InterleavedMethod {
 }
 
 class InterleavedCtor {
+  // @ts-expect-error Constructor implementation is missing
   constructor(x: string);
   x: number = 1;
   constructor(x: string) {}
