@@ -734,7 +734,10 @@ mutable class FileDefsState private {
           ),
         )
       };
-      resolveName(this.fs, this.dirName, this.rootMap, name)
+      resolveName(this.fs, this.dirName, this.rootMap, name) match {
+      | Some(fileName) -> StubFound(fileName)
+      | None() -> StubNotFound()
+      }
     } else {
       // Try path alias resolution first
       resolvePathAlias(
@@ -743,13 +746,16 @@ mutable class FileDefsState private {
         this.compilerOptions,
         name,
       ) match {
-      | some @ Some(_) -> some
+      | Some(fileName) -> StubFound(fileName)
       | None() -> resolveStubs(this.fs, this.rootMap.importStubs, name)
       }
     };
     resolved match {
-    | Some(fileName) -> Some(ModuleName{name, fileName})
-    | None() ->
+    | StubFound(fileName) -> Some(ModuleName{name, fileName})
+    | StubError(msg) ->
+      this.fileErrors.push(NamingError(Array[(mname.pos, msg)], TSCode(2307)));
+      None()
+    | StubNotFound() ->
       this.fileErrors.push(
         NamingError(
           Array[

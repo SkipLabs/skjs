@@ -13,20 +13,39 @@ fun mkStubMem(files: Array<(String, String)>): SKJS.MemFs {
 fun testResolveStubsPackageJson(): void {
   stubs = Array[SKJS.DAbsolute::create("/stubs")];
 
-  // Current behavior before #610: only <pkg>/index.d.ts is resolved.
+  // Explicit `types` field pointing to a non-index.d.ts path.
   fsTypes = mkStubMem(
     Array[
-      ("/stubs/foo/package.json", `{"types": "./dist/foo.d.ts"}`),
-      ("/stubs/foo/dist/foo.d.ts", "export declare const x: number;"),
+      ("/stubs/foo/package.json", `{"types": "./lib/foo.d.ts"}`),
+      ("/stubs/foo/lib/foo.d.ts", "export declare const x: number;"),
     ],
   );
   SKTest.expectEq(
     SKJS.resolveStubs(fsTypes, stubs, "foo"),
-    None(),
-    "pre-#610: types field not yet read",
+    SKJS.StubFound(
+      SKJS.FPath::create(SKJS.RootId::stub(0), "foo/lib/foo.d.ts"),
+    ),
+    "package.json types field",
   );
 
-  // Typings alias (extensionless) — not yet resolved.
+  // `types` takes precedence over `typings` when both are present.
+  fsPrecedence = mkStubMem(
+    Array[
+      (
+        "/stubs/both/package.json",
+        `{"types": "./a.d.ts", "typings": "./b.d.ts"}`,
+      ),
+      ("/stubs/both/a.d.ts", "export declare const a: number;"),
+      ("/stubs/both/b.d.ts", "export declare const b: string;"),
+    ],
+  );
+  SKTest.expectEq(
+    SKJS.resolveStubs(fsPrecedence, stubs, "both"),
+    SKJS.StubFound(SKJS.FPath::create(SKJS.RootId::stub(0), "both/a.d.ts")),
+    "types takes precedence over typings",
+  );
+
+  // `typings` alias with extensionless target.
   fsTypings = mkStubMem(
     Array[
       ("/stubs/bar/package.json", `{"typings": "types/bar"}`),
@@ -35,37 +54,107 @@ fun testResolveStubsPackageJson(): void {
   );
   SKTest.expectEq(
     SKJS.resolveStubs(fsTypings, stubs, "bar"),
-    None(),
-    "pre-#610: typings field not yet read",
+    SKJS.StubFound(
+      SKJS.FPath::create(SKJS.RootId::stub(0), "bar/types/bar.d.ts"),
+    ),
+    "package.json typings alias (extensionless)",
   );
 
-  // Fallback to index.d.ts already works.
+  // Directory target in `types` resolves to `<dir>/index.d.ts`.
+  fsDirTarget = mkStubMem(
+    Array[
+      ("/stubs/dirpkg/package.json", `{"types": "./types"}`),
+      ("/stubs/dirpkg/types/index.d.ts", "export declare const d: number;"),
+    ],
+  );
+  SKTest.expectEq(
+    SKJS.resolveStubs(fsDirTarget, stubs, "dirpkg"),
+    SKJS.StubFound(
+      SKJS.FPath::create(SKJS.RootId::stub(0), "dirpkg/types/index.d.ts"),
+    ),
+    "package.json types pointing to directory",
+  );
+
+  // Missing `types` target falls back to index.d.ts.
+  fsMissingTarget = mkStubMem(
+    Array[
+      ("/stubs/fall/package.json", `{"types": "./missing.d.ts"}`),
+      ("/stubs/fall/index.d.ts", "export declare const f: boolean;"),
+    ],
+  );
+  SKTest.expectEq(
+    SKJS.resolveStubs(fsMissingTarget, stubs, "fall"),
+    SKJS.StubFound(SKJS.FPath::create(SKJS.RootId::stub(0), "fall/index.d.ts")),
+    "missing types target falls back to index.d.ts",
+  );
+
+  // Path escaping stub root is ignored (does not resolve outside stub dir).
+  fsEscape = mkStubMem(
+    Array[
+      ("/stubs/esc/package.json", `{"types": "../../secret.d.ts"}`),
+      ("/secret.d.ts", "export declare const s: string;"),
+    ],
+  );
+  SKTest.expectEq(
+    SKJS.resolveStubs(fsEscape, stubs, "esc"),
+    SKJS.StubNotFound(),
+    "types path escaping stub root rejected",
+  );
+
+  // Fallback to index.d.ts without package.json.
   fsIndexDts = mkStubMem(
     Array[("/stubs/legacy/index.d.ts", "export declare const z: boolean;")],
   );
   SKTest.expectEq(
     SKJS.resolveStubs(fsIndexDts, stubs, "legacy"),
-    Some(SKJS.FPath::create(SKJS.RootId::stub(0), "legacy/index.d.ts")),
+    SKJS.StubFound(
+      SKJS.FPath::create(SKJS.RootId::stub(0), "legacy/index.d.ts"),
+    ),
     "index.d.ts fallback",
   );
 
-  // Fallback to index.ts — not yet resolved.
+  // Fallback to index.ts / index.tsx.
   fsIndexTs = mkStubMem(
     Array[("/stubs/tsonly/index.ts", "export const a: number = 1;")],
   );
   SKTest.expectEq(
     SKJS.resolveStubs(fsIndexTs, stubs, "tsonly"),
-    None(),
-    "pre-#610: index.ts fallback not yet supported",
+    SKJS.StubFound(SKJS.FPath::create(SKJS.RootId::stub(0), "tsonly/index.ts")),
+    "index.ts fallback",
   );
 
-  // Malformed package.json — currently ignored (returns None).
-  fsBroken = mkStubMem(Array[("/stubs/broken/package.json", "{not json")]);
-  SKTest.expectEq(
-    SKJS.resolveStubs(fsBroken, stubs, "broken"),
-    None(),
-    "pre-#610: malformed package.json ignored",
+  fsIndexTsx = mkStubMem(
+    Array[("/stubs/tsxonly/index.tsx", "export const a: number = 1;")],
   );
+  SKTest.expectEq(
+    SKJS.resolveStubs(fsIndexTsx, stubs, "tsxonly"),
+    SKJS.StubFound(
+      SKJS.FPath::create(SKJS.RootId::stub(0), "tsxonly/index.tsx"),
+    ),
+    "index.tsx fallback",
+  );
+
+  // Malformed package.json returns a clear StubError diagnostic (no crash).
+  fsBroken = mkStubMem(Array[("/stubs/broken/package.json", "{not json")]);
+  SKJS.resolveStubs(fsBroken, stubs, "broken") match {
+  | SKJS.StubError(msg) ->
+    SKTest.expectTrue(
+      msg.contains("Invalid package.json for module 'broken'"),
+      `unexpected error message: ${msg}`,
+    )
+  | other -> SKTest.fail(`Expected StubError, got ${other}`)
+  };
+
+  // Non-object package.json also returns StubError.
+  fsArrayPkg = mkStubMem(Array[("/stubs/arrpkg/package.json", "[1, 2, 3]")]);
+  SKJS.resolveStubs(fsArrayPkg, stubs, "arrpkg") match {
+  | SKJS.StubError(msg) ->
+    SKTest.expectTrue(
+      msg.contains("Invalid package.json for module 'arrpkg'"),
+      `unexpected error message: ${msg}`,
+    )
+  | other -> SKTest.fail(`Expected StubError, got ${other}`)
+  };
 }
 
 module end;
