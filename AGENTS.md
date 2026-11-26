@@ -1,84 +1,77 @@
 # SKJS
 
-TypeScript type checker implemented in the Skip language. It aims to check a sound subset of TypeScript — rejecting programs that would fail at runtime for type reasons. Soundness is the goal rather than a finished guarantee: some unsound programs are still accepted today.
+TypeScript type checker implemented in the Skip language (`.sk`). Aims to check a sound subset of TypeScript — rejecting programs that would fail at runtime for type reasons. Soundness is the goal rather than a finished guarantee: some unsound programs are still accepted today.
 
-- **`.sk` files** in `src/` are the checker implementation (Skip language)
-- **`.sk` files** in `tests/` are the test harness
-- **`.ts` files** in `tests/` and `examples/` are TypeScript user programs checked by SKJS
+- `src/*.sk` + `src/absint/*.sk` — checker implementation (Skip)
+- `tests/*.sk` — test harness (Skip)
+- `tests/expect-error/*.ts`, `tests/projects/*/`, `examples/src/*.ts` — TypeScript user programs checked by SKJS
 
 ## Commands
 
 ```bash
-make build-in-docker                   # Build the skjs binary
-make check-file-in-docker FILE=tmp.ts  # Run skjs check on one file (fast iteration)
-make test-in-docker                    # Run all tests — every commit must pass this
-make check-in-docker                   # Type-check the Skip code without building (fast incremental)
-make fmt                               # Format all code (skfmt for .sk, prettier for .ts/.json)
-make clean-in-docker                   # Clean build artifacts
+make check-in-docker                                # Fast incremental type-check of Skip code
+make build-in-docker                                # Build ./target/host/dev/skjs
+make check-file-in-docker FILE=tmp.ts               # Check one TS file via `skargo run`
+make check-file-in-docker FILE=tmp.ts BIN=./target/host/dev/skjs  # Reuse built binary (faster)
+make test-in-docker                                 # Full suite — every commit must pass
+make test-cfg-in-docker / make test-deadcode-in-docker  # Targeted CFG / dead-code tests
+make fmt                                            # Format (.sk via skfmt, .ts/.json via prettier)
+make check-fmt && make check-sh                     # CI formatting + shellcheck/selftests
+make clean-in-docker                                # Clean build artifacts
 ```
 
-The `*-in-docker` targets run inside the Skip docker image (directly when in a devcontainer). With a local Skip toolchain, the native equivalents work too: `make build`, `make test`, `make check`, or `skargo` directly. For comment-only changes, `make check-in-docker` / `skargo check` is sufficient verification — comments cannot affect behavior, and it is much faster than the full test run.
+`*-in-docker` runs inside the Skip docker image (directly in a devcontainer). With a local Skip toolchain, use `make build` / `make test` / `make check` or `skargo` directly. For comment-only changes, `make check-in-docker` / `skargo check` suffices.
 
-## Fast Iteration (Single File + Binary Variants)
+### Fast debugging loop
 
-Use this loop for checker debugging (much faster than full builds/tests):
+- Save binary variants to compare before/after on a `tmp_*.ts` repro (gitignored):
+  `cp target/host/dev/skjs target/host/dev/skjs.<label>`, then pass `BIN=target/host/dev/skjs.<label>`.
+- Inspect inferred types in `.ts` repros with intrinsics:
+  - `__SKJS_show(expr)` — inferred type (often alias-preserving)
+  - `__SKJS_show_expanded(expr)` — expanded type (useful for tuple-rest/internal debugging)
+  - Optional 2nd string-literal arg asserts the printed type, e.g. `__SKJS_show_expanded(x, "[]")`.
+- Update test expectations after diagnostic changes: `UPDATE_EXPECT=1|2|3 make test-in-docker` (see [docs/testing.md](docs/testing.md)).
 
-```bash
-make build-in-docker
-make check-file-in-docker FILE=tmp_atarrayof_semantic_fail.ts
-make check-file-in-docker FILE=tmp_atarrayof_semantic_fail.ts BIN=target/host/dev/skjs.some-variant
-```
+## Codebase Map
 
-Notes:
-
-- `check-file-in-docker` defaults to `BIN=./target/host/dev/skjs`; override `BIN=...` to compare variants on the same repro.
-- Save binary variants manually when iterating on one code change:
-
-```bash
-cp target/host/dev/skjs target/host/dev/skjs.<label>
-```
-
-- Debug type inference/normalization with show intrinsics inside `.ts` repros:
-  - `__SKJS_show(expr)` prints the inferred type (often alias-preserving).
-  - `__SKJS_show_expanded(expr)` prints an expanded type (useful for internals/tuple-rest debugging).
-  - Optional 2nd arg string literal asserts the expected printed type (e.g. `__SKJS_show_expanded(x, "[]")`).
-
-## Merge bot
-
-skjs reuses **Skip's merge bot** rather than keeping a copy: `bin/merge-bot.sh` is a thin wrapper that execs `../skip/bin/merge-bot.sh` (`SKIP_DIR` to override; same convention as the docker targets) and only sets skjs-specific knobs — the changed-paths CI heuristic (`MERGE_BOT_PATH_EST`), the fixer-briefs dir (`.vibe/skills/merge-bot/references/`, only `fix-ci.md` differs), and the state dir (`~/.cache/skjs-merge-bot`, which skip's bot also derives from the repo name). The `.vibe/skills/merge-bot/SKILL.md` skill here is a symlink to `../skip/.vibe/skills/merge-bot/SKILL.md` (only `references/fix-ci.md` is kept locally); the human overview is `../skip/HACKING.md` ("Merge bot"). In short: a PR is ready when **auto-merge is enabled and its CI is green** (`ci/circleci: build`); the bot acts on **one ready PR at a time** — waiting on green + up-to-date ones, rebasing green + `BEHIND`/conflicting ones onto `main` and pushing with `--force-with-lease` in worktrees under the state dir, never in your checkout.
-
-Run it interactively through the `merge-bot` skill, or unattended with `bin/merge-bot.sh run` (see `bin/merge-bot.sh --help`; `--dry-run` previews without pushing). `bin/merge-bot.sh --selftest` runs skip's bot selftest and runs as part of `make check-sh` (needs the skip checkout, which CI mounts).
-
-## Project Layout
-
-| Path | Contents |
+| Area | Key files |
 | --- | --- |
-| `src/*.sk` | Type checker implementation (~61 files): lexer, parser, type checker, module resolver |
-| `tests/*.sk` | Test harness (Skip test files) |
-| `tests/expect-error/*.ts` | Negative + positive type-checking tests with error annotations |
-| `examples/src/*.ts` | Working example programs demonstrating supported features |
-| `tests/projects/*/` | Multi-file test projects (auto-discovered — all must pass at every commit) |
-| `import-stubs/` | Stub type declarations for built-in modules |
+| CLI & driver | `src/Main.sk`, `src/Files.sk`, `src/Config.sk`, `src/TsConfig.sk`, `src/ModuleResolver.sk`, `src/FileDefs.sk` |
+| Lexer & parser | `src/Lexer.sk`, `src/Tokens.sk`, `src/Ast.sk`, `src/Parser.sk`, `src/Parser{Defs,Expr,Stmt,Type,Pattern,Utils}.sk` |
+| Type representation | `src/TType.sk`, `src/TType{Union,Inter,Subst,Subtyping,Observation,Materialization,Transformers,Pp}.sk`, `src/TEnv.sk` |
+| Type checker | `src/TypeCheck.sk`, `src/TypeCheck{Def,Class,Enum,Fun,Stmt,Expr,Refine,Scope,Env,Utils}.sk`, `src/TArrayLitTyping.sk`, `src/TVariadicTyping.sk`, `src/CallTyping.sk`, `src/CaptureWrites.sk` |
+| Diagnostics | `src/Error.sk`, `src/TypingError.sk`, `src/Position.sk` |
+| Abstract interp / CFG | `src/absint/{CFG,CFGSerializer,AbstractDomain,ConstantProp,DeadCode,InterprocDataflow}.sk` |
+| Tests & stubs | `tests/Main.sk`, `tests/Helpers.sk`, `tests/expect-error/*.ts`, `tests/projects/*/` (auto-discovered), `tests/ts-conformance/`, `examples/src/*.ts`, `import-stubs/` |
 
 ## Key Conventions
 
-- **Green commits**: Every intermediate commit must pass `make test-in-docker`
-- **Pinning tests first**: add the test that pins/demonstrates a behavior in its own commit BEFORE the change that alters it — never in the same commit as the fix (sole exception: the pre-change test crashes the test runner). Every fix needs a preceding test commit showing what it fixes. See docs/commits-and-prs.md.
-- **SKJS is a typechecker, not a runtime**: Tests exercise type-checking only — no `console.log()` calls or function invocations
-- **One error per definition**: SKJS reports only the first type error per function/definition unless passing `--keep-going` (best-effort — fatal errors may still hide subsequent ones)
-- **Match TypeScript**: SKJS should not be more permissive than TypeScript, but must not follow TypeScript when TypeScript is unsound. When in doubt, verify with `npx tsc --strict --noEmit`
-- **Skip-code lessons log**: the canonical living log of lessons about writing better Skip code lives in the Skip repo — [SkipLabs/skip `docs/skip-code-notes.md`](https://github.com/SkipLabs/skip/blob/main/docs/skip-code-notes.md). Read it before writing `.sk` code, and append to it (in the Skip repo) whenever you learn a lesson — especially when the user tells you to do something differently.
+- **Green commits**: Every commit must pass `make fmt` and `make test-in-docker`.
+- **Pinning tests first**: Add a pinning test demonstrating the current behavior in its own commit BEFORE the fix/behavior-change commit — never in the same commit (sole exception: pre-change test crashes the runner). See [docs/commits-and-prs.md](docs/commits-and-prs.md).
+- **One logical change per commit**; bump `version` in `Skargo.toml` in every code PR (patch/minor/major).
+- **No build/debug artifacts**: Never commit `target/`, `tmp_*.ts`, `_skjs-debug/`, or caches (all gitignored).
+- **SKJS is a typechecker, not a runtime**: Tests exercise type-checking only — no `console.log()` or function invocations.
+- **One error per definition**: SKJS reports only the first fatal error per definition unless `--keep-going` is passed (best-effort). Warnings are non-fatal and all are reported.
+- **Match TypeScript, never its unsoundness**: SKJS must not be more permissive than `tsc --strict --noEmit`, except where documented, and must not follow `tsc` when `tsc` is unsound.
+- **Skip-code lessons log**: Read [SkipLabs/skip `docs/skip-code-notes.md`](https://github.com/SkipLabs/skip/blob/main/docs/skip-code-notes.md) (sibling checkout: `../skip/docs/skip-code-notes.md`) before writing `.sk` code; append Skip-writing lessons there in the Skip repo.
+
+## Merge bot
+
+`bin/merge-bot.sh` delegates to `../skip/bin/merge-bot.sh` (override with `SKIP_DIR`), setting skjs CI heuristics, `.vibe/skills/merge-bot/references/`, and state dir `~/.cache/skjs-merge-bot`. Use the `merge-bot` skill (symlinked to `../skip/.vibe/skills/merge-bot/SKILL.md`) or `bin/merge-bot.sh run` (`--dry-run` to preview); `bin/merge-bot.sh --selftest` runs via `make check-sh`.
 
 ## Detailed Guides
 
-Read these before starting the relevant task:
+Read the relevant guide before starting a task:
 
 | Guide | When to read |
 | --- | --- |
-| [Setup](docs/setup.md) | First time setting up the repo |
-| [TypeScript Subset Rules](skjs-rules.md) | Before changing what SKJS accepts or rejects — this is the source of truth |
-| [TypeScript Soundness Holes](docs/typescript-soundness-holes.md) | Before deciding whether to follow tsc — catalogues the programs tsc accepts unsoundly |
-| [Writing Code](docs/writing-code.md) | Before writing or modifying `.sk` or `.ts` files |
-| [Skip Code Notes](https://github.com/SkipLabs/skip/blob/main/docs/skip-code-notes.md) | Canonical living log of Skip-writing lessons (lives in the Skip repo) — read before writing `.sk` code |
-| [Testing](docs/testing.md) | Before writing or modifying tests |
-| [Commits and PRs](docs/commits-and-prs.md) | Before committing or opening a pull request |
+| [Setup](docs/setup.md) | First-time setup (sibling `../skip`, git hooks) |
+| [TypeScript Subset Rules](skjs-rules.md) | Normative spec of what SKJS accepts/rejects (has ToC — jump to the relevant rule) |
+| [TypeScript Soundness Holes](docs/typescript-soundness-holes.md) | Before deciding whether to follow `tsc` — catalogues unsound programs `tsc --strict` accepts |
+| [Writing Code](docs/writing-code.md) | Skip style, error message conventions, doc-sync rules |
+| [Skip Code Notes](https://github.com/SkipLabs/skip/blob/main/docs/skip-code-notes.md) | Canonical Skip-writing lessons (in sibling `../skip/docs/skip-code-notes.md`) |
+| [Testing](docs/testing.md) | Annotations, `UPDATE_EXPECT`, conformance tests, test rules |
+| [Commits and PRs](docs/commits-and-prs.md) | Commit ordering, versioning, AI disclosure, PR guidelines |
+| [Error Formats](docs/error-format.md) | `--error-format` (`default`, `indent`, `json`) schemas |
+| [Incremental](docs/incremental.md) | `--init` / `--data` / `--log-affected-files` |
+| [Releasing & CI](docs/releasing.md) | CircleCI change classification, binary cache, release tagging |
