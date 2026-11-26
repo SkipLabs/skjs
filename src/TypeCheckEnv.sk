@@ -23,6 +23,11 @@ value class HiddenEscapeCheck(
 mutable base class TCEnvBase private {
   context: mutable SKStore.Context,
   results: mutable TCResultsAcc,
+  // True while re-checking an implementation body under an overload's
+  // signature (the TS2394 trial): branches where a parameter narrows to
+  // `never` are unreachable for calls through that overload, so diagnostics
+  // on never operands are suppressed there only.
+  mutable inOverloadTrial: Bool = false,
   // Switches whose cases cover every value the scrutinee can take, keyed by the
   // scrutinee's position. Only the type-checker can tell — it is the one that
   // knows the scrutinee's type — but the termination pass needs the answer, so
@@ -701,6 +706,7 @@ class TCResults private {
 // evaluation precedes the call checkpoint and therefore retains its own facts.
 class TypePublicationState{
   callCount: Int,
+  classHierarchyCount: Int,
   subtypingEdges: SortedSet<(CGNode, CGNode)>,
   cfgs: SortedMap<CGNode, CFG>,
 }
@@ -721,6 +727,7 @@ mutable class TCResultsAcc private {
   readonly fun savePublication(): TypePublicationState {
     TypePublicationState{
       callCount => this.callgraph.size(),
+      classHierarchyCount => this.classHierarchy.size(),
       subtypingEdges => this.subtypingEdges,
       cfgs => this.cfgs,
     }
@@ -729,6 +736,9 @@ mutable class TCResultsAcc private {
   mutable fun restorePublication(saved: TypePublicationState): void {
     while (this.callgraph.size() > saved.callCount) {
       _ = this.callgraph.pop();
+    };
+    while (this.classHierarchy.size() > saved.classHierarchyCount) {
+      _ = this.classHierarchy.pop();
     };
     this.!subtypingEdges = saved.subtypingEdges;
     this.!cfgs = saved.cfgs

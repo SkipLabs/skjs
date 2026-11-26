@@ -41,11 +41,15 @@ extension class TypeChecker {
       }
     };
     classFields = this.getClassFields(tcenvl.context, c);
-    constructor: ?ClassFieldMethod = None();
+    // TS2392 fires only on a second constructor IMPLEMENTATION; the
+    // signature-only declarations of a constructor overload set are fine.
+    ctorImpl: ?ClassFieldMethod = None();
     for (fieldType in classFields) {
       fieldType match {
-      | fd @ ClassFieldMethod{name => FNNormal(Name(fdPos, "constructor"))} ->
-        constructor match {
+      | fd @ ClassFieldMethod{name => FNNormal(Name(fdPos, "constructor"))} if (
+        fd.hasBody
+      ) ->
+        ctorImpl match {
         | Some(existingConstructor) ->
           tcenvl.error(
             Array[
@@ -54,7 +58,7 @@ extension class TypeChecker {
             ],
             TSCode(2392),
           )
-        | None() -> !constructor = Some(fd)
+        | None() -> !ctorImpl = Some(fd)
         }
       | _ -> void
       }
@@ -65,6 +69,65 @@ extension class TypeChecker {
     targs = TArgs(c.tparams.map(tparam -> this.bindings[tparam.name.value]));
     fileName = c.name.pos.fileName;
     thisType = TType::classThisType(subst, this, c.name, targs.targs);
+    // A class is ambient when it is an interface or comes from a .d.ts file
+    // (tsc treats .d.ts files as ambient throughout); ambient classes never
+    // need method/constructor implementations. `declare class` never reaches
+    // class_ (checkDef_ has a dedicated Declare arm).
+    classIsAmbient =
+      c.kind is CKInterface() ||
+      fileName.toString().endsWith(".d.ts");
+    // Method/constructor overload groups span all declarations of the merged
+    // name (interface merging), so collect them across defs, not just this
+    // declaration. implMethodKeys holds `static:`-prefixed method names that
+    // have an implementation somewhere in the group — used to suppress the
+    // per-member "Method implementation is missing" error for signature-only
+    // overloads (funDef reports it only when the group has no impl at all).
+    implMethodKeys = mutable Set<String>[];
+    ctorGroupHasImpl = false;
+    groupDecls = mutable Vector[c];
+    for (def in this.defMap.getAll(tcenvl, c.name, true)) {
+      def match {
+      | other @ Class _ -> groupDecls.push(other)
+      | _ -> void
+      }
+    };
+    for (decl in groupDecls) {
+      for (f in this.getClassFields(tcenvl.context, decl)) {
+        f match {
+        | fd @ ClassFieldMethod _ ->
+          if (fd.hasBody) {
+            fd.name match {
+            | FNNormal(n) ->
+              if (n.value == "constructor") {
+                !ctorGroupHasImpl = true
+              } else {
+                key = if (fd.isStatic()) {
+                  `static:${n.value}`
+                } else {
+                  n.value
+                };
+                implMethodKeys.insert(key)
+              }
+            | _ -> void
+            }
+          }
+        | _ -> void
+        }
+      }
+    };
+    // Run the overload-group checks once, from the first declaration of the
+    // name (class_ runs once per declaration / DefKey occurrence).
+    isFirstDecl = groupDecls.isEmpty() || groupDecls[0].name.pos == c.name.pos;
+    if (isFirstDecl) {
+      this.checkMethodOverloadGroups(
+        tcenvl,
+        c,
+        groupDecls.toArray(),
+        thisType,
+        targs,
+        classIsAmbient,
+      )
+    };
     if (c.extends_.size() != 0) {
       isInterface = c.kind is CKInterface();
       if (c.extends_.size() > 1 && !isInterface) {
@@ -436,6 +499,10 @@ extension class TypeChecker {
               }
             )
             .collect(SortedSet);
+          // A signature-only constructor overload is fine when the group has
+          // an implementation (or the class is ambient); only a group with no
+          // implementation at all keeps the TS2391 from constructor().
+          allowMissing = classIsAmbient || ctorGroupHasImpl;
           this.constructor(
             subst,
             thisType,
@@ -443,11 +510,32 @@ extension class TypeChecker {
             fd,
             Some(c.name),
             methods,
+            allowMissing,
           )
         } else {
           cgNode = CGNode::create(Method(fd.name, c.name, fd.isStatic()));
+          // A signature-only overload of a method group that has an
+          // implementation must not report "Method implementation is missing"
+          // (funDef emits it for body-less methods of a real class); check
+          // its signature only, like an ambient method.
+          isSigOnlyOfImplGroup =
+            !fd.hasBody &&
+            !classIsAmbient &&
+            c.kind is CKClass() &&
+            implMethodKeys.contains(
+              if (fd.isStatic()) {
+                `static:${fd.name.getName()}`
+              } else {
+                fd.name.getName()
+              },
+            );
+          thisTypeOpt = if (isSigOnlyOfImplGroup) {
+            None()
+          } else {
+            Some((c.kind, thisType))
+          };
           tcenvl.collectErrors(() -> {
-            this.funDef(subst, Some((c.kind, thisType)), fd, cgNode)
+            this.funDef(subst, thisTypeOpt, fd, cgNode)
           })
         }
       }
@@ -481,6 +569,260 @@ extension class TypeChecker {
     }
   }
 
+  // Validates a same-named group of method declarations (across all merged
+  // declarations of the class/interface name) as one overload set:
+  // - TS2393 on every implementation after the first;
+  // - TS2391 when the implementation is not the last member of the group;
+  // - TS2394 when an overload signature is compatible with neither the
+  //   implementation signature (subtype) nor the implementation BODY
+  //   re-checked under the overload's signature (the sound check — see
+  //   checkFunOverloadGroup for top-level functions).
+  // Ambient classes (interfaces, .d.ts) need no implementation, so only the
+  // compatibility check applies — and with no bodies there, nothing to check.
+  private fun checkMethodOverloadGroups(
+    tcenvl: mutable TCEnvLight,
+    c: Class,
+    decls: Array<Class>,
+    thisType: TType,
+    targs: TArgs,
+    classIsAmbient: Bool,
+  ): void {
+    // Group non-constructor methods by (name, static), in declaration order
+    // across all declarations of the merged name; deduplicate by position.
+    groups = mutable Map<String, Array<ClassFieldMethod>>[];
+    for (decl in decls) {
+      for (f in this.getClassFields(tcenvl.context, decl)) {
+        f match {
+        | fd @ ClassFieldMethod _ ->
+          fd.name match {
+          | FNNormal(n) if (n.value != "constructor") ->
+            key = if (fd.isStatic()) {
+              `static:${n.value}`
+            } else {
+              n.value
+            };
+            vec = groups.maybeGet(key).default(Array[]);
+            if (!vec.any(m -> m.name.getPos() == fd.name.getPos())) {
+              groups![key] = vec.concat(Array[fd])
+            }
+          | _ -> void
+          }
+        | _ -> void
+        }
+      }
+    };
+    groups.each((_, members) -> {
+      bodies = members.filter(fd -> fd.hasBody);
+      if (bodies.size() > 1) {
+        // tsc TS2393, reported at every implementation after the first.
+        for (i in Range(1, bodies.size())) {
+          tcenvl.error(
+            Array[
+              (bodies[i].name.getPos(), "Duplicate function implementation"),
+            ],
+            TSCode(2393),
+          )
+        }
+      };
+      if (bodies.size() == 1 && !members[members.size() - 1].hasBody) {
+        // tsc TS2391: the implementation must immediately follow the overload
+        // signatures.
+        tcenvl.error(
+          Array[
+            (
+              members[members.size() - 1].name.getPos(),
+              "Function implementation is missing or not immediately following the declaration",
+            ),
+          ],
+          TSCode(2391),
+        )
+      };
+      // Implementation compatibility (sound, stricter than tsc's loose
+      // "comparable" rule): for each signature-only overload O, either the
+      // implementation signature is a subtype of O, or the implementation
+      // body re-checked with O's signature type-checks.
+      overloadSigs = members.filter(fd -> !fd.hasBody);
+      if (!classIsAmbient && bodies.size() == 1 && !overloadSigs.isEmpty()) {
+        implFd = bodies[0];
+        implIsStatic = implFd.isStatic();
+        implicitThisOpt = if (implIsStatic) {
+          None()
+        } else {
+          Some(thisType)
+        };
+        implCgNode = CGNode::create(Method(implFd.name, c.name, implIsStatic));
+        implTFuns = this.funDecl(tcenvl, implicitThisOpt, implFd, implCgNode);
+        implTy = TType::single(TObject::createCall(implTFuns));
+        for (ovFd in overloadSigs) {
+          ovPos = ovFd.name.getPos();
+          {
+            ovImplicitThisOpt = if (ovFd.isStatic()) {
+              None()
+            } else {
+              Some(thisType)
+            };
+            ovCgNode = CGNode::create(
+              Method(ovFd.name, c.name, ovFd.isStatic()),
+            );
+            ovTFuns = this.funDecl(tcenvl, ovImplicitThisOpt, ovFd, ovCgNode);
+            ovTy = TType::single(TObject::createCall(ovTFuns));
+            subst = Subst::createCheckingOwner(tcenvl);
+            sigOk = TType::isSub(subst, this, implTy, ovTy) is STOk();
+            bodyOk = false;
+            if (!sigOk) {
+              implSig = this.getFunSig(tcenvl.context, implFd);
+              ovSig = this.getFunSig(tcenvl.context, ovFd);
+              trialFd = implFd with {
+                sig => FSInline(
+                  ovSig.tparams,
+                  static::overloadTrialParams(implSig, ovSig),
+                  ovSig.retType,
+                ),
+              };
+              trialResults = TCResultsAcc::mcreate{
+                errorHandling => this.errorHandling,
+              };
+              trialEnvl = mutable TCEnvLight{
+                context => tcenvl.context,
+                results => trialResults,
+              };
+              subst2 = Subst::createCheckingOwner(trialEnvl);
+              exn = catchError(() ->
+                this.funDef(
+                  subst2,
+                  Some((c.kind, thisType)),
+                  trialFd,
+                  implCgNode,
+                  true,
+                )
+              );
+              !bodyOk = exn.isNone() && trialResults.errors.isEmpty()
+            };
+            if (!sigOk && !bodyOk) {
+              tcenvl.error(
+                Array[
+                  (
+                    ovPos,
+                    "Overload signature is not compatible with its implementation signature",
+                  ),
+                  (
+                    implFd.name.getPos(),
+                    "The implementation signature is declared here",
+                  ),
+                ],
+                TSCode(2394),
+              )
+            }
+          }
+        }
+      }
+    });
+    // Constructor overload group: same rules as methods, on the `new`
+    // signatures. TS2392 (duplicate implementation) is reported in class_'s
+    // preamble; TS2391 (missing / not-last implementation) comes from
+    // constructor() per declaration.
+    ctors = mutable Vector[];
+    for (decl in decls) {
+      for (f in this.getClassFields(tcenvl.context, decl)) {
+        f match {
+        | fd @ ClassFieldMethod _ if (
+          fd.name is FNNormal(Name(_, "constructor"))
+        ) ->
+          if (!ctors.any(m -> m.name.getPos() == fd.name.getPos())) {
+            ctors.push(fd)
+          }
+        | _ -> void
+        }
+      }
+    };
+    ctorArr = ctors.toArray();
+    ctorBodies = ctorArr.filter(fd -> fd.hasBody);
+    ctorSigs = ctorArr.filter(fd -> !fd.hasBody);
+    if (!classIsAmbient && ctorBodies.size() == 1 && !ctorSigs.isEmpty()) {
+      implFd = ctorBodies[0];
+      implTFuns = this.makeConstructor(tcenvl, c.name, c.tparams, implFd);
+      implTy = TType::single(TObject::createNew(implTFuns, c.name.pos));
+      for (ovFd in ctorSigs) {
+        ovPos = ovFd.name.getPos();
+        {
+          ovTFuns = this.makeConstructor(tcenvl, c.name, c.tparams, ovFd);
+          ovTy = TType::single(TObject::createNew(ovTFuns, c.name.pos));
+          subst = Subst::createCheckingOwner(tcenvl);
+          sigOk = TType::isSub(subst, this, implTy, ovTy) is STOk();
+          bodyOk = false;
+          if (!sigOk) {
+            implSig = this.getFunSig(tcenvl.context, implFd);
+            ovSig = this.getFunSig(tcenvl.context, ovFd);
+            trialFd = implFd with {
+              sig => FSInline(
+                ovSig.tparams,
+                static::overloadTrialParams(implSig, ovSig),
+                ovSig.retType,
+              ),
+            };
+            trialResults = TCResultsAcc::mcreate{
+              errorHandling => this.errorHandling,
+            };
+            trialEnvl = mutable TCEnvLight{
+              context => tcenvl.context,
+              results => trialResults,
+            };
+            subst2 = Subst::createCheckingOwner(trialEnvl);
+            allFields = mutable Vector[];
+            for (decl in decls) {
+              for (f in this.getClassFields(tcenvl.context, decl)) {
+                allFields.push(f)
+              }
+            };
+            partialThisType = this.new(
+              subst2,
+              c.name,
+              targs.targs,
+              fieldType ~> (fieldType is ClassFieldValue{value => Some _}),
+            );
+            methodNames = allFields
+              .toArray()
+              .filterMap(f ->
+                f match {
+                | ClassFieldMethod{name => FNNormal(Name(_, mn))} -> Some(mn)
+                | _ -> None()
+                }
+              )
+              .collect(SortedSet);
+            exn = catchError(() ->
+              this.constructor(
+                subst2,
+                thisType,
+                partialThisType,
+                trialFd,
+                Some(c.name),
+                methodNames,
+                true,
+                true,
+              )
+            );
+            !bodyOk = exn.isNone() && trialResults.errors.isEmpty()
+          };
+          if (!sigOk && !bodyOk) {
+            tcenvl.error(
+              Array[
+                (
+                  ovPos,
+                  "Overload signature is not compatible with its implementation signature",
+                ),
+                (
+                  implFd.name.getPos(),
+                  "The implementation signature is declared here",
+                ),
+              ],
+              TSCode(2394),
+            )
+          }
+        }
+      }
+    }
+  }
+
   fun constructor(
     subst: mutable Subst,
     thisType: TType,
@@ -488,6 +830,8 @@ extension class TypeChecker {
     fd: ClassFieldMethod,
     className: ?Name,
     methods: SortedSet<String>,
+    allowMissingBody: Bool = false,
+    inOverloadTrial: Bool = false,
   ): void {
     cstrSig = this.getFunSig(subst.context, fd);
     if (cstrSig.retType.i1 is Some _) {
@@ -536,6 +880,7 @@ extension class TypeChecker {
       fd,
       cgNode,
     );
+    tcenv.!inOverloadTrial = inOverloadTrial;
     // `this` is bound in funDefSetup as `Name(fdPos, "this")`, so its
     // declaration position (the localObjects key) is fdPos.
     tcenv.localObjects![fdPos] = LOCanGrow(Some(thisType));
@@ -549,10 +894,14 @@ extension class TypeChecker {
     };
     this.getFunBody(subst.context, fd) match {
     | FDBNone() ->
-      subst.error(
-        Array[(fdPos, "Constructor implementation is missing")],
-        TSCode(2391),
-      )
+      // allowMissingBody: a signature-only constructor overload of a group
+      // that has an implementation (or an ambient class) — no error.
+      if (!allowMissingBody) {
+        subst.error(
+          Array[(fdPos, "Constructor implementation is missing")],
+          TSCode(2391),
+        )
+      }
     | FDBSome(body) ->
       (blockScope, _) = this.block(tcenv, body);
       blockThisType = blockScope.get(Name(fdPos, "this"));

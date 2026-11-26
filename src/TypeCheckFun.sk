@@ -329,6 +329,7 @@ extension class TypeChecker {
     thisTypeOpt: ?(ClassKind, TType),
     fd: FunDefWithModifiers<SimpleFieldName>,
     cgNode: CGNode,
+    inOverloadTrial: Bool = false,
   ): void {
     for (modifier in fd.modifiers.modifiers) {
       modifier match {
@@ -357,6 +358,7 @@ extension class TypeChecker {
       fd,
       cgNode,
     );
+    tcenv.!inOverloadTrial = inOverloadTrial;
     funSig = this.getFunSig(subst.context, fd);
     if (this.retType is None()) {
       subst.error(
@@ -423,6 +425,22 @@ extension class TypeChecker {
     fdPos = fd.name.getPos();
     this.getFunBody(subst.context, fd) match {
     | FDBNone() ->
+      // tsc TS2371: a parameter initializer is only allowed in a function or
+      // constructor implementation, never in a body-less (overload or
+      // ambient) signature.
+      for (param in funSig.params) {
+        param.default.each(dflt ->
+          subst.error(
+            Array[
+              (
+                dflt.pos,
+                "A parameter initializer is only allowed in a function or constructor implementation",
+              ),
+            ],
+            TSCode(2371),
+          )
+        )
+      };
       if (thisTypeOpt is Some((CKClass(), _))) {
         subst.error(
           Array[(fdPos, "Method implementation is missing")],

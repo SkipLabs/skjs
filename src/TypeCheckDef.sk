@@ -254,6 +254,57 @@ extension class TypeChecker {
     }
   }
 
+  // Build the parameter list for an implementation-compatibility trial
+  // (TS2394): the IMPLEMENTATION's own parameters — names, patterns,
+  // defaults, optional/rest markers, `this` — with type annotations replaced
+  // positionally from the overload's non-`this` parameters. Positions beyond
+  // the overload's arity are typed `unknown` (a call through the overload
+  // supplies no argument there — the runtime value is the default or
+  // undefined — so the body must not rely on a declared type). An overload
+  // rest parameter maps to its element type when the implementation's
+  // parameter is not itself a rest.
+  static fun overloadTrialParams(
+    implSig: FunDefSigData,
+    ovSig: FunDefSigData,
+  ): Array<Param> {
+    ovParams = ovSig.params.filter(p -> !p.isThisParam());
+    implSig.params.mapWithIndex((i, p) ->
+      if (p.isThisParam()) {
+        p
+      } else {
+        ovIdx = implSig.params.slice(0, i).filter(q -> !q.isThisParam()).size();
+        ovp = if (ovIdx < ovParams.size()) {
+          Some(ovParams[ovIdx])
+        } else {
+          None()
+        };
+        unknownType = Type(p.pos, TAInst(Name(p.pos, "unknown"), Array[]));
+        newType: ?Type = ovp match {
+        | None() -> Some(unknownType)
+        | Some(q) ->
+          if (q.isRest.isSome()) {
+            if (p.isRest.isSome()) {
+              // both rest: the array annotation carries over
+              q.type
+            } else {
+              // overload rest maps to its element type
+              q.type match {
+              | Some(Type(_, TAArray(elt))) -> Some(elt)
+              | _ -> Some(unknownType)
+              }
+            }
+          } else if (p.isRest.isSome()) {
+            // implementation rest, overload plain: array of the overload type
+            q.type.map(t -> Type(p.pos, TAArray(t)))
+          } else {
+            q.type
+          }
+        };
+        p with {type => newType}
+      }
+    )
+  }
+
   // Validate a same-named group of top-level function declarations as one
   // overload set (pushDef lets them coexist instead of reporting a duplicate
   // identifier). When the group has an implementation, the implementation
@@ -382,16 +433,16 @@ extension class TypeChecker {
             // by position, never by name).
             implSig = this.getFunSig(tcenvl.context, implFd);
             ovSig = this.getFunSig(tcenvl.context, ovFd);
-            renamedParams = ovSig.params.mapWithIndex((i, p) ->
-              if (i < implSig.params.size()) {
-                p with {name => implSig.params[i].name}
-              } else {
-                p
-              }
-            );
-            // getFunSig materializes both inline and ref'd signatures.
+            // getFunSig materializes both inline and ref'd signatures. The
+            // trial runs the implementation BODY under the overload's
+            // signature, so it keeps the implementation's own parameter list
+            // (names, defaults, `this`) and only swaps the types.
             trialFd = implFd with {
-              sig => FSInline(ovSig.tparams, renamedParams, ovSig.retType),
+              sig => FSInline(
+                ovSig.tparams,
+                static::overloadTrialParams(implSig, ovSig),
+                ovSig.retType,
+              ),
             };
             trialResults = TCResultsAcc::mcreate{
               errorHandling => this.errorHandling,
@@ -402,7 +453,13 @@ extension class TypeChecker {
             };
             subst2 = Subst::createCheckingOwner(trialEnvl);
             exn = catchError(() ->
-              this.funDef(subst2, None(), trialFd, implFd.cgNode.fromSome())
+              this.funDef(
+                subst2,
+                None(),
+                trialFd,
+                implFd.cgNode.fromSome(),
+                true,
+              )
             );
             !bodyOk = exn.isNone() && trialResults.errors.isEmpty()
           };

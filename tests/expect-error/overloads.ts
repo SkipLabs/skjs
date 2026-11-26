@@ -158,3 +158,139 @@ function testCallApplyBind(): void {
   const c: number = g2.apply(undefined, ["hi"]);
   const d: string = g2.bind(undefined)(42);
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// Phase 2: method, constructor, and call/construct-signature overloads
+///////////////////////////////////////////////////////////////////////////////
+
+// Class method overloads resolve first-match-wins; the implementation
+// signature is excluded from the callable set. (The overloads share a return
+// type so the implementation passes the strict TS2394 compatibility check.)
+class MethodOvl {
+  m(x: string): string;
+  m(x: number): string;
+  m(x: string | number): string {
+    return typeof x === "string" ? x : "n";
+  }
+}
+
+function testMethodOverloads(): void {
+  const c = new MethodOvl();
+  const a: string = c.m("hi");
+  const b: string = c.m(42);
+  // @skjs-expect-error No overload matches this call
+  // @skjs-expect-error This expression was expected to be of type 'void' or ignorable
+  c.m(true);
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  const wrong: number = c.m("hi");
+}
+
+// Constructor overloads form the `new` signature set.
+class CtorOvl {
+  constructor(x: string);
+  constructor(x: number);
+  constructor(x: string | number) {}
+}
+
+function testCtorOverloads(): void {
+  const a = new CtorOvl("hi");
+  const b = new CtorOvl(42);
+  // @skjs-expect-error No overload matches this call
+  // @skjs-expect-error This expression was expected to be of type 'void' or ignorable
+  new CtorOvl(true);
+}
+
+// Static method overloads.
+class StaticOvl {
+  static s(x: string): string;
+  static s(x: number): string;
+  static s(x: string | number): string {
+    return typeof x === "string" ? x : "n";
+  }
+}
+
+function testStaticOverloads(): void {
+  const a: string = StaticOvl.s("hi");
+  const b: string = StaticOvl.s(42);
+}
+
+// Interface declaration merging accumulates overloads.
+interface MergedI {
+  f(x: string): number;
+}
+interface MergedI {
+  f(x: number): string;
+}
+
+function testMergedInterface(i: MergedI): void {
+  const a: number = i.f("hi");
+  const b: string = i.f(42);
+  // @skjs-expect-error No overload matches this call
+  // @skjs-expect-error This expression was expected to be of type 'void' or ignorable
+  i.f(true);
+}
+
+// Multiple call signatures in an object type literal form a call overload set.
+function testCallSignatures(f: {
+  (x: string): number;
+  (x: number): string;
+}): void {
+  const a: number = f("hi");
+  const b: string = f(42);
+  // @skjs-expect-error No overload matches this call
+  // @skjs-expect-error This expression was expected to be of type 'void' or ignorable
+  f(true);
+}
+
+// Group rules for methods: duplicate implementation -> TS2393.
+class DupImpl {
+  m(x: string): void {}
+  // @skjs-expect-error Duplicate function implementation
+  m(x: number): void {}
+}
+
+// Implementation not last -> TS2391.
+class NotLast {
+  m(x: string): void {}
+  // @skjs-expect-error Function implementation is missing or not immediately following the declaration
+  m(x: number): void;
+}
+
+// Lone body-less method in a real class -> TS2391.
+class LoneSig {
+  // @skjs-expect-error Method implementation is missing
+  m(x: string): void;
+}
+
+// Incompatible overload -> TS2394.
+class Incompatible {
+  // @skjs-expect-error Overload signature is not compatible with its implementation signature
+  m(x: string): number;
+  m(x: string): string {
+    return "s";
+  }
+}
+
+// Duplicate constructor implementations -> TS2392.
+class DupCtor {
+  constructor(x: string) {}
+  // @skjs-expect-error Multiple constructor implementations are not allowed.
+  constructor(x: number) {}
+}
+
+// Lone body-less constructor in a real class -> TS2391.
+class LoneCtor {
+  // @skjs-expect-error Constructor implementation is missing
+  constructor(x: string);
+}
+
+// Interfaces need no implementation: body-less method groups are fine.
+interface AmbientLike {
+  m(x: string): number;
+  m(x: number): string;
+}
+
+function testInterfaceGroup(i: AmbientLike): void {
+  const a: number = i.m("hi");
+  const b: string = i.m(42);
+}
