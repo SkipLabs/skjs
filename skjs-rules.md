@@ -1,15 +1,46 @@
 # SKJS TypeScript Subset Rules
 
-This document describes the rules and restrictions of the SKJS type checker, which aims to implement a sound subset of TypeScript.
+Normative specification of the TypeScript subset checked by SKJS. Where a rule is stricter than `tsc --strict` for soundness, see also [docs/typescript-soundness-holes.md](docs/typescript-soundness-holes.md).
+
+## Contents
+
+- [Diagnostics: errors vs warnings](#diagnostics-errors-vs-warnings)
+- [Conformance Mode](#conformance-mode)
+- [Key Rules & Restrictions](#key-rules--restrictions)
+  - Scope & bindings: [1. Top-level `let`](#1-no-toplevel-let-declarations) · [1b. Top-level `const` destructuring](#1b-no-destructuring-in-top-level-const-declarations) · [31. Annotated writes & evolving `let`](#31-writes-are-checked-against-an-explicit-annotation-only)
+  - Types, literals & operators: [2. Delayed array literals](#2-array-literals-use-delayed-typing) · [8. `keyof`](#8-keyof-operator) · [9. Literal typing & `as const`](#9-literal-typing-and-as-const) · [17. No `any`](#17-the-any-type-is-not-supported) · [18. Template literal strings](#18-template-literal-strings) · [18b. Template literal types](#18b-template-literal-types-partially-supported) · [19. `as` casts](#19-as-casts-are-checked-for-soundness) · [30. Number literals](#30-number-literal-normalization) · [30b. String escapes](#30b-string-literal-escape-decoding) · [30c. Identifier chars](#30c-identifier-characters) · [31. Enums](#31-enums-value-set-semantics) · [33. Circular type params](#33-circular-type-parameter-defaults-and-constraints)
+  - Objects, fields & mutability: [27. Readonly field soundness](#27-readonly-field-soundness-stricter-than-typescript) · [28. Optional fields exact](#28-optional-fields-are-exact-present--t) · [28. Index signatures](#28-index-signatures) · [28b. `Closed<T>`](#28b-closedt--closed-object-types-skjs-extension) · [28. Object spread soundness](#28-object-spread-soundness-stricter-than-typescript)
+  - Functions & classes: [3. Class inheritance constructors](#3-class-inheritance-constructor-signatures) · [4b. Abstract classes/methods](#4b-abstract-methods-not-supported) · [4c. Static readonly fields](#4c-static-fields-must-be-readonly) · [10. Function overloads](#10-function-overloading-functions-methods-constructors-call-signatures) · [12. Function expressions](#12-function-expressions-not-supported) · [16. Explicit function annotations](#16-function-signatures-must-be-fully-annotated) · [16b. Ambient un-annotated class fields](#16b-un-annotated-class-fields-are-opaque-ambient-classes) · [32. `this` parameter](#32-the-this-parameter--differences-from-typescript) · [35. Nominal classes](#35-class-instance-types-are-nominal-stricter-than-typescript)
+  - Narrowing & control flow: [13. Discriminated unions](#13-discriminated-unions) · [20. `for...of`](#20-forof-loop-constraints) · [20b. `switch` & jump edges](#20b-switch-clauses-must-not-fall-through) · [21. Promises & `async`/`await`](#21-promises-and-asyncawait) · [27b. `Array.isArray`](#27b-arrayisarray-narrowing-stays-readonly-unless-provably-mutable-stricter-than-typescript) · [27c. `instanceof` & `Symbol.hasInstance`](#27c-instanceof-narrowing-is-suppressed-for-custom-symbolhasinstance-stricter-than-typescript) · [27d. `typeof === "function"`](#27d-typeof-x--function-narrowing-uses-four-state-callability-stricter-than-typescript) · [27e. Generic `instanceof`](#27e-instanceof-narrowing-binds-hidden-type-arguments-rigidly-stricter-than-typescript) · [27f. `void`/`undefined` equality](#27f-void-and-undefined-overlap-in-equality-narrowing) · [27g. Incomparable function equality](#27g-incomparable-function-signatures-are-not-disjoint-in-equality-narrowing) · [29. Truthiness](#29-truthiness-tests-and-the-truthiness-option) · [36. Assertion signatures](#36-assertion-signatures-asserts-x-and-asserts-x-is-t)
+  - Environment & modules: [5. Console surface](#5-console-surface-is-minimal) · [14. Import system](#14-import-system)
+- [Coding Guidelines for SKJS](#coding-guidelines-for-skjs)
 
 ## Diagnostics: errors vs warnings
 
 SKJS emits diagnostics at two severities:
 
-- **Errors** are soundness-critical (type mismatches, unsupported constructs, unbound names, …). A file with any error fails the build (exit code `2`).
-- **Warnings** are non-fatal, lint-style diagnostics that are not soundness-critical. They are reported but do **not** fail the build — a file whose only diagnostics are warnings exits `0`. They also never abort checking of a definition, so they don't hide later errors.
+- **Errors** are soundness-critical (type mismatches, unsupported constructs, unbound names, …). Any error fails the check (exit code `2`).
+- **Warnings** are non-fatal, lint-style diagnostics that are not soundness-critical. They are reported, never abort checking of a definition, and exit `0` when no errors exist.
 
-Diagnostics currently reported as warnings: redundant optional chaining (`Useless '?.'`) and redundant non-null assertions (`This operator is useless` on an operand that is never null/undefined), redundant destructuring defaults (`Default is useless …` / `Element is always undefined`), a redundant negation of a boolean literal (`This constant expression could have been simplified` on `!true` / `!false` — a valid but pointless way to write the literal), a `void`-typed expression used as a value in `??`/`!`/`===`/`typeof` (`An expression of type 'void' cannot be used here`, the `no-confusing-void-expression` rule — runtime-sound and tsc-permissive), `await` applied to a value that is not (always) a thenable (`'await' can only be applied to a Promise`, the `await-thenable` rule — `await` passes a non-thenable through unchanged at runtime, as tsc types it; SKJS is deliberately stricter but non-fatal), a `switch` that cannot do anything (`A switch statement must have at least one case` — sound, and accepted silently by tsc, so the code is pointless rather than wrong; the scrutinee is still checked — and `This switch has a single branch; use an 'if' statement instead`), an unreachable clause (`This case is unreachable: …` / `This 'default' case is unreachable: …`), a `default` clause that is not the last branch of a switch (`The 'default' clause should be the last branch of a switch`; a lint concern only, since `default` runs only when no `case` matches regardless of its position; two `default` clauses in one switch, by contrast, is rejected as a hard error, `A 'default' clause cannot appear more than once in a 'switch' statement` (TS1113, since it is a JavaScript SyntaxError)), a non-exhaustive `switch` over a finite type with no `default` (`Switch is not exhaustive; the following cases are unhandled` — tsc does not require exhaustiveness and SKJS does not rely on the verdict for narrowing or reachability), a statically-known `in` check whose result is a foregone conclusion (`This condition is always true` / `This condition is always false`, the `no-unnecessary-condition` rule — the check is well-typed and sound to evaluate, so it warns rather than erroring; a `(false, false)` contradiction between the operand types stays an error), and non-overlapping strict comparisons (`This comparison is always true/false because the operand types do not overlap`, only when the operands' value sets are provably disjoint: primitive kind mismatches like `number === string`, disjoint literal sets like `0 === 1`, comparisons against `null` or `undefined` that the other operand can never hold (`x === null` when `x` cannot be null is dead code — reported even though tsc is silent), and primitives against object types they cannot box into. Reference types — objects, functions, promises, class instances — are never reported, because a single value can inhabit both sides (width subtyping, never-returning functions, `Promise<never>`), even where tsc reports TS2367. Number literals are normalized at parse time (see rule 30), so `1e3 === 1000` compares one single value and is reported as always true; for literals beyond IEEE-754 double precision (more than 15 significant digits, or outside the double range), two spellings can denote the same runtime double, so the overlap warnings stay silent rather than risk a false always-false claim). SKJS additionally warns when both operands of a strict comparison can only hold one identical value (`This comparison is always true/false because the operands always hold the same single value`, e.g. `x === y` with both typed `"a"`, `0`, `true`, `null`, or `undefined`) — tsc reports nothing there. Comparisons where either operand is a literal expression (including signed numbers like `-1`) are exempt: re-checking a narrowed discriminant on the last variant of a union (`else if (color.kind === "blue")`) is idiomatic, not a bug. The exemption is syntactic, so re-checking against a hoisted constant (`x === BLUE`) still warns. A non-null assertion (`!`) whose operand is *always* null or undefined stays an **error**: `x!` would then have the empty type and satisfy any annotation, so accepting it would be unsound. Also warnings: a non-stringifiable expression interpolated into a template literal (`Template literal expressions must be of type string, number, bigint, boolean, null, or undefined`, the `restrict-template-expressions` rule — JS coerces any interpolated value via `String()`, and tsc accepts it), loose equality `==`/`!=` (the `eqeqeq` rule, reported at parse time — the comparison still parses and types as `boolean`, but narrows nothing: `==` coerces its operands, so `x == "1"` holds for `x: 1` and strict-style refinement would be unsound; no always-true/false overlap diagnostic either, since disjoint-looking operands can still compare equal at runtime, e.g. `0 == ""` and `null == undefined`), an empty `if` body (`if (c);`, the `no-empty` rule — runtime-sound, it just runs nothing), and a `case` clause that falls through into the next one (`Fallthrough case in switch; add a 'break'`, TS7029 when `noFallthroughCasesInSwitch` is on — the clause fallen into is still fully type-checked, which is what keeps the fallthrough sound; the flag now gates only the diagnostic, never the typing).
+Diagnostics currently reported as warnings:
+
+- **Redundant nullish / destructuring ops**: redundant optional chaining (`Useless '?.'`), redundant non-null assertions (`This operator is useless` when never null/undefined), redundant destructuring defaults (`Default is useless …` / `Element is always undefined`). *(Note: `!` on an operand that is **always** null/undefined stays an **error** — otherwise `x!` would become `never` and satisfy any type unsoundly.)*
+- **Redundant boolean negation**: `This constant expression could have been simplified` on `!true` / `!false`.
+- **Confusing `void` (`no-confusing-void-expression`)**: `An expression of type 'void' cannot be used here` in `??` / `!` / `===` / `typeof` (runtime-sound and tsc-permissive).
+- **Non-thenable `await` (`await-thenable`)**: `'await' can only be applied to a Promise` (`await` passes non-thenables through unchanged at runtime, as tsc types it).
+- **`switch` lint checks**:
+  - Empty / single-branch switch: `A switch statement must have at least one case` (scrutinee is still checked) and `This switch has a single branch; use an 'if' statement instead`.
+  - Unreachable clause: `This case is unreachable: …` / `This 'default' case is unreachable: …`.
+  - Misplaced `default`: `The 'default' clause should be the last branch of a switch` (two `default` clauses in one switch stays a hard error, TS1113).
+  - Non-exhaustive finite switch with no `default`: `Switch is not exhaustive; the following cases are unhandled` (SKJS does not rely on the warning for narrowing or reachability).
+  - Fallthrough clause (TS7029 when `noFallthroughCasesInSwitch` is on): `Fallthrough case in switch; add a 'break'` — the clause fallen into is still fully type-checked (flag gates only the diagnostic, never the typing).
+- **Statically-known `in` (`no-unnecessary-condition`)**: `This condition is always true` / `This condition is always false` (a `(false, false)` operand contradiction stays an error).
+- **Strict comparison overlap & constant identity**:
+  - `This comparison is always true/false because the operand types do not overlap` — only when operand value sets are provably disjoint: primitive kind mismatches (`number === string`), disjoint literals (`0 === 1`), impossible `null`/`undefined` checks (`x === null` when `x` cannot be null), and primitives vs non-boxing objects. Reference types (objects, functions, promises, class instances) are never reported because one value can inhabit both sides (width subtyping, never-returning functions, `Promise<never>`), even where tsc reports TS2367. Number literals are normalized at parse time (rule 30), so `1e3 === 1000` is reported as always true; literals beyond IEEE-754 double precision (>15 significant digits or out of double range) stay silent to avoid false always-false claims.
+  - `This comparison is always true/false because the operands always hold the same single value` — when both operands hold the same singleton value (`"a"`, `0`, `true`, `null`, `undefined`). Syntactic literal expressions (including signed numbers like `-1`) are exempt so `else if (color.kind === "blue")` stays quiet, whereas hoisted constants (`x === BLUE`) warn.
+- **Template interpolation (`restrict-template-expressions`)**: `Template literal expressions must be of type string, number, bigint, boolean, null, or undefined` (JS coerces via `String()`, tsc accepts it).
+- **Loose equality (`eqeqeq`)**: `==` / `!=` warned at parse time; types as `boolean`, narrows nothing (coercion makes strict-style narrowing unsound), and emits no overlap diagnostic.
+- **Empty `if` body (`no-empty`)**: `if (c);`.
 
 In tests, warnings are asserted with `// @skjs-expect-warning`; see [docs/testing.md](docs/testing.md).
 
@@ -22,50 +53,47 @@ SKJS-specific option — CLI `--conformance`, tsconfig `"conformance": true` —
 
 Conformance mode deliberately trades some of SKJS's stricter guarantees for tsc compatibility; the default mode remains strict.
 
-## Key Restrictions Discovered
+## Key Rules & Restrictions
 
 ### 1. No Toplevel `let` Declarations
-- **Rule**: Cannot use `let` at the top level of files
-- **Error**: "toplevel let is not supported by SKJS"
-- **Workaround**: Use function declarations or class methods instead
+- **Rule**: Cannot use `let` at top level in default mode (accepted in conformance mode — see [Conformance Mode](#conformance-mode)).
+- **Error**: `"toplevel let is not supported by SKJS (ignored)"`
+- **Workaround**: Use functions, classes, or top-level `const`.
 
 ### 1b. No Destructuring in **Top-Level** `const` Declarations
 - **Rule**: Destructuring patterns are rejected when the `const` appears at module scope.
-- **Error**: "Top-level const declarations cannot use destructuring in SKJS"
+- **Error**: `"Top-level const declarations cannot use destructuring in SKJS"`
 - **Reason**: SKJS loads top-level constants as literal scalars for predictable initialization; pattern binding would require tracking object/tuple shapes in the loader.
 - **Workaround**: Bind the value to a simple `const tmp = ...` at the top level, then destructure inside a function or block (where regular `const` destructuring remains supported).
 
 ### 2. Array Literals Use Delayed Typing
-- **Rule**: `[...]` literals defer their type (array vs tuple) until used in context
-- **Commits to Array**: when assigned to `Array<T>` / `T[]` / `readonly T[]`, used with `.push()` / `.map()` etc., or indexed with a non-literal number
-- **Commits to Tuple**: when assigned to a tuple type like `[number, string]`, or used only with literal indices
-- **Once committed, cannot change**: using an array-committed literal as a tuple (or vice versa) is an error
-- **Example**: `const nums: number[] = [1, 2, 3];` commits to array; `const pair: [number, string] = [1, "hello"];` commits to tuple
+- **Rule**: `[...]` literals defer their type (array vs tuple) until used in context.
+- **Commits to Array**: when assigned to `Array<T>` / `T[]` / `readonly T[]`, used with `.push()` / `.map()` etc., or indexed with a non-literal number.
+- **Commits to Tuple**: when assigned to a tuple type like `[number, string]`, or used only with literal indices.
+- **Once committed, cannot change**: using an array-committed literal as a tuple (or vice versa) is an error.
+- **Example**: `const nums: number[] = [1, 2, 3];` commits to array; `const pair: [number, string] = [1, "hello"];` commits to tuple.
 
 ### 3. Class Inheritance Constructor Signatures
-- **Rule**: Child class constructors must have same signature as parent
-- **Error**: "Invalid extends" when constructor signatures differ
-- **Requirement**: `constructor(a: T, b: U)` in parent requires same in child
-- **Workaround**: Design inheritance hierarchies with consistent constructor patterns
+- **Rule**: Child classes may define constructors with different parameter lists than their parent class as long as they call `super(...)` with arguments matching the parent's constructor signature (verified by `tests/expect-error/class_inheritance_test.ts`).
 
-#### 4b. Abstract Classes Not Supported
-- **Rule**: Abstract classes and abstract method modifiers are not implemented
-- **Error**: "Method modifier 'abstract' is not yet supported by SKJS"
-- **Workaround**: Use regular classes with interfaces, or avoid abstract patterns
+### 4b. Abstract Methods Not Supported
+- **Rule**: `abstract class` declarations parse, but the `abstract` modifier on methods and type positions is not yet supported.
+- **Error**: `"Method modifier 'abstract' is not yet supported by SKJS"` / `"The 'abstract' type modifier is not yet supported by SKJS"`
+- **Workaround**: Use regular classes with interfaces or concrete base classes.
 
-#### 4c. Static Fields Must Be Readonly
-- **Rule**: Static fields are supported but must have the `readonly` modifier
+### 4c. Static Fields Must Be Readonly
+- **Rule**: Static fields are supported but must have the `readonly` modifier.
 - **Restrictions**:
   - Must use `static readonly` together
   - Must be initialized with a value
   - Cannot be marked as optional (`?`)
-  - Only primitive types allowed (number, string, boolean, bigint, symbol - no objects)
+  - Only primitive types allowed (number, string, boolean, bigint, symbol — no objects)
   - Type annotation can be inferred from literal values
 - **Errors**:
-  - `static field: number = 42` → "A static field must be marked 'readonly'"
-  - `static readonly field?: number = 42` → "A static field cannot be optional"
-  - `static readonly field: number;` → "This declaration must have an initializer"
-  - `static readonly obj: MyClass = new MyClass();` → "The type of a top-level constant must be a primitive type, not an object"
+  - `static field: number = 42` → `"A static field must be marked 'readonly'"`
+  - `static readonly field?: number = 42` → `"A static field cannot be optional"`
+  - `static readonly field: number;` → `"This declaration must have an initializer"`
+  - `static readonly obj: MyClass = new MyClass();` → `"The type of a top-level constant must be a primitive type, not an object"`
 - **Supported**:
   ```typescript
   class Config {
@@ -76,7 +104,7 @@ Conformance mode deliberately trades some of SKJS's stricter guarantees for tsc 
 
   const url = Config.API_URL;  // Access via class name
   ```
-- **Rationale**: Static readonly fields have the same restrictions as top-level `const` declarations to ensure predictable initialization and type safety
+- **Rationale**: Static readonly fields have the same restrictions as top-level `const` declarations to ensure predictable initialization and type safety.
 
 ### 5. Console Surface Is Minimal
 - **Rule**: Only `console.log`, `console.assert`, and `console.error` are provided by `import-stubs/@types/skjs`; other console helpers (e.g., `console.table`) are unavailable.
@@ -84,20 +112,10 @@ Conformance mode deliberately trades some of SKJS's stricter guarantees for tsc 
 - **Workaround**: Create your own logging wrapper module (e.g., `logger.ts`) that exports the shapes you need, or extend `@types/skjs` locally before running the checker.
 - **Verified by**: `examples/src/console_surface.ts` covers supported calls; `tests/expect-error/console.ts` ensures unsupported helpers like `console.table` stay blocked and that `console.assert` does not narrow.
 
-### 6. Undefined Method Access
-- **Rule**: Cannot call methods on potentially undefined values
-- **Error**: "Invalid '.'" when accessing methods on `T | undefined`
-- **Workaround**: Explicit undefined checks required
-
-### 7. Generic Classes Work Properly ✅
-- **Rule**: Generic classes with type parameters work correctly
-- **Status**: Fixed - `new Array<T>()` assignment works in generic class constructors
-- **Example**: `class Stack<T> { items: Array<T>; constructor() { this.items = new Array<T>(); } }`
-
-### 8. Keyof Operator Not Implemented
-- **Rule**: The `keyof` operator is not supported
-- **Error**: "Invariant violation: TODO keyof"
-- **Workaround**: Use explicit property access or type-specific functions
+### 8. `keyof` Operator
+- **Rule**: `keyof T` is supported on concrete object types, interfaces, classes, tuples, arrays, index signatures, enums (`keyof typeof E`), and primitives.
+- **Not yet supported**: `keyof` on an abstract type parameter (e.g., `type Keys<T> = keyof T`) is rejected with `"keyof on an abstract type is not yet supported by SKJS; use a known object or array shape with explicit type parameters"`.
+- **Verified by**: `tests/expect-error/keyof.ts`, `tests/expect-error/abstract-type-projection.ts`.
 
 ### 9. Literal Typing and `as const`
 - **Rule**: SKJS automatically uses precise literal types in some contexts but requires the use of `as const` in others
@@ -128,12 +146,12 @@ function getStatus(): 'ready' {
   return 'ready';  // automatically gets literal type
 }
 
-// ✓ Switch expressions - automatic precise typing + unused branch detection
+// ✓ Switch expressions - automatic precise typing + unreachable branch warning
 function handleCode(code: 1 | 2): string {
   switch (code) {
     case 1: return 'first';
     case 2: return 'second';
-    case 3: return 'third';  // Error: "Unused branch" 
+    case 3: return 'third';  // Warning: "This case is unreachable: ..."
   }
 }
 
@@ -141,12 +159,11 @@ function handleCode(code: 1 | 2): string {
 const tags: ('urgent' | 'priority')[] = ['urgent', 'priority'];
 const pair: [0, number] = [0, 1];
 
-// ✓ 'as const' on an array literal - a readonly tuple of the elements' 'as const' types
-function makeReadonlyTuple(): void {
+// ✓ 'as const' on object and array literals
+function makeFrozen(): void {
   const pair = [0, 1] as const; // readonly [0, 1]
-  const nested = [[0, 1]] as const; // readonly [readonly [0, 1]]
+  const cfg = { name: 'app', nested: { debug: true } } as const; // deeply readonly Closed<...>
 }
-// (the whole-object form `{ ... } as const` is not yet supported)
 ```
 
 #### Examples - Where `as const` is still needed:
@@ -173,60 +190,20 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
 - **Not yet supported**: call/construct signatures inside `interface` bodies (parse-level gap; object type literals support them).
 - **Test**: [tests/expect-error/overloads.ts](tests/expect-error/overloads.ts)
 
-### 11. Generic Type Method Calls
-- **Rule**: Cannot call methods like `.toString()` on unconstrained generic types
-- **Error**: "Invalid '.' for type: T extends"
-- **Workaround**: Use type constraints or avoid calling methods on raw generic types
+### 12. Function Expressions Not Supported
+- **Rule**: Anonymous/named `function (...) { ... }` expressions are rejected in expression position; use arrow functions (`(...) => ...`) or top-level `function` declarations instead.
+- **Error**: `"Function expressions are not supported; use an arrow function (closure) instead"`
 
-### 12. Nested Function Declarations Not Supported
-- **Rule**: Cannot declare functions inside other functions
-- **Error**: "Function expressions are not supported; use an arrow function (closure) instead"
-- **Workaround**: Declare all functions at module level
+### 13. Discriminated Unions
+- **Rule**: Narrowing works on any literal-typed discriminant field (`kind`, `type`, numeric tags, etc.), not only `kind`.
+- **Example**: `if (e.type === "click")` or `if (s.kind === "circle")` narrows the union branch; `!==` eliminates it.
+- **Verified by**: `tests/expect-error/field-refinement.ts`.
 
-### 13. Algebraic Data Types with 'kind' Field ✅
-- **Rule**: ADTs must use `kind` field for discriminated unions
-- **Syntax**: `type Foo = { kind: 'variant1', ... } | { kind: 'variant2', ... }`
-- **Pattern Matching**: Use `if (value.kind === 'variant1')` for type narrowing
-- **Special**: Only `kind` field enables ADT pattern matching, other field names won't work
-
-### 14. Import System ✅
+### 14. Import System
 - **Rule**: Relative imports must start with `./` or `../`.
-- **Extensions**: In `node16`/`nodenext` moduleResolution (default), imports must end with `.js`, `.mjs`, or `.cjs`. In `bundler` mode, extensions are optional.
-- **Syntax**: `import { functionName, TypeName } from './filename.js'` or side-effect imports `import './filename.js'`
+- **Extensions**: In `node16`/`nodenext` `moduleResolution` (default), relative imports must end with `.js`, `.mjs`, or `.cjs`. In `bundler` mode, extensions are optional.
 - **Side-effect imports**: Module specifiers in side-effect imports (`import './side-effect.js'`, `import 'pkg'`) are always resolved (equivalent to tsc's `--noUncheckedSideEffectImports`), reporting TS2307 when the target cannot be found.
-- **Example**: `import { add, User } from './utils.js'`
-
-### 15. Only Locals Can Be Compared to null/undefined
-- **Rule**: Only local variables can be directly compared to `null`, `undefined`, or string literals
-- **Limitation**: Cannot compare property access expressions like `x.foo` or `obj.property` to null/undefined
-- **Error**: Expressions like `if (x.foo != null)` or `while (current.next !== null)` will fail
-- **Workaround**: Assign property to local variable first, then perform comparison
-- **Example**: 
-  ```typescript
-  // Won't work - comparing property access to null
-  if (x.foo != null) {
-    x.foo.someMethod(); // Error: "Only locals can be compared to null/undefined"
-  }
-  
-  // Works - compare local variable to null
-  let foo = x.foo;
-  if (foo != null) {
-    foo.someMethod(); // Success: local comparison works
-  }
-  
-  // Won't work - comparing property in loop
-  while (current.next !== null) { // Error
-    current = current.next;
-  }
-  
-  // Works - use local variable in loop
-  let nextNode = current.next;
-  while (nextNode !== null) {
-    current = nextNode;
-    nextNode = current.next;
-  }
-  ```
-
+- **Bare imports**: Resolved against `--import-stubs` (`package.json` `types`/`typings` or `index.{d.ts,ts,tsx}`).
 
 ### 16. Function Signatures Must Be Fully Annotated
 - **Rule**: Every function parameter requires an explicit type annotation — in function/method declarations, arrow callbacks, and function *type* annotations (e.g. `type F = (x) => void`). Named function declarations must also supply an explicit return type; arrow callbacks currently infer their return type but still need annotated parameters.
@@ -259,7 +236,7 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
   function process<T>(value: T): T { return value; }
   ```
 
-### 18. Template Literal Strings ✅
+### 18. Template Literal Strings
 - **Rule**: Template literals with backticks and string interpolation are fully supported. Interpolation expressions are parsed inline as first-class expressions (nested templates, strings, and comments inside `${...}` all work), fully typechecked, with diagnostics positioned on the offending expression.
 - **Syntax**: Use backticks `` ` `` with `${expression}` for interpolation
 - **Features**: 
@@ -309,18 +286,10 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
   ```
 - **Verified by**: `tests/expect-error/template-literal-types.ts`
 
-### 19. Boolean Literal Type Casting Not Supported
-- **Rule**: Casting boolean values to literal boolean types is not supported
-- **Error**: "Construction not supported" when using `false as false` or `true as true`
-- **Workaround**: Use explicit boolean comparisons or different type definitions
-- **Example**:
-  ```typescript
-  // WRONG - will cause errors
-  let result: 'true' | 'false' = false as false;
-  
-  // CORRECT - use conditional expressions
-  let result: 'true' | 'false' = condition ? 'true' : 'false';
-  ```
+### 19. `as` Casts Are Checked for Soundness
+- **Rule**: `e as T` is accepted only when the expression's stable source type is a subtype of `T` (sound upcasts; object aliases cannot rely on temporary field refinements).
+- **Unsound casts**: Downcasts, sideways casts, and casts from `unknown` report `"This 'as' cast is unsound: the source type is not assignable to the target type"`, then continue checking with type `T` to avoid cascading errors.
+- **Verified by**: `tests/expect-error/as-operator.ts`.
 
 ### 20. `for...of` Loop Constraints
 - **Rule**: Only arrays, tuples, strings, or objects with an explicit string index signature are recognized as iterables. Plain object literals (without `[key: string]: ...`) and custom classes are rejected.
@@ -525,7 +494,7 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
 - **Stricter than TypeScript (soundness-required)**: a lone (unpaired) surrogate escape (`"\uD800"`) is rejected. tsc keeps it as a lone UTF-16 code unit, but a Skip `Char` is a Unicode code point and cannot represent a surrogate, so decoding it is impossible and rejecting is the sound choice. Template literal types are decoded the same way (see rule 18b), so `` `\x61` `` is the type `"a"`.
 - **Verified by**: `tests/expect-error/string-literal-escapes-prettier-ignore.ts`, `tests/expect-error/string-literal-line-continuation-prettier-ignore.ts`, `tests/expect-error/string-escape-*-prettier-ignore.ts`
 
-### 30c. Identifier Characters ✅
+### 30c. Identifier Characters
 - **Rule**: an identifier's characters are the Unicode properties **ID_Start** and **ID_Continue** (ECMA-262 sec 12.7), from a table pinned to **Unicode 15.1** — the vintage tsc 6.0.3's scanner uses — so the accepted set matches tsc character for character (verified exhaustively over the whole code space). `café`, `α`, `переменная`, `変数` and CJK Extension I names are ordinary identifiers, property names included
 - **ECMAScript's additions**: `$` and `_` may start a name; the joiners `<ZWNJ>`/`<ZWJ>` may continue one
 - **Continue-only characters cannot start a name**: a middle dot (`a·b` ✓, `·x` ✗), the joiners, digits, combining marks. Look-alikes that are not identifier characters at all stay invalid: emoji, a math minus (U+2212), U+180E, U+200B
@@ -664,350 +633,9 @@ union/intersection member, or a reference's arguments) denotes nothing.
 
 ## Coding Guidelines for SKJS
 
-1. **Avoid toplevel variables**: Define everything inside functions or classes
-2. **Array literals use delayed typing**: `[...]` commits to array or tuple based on usage context
-3. **Keep constructor signatures simple**: Match parent class constructors exactly
-4. **Use single console.log arguments**: Concatenate strings before logging
-5. **Avoid private modifiers**: Use public fields only
-6. **Handle undefined explicitly**: Check for undefined before method calls
-7. **Generic classes work well**: Both generic functions and generic classes are fully supported
-8. **Array literals work for initialization**: `const arr: number[] = [1, 2, 3]` works; `new Array<T>()` also works
-9. **Static fields must be readonly**: Use `static readonly` together for class constants with primitive types only
-10. **Use local variables for null/undefined comparisons**: Always assign properties to locals before comparing to null/undefined
-11. **NEVER use the `any` type**: The `any` type is not supported in SKJS - use specific types or union types instead
-13. **Avoid the `!` operator**: Use explicit comparisons like `=== false` instead of `!` for better type safety
-14. **Template literals work as expected**: Use backticks and `${expression}` syntax for string interpolation and multiline strings
-15. **Annotate bindings that are used across statements**: without an annotation, inference for `[]`, `new Container()`, and some generic-call results can depend on later use; for a `const`, an annotation or explicit type arguments make it order-independent. Prefer `const` — a `let`'s type follows its assignments
-16. **Declare the widest type a value will ever need at its creation site**: declared mutable element and field types do not widen with use (sound invariance, stricter than tsc); on parameters that only read, use `readonly` element types so narrower arguments are accepted
-
-## File Organization and Structure Guidelines
-
-### 22. Prefer Small, Focused Files
-- **Rule**: Split code into as many separate files as possible
-- **Guideline**: Aim for one function per file whenever practical
-- **Rationale**: Small files are easier to type-check, debug, and maintain in SKJS
-- **Example Structure**:
-  ```typescript
-  // math_add.ts
-  export function add(a: number, b: number): number {
-    return a + b;
-  }
-  
-  // math_multiply.ts  
-  export function multiply(a: number, b: number): number {
-    return a * b;
-  }
-  
-  // math_utils.ts - aggregates multiple utilities
-  import { add } from './math_add.js';
-  import { multiply } from './math_multiply.js';
-  export { add, multiply };
-  ```
-
-### 23. Keep Classes Minimal
-- **Rule**: Define only core methods in classes (constructor, essential primitives)
-- **Guideline**: Move complex logic to separate utility functions
-- **Rationale**: Smaller classes are easier to type-check and less prone to SKJS limitations
-- **Example**:
-  ```typescript
-  // user.ts - minimal class
-  export class User {
-    name: string;
-    email: string;
-    
-    constructor(name: string, email: string) {
-      this.name = name;
-      this.email = email;
-    }
-  }
-  
-  // user_validation.ts - separate utility
-  import { User } from './user.js';
-  export function validateUser(user: User): boolean {
-    return user.name.length > 0 && user.email.includes('@');
-  }
-  
-  // user_formatting.ts - separate utility
-  import { User } from './user.js';
-  export function formatUserDisplay(user: User): string {
-    return user.name + ' (' + user.email + ')';
-  }
-  ```
-
-### 24. File Size Guidelines
-- **Target**: Aim for files under 50 lines when possible
-- **Maximum**: Keep files under 100 lines for optimal SKJS performance
-- **Benefits**: 
-  - Faster type checking
-  - Easier debugging
-  - Better modularity
-  - Reduced complexity per file
-- **When to Split**: If a file has multiple functions, consider splitting into separate files
-
-### 25. Logical File Organization
-- **Group by Feature**: Create separate files for related functionality
-- **Separate Concerns**: Keep types, utilities, and business logic in different files
-- **Example Directory Structure**:
-  ```
-  src/
-  ├── types/
-  │   ├── user.ts
-  │   ├── product.ts
-  │   └── order.ts
-  ├── utils/
-  │   ├── string_utils.ts
-  │   ├── math_utils.ts
-  │   └── validation_utils.ts
-  ├── business/
-  │   ├── user_service.ts
-  │   ├── order_processing.ts
-  │   └── inventory_management.ts
-  └── main.ts
-  ```
-
-### 26. Import/Export Organization
-- **Rule**: Use barrel exports to aggregate related functionality
-- **Pattern**: Create index files that re-export from multiple small files
-- **Example**:
-  ```typescript
-  // utils/index.ts
-  export { add, subtract } from './math_add.js';
-  export { multiply, divide } from './math_multiply.js';
-  export { validateEmail } from './email_validator.js';
-  
-  // main.ts
-  import { add, validateEmail } from './utils/index.js';
-  ```
-
-### Benefits of Small Files in SKJS
-1. **Faster Compilation**: SKJS type-checks smaller files more quickly
-2. **Easier Debugging**: Isolated functions are easier to test and debug
-3. **Better Modularity**: Encourages clean separation of concerns
-4. **Reduced Complexity**: Each file focuses on a single responsibility
-5. **Improved Maintainability**: Changes affect smaller, more focused areas
-6. **Better Error Localization**: Type errors are easier to locate in small files
-
-## What Works Well in SKJS
-
-- Function generics (`function identity<T>(arg: T): T`)
-- Generic classes (`class Stack<T> { ... }`)
-- Interface definitions
-- Union types (`string | number`)
-- Tuple types (`[number, string, boolean]`)
-- Algebraic Data Types with `kind` field discrimination
-- Import/export system with relative paths
-- Basic class definitions
-- Method calls with proper type checking
-- Explicit type annotations
-- String concatenation and basic operations
-- Template literal strings with interpolation
-- Math operations and comparisons
-
-## Recommended Patterns
-
-### Array Literals (Delayed Typing)
-```typescript
-// Good - array literal commits to Array via type annotation
-const nums: number[] = [1, 2, 3];
-nums.push(4);
-
-// Good - array literal commits to Array via method usage
-const items = [1, 2, 3];
-items.push(4); // commits to Array<number>
-
-// Good - array literal commits to Tuple via type annotation
-const pair: [number, string] = [42, "hello"];
-const coordinate: [number, number] = [10, 20];
-
-// Error - once committed, cannot change
-const values = [1, 2];
-values.push(3);  // commits to Array<number>
-const tuple: [number, number] = values; // Error: already committed to Array
-```
-
-### Class Design
-```typescript
-// Good - simple class
-class Person {
-    name: string;
-    constructor(name: string) { this.name = name; }
-}
-
-// Good - static readonly fields for constants
-class Config {
-    static readonly API_URL: string = "https://api.example.com";
-    static readonly MAX_RETRIES = 3;  // Type inferred
-}
-const url = Config.API_URL;
-
-// Good - generic classes work well
-class Stack<T> {
-    items: Array<T>;
-    constructor() { this.items = new Array<T>(); }
-}
-
-// Good - inheritance with matching constructors
-class Student extends Person {
-    constructor(name: string, age: number) { super(name, age); }
-}
-
-// Avoid - static fields without readonly
-class Bad {
-    static count: number = 0;  // Error: static fields must be readonly
-}
-
-// Avoid - inheritance with different constructor signatures
-class Student extends Person {
-    constructor(name: string, age: number, id: string) { ... } // Error: signature mismatch
-}
-```
-
-### Function Organization
-```typescript
-// Good - everything in functions
-function main(): void {
-    let x: number = 10;
-    console.log(x.toString());
-}
-
-// Avoid - toplevel variables
-let x: number = 10; // "Construction not supported: toplevel let"
-```
-
-### String Literals and 'as const' Syntax
-```typescript
-// Good - both quote styles work in type definitions
-type Status = 'active' | 'inactive' | 'pending';   // ✓ creates literal types
-type Status = "active" | "inactive" | "pending";   // ✓ also creates literal types
-
-// Good - use 'as const' in expressions for literal types
-let config = { status: 'active' as const, id: 123 };      // ✓ 'active' is literal
-let config = { status: "active" as const, id: 123 };      // ✓ also works
-
-// Good - regular string values don't need 'as const'
-let message: string = "Hello, world!";                     // ✓ regular string
-
-// Now works - automatic literal types for kind field
-let result = { kind: 'success', data: 'hello' };          // ✓ 'success' is automatically literal
-```
-
-### Algebraic Data Types
-```typescript
-// Good - ADT type definition (no 'as const' needed in types)
-type Shape = 
-    | { kind: 'circle', radius: number }
-    | { kind: 'square', side: number };
-
-// Good - ADT object creation (automatic literal types for kind field)
-function createShapes(): void {
-    let circle: Shape = { kind: 'circle', radius: 5 };
-    let square: Shape = { kind: 'square', side: 4 };
-}
-
-// Good - pattern matching works with 'as const' objects
-function calculateArea(shape: Shape): number {
-    if (shape.kind === 'circle') {
-        return Math.PI * shape.radius * shape.radius;
-    } else if (shape.kind === 'square') {
-        return shape.side * shape.side;
-    }
-    return 0;
-}
-
-// Now works - automatic literal types for kind field  
-let badCircle: Shape = { kind: 'circle', radius: 5 };  // ✓ 'circle' is automatically literal
-
-// Avoid - using different discriminator field
-type BadShape = 
-    | { type: 'circle', radius: number }  // Won't enable pattern matching
-    | { type: 'square', side: number };
-```
-
-### Import/Export System
-```typescript
-// Good - proper import syntax
-import { add, multiply, User } from './math_utils.js';
-import { Result, Option } from './types.js';
-
-// Export functions and types
-export function helper(): void { ... }
-export type MyType = { ... };
-export interface MyInterface { ... }
-
-// Avoid - incorrect import paths (in node16/nodenext mode)
-import { add } from 'math_utils';        // Missing ./ and .js
-import { add } from './math_utils';      // Missing .js extension (OK in bundler mode)
-import { add } from './math_utils.ts';   // Wrong extension
-```
-
-### Template Literal Patterns
-```typescript
-// Avoid - object/array interpolations (rejected even when they have toString())
-// const badTemplate: string = `Object: ${someComplexObject}`; // restrict-template-expressions error
-```
-
-### Null/Undefined Comparison Patterns
-```typescript
-// Good - compare local variables to null/undefined
-function processUser(user: { name: string | null, age: number | null }): void {
-    let name = user.name;
-    let age = user.age;
-    
-    if (name != null) {
-        console.log(name.toUpperCase()); // Works: local comparison
-    }
-    
-    if (age != null) {
-        console.log(age.toString()); // Works: local comparison
-    }
-}
-
-// Good - handle linked list traversal with locals
-function traverseList<T>(head: ListNode<T> | null): void {
-    let current = head;
-    let nextNode = current?.next;
-    
-    while (nextNode !== null) {
-        current = nextNode;
-        nextNode = current.next;
-    }
-}
-
-// Good - handle union types with local assignment
-function handleResponse(response: { data: string } | { error: string }): void {
-    let data = response.data;
-    let error = response.error;
-    
-    if (data != null) {
-        console.log(data); // Works: local comparison
-    } else if (error != null) {
-        console.log(error); // Works: local comparison
-    }
-}
-
-// Avoid - comparing property access directly to null/undefined
-function badProcessUser(user: { name: string | null }): void {
-    if (user.name != null) { // Error: "Only locals can be compared to null/undefined"
-        console.log(user.name.toUpperCase());
-    }
-}
-
-// Avoid - comparing property in loops
-function badTraverseList<T>(head: ListNode<T> | null): void {
-    let current = head;
-    while (current.next !== null) { // Error: property comparison to null
-        current = current.next;
-    }
-}
-```
-
-## Working Examples Summary
-
-A few of the example programs under `examples/src/` and the patterns they demonstrate:
-
-- **basic_types.ts**: Variable declarations, functions, basic types
-- **algorithms.ts**: Array operations, recursive algorithms
-- **string_processing.ts**: String manipulation, palindrome checking
-- **math_utils.ts**: Exportable math functions and utilities
-
-These follow SKJS constraints and pass type checking; see `examples/src/` for the full set.
+- **Avoid top-level `let`**: Define mutable state inside functions or classes (rule 1).
+- **Annotate function signatures & cross-statement bindings**: Parameters and named-function returns need explicit types (rule 16). Without an annotation, inference for `[]`, `new Container()`, and some generic-call results can depend on later use; for a `const`, an annotation or explicit type arguments make it order-independent. Prefer `const` — an un-annotated `let`'s type evolves on assignment (rule 31).
+- **Declare the widest type a value will ever need at its creation site**: Mutable element and field types are invariant (soundness, rule 27); on read-only parameters, use `readonly` fields/arrays so narrower arguments are accepted.
+- **Never use `any`**: Use specific types, unions, `unknown`, or generics (rule 17).
+- **Static fields must be `static readonly`** with primitive initializers (rule 4c).
+- **Prefer small, focused files**: Smaller files maximize incremental checking precision (`--data`) and keep diagnostics localized. See `examples/src/` for working programs following these rules.
