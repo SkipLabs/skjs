@@ -1,0 +1,71 @@
+// Unit tests for package.json types/typings resolution in ModuleResolver.
+module SKJSTests;
+
+fun mkStubMem(files: Array<(String, String)>): SKJS.MemFs {
+  m = mutable Map[];
+  for (kv in files) {
+    m.set(kv.i0, kv.i1)
+  };
+  SKJS.MemFs::fromMap(m.chill())
+}
+
+@test
+fun testResolveStubsPackageJson(): void {
+  stubs = Array[SKJS.DAbsolute::create("/stubs")];
+
+  // Current behavior before #610: only <pkg>/index.d.ts is resolved.
+  fsTypes = mkStubMem(
+    Array[
+      ("/stubs/foo/package.json", `{"types": "./dist/foo.d.ts"}`),
+      ("/stubs/foo/dist/foo.d.ts", "export declare const x: number;"),
+    ],
+  );
+  SKTest.expectEq(
+    SKJS.resolveStubs(fsTypes, stubs, "foo"),
+    None(),
+    "pre-#610: types field not yet read",
+  );
+
+  // Typings alias (extensionless) — not yet resolved.
+  fsTypings = mkStubMem(
+    Array[
+      ("/stubs/bar/package.json", `{"typings": "types/bar"}`),
+      ("/stubs/bar/types/bar.d.ts", "export declare const y: string;"),
+    ],
+  );
+  SKTest.expectEq(
+    SKJS.resolveStubs(fsTypings, stubs, "bar"),
+    None(),
+    "pre-#610: typings field not yet read",
+  );
+
+  // Fallback to index.d.ts already works.
+  fsIndexDts = mkStubMem(
+    Array[("/stubs/legacy/index.d.ts", "export declare const z: boolean;")],
+  );
+  SKTest.expectEq(
+    SKJS.resolveStubs(fsIndexDts, stubs, "legacy"),
+    Some(SKJS.FPath::create(SKJS.RootId::stub(0), "legacy/index.d.ts")),
+    "index.d.ts fallback",
+  );
+
+  // Fallback to index.ts — not yet resolved.
+  fsIndexTs = mkStubMem(
+    Array[("/stubs/tsonly/index.ts", "export const a: number = 1;")],
+  );
+  SKTest.expectEq(
+    SKJS.resolveStubs(fsIndexTs, stubs, "tsonly"),
+    None(),
+    "pre-#610: index.ts fallback not yet supported",
+  );
+
+  // Malformed package.json — currently ignored (returns None).
+  fsBroken = mkStubMem(Array[("/stubs/broken/package.json", "{not json")]);
+  SKTest.expectEq(
+    SKJS.resolveStubs(fsBroken, stubs, "broken"),
+    None(),
+    "pre-#610: malformed package.json ignored",
+  );
+}
+
+module end;

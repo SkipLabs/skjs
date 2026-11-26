@@ -567,10 +567,16 @@ fun testProject(projectDir: String, update: UpdateMode): void {
     | None() -> configDirStr
     }
   };
+  nodeModulesDir = Path.join(dir, "node_modules");
+  importStubs = if (fs.isDirectory(nodeModulesDir)) {
+    Array["./import-stubs", nodeModulesDir]
+  } else {
+    Array["./import-stubs"]
+  };
   fileErrors = checkFilesWithRoot(
     root,
     srcFiles,
-    Array["./import-stubs"],
+    importStubs,
     validateExpectErrorComments,
     false,
     update,
