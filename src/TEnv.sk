@@ -1952,9 +1952,15 @@ base class TEnv{
         // Interface call/construct signatures are not named fields: collect
         // them into the signature sets instead of `acc`. A `new (...)` member
         // of an interface is a construct signature (in a class it stays a
-        // plain method named "new"). Instance side only; like object type
-        // literals, the signatures carry no implicit `this`.
-        sigTarget = if (isStatic is None() && cls.kind is CKInterface()) {
+        // plain method named "new"); an optional `new?(): T` is an optional
+        // method named "new", not a construct signature (matching tsc).
+        // Instance side only; like object type literals, the signatures carry
+        // no implicit `this`.
+        sigTarget = if (
+          isStatic is None() &&
+          cls.kind is CKInterface() &&
+          fd.optional is None()
+        ) {
           fd.name match {
           | FNEmpty(_) -> Some(ownCallSigs)
           | FNNormal(Name(_, "new")) -> Some(ownNewSigs)
@@ -4231,10 +4237,11 @@ base class TEnv{
         cgNode = CGNode::create(AnonymousFunDef(fd));
         // Named method-syntax members are attach-only shape methods; the
         // object's call/new signatures are not (the object itself is invoked).
+        // An optional `new?(): T` is an optional method named "new", not a
+        // construct signature (matching tsc).
         isShapeMethod = fd.name match {
-        | FNNormal(Name(_, "new"))
-        | FNEmpty(_) ->
-          false
+        | FNNormal(Name(_, "new")) if (fd.optional is None()) -> false
+        | FNEmpty(_) -> false
         | SimpleFieldName _ -> true
         };
         isConstructSig = fd.name is FNNormal(Name(_, "new"));
@@ -4247,7 +4254,7 @@ base class TEnv{
           !isConstructSig,
         );
         fd.name match {
-        | FNNormal(Name(_, "new")) ->
+        | FNNormal(Name(_, "new")) if (fd.optional is None()) ->
           // Construct signatures accumulate: `{ new (x: string): A; new (x: number): A }`
           // is a construct overload set, resolved like call overloads.
           !new = Some(static::mergeSigSet(new, tFuns, fd.name.getPos()))

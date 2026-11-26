@@ -41,9 +41,8 @@ interface OptNewIface {
 }
 declare const oni: OptNewIface;
 export function testOptNewIface(): void {
-  // Currently treated as a construct signature instead of an optional method.
+  // @skjs-expect-error This expression is not constructable
   const _o: object = new oni();
-  // @skjs-expect-error Property 'new' does not exist on this type
   const _m = oni.new;
 }
 type OptNewObj = {
@@ -51,9 +50,8 @@ type OptNewObj = {
 };
 declare const ono: OptNewObj;
 export function testOptNewObj(): void {
-  // Currently treated as a construct signature instead of an optional method.
+  // @skjs-expect-error This expression is not constructable
   const _o: object = new ono();
-  // @skjs-expect-error Property 'new' does not exist on this type
   const _m = ono.new;
 }
 
