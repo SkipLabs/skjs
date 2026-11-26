@@ -13,6 +13,10 @@ mutable class Parser(
   // symbolic anchor, so a length-changing edit to one declaration does not
   // shift the relative positions (and thus the hashes) of the others.
   funSymbolCounts: mutable Map<String, Int> = mutable Map[],
+  // Per-(class, method) count of method declarations seen during parsing,
+  // used to give each same-name method declaration (overload group member)
+  // its OWN symbolic anchor, mirroring funSymbolCounts for functions.
+  methodSymbolCounts: mutable Map<String, Int> = mutable Map[],
   funDefSigs: mutable Vector<(FunDefRef, FunDefSigData)> = mutable Vector[],
   funDefBodies: mutable Vector<(FunDefRef, FunDefBodyData)> = mutable Vector[],
   classBodies: mutable Vector<(ClassBodyRef, ClassBodyData)> = mutable Vector[],

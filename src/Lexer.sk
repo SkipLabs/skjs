@@ -8,7 +8,7 @@ base class SymbolicPos uses Orderable, Hashable, XXHashable {
   children =
   | SPTopLevel()
   | SPClass(className: String)
-  | SPMethod(className: String, metName: String)
+  | SPMethod(className: String, metName: String, occurrence: Int)
   | SPFunction(funName: String, occurrence: Int)
   | SPConstant(constName: String)
   | SPTypeAlias(aliasName: String)
@@ -16,7 +16,8 @@ base class SymbolicPos uses Orderable, Hashable, XXHashable {
   fun toString(): String
   | SPTopLevel() -> "toplevel"
   | SPClass(className) -> `class(${className})`
-  | SPMethod(className, metName) -> `method(${className}.${metName})`
+  | SPMethod(className, metName, occurrence) ->
+    `method(${className}.${metName}#${occurrence})`
   | SPFunction(funName, occurrence) -> `function(${funName}#${occurrence})`
   | SPConstant(constName) -> `constant(${constName})`
   | SPTypeAlias(aliasName) -> `type(${aliasName})`

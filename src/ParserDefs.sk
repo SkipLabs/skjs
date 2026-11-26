@@ -1292,7 +1292,10 @@ extension class Parser {
     prevSymbolContext = this.getCurrentSymbolContext();
     (funName, this.getCurrentSymbol()) match {
     | (FNNormal(name), SPClass(className)) ->
-      methodSymbol = SPMethod(className, name.value);
+      methodKey = `${className}.${name.value}`;
+      metOcc = this.methodSymbolCounts.maybeGet(methodKey).default(0);
+      this.methodSymbolCounts.set(methodKey, metOcc + 1);
+      methodSymbol = SPMethod(className, name.value, metOcc);
       symbolContextPos = this.lex.pos;
       this.recordSymbolDefinitionAndSetSymbolContext(
         methodSymbol,
