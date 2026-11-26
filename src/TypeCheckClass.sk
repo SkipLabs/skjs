@@ -514,21 +514,19 @@ extension class TypeChecker {
           )
         } else {
           cgNode = CGNode::create(Method(fd.name, c.name, fd.isStatic()));
-          // A signature-only overload of a method group that has an
-          // implementation must not report "Method implementation is missing"
-          // (funDef emits it for body-less methods of a real class); check
-          // its signature only, like an ambient method.
+          implKey = if (fd.isStatic()) {
+            `static:${fd.name.getName()}`
+          } else {
+            fd.name.getName()
+          };
+          // A signature-only overload of a group that has an implementation
+          // must not report "Method implementation is missing" (funDef emits
+          // it for body-less methods of a real class); ambient classes
+          // (.d.ts files, interfaces) need no implementation at all.
           isSigOnlyOfImplGroup =
             !fd.hasBody &&
-            !classIsAmbient &&
-            c.kind is CKClass() &&
-            implMethodKeys.contains(
-              if (fd.isStatic()) {
-                `static:${fd.name.getName()}`
-              } else {
-                fd.name.getName()
-              },
-            );
+            (classIsAmbient ||
+              (c.kind is CKClass() && implMethodKeys.contains(implKey)));
           thisTypeOpt = if (isSigOnlyOfImplGroup) {
             None()
           } else {

@@ -4005,7 +4005,8 @@ base class TEnv{
               type => normalizedType,
               access => FAPublic(),
             };
-            fieldsMap![field.name] = field
+            fieldsMap![field.name] = field;
+            _ = objMethodGroups.maybeRemove(field.name)
           }
         | FNColon(indexName, indexType) ->
           keyType = this.normalize(tcenvb, indexType);

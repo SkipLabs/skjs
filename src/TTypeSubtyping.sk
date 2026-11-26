@@ -2037,7 +2037,16 @@ extension class TType {
         }
       };
       if (!matched) {
-        return STRecTFuns(firstErr.fromSome(), funs1, funs2)
+        // No source signature's arity covers the target: reject with a real
+        // type error (re-run the first source signature for its diagnostic,
+        // or synthesize a parameter error if it is otherwise compatible).
+        err = firstErr.default(
+          static::isSubFun(subst, tenv, funs1.allFuns()[0], t) match {
+          | e @ STErrorOnTFun _ -> e
+          | STOk() -> STRecFunParam(None(), 0, funs1.allFuns()[0], t)
+          },
+        );
+        return STRecTFuns(err, funs1, funs2)
       }
     };
     STOk()
