@@ -70,6 +70,8 @@ function testExcessPropertyVsClosed(): void {
 // is closed rather than reporting a missing index signature.
 function testOpenIntoClosedRejected(x: { readonly a: number }): void {
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 Type '{ readonly a: number; }'
+  // @skjs-expect-error-line3 is not assignable to type {
   // @skjs-expect-error-line4 The target is a closed object type: every unnamed key is provably absent, but the source is an open object type that may have unknown extra keys
   const c: Closed<{ readonly a: number }> = x;
 }
@@ -196,4 +198,89 @@ function testClosedAliasWrapperConcrete(): void {
 
 function testClosedAliasWrapperBadInstantiation(): void {
   const n: FreezeWrapper<number> = 1;
+}
+
+// ============================================================================
+// Diagnostic display of Closed<T> (SkipLabs/skjs#803):
+// Errors should print `Closed<...>` instead of the raw never-index encoding.
+// ============================================================================
+
+type ClosedNamedObj = { readonly a: number };
+
+function testClosedDisplayIntoPrimitive(
+  x: Closed<{ readonly a: number }>,
+): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 Type {
+  // @skjs-expect-error-line3 is not assignable to type 'number'
+  const n: number = x;
+}
+
+function testPrimitiveIntoClosedDisplay(): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 Type '42'
+  // @skjs-expect-error-line3 is not assignable to type {
+  const c: Closed<{ readonly a: number }> = 42;
+}
+
+function testClosedNamedAliasDisplay(x: Closed<ClosedNamedObj>): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 Type {
+  // @skjs-expect-error-line3 is not assignable to type 'number'
+  const n: number = x;
+}
+
+function testClosedWrapperDisplay(
+  x: FreezeWrapper<{ readonly a: number }>,
+): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 Type {
+  // @skjs-expect-error-line3 is not assignable to type 'number'
+  const n: number = x;
+}
+
+function testClosedUnionDisplay(
+  x: Closed<{ a: number } | { b: string }>,
+): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 Type { a: number; readonly [k: string]: never; readonly [s: symbol]: never; } | {
+  // @skjs-expect-error-line3 is not assignable to type 'number'
+  const n: number = x;
+}
+
+function testClosedEmptyDisplay(x: Closed<{}>): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 Type '{ readonly [k: string]: never; readonly [s: symbol]: never; }'
+  // @skjs-expect-error-line3 is not assignable to type 'number'
+  const n: number = x;
+}
+
+interface ClosedRecursiveNode {
+  readonly value: number;
+  readonly next?: Closed<ClosedRecursiveNode>;
+}
+
+function testClosedRecursiveDisplay(x: Closed<ClosedRecursiveNode>): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 Type {
+  // @skjs-expect-error-line3 is not assignable to type 'number'
+  const n: number = x;
+}
+
+function testClosedShowExpanded(): void {
+  const direct: Closed<{ readonly a: number }> = { a: 1 };
+  __SKJS_show_expanded(
+    direct,
+    "{\n  readonly a: number;\n  readonly [k: string]: never;\n  readonly [s: symbol]: never;\n}\n",
+  );
+  const named: Closed<ClosedNamedObj> = { a: 1 };
+  __SKJS_show_expanded(
+    named,
+    "{\n  readonly a: number;\n  readonly [k: string]: never;\n  readonly [s: symbol]: never;\n}\n",
+  );
+  const empty: Closed<{}> = {};
+  __SKJS_show_expanded(
+    empty,
+    "{ readonly [k: string]: never; readonly [s: symbol]: never; }",
+  );
 }
