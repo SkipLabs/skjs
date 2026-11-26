@@ -1371,6 +1371,7 @@ class TObject private (
     sawAbsent = false;
     sawUnknown = false;
     sawFunction = false;
+    notCallable = false;
     partial: ?TFuns = None();
     for (fields in this.branches) {
       !sawBranch = true;
@@ -1379,18 +1380,33 @@ class TObject private (
       | CUnknown() -> !sawUnknown = true
       | CFunction() -> !sawFunction = true
       | CPresent(tFuns) ->
-        !partial = Some(
-          partial match {
-          | None() -> tFuns
-          | Some(acc) -> TFuns::union(subst, tenv, acc, tFuns)
-          },
-        )
+        if (notCallable) {
+          void
+        } else {
+          !partial = Some(
+            partial match {
+            | None() -> tFuns
+            | Some(acc) ->
+              TFuns::union(subst, tenv, acc, tFuns) match {
+              | Some(u) -> u
+              | None() ->
+                // Incompatible overload sets in a union: not callable.
+                !notCallable = true;
+                acc
+              }
+            },
+          )
+        }
       }
     };
     mode = if (!sawBranch) {
       // An empty branch set claims nothing.
       CUnknown()
-    } else if (sawUnknown || (sawAbsent && (sawFunction || partial.isSome()))) {
+    } else if (
+      sawUnknown ||
+      notCallable ||
+      (sawAbsent && (sawFunction || partial.isSome()))
+    ) {
       CUnknown()
     } else if (sawAbsent) {
       CAbsent()

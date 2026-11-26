@@ -100,19 +100,36 @@ extension class TFuns {
   // a call's arguments must be accepted by BOTH): merge every pair of
   // signatures across the two overload sets with TFun::union (which
   // intersects parameters and unions returns — sound for the union reading).
+  // Returns None when the union is not callable: tsc's rule is that if BOTH
+  // members have several signatures, the sets must be identical, otherwise
+  // the union is not callable (TS2349) — this also bounds the cross product,
+  // which would otherwise grow exponentially across a chain of unions.
+  // Pairs with different type-parameter counts cannot be merged and are
+  // skipped (dropping a pair only rejects calls, never accepts one).
   static fun union(
     subst: mutable Subst,
     tenv: TEnv,
     f1: TFuns,
     f2: TFuns,
-  ): TFuns {
+  ): ?TFuns {
+    a = f1.allFuns();
+    b = f2.allFuns();
+    if (a.size() > 1 && b.size() > 1 && a != b) {
+      return None()
+    };
     merged = mutable Vector[];
-    for (a in f1.allFuns()) {
-      for (b in f2.allFuns()) {
-        merged.push(TFun::union(subst, tenv, a, b))
+    for (x in a) {
+      for (y in b) {
+        if (x.tparams.size() == y.tparams.size()) {
+          merged.push(TFun::union(subst, tenv, x, y))
+        }
       }
     };
-    TFuns::multiple(merged.toArray(), f1.pos)
+    if (merged.isEmpty()) {
+      None()
+    } else {
+      Some(TFuns::multiple(merged.toArray(), f1.pos))
+    }
   }
 }
 
