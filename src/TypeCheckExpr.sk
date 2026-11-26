@@ -5181,10 +5181,9 @@ extension class TypeChecker {
         project(
           field,
           TType::single(
-            if (kind is TString()) {
-              TPrimString::full(field.pos)
-            } else {
-              TPrimValue::full(kind, field.pos)
+            kind match {
+            | TString() -> TPrimString::full(field.pos)
+            | k @ TPrimNonStringKind _ -> TPrimValue::full(k, field.pos)
             },
           ),
         );

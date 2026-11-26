@@ -1994,6 +1994,14 @@ base class TPrimValueKind uses XXHashable, Orderable {
   }
 }
 
+// Non-string primitive value kinds carried by `TPrimValue` (strings live in
+// `TPrimString` so template literal pattern types extend only the string side).
+base class TPrimNonStringKind extends TPrimValueKind
+extension class TNum extends TPrimNonStringKind
+extension class TBool extends TPrimNonStringKind
+extension class TBigInt extends TPrimNonStringKind
+extension class TSymbol extends TPrimNonStringKind
+
 // Restricted key kind for FKName: only string or number
 base class FKNameKind extends TPrimValueKind
 extension class TNum extends FKNameKind
@@ -2048,11 +2056,13 @@ base class FieldKey {
   }
 
   fun toType(): TType {
-    kind = this.toPrimValueKind();
-    if (kind is TString()) {
-      TType::single(TPrimString::single(this.value(), this.pos()))
-    } else {
-      TType::single(TPrimValue::single(kind, this.value(), this.pos()))
+    this match {
+    | FKName(name, TString()) ->
+      TType::single(TPrimString::single(name.value, name.pos))
+    | FKName(name, TNum()) ->
+      TType::single(TPrimValue::single(TNum(), name.value, name.pos))
+    | FKSymbol(pos, uniqueId) ->
+      TType::single(TPrimValue::single(TSymbol(), uniqueId, pos))
     }
   }
 
@@ -2148,8 +2158,6 @@ base class SType private (
     | TPrimValue(TBool(), _, _) -> TagBool()
     | TPrimValue(TNum(), _, _) -> TagNum()
     | TPrimString(_, _) -> TagString()
-    // Unreachable since strings moved to TPrimString, kept for exhaustiveness.
-    | TPrimValue(TString(), _, _) -> TagString()
     | TPrimValue(TBigInt(), _, _) -> TagBigInt()
     | TPrimValue(TSymbol(), _, _) -> TagSymbol()
     | TObject _ -> TagObject()
@@ -2185,9 +2193,7 @@ base class SType private (
       SFValues(FZero(), true)
     | TPrimValue(TBool(), None(), _)
     | TPrimString(None(), _)
-    | TPrimValue(TBigInt(), None(), _)
-    // Unreachable since strings moved to TPrimString, kept for exhaustiveness.
-    | TPrimValue(TString(), None(), _) ->
+    | TPrimValue(TBigInt(), None(), _) ->
       // boolean has only `false`, string only `""`, bigint only `0n`.
       SFValues(FOne(), true)
     | TPrimValue(TNum(), None(), _) ->
@@ -2241,9 +2247,7 @@ base class SType private (
       if (target) Some(this) else None()
     | TPrimString(None(), _)
     | TPrimValue(TNum(), None(), _)
-    | TPrimValue(TBigInt(), None(), _)
-    // Unreachable since strings moved to TPrimString, kept for exhaustiveness.
-    | TPrimValue(TString(), None(), _) ->
+    | TPrimValue(TBigInt(), None(), _) ->
       Some(this)
     | TPrimValue(TBool(), None(), pos) ->
       Some(TPrimValue::single(TBool(), if (target) "true" else "false", pos))
@@ -2325,17 +2329,16 @@ extension class TPrimString extends TPrim
 
 class TPrimUnit(kind: TPrimUnitKind) extends SType
 
-class TPrimValue(kind: TPrimValueKind, literals: ?PrimLiterals) extends SType {
+class TPrimValue(
+  kind: TPrimNonStringKind,
+  literals: ?PrimLiterals,
+) extends SType {
   static fun single(
-    kind: TPrimValueKind,
+    kind: TPrimNonStringKind,
     value: String,
     pos: PosRange,
     userVal: ?String = None(),
   ): TPrimValue {
-    invariant(
-      !(kind is TString()),
-      "Use TPrimString::single for string literals",
-    );
     TPrimValue(
       kind,
       Some(PrimLiterals::single(PrimLiteral(pos, value, userVal))),
@@ -2343,8 +2346,7 @@ class TPrimValue(kind: TPrimValueKind, literals: ?PrimLiterals) extends SType {
     )
   }
 
-  static fun full(kind: TPrimValueKind, pos: PosRange): TPrimValue {
-    invariant(!(kind is TString()), "Use TPrimString::full for string");
+  static fun full(kind: TPrimNonStringKind, pos: PosRange): TPrimValue {
     TPrimValue(kind, None(), pos)
   }
 

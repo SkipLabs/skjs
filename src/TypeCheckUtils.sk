@@ -287,7 +287,7 @@ extension class TypeChecker {
     pos: PosRange,
     msg: String,
     ty: TType,
-  ): TPrimValueKind {
+  ): TPrimNonStringKind {
     ty.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
       stypes.singleElt()
     ) match {
