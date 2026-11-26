@@ -371,4 +371,55 @@ fun testResolveStubsPackageJsonExports(): void {
   );
 }
 
+@test
+fun testNodeModulesWalkPin(): void {
+  // Pre-#612: resolveStubs only scans the flat importStubs array (root
+  // node_modules), ignoring nested packages/a/node_modules.
+  fs = mkStubMem(
+    Array[
+      ("/proj/node_modules/foo/package.json", `{"types": "./lib/foo.d.ts"}`),
+      (
+        "/proj/node_modules/foo/lib/foo.d.ts",
+        `export declare function tag(): "root";`,
+      ),
+      (
+        "/proj/packages/a/node_modules/foo/package.json",
+        `{"types": "./lib/foo.d.ts"}`,
+      ),
+      (
+        "/proj/packages/a/node_modules/foo/lib/foo.d.ts",
+        `export declare function tag(): "nested";`,
+      ),
+      (
+        "/proj/packages/a/node_modules/only-a/index.d.ts",
+        "export declare const a: number;",
+      ),
+      ("/stubs/flat-stub/index.d.ts", "export declare const flat: string;"),
+    ],
+  );
+  stubs = Array[
+    SKJS.DAbsolute::create("/stubs"),
+    SKJS.DAbsolute::create("/proj/node_modules"),
+  ];
+  SKTest.expectEq(
+    SKJS.resolveStubs(fs, stubs, "foo"),
+    SKJS.StubFound(
+      SKJS.FPath::create(SKJS.RootId::stub(1), "foo/lib/foo.d.ts"),
+    ),
+    "pre-#612: flat resolveStubs finds root node_modules/foo",
+  );
+  SKTest.expectEq(
+    SKJS.resolveStubs(fs, stubs, "only-a"),
+    SKJS.StubNotFound(),
+    "pre-#612: flat resolveStubs misses nested packages/a/node_modules/only-a",
+  );
+  SKTest.expectEq(
+    SKJS.resolveStubs(fs, stubs, "flat-stub"),
+    SKJS.StubFound(
+      SKJS.FPath::create(SKJS.RootId::stub(0), "flat-stub/index.d.ts"),
+    ),
+    "flat non-node_modules stub dir resolves",
+  );
+}
+
 module end;
