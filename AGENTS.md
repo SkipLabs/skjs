@@ -63,6 +63,7 @@ Run it interactively through the `merge-bot` skill, or unattended with `bin/merg
 ## Key Conventions
 
 - **Green commits**: Every intermediate commit must pass `make test-in-docker`
+- **Pinning tests first**: add the test that pins/demonstrates a behavior in its own commit BEFORE the change that alters it — never in the same commit as the fix (sole exception: the pre-change test crashes the test runner). Every fix needs a preceding test commit showing what it fixes. See docs/commits-and-prs.md.
 - **SKJS is a typechecker, not a runtime**: Tests exercise type-checking only — no `console.log()` calls or function invocations
 - **One error per definition**: SKJS reports only the first type error per function/definition unless passing `--keep-going` (best-effort — fatal errors may still hide subsequent ones)
 - **Match TypeScript**: SKJS should not be more permissive than TypeScript, but must not follow TypeScript when TypeScript is unsound. When in doubt, verify with `npx tsc --strict --noEmit`
