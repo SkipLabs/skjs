@@ -1033,6 +1033,13 @@ class TObject private (
     TObject(this.branches.mapToSet(f), None(), this.pos)
   }
 
+  fun mapWithUnexpanded(
+    f: TFields -> TFields,
+    unexpandedType: ?TSInst,
+  ): TObject {
+    TObject(this.branches.mapToSet(f), unexpandedType, this.pos)
+  }
+
   fun mapOpt(f: TFields -> ?TFields): ?TObject {
     branches = this.branches.filterMap(f);
     if (branches.isEmpty()) None() else Some(this with {branches})
@@ -3079,6 +3086,24 @@ class TFields protected {
       numberIndex,
       symbolIndex => Some(symbolIdx),
     }
+  }
+
+  // True when this branch has the closed-object encoding produced by Closed<T>
+  // and `as const`: non-synthetic never-valued string and symbol indexes and no
+  // non-synthetic number index.
+  fun isClosedObject(): Bool {
+    isNeverIdx = (idx: ?TField) ->
+      idx match {
+      | Some(f) -> !f.isSynthetic() && f.get.isBottom() && f.set.isBottom()
+      | None() -> false
+      };
+    hasDeclaredNumberIdx = this.numberIndex match {
+    | Some(f) -> !f.isSynthetic()
+    | None() -> false
+    };
+    isNeverIdx(this.stringIndex) &&
+      isNeverIdx(this.symbolIndex) &&
+      !hasDeclaredNumberIdx
   }
 
   fun maybeGet(fieldName: String): ?TField {
