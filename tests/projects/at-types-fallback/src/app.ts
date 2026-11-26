@@ -1,9 +1,12 @@
-// @skjs-expect-error Cannot find module 'untyped' or its corresponding type declarations
 import { fromDt } from "untyped";
-// @skjs-expect-error Cannot find module '@acme/widgets' or its corresponding type declarations
 import { makeWidget } from "@acme/widgets";
 import { source } from "own-types";
 
-function checkOwn(): "own" {
-  return source;
+function checkAll(): [string, string, "own"] {
+  return [fromDt(42), makeWidget("w1").id, source];
+}
+
+function badDtCall(): string {
+  // @skjs-expect-error Argument is not assignable to the parameter's type
+  return fromDt("wrong");
 }
