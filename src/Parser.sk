@@ -6,6 +6,11 @@ module SKJS;
 
 mutable class Parser(
   lex: mutable Lexer,
+  // Whether number/bigint literals keep their user-written spelling for
+  // diagnostics (TsCompilerOptions.userLiteralSpelling). When false, literals
+  // are stored in canonical form only and diagnostics print the canonical
+  // value (rule 30).
+  userLiteralSpelling: Bool = false,
   mutable id: Int = 1,
   nameCounts: mutable Map<String, Int> = mutable Map[],
   // Per-name count of top-level function declarations seen during parsing,

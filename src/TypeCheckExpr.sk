@@ -6820,8 +6820,8 @@ extension base class TEnv {
   fun directLiteralSType(e: Expr): ?SType {
     pos = e.pos;
     e.value match {
-    | Number(n) -> Some(TPrimValue::single(TNum(), n, pos))
-    | BigInt(n) -> Some(TPrimValue::single(TBigInt(), n, pos))
+    | Number(n) -> Some(TPrimValue::single(TNum(), n.val, pos, n.userVal))
+    | BigInt(n) -> Some(TPrimValue::single(TBigInt(), n.val, pos, n.userVal))
     | EString(n) -> Some(TPrimValue::single(TString(), n, pos))
     | Var(Name(_, "true")) -> Some(TPrimValue::single(TBool(), "true", pos))
     | Var(Name(_, "false")) -> Some(TPrimValue::single(TBool(), "false", pos))
@@ -6836,11 +6836,11 @@ extension base class TEnv {
       };
       kindValue.map(kn -> {
         (kind, n) = kn;
-        value = nuop match {
+        lit = nuop match {
         | UOPlus() -> n
-        | UOMinus() -> negateJSNumberLiteral(n)
+        | UOMinus() -> n.negated()
         };
-        TPrimValue::single(kind, value, pos)
+        TPrimValue::single(kind, lit.val, pos, lit.userVal)
       })
     | _ -> None()
     }

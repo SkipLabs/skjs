@@ -476,10 +476,31 @@ extension class Expr(pos: PosRange, value: Expr_) extends Def_ {
   }
 }
 
+// A numeric literal in source: `val` is the canonical name (rule 30) that
+// identifies the literal, and `userVal` the user-written spelling when it
+// differs ("0xf" for val "15"). userVal is display-only: it never takes part
+// in identity, hashing or comparison.
+value class NumLit(val: String, userVal: ?String) uses XXHashable {
+  // `raw` is the literal exactly as written (sign included).
+  static fun ofUserWritten(val: String, raw: String): NumLit {
+    NumLit(val, if (raw == val) None() else Some(raw))
+  }
+
+  // The literal with the sign flipped, as a unary minus/plus would produce.
+  fun negated(): NumLit {
+    NumLit(
+      negateJSNumberLiteral(this.val),
+      this.userVal.map(u ->
+        if (u.startsWith("-")) u.stripPrefix("-") else "-" + u
+      ),
+    )
+  }
+}
+
 base class Expr_ uses XXHashable {
   children =
-  | Number(String)
-  | BigInt(String)
+  | Number(NumLit)
+  | BigInt(NumLit)
   | Var(Name)
   | Spread(Expr)
   | EString(String)
@@ -670,8 +691,8 @@ base class Type_ uses XXHashable {
   // A template literal type: `strings` is the cooked text around the holes,
   // `types` the interpolated types. strings.size() == types.size() + 1.
   | TATemplate(Array<String>, Array<Type>)
-  | TANumLiteral(String)
-  | TABigIntLiteral(String)
+  | TANumLiteral(NumLit)
+  | TABigIntLiteral(NumLit)
   | TAPrim(TPrimKind)
   | TATypeOf(Expr)
   | TAArray(Type)

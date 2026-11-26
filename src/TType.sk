@@ -2116,8 +2116,13 @@ class TPrimValue(kind: TPrimValueKind, literals: ?PrimLiterals) extends SType {
     kind: TPrimValueKind,
     value: String,
     pos: PosRange,
+    userVal: ?String = None(),
   ): TPrimValue {
-    TPrimValue(kind, Some(PrimLiterals::single(PrimLiteral(pos, value))), pos)
+    TPrimValue(
+      kind,
+      Some(PrimLiterals::single(PrimLiteral(pos, value, userVal))),
+      pos,
+    )
   }
 
   static fun full(kind: TPrimValueKind, pos: PosRange): TPrimValue {
@@ -2752,8 +2757,8 @@ class TFields protected {
       brandField.get.getSingleConstant() match {
       | Some(TPrimValue(TBool(), Some(lits), _)) ->
         lits.singleElt() match {
-        | Some(PrimLiteral(_pos, "true")) -> Some(true)
-        | Some(PrimLiteral(_pos, "false")) -> Some(false)
+        | Some(PrimLiteral(_pos, "true", _)) -> Some(true)
+        | Some(PrimLiteral(_pos, "false", _)) -> Some(false)
         | _ -> None()
         }
       | _ -> None()
@@ -2782,7 +2787,7 @@ class TFields protected {
       isTrue = brandField.get.getSingleConstant() match {
       | Some(TPrimValue(TBool(), Some(lits), _)) ->
         lits.singleElt() match {
-        | Some(PrimLiteral(_pos, "true")) -> true
+        | Some(PrimLiteral(_pos, "true", _)) -> true
         | _ -> false
         }
       | _ -> false
@@ -3109,7 +3114,7 @@ class TFields protected {
     length = lengthField.get.getSingleConstant() match {
     | Some(TPrimValue(TNum(), Some(lits), _)) ->
       lits.singleElt() match {
-      | Some(PrimLiteral(_, v)) -> v.toIntOption()
+      | Some(PrimLiteral(_, v, _)) -> v.toIntOption()
       | None() -> None()
       }
     | _ -> None()

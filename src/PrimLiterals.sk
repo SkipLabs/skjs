@@ -1,9 +1,13 @@
 module SKJS;
 
-// A primitive literal value with position, identified by the value string
+// A primitive literal value with position, identified by the value string.
+// `userVal`, when present, is the user-written spelling of a number/bigint
+// literal (e.g. "0xf" for val "15"); it is display-only and never takes part
+// in identity, hashing or comparison.
 class PrimLiteral(
   pos: PosRange,
   val: String,
+  userVal: ?String = None(),
 ) uses Projectable<String>, Orderable {
   fun project(): String {
     this.val
@@ -11,6 +15,16 @@ class PrimLiteral(
 
   fun compare(that: this): Order {
     this.project().compare(that.project())
+  }
+
+  // Hash over the canonical value only, so userVal stays display-only.
+  fun xxhash(): XXHash {
+    this.val.xxhash()
+  }
+
+  // The spelling to show users: the user-written one when known.
+  fun displayVal(): String {
+    this.userVal.default(this.val)
   }
 }
 
@@ -85,7 +99,7 @@ class PrimLiterals private (
   }
 
   fun toStringList(): String {
-    this.inner.values().map(lit -> lit.val).collect(Array).join(" | ")
+    this.inner.values().map(lit -> lit.displayVal()).collect(Array).join(" | ")
   }
 
   fun toString(): String {

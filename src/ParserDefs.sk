@@ -77,13 +77,13 @@ extension class Parser {
     | Some(tok @ Token(TKDoubleQuote(), _, _)) ->
       Name(this.lex.posRange(tok), this.unquoteString(tok))
     | Some(tok @ Token(TKNumber(), _, _)) ->
-      Name(this.lex.posRange(tok), this.getNumber(tok))
+      Name(this.lex.posRange(tok), this.getNumber(tok).val)
     | Some(tokSub @ Token(TKSubtraction(), _, _)) ->
       nbrTok = this.lex.next() match {
       | None() -> this.error(this.lex.posEnd(), UnterminatedDef())
       | Some(x) -> x
       };
-      Name(this.lex.posRange2(tokSub, nbrTok), this.getNumber(nbrTok, true))
+      Name(this.lex.posRange2(tokSub, nbrTok), this.getNumber(nbrTok, true).val)
     | _ ->
       this.error(
         this.lex.posEnd(),

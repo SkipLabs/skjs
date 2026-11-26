@@ -124,7 +124,9 @@ fun synthesizeTupleClassFields(
         pos,
         name => FNNormal(Name(pos, "length")),
         optional => None(),
-        type => Some(Type(pos, TANumLiteral(kind.arity.toString()))),
+        type => Some(
+          Type(pos, TANumLiteral(NumLit(kind.arity.toString(), None()))),
+        ),
         value => None(),
         modifiers => Modifiers(readonlyMod),
       }

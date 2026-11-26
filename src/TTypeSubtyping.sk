@@ -218,9 +218,7 @@ base class STErrorOnTPrimValue(
   | STPrimMissingValue(elt, prim1, prim2, suggestReadonly) ->
     // Render the missing value the same way it appears in the quoted type
     // pair above it (e.g. `Value '"other"' is missing`).
-    displayVal = quoteRenderedType(
-      TypePp::renderPrimLiteral(prim1.kind, elt.val),
-    );
+    displayVal = quoteRenderedType(TypePp::renderPrimLiteral(prim1.kind, elt));
     List[
       (prim1.pos, `Type ${quoteRenderedType(prim1.toString(subst, tenv))}`),
       (
