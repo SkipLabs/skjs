@@ -227,8 +227,9 @@ extension class Parser {
   // Field parsing
   /***************************************************************************/
 
-  // Parse class fields
-  mutable fun classFields(): Array<ClassField> {
+  // Parse class fields. `kind` distinguishes class from interface bodies:
+  // only interfaces accept call signatures (`(params): ret;` members).
+  mutable fun classFields(kind: ClassKind): Array<ClassField> {
     if (this.lex.peekKind() is Some(TKCloseCurly())) {
       _ = this.lex.next();
       return Array[];
@@ -241,76 +242,35 @@ extension class Parser {
       | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
       | Some(x) -> x.posStart
       };
-      fieldName = this.getFieldName();
-      // `foo!: T` definite assignment assertion. Parsed unconditionally; the
-      // checker rejects it with a non-fatal error outside conformance mode.
-      definiteAssignment = if (
-        this.lex.peekKind() is Some(TKExclamationMark())
+      // A call signature in an interface body starts with `(` or `<` (generic
+      // call signature); it has no name (FNEmpty), like in object type
+      // literals. Classes reject it (tsc does too), so this is gated on the
+      // interface kind.
+      field = if (
+        kind is CKInterface() &&
+        (this.lex.peekKind() is Some(TKOpenParen()) ||
+          this.lex.peekKind() is Some(TKLessThan()))
       ) {
-        _ = this.lex.next();
-        true
-      } else {
-        false
-      };
-      isOptional = if (this.lex.peekKind() is Some(TKQuestionMark())) {
-        Some(this.lex.posRange(this.lex.next().fromSome()));
-      } else {
-        None()
-      };
-      field = fieldName match {
-      | methodName @ SimpleFieldName _ if (
-        this.lex.peekKind() is Some(TKOpenParen()) ||
-        this.lex.peekKind() is Some(TKLessThan())
-      ) ->
+        emptyPos = this.lex.posRange(this.lex.peek().fromSome());
         this.methodDef(
           {tparams, params, retType, body} ->
             ClassFieldMethod{
               isAsync => None(),
               modifiers,
-              isGetSet => fieldGetSet,
-              name => methodName,
-              optional => isOptional,
+              isGetSet => None(),
+              name => FNEmpty(emptyPos),
+              optional => None(),
               sig => FSInline(tparams, params, retType),
               body => FBInline(body),
               hasBody => body is FDBSome _,
               isAmbient => false,
               cgNode => None(),
             },
-          methodName,
+          FNEmpty(emptyPos),
           true,
         )
-      | _ ->
-        if (fieldGetSet.isSome()) {
-          this.error(
-            this.lex.posStart(this.lex.peek().fromSome()),
-            ExpectedAccessorDefinition(),
-          );
-        };
-        type = if (this.lex.peekKind() is Some(TKColon())) {
-          _ = this.lex.next();
-          Some(this.type(0))
-        } else {
-          None()
-        };
-        fieldValue = if (this.lex.peekKind() is Some(TKAssignment())) {
-          _ = this.lex.next();
-          Some(this.expr(0))
-        } else {
-          None()
-        };
-        ClassFieldValue{
-          pos => PosRange::create(
-            this.lex,
-            fieldPosStart,
-            this.lex.getLastPos(),
-          ),
-          modifiers,
-          name => fieldName,
-          optional => isOptional,
-          type,
-          value => fieldValue,
-          definiteAssignment,
-        }
+      } else {
+        this.classField(modifiers, fieldGetSet, fieldPosStart)
       };
       fields.push(field);
       semiTok = this.lex.peek() match {
@@ -331,6 +291,80 @@ extension class Parser {
       }
     };
     fields.toArray()
+  }
+
+  // Parse a single named class field (method or property), after modifiers,
+  // get/set and the field start position have been consumed by the caller.
+  mutable fun classField(
+    modifiers: Modifiers,
+    fieldGetSet: ?FieldGetSet,
+    fieldPosStart: Pos,
+  ): ClassField {
+    fieldName = this.getFieldName();
+    // `foo!: T` definite assignment assertion. Parsed unconditionally; the
+    // checker rejects it with a non-fatal error outside conformance mode.
+    definiteAssignment = if (this.lex.peekKind() is Some(TKExclamationMark())) {
+      _ = this.lex.next();
+      true
+    } else {
+      false
+    };
+    isOptional = if (this.lex.peekKind() is Some(TKQuestionMark())) {
+      Some(this.lex.posRange(this.lex.next().fromSome()));
+    } else {
+      None()
+    };
+    fieldName match {
+    | methodName @ SimpleFieldName _ if (
+      this.lex.peekKind() is Some(TKOpenParen()) ||
+      this.lex.peekKind() is Some(TKLessThan())
+    ) ->
+      this.methodDef(
+        {tparams, params, retType, body} ->
+          ClassFieldMethod{
+            isAsync => None(),
+            modifiers,
+            isGetSet => fieldGetSet,
+            name => methodName,
+            optional => isOptional,
+            sig => FSInline(tparams, params, retType),
+            body => FBInline(body),
+            hasBody => body is FDBSome _,
+            isAmbient => false,
+            cgNode => None(),
+          },
+        methodName,
+        true,
+      )
+    | _ ->
+      if (fieldGetSet.isSome()) {
+        this.error(
+          this.lex.posStart(this.lex.peek().fromSome()),
+          ExpectedAccessorDefinition(),
+        );
+      };
+      type = if (this.lex.peekKind() is Some(TKColon())) {
+        _ = this.lex.next();
+        Some(this.type(0))
+      } else {
+        None()
+      };
+      fieldValue = if (this.lex.peekKind() is Some(TKAssignment())) {
+        _ = this.lex.next();
+        Some(this.expr(0))
+      } else {
+        None()
+      };
+      ClassFieldValue{
+        pos => PosRange::create(this.lex, fieldPosStart, this.lex.getLastPos()),
+        modifiers,
+        name => fieldName,
+        optional => isOptional,
+        type,
+        value => fieldValue,
+        definiteAssignment,
+      }
+    }
   }
 
   /***************************************************************************/
@@ -951,7 +985,7 @@ extension class Parser {
       Array[]
     };
     this.expect(TKOpenCurly());
-    fields = this.classFields();
+    fields = this.classFields(kind);
 
     // Restore previous context
     this.setSymbolContext(prevSymbolContext);

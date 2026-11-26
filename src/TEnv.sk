@@ -1211,6 +1211,8 @@ base class TEnv{
     fields = mutable Map[];
     symbolFields = mutable Map[];
     indexes = mutable Vector[];
+    callSigs = mutable Vector[];
+    newSigs = mutable Vector[];
     thisType = TType::inst(className, TArgs(targs));
     !this.bindings["this"] = thisType;
     this.addFields(
@@ -1222,6 +1224,8 @@ base class TEnv{
       None(),
       className,
       targs,
+      callSigs,
+      newSigs,
       fieldType ~> {
         filter(fieldType) && !fieldType.isStatic()
       },
@@ -1231,11 +1235,25 @@ base class TEnv{
     // instance type is structural -- interfaces, and ambient classes from
     // .d.ts stubs (rule 35) -- so an array or function carrying the members
     // inhabits it and those facts are unknown (unless the isArray brand field
-    // overrides, as for Array itself).
+    // overrides, as for Array itself). A declared call/construct signature
+    // (interface bodies only) upgrades that to present-with-signature.
     classIds = this.classIdentity(tcenvb, c);
     (isArray, call, new) = classIds match {
     | Some _ -> (Some(false), CAbsent(), CAbsent())
-    | None() -> (None(), CUnknown(), CUnknown())
+    | None() ->
+      (
+        None(),
+        if (callSigs.isEmpty()) {
+          CUnknown()
+        } else {
+          CPresent(TFuns::multiple(callSigs.toArray(), className.pos))
+        },
+        if (newSigs.isEmpty()) {
+          CUnknown()
+        } else {
+          CPresent(TFuns::multiple(newSigs.toArray(), className.pos))
+        },
+      )
     };
     tIndexes = TIndexes::create(tcenvb, this, indexes);
     TFields::create{
@@ -1308,6 +1326,8 @@ base class TEnv{
       Some(c.tparams),
       className,
       targs,
+      mutable Vector[],
+      mutable Vector[],
       fieldType ~> fieldType.isStatic(),
     );
     // Collect static members without instance arguments. The construct
@@ -1642,6 +1662,8 @@ base class TEnv{
     isStatic: ?Array<TypeParam>,
     className: Name,
     targs: Array<TType>,
+    callSigs: mutable Vector<TFun>,
+    newSigs: mutable Vector<TFun>,
     filter: ClassFieldValue ~> Bool,
   ): void {
     (!this, clss) = this.processClassSetup(
@@ -1709,6 +1731,8 @@ base class TEnv{
                 if (isStatic is Some _) Array[] else {
                   paramTArgs.map(targ -> this.normalize(tcenvb, targ))
                 },
+                callSigs,
+                newSigs,
                 filter,
               )
             } else {
@@ -1755,6 +1779,12 @@ base class TEnv{
         ownFieldEntries.push((cls, field))
       }
     };
+    // Call/construct signatures declared directly by these declarations
+    // (interface bodies only), in declaration order. They are prepended to
+    // the shared vectors after the loop so own signatures resolve before
+    // inherited ones (tsc's derived-first order for `extends`).
+    ownCallSigs = mutable Vector<TFun>[];
+    ownNewSigs = mutable Vector<TFun>[];
     // Same-name method declarations accumulate as an overload set (tsc
     // merges them within a class body and across merged interface
     // declarations). methodGroups[name] tracks the first member's field plus
@@ -1908,6 +1938,28 @@ base class TEnv{
       | fd @ ClassFieldMethod _ ->
         metIsStatic = fd.isStatic();
         if (metIsStatic != isStatic.isSome()) continue;
+        // Interface call/construct signatures are not named fields: collect
+        // them into the signature sets instead of `acc`. A `new (...)` member
+        // of an interface is a construct signature (in a class it stays a
+        // plain method named "new"). Instance side only; like object type
+        // literals, the signatures carry no implicit `this`.
+        sigTarget = if (isStatic is None() && cls.kind is CKInterface()) {
+          fd.name match {
+          | FNEmpty(_) -> Some(ownCallSigs)
+          | FNNormal(Name(_, "new")) -> Some(ownNewSigs)
+          | _ -> None()
+          }
+        } else {
+          None()
+        };
+        sigTarget match {
+        | Some(target) ->
+          sigCgNode = CGNode::create(Method(fd.name, className, false));
+          sigFuns = this.funDecl(tcenvb, None(), fd, sigCgNode);
+          for (tf in sigFuns.allFuns()) target.push(tf);
+          continue
+        | None() -> void
+        };
         cgNode = CGNode::create(Method(fd.name, className, metIsStatic));
         // Populate the implicit `this` type (the enclosing class instance) for
         // every non-static method. This closes the "detached method call"
@@ -1936,6 +1988,19 @@ base class TEnv{
         | FNNormal(name) -> FKName(name, TString())
         | FNComputed(keyExpr) ->
           this.resolveComputedKeyFieldKey(tcenvb, keyExpr)
+        | other ->
+          // Unreachable today: call signatures (FNEmpty) are routed to the
+          // signature sets above, and index names never become methods.
+          tcenvb.error(
+            Array[
+              (
+                other.getPos(),
+                "This field name syntax is not supported by SKJS",
+              ),
+            ],
+            SKJSCode(2024),
+          );
+          FKName(Name(other.getPos(), other.getName()), TString())
         } match {
         | FKSymbol(exprPos, uniqueId) ->
           field = TField::create{
@@ -1982,6 +2047,14 @@ base class TEnv{
           }
         }
       }
+    };
+    // Own call/construct signatures go before inherited ones (the base walk
+    // above already appended theirs), so resolution is derived-first.
+    for (i in Range(0, ownCallSigs.size())) {
+      callSigs.insert(i, ownCallSigs[i])
+    };
+    for (i in Range(0, ownNewSigs.size())) {
+      newSigs.insert(i, ownNewSigs[i])
     };
     // Rebuild overloaded method fields now that every declaration of the
     // merged name has been seen: the sig-only/impl split is only final once
