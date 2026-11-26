@@ -992,7 +992,9 @@ extension class Parser {
     // Restore previous context
     this.setSymbolContext(prevSymbolContext);
 
-    /* Desugar parameter properties */
+    /* Desugar parameter properties (constructor implementations only;
+     * body-less constructor signatures keep their parameter modifiers so the
+     * type checker rejects them rather than synthesizing fields). */
 
     parameterProperties = mutable Vector[];
     !fields = fields.map(field ->
@@ -1000,6 +1002,7 @@ extension class Parser {
       | fd @ ClassFieldMethod{
         name => FNNormal(Name(_, "constructor")),
         sig => FSInline(sigTparams, sigParams, sigRetType),
+        body => FBInline(FDBSome(stmts)),
       } ->
         initializationStatements = mutable Vector[];
         newParams = sigParams.map(param -> {
@@ -1063,13 +1066,9 @@ extension class Parser {
           param
         });
         !fd.sig = FSInline(sigTparams, newParams, sigRetType);
-        fd.body match {
-        | FBInline(FDBNone _) -> void
-        | FBInline(FDBSome(stmts)) ->
-          !stmts = initializationStatements.toArray().concat(stmts);
-          !fd.body = FBInline(FDBSome(stmts))
-        | FBRef _ -> internal_error("expected inline body during parsing")
-        };
+        !fd.body = FBInline(
+          FDBSome(initializationStatements.toArray().concat(stmts)),
+        );
         fd
       | _ -> field
       }
