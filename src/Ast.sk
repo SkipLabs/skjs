@@ -639,10 +639,9 @@ class ClassFieldValue{
   definiteAssignment: Bool = false,
 } extends ClassField, WithModifiers
 
-class ClassFieldMethod extends
-  FunDefWithModifiers<SimpleFieldName>,
-  ClassField,
-{}
+// The name bound is FunDefName (not SimpleFieldName) so interface bodies can
+// hold call signatures, whose name is FNEmpty (mirroring ObjectFieldMethod).
+class ClassFieldMethod extends FunDefWithModifiers<FunDefName>, ClassField {}
 
 base class WithModifiers{modifiers: Modifiers} uses XXHashable {
   fun isStatic(): Bool {
