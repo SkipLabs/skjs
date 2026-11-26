@@ -795,46 +795,12 @@ mutable class TypeReadContext private {
     )
   }
 
-  // Overload rule, mirroring STypes::isSubFuns: every target signature must be
-  // matched by some source signature — and, for an overloaded source, only by
-  // one whose arity covers the target's parameters (argument-count dispatch
-  // matters at runtime, so a shorter source signature must not match).
   private mutable fun funsSubtype(
     a: TFuns,
     b: TFuns,
     shapeCarrier: ?TType = None(),
   ): STResult<TFuns> {
-    multiSource = a.allFuns().size() > 1;
-    for (t in b.allFuns()) {
-      matched = false;
-      firstErr: ?STErrorOnTFun = None();
-      for (s in a.allFuns()) {
-        covers =
-          !multiSource ||
-          s.spreadParam.isSome() ||
-          s.params.size() + s.optionalParams.size() >=
-            t.params.size() + t.optionalParams.size();
-        if (!matched && covers) {
-          this.functionSubtype(s, t, shapeCarrier) match {
-          | STOk() -> !matched = true
-          | err @ STErrorOnTFun _ ->
-            if (firstErr is None()) !firstErr = Some(err)
-          }
-        }
-      };
-      if (!matched) {
-        // No source signature's arity covers the target: reject with a real
-        // type error instead of crashing on fromSome(None).
-        err = firstErr.default(
-          this.functionSubtype(a.allFuns()[0], t, shapeCarrier) match {
-          | e @ STErrorOnTFun _ -> e
-          | STOk() -> STRecFunParam(None(), 0, a.allFuns()[0], t)
-          },
-        );
-        return STRecTFuns(err, a, b)
-      }
-    };
-    STOk()
+    TFuns::isSubWith(a, b, (s, t) -> this.functionSubtype(s, t, shapeCarrier))
   }
 
   private mutable fun functionSubtype(

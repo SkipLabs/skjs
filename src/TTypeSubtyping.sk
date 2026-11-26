@@ -2086,56 +2086,9 @@ extension class TType {
     funs2: TFuns,
     shapeCarrier: ?TType = None(),
   ): STResult<TFuns> {
-    // Overload rule: source signature set is assignable to the target set iff
-    // EVERY target signature is matched by SOME source signature. This is
-    // sound for calls through the target type: a call accepted by target
-    // signature t is accepted by the matching source signature s (params
-    // contravariant), and s's return is a subtype of t's return. Each failed
-    // trial rolls its own bindings back (isSubFun restores on STError), so the
-    // search is backtracking-safe.
-    multiSource = funs1.allFuns().size() > 1;
-    for (t in funs2.allFuns()) {
-      matched = false;
-      firstErr: ?STErrorOnTFun = None();
-      for (s in funs1.allFuns()) {
-        // With an overloaded source, argument-count dispatch matters at
-        // runtime: only a source signature whose arity covers the target's
-        // parameters may match it. Otherwise a call through the target could
-        // dispatch to a different overload of the source and get a different
-        // return type than the target promises.
-        covers =
-          !multiSource ||
-          s.spreadParam.isSome() ||
-          s.params.size() + s.optionalParams.size() >=
-            t.params.size() + t.optionalParams.size();
-        if (!matched && covers) {
-          static::isSubFun(subst, tenv, s, t, shapeCarrier) match {
-          | STOk() -> !matched = true
-          | err @ STErrorOnTFun _ ->
-            if (firstErr is None()) !firstErr = Some(err)
-          }
-        }
-      };
-      if (!matched) {
-        // No source signature's arity covers the target: reject with a real
-        // type error (re-run the first source signature for its diagnostic,
-        // or synthesize a parameter error if it is otherwise compatible).
-        err = firstErr.default(
-          static::isSubFun(
-            subst,
-            tenv,
-            funs1.allFuns()[0],
-            t,
-            shapeCarrier,
-          ) match {
-          | e @ STErrorOnTFun _ -> e
-          | STOk() -> STRecFunParam(None(), 0, funs1.allFuns()[0], t)
-          },
-        );
-        return STRecTFuns(err, funs1, funs2)
-      }
-    };
-    STOk()
+    TFuns::isSubWith(funs1, funs2, (s, t) ->
+      static::isSubFun(subst, tenv, s, t, shapeCarrier)
+    )
   }
 
   // Member-getter subtyping with carrier awareness: when `u2` directly carries
@@ -2694,6 +2647,56 @@ extension class TFun {
         STRecFunAssertPred(None(), f1, f2)
       }
     }
+  }
+}
+
+extension class TFuns {
+  // Overload subtyping rule shared by the solver (`STypes::isSubFuns`) and
+  // the observation path (`TypeObservationContext::funsSubtype`): a source
+  // signature set is assignable to the target set iff EVERY target signature
+  // is matched by SOME source signature. With an overloaded source, argument-
+  // count dispatch matters at runtime, so a source signature may only match a
+  // target whose arity it covers — in particular, a non-rest overload cannot
+  // cover a target with a rest parameter (a call through the target could
+  // pass extra arguments and dispatch to another overload at runtime).
+  static fun isSubWith(
+    funs1: TFuns,
+    funs2: TFuns,
+    funSub: (TFun, TFun) -> STResult<TFun>,
+  ): STResult<TFuns> {
+    multiSource = funs1.allFuns().size() > 1;
+    for (t in funs2.allFuns()) {
+      matched = false;
+      firstErr: ?STErrorOnTFun = None();
+      for (s in funs1.allFuns()) {
+        covers =
+          !multiSource ||
+          s.spreadParam.isSome() ||
+          (t.spreadParam.isNone() &&
+            s.params.size() + s.optionalParams.size() >=
+              t.params.size() + t.optionalParams.size());
+        if (!matched && covers) {
+          funSub(s, t) match {
+          | STOk() -> !matched = true
+          | err @ STErrorOnTFun _ ->
+            if (firstErr is None()) !firstErr = Some(err)
+          }
+        }
+      };
+      if (!matched) {
+        // No source signature's arity covers the target: reject with a real
+        // type error (re-run the first source signature for its diagnostic,
+        // or synthesize a parameter error if it is otherwise compatible).
+        err = firstErr.default(
+          funSub(funs1.allFuns()[0], t) match {
+          | e @ STErrorOnTFun _ -> e
+          | STOk() -> STRecFunParam(None(), 0, funs1.allFuns()[0], t)
+          },
+        );
+        return STRecTFuns(err, funs1, funs2)
+      }
+    };
+    STOk()
   }
 }
 

@@ -6,7 +6,7 @@
 declare function ovArity(x: string): string;
 declare function ovArity(x: string, y: number): number;
 export function testOverloadToRestTarget(): string {
-  // Currently accepted (bug: `covers` ignores `t.spreadParam.isSome()`).
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const f: (x: string, ...rest: number[]) => string = ovArity;
   return f("a", 42);
 }
