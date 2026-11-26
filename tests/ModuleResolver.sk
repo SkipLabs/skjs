@@ -157,4 +157,52 @@ fun testResolveStubsPackageJson(): void {
   };
 }
 
+@test
+fun testResolveStubsAtTypesFallback(): void {
+  stubs = Array[SKJS.DAbsolute::create("/stubs")];
+
+  // Unscoped package with no types falls back to @types/<pkg> — not yet supported.
+  fsDt = mkStubMem(
+    Array[
+      ("/stubs/untyped/package.json", `{"name": "untyped"}`),
+      ("/stubs/@types/untyped/index.d.ts", "export declare const x: number;"),
+    ],
+  );
+  SKTest.expectEq(
+    SKJS.resolveStubs(fsDt, stubs, "untyped"),
+    SKJS.StubNotFound(),
+    "pre-#613: @types/<pkg> fallback not yet supported",
+  );
+
+  // Scoped package @scope/pkg -> @types/scope__pkg — not yet supported.
+  fsScoped = mkStubMem(
+    Array[
+      ("/stubs/@types/acme__pkg/package.json", `{"types": "./lib/pkg.d.ts"}`),
+      (
+        "/stubs/@types/acme__pkg/lib/pkg.d.ts",
+        "export declare const y: string;",
+      ),
+    ],
+  );
+  SKTest.expectEq(
+    SKJS.resolveStubs(fsScoped, stubs, "@acme/pkg"),
+    SKJS.StubNotFound(),
+    "pre-#613: @types/scope__pkg fallback not yet supported",
+  );
+
+  // Own types take precedence over @types/<pkg> (already true).
+  fsOwn = mkStubMem(
+    Array[
+      ("/stubs/own/package.json", `{"types": "./own.d.ts"}`),
+      ("/stubs/own/own.d.ts", "export declare const s: 'own';"),
+      ("/stubs/@types/own/index.d.ts", "export declare const s: 'dt';"),
+    ],
+  );
+  SKTest.expectEq(
+    SKJS.resolveStubs(fsOwn, stubs, "own"),
+    SKJS.StubFound(SKJS.FPath::create(SKJS.RootId::stub(0), "own/own.d.ts")),
+    "own types take precedence over @types",
+  );
+}
+
 module end;
