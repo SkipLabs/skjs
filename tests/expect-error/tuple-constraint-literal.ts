@@ -187,9 +187,13 @@ function openConstraintVariable(): void {
   const bad = viaVar("a", [1]);
 }
 
-// A constraint whose positions are unions of literals keeps the argument's
-// own element types when they satisfy it: tsc infers K = [2, 3] here, not
-// the constraint's [0 | 2, 1 | 3] (#934).
+// A constraint whose positions are unions of literals: tsc infers K = [2, 3]
+// (the argument's own element types), not the constraint's [0 | 2, 1 | 3]
+// (#934). FIXME: SKJS pins K to the constraint's projection. Binding K to
+// the narrower [2, 3] is rejected because SKJS checks mutable array-method
+// parameters strictly, so [2, 3] is not a subtype of [0 | 2, 1 | 3] here
+// ("would not be an error if this field were readonly"); the binding must
+// satisfy the constraint, so K stays wide and the assignment below fails.
 declare function unionLit<K extends [0 | 2, 1 | 3]>(x: K): K;
 function unionLiteralConstraintKeepsArgument(): void {
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
