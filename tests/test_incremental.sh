@@ -631,6 +631,111 @@ out=$(run_check --data)
 expect_markers "overloadGroupAnchorEditRecomputesOnlyGroupAndUsers" "\"user\"" "$out"
 
 ########################################################################
+# 22. Interface call and construct signatures
+########################################################################
+
+reset_cache
+cat > "$FILE" <<'EOF'
+interface BaseCall {
+  (x: string): number;
+}
+interface SubCall extends BaseCall {
+  (x: number): string;
+  new (x: string): { ok: boolean };
+}
+function callUser(f: SubCall): void {
+  __SKJS_show("callUser");
+  let _a: number = f("hi");
+  let _b: string = f(1);
+  let _c: { ok: boolean } = new f("hi");
+}
+function independent(): void {
+  __SKJS_show("independent");
+}
+EOF
+
+out=$(run_check --init)
+expect_markers "ifaceCallConstructInit" "\"callUser\"
+\"independent\"" "$out"
+
+out=$(run_check --data)
+expect_markers "ifaceCallConstructNoChange" "" "$out"
+
+# Line shift before interfaces: neither callUser nor independent recomputes.
+cat > "$FILE" <<'EOF'
+// comment shift
+interface BaseCall {
+  (x: string): number;
+}
+interface SubCall extends BaseCall {
+  (x: number): string;
+  new (x: string): { ok: boolean };
+}
+function callUser(f: SubCall): void {
+  __SKJS_show("callUser");
+  let _a: number = f("hi");
+  let _b: string = f(1);
+  let _c: { ok: boolean } = new f("hi");
+}
+function independent(): void {
+  __SKJS_show("independent");
+}
+EOF
+
+out=$(run_check --data)
+expect_markers "ifaceCallConstructLineShiftDoesNotRecompute" "" "$out"
+
+# Length-changing edit to SubCall's construct signature: only callUser
+# recomputes; independent stays cached.
+cat > "$FILE" <<'EOF'
+// comment shift
+interface BaseCall {
+  (x: string): number;
+}
+interface SubCall extends BaseCall {
+  (x: number): string;
+  new (x: string | boolean): { ok: boolean };
+}
+function callUser(f: SubCall): void {
+  __SKJS_show("callUser");
+  let _a: number = f("hi");
+  let _b: string = f(1);
+  let _c: { ok: boolean } = new f("hi");
+}
+function independent(): void {
+  __SKJS_show("independent");
+}
+EOF
+
+out=$(run_check --data)
+expect_markers "ifaceConstructSigEditRecomputesOnlyUsers" "\"callUser\"" "$out"
+
+# Edit BaseCall's inherited call signature: propagates through extends to
+# callUser, while independent stays cached.
+cat > "$FILE" <<'EOF'
+// comment shift
+interface BaseCall {
+  (x: string | boolean): number;
+}
+interface SubCall extends BaseCall {
+  (x: number): string;
+  new (x: string | boolean): { ok: boolean };
+}
+function callUser(f: SubCall): void {
+  __SKJS_show("callUser");
+  let _a: number = f("hi");
+  let _b: string = f(1);
+  let _c: { ok: boolean } = new f("hi");
+}
+function independent(): void {
+  __SKJS_show("independent");
+}
+EOF
+
+out=$(run_check --data)
+expect_markers "ifaceBaseCallSigEditPropagatesThroughExtends" "\"callUser\"" "$out"
+
+########################################################################
 # Summary
 ########################################################################
 total=$((successes + failures))
