@@ -34,19 +34,6 @@ export function testExtendsBaseOrder(): void {
   const b: string = subAB("hi");
 }
 
-// 3. Interface method named after a modifier keyword (e.g. `public(x: string): number`)
-// must parse as a method named `public`, NOT as a call signature with modifier `public`.
-interface ModMethodName {
-  public(x: string): number;
-}
-declare const mmn: ModMethodName;
-export function testModMethodName(): void {
-  // Currently parses `public` as a modifier and `(...)` as a call signature.
-  const wrongCall: number = mmn("hi");
-  // @skjs-expect-error Property 'public' does not exist on this type
-  const okMethod: number = mmn.public("hi");
-}
-
 // 4. Optional `new?(): object` in an interface or object type literal is an
 // optional method named `new`, NOT a construct signature (tsc TS2351 on `new x()`).
 interface OptNewIface {

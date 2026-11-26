@@ -242,12 +242,14 @@ extension class Parser {
       | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
       | Some(x) -> x.posStart
       };
-      // A call signature in an interface body starts with `(` or `<` (generic
-      // call signature); it has no name (FNEmpty), like in object type
-      // literals. Classes reject it (tsc does too), so this is gated on the
-      // interface kind.
+      // A call signature in an interface body starts directly with `(` or `<`
+      // (generic call signature) with no leading modifiers or get/set; it has
+      // no name (FNEmpty), like in object type literals. Classes reject it
+      // (tsc does too), so this is gated on the interface kind.
       field = if (
         kind is CKInterface() &&
+        modifiers.modifiers.isEmpty() &&
+        fieldGetSet.isNone() &&
         (this.lex.peekKind() is Some(TKOpenParen()) ||
           this.lex.peekKind() is Some(TKLessThan()))
       ) {
