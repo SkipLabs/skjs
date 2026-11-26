@@ -5,6 +5,7 @@ dist/
 !.vscode/extensions.json
 .devcontainer
 node_modules/
+!tests/projects/**/node_modules/
 .generated-examples-check/
 .project-survey/
 docs/*.bbl

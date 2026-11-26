@@ -400,27 +400,151 @@ fun resolvePathAlias(
   None()
 }
 
+base class StubResolveResult uses Equality, Show {
+  children =
+  | StubFound(path: FPath)
+  | StubNotFound()
+  | StubError(message: String)
+
+  fun toString(): String {
+    this match {
+    | StubFound(p) -> `StubFound(${p})`
+    | StubNotFound() -> "StubNotFound()"
+    | StubError(msg) -> `StubError(${msg})`
+    }
+  }
+}
+
+// Check if `relTarget` (relative to `pkgRel` inside `rootDir`) resolves to a
+// file (not a directory) that stays within `rootDir`, trying exact path first
+// and then TS/index extensions (matching TypeScript's package.json `types`
+// target resolution).
+private fun tryPackageTarget(
+  fs: Fs,
+  rootId: RootId,
+  rootDir: DAbsolute,
+  pkgRel: DRelative,
+  relTarget: String,
+): ?FPath {
+  rootStr = rootDir.toString();
+  pkgDir = rootDir / pkgRel;
+  for (ext in Array[
+    "",
+    ".d.ts",
+    ".ts",
+    ".tsx",
+    "/index.d.ts",
+    "/index.ts",
+    "/index.tsx",
+  ]) {
+    candidate = relTarget + ext;
+    if (candidate == "" || candidate.endsWith("/")) continue;
+    absPath = Path.resolve(Path.join(pkgDir.toString(), candidate));
+    // Reject paths escaping the stub root (e.g. "../../outside.d.ts").
+    if (!absPath.startsWith(rootStr)) continue;
+    if (fs.exists(absPath) && !fs.isDirectory(absPath)) {
+      relToRoot = Path.relativeTo{path => absPath, base => rootStr};
+      return Some(FPath::create(rootId, relToRoot))
+    }
+  };
+  None()
+}
+
+// Resolve a bare package `moduleName` inside a single stub/node_modules root.
+// Order:
+//   1. <pkg>/package.json `types` (or `typings`) field, resolved relative to <pkg>/
+//   2. <pkg>/index.d.ts
+//   3. <pkg>/index.ts / <pkg>/index.tsx
+fun resolvePackageInDir(
+  fs: Fs,
+  rootId: RootId,
+  rootDir: DAbsolute,
+  moduleName: String,
+): StubResolveResult {
+  pkgRel = DRelative::create(moduleName);
+  pkgDir = rootDir / pkgRel;
+  pkgJsonPath = FAbsolute(pkgDir, "package.json").toString();
+
+  if (fs.exists(pkgJsonPath) && !fs.isDirectory(pkgJsonPath)) {
+    raw = fs.readTextFile(pkgJsonPath);
+    pkgObjRes: Result<JSON.Object, String> = try {
+      Success(JSON.decode(raw).expectObject())
+    } catch {
+    | e @ JSON.JSONError _ ->
+      Failure(
+        `Invalid package.json for module '${moduleName}': ${e.getMessage()}`,
+      )
+    | e @ JSON.InvalidJSONError _ ->
+      Failure(
+        `Invalid package.json for module '${moduleName}': ${e.getMessage()}`,
+      )
+    | e -> throw e
+    };
+    pkgObj = pkgObjRes match {
+    | Success(obj) -> obj
+    | Failure(msg) -> return StubError(msg)
+    };
+    typesField = pkgObj.maybeGet("types") match {
+    | Some(JSON.String(s)) -> Some(s)
+    | _ ->
+      pkgObj.maybeGet("typings") match {
+      | Some(JSON.String(s)) -> Some(s)
+      | _ -> None()
+      }
+    };
+    typesField match {
+    | Some(target) if (target != "") ->
+      tryPackageTarget(fs, rootId, rootDir, pkgRel, target) match {
+      | Some(fpath) -> return StubFound(fpath)
+      | None() -> void
+      }
+    | _ -> void
+    }
+  };
+
+  for (entry in Array["index.d.ts", "index.ts", "index.tsx"]) {
+    path = FAbsolute(pkgDir, entry);
+    pathStr = path.toString();
+    if (fs.exists(pathStr) && !fs.isDirectory(pathStr)) {
+      return StubFound(FPath::create(rootId, `${moduleName}/${entry}`))
+    }
+  };
+  StubNotFound()
+}
+
 fun resolveStubs(
   fs: Fs,
   importStubs: Array<DAbsolute>,
   moduleName: String,
-): ?FPath {
+): StubResolveResult {
   res: ?FPath = None();
+  firstErr: ?String = None();
   for (i => importStub in importStubs) {
-    path = FAbsolute(importStub / DRelative::create(moduleName), "index.d.ts");
-    if (fs.exists(path.toString())) {
-      fpath = FPath::create(RootId::stub(i), moduleName + "/index.d.ts");
+    resolvePackageInDir(fs, RootId::stub(i), importStub, moduleName) match {
+    | StubFound(fpath) ->
       res match {
       | Some(existing) ->
         print_error(
-          `Found more than one import stub for module '${moduleName}': ${existing} and ${path}`,
+          `Found more than one import stub for module '${moduleName}': ${existing} and ${fpath}`,
         );
         throw Exit(2)
       | None() -> !res = Some(fpath)
       }
+    | StubError(msg) ->
+      if (firstErr.isNone()) {
+        !firstErr = Some(msg)
+      }
+    | StubNotFound() -> void
     }
   };
-  res
+  res match {
+  | Some(fpath) -> StubFound(fpath)
+  | None() ->
+    firstErr match {
+    | Some(msg) -> StubError(msg)
+    | None() -> StubNotFound()
+    }
+  }
 }
 
 module end;
