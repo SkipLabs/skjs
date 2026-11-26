@@ -5,16 +5,17 @@
 ///////////////////////////////////////////////////////////////////////////////
 
 // ---------------------------------------------------------------------------
-// 1. Construct signatures with explicit `this` parameter (should be TS2681)
+// 1. Construct signatures with explicit `this` parameter (TS2681)
 // ---------------------------------------------------------------------------
 
-// Currently accepted at declaration time; errors only at `new` with a `this`
-// context mismatch instead of TS2681 at the `this` parameter.
+// @ts-expect-error A constructor cannot have a 'this' parameter
 type NewFnWithThis = new (this: { a: number }, x: string) => { a: number };
 type NewObjWithThis = {
+  // @ts-expect-error A constructor cannot have a 'this' parameter
   new (this: { a: number }, x: string): { a: number };
 };
 interface NewIfaceWithThis {
+  // @ts-expect-error A constructor cannot have a 'this' parameter
   new (this: { a: number }, x: string): { a: number };
 }
 
@@ -23,11 +24,9 @@ function useNewWithThis(
   c2: NewObjWithThis,
   c3: NewIfaceWithThis,
 ): void {
-  // @skjs-expect-error The 'this' context is not assignable to method's 'this' type
+  // No cascading `this` mismatch at construction sites once `this` is dropped.
   const r1: { a: number } = new c1("hi");
-  // @skjs-expect-error The 'this' context is not assignable to method's 'this' type
   const r2: { a: number } = new c2("hi");
-  // @skjs-expect-error The 'this' context is not assignable to method's 'this' type
   const r3: { a: number } = new c3("hi");
 }
 

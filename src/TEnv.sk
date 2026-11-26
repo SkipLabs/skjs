@@ -1962,17 +1962,25 @@ base class TEnv{
           fd.optional is None()
         ) {
           fd.name match {
-          | FNEmpty(_) -> Some(ownCallSigs)
-          | FNNormal(Name(_, "new")) -> Some(ownNewSigs)
+          | FNEmpty(_) -> Some((ownCallSigs, false))
+          | FNNormal(Name(_, "new")) -> Some((ownNewSigs, true))
           | _ -> None()
           }
         } else {
           None()
         };
         sigTarget match {
-        | Some(target) ->
+        | Some((target, isConstructSig)) ->
           sigCgNode = CGNode::create(Method(fd.name, className, false));
-          sigFuns = this.funDecl(tcenvb, None(), fd, sigCgNode);
+          sigFuns = this.funDecl(
+            tcenvb,
+            None(),
+            fd,
+            sigCgNode,
+            false,
+            !isConstructSig,
+            isConstructSig,
+          );
           for (tf in sigFuns.allFuns()) target.push(tf);
           continue
         | None() -> void
@@ -2459,6 +2467,7 @@ base class TEnv{
     cgNode: CGNode,
     isShapeMethod: Bool = false,
     allowPredicates: Bool = true,
+    forbidThisParam: Bool = false,
   ): TFuns {
     sig = this.getFunSig(tcenvb.context, fd);
     retType = sig.retType match {
@@ -2491,6 +2500,7 @@ base class TEnv{
       implicitThisOpt,
       None(),
       allowPredicates,
+      forbidThisParam,
     )
   }
 
@@ -2590,7 +2600,17 @@ base class TEnv{
     | TANew(Type(tyPos, tafun @ TAFun _)) ->
       // The inner function type comes only from ParserType.typeFun, which
       // always sets isMethod=false, so it can be normalized as-is.
-      tfuns = this.normalizeFun(tcenvb, tyPos, tafun);
+      tfuns = this.normalizeFun(
+        tcenvb,
+        tyPos,
+        tafun,
+        false,
+        false,
+        None(),
+        None(),
+        false,
+        true,
+      );
       TType::single(TObject::createNew(tfuns, pos))
     | TANew _ ->
       fatalError(
@@ -3731,6 +3751,7 @@ base class TEnv{
     implicitThisOpt: ?TType = None(),
     parameterScope: ?(TEnv, Array<TypeParam>) = None(),
     allowAssertPred: Bool = false,
+    forbidThisParam: Bool = false,
   ): TFuns {
     tafun match {
     | TAFun(isMethod, tParams, params, retType, cgNode) ->
@@ -3758,6 +3779,13 @@ base class TEnv{
         paramType = paramsEnv.normalize(tcenvb, paramTypeAst);
         param.name.value match {
         | PVar(Name(thisPos, "this")) ->
+          if (forbidThisParam) {
+            tcenvb.error(
+              Array[(thisPos, "A constructor cannot have a 'this' parameter")],
+              TSCode(2681),
+            );
+            continue
+          };
           if (i > 0) {
             tcenvb.error(
               Array[
@@ -4239,12 +4267,14 @@ base class TEnv{
         // object's call/new signatures are not (the object itself is invoked).
         // An optional `new?(): T` is an optional method named "new", not a
         // construct signature (matching tsc).
+        isConstructSig =
+          fd.name is FNNormal(Name(_, "new")) &&
+          fd.optional is None();
         isShapeMethod = fd.name match {
         | FNNormal(Name(_, "new")) if (fd.optional is None()) -> false
         | FNEmpty(_) -> false
         | SimpleFieldName _ -> true
         };
-        isConstructSig = fd.name is FNNormal(Name(_, "new"));
         tFuns = this.funDecl(
           tcenvb,
           None(),
@@ -4252,6 +4282,7 @@ base class TEnv{
           cgNode,
           isShapeMethod,
           !isConstructSig,
+          isConstructSig,
         );
         fd.name match {
         | FNNormal(Name(_, "new")) if (fd.optional is None()) ->
