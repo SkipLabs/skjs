@@ -4194,11 +4194,17 @@ base class TEnv{
         );
         inner
       } else {
-        closed = obj.map(b ->
-          b.withNeverIndexes(
-            TField::createNeverIndex("k", closedPos),
-            TField::createNeverIndex("s", closedPos),
-          )
+        // Stamp unexpandedType with `Closed<inner>` so display paths render
+        // `Closed<...>` instead of the raw never-index encoding (#803). Every
+        // consumer of TObject.unexpandedType is display-only (plus TVarScan,
+        // which scans its type arguments without re-instantiating it).
+        closed = obj.mapWithUnexpanded(
+          b ->
+            b.withNeverIndexes(
+              TField::createNeverIndex("k", closedPos),
+              TField::createNeverIndex("s", closedPos),
+            ),
+          Some(TSInst(Name(closedPos, "Closed"), TArgs(Array[inner]))),
         );
         TType::single(closed)
       }

@@ -548,6 +548,32 @@ mutable class TypePp{
     ) {
       return this.out(level, margin, "Function")
     };
+    // Closed object branch: never string & symbol indexes (and no declared
+    // number index) represent `Closed<{ ... }>` (from `Closed<T>` or
+    // `as const`). Render the shorthand in field-level diagnostics (e.g.
+    // STErrorOnTFields) instead of leaking the raw never-index encoding;
+    // keep the raw form under --verbose for debugging.
+    if (!this.verbose && fields.isClosedObject()) {
+      this.out(level, margin, "Closed<{");
+      this.branch(
+        level,
+        margin,
+        (pp, level, margin) ~> {
+          if (pp.renderObjectMembers(level, margin, fields, false, true)) {
+            pp.out(level, margin, " }>")
+          } else {
+            pp.out(level, margin, "}>")
+          }
+        },
+        (pp, level, prevMargin, margin) -> {
+          _ = pp.renderObjectMembers(level, margin, fields, true, true);
+          pp.newLine();
+          pp.out(level, prevMargin, "}>");
+          pp.newLine();
+        },
+      );
+      return void
+    };
     (if (this.verbose) None() else TypePp::bareSignature(fields)) match {
     | Some((isNew, tfun)) ->
       if (isNew) this.out(level, margin, "new ");
@@ -586,6 +612,7 @@ mutable class TypePp{
     margin: Margin,
     fields: TFields,
     multiLine: Bool,
+    hideNeverIndexes: Bool = false,
   ): Bool {
     savedEmitted = this.emittedMember;
     this.!emittedMember = false;
@@ -594,14 +621,21 @@ mutable class TypePp{
     // Hide synthetic indexes (kSyntheticIndexName): they exist to make
     // object literals satisfy indexed-type constraints during subtyping
     // and must not appear in user-visible printed types. Kept under
-    // --verbose for debugging.
-    hideSynthetic: ((?TField) -> ?TField) = idx ->
+    // --verbose for debugging. When wrapping a closed branch in `Closed<...>`,
+    // the never string/symbol indexes are already represented by the wrapper.
+    hideIndex: ((?TField) -> ?TField) = idx ->
       if (this.verbose) idx else {
-        idx.flatMap(f -> if (f.isSynthetic()) None() else Some(f))
+        idx.flatMap(f ->
+          if (f.isSynthetic() || (hideNeverIndexes && f.get.isBottom())) {
+            None()
+          } else {
+            Some(f)
+          }
+        )
       };
-    stringIdx = hideSynthetic(fields.stringIndex);
-    numberIdx = hideSynthetic(fields.numberIndex);
-    symbolIdx = hideSynthetic(fields.symbolIndex);
+    stringIdx = hideIndex(fields.stringIndex);
+    numberIdx = hideIndex(fields.numberIndex);
+    symbolIdx = hideIndex(fields.symbolIndex);
     for (field in fieldArray) {
       this.beginMember(level, margin, multiLine);
       fieldName = field.name.value;
