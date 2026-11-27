@@ -543,6 +543,7 @@ base class STErrorOnTFun(f1: TFun, f2: TFun) extends STError<TFun> {
   | STRecFunOptionalSpread(STErrorOnTType, Int)
   | STRecFunSpread(?STErrorOnTType)
   | STRecFunReturn(STErrorOnTType)
+  | STRecFunAssertPred(?STErrorOnTType)
 
   fun toError(
     subst: mutable Subst,
@@ -638,6 +639,18 @@ base class STErrorOnTFun(f1: TFun, f2: TFun) extends STError<TFun> {
     | STRecFunReturn(err, _f1, _f2) ->
       (
         Some((pos1, "Their return types are not compatible")),
+        err.toError(subst, tenv, detail.decreaseIntermediate()),
+        None(),
+      )
+    | STRecFunAssertPred(None(), _f1, _f2) ->
+      (
+        None(),
+        List[(pos1, "Their assertion predicates are not compatible")],
+        None(),
+      )
+    | STRecFunAssertPred(Some(err), _f1, _f2) ->
+      (
+        Some((pos1, "Their assertion predicates are not compatible")),
         err.toError(subst, tenv, detail.decreaseIntermediate()),
         None(),
       )
@@ -2514,8 +2527,36 @@ extension class TFun {
       }
     };
     typeSub(f1.retType, f2.retType) match {
-    | STOk() -> STOk()
-    | err @ STErrorOnTType _ -> STRecFunReturn(err, f1, f2)
+    | STOk() -> void
+    | err @ STErrorOnTType _ -> return STRecFunReturn(err, f1, f2)
+    };
+    // Assertion predicate compatibility:
+    // - An assertion function is assignable to a plain void function (drop the
+    //   assertion predicate: callers expecting `void` simply do not narrow).
+    // - A plain void function is NOT assignable to an assertion function.
+    // - Two assertion functions must assert on the same subject (`this` or the
+    //   same positional parameter index) and have compatible kinds:
+    //   `AKTruthy` matches `AKTruthy`, and `AKIs(t1)` matches `AKIs(t2)`
+    //   covariantly (`t1 <: t2`, since an assertion never returns on failure,
+    //   so there is no false-branch subtraction).
+    (f1.assertPred, f2.assertPred) match {
+    | (_, None()) -> STOk()
+    | (None(), Some _) -> STRecFunAssertPred(None(), f1, f2)
+    | (Some(ap1), Some(ap2)) ->
+      if (ap1.subject != ap2.subject) {
+        return STRecFunAssertPred(None(), f1, f2)
+      };
+      (ap1.kind, ap2.kind) match {
+      | (AKTruthy(), AKTruthy()) -> STOk()
+      | (AKIs(t1), AKIs(t2)) ->
+        typeSub(t1, t2) match {
+        | STOk() -> STOk()
+        | err @ STErrorOnTType _ -> STRecFunAssertPred(Some(err), f1, f2)
+        }
+      | (AKTruthy(), AKIs _)
+      | (AKIs _, AKTruthy()) ->
+        STRecFunAssertPred(None(), f1, f2)
+      }
     }
   }
 }

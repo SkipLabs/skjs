@@ -20,6 +20,7 @@ extension class TypeChecker {
       if (!static::isPossiblyNonVoidExpressionAllowedAsStatement(e)) {
         this.checkIsIgnorable(tcenv, e.pos, ty)
       };
+      this.evalAssertCallStmt(tcenv, e);
       StmtTermination::expr(e)
     | Return(pos, eOpt) ->
       retType = this.retType match {

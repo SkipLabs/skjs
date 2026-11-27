@@ -773,6 +773,125 @@ extension class TypeChecker {
     }
   }
 
+  // Applies the narrowing effect of an assertion-function call statement
+  // (`assertX(arg)` or `obj.assertMethod(...)`) after the expression statement
+  // has been type-checked. Only top-level direct calls narrow (never optional
+  // chaining or value-consumed calls).
+  //
+  // Soundness:
+  // - For `AKIs(target)`, the asserted subject must be a local variable that
+  //   cannot be reassigned by a call (`!mayBeReassignedByCall(local)`), and
+  //   not written by any sibling argument expression in the call: if `local`
+  //   were a captured mutable `let`, the callee could mutate the outer binding
+  //   via closure before returning normally, invalidating the asserted value.
+  // - For `AKTruthy()`, `evalCond(tcenv, subjectExpr, true)` handles both a
+  //   bare local (`assertTruthy(x)`) and a condition expression
+  //   (`assertCond(typeof x === "string")`), reusing `evalStableCond`'s
+  //   effect-epoch and write-stability checks (note: the call itself already
+  //   advanced `tcenv.effectEpoch`, so captured mutable locals read before the
+  //   call have `exprEffectEpoch < tcenv.effectEpoch` and are automatically
+  //   rejected as stale!). For `asserts this` (`AKTruthy` on `ASThis`), the
+  //   receiver expression is passed to `evalCond` only when non-captured and
+  //   unwritten in the call.
+  fun evalAssertCallStmt(tcenv: mutable TCEnv, e: Expr): void {
+    e.value match {
+    | Call(callee, _, args) ->
+      // Optional chaining (`x?.assertReady()`) can skip the call when the
+      // receiver is nullish, so it never proves the assertion holds.
+      if (callee.value is Dot(OptionalDot(), _, _)) {
+        return void
+      };
+      tcenv.callAssertPredicates.maybeGet(e.pos) match {
+      | Some(Some(pred)) ->
+        subjectOpt = pred.subject match {
+        | ASParam(idx) ->
+          if (
+            idx >= 0 &&
+            idx < args.size() &&
+            !Range(0, idx + 1).any(i -> args[i].value is Spread _)
+          ) {
+            Some(args[idx])
+          } else {
+            None()
+          }
+        | ASThis() ->
+          callee.value match {
+          | Dot(NormalDot(), recv, _) -> Some(recv)
+          | _ -> None()
+          }
+        };
+        subjectOpt match {
+        | None() -> void
+        | Some(subjectExpr) ->
+          writes = mutable CaptureWrites{};
+          writes.expr(e);
+          writtenOpt = writes.result();
+          pred.kind match {
+          | AKTruthy() ->
+            // For `ASParam` with a general condition expression (e.g.
+            // `assertCond(typeof x === "string")`), delegate to
+            // `evalStableCond` with the full call's `writes`, so any write
+            // inside sibling arguments suppresses narrowing on written locals.
+            // For `ASThis`, `CaptureWrites(trackReads=true)` skips Call
+            // callees, so guard a bare local receiver explicitly against
+            // `mayBeReassignedByCall` as well.
+            allowEval = pred.subject match {
+            | ASParam _ -> true
+            | ASThis() ->
+              subjectExpr.value match {
+              | Var(local) -> !tcenv.scope.mayBeReassignedByCall(local)
+              | _ -> false
+              }
+            };
+            if (allowEval) {
+              this.evalStableCond(tcenv, writtenOpt, subjectExpr, true)
+            }
+          | AKIs(target) ->
+            subjectExpr.value match {
+            | Var(local) ->
+              isSafe =
+                !tcenv.scope.mayBeReassignedByCall(local) &&
+                (writtenOpt match {
+                | Some(written) -> !written.contains(local.value)
+                | None() -> false
+                });
+              if (isSafe) {
+                this.evalAssertIs(tcenv, local, target)
+              }
+            | _ -> void
+            }
+          }
+        }
+      | _ -> void
+      }
+    | _ -> void
+    }
+  }
+
+  // Narrows `local` by intersecting its current type with `predTarget` after a
+  // validated `asserts local is T` / `asserts this is T` call returns normally.
+  private fun evalAssertIs(
+    tcenv: mutable TCEnv,
+    local: Name,
+    predTarget: TType,
+  ): void {
+    tcenv.scope.maybeGet(local) match {
+    | None() -> void
+    | Some(localType) ->
+      expandedLocal = localType.expand(tcenv.subst, this, Some(Covariant()));
+      expandedTarget = predTarget.expand(tcenv.subst, this, Some(Covariant()));
+      narrowed = this.materializeReadContext<TType>(
+        tcenv,
+        local.pos,
+        context -> context.intersection(expandedLocal, expandedTarget, true),
+        (scratch, readEnv) ->
+          TType::inter(scratch, readEnv, expandedLocal, expandedTarget)
+        ,
+      );
+      tcenv.scope.set(local, narrowed, (_, _) -> void)
+    }
+  }
+
   // Narrows `local` based on its truthiness (`if (local)`). Each member is kept
   // as its truthy part (then-branch) or falsy part (else-branch): `boolean`
   // narrows to true/false, `T | undefined` to `T` / `undefined`, etc. Type

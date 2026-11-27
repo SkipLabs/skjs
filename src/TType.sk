@@ -1708,6 +1708,38 @@ base class ThisParam uses XXHashable, Orderable {
     Some(ty)
 }
 
+// Subject of an assertion signature (`asserts x`, `asserts x is T`,
+// `asserts this`, `asserts this is T`). `ASParam(index)` is the zero-based
+// positional index into the non-`this` parameter list (`params` followed by
+// `optionalParams`).
+base class AssertSubject uses XXHashable, Orderable {
+  children =
+  | ASThis()
+  | ASParam(index: Int)
+}
+
+// Kind of assertion performed by an assertion signature:
+// - `AKTruthy()`: `asserts x` — asserts that the subject is truthy (or, when
+//   called with a condition expression, that the condition holds).
+// - `AKIs(target)`: `asserts x is T` — asserts that the subject has type `T`.
+base class AssertKind uses XXHashable, Orderable {
+  children =
+  | AKTruthy()
+  | AKIs(target: TType)
+}
+
+class AssertPred(
+  subject: AssertSubject,
+  kind: AssertKind,
+) uses XXHashable, Orderable {
+  fun mapTarget(f: TType -> TType): AssertPred {
+    this.kind match {
+    | AKTruthy() -> this
+    | AKIs(target) -> AssertPred(this.subject, AKIs(f(target)))
+    }
+  }
+}
+
 class TFun(
   tparams: Array<TParamWithConstraint>,
   thisParam: ThisParam,
@@ -1716,6 +1748,7 @@ class TFun(
   spreadParam: ?TType, /* A function can always accept more ignored parameters, so None() is like Some(Array<Top>) */
   retType: TType,
   cgNodes: CGNodes,
+  assertPred: ?AssertPred = None(),
 ) uses XXHashable, Orderable {
   fun toString(subst: mutable Subst, tenv: TEnv): String {
     prettyPrintTFun(subst, tenv, this)
@@ -4265,7 +4298,13 @@ mutable class TVarScan{seen: mutable Set<Int> = mutable Set[]} {
       fun_.params.any(t -> this.scanType(t)) ||
       fun_.optionalParams.any(t -> this.scanType(t)) ||
       fun_.spreadParam.map(t -> this.scanType(t)).default(false) ||
-      this.scanType(fun_.retType)
+      this.scanType(fun_.retType) ||
+      (fun_.assertPred match {
+      | Some(AssertPred(_, AKIs(target))) -> this.scanType(target)
+      | Some(AssertPred(_, AKTruthy()))
+      | None() ->
+        false
+      })
   }
 }
 

@@ -390,7 +390,7 @@ mutable class TypePp{
         } else {
           pp.out(level, margin, ") => ");
         };
-        pp.type(level, margin, tfun.retType);
+        pp.tfunReturn(level, margin, tfun);
       },
       (pp, level, prevMargin, margin) ~> {
         if (tfun.tparams.size() != 0) {
@@ -442,9 +442,27 @@ mutable class TypePp{
         } else {
           pp.out(level, prevMargin, ") => ");
         };
-        pp.type(level, margin, tfun.retType);
+        pp.tfunReturn(level, margin, tfun);
       },
     )
+  }
+
+  private mutable fun tfunReturn(level: Int, margin: Margin, tfun: TFun): void {
+    tfun.assertPred match {
+    | None() -> this.type(level, margin, tfun.retType)
+    | Some(AssertPred(subject, kind)) ->
+      subjectStr = subject match {
+      | ASThis() -> "this"
+      | ASParam(i) -> `_${i}`
+      };
+      this.out(level, margin, `asserts ${subjectStr}`);
+      kind match {
+      | AKTruthy() -> void
+      | AKIs(target) ->
+        this.out(level, margin, " is ");
+        this.type(level, margin, target)
+      }
+    }
   }
 
   mutable fun tuple(level: Int, margin: Margin, values: Array<TType>): void {

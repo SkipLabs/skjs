@@ -1396,26 +1396,67 @@ base class TEnv{
     this
   }
 
-  // Normalizes a function/method's return type annotation. The top-level `x
-  // is T` type-predicate form is accepted here (unlike in the general
-  // recursive `normalize`, whose own TAIs handling always rejects, covering
-  // any nested position). Whether this is legal on the enclosing
-  // declaration (only on a bodyless signature — see callers of
-  // rejectTypePredicateOnBodiedSignature) is deliberately NOT checked here:
-  // this return-type normalization must stay independent of whether the
-  // declaration has a body, since it feeds a signature that's cached
-  // separately from — and read by callers regardless of — the body, and
-  // depending on body content here would incorrectly propagate body-only
-  // edits to those callers under incremental checking. `params` is consulted
-  // only inside the TAIs branch, so the common (non-predicate) return type
-  // costs nothing.
+  // Resolve the subject of an assertion signature (`asserts x` / `asserts x is
+  // T` / `asserts this` / `asserts this is T`) against the enclosing function's
+  // parameter list. Positional indices skip any leading explicit `this`
+  // parameter; rest parameters cannot be assertion subjects (TS1229).
+  private static fun resolveAssertSubject(
+    name: Name,
+    params: Array<ParamBase>,
+  ): AssertSubject {
+    if (name.value == "this") {
+      return ASThis()
+    };
+    idx = 0;
+    for (i => p in params) {
+      if (i == 0 && p.name.value is PVar(Name(_, "this"))) {
+        continue
+      };
+      if (p.isRest is Some _) {
+        p.name.value match {
+        | PVar(n) if (n.value == name.value) ->
+          fatalError(
+            Array[
+              (name.pos, "A type predicate cannot reference a rest parameter"),
+            ],
+            TSCode(1229),
+          )
+        | _ -> continue
+        }
+      };
+      p.name.value match {
+      | PVar(n) if (n.value == name.value) -> return ASParam(idx)
+      | _ -> void
+      };
+      !idx = idx + 1
+    };
+    fatalError(
+      Array[(name.pos, `Cannot find parameter '${name.value}'`)],
+      TSCode(1225),
+    )
+  }
+
+  // Normalizes a function/method's return type annotation. Top-level `x is T`
+  // type predicates (when `allowTypePredicate` is true) and `asserts x` /
+  // `asserts x is T` assertion signatures (when `allowAssertPred` is true) are
+  // accepted here (unlike in the general recursive `normalize`, which rejects
+  // them in nested positions). Whether this is legal on a bodied declaration
+  // (see callers of rejectTypePredicateOnBodiedSignature) is deliberately NOT
+  // checked here: this return-type normalization must stay independent of
+  // whether the declaration has a body, since it feeds a signature that's
+  // cached separately from — and read by callers regardless of — the body, and
+  // depending on body content here would incorrectly propagate body-only edits
+  // to those callers under incremental checking. `params` is consulted only
+  // inside the predicate branches, so the common return type costs nothing.
   fun normalizeReturnType(
     tcenvb: mutable TCEnvBase,
     rty: Type,
     params: Array<ParamBase>,
-  ): TType {
+    allowTypePredicate: Bool = true,
+    allowAssertPred: Bool = true,
+  ): (TType, ?AssertPred) {
     rty.value match {
-    | TAIs(lhs, rhs) ->
+    | TAIs(lhs, rhs) if (allowTypePredicate) ->
       // The subject must name an actual parameter of the enclosing
       // function, or be `this` — nothing else (unlike a full `normalize`
       // call, which would also accept any other valid type expression,
@@ -1444,18 +1485,31 @@ base class TEnv{
         )
       };
       _ = this.normalize(tcenvb, rhs);
-      TType::single(TPrimValue::boolean(rty.pos))
-    | _ -> this.normalize(tcenvb, rty)
+      (TType::single(TPrimValue::boolean(rty.pos)), None())
+    | TAAsserts(name) if (allowAssertPred) ->
+      subject = static::resolveAssertSubject(name, params);
+      (
+        TType::single(TPrimUnit(TVoid(), rty.pos)),
+        Some(AssertPred(subject, AKTruthy())),
+      )
+    | TAAssertIs(name, rhs) if (allowAssertPred) ->
+      subject = static::resolveAssertSubject(name, params);
+      target = this.normalize(tcenvb, rhs);
+      (
+        TType::single(TPrimUnit(TVoid(), rty.pos)),
+        Some(AssertPred(subject, AKIs(target))),
+      )
+    | _ -> (this.normalize(tcenvb, rty), None())
     }
   }
 
-  // A type predicate return type is only accepted on a bodyless
-  // (ambient/interface) signature, since SKJS never checks it against a
-  // real implementation. Called from funDef/method-checking, right where
-  // the body is already legitimately read (to check its statements) —
-  // deliberately NOT from normalizeReturnType/funDefSetup, which must stay
-  // independent of body content for incremental checking (see
-  // normalizeReturnType's doc comment).
+  // Type predicates (`x is T`) and assertion signatures (`asserts x`,
+  // `asserts x is T`) are only accepted on bodyless (ambient/interface)
+  // signatures, since SKJS does not verify the body against the claimed
+  // narrowing. Called from funDef/method-checking, right where the body is
+  // already legitimately read (to check its statements) — deliberately NOT from
+  // normalizeReturnType/funDefSetup, which must stay independent of body
+  // content for incremental checking (see normalizeReturnType's doc comment).
   fun rejectTypePredicateOnBodiedSignature(
     tcenvb: mutable TCEnvBase,
     retTypeAst: ?Type,
@@ -1470,6 +1524,17 @@ base class TEnv{
           ),
         ],
         SKJSCode(9032),
+      )
+    | Some(Type(pos, TAAsserts _))
+    | Some(Type(pos, TAAssertIs _)) ->
+      tcenvb.error(
+        Array[
+          (
+            pos,
+            "An assertion signature ('asserts') is only supported on declared function, method, or function-type signatures",
+          ),
+        ],
+        SKJSCode(9013),
       )
     | _ -> void
     }
@@ -2305,6 +2370,7 @@ base class TEnv{
     fd: FunDef<FunDefName>,
     cgNode: CGNode,
     isShapeMethod: Bool = false,
+    allowPredicates: Bool = true,
   ): TFuns {
     sig = this.getFunSig(tcenvb.context, fd);
     retType = sig.retType match {
@@ -2332,9 +2398,11 @@ base class TEnv{
       tcenvb,
       fd.name.getPos(),
       tafun,
-      true,
+      allowPredicates,
       isShapeMethod,
       implicitThisOpt,
+      None(),
+      allowPredicates,
     )
   }
 
@@ -2356,10 +2424,16 @@ base class TEnv{
     typeAst.value match {
     | TABigIntLiteral(x) ->
       TType::single(TPrimValue::single(TBigInt(), x.val, pos, x.userVal))
-    | TAAssertIs _ ->
+    | TAAssertIs _
+    | TAAsserts _ ->
       fatalError(
-        Array[(pos, "'asserts' type predicates are not yet supported by SKJS")],
-        SKJSCode(9013),
+        Array[
+          (
+            pos,
+            "A type predicate is only allowed in return type position for functions and methods",
+          ),
+        ],
+        TSCode(1228),
       )
     | TAAbstract _ ->
       fatalError(
@@ -2394,11 +2468,6 @@ base class TEnv{
           SKJSCode(2029),
         )
       }
-    | TAAsserts _ ->
-      fatalError(
-        Array[(pos, "'asserts' type predicates are not yet supported by SKJS")],
-        SKJSCode(9013),
-      )
     | TAIs _ ->
       // A type predicate (`x is T`) is only accepted as the top-level
       // return type of a declared (bodyless) function or method signature —
@@ -2419,7 +2488,16 @@ base class TEnv{
       targetType = this.normalize(tcenvb, ty);
       this.keyOfType(tcenvb, targetType, pos)
     | tafun @ TAFun _ ->
-      tfuns = this.normalizeFun(tcenvb, pos, tafun);
+      tfuns = this.normalizeFun(
+        tcenvb,
+        pos,
+        tafun,
+        false,
+        false,
+        None(),
+        None(),
+        true,
+      );
       TType::single(TObject::createCallWithPos(tfuns, pos))
     | TANew(Type(tyPos, tafun @ TAFun _)) ->
       // The inner function type comes only from ParserType.typeFun, which
@@ -3540,12 +3618,11 @@ base class TEnv{
   }
 
   // isDeclaredSignature: true only when tafun is a named function/method
-  // declaration's own signature (from funDecl) — the only case where a
-  // top-level `x is T` return type is accepted (see normalizeReturnType).
-  // False (the default) for every other TAFun position: constructor
-  // synthesis, callable/newable object types, and TAFun appearing as a
-  // nested type annotation (e.g. a type alias or callback parameter type),
-  // where `x is T` is never legal.
+  // declaration's own signature (from funDecl) — where a top-level `x is T`
+  // or `asserts` return type is accepted (see normalizeReturnType).
+  // allowAssertPred: true for callable signatures (declared functions/methods
+  // and function-type annotations), false for construct signatures and
+  // synthesized constructors.
   fun normalizeFun(
     tcenvb: mutable TCEnvBase,
     pos: PosRange,
@@ -3554,6 +3631,7 @@ base class TEnv{
     isShapeMethod: Bool = false,
     implicitThisOpt: ?TType = None(),
     parameterScope: ?(TEnv, Array<TypeParam>) = None(),
+    allowAssertPred: Bool = false,
   ): TFuns {
     tafun match {
     | TAFun(isMethod, tParams, params, retType, cgNode) ->
@@ -3689,18 +3767,26 @@ base class TEnv{
         | None() -> if (isShapeMethod) ImplicitShape() else NoThis()
         }
       };
+      (normRetType, assertPred) = if (isDeclaredSignature || allowAssertPred) {
+        this.normalizeReturnType(
+          tcenvb,
+          retType,
+          params,
+          isDeclaredSignature,
+          isDeclaredSignature || allowAssertPred,
+        )
+      } else {
+        (this.normalize(tcenvb, retType), None())
+      };
       tfun = TFun(
         funTParams,
         thisParamValue,
         normalParams.toArray(),
         optionalParams.toArray(),
         spreadParam,
-        if (isDeclaredSignature) {
-          this.normalizeReturnType(tcenvb, retType, params)
-        } else {
-          this.normalize(tcenvb, retType)
-        },
+        normRetType,
         CGNodes::singleton(cgNode),
+        assertPred,
       );
       if (isMethod) {
         TFuns::singleMethod(tfun, pos)
@@ -4058,7 +4144,15 @@ base class TEnv{
           false
         | SimpleFieldName _ -> true
         };
-        tFuns = this.funDecl(tcenvb, None(), fd, cgNode, isShapeMethod);
+        isConstructSig = fd.name is FNNormal(Name(_, "new"));
+        tFuns = this.funDecl(
+          tcenvb,
+          None(),
+          fd,
+          cgNode,
+          isShapeMethod,
+          !isConstructSig,
+        );
         fd.name match {
         | FNNormal(Name(_, "new")) ->
           // Construct signatures accumulate: `{ new (x: string): A; new (x: number): A }`

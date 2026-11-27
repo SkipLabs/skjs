@@ -115,6 +115,7 @@ mutable base class ApplyType(
       f.spreadParam.map(x -> this.type(env, x)),
       this.type(env, f.retType),
       f.cgNodes,
+      f.assertPred.map(ap -> ap.mapTarget(t -> this.type(env, t))),
     )
   }
 

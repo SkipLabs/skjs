@@ -647,6 +647,21 @@ union/intersection member, or a reference's arguments) denotes nothing.
 - **Narrowing facts follow identity**: an instance of a nominal class is provably not an array and not callable or constructible, so `Array.isArray(c)` and `typeof c === "function"` narrow it to `never`. An ambient class's instance type is structural, so an array or function carrying its members inhabits it, and those facts are unknown (tsc likewise keeps the branch).
 - **Verified by**: `tests/expect-error/class-nominal.ts`, `tests/projects/class-nominal-same-name/`, `tests/projects/class-ambient-claims/`
 
+### 36. Assertion Signatures (`asserts x` and `asserts x is T`)
+
+- **Rule**: Assertion return types (`asserts x`, `asserts x is T`, `asserts this`, `asserts this is T`) are supported on **declared/ambient** functions, interface/class method declarations, object-type call/method signatures, and function type annotations (`(x: unknown) => asserts x is string`). Their runtime return type is `void`.
+- **Bodied implementations are rejected (soundness)**: A function or method with a body cannot declare an `asserts` return type (`SKJS9013`), matching how SKJS rejects bodied `x is T` type predicates — SKJS does not verify that a body throws whenever the claimed condition fails. Construct signatures (`new (...) => asserts ...`) and nested positions (`Promise<asserts x is string>`) are likewise rejected (`TS1228`), as are unknown parameter names (`TS1225`) and rest parameters (`TS1229`).
+- **Statement-level narrowing**: Calling an assertion function as a top-level expression statement (`assertString(x);`, `assertTruthy(x);`, `assertCondition(typeof x === "string");`, `box.assertReady();`) narrows the asserted local variable for the remainder of the enclosing scope after the call returns normally. Calls whose result is used (`const r = assertString(x)`), optional-chained calls (`box?.assertReady()`), and calls where union branches disagree on the assertion predicate do not narrow. Inside `try { assertString(x); ... } catch { ... }`, the narrowing applies only after the call in `try`, never in `catch`.
+- **Soundness guards on narrowing (stricter than TypeScript)**:
+  - A captured mutable `let` (a local reassigned inside a nested closure) is **not** narrowed by an assertion call: the callee could invoke a closure that reassigns the outer binding before returning normally, invalidating the asserted value.
+  - A local written by a sibling argument in the same call (e.g., `assertFirst(x, (x = 1))`) is **not** narrowed.
+  - Calling `.bind(...)` on an `asserts this` method drops the `this` assertion predicate on the bound function.
+- **Subtyping (stricter than TypeScript)**:
+  - An assertion function is assignable to a plain `(...) => void` function (dropping the assertion predicate).
+  - A plain `(...) => void` function is **not** assignable to an assertion function type (tsc unsoundly allows this).
+  - Two assertion functions are compatible when they assert on the same subject (`this` or the same positional parameter index) and have compatible kinds: `asserts x` matches `asserts x`, and `asserts x is T1` matches `asserts x is T2` covariantly when `T1 <: T2` (sound because assertions never return normally on failure, so there is no false-branch subtraction).
+- **Verified by**: `tests/expect-error/assertion-signatures.ts`
+
 ## Coding Guidelines for SKJS
 
 1. **Avoid toplevel variables**: Define everything inside functions or classes

@@ -401,6 +401,14 @@ extension class TFun {
     };
     retType = TType::union(subst, tenv, f1.retType, f2.retType);
     cgNodes = f1.cgNodes.union(f2.cgNodes);
+    // Keep an assertion predicate across a function union only when both
+    // members agree on the exact same subject and identical kind/target;
+    // otherwise drop it so a union call cannot over-narrow using a branch
+    // that did not run.
+    assertPred = (f1.assertPred, f2.assertPred) match {
+    | (Some(ap1), Some(ap2)) if (ap1 == ap2) -> Some(ap1)
+    | _ -> None()
+    };
     TFun(
       clauses.toArray(),
       thisParam,
@@ -409,6 +417,7 @@ extension class TFun {
       spreadParam,
       retType,
       cgNodes,
+      assertPred,
     )
   }
 }
