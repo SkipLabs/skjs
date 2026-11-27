@@ -427,6 +427,14 @@ extension class TFun {
     | (Some(ap1), Some(ap2)) if (ap1 == ap2) -> Some(ap1)
     | _ -> None()
     };
+    // Keep a type predicate across a function union only when both members
+    // agree on the exact same subject and identical target: a differing target
+    // union `(x is A) | (x is B)` would unsoundly subtract both A and B in the
+    // false branch (when the runtime callee is `x is A` and returns false on B).
+    typePred = (f1.typePred, f2.typePred) match {
+    | (Some(tp1), Some(tp2)) if (tp1 == tp2) -> Some(tp1)
+    | _ -> None()
+    };
     TFun(
       clauses.toArray(),
       thisParam,
@@ -436,6 +444,7 @@ extension class TFun {
       retType,
       cgNodes,
       assertPred,
+      typePred,
     )
   }
 }

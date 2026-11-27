@@ -1454,26 +1454,54 @@ base class TEnv{
     params: Array<ParamBase>,
     allowTypePredicate: Bool = true,
     allowAssertPred: Bool = true,
-  ): (TType, ?AssertPred) {
+  ): (TType, ?AssertPred, ?TypePred) {
     rty.value match {
     | TAIs(lhs, rhs) if (allowTypePredicate) ->
-      // The subject must name an actual parameter of the enclosing
+      // The subject must name an actual non-rest parameter of the enclosing
       // function, or be `this` — nothing else (unlike a full `normalize`
       // call, which would also accept any other valid type expression,
       // e.g. `true is ...`).
-      // TODO: model the narrowing effect precisely.
-      isValidSubject = lhs.value match {
-      | TAInst(Name(_, "this"), args) if (args.isEmpty()) -> true
+      subjectOpt: ?TypePredSubject = lhs.value match {
+      | TAInst(Name(_, "this"), args) if (args.isEmpty()) -> Some(TPSThis())
       | TAInst(name, args) if (args.isEmpty()) ->
-        params.any(p ->
+        // Positional index skips any leading explicit `this` parameter and
+        // matches required/optional params (rest params cannot be predicate
+        // subjects, TS1229).
+        idx = 0;
+        found: ?TypePredSubject = None();
+        for (i => p in params) {
+          if (i == 0 && p.name.value is PVar(Name(_, "this"))) {
+            continue
+          };
+          if (p.isRest is Some _) {
+            p.name.value match {
+            | PVar(n) if (n.value == name.value) ->
+              fatalError(
+                Array[
+                  (
+                    lhs.pos,
+                    "A type predicate cannot reference a rest parameter",
+                  ),
+                ],
+                TSCode(1229),
+              )
+            | _ -> continue
+            }
+          };
           p.name.value match {
-          | PVar(n) -> n.value == name.value
-          | _ -> false
-          }
-        )
-      | _ -> false
+          | PVar(n) if (n.value == name.value) ->
+            !found = Some(TPSParam(idx));
+            break void
+          | _ -> void
+          };
+          !idx = idx + 1
+        };
+        found
+      | _ -> None()
       };
-      if (!isValidSubject) {
+      subject = subjectOpt match {
+      | Some(s) -> s
+      | None() ->
         fatalError(
           Array[
             (
@@ -1484,13 +1512,18 @@ base class TEnv{
           SKJSCode(9031),
         )
       };
-      _ = this.normalize(tcenvb, rhs);
-      (TType::single(TPrimValue::boolean(rty.pos)), None())
+      target = this.normalize(tcenvb, rhs);
+      (
+        TType::single(TPrimValue::boolean(rty.pos)),
+        None(),
+        Some(TypePred(subject, target)),
+      )
     | TAAsserts(name) if (allowAssertPred) ->
       subject = static::resolveAssertSubject(name, params);
       (
         TType::single(TPrimUnit(TVoid(), rty.pos)),
         Some(AssertPred(subject, AKTruthy())),
+        None(),
       )
     | TAAssertIs(name, rhs) if (allowAssertPred) ->
       subject = static::resolveAssertSubject(name, params);
@@ -1498,8 +1531,9 @@ base class TEnv{
       (
         TType::single(TPrimUnit(TVoid(), rty.pos)),
         Some(AssertPred(subject, AKIs(target))),
+        None(),
       )
-    | _ -> (this.normalize(tcenvb, rty), None())
+    | _ -> (this.normalize(tcenvb, rty), None(), None())
     }
   }
 
@@ -3778,7 +3812,10 @@ base class TEnv{
         | None() -> if (isShapeMethod) ImplicitShape() else NoThis()
         }
       };
-      (normRetType, assertPred) = if (isDeclaredSignature || allowAssertPred) {
+      (normRetType, assertPred, typePred) = if (
+        isDeclaredSignature ||
+        allowAssertPred
+      ) {
         this.normalizeReturnType(
           tcenvb,
           retType,
@@ -3787,7 +3824,7 @@ base class TEnv{
           isDeclaredSignature || allowAssertPred,
         )
       } else {
-        (this.normalize(tcenvb, retType), None())
+        (this.normalize(tcenvb, retType), None(), None())
       };
       tfun = TFun(
         funTParams,
@@ -3798,6 +3835,7 @@ base class TEnv{
         normRetType,
         CGNodes::singleton(cgNode),
         assertPred,
+        typePred,
       );
       if (isMethod) {
         TFuns::singleMethod(tfun, pos)

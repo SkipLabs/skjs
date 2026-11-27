@@ -355,6 +355,52 @@ extension class TypeChecker {
     }
   }
 
+  // Narrows `local` based on a declared/ambient type predicate call
+  // (`pred(local) === target` or `local.pred() === target`).
+  // - `target == true`: intersect `local` with `predTarget`.
+  // - `target == false`: subtract any constituent of `local` that is a subtype
+  //   of `predTarget` (plus literal/boolean subtraction).
+  fun evalTypePred(
+    tcenv: mutable TCEnv,
+    local: Name,
+    predTarget: TType,
+    target: Bool,
+  ): void {
+    tcenv.scope.maybeGet(local) match {
+    | None() -> void
+    | Some(localType) ->
+      expandedLocal = localType.expand(tcenv.subst, this, Some(Covariant()));
+      expandedTarget = predTarget.expand(tcenv.subst, this, Some(Covariant()));
+      narrowed = if (target) {
+        this.materializeReadContext<TType>(
+          tcenv,
+          local.pos,
+          context -> context.intersection(expandedLocal, expandedTarget, true),
+          (scratch, readEnv) ->
+            TType::inter(scratch, readEnv, expandedLocal, expandedTarget)
+          ,
+        )
+      } else {
+        this.materializeReadContext<TType>(
+          tcenv,
+          local.pos,
+          context -> context.excludeType(expandedLocal, expandedTarget),
+          (scratch, readEnv) ->
+            TType::excludeTypeWith(
+              expandedLocal.pos,
+              expandedLocal.expand(scratch, readEnv, Some(Covariant())),
+              expandedTarget.expand(scratch, readEnv, Some(Covariant())),
+              (left, right) ->
+                TType::isSub(scratch, readEnv, left, right) is STOk()
+              ,
+            )
+          ,
+        )
+      };
+      tcenv.scope.set(local, narrowed, (_, _) -> void)
+    }
+  }
+
   // Narrows `local` based on `Array.isArray(local) === target`.
   // target === true: intersects with Array/ReadonlyArray.
   // target === false: excludes arrays and tuples.
@@ -596,6 +642,45 @@ extension class TypeChecker {
         | Expr(_, Var(local)) -> this.evalIsArray(tcenv, local, target)
         | _ -> void
         }
+      }
+
+    | Call(callee, _, args) ->
+      tcenv.callPredicates.maybeGet(e.pos) match {
+      | Some(Some(pred)) ->
+        subjectOpt = pred.subject match {
+        | TPSParam(idx) ->
+          if (
+            idx >= 0 &&
+            idx < args.size() &&
+            !Range(0, idx + 1).any(i -> args[i].value is Spread _)
+          ) {
+            Some(args[idx])
+          } else {
+            None()
+          }
+        | TPSThis() ->
+          callee.value match {
+          | Dot(NormalDot(), recv, _) -> Some(recv)
+          | _ -> None()
+          }
+        };
+        subjectOpt match {
+        | Some(Expr(_, Var(local))) ->
+          // CaptureWrites(trackReads=true) skips traversing Call callees, so
+          // explicitly guard `this` predicates against captured/reassigned
+          // bindings and writes inside the condition expression.
+          isSafe =
+            !tcenv.scope.mayBeReassignedByCall(local) &&
+            (writes match {
+            | Some(written) -> !written.contains(local.value)
+            | None() -> false
+            });
+          if (isSafe) {
+            this.evalTypePred(tcenv, local, pred.target, target)
+          }
+        | _ -> void
+        }
+      | _ -> void
       }
 
     | InstanceOf(

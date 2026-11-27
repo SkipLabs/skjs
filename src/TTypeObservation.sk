@@ -511,6 +511,18 @@ mutable class TypeReadContext private {
     )
   }
 
+  mutable fun excludeType(source: TType, excluded: TType): TType {
+    this.lifetime.checkActive();
+    expandedSource = this.expand(source, Some(Covariant()));
+    expandedExcluded = this.expand(excluded, Some(Covariant()));
+    TType::excludeTypeWith(
+      source.pos,
+      expandedSource,
+      expandedExcluded,
+      (left, right) -> this.isSubtype(left, right),
+    )
+  }
+
   mutable fun truthinessPart(type: TType, target: Bool): TType {
     this.lifetime.checkActive();
     type.mapSTypesWith(

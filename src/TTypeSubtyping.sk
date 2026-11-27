@@ -590,6 +590,7 @@ base class STErrorOnTFun(f1: TFun, f2: TFun) extends STError<TFun> {
   | STRecFunSpread(?STErrorOnTType)
   | STRecFunReturn(STErrorOnTType)
   | STRecFunAssertPred(?STErrorOnTType)
+  | STRecFunTypePred(?STErrorOnTType)
 
   fun toError(
     subst: mutable Subst,
@@ -697,6 +698,14 @@ base class STErrorOnTFun(f1: TFun, f2: TFun) extends STError<TFun> {
     | STRecFunAssertPred(Some(err), _f1, _f2) ->
       (
         Some((pos1, "Their assertion predicates are not compatible")),
+        err.toError(subst, tenv, detail.decreaseIntermediate()),
+        None(),
+      )
+    | STRecFunTypePred(None(), _f1, _f2) ->
+      (None(), List[(pos1, "Their type predicates are not compatible")], None())
+    | STRecFunTypePred(Some(err), _f1, _f2) ->
+      (
+        Some((pos1, "Their type predicates are not compatible")),
         err.toError(subst, tenv, detail.decreaseIntermediate()),
         None(),
       )
@@ -2701,22 +2710,47 @@ extension class TFun {
     //   covariantly (`t1 <: t2`, since an assertion never returns on failure,
     //   so there is no false-branch subtraction).
     (f1.assertPred, f2.assertPred) match {
-    | (_, None()) -> STOk()
-    | (None(), Some _) -> STRecFunAssertPred(None(), f1, f2)
+    | (_, None()) -> void
+    | (None(), Some _) -> return STRecFunAssertPred(None(), f1, f2)
     | (Some(ap1), Some(ap2)) ->
       if (ap1.subject != ap2.subject) {
         return STRecFunAssertPred(None(), f1, f2)
       };
       (ap1.kind, ap2.kind) match {
-      | (AKTruthy(), AKTruthy()) -> STOk()
+      | (AKTruthy(), AKTruthy()) -> void
       | (AKIs(t1), AKIs(t2)) ->
         typeSub(t1, t2) match {
-        | STOk() -> STOk()
-        | err @ STErrorOnTType _ -> STRecFunAssertPred(Some(err), f1, f2)
+        | STOk() -> void
+        | err @ STErrorOnTType _ -> return STRecFunAssertPred(Some(err), f1, f2)
         }
       | (AKTruthy(), AKIs _)
       | (AKIs _, AKTruthy()) ->
-        STRecFunAssertPred(None(), f1, f2)
+        return STRecFunAssertPred(None(), f1, f2)
+      }
+    };
+    // Type predicate compatibility:
+    // - A predicate function is assignable to a plain boolean function (drop
+    //   the predicate: callers not expecting a guard simply ignore it).
+    // - A plain boolean function is NOT assignable to a predicate function.
+    // - Two predicate functions must target the same subject (`this` or the
+    //   same positional parameter index) and have equivalent target types
+    //   (invariant in target: covariance is needed for true-branch narrowing,
+    //   and contravariance is needed for false-branch subtraction — a narrower
+    //   predicate `x is "a"` returning false does not rule out `"b"`).
+    (f1.typePred, f2.typePred) match {
+    | (_, None()) -> STOk()
+    | (None(), Some _) -> STRecFunTypePred(None(), f1, f2)
+    | (Some(tp1), Some(tp2)) ->
+      if (tp1.subject != tp2.subject) {
+        return STRecFunTypePred(None(), f1, f2)
+      };
+      typeSub(tp1.target, tp2.target) match {
+      | STOk() -> void
+      | err @ STErrorOnTType _ -> return STRecFunTypePred(Some(err), f1, f2)
+      };
+      typeSub(tp2.target, tp1.target) match {
+      | STOk() -> STOk()
+      | err @ STErrorOnTType _ -> STRecFunTypePred(Some(err), f1, f2)
       }
     }
   }

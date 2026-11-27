@@ -365,6 +365,103 @@ class TType private {
     TType::create(resultPos, expanded.insts, newClauses)
   }
 
+  // Subtract `excluded` from an already-expanded `source` using `isSub` to
+  // decide when a whole clause or atomic union member is subsumed by
+  // `excluded`. Used for false-branch narrowing of type predicates (`!isT(x)`).
+  // Any clause/branch whose runtime values all satisfy `excluded` is dropped;
+  // for primitive literals (and `boolean` minus `true`/`false`) the covered
+  // literals are removed. Every other constituent is kept unchanged.
+  static fun excludeTypeWith(
+    resultPos: PosRange,
+    expandedSource: TType,
+    expandedExcluded: TType,
+    isSub: (TType, TType) -> Bool,
+  ): TType {
+    excludedPrims = mutable Vector<TPrim>[];
+    for (clause in expandedExcluded.clauses) {
+      if (clause.vars.isEmpty()) {
+        clause.stypes.each(stypes -> {
+          for (st in stypes) {
+            st match {
+            | p @ TPrim _ -> excludedPrims.push(p)
+            | TObject _ -> void
+            }
+          }
+        })
+      }
+    };
+    newClauses = expandedSource.clauses.filterMap(clause -> {
+      // First check whether the whole clause (e.g. a type parameter `T` or a
+      // concrete single-branch clause) is a subtype of `excluded`.
+      clauseTy = TType::ofClauses(resultPos, Clauses::singleClause(clause));
+      if (isSub(clauseTy, expandedExcluded)) {
+        return None()
+      };
+      clause.stypes match {
+      | None() -> Some(clause)
+      | Some(stypes) ->
+        filtered = stypes.filterMap(stype -> {
+          stype match {
+          | TPrimUnit _
+          | TPrimValue _
+          | TPrimString _ ->
+            // Drop if the whole primitive is subsumed by `excluded`.
+            if (isSub(TType::single(stype), expandedExcluded)) {
+              return None()
+            };
+            // Otherwise, subtract any concrete primitive literals covered by
+            // `excluded` (e.g. `"a" | "b"` minus `"a"`, or `boolean` minus
+            // `true`).
+            cur: ?SType = Some(stype);
+            for (ep in excludedPrims) {
+              !cur = cur.flatMap(st ->
+                (st, ep) match {
+                | (
+                  TPrimValue(k1, Some(lits1), pos),
+                  TPrimValue(k2, Some(lits2), _),
+                ) if (k1 == k2) ->
+                  lits1.diff(lits2).map(l -> TPrimValue(k1, Some(l), pos))
+                | (
+                  TPrimString(Some(lits1), pos),
+                  TPrimString(Some(lits2), _),
+                ) ->
+                  lits1.diff(lits2).map(l -> TPrimString(Some(l), pos))
+                | (
+                  TPrimValue(k1 @ TBool _, None(), pos),
+                  TPrimValue(k2, Some(lits2), _),
+                ) if (k1 == k2) ->
+                  invariant(lits2.size() == 1);
+                  other = if (lits2.contains("true")) "false" else {
+                    invariant(lits2.contains("false"));
+                    "true"
+                  };
+                  Some(
+                    TPrimValue(
+                      k1,
+                      Some(PrimLiterals::single(PrimLiteral(pos, other))),
+                      pos,
+                    ),
+                  )
+                | _ -> Some(st)
+                }
+              )
+            };
+            cur
+          | obj @ TObject _ ->
+            obj.mapOpt(fields -> {
+              branchTy = TType::single(
+                TObject::createSingleBranch(fields, None(), obj.pos),
+              );
+              if (isSub(branchTy, expandedExcluded)) None() else Some(fields)
+            })
+          }
+        });
+        Clause::create(clause.vars, Some(filtered))
+      }
+    });
+    TType::create(resultPos, expandedSource.insts, newClauses)
+  }
+
   static fun removeUndefined(
     subst: mutable Subst,
     tenv: TEnv,
@@ -1807,6 +1904,20 @@ class AssertPred(
   }
 }
 
+// Subject of a boolean type predicate (`x is T` or `this is T`).
+// `TPSParam(index)` is the zero-based positional index into the non-`this`
+// parameter list (`params` followed by `optionalParams`).
+base class TypePredSubject uses XXHashable, Orderable {
+  children =
+  | TPSThis()
+  | TPSParam(index: Int)
+}
+
+class TypePred(
+  subject: TypePredSubject,
+  target: TType,
+) uses XXHashable, Orderable
+
 class TFun(
   tparams: Array<TParamWithConstraint>,
   thisParam: ThisParam,
@@ -1816,6 +1927,7 @@ class TFun(
   retType: TType,
   cgNodes: CGNodes,
   assertPred: ?AssertPred = None(),
+  typePred: ?TypePred = None(),
 ) uses XXHashable, Orderable {
   fun toString(subst: mutable Subst, tenv: TEnv): String {
     prettyPrintTFun(subst, tenv, this)
@@ -4475,7 +4587,8 @@ mutable class TVarScan{seen: mutable Set<Int> = mutable Set[]} {
       | Some(AssertPred(_, AKTruthy()))
       | None() ->
         false
-      })
+      }) ||
+      fun_.typePred.map(tp -> this.scanType(tp.target)).default(false)
   }
 }
 
