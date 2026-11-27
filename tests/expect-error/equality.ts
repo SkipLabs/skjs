@@ -298,8 +298,10 @@ function negativeLiteralRecheck(x: 1 | -1): string {
   return "";
 }
 
-// FIXME: the literal exemption is syntactic, so re-checking against a
-// hoisted constant still warns where the inline literal would be exempt
+// Default behavior (`exemptConstantRechecks` off): the literal exemption is
+// syntactic, so re-checking against a hoisted constant or enum member warns.
+// The opt-in flag-on behavior (`exemptConstantRechecks: true`) is tested in
+// tests/projects/exempt-constant-rechecks/.
 const B = "b";
 function namedConstantRecheck(x: "a" | "b"): string {
   if (x === "a") {

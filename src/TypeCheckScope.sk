@@ -15,7 +15,9 @@ module SKJS;
 // compatible bounds; a concrete contract is never replaced by a later flow type.
 // `isMutable` is false for a `const` binding and true for `let`, `var`, a
 // parameter, or a catch clause's variable; `this` is also not mutable, since
-// it cannot be reassigned.
+// it cannot be reassigned. `isLiteralConst` is true when a `const` binding was
+// directly initialized to a literal expression (used to recognize hoisted
+// discriminant constants in SKJS2074).
 value class LocalRef(
   type: TType,
   declaredType: TType,
@@ -23,6 +25,7 @@ value class LocalRef(
   isInitialized: Bool,
   isMutable: Bool,
   hasFieldRefinement: Bool = false,
+  isLiteralConst: Bool = false,
 ) {
   // Only a binding carrying transient field facts needs contract projection.
   fun stableContentsType(
@@ -338,6 +341,7 @@ mutable class Scope{
     isInitialized: Bool,
     isMutable: Bool,
     pendingBindings: SortedSet<PosRange> = SortedSet[],
+    isLiteralConst: Bool = false,
   ): void {
     this.maybeGetLocal(name) match {
     | None() -> void
@@ -368,6 +372,8 @@ mutable class Scope{
       hasDeclaredContract,
       isInitialized,
       isMutable,
+      false,
+      isLiteralConst,
     )
   }
 
@@ -379,6 +385,7 @@ mutable class Scope{
     ty: TType,
     hasDeclaredContract: Bool = true,
     isInitialized: Bool = true,
+    isLiteralConst: Bool = false,
   ): void {
     ref = this.refs.get(name.value);
     this.!refs[name.value] = ref with {
@@ -386,6 +393,7 @@ mutable class Scope{
       declaredType => ty,
       isInitialized,
       hasDeclaredContract,
+      isLiteralConst,
     }
   }
 
@@ -447,6 +455,16 @@ mutable class Scope{
     this.maybeGetRef(name.value)
       .map(pair -> pair.i1.hasDeclaredContract)
       .default(false)
+  }
+
+  readonly fun isLiteralConst(name: Name): Bool {
+    this.maybeGetRef(name.value)
+      .map(pair -> pair.i1.isLiteralConst)
+      .default(false)
+  }
+
+  readonly fun declaredType(name: Name): ?TType {
+    this.maybeGetRef(name.value).map(pair -> pair.i1.declaredType)
   }
 
   // An annotated direct alias must promise stable contents, rather than
@@ -709,6 +727,7 @@ mutable class Scope{
       true,
       upRef.isMutable,
       upRef.hasFieldRefinement,
+      upRef.isLiteralConst,
     );
   }
 
@@ -776,6 +795,7 @@ mutable class Scope{
         nameRef.ref.isInitialized && curRef.isInitialized,
         curRef.isMutable,
         curRef.hasFieldRefinement || nameRef.ref.hasFieldRefinement,
+        curRef.isLiteralConst,
       )
     }
   }
@@ -934,6 +954,7 @@ mutable class Scope{
         edgeRef.isInitialized && curRef.isInitialized,
         curRef.isMutable,
         curRef.hasFieldRefinement || edgeRef.hasFieldRefinement,
+        curRef.isLiteralConst,
       )
     };
     // The edge speaks for every binding, not only the ones it mentions: one it
@@ -956,6 +977,7 @@ mutable class Scope{
             false,
             nameRef.ref.isMutable,
             nameRef.ref.hasFieldRefinement,
+            nameRef.ref.isLiteralConst,
           )
         | _ -> void
         }
@@ -984,6 +1006,7 @@ mutable class Scope{
           cur.isInitialized,
           cur.isMutable,
           true, // The write log carries types without refinement provenance.
+          cur.isLiteralConst,
         )
       | None() -> void
       }
@@ -1025,6 +1048,7 @@ mutable class Scope{
           cur.isInitialized,
           cur.isMutable,
           cur.hasFieldRefinement || nameRef.ref.hasFieldRefinement,
+          cur.isLiteralConst,
         ),
       )
     }
@@ -1113,6 +1137,7 @@ mutable class Scope{
         isInitialized,
         upRef.isMutable,
         hasFieldRefinement,
+        upRef.isLiteralConst,
       )
     }
   }
@@ -1145,6 +1170,7 @@ mutable class Scope{
           upRef.isInitialized,
           upRef.isMutable,
           upRef.hasFieldRefinement || nameRef.ref.hasFieldRefinement,
+          upRef.isLiteralConst,
         )
       | Both(nameRef1, nameRef2) ->
         // Value contracts belong to the binding. Copy provenance may have
@@ -1165,6 +1191,7 @@ mutable class Scope{
           nameRef1.ref.isInitialized && nameRef2.ref.isInitialized,
           upRef.isMutable,
           nameRef1.ref.hasFieldRefinement || nameRef2.ref.hasFieldRefinement,
+          upRef.isLiteralConst,
         )
       }
     })
@@ -1191,6 +1218,7 @@ mutable class Scope{
         upRef.isInitialized,
         upRef.isMutable,
         upRef.hasFieldRefinement || nameRef.ref.hasFieldRefinement,
+        upRef.isLiteralConst,
       )
     }
   }

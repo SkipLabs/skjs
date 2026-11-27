@@ -295,6 +295,12 @@ class TsCompilerOptions{
   // number/bigint literals (e.g. `0xf`) for diagnostics instead of printing
   // the canonical value (rule 30, e.g. `15`). Off by default.
   userLiteralSpelling: Bool = false,
+  // SKJS-specific option, not a tsc one: exempt narrowed-discriminant
+  // re-checks against hoisted literal-initialized `const` bindings and enum
+  // members (`else if (x === B)`, `else if (x === Color.Blue)`) from the
+  // always-true comparison warning (SKJS2074). Off by default: without it,
+  // only syntactic inline literals are exempt.
+  exemptConstantRechecks: Bool = false,
 }
 
 class TsConfigDiag{line: Int, message: String, isWarning: Bool}
@@ -737,6 +743,13 @@ fun loadTsConfig(fs: Fs, path: String): (TsConfig, Array<TsConfigDiag>) {
     // diagnostics (see TsCompilerOptions.userLiteralSpelling).
     userLiteralSpelling = co.maybeGetBool("userLiteralSpelling").default(false);
 
+    // SKJS-specific option, not a tsc one: exempt narrowed-discriminant
+    // re-checks against hoisted constants and enum members from SKJS2074
+    // (see TsCompilerOptions.exemptConstantRechecks).
+    exemptConstantRechecks = co
+      .maybeGetBool("exemptConstantRechecks")
+      .default(false);
+
     noFallthroughCasesInSwitch = co
       .maybeGetBool("noFallthroughCasesInSwitch")
       .default(true);
@@ -819,6 +832,7 @@ fun loadTsConfig(fs: Fs, path: String): (TsConfig, Array<TsConfigDiag>) {
       noFallthroughCasesInSwitch,
       conformance,
       userLiteralSpelling,
+      exemptConstantRechecks,
     }
   | None() ->
     diags.push(
