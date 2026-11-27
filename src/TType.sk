@@ -998,6 +998,32 @@ class TType private {
       None()
     }
   }
+
+  // True when `this` directly carries a method-syntax shape signature
+  // (`ImplicitShape()`) on a top-level callable branch. Used to recognize
+  // shape-method member targets without expanding aliases or touching TVars
+  // (`ObjectFieldMethod` always stores `{ m(): R }` as a direct call object).
+  fun hasTopLevelShapeMethod(): Bool {
+    this.clauses.any(clause ->
+      clause.stypes match {
+      | Some(stypes) ->
+        stypes.any(stype ->
+          stype match {
+          | obj @ TObject _ ->
+            obj.getAllFields().any(fields ->
+              fields.call match {
+              | CPresent(funs) ->
+                funs.allFuns().any(f -> f.thisParam is ImplicitShape())
+              | _ -> false
+              }
+            )
+          | _ -> false
+          }
+        )
+      | None() -> false
+      }
+    )
+  }
 }
 
 base class Variance {
@@ -1132,6 +1158,34 @@ class TObject private (
     // invocable, so it cannot be mis-called, and tsc likewise stays silent
     // on it (`truthiness: typescript` mode is tsc parity).
     this.branches.all(fields -> fields.call is CPresent _)
+  }
+
+  // Carrier type for a single branch `fields1` of `obj1` when checking a
+  // method-syntax target member (`{ m(): R }`). For a single-branch boxed
+  // primitive wrapper (created via `TType::inst(prim.asClassName(), [])`
+  // during primitive/object overlap checks), recover the underlying primitive
+  // type so `toFixed(this: number): string` sees `number` as the carrier.
+  static fun shapeCarrierForBranch(obj1: TObject, fields1: TFields): TType {
+    if (obj1.branches.size() == 1) {
+      obj1.unexpandedType match {
+      | Some(TSInst(Name(p, "boolean"), TArgs(targs))) if (targs.isEmpty()) ->
+        TType::single(TPrimValue::boolean(p))
+      | Some(TSInst(Name(p, "number"), TArgs(targs))) if (targs.isEmpty()) ->
+        TType::single(TPrimValue::number(p))
+      | Some(TSInst(Name(p, "string"), TArgs(targs))) if (targs.isEmpty()) ->
+        TType::single(TPrimValue::string(p))
+      | Some(TSInst(Name(p, "symbol"), TArgs(targs))) if (targs.isEmpty()) ->
+        TType::single(TPrimValue::symbol(p))
+      | Some(TSInst(Name(p, "bigint"), TArgs(targs))) if (targs.isEmpty()) ->
+        TType::single(TPrimValue::bigint(p))
+      | unexpanded ->
+        TType::single(
+          TObject::createSingleBranch(fields1, unexpanded, obj1.pos),
+        )
+      }
+    } else {
+      TType::single(TObject::createSingleBranch(fields1, None(), obj1.pos))
+    }
   }
 
   // True when every branch carries a call or construct signature, i.e. this
@@ -1690,18 +1744,24 @@ class TFuns private (
 //                     object it is accessed on, and its carrier type is
 //                     erased, so it cannot be detached or laundered into a
 //                     free function type.
+//   - DetachedShape() a shape method after extraction (`o.m` as a value or
+//                     copied via `{ ...o }`): its original carrier is lost, so
+//                     it can neither be free-called nor re-attached to a new
+//                     object literal to satisfy another shape method.
 base class ThisParam uses XXHashable, Orderable {
   children =
   | NoThis()
   | Explicit(ty: TType)
   | ImplicitClass(ty: TType)
   | ImplicitShape()
+  | DetachedShape()
 
-  // The declared/instance type, if any (None for NoThis and for ImplicitShape,
-  // whose carrier type is erased).
+  // The declared/instance type, if any (None for NoThis, ImplicitShape, and
+  // DetachedShape, whose carrier type is absent or erased).
   fun tyOpt(): ?TType
   | NoThis()
-  | ImplicitShape() ->
+  | ImplicitShape()
+  | DetachedShape() ->
     None()
   | Explicit(ty)
   | ImplicitClass(ty) ->

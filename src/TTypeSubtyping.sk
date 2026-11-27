@@ -1123,9 +1123,14 @@ extension class TFields {
   }
 
   // Check subtyping for named fields (sub vs super).
+  // `memberGetterSub` checks covariant field-getter positions (carrying the
+  // enclosing object branch so method-syntax targets can validate receiver
+  // requirements against the actual carrier); `typeSub` checks contravariant
+  // setters and non-member positions.
   // indexFor looks up the index covering a given field name in the given TFields.
   private static fun isSub_NamedFields(
     typeSub: (TType, TType) -> STResult<TType>,
+    memberGetterSub: (TType, TType) -> STResult<TType>,
     namedFields1: InternalKeyedArrayMap<FieldNameString, TField>,
     namedFields2: InternalKeyedArrayMap<FieldNameString, TField>,
     indexFor: (TFields, FieldNameString) -> ?TField,
@@ -1139,7 +1144,7 @@ extension class TFields {
         indexFor(fields2, f1.name) match {
         | None() -> void
         | Some(idx2) ->
-          typeSub(f1.get, idx2.get) match {
+          memberGetterSub(f1.get, idx2.get) match {
           | err @ STErrorOnTType _ ->
             return STRecFieldsFieldIndex(
               err,
@@ -1191,7 +1196,7 @@ extension class TFields {
         | None() -> return STRecFieldsMissingField(f2, fields1, fields2)
         | Some(idx1) if (idx1.isSynthetic()) -> void
         | Some(idx1) ->
-          typeSub(idx1.get, f2.get) match {
+          memberGetterSub(idx1.get, f2.get) match {
           | err @ STErrorOnTType _ ->
             return STRecFieldsIndexField(
               err,
@@ -1251,7 +1256,7 @@ extension class TFields {
         // needs no cleanup when the setter failed -- this whole comparison
         // then returns an STError, and `TFields::isSub` restores the subst on
         // error (the invariant every `isSub` upholds).
-        getterResult = typeSub(f1.get, f2.get);
+        getterResult = memberGetterSub(f1.get, f2.get);
         setterResult match {
         | STOk() ->
           getterResult match {
@@ -1302,6 +1307,7 @@ extension class TFields {
     fields1: TFields,
     fields2: TFields,
     typeSub: (TType, TType) -> STResult<TType>,
+    memberGetterSub: (TType, TType) -> STResult<TType>,
     funsSub: (TFuns, TFuns) -> STResult<TFuns>,
     symbolId: (PosRange, String) -> ?String,
   ): STResult<TFields> {
@@ -1334,6 +1340,7 @@ extension class TFields {
     // before call/new signatures with union types.
     TFields::isSub_NamedFields(
       typeSub,
+      memberGetterSub,
       fields1.fields,
       fields2.fields,
       (fs, name) -> fs.indexForFieldName(name.value),
@@ -1391,6 +1398,7 @@ extension class TFields {
     // Symbol fields: same logic as string fields
     TFields::isSub_NamedFields(
       typeSub,
+      memberGetterSub,
       fields1.symbolFields,
       fields2.symbolFields,
       (fs, _) -> fs.symbolIndex,
@@ -1912,7 +1920,13 @@ extension class TType {
               continue
             };
             boundFields.maybeGet(of.name.value) match {
-            | Some(bf) ->
+            | Some(
+              bf,
+            ) if (
+              !(variance is Covariant() &&
+                bf.set.isBottom() &&
+                bf.get.hasTopLevelShapeMethod())
+            ) ->
               rConstraintErr = static::growTVars(
                 subst,
                 tenv,
@@ -1921,7 +1935,7 @@ extension class TType {
                 variance,
               );
               if (constraintErr is None()) !constraintErr = rConstraintErr
-            | None() -> void
+            | _ -> void
             }
           };
           (openFields.call, boundFields.call) match {
@@ -2070,6 +2084,7 @@ extension class TType {
     tenv: TEnv,
     funs1: TFuns,
     funs2: TFuns,
+    shapeCarrier: ?TType = None(),
   ): STResult<TFuns> {
     // Overload rule: source signature set is assignable to the target set iff
     // EVERY target signature is matched by SOME source signature. This is
@@ -2094,7 +2109,7 @@ extension class TType {
           s.params.size() + s.optionalParams.size() >=
             t.params.size() + t.optionalParams.size();
         if (!matched && covers) {
-          static::isSubFun(subst, tenv, s, t) match {
+          static::isSubFun(subst, tenv, s, t, shapeCarrier) match {
           | STOk() -> !matched = true
           | err @ STErrorOnTFun _ ->
             if (firstErr is None()) !firstErr = Some(err)
@@ -2106,7 +2121,13 @@ extension class TType {
         // type error (re-run the first source signature for its diagnostic,
         // or synthesize a parameter error if it is otherwise compatible).
         err = firstErr.default(
-          static::isSubFun(subst, tenv, funs1.allFuns()[0], t) match {
+          static::isSubFun(
+            subst,
+            tenv,
+            funs1.allFuns()[0],
+            t,
+            shapeCarrier,
+          ) match {
           | e @ STErrorOnTFun _ -> e
           | STOk() -> STRecFunParam(None(), 0, funs1.allFuns()[0], t)
           },
@@ -2117,17 +2138,66 @@ extension class TType {
     STOk()
   }
 
+  // Member-getter subtyping with carrier awareness: when `u2` directly carries
+  // a method-syntax shape signature (`ImplicitShape()`), check its top-level
+  // call signatures with `shapeCarrier = Some(carrier)` WITHOUT caching the
+  // carrier-dependent judgment in `subtypeCache`. All nested checks fall back
+  // to normal `isSub` (with `shapeCarrier = None()`).
+  private static fun isSubMemberGetter(
+    subst: mutable Subst,
+    tenv: TEnv,
+    u1: TType,
+    u2: TType,
+    carrier: ?TType,
+  ): STResult<TType> {
+    if (carrier is None() || !u2.hasTopLevelShapeMethod()) {
+      return static::isSub(subst, tenv, u1, u2)
+    };
+    if (u1 == u2) return STOk();
+    if (u2.isTop()) return STOk();
+    savedSubst = subst.save();
+    clauses1 = u1.expandToClauses(subst, tenv, Covariant());
+    clauses2 = u2.expandToClauses(subst, tenv, Contravariant());
+    Clauses::isSubWith(clauses1, clauses2, (stypes1, stypes2) ->
+      STypes::isSubWith(stypes1, stypes2, (obj1, obj2) ->
+        TObject::isSubWith(obj1, obj2, (f1, f2) -> {
+          savedBranchSubst = subst.save();
+          res = TFields::isSubWith(
+            f1,
+            f2,
+            (left, right) -> static::isSub(subst, tenv, left, right),
+            (left, right) -> static::isSub(subst, tenv, left, right),
+            (left, right) ->
+              static::isSubFuns(subst, tenv, left, right, carrier),
+            (pos, name) -> tenv.getWellKnownSymbolUniqueId(subst, pos, name),
+          );
+          if (res is STError _) subst.restore(savedBranchSubst);
+          res
+        })
+      )
+    ) match {
+    | STOk() -> STOk()
+    | err @ STErrorOnClauses _ ->
+      hints = static::originSuggestions(subst, tenv, u1, u2);
+      subst.restore(savedSubst);
+      STRecTypeWithHint(err, hints, u1, u2)
+    }
+  }
+
   private static fun isSubFields(
     subst: mutable Subst,
     tenv: TEnv,
     fields1: TFields,
     fields2: TFields,
+    carrier: ?TType = None(),
   ): STResult<TFields> {
     savedSubst = subst.save();
     res = TFields::isSubWith(
       fields1,
       fields2,
       (left, right) -> static::isSub(subst, tenv, left, right),
+      (left, right) ->
+        static::isSubMemberGetter(subst, tenv, left, right, carrier),
       (left, right) -> static::isSubFuns(subst, tenv, left, right),
       (pos, name) -> tenv.getWellKnownSymbolUniqueId(subst, pos, name),
     );
@@ -2172,7 +2242,8 @@ extension class TType {
     savedSubst = subst.save();
     result = TObject::isSubWith(obj1, obj2, (left, right) -> {
       savedBranchSubst = subst.save();
-      result = static::isSubFields(subst, tenv, left, right);
+      carrier = Some(TObject::shapeCarrierForBranch(obj1, left));
+      result = static::isSubFields(subst, tenv, left, right, carrier);
       if (result is STError _) subst.restore(savedBranchSubst);
       result
     });
@@ -2185,6 +2256,7 @@ extension class TType {
     tenv: TEnv,
     f1: TFun,
     f2: TFun,
+    shapeCarrier: ?TType = None(),
   ): STResult<TFun> {
     savedSubst = subst.save();
     // A later rest projection can be blocked after an earlier layout decision
@@ -2197,8 +2269,8 @@ extension class TType {
         (left, right) -> static::isSub(subst, tenv, left, right),
         spread -> VariadicTyping::resolveSubtypeRestTuple(subst, tenv, spread),
         (spread, variance) ->
-          VariadicTyping::resolveRestElementType(subst, tenv, spread, variance)
-        ,
+          VariadicTyping::resolveRestElementType(subst, tenv, spread, variance),
+        shapeCarrier,
       )
     } catch {
     | exn ->
@@ -2245,11 +2317,17 @@ extension class TType {
     source: TFields,
     view: TFields,
   ): Bool {
+    carrier = Some(
+      TType::single(
+        TObject::createSingleBranch(source, None(), PosRange::none),
+      ),
+    );
     static::isSubFields(
       probe.compatibilityProbe(),
       tenv,
       source,
       view,
+      carrier,
     ) is STOk _
   }
 
@@ -2395,6 +2473,7 @@ extension class TFun {
     typeSub: (TType, TType) -> STResult<TType>,
     restTuple: (?TType) -> ?Array<TType>,
     restElement: (TType, Variance) -> ?TType,
+    shapeCarrier: ?TType = None(),
   ): STResult<TFun> {
     if (f1.tparams.size() != f2.tparams.size()) {
       return STTypeParameterMismatch(f1, f2)
@@ -2424,22 +2503,14 @@ extension class TFun {
     // receiver (SkipLabs/skjs#960). TS accepts that; SKJS rejects it.
     (f1.thisParam, f2.thisParam) match {
     | (NoThis(), _) -> void
-    // A method-syntax member of an object-literal shape (`{ m(): R }`) is
-    // attach-only: at an attached call its receiver is the very object it was
-    // accessed on. So a source that is itself receiver-agnostic — a no-`this`
-    // function (handled above) or another attach-only shape method — soundly
-    // inhabits it.
+    // A shape method extracted from another object (`other.m`) or copied via
+    // object spread (`{ ...other }`) has lost its original carrier; its hidden
+    // receiver requirement cannot be verified against a new target.
+    | (DetachedShape(), _) -> return STRecFunThisParam(None(), f1, f2)
+    // An unextracted method-syntax member of an object-literal shape
+    // (`{ m(): R }`) stays bound to the same carrier object when copied into a
+    // shape supertype via width/depth subtyping.
     | (ImplicitShape(), ImplicitShape()) -> void
-    // A source whose method declares a real receiver (`Explicit`/`ImplicitClass`)
-    // does NOT soundly inhabit a shape method: the shape target erases the
-    // requirement, so `o.m()` would run with the carrier as `this`, which need
-    // not satisfy the declared `this` — the #993 hole. Falling through to the
-    // generic contravariant arm rejects it (the shape's erased receiver is
-    // treated as `unknown`, which no real declared `this` accepts). This is a
-    // sound over-approximation: it also rejects a class instance or primitive
-    // structurally inhabiting a method-syntax shape, even though the carrier
-    // there IS a valid receiver (a false positive we accept to close the hole;
-    // see SkipLabs/skjs#993).
     // A shape method used where a declared- or no-this function is expected:
     // its receiver requirement is erased, so nothing can be proven — reject.
     | (ImplicitShape(), _) -> return STRecFunThisParam(None(), f1, f2)
@@ -2450,6 +2521,19 @@ extension class TFun {
     // container variance (ReadonlyArray<Dog> vs ReadonlyArray<Animal>) and
     // subclass override compatibility.
     | (ImplicitClass _, ImplicitClass _) -> void
+    // A method or `this`-annotated function inhabiting a method-syntax shape
+    // member (`{ m(): R }`, SkipLabs/skjs#1020): sound iff the enclosing
+    // carrier object itself satisfies the method's declared receiver `this1`
+    // (for `shapeCarrier = Some(carrier)`). Outside a direct member-getter
+    // check (`shapeCarrier = None()`), the carrier is unknown so fall back to
+    // `unknown <: this1` (rejecting non-trivial receiver requirements).
+    | (tp1, ImplicitShape()) ->
+      this1 = tp1.tyOpt().fromSome();
+      receiver = shapeCarrier.default(TType::top(this1.pos));
+      typeSub(receiver, this1) match {
+      | STOk() -> void
+      | err @ STErrorOnTType _ -> return STRecFunThisParam(Some(err), f1, f2)
+      }
     | (tp1, tp2) ->
       this1 = tp1.tyOpt().fromSome();
       this2 = tp2.tyOpt().default(TType::top(this1.pos));

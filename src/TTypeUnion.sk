@@ -302,6 +302,12 @@ extension class TFun {
     // widening the result back to unknown — matching TS, which requires the
     // receiver to satisfy every branch's `this`.
     thisParam = (f1.thisParam, f2.thisParam) match {
+    // Detached wins over everything: if either branch is a detached shape
+    // method, its original receiver is lost and it cannot be called or
+    // re-attached.
+    | (DetachedShape(), _)
+    | (_, DetachedShape()) ->
+      DetachedShape()
     // Attach-only wins: if either branch is a shape method, the union can only
     // be called attached (using it any other way could reach the shape-method
     // branch with no receiver).

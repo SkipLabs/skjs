@@ -32,11 +32,9 @@ function attachOk(): number {
   return shape.m();
 }
 
-// A class instance no longer structurally inhabits a method-syntax shape: the
-// blunt fix that closes the shape-carrier hole (#993) also rejects this safe
-// case (a sound over-approximation, to be relaxed later).
+// A class instance structurally inhabits a method-syntax shape because the
+// carrier itself satisfies the method's receiver requirement (#1020).
 function widthOk(): MethodShape {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return carrier;
 }
 
@@ -112,8 +110,7 @@ function propExplicitThisIntoShape(): MethodShape {
   return explicitThisProp;
 }
 
-// --- Additional sound carrier cases (pinned as rejected under the #993
-// over-approximation; restored by #1020) ---
+// --- Additional sound carrier cases (restored by #1020) ---
 
 class SubCarrier extends Carrier {
   extra: string = "hi";
@@ -121,7 +118,6 @@ class SubCarrier extends Carrier {
 
 declare const subCarrier: SubCarrier;
 function subclassIntoShape(): MethodShape {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return subCarrier;
 }
 
@@ -137,7 +133,6 @@ class GenericCarrier<T> {
 
 declare const genCarrier: GenericCarrier<number>;
 function genericClassIntoShape(): { get(): number } {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return genCarrier;
 }
 
@@ -146,7 +141,6 @@ interface ICarrier {
 }
 declare const iCarrier: ICarrier;
 function interfaceIntoShape(): MethodShape {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return iCarrier;
 }
 
@@ -159,7 +153,6 @@ class AltCarrier {
 }
 declare const unionCarrier: Carrier | AltCarrier;
 function unionClassIntoShape(): MethodShape {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return unionCarrier;
 }
 
@@ -169,13 +162,11 @@ function readX(this: { x: number }): number {
 }
 declare const withX: { x: number; m: (this: { x: number }) => number };
 function explicitThisSatisfiedByCarrier(): MethodShape {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return withX;
 }
 
 // Inline object literal whose properties satisfy the attached function's `this`.
 function inlineLiteralSatisfiedThis(): MethodShape {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return { x: 42, m: readX };
 }
 
@@ -193,7 +184,6 @@ function objectLiteralMethodIntoShape(): MethodShape {
 // Optional method-syntax shape inhabited by a class instance.
 type OptionalMethodShape = { m?(): number };
 function classIntoOptionalMethodShape(): OptionalMethodShape {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return carrier;
 }
 
@@ -207,7 +197,6 @@ class SymCarrier {
 }
 declare const symCarrier: SymCarrier;
 function symbolMethodIntoShape(): { [symM](): number } {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return symCarrier;
 }
 
@@ -225,7 +214,6 @@ function overloadedClassIntoShape(): {
   f(x: number): number;
   f(x: string): string;
 } {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return overloadedCarrier;
 }
 
@@ -238,7 +226,6 @@ class ExplicitThisCarrier {
 }
 declare const explicitThisCarrier: ExplicitThisCarrier;
 function explicitThisClassMethodIntoShape(): MethodShape {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return explicitThisCarrier;
 }
 
@@ -312,8 +299,8 @@ function readOne(this: { x: 1 }): number {
 }
 function aliasedMutationAfterShapeSubtyping(): MethodShape {
   const raw = { x: 1, m: readOne };
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const o: MethodShape = raw;
+  // @skjs-expect-error Type is not assignable to the field's type
   raw.x = 2;
   return o;
 }
@@ -341,8 +328,8 @@ function readY(this: { y: string }): number {
 }
 function aliasedMethodSwapRejected(): MethodShape {
   const raw = { x: 42, m: readX };
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const o: MethodShape = raw;
+  // @skjs-expect-error Type is not assignable to the field's type
   raw.m = readY;
   return o;
 }
@@ -362,25 +349,27 @@ function inlineLiteralWrongFieldTypeForThis(): MethodShape {
 
 // Attack 14: extracting a shape method from one carrier and re-attaching it to
 // a DIFFERENT object literal (`{ m: other.m }` or `const f = other.m; { m: f }`).
-// Once class instances inhabit `MethodShape`, `other.m` may actually be a class
-// method reading private/instance fields of `other`; attaching it to a fresh
-// object would run it with the wrong `this` receiver.
-// (Currently accepted on main before #1020 because `other.m` keeps `ImplicitShape`;
-// #1020 MUST reject these when relaxing class-instance inhabitance.)
+// Because class instances inhabit `MethodShape`, `other.m` may actually be a
+// class method reading private/instance fields of `other`; extracting it
+// detaches its shape receiver so re-attaching it to a fresh object is rejected.
 function detachedShapeMethodReattachedInline(other: MethodShape): MethodShape {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return { m: other.m };
 }
 
 function detachedShapeMethodReattachedViaVar(other: MethodShape): MethodShape {
   const f = other.m;
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return { m: f };
 }
 
 // Attack 15: spreading a shape carrier onto a new object while overwriting a
 // hidden field (`{ ...other, x: "bad" }`) or copying a shape method onto a
 // fresh object. Because `other`'s carrier type was erased, copying `other.m`
-// onto a fresh object loses the guarantee that `this` matches `other`.
+// onto a fresh object loses the guarantee that `this` matches `other` (and a
+// class method may also be omitted by property copy).
 function spreadShapeMethodOntoNewObject(other: MethodShape): MethodShape {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return { ...other, x: "bad" };
 }
 
@@ -388,8 +377,8 @@ function spreadShapeMethodOntoNewObject(other: MethodShape): MethodShape {
 // carrier's shape method (`raw.m = other.m`) after aliasing `raw` to `MethodShape`.
 function aliasedMethodSwapWithShapeMethod(other: MethodShape): MethodShape {
   const raw = { x: 42, m: readX };
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const o: MethodShape = raw;
+  // @skjs-expect-error Type is not assignable to the field's type
   raw.m = other.m;
   return o;
 }

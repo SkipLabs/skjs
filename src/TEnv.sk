@@ -3183,27 +3183,35 @@ base class TEnv{
 
   // Copying reads own enumerable values. A class method may be omitted
   // (inherited or non-enumerable), or supplied by an enumerable own override.
-  // Preserve both cases for spread overwrites.
+  // Preserve both cases for spread overwrites. Any method copied onto a fresh
+  // object also loses its attachment to the original carrier (class methods
+  // keep their instance requirement explicitly; shape methods become detached).
   fun propertyCopyFields(subst: mutable Subst, fields: TFields): TFields {
     fields
       .asPropertyCopy()
       .map(
-        field ->
+        field -> {
+          extracted = this.extractedMethodType(subst, field.get);
           if (field.mayBeOmittedByCopy) {
             field with {
-              get => this.extractedMethodType(subst, field.get),
+              get => extracted,
               isOptional => true,
               mayBeOmittedByCopy => false,
             }
+          } else if (extracted != field.get) {
+            field with {get => extracted}
           } else {
             field
-          },
+          }
+        },
         funs -> funs,
       )
   }
 
-  // Extraction loses the guarantee that a class method runs on its original
-  // carrier. Preserve the instance type as an explicit this requirement.
+  // Extraction loses the guarantee that a method runs on its original carrier:
+  // class methods preserve the instance type as an explicit `this`
+  // requirement, and shape methods become detached so they cannot be
+  // re-attached to a different carrier.
   fun extractedMethodType(subst: mutable Subst, ty: TType): TType {
     TEnv::extractedMethodTypeWith(ty, map ->
       ty.mapSTypes(subst, this, None(), map)
@@ -3229,9 +3237,12 @@ base class TEnv{
                     | ImplicitClass(receiver) ->
                       !changed = true;
                       f with {thisParam => Explicit(receiver)}
+                    | ImplicitShape() ->
+                      !changed = true;
+                      f with {thisParam => DetachedShape()}
                     | NoThis()
                     | Explicit _
-                    | ImplicitShape() ->
+                    | DetachedShape() ->
                       f
                     }
                   )
@@ -4176,6 +4187,7 @@ base class TEnv{
               isReadonly => Some(exprPos),
               type => decl,
               access => FAPublic(),
+              mayBeOmittedByCopy => true,
             };
             symbolFields![field.name] = field
           | FKName(name, _) ->
@@ -4186,6 +4198,7 @@ base class TEnv{
               isReadonly => Some(name.pos),
               type => decl,
               access => FAPublic(),
+              mayBeOmittedByCopy => true,
             };
             fieldsMap![field.name] = field;
             entry = objMethodGroups.maybeGet(field.name);
