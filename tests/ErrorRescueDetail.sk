@@ -1,0 +1,127 @@
+// Pins the file anchors of rescued subtyping diagnostics (issue #672 item 2).
+// `@skjs-expect-error-lineN` checks message text only, not the `PosRange` file
+// of continuation lines; this test asserts directly on `renderDetail` positions.
+module SKJSTests;
+
+fun checkSingleVirtualFileErrors(
+  source: String,
+): (mutable SKStore.Context, Array<SKJS.Error>) {
+  rootDir = Path.resolve(".");
+  virtualFile = Path.join(rootDir, "__skjs_rescue_pos_test__.ts");
+  overlay = SKJS.MemFs::fromMap(Map[virtualFile => source]);
+  fs = SKJS.OverlayFs{underlying => SKJS.DiskFs(), overlay};
+  context = SKStore.Context::mcreate{};
+  files =
+    SKJS.Files::create(
+      context,
+      fs,
+      rootDir,
+      Array[virtualFile],
+      Array["./import-stubs"],
+    ) |> expectFilesSuccess;
+  SKJS.writeConfig(
+    context,
+    SKJS.CheckerConfig{
+      compilerOptions => SKJS.TsCompilerOptions{},
+      errorHandling => SKJS.EHKeepGoing(),
+      errorDetailConfig => SKJS.ErrorDetailConfig::default(),
+    },
+  );
+  checker = SKJS.Checker::create{context, fs, files}.fromSuccess();
+  targetFPath = SKJS.FPath::create(
+    SKJS.RootId::project,
+    "__skjs_rescue_pos_test__.ts",
+  );
+  errors = checker
+    .checkFiles(context)
+    .getArray(context, targetFPath)
+    .flatMap(res -> res.errors);
+  (context, errors)
+}
+
+@test
+fun testRescuedNestedArrayDetailPositions(): void {
+  source = "declare function wrap<K extends 0 | 1>(x: Array<Array<K>>): K;\nfunction f(a: Array<Array<5>>): void { const r = wrap(a); }\n";
+  (context, errors) = checkSingleVirtualFileErrors(source);
+  SKTest.expectEq(1, errors.size());
+  errors[0] match {
+  | err @ SKJS.SubtypingError _ ->
+    detail = err.renderDetail(context, SKJS.STErrorDetail::default);
+    SKTest.expectTrue(detail.size() >= 2, "expected rescued detail lines");
+    // #672 item 2: rescued stub-frame positions re-anchor to user source
+    // instead of pointing into `import-stubs/@types/skjs/index.d.ts`.
+    for (entry in detail) {
+      SKTest.expectTrue(
+        entry.i0.fileName.rootId.isProject(),
+        `expected project anchor, got ${entry.i0.fileName} for: ${entry.i1}`,
+      )
+    };
+    SKTest.expectEq("Type '5'", detail[0].i1);
+    SKTest.expectEq("is not assignable to type '0 | 1'", detail[1].i1)
+  | _ -> SKTest.fail("expected SubtypingError")
+  }
+}
+
+@test
+fun testRescuedNestedReadonlyArrayDetailPositions(): void {
+  source = "declare function wrap<K extends 0 | 1>(x: ReadonlyArray<ReadonlyArray<K>>): K;\nfunction f(a: ReadonlyArray<ReadonlyArray<5>>): void { const r = wrap(a); }\n";
+  (context, errors) = checkSingleVirtualFileErrors(source);
+  SKTest.expectEq(1, errors.size());
+  errors[0] match {
+  | err @ SKJS.SubtypingError _ ->
+    detail = err.renderDetail(context, SKJS.STErrorDetail::default);
+    SKTest.expectTrue(detail.size() >= 2, "expected rescued detail lines");
+    for (entry in detail) {
+      SKTest.expectTrue(
+        entry.i0.fileName.rootId.isProject(),
+        `expected project anchor, got ${entry.i0.fileName} for: ${entry.i1}`,
+      )
+    };
+    SKTest.expectEq("Type '5'", detail[0].i1);
+    SKTest.expectEq("is not assignable to type '0 | 1'", detail[1].i1)
+  | _ -> SKTest.fail("expected SubtypingError")
+  }
+}
+
+@test
+fun testRescuedMapDetailPositions(): void {
+  source = "declare function wrap<K extends 0 | 1>(x: Map<string, K>): K;\nfunction f(a: Map<string, 5>): void { const r = wrap(a); }\n";
+  (context, errors) = checkSingleVirtualFileErrors(source);
+  SKTest.expectEq(1, errors.size());
+  errors[0] match {
+  | err @ SKJS.SubtypingError _ ->
+    detail = err.renderDetail(context, SKJS.STErrorDetail::default);
+    SKTest.expectTrue(detail.size() >= 2, "expected rescued detail lines");
+    for (entry in detail) {
+      SKTest.expectTrue(
+        entry.i0.fileName.rootId.isProject(),
+        `expected project anchor, got ${entry.i0.fileName} for: ${entry.i1}`,
+      )
+    };
+    SKTest.expectEq("Type '5'", detail[0].i1);
+    SKTest.expectEq("is not assignable to type '0 | 1'", detail[1].i1)
+  | _ -> SKTest.fail("expected SubtypingError")
+  }
+}
+
+@test
+fun testArrayConstraintRendersShorthandWithoutCollisionNote(): void {
+  source = "declare function f<K extends Array<0 | 1>>(x: K): K;\nfunction g(): void { const r = f(5); }\n";
+  (context, errors) = checkSingleVirtualFileErrors(source);
+  SKTest.expectEq(1, errors.size());
+  errors[0] match {
+  | err @ SKJS.SubtypingError _ ->
+    detail = err.renderDetail(context, SKJS.STErrorDetail::default);
+    SKTest.expectEq(2, detail.size());
+    SKTest.expectEq("Type '5'", detail[0].i1);
+    SKTest.expectEq("is not assignable to type '(0 | 1)[]'", detail[1].i1);
+    // No spurious '#' disambiguation note from expanded Array methods.
+    SKTest.expectFalse(
+      detail.any(m -> m.i1.contains("#")),
+      "did not expect '#' disambiguation note on shorthand Array",
+    )
+  | _ -> SKTest.fail("expected SubtypingError")
+  }
+}
+
+module end;

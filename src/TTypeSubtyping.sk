@@ -446,6 +446,60 @@ base class STErrorOnTType(ty1: TType, ty2: TType) extends STError<TType> {
   | STRecTypeWithHint(STErrorOnClauses, List<(PosRange, String)>)
   | STUnvalidatedType(SubtypeValidationFailure)
 
+  // Re-anchors a non-project (import-stub) position onto `fallbackPos`.
+  private static fun anchorInProject(
+    pos: PosRange,
+    fallbackPos: PosRange,
+  ): PosRange {
+    if (pos.fileName.rootId.isProject()) pos else fallbackPos
+  }
+
+  private static fun renderTypePair(
+    ty1: TType,
+    ty2: TType,
+    subst: mutable Subst,
+    tenv: TEnv,
+    tail: List<(PosRange, String)>,
+  ): List<(PosRange, String)> {
+    ty1Str = quoteRenderedType(prettyPrintType(false, ty1, subst, tenv));
+    ty2Str = quoteRenderedType(prettyPrintType(false, ty2, subst, tenv));
+    List.Cons(
+      (ty1.pos, `Type ${ty1Str}`),
+      List.Cons((ty2.pos, `is not assignable to type ${ty2Str}`), tail),
+    )
+  }
+
+  // Entry point for top-level diagnostic rendering: re-anchors any rescued
+  // stub-file positions onto user-code positions (`pos1`, `pos2`) when the
+  // error itself is reported in project code (`detail.maxRecTypeDepth == 0`).
+  fun toErrorForDiagnostic(
+    subst: mutable Subst,
+    tenv: TEnv,
+    detail: STErrorDetail,
+    fallbackPos1: PosRange,
+    fallbackPos2: PosRange,
+  ): List<(PosRange, String)> {
+    msgs = this.toError(subst, tenv, detail);
+    if (
+      detail.maxRecTypeDepth > 0 ||
+      !fallbackPos1.fileName.rootId.isProject()
+    ) {
+      return msgs
+    };
+    // Only re-anchor stub positions onto the outermost user-source positions
+    // (preserving any position that already points into project source).
+    // The first line (`Type ...`) falls back to `fallbackPos1` (source type),
+    // the second (`is not assignable to type ...`) to `fallbackPos2` (target
+    // type), and any trailing hints to `fallbackPos1`.
+    idx = 0;
+    msgs.map(entry -> {
+      (pos, msg) = entry;
+      fb = if (idx == 1) fallbackPos2 else fallbackPos1;
+      !idx = idx + 1;
+      (STErrorOnTType::anchorInProject(pos, fb), msg)
+    })
+  }
+
   fun toError(
     subst: mutable Subst,
     tenv: TEnv,
@@ -466,12 +520,7 @@ base class STErrorOnTType(ty1: TType, ty2: TType) extends STError<TType> {
       // fall back to the top-level type pair regardless of the detail
       // budget: an error must never print bare with no explanation.
       if (detail.maxRecTypeDepth > 0 || msgs.isEmpty()) {
-        ty1Str = quoteRenderedType(prettyPrintType(false, ty1, subst, tenv));
-        ty2Str = quoteRenderedType(prettyPrintType(false, ty2, subst, tenv));
-        List.Cons(
-          (ty1.pos, `Type ${ty1Str}`),
-          List.Cons((ty2.pos, `is not assignable to type ${ty2Str}`), msgs),
-        )
+        STErrorOnTType::renderTypePair(ty1, ty2, subst, tenv, msgs)
       } else {
         msgs
       }
@@ -487,12 +536,7 @@ base class STErrorOnTType(ty1: TType, ty2: TType) extends STError<TType> {
       // the clause comparison can report no pairs at all, and an error must
       // never print bare with no explanation.
       if (msgs.isEmpty()) {
-        ty1Str = quoteRenderedType(prettyPrintType(false, ty1, subst, tenv));
-        ty2Str = quoteRenderedType(prettyPrintType(false, ty2, subst, tenv));
-        List[
-          (ty1.pos, `Type ${ty1Str}`),
-          (ty2.pos, `is not assignable to type ${ty2Str}`),
-        ]
+        STErrorOnTType::renderTypePair(ty1, ty2, subst, tenv, List.Nil())
       } else {
         msgs
       }

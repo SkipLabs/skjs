@@ -121,3 +121,86 @@ function directTupleNestedMismatch(): void {
   // @skjs-expect-error-line3 is not assignable to type '0'
   const x: [[0], number] = [[1], 0];
 }
+
+// Expanded Array<T> and ReadonlyArray<T> constraints (#672 residual) render
+// in tsc shorthand (`(0 | 1)[]` / `readonly (0 | 1)[]`) rather than dumping
+// all stub methods and emitting a spurious `#`-disambiguation note.
+declare function arrConstraint<K extends Array<0 | 1>>(x: K): K;
+function arrayConstraintDump(): void {
+  // @skjs-expect-error Argument is not assignable to the parameter's type
+  // @skjs-expect-error-line2 Type '5'
+  // @skjs-expect-error-line3 is not assignable to type '(0 | 1)[]'
+  const r = arrConstraint(5);
+}
+
+declare function roArrConstraint<K extends ReadonlyArray<0 | 1>>(x: K): K;
+function readonlyArrayConstraintDump(): void {
+  // @skjs-expect-error Argument is not assignable to the parameter's type
+  // @skjs-expect-error-line2 Type '5'
+  // @skjs-expect-error-line3 is not assignable to type 'readonly (0 | 1)[]'
+  const r = roArrConstraint(5);
+}
+
+// Intersection guards: extra named/symbol/index members on an array or tuple
+// constraint must NOT be hidden by shorthand rendering.
+declare function arrExtraMember<K extends Array<0 | 1> & { foo: string }>(
+  x: K,
+): K;
+function arrayExtraMemberShown(arg: Array<0 | 1>): void {
+  // @skjs-expect-error Argument is not assignable to the parameter's type
+  // @skjs-expect-error-line2 Type '(0 | 1)[]'
+  // @skjs-expect-error-line3 is not assignable to type {
+  const r = arrExtraMember(arg);
+}
+
+declare const extraSym: unique symbol;
+declare function tupleExtraSym<K extends [0, 1] & { [extraSym]: string }>(
+  x: K,
+): K;
+function tupleExtraSymbolShown(arg: [0, 1]): void {
+  // @skjs-expect-error Argument is not assignable to the parameter's type
+  // @skjs-expect-error-line2 Type '[0, 1]'
+  // @skjs-expect-error-line3 is not assignable to type {
+  const r = tupleExtraSym(arg);
+}
+
+declare function tupleExtraIndex<K extends [0, 1] & { [k: string]: unknown }>(
+  x: K,
+): K;
+function tupleExtraIndexShown(arg: [0, 1]): void {
+  // @skjs-expect-error Argument is not assignable to the parameter's type
+  // @skjs-expect-error-line2 Type '[0, 1]'
+  // @skjs-expect-error-line3 is not assignable to type {
+  const r = tupleExtraIndex(arg);
+}
+
+// Rescued pairs inside nested generic containers (#672 item 2): keep the
+// precise leaf pair (`5` vs `0 | 1`), with stub positions re-anchored in user
+// source (file anchors verified in tests/ErrorRescueDetail.sk).
+declare function wrapNestedArray<K extends 0 | 1>(x: Array<Array<K>>): K;
+function nestedArrayConstraintMismatch(a: Array<Array<5>>): void {
+  // @skjs-expect-error Argument is not assignable to the parameter's type
+  // @skjs-expect-error-line2 Type '5'
+  // @skjs-expect-error-line3 is not assignable to type '0 | 1'
+  const r = wrapNestedArray(a);
+}
+
+declare function wrapNestedReadonlyArray<K extends 0 | 1>(
+  x: ReadonlyArray<ReadonlyArray<K>>,
+): K;
+function nestedReadonlyArrayConstraintMismatch(
+  a: ReadonlyArray<ReadonlyArray<5>>,
+): void {
+  // @skjs-expect-error Argument is not assignable to the parameter's type
+  // @skjs-expect-error-line2 Type '5'
+  // @skjs-expect-error-line3 is not assignable to type '0 | 1'
+  const r = wrapNestedReadonlyArray(a);
+}
+
+declare function wrapMap<K extends 0 | 1>(x: Map<string, K>): K;
+function mapConstraintMismatch(a: Map<string, 5>): void {
+  // @skjs-expect-error Argument is not assignable to the parameter's type
+  // @skjs-expect-error-line2 Type '5'
+  // @skjs-expect-error-line3 is not assignable to type '0 | 1'
+  const r = wrapMap(a);
+}
