@@ -160,11 +160,12 @@ interface MergeOrder {
 }
 
 function testMergeOrder(x: MergeOrder): void {
-  // Currently first declaration wins; tsc resolves later declarations first.
-  const r1: number = x("a");
-  const r2: number = x("b");
+  // Later merged interface declarations resolve first, preserving
+  // top-to-bottom order within each declaration (matching tsc).
+  const r1: "second-1" = x("a");
+  const r2: "second-2" = x("b");
   const r3: number = x("c");
   const r4: boolean = x(1);
-  const c1: { from: "first" } = new x("hi");
-  const m1: number = x.m("hi");
+  const c1: { from: "second" } = new x("hi");
+  const m1: string = x.m("hi");
 }

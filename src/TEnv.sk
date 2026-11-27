@@ -1784,30 +1784,33 @@ base class TEnv{
     ownFields = mutable Map<FieldNameString, TField>[];
     ownMethods = mutable Set<FieldNameString>[];
     ownIndexKinds = mutable Set<String>[];
-    ownFieldEntries = mutable Vector<(Class, ClassField)>[];
-    for (cls in clss) {
+    ownFieldEntries = mutable Vector<(Int, Class, ClassField)>[];
+    for (declIdx => cls in clss) {
       for (field in this.getClassFields(tcenvb.context, cls)) {
-        ownFieldEntries.push((cls, field))
+        ownFieldEntries.push((declIdx, cls, field))
       }
     };
     // Call/construct signatures declared directly by these declarations
-    // (interface bodies only), in declaration order. They are prepended to
-    // the shared vectors after the loop so own signatures resolve before
-    // inherited ones (tsc's derived-first order for `extends`).
-    ownCallSigs = mutable Vector<TFun>[];
-    ownNewSigs = mutable Vector<TFun>[];
+    // (interface bodies only), bucketed per declaration so merged interfaces
+    // emit later declarations first (preserving top-to-bottom order within
+    // each declaration, matching tsc) before inherited signatures.
+    reverseMergedDecls =
+      clss.size() > 1 &&
+      clss.all(c -> c.kind is CKInterface());
+    ownCallSigBuckets = Array::fillBy(clss.size(), _ -> mutable Vector<TFun>[]);
+    ownNewSigBuckets = Array::fillBy(clss.size(), _ -> mutable Vector<TFun>[]);
     // Same-name method declarations accumulate as an overload set (tsc
     // merges them within a class body and across merged interface
     // declarations). methodGroups[name] tracks the first member's field plus
-    // every member's signature, in declaration order; the field stored in
-    // `acc` is rebuilt after the loop with the merged TFuns. Like top-level
-    // functions, the implementation (body-bearing) signature is excluded
-    // from the callable set when signature-only overloads exist.
+    // per-declaration buckets of all/sig-only signatures; merged interfaces
+    // emit later declarations first (preserving intra-declaration order).
+    // Like top-level functions, the implementation (body-bearing) signature is
+    // excluded from the callable set when signature-only overloads exist.
     methodGroups = mutable Map<
       FieldNameString,
-      (TField, Array<TFun>, Array<TFun>),
+      (TField, Array<mutable Vector<TFun>>, Array<mutable Vector<TFun>>),
     >[];
-    for ((cls, fieldType) in ownFieldEntries) {
+    for ((declIdx, cls, fieldType) in ownFieldEntries) {
       fieldType match {
       | field @ ClassFieldValue _ ->
         if (!filter(field)) continue;
@@ -1962,8 +1965,8 @@ base class TEnv{
           fd.optional is None()
         ) {
           fd.name match {
-          | FNEmpty(_) -> Some((ownCallSigs, false))
-          | FNNormal(Name(_, "new")) -> Some((ownNewSigs, true))
+          | FNEmpty(_) -> Some((ownCallSigBuckets[declIdx], false))
+          | FNNormal(Name(_, "new")) -> Some((ownNewSigBuckets[declIdx], true))
           | _ -> None()
           }
         } else {
@@ -2053,31 +2056,52 @@ base class TEnv{
 
           this.recordOwnField(tcenvb, ownFields, ownMethods, field, true);
           acc![field.name] = field;
-          // Accumulate same-name methods into one overload set, in
-          // declaration order. Get/set accessors are not overloads, so they
-          // never merge.
+          // Accumulate same-name methods into one overload set, bucketed per
+          // declaration so merged interfaces emit later declarations first
+          // while preserving order within each declaration. Get/set accessors
+          // are not overloads, so they never merge.
           if (fd.isGetSet is None()) {
-            entry = methodGroups.maybeGet(field.name);
-            (firstField, allFuns, sigFuns) = entry match {
+            (firstField, allBuckets, sigBuckets) = methodGroups.maybeGet(
+              field.name,
+            ) match {
             | Some(e) -> e
-            | None() -> (field, Array[], Array[])
+            | None() ->
+              e = (
+                field,
+                Array::fillBy(clss.size(), _ -> mutable Vector<TFun>[]),
+                Array::fillBy(clss.size(), _ -> mutable Vector<TFun>[]),
+              );
+              methodGroups![field.name] = e;
+              e
             };
-            newAll = allFuns.concat(metTFuns.allFuns());
-            newSig = if (fd.hasBody) {
-              sigFuns
-            } else {
-              sigFuns.concat(metTFuns.allFuns())
+            for (tf in metTFuns.allFuns()) {
+              allBuckets[declIdx].push(tf);
+              if (!fd.hasBody) sigBuckets[declIdx].push(tf)
             };
-            methodGroups![field.name] = (firstField, newAll, newSig)
+            _ = firstField
           }
         }
       }
     };
-    // Emit own call/construct signatures first (derived-first), then inherited
-    // ones in left-to-right `extends` order — matching tsc.
-    for (tf in ownCallSigs) callSigs.push(tf);
+    flattenBuckets = (buckets: Array<mutable Vector<TFun>>) -> {
+      out = mutable Vector<TFun>[];
+      if (reverseMergedDecls) {
+        for (i in Range(0, buckets.size())) {
+          for (tf in buckets[buckets.size() - 1 - i]) out.push(tf)
+        }
+      } else {
+        for (bucket in buckets) {
+          for (tf in bucket) out.push(tf)
+        }
+      };
+      out.toArray()
+    };
+    // Emit own call/construct signatures first (derived-first, and later
+    // merged interface declarations before earlier ones), then inherited ones
+    // in left-to-right `extends` order — matching tsc.
+    for (tf in flattenBuckets(ownCallSigBuckets)) callSigs.push(tf);
     for (tf in baseCallSigs) callSigs.push(tf);
-    for (tf in ownNewSigs) newSigs.push(tf);
+    for (tf in flattenBuckets(ownNewSigBuckets)) newSigs.push(tf);
     for (tf in baseNewSigs) newSigs.push(tf);
     // Rebuild overloaded method fields now that every declaration of the
     // merged name has been seen: the sig-only/impl split is only final once
@@ -2085,8 +2109,8 @@ base class TEnv{
     // signature whenever at least one signature-only overload exists.
     methodGroups.each((name, grp) -> {
       firstField = grp.i0;
-      allFuns = grp.i1;
-      sigFuns = grp.i2;
+      allFuns = flattenBuckets(grp.i1);
+      sigFuns = flattenBuckets(grp.i2);
       finalFuns = if (sigFuns.isEmpty()) allFuns else sigFuns;
       mergedType = TType::single(
         TObject::createCall(TFuns::multiple(finalFuns, firstField.pos)),

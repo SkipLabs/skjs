@@ -40,10 +40,8 @@ function useBox(b: Box<number>): void {
   const w: Box<number> = b.wrap(1);
 }
 
-// A re-declared method accumulates as an overload in tsc. SKJS cannot
-// represent overloads (a TFuns holds a single signature) and keeps the later
-// declaration, which is sound: dropping an overload only rejects programs tsc
-// accepts, never accepts one tsc rejects.
+// A re-declared method accumulates as an overload, with later declarations
+// resolving before earlier ones (matching tsc).
 interface Overloaded {
   m(x: string): void;
 }
@@ -51,6 +49,7 @@ interface Overloaded {
   m(x: number): void;
 }
 function useOverloaded(o: Overloaded): void {
+  o.m("a");
   o.m(1);
 }
 
