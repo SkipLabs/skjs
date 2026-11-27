@@ -4075,6 +4075,39 @@ base class TEnv{
     }
   }
 
+  // Warn on any overload signature in `sigs` that is completely shadowed by an
+  // earlier signature in the same declaration (so first-match overload
+  // resolution can never select it). Ambient `.d.ts` files are skipped so
+  // third-party / lib declarations are not flagged.
+  fun warnShadowedOverloads(
+    tcenvb: mutable TCEnvBase,
+    sigs: Array<(PosRange, TFun)>,
+  ): void {
+    if (sigs.size() <= 1) return void;
+    if (tcenvb is TypeReadDeclaration _) return void;
+    if (sigs[0].i0.fileName.toString().endsWith(".d.ts")) return void;
+    subst = Subst::computationOwner(tcenvb);
+    for (j in Range(1, sigs.size())) {
+      (laterPos, laterFun) = sigs[j];
+      for (i in Range(0, j)) {
+        (earlierPos, earlierFun) = sigs[i];
+        if (TType::shadowsFunParams(subst, this, earlierFun, laterFun)) {
+          tcenvb.warning(
+            Array[
+              (
+                laterPos,
+                "This overload signature is shadowed by an earlier overload and can never be selected",
+              ),
+              (earlierPos, "The earlier overload is declared here"),
+            ],
+            SKJSCode(2083),
+          );
+          break void
+        }
+      }
+    }
+  }
+
   private fun createTFields(
     tcenvb: mutable TCEnvBase,
     fieldTypes: Array<ObjectField>,
@@ -4085,9 +4118,14 @@ base class TEnv{
     indexes = mutable Vector[];
     call: ?TFuns = None();
     new: ?TFuns = None();
+    callSigEntries = mutable Vector<(PosRange, TFun)>[];
+    newSigEntries = mutable Vector<(PosRange, TFun)>[];
     // Same-name method-syntax members of an object type literal accumulate
     // as an overload set, in declaration order (see addFields for classes).
-    objMethodGroups = mutable Map<FieldNameString, (TField, Array<TFun>)>[];
+    objMethodGroups = mutable Map<
+      FieldNameString,
+      (TField, Array<(PosRange, TFun)>),
+    >[];
 
     for (elt in fieldTypes) {
       elt match {
@@ -4312,10 +4350,14 @@ base class TEnv{
         | FNNormal(Name(_, "new")) if (fd.optional is None()) ->
           // Construct signatures accumulate: `{ new (x: string): A; new (x: number): A }`
           // is a construct overload set, resolved like call overloads.
-          !new = Some(static::mergeSigSet(new, tFuns, fd.name.getPos()))
+          !new = Some(static::mergeSigSet(new, tFuns, fd.name.getPos()));
+          for (tf in tFuns.allFuns()) newSigEntries.push((fd.name.getPos(), tf))
         | FNEmpty(_) ->
           // Call signatures accumulate the same way.
-          !call = Some(static::mergeSigSet(call, tFuns, fd.name.getPos()))
+          !call = Some(static::mergeSigSet(call, tFuns, fd.name.getPos()));
+          for (tf in tFuns.allFuns()) {
+            callSigEntries.push((fd.name.getPos(), tf))
+          }
         | simpleFieldName @ SimpleFieldName _ ->
           decl = TType::single(TObject::createCall(tFuns));
           simpleFieldName match {
@@ -4352,15 +4394,19 @@ base class TEnv{
             };
             objMethodGroups![field.name] = (
               firstField,
-              funs.concat(tFuns.allFuns()),
+              funs.concat(tFuns.allFuns().map(tf -> (name.pos, tf))),
             )
           }
         }
       }
     };
+    this.warnShadowedOverloads(tcenvb, callSigEntries.toArray());
+    this.warnShadowedOverloads(tcenvb, newSigEntries.toArray());
     objMethodGroups.each((name, grp) -> {
       firstField = grp.i0;
-      funs = grp.i1;
+      entries = grp.i1;
+      this.warnShadowedOverloads(tcenvb, entries);
+      funs = entries.map(e -> e.i1);
       mergedType = TType::single(
         TObject::createCall(TFuns::multiple(funs, firstField.pos)),
       );

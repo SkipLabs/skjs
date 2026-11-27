@@ -16,7 +16,7 @@ interface CallBaseA {
 interface CallBaseB {
   (x: string): string;
 }
-// Currently accepted silently; should error (conflicting inherited call signatures).
+// @skjs-expect-error Interface 'ConflictCallSub' cannot simultaneously extend 'CallBaseA' and 'CallBaseB': conflicting call signatures
 interface ConflictCallSub extends CallBaseA, CallBaseB {}
 
 interface NewBaseA {
@@ -25,7 +25,7 @@ interface NewBaseA {
 interface NewBaseB {
   new (x: string): { b: string };
 }
-// Currently accepted silently; should error (conflicting inherited construct signatures).
+// @skjs-expect-error Interface 'ConflictNewSub' cannot simultaneously extend 'NewBaseA' and 'NewBaseB': conflicting construct signatures
 interface ConflictNewSub extends NewBaseA, NewBaseB {}
 
 // Compatible refinement across extends: earlier base's return is a subtype of
@@ -67,8 +67,8 @@ export function usePartialOverlap(): void {
 // ---------------------------------------------------------------------------
 
 // Top-level function: wider overload listed before narrower.
-// Currently no warning; should warn on the shadowed second overload.
 function shadowedFn(x: string | number): string | number;
+// @skjs-expect-warning This overload signature is shadowed by an earlier overload and can never be selected
 function shadowedFn(x: string): string;
 function shadowedFn(x: string | number): string | number {
   return x;
@@ -82,15 +82,16 @@ function orderedFn(x: string | number): string | number {
 }
 
 // Class method: wider overload before narrower.
-// Currently no warning; should warn on the shadowed second overload.
 class ShadowedClass {
   m(x: string | number): string | number;
+  // @skjs-expect-warning This overload signature is shadowed by an earlier overload and can never be selected
   m(x: string): string;
   m(x: string | number): string | number {
     return x;
   }
 
   constructor(x: string | number);
+  // @skjs-expect-warning This overload signature is shadowed by an earlier overload and can never be selected
   constructor(x: string);
   constructor(_x: string | number) {}
 }
@@ -98,20 +99,26 @@ class ShadowedClass {
 // Interface call/construct/method shadowed within one declaration.
 interface ShadowedIface {
   (x: string | number): void;
+  // @skjs-expect-warning This overload signature is shadowed by an earlier overload and can never be selected
   (x: string): void;
   new (x: string | number): object;
+  // @skjs-expect-warning This overload signature is shadowed by an earlier overload and can never be selected
   new (x: string): object;
   m(x: string | number): void;
+  // @skjs-expect-warning This overload signature is shadowed by an earlier overload and can never be selected
   m(x: string): void;
 }
 
 // Object type literal shadowed call/construct/method.
 type ShadowedObj = {
   (x: string | number): void;
+  // @skjs-expect-warning This overload signature is shadowed by an earlier overload and can never be selected
   (x: string): void;
   new (x: string | number): object;
+  // @skjs-expect-warning This overload signature is shadowed by an earlier overload and can never be selected
   new (x: string): object;
   m(x: string | number): void;
+  // @skjs-expect-warning This overload signature is shadowed by an earlier overload and can never be selected
   m(x: string): void;
 };
 export function useShadowedObj(o: ShadowedObj): void {

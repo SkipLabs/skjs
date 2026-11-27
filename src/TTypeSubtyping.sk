@@ -2259,6 +2259,53 @@ extension class TType {
     static::isSubFun(subst, tenv, general, specific) is STOk()
   }
 
+  // Whether overload `earlier` shadows `later` at every call site (so `later`
+  // can never be selected by first-match overload resolution). True when both
+  // are non-generic, `earlier`'s arity covers `later`'s arity (so the call-site
+  // arity filter never skips `earlier` for a call targeting `later`), and every
+  // argument tuple accepted by `later` is also accepted by `earlier`
+  // (contravariant parameter subtyping, ignoring return types).
+  static fun shadowsFunParams(
+    subst: mutable Subst,
+    tenv: TEnv,
+    earlier: TFun,
+    later: TFun,
+  ): Bool {
+    if (!earlier.tparams.isEmpty() || !later.tparams.isEmpty()) {
+      return false
+    };
+    covers =
+      earlier.spreadParam.isSome() ||
+      (later.spreadParam.isNone() &&
+        earlier.params.size() + earlier.optionalParams.size() >=
+          later.params.size() + later.optionalParams.size());
+    if (!covers) return false;
+    // Compare parameters via `isSubFun` with neutral return types (top -> top)
+    // on a detached diagnostic substitution so no inference bindings or
+    // subtyping edges are published.
+    probe = subst.diagnosticComputation();
+    topRet = TType::top(earlier.retType.pos);
+    static::isSubFun(
+      probe,
+      tenv,
+      earlier with {retType => topRet},
+      later with {retType => topRet},
+    ) is STOk()
+  }
+
+  // Whether `earlier`'s return type is a subtype of `later`'s return type
+  // (detached diagnostic check, used to distinguish compatible refinement
+  // across `extends` from genuinely conflicting inherited signatures).
+  static fun funReturnSub(
+    subst: mutable Subst,
+    tenv: TEnv,
+    earlier: TFun,
+    later: TFun,
+  ): Bool {
+    probe = subst.diagnosticComputation();
+    static::isSub(probe, tenv, earlier.retType, later.retType) is STOk()
+  }
+
   // One attempt of an existential compatibility search, for `instanceof`
   // branch preservation: is there an instantiation of `view` under which
   // `source` already matches? The attempt runs on its own detached state, so

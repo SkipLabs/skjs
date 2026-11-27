@@ -414,6 +414,16 @@ extension class TypeChecker {
     // check here (and funDecl below would re-emit signature-level diagnostics
     // for a plain function that funDef already reports via processParams).
     overloadSigs = group.filter(f -> !hasBody(f));
+    if (overloadSigs.size() > 1) {
+      sigEntries = mutable Vector<(PosRange, TFun)>[];
+      for (ovFd in overloadSigs) {
+        ovFd.getPos().each(ovPos -> {
+          ovTFuns = this.funDecl(tcenvl, None(), ovFd, ovFd.cgNode.fromSome());
+          for (tf in ovTFuns.allFuns()) sigEntries.push((ovPos, tf))
+        })
+      };
+      this.warnShadowedOverloads(tcenvl, sigEntries.toArray())
+    };
     if (bodies.size() == 1 && !overloadSigs.isEmpty()) {
       implFd = bodies[0];
       implTFuns = this.funDecl(

@@ -19,9 +19,10 @@ export function testSingleToRestTarget(): string {
 }
 
 // 2. Interface `extends A, B`: bases must appear left-to-right (A before B),
-// matching tsc (currently B overwrites/prepends ahead of A).
+// matching tsc (tested with partially overlapping bases so B remains reachable;
+// completely conflicting bases are now rejected at declaration time).
 interface BaseA {
-  (x: string): number;
+  (x: "hi"): number;
 }
 interface BaseB {
   (x: string): string;
@@ -30,6 +31,7 @@ interface SubAB extends BaseA, BaseB {}
 declare const subAB: SubAB;
 export function testExtendsBaseOrder(): void {
   const a: number = subAB("hi");
+  const s: string = subAB("other");
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const b: string = subAB("hi");
 }

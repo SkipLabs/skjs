@@ -87,7 +87,10 @@ extension class TypeChecker {
     groupDecls = mutable Vector[c];
     for (def in this.defMap.getAll(tcenvl, c.name, true)) {
       def match {
-      | other @ Class _ -> groupDecls.push(other)
+      | other @ Class _ if (
+        !groupDecls.any(existing -> existing.name.pos == other.name.pos)
+      ) ->
+        groupDecls.push(other)
       | _ -> void
       }
     };
@@ -136,6 +139,12 @@ extension class TypeChecker {
           TSCode(1174),
         )
       };
+      // Collect inherited call/construct signatures per `extends` base on
+      // interfaces so we can diagnose conflicting bases (where an earlier
+      // base's signature completely shadows a later base's signature with an
+      // incompatible return type, making the combined interface inconsistent).
+      inheritedBaseCallSigs = mutable Vector<(PosRange, String, Array<TFun>)>[];
+      inheritedBaseNewSigs = mutable Vector<(PosRange, String, Array<TFun>)>[];
       for (ext in c.extends_) {
         ext.value match {
         | TAInst(parentReference, parentTArgs) ->
@@ -204,7 +213,28 @@ extension class TypeChecker {
             // identity (interfaces are structural), so it is checked against
             // the base's structural view.
             if (isInterface) {
-              !super = TType::withoutClassIdentity(subst, this, super)
+              !super = TType::withoutClassIdentity(subst, this, super);
+              super
+                .expand(subst, this, Some(Covariant()))
+                .clauses.getObject() match {
+              | Some(obj) if (obj.getBranches().size() == 1) ->
+                bf = obj.getBranches()[0];
+                bf.call match {
+                | CPresent(funs) ->
+                  inheritedBaseCallSigs.push(
+                    (parentName.pos, parentName.value, funs.allFuns()),
+                  )
+                | _ -> void
+                };
+                bf.new match {
+                | CPresent(funs) ->
+                  inheritedBaseNewSigs.push(
+                    (parentName.pos, parentName.value, funs.allFuns()),
+                  )
+                | _ -> void
+                }
+              | _ -> void
+              }
             };
             if (!isInterface) {
               !this.super = Some((superCstr, super));
@@ -276,6 +306,60 @@ extension class TypeChecker {
             TSCode(2507),
           )
         }
+      };
+      // Check conflicting call/construct signatures inherited across multiple
+      // `extends` bases: if an earlier base's signature completely shadows a
+      // later base's signature with an incompatible return type, the later
+      // signature can never be selected and no value can satisfy both bases.
+      if (isInterface) {
+        checkBaseSigConflicts = (
+          bases: readonly Vector<(PosRange, String, Array<TFun>)>,
+          kindLabel: String,
+        ) -> {
+          if (bases.size() <= 1) return void;
+          for (j in Range(1, bases.size())) {
+            (laterBasePos, laterBaseName, laterSigs) = bases[j];
+            for (i in Range(0, j)) {
+              (earlierBasePos, earlierBaseName, earlierSigs) = bases[i];
+              conflict = false;
+              for (laterFun in laterSigs) {
+                for (earlierFun in earlierSigs) {
+                  if (
+                    TType::shadowsFunParams(
+                      subst,
+                      this,
+                      earlierFun,
+                      laterFun,
+                    ) &&
+                    !TType::funReturnSub(subst, this, earlierFun, laterFun)
+                  ) {
+                    tcenvl.error(
+                      Array[
+                        (
+                          c.name.pos,
+                          `Interface '${
+                            c.name.value
+                          }' cannot simultaneously extend '${earlierBaseName}' and '${laterBaseName}': conflicting ${kindLabel} signatures`,
+                        ),
+                        (
+                          earlierBasePos,
+                          `'${earlierBaseName}' declares a signature that shadows '${laterBaseName}' with an incompatible return type`,
+                        ),
+                        (laterBasePos, `'${laterBaseName}' is extended here`),
+                      ],
+                      TSCode(2320),
+                    );
+                    !conflict = true;
+                    break void
+                  }
+                };
+                if (conflict) break void
+              }
+            }
+          }
+        };
+        checkBaseSigConflicts(inheritedBaseCallSigs, "call");
+        checkBaseSigConflicts(inheritedBaseNewSigs, "construct")
       }
     };
     for (interface in c.implements) {
@@ -853,6 +937,80 @@ extension class TypeChecker {
           ),
         ],
         TSCode(2390),
+      )
+    };
+    // Intra-declaration shadowed overload warnings for methods, constructors,
+    // and interface call/construct signatures. Checked per declaration so
+    // intentional refinements across merged interfaces are not flagged.
+    for (decl in decls) {
+      declCallSigs = mutable Vector<(PosRange, TFun)>[];
+      declNewSigs = mutable Vector<(PosRange, TFun)>[];
+      declCtorSigs = mutable Vector<(PosRange, TFun)>[];
+      declMethodSigs = mutable Map<String, mutable Vector<(PosRange, TFun)>>[];
+      for (f in this.getClassFields(tcenvl.context, decl)) {
+        f match {
+        | fd @ ClassFieldMethod _ if (!fd.hasBody && fd.isGetSet is None()) ->
+          fd.name match {
+          | FNEmpty(
+            _,
+          ) if (decl.kind is CKInterface() && fd.optional is None()) ->
+            cgNode = CGNode::create(Method(fd.name, c.name, false));
+            sigFuns = this.funDecl(
+              tcenvl,
+              None(),
+              fd,
+              cgNode,
+              false,
+              true,
+              false,
+            );
+            for (tf in sigFuns.allFuns()) {
+              declCallSigs.push((fd.name.getPos(), tf))
+            }
+          | FNNormal(
+            Name(_, "new"),
+          ) if (decl.kind is CKInterface() && fd.optional is None()) ->
+            cgNode = CGNode::create(Method(fd.name, c.name, false));
+            sigFuns = this.funDecl(
+              tcenvl,
+              None(),
+              fd,
+              cgNode,
+              false,
+              false,
+              true,
+            );
+            for (tf in sigFuns.allFuns()) {
+              declNewSigs.push((fd.name.getPos(), tf))
+            }
+          | FNNormal(Name(_, "constructor")) ->
+            sigFuns = this.makeConstructor(tcenvl, c.name, c.tparams, fd);
+            for (tf in sigFuns.allFuns()) {
+              declCtorSigs.push((fd.name.getPos(), tf))
+            }
+          | FNNormal(n) ->
+            key = if (fd.isStatic()) `static:${n.value}` else n.value;
+            implicitThisOpt = if (fd.isStatic()) None() else Some(thisType);
+            cgNode = CGNode::create(Method(fd.name, c.name, fd.isStatic()));
+            sigFuns = this.funDecl(tcenvl, implicitThisOpt, fd, cgNode);
+            vec = declMethodSigs.maybeGet(key) match {
+            | Some(v) -> v
+            | None() ->
+              v = mutable Vector[];
+              declMethodSigs![key] = v;
+              v
+            };
+            for (tf in sigFuns.allFuns()) vec.push((fd.name.getPos(), tf))
+          | _ -> void
+          }
+        | _ -> void
+        }
+      };
+      this.warnShadowedOverloads(tcenvl, declCallSigs.toArray());
+      this.warnShadowedOverloads(tcenvl, declNewSigs.toArray());
+      this.warnShadowedOverloads(tcenvl, declCtorSigs.toArray());
+      declMethodSigs.each((_, vec) ->
+        this.warnShadowedOverloads(tcenvl, vec.toArray())
       )
     };
     if (!classIsAmbient && ctorBodies.size() == 1 && !ctorSigs.isEmpty()) {
