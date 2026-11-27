@@ -1180,7 +1180,7 @@ class TObject private (
       | Some(TSInst(Name(p, "number"), TArgs(targs))) if (targs.isEmpty()) ->
         TType::single(TPrimValue::number(p))
       | Some(TSInst(Name(p, "string"), TArgs(targs))) if (targs.isEmpty()) ->
-        TType::single(TPrimValue::string(p))
+        TType::single(TPrimString::full(p))
       | Some(TSInst(Name(p, "symbol"), TArgs(targs))) if (targs.isEmpty()) ->
         TType::single(TPrimValue::symbol(p))
       | Some(TSInst(Name(p, "bigint"), TArgs(targs))) if (targs.isEmpty()) ->
