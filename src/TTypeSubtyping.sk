@@ -1650,6 +1650,8 @@ extension class TType {
             tvarsToGrow,
             seen,
           )
+        | TClosed(_, inner) ->
+          static::collectTVars(subst, tenv, inner.insts, tvarsToGrow, seen)
         | TArrayLit _ -> void
         }
       }

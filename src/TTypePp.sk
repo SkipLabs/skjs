@@ -1009,6 +1009,10 @@ mutable class TypePp{
               if (j < tys.size() - 1) pp.out(level, margin, " & ");
               !j = j + 1;
             }
+          | TClosed(_, inner) ->
+            pp.out(level, margin, "Closed<");
+            pp.type(level, margin, inner);
+            pp.out(level, margin, ">")
           | tvar @ TVar _ -> pp.tvar(level, margin, tvar)
           }
         }
@@ -1040,6 +1044,10 @@ mutable class TypePp{
               if (i < tys.size() - 1) pp.out(level, margin, " & ");
               !i = i + 1;
             }
+          | TClosed(_, inner) ->
+            pp.out(level, margin, "Closed<");
+            pp.type(level, margin, inner);
+            pp.out(level, margin, ">")
           | tvar @ TVar _ -> pp.tvar(level, margin, tvar)
           }
         }
@@ -1086,7 +1094,8 @@ mutable class TypePp{
           !tvar.constraints.isEmpty() ||
             this.substValues.maybeGet(tvar.identity()).isSome()
         | TArrayLit _
-        | TSInst _ ->
+        | TSInst _
+        | TClosed _ ->
           false
         }
       }

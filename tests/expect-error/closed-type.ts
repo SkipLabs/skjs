@@ -183,12 +183,8 @@ function testClosedOfConstrainedTypeParameter<T extends { a: number }>(
 }
 
 // A generic alias wrapping Closed: validation of the abstract body is
-// deferred during type-definition validation and performed at each concrete
-// instantiation instead, so wrappers work. A BAD concrete instantiation
-// (testClosedAliasWrapperBadInstantiation below) reports here, at the
-// wrapper's own Closed<T> application — the use-site position is erased by
-// alias re-positioning before the instantiation-time check runs.
-// @skjs-expect-error Closed<T> requires a statically known object type
+// deferred during type-definition validation and performed when each concrete
+// instantiation is expanded, anchoring errors at the use site (#814).
 type FreezeWrapper<T> = Closed<T>;
 
 function testClosedAliasWrapperConcrete(): void {
@@ -197,11 +193,18 @@ function testClosedAliasWrapperConcrete(): void {
 }
 
 function testClosedAliasWrapperBadInstantiation(): void {
+  // @skjs-expect-error Closed<T> requires a statically known object type
   const n: FreezeWrapper<number> = 1;
 }
 
-// Multi-level wrapper alias: pre-#814 also anchors on FreezeWrapper's own
-// Closed<T> application rather than at the use site below.
+// A second bad instantiation of the same `FreezeWrapper<number>` must also
+// anchor at its own use site even when the named-expansion cache hits.
+function testClosedAliasWrapperBadInstantiationSecond(): void {
+  // @skjs-expect-error Closed<T> requires a statically known object type
+  const n: FreezeWrapper<number> = 2;
+}
+
+// Multi-level wrapper alias: errors still anchor at the outermost use site.
 type DeepFreezeWrapper<T> = FreezeWrapper<T>;
 
 function testClosedDeepWrapperConcrete(): void {
@@ -210,7 +213,21 @@ function testClosedDeepWrapperConcrete(): void {
 }
 
 function testClosedDeepWrapperBadInstantiation(): void {
+  // @skjs-expect-error Closed<T> requires a statically known object type
   const n: DeepFreezeWrapper<number> = 1;
+}
+
+// Shallow closing preserves symbolic nested aliases without eager flattening:
+// a field typed via a recursive alias stays symbolic inside Closed<...>.
+type NestedTree = { readonly val: number; readonly child?: NestedTree };
+type ClosedNestedHolder = Closed<{ readonly tree: NestedTree }>;
+
+function testClosedShallowPreservesNestedAlias(): void {
+  const leaf: NestedTree = { val: 1 };
+  const holder: ClosedNestedHolder = { tree: leaf };
+  const t: NestedTree = holder.tree;
+  // @skjs-expect-error Property 'extra' does not exist on this type
+  const bad = holder.extra;
 }
 
 // ============================================================================
@@ -243,36 +260,35 @@ function testClosedOfLiteralSyntheticIndex(): void {
 // @skjs-expect-error Type alias 'SelfClosed' circularly references itself
 type SelfClosed = Closed<SelfClosed>;
 
-// Pre-#814: nested `Closed<Closed<T>>` fails because eager expansion of the
-// inner `Closed` hits `seenInstantiate` for the `Closed` stub alias and
-// returns an unexpanded inst.
+// Direct recursive alias through SKJS_Closed<...> is also circular (TS2456).
+// @skjs-expect-error Type alias 'SelfDirectClosed' circularly references itself
+type SelfDirectClosed = SKJS_Closed<SelfDirectClosed>;
+
+// Nested `Closed<Closed<T>>` is idempotent (#814) and preserves `Closed<...>`
+// display without double-wrapping.
 function testClosedOfClosed(): void {
-  // @skjs-expect-error Closed<T> requires a statically known object type
   const x: Closed<Closed<{ readonly a: number }>> = { a: 1 };
   const j: Json = x;
+  __SKJS_show_expanded(x, "Closed<{ readonly a: number; }>");
 }
 
 type ClosedAlreadyObj = Closed<{ readonly a: number }>;
 
-// Pre-#814: `Closed<ClosedAlreadyObj>` hits the same `seenInstantiate` cycle.
+// `Closed<ClosedAlreadyObj>` is idempotent (#814).
 function testClosedOfClosedAlias(): void {
-  // @skjs-expect-error Closed<T> requires a statically known object type
   const x: Closed<ClosedAlreadyObj> = { a: 1 };
   const j: Json = x;
 }
 
-// Pre-#814: closing an already-closed `as const` literal is rejected because
-// its never indexes are treated as declared index signatures.
+// Closing an already-closed `as const` literal is idempotent (#814).
 function testClosedOfAsConst(): void {
   const lit = { a: 1 } as const;
-  // @skjs-expect-error Closed<T> requires an object type without index signatures
   const x: Closed<typeof lit> = { a: 1 };
   const j: Json = x;
 }
 
-// Pre-#814: direct `SKJS_Closed<SKJS_Closed<T>>` is rejected for the same reason.
+// Direct `SKJS_Closed<SKJS_Closed<T>>` is also idempotent (#814).
 function testDirectClosedOfClosed(): void {
-  // @skjs-expect-error Closed<T> requires an object type without index signatures
   const x: SKJS_Closed<SKJS_Closed<{ readonly a: number }>> = { a: 1 };
   const j: Json = x;
 }

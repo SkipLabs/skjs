@@ -380,7 +380,7 @@ base class TEnv{
         ProbeTypeArguments(),
         Some(ta),
       );
-      !this.instantiateAt = Some(name.pos);
+      !this.instantiateAt = Some(this.instantiateAt.default(name.pos));
       this.normalize(tcenvb, this.getTypeDefBody(tcenvb.context, ta))
     | Class _ -> this.new(tcenvb, name, targs.targs)
     | en @ Enum _ -> this.enumUnionType(tcenvb, en)
@@ -821,6 +821,18 @@ base class TEnv{
         }
       | _ -> false
       }
+    // `SKJS_Closed<T>` is a checker-intercepted operator, not a declared
+    // TypeDef, so walk its operand directly: `type R = SKJS_Closed<R>` is
+    // circular just like `type R = Closed<R>`.
+    | TAInst(Name(_, "SKJS_Closed"), targs) if (targs.size() == 1) ->
+      this.requiresTypeDef(
+        context,
+        target,
+        targs[0],
+        shadowed,
+        visited,
+        typeofVisited,
+      )
     | TAInst(n, targs) ->
       if (shadowed.contains(n.value)) {
         // A type parameter of the alias being walked, not the alias itself.
@@ -2589,8 +2601,15 @@ base class TEnv{
       // Closed<T>, a plain stub alias for it (import-stubs/@types/skjs). For
       // tsc compatibility a tsc-only stub declares the identity
       // `type SKJS_Closed<T> = T`. Other arities resolve ordinarily.
+      //
+      // Defer closing into a symbolic `TClosed` instead of eagerly expanding
+      // `inner` here (#814): this avoids eager alias/inst flattening during
+      // normalization, prevents `Closed<Closed<T>>` from hitting the `Closed`
+      // alias recursion guard, and anchors errors at the outermost
+      // instantiation site.
       inner = this.normalize(tcenvb, targs[0]);
-      this.closeObjectType(tcenvb, closedPos, inner)
+      errPos = this.instantiateAt.default(closedPos);
+      TType::closed(errPos, inner)
     | TAInst(n, targs) ->
       // Resolve via lexical bindings (see `bindings` field doc).
       this.bindings.maybeGet(n.value) match {
@@ -4119,7 +4138,7 @@ base class TEnv{
   // (a synthetic literal index is not a declared index: it is cleared and
   // replaced). Anything else errors and recovers with T itself — the tsc
   // reading of the recommended compat declaration `type Closed<T> = T`.
-  private fun closeObjectType(
+  fun closeObjectType(
     tcenvb: mutable TCEnvBase,
     closedPos: PosRange,
     inner: TType,
@@ -4145,11 +4164,8 @@ base class TEnv{
     expanded: TType,
     report: (Array<(PosRange, String)>, ErrorCode) -> void,
   ): TType {
-    // Errors anchor at the instantiation site when there is one (for the
-    // stub-alias route that is the innermost alias application: a direct
-    // Closed<...> use anchors at the use site; a wrapper alias anchors at the
-    // wrapper's own Closed<T> application — the use-site position is erased
-    // by alias re-positioning before reaching this depth).
+    // Errors anchor at the outermost instantiation site when there is one
+    // (propagated through wrapper aliases into TClosed.pos, #814).
     errPos = this.instantiateAt.default(closedPos);
     hasDeclaredIndex = (idx: ?TField) ->
       idx match {
@@ -4176,11 +4192,15 @@ base class TEnv{
     };
     expanded.clauses.getObject() match {
     | Some(obj) if (obj.getBranches().all(b -> b.isArray != Some(true))) ->
+      // Already-closed branches (e.g. `Closed<Closed<T>>` or `Closed<typeof asConst>`)
+      // carry never string/symbol indexes and no declared number index; closing
+      // them is idempotent, not a declared-index violation.
       if (
         obj.getBranches().any(b ->
-          hasDeclaredIndex(b.stringIndex) ||
-            hasDeclaredIndex(b.numberIndex) ||
-            hasDeclaredIndex(b.symbolIndex)
+          !b.isClosedObject() &&
+            (hasDeclaredIndex(b.stringIndex) ||
+              hasDeclaredIndex(b.numberIndex) ||
+              hasDeclaredIndex(b.symbolIndex))
         )
       ) {
         report(
@@ -4195,18 +4215,31 @@ base class TEnv{
         inner
       } else {
         // Stamp unexpandedType with `Closed<inner>` so display paths render
-        // `Closed<...>` instead of the raw never-index encoding (#803). Every
-        // consumer of TObject.unexpandedType is display-only (plus TVarScan,
-        // which scans its type arguments without re-instantiating it).
-        closed = obj.mapWithUnexpanded(
-          b ->
-            b.withNeverIndexes(
-              TField::createNeverIndex("k", closedPos),
-              TField::createNeverIndex("s", closedPos),
-            ),
-          Some(TSInst(Name(closedPos, "Closed"), TArgs(Array[inner]))),
-        );
-        TType::single(closed)
+        // `Closed<...>` instead of the raw never-index encoding (#803). When
+        // every branch is already closed with an existing `Closed<...>`
+        // unexpandedType (idempotent `Closed<Closed<T>>` / `Closed<ClosedAlias>`),
+        // preserve the existing closed object directly to avoid double-wrapping
+        // `Closed<Closed<...>>` in display output (#814). Every consumer of
+        // TObject.unexpandedType is display-only (plus TVarScan, which scans
+        // its type arguments without re-instantiating it).
+        alreadyClosedDisplay = obj.unexpandedType match {
+        | Some(TSInst(Name(_, "Closed"), _)) ->
+          obj.getBranches().all(b -> b.isClosedObject())
+        | _ -> false
+        };
+        if (alreadyClosedDisplay) {
+          TType::single(obj)
+        } else {
+          closed = obj.mapWithUnexpanded(
+            b ->
+              b.withNeverIndexes(
+                TField::createNeverIndex("k", errPos),
+                TField::createNeverIndex("s", errPos),
+              ),
+            Some(TSInst(Name(errPos, "Closed"), TArgs(Array[inner]))),
+          );
+          TType::single(closed)
+        }
       }
     | Some _ ->
       report(
