@@ -861,7 +861,7 @@ extension class TypeChecker {
       };
     // Head expansion was established above. Transform that data without
     // entering inference's expansion adapter again; nested members stay symbolic.
-    !ty = ty.mapSTypesWith(_ -> None(), f);
+    !ty = ty.mapSTypesWith((_, _) -> None(), f);
     tcenv.scope.set(local, ty, (_, _) -> void)
   }
 

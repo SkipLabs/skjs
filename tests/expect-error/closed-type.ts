@@ -183,12 +183,8 @@ function testClosedOfConstrainedTypeParameter<T extends { a: number }>(
 }
 
 // A generic alias wrapping Closed: validation of the abstract body is
-// deferred during type-definition validation and performed at each concrete
-// instantiation instead, so wrappers work. A BAD concrete instantiation
-// (testClosedAliasWrapperBadInstantiation below) reports here, at the
-// wrapper's own Closed<T> application — the use-site position is erased by
-// alias re-positioning before the instantiation-time check runs.
-// @skjs-expect-error Closed<T> requires a statically known object type
+// deferred during type-definition validation and performed when each concrete
+// instantiation is expanded, anchoring errors at the use site (#814).
 type FreezeWrapper<T> = Closed<T>;
 
 function testClosedAliasWrapperConcrete(): void {
@@ -197,7 +193,104 @@ function testClosedAliasWrapperConcrete(): void {
 }
 
 function testClosedAliasWrapperBadInstantiation(): void {
+  // @skjs-expect-error Closed<T> requires a statically known object type
   const n: FreezeWrapper<number> = 1;
+}
+
+// A second bad instantiation of the same `FreezeWrapper<number>` must also
+// anchor at its own use site even when the named-expansion cache hits.
+function testClosedAliasWrapperBadInstantiationSecond(): void {
+  // @skjs-expect-error Closed<T> requires a statically known object type
+  const n: FreezeWrapper<number> = 2;
+}
+
+// Multi-level wrapper alias: errors still anchor at the outermost use site.
+type DeepFreezeWrapper<T> = FreezeWrapper<T>;
+
+function testClosedDeepWrapperConcrete(): void {
+  const x: DeepFreezeWrapper<{ readonly a: number }> = { a: 1 };
+  const j: Json = x;
+}
+
+function testClosedDeepWrapperBadInstantiation(): void {
+  // @skjs-expect-error Closed<T> requires a statically known object type
+  const n: DeepFreezeWrapper<number> = 1;
+}
+
+// Shallow closing preserves symbolic nested aliases without eager flattening:
+// a field typed via a recursive alias stays symbolic inside Closed<...>.
+type NestedTree = { readonly val: number; readonly child?: NestedTree };
+type ClosedNestedHolder = Closed<{ readonly tree: NestedTree }>;
+
+function testClosedShallowPreservesNestedAlias(): void {
+  const leaf: NestedTree = { val: 1 };
+  const holder: ClosedNestedHolder = { tree: leaf };
+  const t: NestedTree = holder.tree;
+  // @skjs-expect-error Property 'extra' does not exist on this type
+  const bad = holder.extra;
+}
+
+// ============================================================================
+// Additional validation & edge cases (SkipLabs/skjs#814):
+// arrays/tuples, synthetic literal index replacement, recursive aliases,
+// and idempotence (`Closed<Closed<T>>`, `Closed<typeof asConst>`).
+// ============================================================================
+
+function testClosedOfArray(): void {
+  // @skjs-expect-error Closed<T> is not supported on array or tuple types
+  const a: Closed<number[]> = [1];
+}
+
+function testClosedOfTuple(): void {
+  // @skjs-expect-error Closed<T> is not supported on array or tuple types
+  const t: Closed<[number, string]> = [1, "a"];
+}
+
+// Closing `typeof lit` (plain object literal carrying a synthetic index)
+// replaces the synthetic index with never indexes.
+function testClosedOfLiteralSyntheticIndex(): void {
+  const lit = { a: 1, b: "s" };
+  const ok: Closed<typeof lit> = { a: 1, b: "s" };
+  const j: Json = ok;
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  const bad: Closed<typeof lit> = { a: 1, b: "s", c: 3 };
+}
+
+// Recursive alias directly through Closed<...> is circular (TS2456), not a loop.
+// @skjs-expect-error Type alias 'SelfClosed' circularly references itself
+type SelfClosed = Closed<SelfClosed>;
+
+// Direct recursive alias through SKJS_Closed<...> is also circular (TS2456).
+// @skjs-expect-error Type alias 'SelfDirectClosed' circularly references itself
+type SelfDirectClosed = SKJS_Closed<SelfDirectClosed>;
+
+// Nested `Closed<Closed<T>>` is idempotent (#814) and preserves `Closed<...>`
+// display without double-wrapping.
+function testClosedOfClosed(): void {
+  const x: Closed<Closed<{ readonly a: number }>> = { a: 1 };
+  const j: Json = x;
+  __SKJS_show_expanded(x, "Closed<{ readonly a: number; }>");
+}
+
+type ClosedAlreadyObj = Closed<{ readonly a: number }>;
+
+// `Closed<ClosedAlreadyObj>` is idempotent (#814).
+function testClosedOfClosedAlias(): void {
+  const x: Closed<ClosedAlreadyObj> = { a: 1 };
+  const j: Json = x;
+}
+
+// Closing an already-closed `as const` literal is idempotent (#814).
+function testClosedOfAsConst(): void {
+  const lit = { a: 1 } as const;
+  const x: Closed<typeof lit> = { a: 1 };
+  const j: Json = x;
+}
+
+// Direct `SKJS_Closed<SKJS_Closed<T>>` is also idempotent (#814).
+function testDirectClosedOfClosed(): void {
+  const x: SKJS_Closed<SKJS_Closed<{ readonly a: number }>> = { a: 1 };
+  const j: Json = x;
 }
 
 // ============================================================================

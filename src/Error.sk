@@ -157,7 +157,7 @@ base class ErrorPos uses Equality {
  */
 /***************************************************************************/
 
-base class ErrorCode uses Equality {
+base class ErrorCode uses Hashable, Equality {
   children =
   | TSCode(Int)
   | ESLintCode(String)

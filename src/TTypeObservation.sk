@@ -354,13 +354,19 @@ mutable class TypeReadContext private {
 
   mutable fun expand(type: TType, variance: ?Variance): TType {
     this.lifetime.checkActive();
-    type.expandWith(inst -> this.expandInstance(inst, variance))
+    type.expandWith((inst, useSitePos) ->
+      this.expandInstance(inst, variance, useSitePos)
+    )
   }
 
   // Candidate expansion is a tracked fixed-payload read, independent of
   // variance. It cannot invoke inference's covariant sealing/default rules.
   // Occurrence constraints use the same fixed-read intersection backend.
-  private mutable fun expandInstance(inst: TInst, variance: ?Variance): ?TType {
+  private mutable fun expandInstance(
+    inst: TInst,
+    variance: ?Variance,
+    useSitePos: ?PosRange,
+  ): ?TType {
     inst match {
     | TSInst(name, targs) -> Some(this.expandNamed(name, targs))
     | TInter(tys) ->
@@ -373,6 +379,8 @@ mutable class TypeReadContext private {
           first,
         ),
       )
+    | TClosed(closedPos, inner) ->
+      Some(this.closedObject(useSitePos.default(closedPos), inner))
     | tv @ TVar _ ->
       variance.map(_ -> {
         this.constrainRead(tv, this.peekRaw(tv).fromSome())
@@ -460,19 +468,21 @@ mutable class TypeReadContext private {
   // below uses only the known sub-union. It assigns no meaning or solution to
   // the omitted alternatives. Failure with an omitted alternative blocks.
   private mutable fun positiveTargetClauses(type: TType): Clauses {
-    type.expandWith(inst ->
+    type.expandWith((inst, useSitePos) ->
       inst match {
       | tv @ TVar _ ->
         this.scratch.peekSubtypeTarget(tv).map(value ->
           this.constrainRead(tv, value)
         )
-      | _ -> this.expandInstance(inst, Some(Contravariant()))
+      | _ -> this.expandInstance(inst, Some(Contravariant()), useSitePos)
       }
     ).clauses
   }
 
   private mutable fun expandClauses(type: TType, variance: Variance): Clauses {
-    type.expandGraph(inst -> this.expandInstance(inst, Some(variance))) match {
+    type.expandGraph((inst, useSitePos) ->
+      this.expandInstance(inst, Some(variance), useSitePos)
+    ) match {
     | None() -> Clauses::top()
     | Some((_, clauses)) -> Clauses::unionN(clauses)
     }
@@ -488,7 +498,9 @@ mutable class TypeReadContext private {
     variance: ?Variance,
   ): ?(mutable Vector<TInst>, mutable Vector<Clause>) {
     this.lifetime.checkActive();
-    type.expandGraph(inst -> this.expandInstance(inst, variance))
+    type.expandGraph((inst, useSitePos) ->
+      this.expandInstance(inst, variance, useSitePos)
+    )
   }
 
   mutable fun removeConstant(type: TType, constant: TPrim): TType {
@@ -502,7 +514,8 @@ mutable class TypeReadContext private {
   mutable fun truthinessPart(type: TType, target: Bool): TType {
     this.lifetime.checkActive();
     type.mapSTypesWith(
-      inst -> this.expandInstance(inst, Some(Covariant())),
+      (inst, useSitePos) ->
+        this.expandInstance(inst, Some(Covariant()), useSitePos),
       stypes ->
         stypes.map(types ->
           types.filterMap(stype -> stype.truthinessResidue(target))
@@ -577,7 +590,10 @@ mutable class TypeReadContext private {
         },
       type ->
         TEnv::extractedMethodTypeWith(type, map ->
-          type.mapSTypesWith(inst -> this.expandInstance(inst, None()), map)
+          type.mapSTypesWith(
+            (inst, useSitePos) -> this.expandInstance(inst, None(), useSitePos),
+            map,
+          )
         ),
       () ->
         quoteRenderedType(

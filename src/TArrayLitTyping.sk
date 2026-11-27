@@ -362,6 +362,9 @@ class ArrayLitTyping() {
           todo.extend(part.insts)
         };
         TType::bottom(type.pos)
+      | TClosed(_, inner) ->
+        todo.extend(inner.insts);
+        TType::bottom(type.pos)
       | literal @ TArrayLit _ ->
         ArrayLitTyping::arrayLitCommittedType(subst, tenv, literal) match {
         | Some(committed) -> committed

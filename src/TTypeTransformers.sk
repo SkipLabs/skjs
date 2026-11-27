@@ -146,6 +146,13 @@ mutable base class ApplyType(
     inst match {
     | TSInst(name, targs) -> Success(TSInst(name, this.targs(env, targs)))
     | tInter @ TInter _ -> tInter.map(x -> this.type(env, x))
+    | TClosed(pos, inner) ->
+      mapped = this.type(env, inner);
+      unwrapped = mapped.getSingleClosed() match {
+      | Some(TClosed(_, innerInner)) -> innerInner
+      | None() -> mapped
+      };
+      Success(TClosed(pos, unwrapped))
     | tvar @ TVar _ -> Success(tvar.mapConstraints(ty -> this.type(env, ty)))
     | TArrayLit(selector, tupleElts, freshElts) ->
       Success(

@@ -169,6 +169,21 @@ class TType private {
     TType::create(name.pos, TInsts::single(x), Clauses::empty())
   }
 
+  // Deferred closed-object application (`Closed<inner>`).
+  // Idempotent on a nested `TClosed`: unwraps so `Closed<Closed<T>>` keeps
+  // the outer position and a single symbolic wrapper.
+  static fun closed(pos: PosRange, inner: TType): TType {
+    unwrapped = inner.getSingleClosed() match {
+    | Some(TClosed(_, innerInner)) -> innerInner
+    | None() -> inner
+    };
+    TType::create(
+      pos,
+      TInsts::single(TClosed(pos, unwrapped)),
+      Clauses::empty(),
+    )
+  }
+
   // Convert Array<T> to ReadonlyArray<T>. Used for rest parameters.
   static fun arrayToReadonlyArray(ty: TType): TType {
     if (!ty.clauses.isEmpty()) return ty;
@@ -494,13 +509,14 @@ class TType private {
     f: (?STypes) -> ?STypes,
   ): TType {
     this.mapSTypesWith(
-      inst -> this.expandInstance(subst, tenv, expandTVars, inst),
+      (inst, useSitePos) ->
+        this.expandInstance(subst, tenv, expandTVars, inst, useSitePos),
       f,
     )
   }
 
   fun mapSTypesWith(
-    expandInst: (TInst) -> ?TType,
+    expandInst: (TInst, ?PosRange) -> ?TType,
     f: (?STypes) -> ?STypes,
   ): TType {
     this.expandGraph(expandInst) match {
@@ -796,8 +812,8 @@ class TType private {
     tenv: TEnv,
     expandTVars: ?Variance,
   ): ?(mutable Vector<TInst>, mutable Vector<Clause>) /* None is Top */ {
-    this.expandGraph(inst ->
-      this.expandInstance(subst, tenv, expandTVars, inst)
+    this.expandGraph((inst, useSitePos) ->
+      this.expandInstance(subst, tenv, expandTVars, inst, useSitePos)
     )
   }
 
@@ -806,10 +822,13 @@ class TType private {
     tenv: TEnv,
     expandTVars: ?Variance,
     inst: TInst,
+    useSitePos: ?PosRange,
   ): ?TType {
     inst match {
     | TSInst(name, targs) -> Some(tenv.expandNamed(subst, name, targs))
     | tInter @ TInter _ -> Some(tInter.expand(subst, tenv))
+    | TClosed(closedPos, inner) ->
+      Some(tenv.closeObjectType(subst, useSitePos.default(closedPos), inner))
     | tvar @ TVar _ ->
       expandTVars.map(variance -> subst.get(tenv, tvar, variance))
     | arrLit @ TArrayLit _ -> Some(ArrayLitTyping::expand(subst, tenv, arrLit))
@@ -819,17 +838,33 @@ class TType private {
   // Shared graph traversal has no solver capability. The adapter supplies one
   // expansion step; None preserves a symbolic inst rather than inspecting it.
   // Inference and validation differ in that adapter, not in cycle/top handling.
+  //
+  // `useSitePos` tracks the outermost alias-application position that reached
+  // each queued inst (starting at each root inst's own position). Passing it
+  // to `expandInst` lets deferred operators like `TClosed` anchor errors at
+  // the user's call site even through multi-level wrapper aliases and even
+  // when intermediate alias expansions are served from cache (#814).
   fun expandGraph(
-    expandInst: (TInst) -> ?TType,
+    expandInst: (TInst, ?PosRange) -> ?TType,
   ): ?(mutable Vector<TInst>, mutable Vector<Clause>) /* None is Top */ {
     if (this.isTop()) return None();
     clauses = Vector::mcreateFromItems(this.clauses);
     insts: mutable Vector<TInst> = mutable Vector[];
-    todo = Vector::mcreateFromItems(this.insts);
-    seen = SortedSet::createFromItems(todo);
+    todo = mutable Vector[];
+    seen = SortedSet[];
+    for (inst in this.insts) {
+      if (seen.contains(inst)) continue;
+      !seen = seen.set(inst);
+      rootPos = inst match {
+      | TSInst(name, _) -> Some(name.pos)
+      | TClosed(pos, _) -> Some(pos)
+      | _ -> None()
+      };
+      todo.push((inst, rootPos));
+    };
     while (!todo.isEmpty()) {
-      inst = todo.pop();
-      tyDef = expandInst(inst) match {
+      (inst, useSitePos) = todo.pop();
+      tyDef = expandInst(inst, useSitePos) match {
       | Some(ty) -> ty
       | None() ->
         insts.push(inst);
@@ -842,17 +877,28 @@ class TType private {
       for (newInst in tyDef.insts) {
         if (seen.contains(newInst)) continue;
         !seen = seen.set(newInst);
-        todo.push(newInst);
+        nextPos = useSitePos match {
+        | some @ Some _ -> some
+        | None() ->
+          newInst match {
+          | TSInst(name, _) -> Some(name.pos)
+          | TClosed(pos, _) -> Some(pos)
+          | _ -> None()
+          }
+        };
+        todo.push((newInst, nextPos));
       }
     };
     Some((insts, clauses))
   }
 
   fun expand(subst: mutable Subst, tenv: TEnv, expandTVars: ?Variance): TType {
-    this.expandWith(inst -> this.expandInstance(subst, tenv, expandTVars, inst))
+    this.expandWith((inst, useSitePos) ->
+      this.expandInstance(subst, tenv, expandTVars, inst, useSitePos)
+    )
   }
 
-  fun expandWith(expandInst: (TInst) -> ?TType): TType {
+  fun expandWith(expandInst: (TInst, ?PosRange) -> ?TType): TType {
     this.expandGraph(expandInst) match {
     | None() -> TType::top(this.pos)
     | Some((insts, clauses)) ->
@@ -885,7 +931,8 @@ class TType private {
         }
       | arrLit @ TArrayLit _ -> ArrayLitTyping::expand(subst, tenv, arrLit)
       | TSInst _
-      | TInter _ ->
+      | TInter _
+      | TClosed _ ->
         !i = i + 1;
         continue
       };
@@ -942,6 +989,12 @@ class TType private {
 
   fun getSingleInst(): ?TSInst {
     if (this.clauses.isEmpty()) this.insts.getSingleInst() else {
+      None()
+    }
+  }
+
+  fun getSingleClosed(): ?TClosed {
+    if (this.clauses.isEmpty()) this.insts.getSingleClosed() else {
       None()
     }
   }
@@ -3655,6 +3708,18 @@ class TSInst(name: Name, targs: TArgs) extends TInst {
   }
 }
 
+/* Deferred closed-object application (`Closed<inner>`).
+ * Preserves the symbolic argument without forcing eager expansion during
+ * normalization; `pos` anchors validation errors at the instantiation site
+ * (so wrapper aliases report at the use site, #814) and is excluded from the
+ * semantic hash so structurally identical closed types deduplicate and hit
+ * caches regardless of where they were written. */
+class TClosed(pos: PosRange, inner: TType) extends TInst {
+  fun xxhash(): XXHash {
+    ("TClosed", this.inner).xxhash()
+  }
+}
+
 // Expansion and recursion keys identify the resolved declaration by module,
 // definition name, and occurrence. Mention spans and import aliases do not
 // distinguish definitions, while identical spellings in different modules do.
@@ -3757,6 +3822,13 @@ class TInsts private (
   fun getSingleArrayLit(): ?TArrayLit {
     this.getUnique() match {
     | Some(arrLit @ TArrayLit _) -> Some(arrLit)
+    | _ -> None()
+    }
+  }
+
+  fun getSingleClosed(): ?TClosed {
+    this.getUnique() match {
+    | Some(closed @ TClosed _) -> Some(closed)
     | _ -> None()
     }
   }
@@ -4133,6 +4205,7 @@ mutable class TVarScan{seen: mutable Set<Int> = mutable Set[]} {
     | TArrayLit _ -> true
     | TSInst(_, targs) -> targs.targs.any(t -> this.scanType(t))
     | TInter(tys) -> tys.any(t -> this.scanType(t))
+    | TClosed(_, inner) -> this.scanType(inner)
     }
   }
 
