@@ -506,6 +506,12 @@ extension class Parser {
       Namespace(name, defs)
     | "import" ->
       _ = this.lex.next();
+      if (
+        this.lex.peekKind() is Some(TKQuote()) ||
+        this.lex.peekKind() is Some(TKDoubleQuote())
+      ) {
+        return Import(None(), Array[], this.getString())
+      };
       isType = if (this.lex.isEq("type")) {
         Some(this.lex.posRange(this.lex.next().fromSome()))
       } else {

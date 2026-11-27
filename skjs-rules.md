@@ -192,7 +192,8 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
 ### 14. Import System ✅
 - **Rule**: Relative imports must start with `./` or `../`.
 - **Extensions**: In `node16`/`nodenext` moduleResolution (default), imports must end with `.js`, `.mjs`, or `.cjs`. In `bundler` mode, extensions are optional.
-- **Syntax**: `import { functionName, TypeName } from './filename.js'`
+- **Syntax**: `import { functionName, TypeName } from './filename.js'` or side-effect imports `import './filename.js'`
+- **Side-effect imports**: Module specifiers in side-effect imports (`import './side-effect.js'`, `import 'pkg'`) are always resolved (equivalent to tsc's `--noUncheckedSideEffectImports`), reporting TS2307 when the target cannot be found.
 - **Example**: `import { add, User } from './utils.js'`
 
 ### 15. Only Locals Can Be Compared to null/undefined
