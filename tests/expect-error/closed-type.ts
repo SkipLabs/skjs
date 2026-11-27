@@ -200,6 +200,83 @@ function testClosedAliasWrapperBadInstantiation(): void {
   const n: FreezeWrapper<number> = 1;
 }
 
+// Multi-level wrapper alias: pre-#814 also anchors on FreezeWrapper's own
+// Closed<T> application rather than at the use site below.
+type DeepFreezeWrapper<T> = FreezeWrapper<T>;
+
+function testClosedDeepWrapperConcrete(): void {
+  const x: DeepFreezeWrapper<{ readonly a: number }> = { a: 1 };
+  const j: Json = x;
+}
+
+function testClosedDeepWrapperBadInstantiation(): void {
+  const n: DeepFreezeWrapper<number> = 1;
+}
+
+// ============================================================================
+// Additional validation & edge cases (SkipLabs/skjs#814):
+// arrays/tuples, synthetic literal index replacement, recursive aliases,
+// and idempotence (`Closed<Closed<T>>`, `Closed<typeof asConst>`).
+// ============================================================================
+
+function testClosedOfArray(): void {
+  // @skjs-expect-error Closed<T> is not supported on array or tuple types
+  const a: Closed<number[]> = [1];
+}
+
+function testClosedOfTuple(): void {
+  // @skjs-expect-error Closed<T> is not supported on array or tuple types
+  const t: Closed<[number, string]> = [1, "a"];
+}
+
+// Closing `typeof lit` (plain object literal carrying a synthetic index)
+// replaces the synthetic index with never indexes.
+function testClosedOfLiteralSyntheticIndex(): void {
+  const lit = { a: 1, b: "s" };
+  const ok: Closed<typeof lit> = { a: 1, b: "s" };
+  const j: Json = ok;
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  const bad: Closed<typeof lit> = { a: 1, b: "s", c: 3 };
+}
+
+// Recursive alias directly through Closed<...> is circular (TS2456), not a loop.
+// @skjs-expect-error Type alias 'SelfClosed' circularly references itself
+type SelfClosed = Closed<SelfClosed>;
+
+// Pre-#814: nested `Closed<Closed<T>>` fails because eager expansion of the
+// inner `Closed` hits `seenInstantiate` for the `Closed` stub alias and
+// returns an unexpanded inst.
+function testClosedOfClosed(): void {
+  // @skjs-expect-error Closed<T> requires a statically known object type
+  const x: Closed<Closed<{ readonly a: number }>> = { a: 1 };
+  const j: Json = x;
+}
+
+type ClosedAlreadyObj = Closed<{ readonly a: number }>;
+
+// Pre-#814: `Closed<ClosedAlreadyObj>` hits the same `seenInstantiate` cycle.
+function testClosedOfClosedAlias(): void {
+  // @skjs-expect-error Closed<T> requires a statically known object type
+  const x: Closed<ClosedAlreadyObj> = { a: 1 };
+  const j: Json = x;
+}
+
+// Pre-#814: closing an already-closed `as const` literal is rejected because
+// its never indexes are treated as declared index signatures.
+function testClosedOfAsConst(): void {
+  const lit = { a: 1 } as const;
+  // @skjs-expect-error Closed<T> requires an object type without index signatures
+  const x: Closed<typeof lit> = { a: 1 };
+  const j: Json = x;
+}
+
+// Pre-#814: direct `SKJS_Closed<SKJS_Closed<T>>` is rejected for the same reason.
+function testDirectClosedOfClosed(): void {
+  // @skjs-expect-error Closed<T> requires an object type without index signatures
+  const x: SKJS_Closed<SKJS_Closed<{ readonly a: number }>> = { a: 1 };
+  const j: Json = x;
+}
+
 // ============================================================================
 // Diagnostic display of Closed<T> (SkipLabs/skjs#803):
 // Errors should print `Closed<...>` instead of the raw never-index encoding.
