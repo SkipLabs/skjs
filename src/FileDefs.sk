@@ -47,9 +47,11 @@ class DefMap(
     context: mutable S.Context,
     fs: Fs,
     builtinsFileName: FPath,
+    ambientFiles: Array<FPath>,
     rootMap: RootMap,
     parsedFiles: S.EHandle<FPath, ParsedResultFile>,
   ): this {
+    ambientSet = ambientFiles.collect(Set);
     static(
       S.LHandle::create(
         FPath::keyType,
@@ -65,10 +67,12 @@ class DefMap(
             );
             throw Exit(2)
           };
-          includes = if (fileName != builtinsFileName) {
+          includes = if (fileName == builtinsFileName) {
+            Array[]
+          } else if (ambientSet.contains(fileName)) {
             Array[builtinsFileName]
           } else {
-            Array[]
+            Array[builtinsFileName].concat(ambientFiles)
           };
           parsedFile.value match {
           | PROk(defs) ->
@@ -240,7 +244,15 @@ class DefMap(
         )
       | FDNamespace(nsTypeOnly, _posOpt, nsDefs) ->
         getTypeOnly = typeOnly || nsTypeOnly;
-        this.getInDefs(tcenvb, nsDefs, name, getTypeOnly, result, lookup)
+        this.getInDefs(
+          tcenvb,
+          nsDefs,
+          name,
+          getTypeOnly,
+          result,
+          lookup,
+          mutable Set[],
+        )
       | edge @ FDTypeOnlyEdge _ -> result.push(edge)
       }
     };
@@ -254,6 +266,7 @@ class DefMap(
     typeOnly: Bool,
     result: mutable Vector<FileDef>,
     lookup: LookupKind,
+    visitedIncludes: mutable Set<FPath>,
   ): void {
     invariant(name != "", "getInDefs expects a non-empty name");
     local = mutable Vector[];
@@ -269,14 +282,17 @@ class DefMap(
       !local.any(def -> def.hasValue() || def is FDTypeOnlyEdge _)
     ) {
       for (fileName in fileDefs.includes) {
-        this.getInDefs(
-          tcenvb,
-          this.getFileDefs(tcenvb, fileName),
-          name,
-          typeOnly,
-          result,
-          lookup,
-        )
+        if (visitedIncludes.maybeInsert(fileName)) {
+          this.getInDefs(
+            tcenvb,
+            this.getFileDefs(tcenvb, fileName),
+            name,
+            typeOnly,
+            result,
+            lookup,
+            visitedIncludes,
+          )
+        }
       }
     };
     result.extend(local)
@@ -740,7 +756,8 @@ mutable class FileDefsState private {
       }
     } else {
       // Try path alias resolution first, then walk ancestor node_modules
-      // directories up to projectRoot before falling back to --import-stubs.
+      // directories up to projectRoot before falling back to --import-stubs
+      // (excluding tsconfig typeRoots, which are ambient-only roots).
       resolvePathAlias(
         this.fs,
         this.rootMap.projectRoot,

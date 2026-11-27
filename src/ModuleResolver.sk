@@ -164,12 +164,26 @@ class RootId private (value: Int) extends S.Key uses Hashable, XXHashable {
 // RootMap: maps RootId -> DAbsolute.
 // Created once during initialization, read everywhere paths need resolving.
 /***************************************************************************/
-class RootMap(projectRoot: DAbsolute, importStubs: Array<DAbsolute>) {
+class RootMap(
+  projectRoot: DAbsolute,
+  importStubs: Array<DAbsolute>,
+  importStubCount: Int = -1,
+) {
   fun get(rootId: RootId): DAbsolute {
     if (rootId.isProject()) {
       this.projectRoot
     } else {
       this.importStubs[rootId.value - 1]
+    }
+  }
+
+  // Stub roots that should participate in bare-import resolution (excludes
+  // extra roots registered solely for tsconfig `typeRoots`).
+  fun moduleStubs(): Array<DAbsolute> {
+    if (this.importStubCount < 0) {
+      this.importStubs
+    } else {
+      this.importStubs.slice(0, this.importStubCount)
     }
   }
 }
@@ -838,7 +852,9 @@ fun resolveStubs(
 //   1. Walk `<ancestor>/node_modules/<moduleName>` from `fromDir` up to
 //      `rootMap.projectRoot` (first match wins).
 //   2. Fall back to flat `--import-stubs` lookup so non-`node_modules` stub
-//      directories continue to work unchanged.
+//      directories continue to work unchanged. Only actual import-stub roots
+//      participate (rootMap.moduleStubs()), not extra roots registered solely
+//      for tsconfig `typeRoots` — those are ambient-only.
 fun resolveBareModule(
   fs: Fs,
   fromDir: DPath,
@@ -848,7 +864,7 @@ fun resolveBareModule(
   resolveNodeModulesWalk(fs, fromDir, rootMap, moduleName) match {
   | found @ StubFound _ -> found
   | err @ StubError _ -> err
-  | StubNotFound() -> resolveStubs(fs, rootMap.importStubs, moduleName)
+  | StubNotFound() -> resolveStubs(fs, rootMap.moduleStubs(), moduleName)
   }
 }
 

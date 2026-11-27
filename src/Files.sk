@@ -71,6 +71,7 @@ class Files(
   isInit: Bool,
   rootMap: RootMap,
   builtinsFileName: FPath,
+  ambientFiles: Array<FPath>,
   filesContent: SKStore.EHandle<FPath, SKStore.StringFile>,
 ) {
   static fun create(
@@ -79,6 +80,7 @@ class Files(
     root: String,
     srcFileSeq: Sequence<String>,
     importStubs: Array<String>,
+    compilerOptions: TsCompilerOptions = TsCompilerOptions{},
   ): Result<Files, String> {
     if (importStubs.isEmpty()) {
       return Failure("--import-stubs is required");
@@ -121,8 +123,35 @@ class Files(
     srcFiles.set(builtinsFileName, builtinsStr);
 
     !importStubs = importStubs.map(dir -> Path.resolve(dir));
-    absImportStubs = importStubs.map(DAbsolute::create);
-    for (i => dir in importStubs) {
+    // Resolve typeRoots (defaulting to `<projectRoot>/node_modules/@types`
+    // per TS behavior) and discover ambient `@types` entry points.
+    effectiveTypeRoots = compilerOptions.typeRoots match {
+    | Some(roots) -> roots.map(dir -> Path.resolve(dir))
+    | None() -> Array[Path.resolve(Path.join(rootStr, "node_modules/@types"))]
+    };
+
+    // Register any existing typeRoots as additional stub roots so their files
+    // have clean FPaths under RootId::stub(...) without colliding with
+    // project source files. Keep `importStubCount` separate so `resolveStubs`
+    // only searches actual import stub roots, not typeRoots.
+    importStubCount = importStubs.size();
+    allStubDirs = Vector::mcreateFromItems(importStubs);
+    typeRootIndices = mutable Vector[];
+    for (tr in effectiveTypeRoots) {
+      if (!fs.isDirectory(tr)) continue;
+      existingIdx = allStubDirs.findIndex(d -> d == tr);
+      idx = existingIdx match {
+      | Some(i) -> i
+      | None() ->
+        i = allStubDirs.size();
+        allStubDirs.push(tr);
+        i
+      };
+      typeRootIndices.push((idx, tr))
+    };
+
+    absImportStubs = allStubDirs.toArray().map(DAbsolute::create);
+    for (i => dir in allStubDirs) {
       fs.readFilesRecursive(dir, isTsFile).each(p ->
         addFile(p, RootId::stub(i), dir)
       )
@@ -130,7 +159,8 @@ class Files(
 
     // Load TypeScript files inside any `<ancestor>/node_modules/` directory
     // reachable when walking up from loaded project source files to `absRoot`,
-    // skipping any `node_modules` directory already loaded via `importStubs`.
+    // skipping any `node_modules` directory already loaded via `importStubs`
+    // (or registered as a typeRoot stub root).
     // These files are stored under `RootId::project` so `resolveNodeModulesWalk`
     // targets exist in `filesContent`/`parsedFiles`, while `Checker.checkFiles`
     // skips type-checking files inside `node_modules/` directly.
@@ -159,6 +189,38 @@ class Files(
       }
     };
 
+    // Enumerate packages inside each typeRoot, optionally filtered by `types`,
+    // and resolve each package's entry point using `resolvePackageInDir`.
+    ambientFiles = mutable Vector[];
+    seenAmbient = mutable Set[];
+    typesFilter = compilerOptions.types.map(ts -> ts.collect(Set));
+    for ((stubIdx, trDir) in typeRootIndices) {
+      trAbs = absImportStubs[stubIdx];
+      rootId = RootId::stub(stubIdx);
+      entries = fs.readDirectory(trDir).sorted();
+      for (pkgName in entries) {
+        if (pkgName == "." || pkgName == ".." || pkgName.startsWith(".")) {
+          continue
+        };
+        pkgPath = Path.join(trDir, pkgName);
+        if (!fs.isDirectory(pkgPath)) continue;
+        typesFilter match {
+        | Some(allowed) if (!allowed.contains(pkgName)) -> continue
+        | _ -> void
+        };
+        resolvePackageInDir(fs, rootId, trAbs, trAbs, pkgName) match {
+        | StubFound(fpath) ->
+          if (fpath != builtinsFileName && !seenAmbient.contains(fpath)) {
+            seenAmbient.insert(fpath);
+            ambientFiles.push(fpath)
+          }
+        | StubNotFound()
+        | StubError _ ->
+          void
+        }
+      }
+    };
+
     isInit = context.unsafeMaybeGetEagerDir(filesDirName) is None();
     fileHdl = createOrReuseEagerDir(
       context,
@@ -176,8 +238,10 @@ class Files(
         fileHdl.writeArray(context, fileName, Array[]);
       };
     };
-    rootMap = RootMap(absRoot, absImportStubs);
-    Success(Files(isInit, rootMap, builtinsFileName, fileHdl))
+    rootMap = RootMap(absRoot, absImportStubs, importStubCount);
+    Success(
+      Files(isInit, rootMap, builtinsFileName, ambientFiles.toArray(), fileHdl),
+    )
   }
 
   /* Returns Failure for parse errors only if errorHandling is EHDefault */
