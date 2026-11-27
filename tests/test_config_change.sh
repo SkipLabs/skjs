@@ -75,6 +75,50 @@ expect_contains "dataRunSeesNewTruthiness" "$BOOL_MSG" "$out"
 out=$(run_check --data "$CACHE")
 expect_contains "dataRunSeesRestoredTruthiness" "$SAFE_MSG" "$out"
 
+# allowUnreachableCode: toggling --allow-unreachable-code against a persisted
+# cache must recompute TS7027 diagnostics instead of serving stale ones.
+cat > "$TMPDIR/unreachable.ts" <<'EOF'
+function g(): number {
+  return 1;
+  return 2;
+}
+EOF
+
+CACHE_UNREACH="$TMPDIR/cache-unreachable"
+UNREACH_MSG="Unreachable code detected"
+
+run_unreach() {
+  {
+    "$SKJS" check --keep-going --import-stubs "$STUBS" "$@" \
+      "$TMPDIR/unreachable.ts" >/dev/null
+  } 2>&1 || true
+}
+
+expect_not_contains() {
+  local test_name="$1"
+  local needle="$2"
+  local output="$3"
+  if echo "$output" | grep -qF "$needle"; then
+    echo "$FAIL ConfigChange $test_name"
+    echo "  expected diagnostics NOT to contain: $needle"
+    echo "  got:"
+    echo "    ${output//$'\n'/$'\n'    }"
+    failures=$((failures + 1))
+  else
+    echo "$OK ConfigChange $test_name"
+    successes=$((successes + 1))
+  fi
+}
+
+out=$(run_unreach --init "$CACHE_UNREACH")
+expect_contains "initDefaultUnreachable" "$UNREACH_MSG" "$out"
+
+out=$(run_unreach --data "$CACHE_UNREACH" --allow-unreachable-code)
+expect_not_contains "dataRunAllowUnreachableCode" "$UNREACH_MSG" "$out"
+
+out=$(run_unreach --data "$CACHE_UNREACH")
+expect_contains "dataRunRestoredUnreachable" "$UNREACH_MSG" "$out"
+
 total=$((successes + failures))
 echo "Failures: $failures, successes: $successes (total: $total)"
 if [ "$failures" -gt 0 ]; then

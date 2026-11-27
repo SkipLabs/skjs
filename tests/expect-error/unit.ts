@@ -129,6 +129,7 @@ const n2 = 1;
 
 function check9(): 0 | 1 {
   if (true) return n2;
+  // @skjs-expect-error Unreachable code detected
   return n;
 }
 

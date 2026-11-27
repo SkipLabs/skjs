@@ -1,16 +1,10 @@
 // Unreachable code detection (TS7027) and exhaustive if/else-if termination.
-//
-// Pre-fix pins: currently SKJS neither detects that an `if` branch narrowed
-// to `never` is unreachable (so exhaustive `if`/`else if` chains without a
-// trailing `else` still require a dummy fallback return), nor reports TS7027
-// on statements following a non-falling-through statement.
 
 const B = "b";
 
 // Exhaustive if / else-if chain without a trailing return:
-// Currently rejected with TS2366 because `if (x === "b")`'s empty else branch
-// is not recognized as unreachable even though `x` narrows to `never` there.
-// @skjs-expect-error Not all code paths return a value, and the return type does not include 'undefined'
+// `if (x === "b")`'s empty else branch narrows `x` to `never`, so the chain
+// does not fall through and no dummy fallback return is needed.
 function exhaustiveLiteralNoFallback(x: "a" | "b"): string {
   if (x === "a") {
     return "first";
@@ -20,7 +14,6 @@ function exhaustiveLiteralNoFallback(x: "a" | "b"): string {
 }
 
 // Same with a hoisted constant:
-// @skjs-expect-error Not all code paths return a value, and the return type does not include 'undefined'
 function exhaustiveConstantNoFallback(x: "a" | "b"): string {
   if (x === "a") {
     return "first";
@@ -32,7 +25,6 @@ function exhaustiveConstantNoFallback(x: "a" | "b"): string {
 
 // Same with a tagged union discriminant field:
 type TaggedAB = { kind: "a"; n: number } | { kind: "b"; s: string };
-// @skjs-expect-error Not all code paths return a value, and the return type does not include 'undefined'
 function exhaustiveFieldNoFallback(x: TaggedAB): string {
   if (x.kind === "a") {
     return "first";
@@ -41,9 +33,7 @@ function exhaustiveFieldNoFallback(x: TaggedAB): string {
   }
 }
 
-// Trailing statement after an exhaustive if / else-if chain:
-// Currently accepted silently; with unreachable-code detection enabled, the
-// trailing `return ""` is unreachable (TS7027).
+// Trailing statement after an exhaustive if / else-if chain reports TS7027:
 function exhaustiveWithUnreachableFallback(x: "a" | "b"): string {
   if (x === "a") {
     return "first";
@@ -51,17 +41,20 @@ function exhaustiveWithUnreachableFallback(x: "a" | "b"): string {
   } else if (x === B) {
     return "second";
   }
+  // @skjs-expect-error Unreachable code detected
   return "";
 }
 
 // Direct unreachable statements after return / throw / exhaustive if-else:
 function unreachableAfterReturn(): number {
   return 1;
+  // @skjs-expect-error Unreachable code detected
   return 2;
 }
 
 function unreachableAfterThrow(): number {
   throw new Error("boom");
+  // @skjs-expect-error Unreachable code detected
   return 1;
 }
 
@@ -71,6 +64,7 @@ function unreachableAfterBothBranchesReturn(cond: boolean): number {
   } else {
     return 2;
   }
+  // @skjs-expect-error Unreachable code detected
   return 3;
 }
 
@@ -101,4 +95,31 @@ function alreadyNeverParam(x: never): string {
     return "a";
   }
   return "b";
+}
+
+// Multiple statements in an unreachable tail report TS7027 once (on the first),
+// while still type-checking subsequent unreachable statements.
+function unreachableTailReportsOnce(): number {
+  return 1;
+  // @skjs-expect-error Unreachable code detected
+  const a = 2;
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  const b: string = a;
+  return a;
+}
+
+// An assignment inside a branch that happens to narrow a local to `never` mid-body
+// must NOT retroactively treat the branch entry as unreachable.
+function branchNarrowingInsideBodyStillReachesAfter(cond: boolean): number {
+  let x: number | string = 1;
+  if (cond) {
+    if (typeof x === "boolean") {
+      const n: never = x;
+    }
+    x = 2;
+  } else {
+    return 0;
+  }
+  // Reachable: `cond === true` falls through.
+  return x;
 }

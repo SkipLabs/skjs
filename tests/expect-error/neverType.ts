@@ -33,6 +33,7 @@ function move1(direction: "up" | "down"): never {
       // @skjs-expect-error Type of returned value is not assignable to the function's return type
       return -1;
   }
+  // @skjs-expect-error Unreachable code detected
   return error("Should never get here");
 }
 

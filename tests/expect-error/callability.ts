@@ -31,6 +31,7 @@ function testCtorTypeofFunction(): string {
     const s: string = F;
     return s;
   }
+  // @skjs-expect-error Unreachable code detected
   return "not a function";
 }
 

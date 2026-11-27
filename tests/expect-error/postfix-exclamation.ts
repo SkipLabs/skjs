@@ -374,6 +374,7 @@ function testReturnNonNull(x: number | null): number {
     // @skjs-expect-error The non-null assertion operator '!' is not allowed
     return x!;
   }
+  // @skjs-expect-error Unreachable code detected
   return 0;
 }
 

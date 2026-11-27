@@ -12,6 +12,7 @@ function narrowsToUnionNotLastLabel(x: 1 | 2): 2 {
       // @skjs-expect-error Type of returned value is not assignable to the function's return type
       return x;
   }
+  // @skjs-expect-error Unreachable code detected
   return 2;
 }
 

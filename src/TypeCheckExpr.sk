@@ -678,6 +678,23 @@ extension class TypeChecker {
     fallenFrom: ?readonly Scope = None(),
     reservedStatements: Array<Stmt> = Array[],
   ): (readonly Scope, StmtTermination) {
+    (scope, term, _) = this.blockWithReachability(
+      tcenv,
+      stmts,
+      cond,
+      fallenFrom,
+      reservedStatements,
+    );
+    (scope, term)
+  }
+
+  fun blockWithReachability(
+    tcenv: mutable TCEnv,
+    stmts: Array<Stmt>,
+    cond: ?(Expr, Bool) = None(),
+    fallenFrom: ?readonly Scope = None(),
+    reservedStatements: Array<Stmt> = Array[],
+  ): (readonly Scope, StmtTermination, Bool) {
     scopeCopy = tcenv.scope;
     scope = tcenv.mcreateSubScope{isLoop => false};
     tcenv.!scope = scope;
@@ -688,10 +705,13 @@ extension class TypeChecker {
     // After `cond`: the fallthrough entry is a separate way in, so its values
     // are unioned with the narrowed own-entry ones, not narrowed by `cond`.
     fallenFrom.each(from -> scope.uniteFallenInto(tcenv.subst, this, from));
+    // Check before running statements: if entering this branch narrowed an
+    // outer binding from non-`never` to `never`, control cannot reach it.
+    entryUnreachable = scope.hasNarrowedToBottom(tcenv.subst, this);
     this.reserveBlockBindings(tcenv, reservedStatements);
     term = this.blockStatements(tcenv, stmts);
     tcenv.!scope = scopeCopy;
-    (scope, term)
+    (scope, term, entryUnreachable)
   }
 
   // Shared by ordinary and exception-handling blocks. Reserve lexical
@@ -702,7 +722,21 @@ extension class TypeChecker {
   ): StmtTermination {
     this.reserveBlockBindings(tcenv, stmts);
     term = StmtTermination::skip;
+    reportedUnreachable = false;
     for (stmt in stmts) {
+      if (
+        !term.mayFallthrough &&
+        !reportedUnreachable &&
+        !this.allowUnreachableCode &&
+        !tcenv.inOverloadTrial &&
+        !(stmt.value is StmtEmpty())
+      ) {
+        !reportedUnreachable = true;
+        tcenv.error(
+          Array[(stmt.pos, "Unreachable code detected")],
+          TSCode(7027),
+        )
+      };
       !term = term.then(this.stmt(tcenv, stmt))
     };
     term

@@ -37,6 +37,7 @@ function switchContinuePropagatesToLoop(
         default:
           continue;
       }
+      // @skjs-expect-error Unreachable code detected
       y = "dead code after an always-continuing switch";
     } else {
       y = "reached";
@@ -60,6 +61,7 @@ function tryFinallyContinueStillTerminal(
       } finally {
         // completes normally
       }
+      // @skjs-expect-error Unreachable code detected
       y = "dead code after continue+finally";
     } else {
       y = "reached";
@@ -79,6 +81,7 @@ function bothBranchesTerminalStaysConservative(): number {
     } else {
       continue;
     }
+    // @skjs-expect-error Unreachable code detected
     // @skjs-expect-error Type of value is not assignable to the variable's type annotation
     const dead: string = 5;
   }
