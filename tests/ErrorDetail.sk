@@ -60,28 +60,36 @@ fun testMissingIndexErrorDetailLevels(): void {
     "Missing index signature 'k' in source type",
   ];
   SKTest.expectEq(
-    expectedSummary,
     renderSingleSubtypingErrorAt(source, SKJS.STErrorDetail::default),
+    expectedSummary,
     "default detail",
   );
   SKTest.expectEq(
-    expectedSummary,
     renderSingleSubtypingErrorAt(source, SKJS.STErrorDetail::normal),
+    expectedSummary,
     "normal detail",
   );
   SKTest.expectEq(
-    expectedSummary,
     renderSingleSubtypingErrorAt(source, SKJS.STErrorDetail::verbose),
+    expectedSummary,
     "verbose detail",
   );
 
-  // Pinning current pre-fix behavior (#738): at full detail,
-  // STRecFieldsMissingIndex drops the recursive probe error instead of
-  // rendering err.toError(subst, tenv, detailForRec).
+  // At full detail, STRecFieldsMissingIndex also renders the recursive probe
+  // witness err.toError(subst, tenv, detailForRec), expanding the aliased
+  // index value type.
   SKTest.expectEq(
-    expectedSummary,
     renderSingleSubtypingErrorAt(source, SKJS.STErrorDetail::full),
-    "full detail (pre-fix omits recursive probe error)",
+    Array[
+      "Type '{}'",
+      "is not assignable to type '{ [k: string]: Val; }'",
+      "Missing index signature 'k' in source type",
+      "Type 'unknown'",
+      "is not assignable to type 'Val'",
+      "Type 'unknown'",
+      "is not assignable to type 'number | string'",
+    ],
+    "full detail",
   );
 }
 
@@ -101,16 +109,21 @@ fun testMissingIndexSetterProbeErrorDetail(): void {
     "Missing index signature 'k' in source type",
   ];
   SKTest.expectEq(
-    expectedSummary,
     renderSingleSubtypingErrorAt(source, SKJS.STErrorDetail::default),
+    expectedSummary,
     "default detail",
   );
-  // Pinning current pre-fix behavior (#738): full detail omits the
-  // setter-probe error.
+  // At full detail, the setter-probe witness (`unknown <: never`) is appended.
   SKTest.expectEq(
-    expectedSummary,
     renderSingleSubtypingErrorAt(source, SKJS.STErrorDetail::full),
-    "full detail (pre-fix omits setter-probe error)",
+    Array[
+      "Type '{}'",
+      "is not assignable to type '{ [k: string]: unknown; }'",
+      "Missing index signature 'k' in source type",
+      "Type 'unknown'",
+      "is not assignable to type 'never'",
+    ],
+    "full detail",
   );
 }
 
@@ -124,26 +137,28 @@ fun testClosedTargetMissingIndexErrorDetail(): void {
     "}\n";
 
   SKTest.expectEq(
+    renderSingleSubtypingErrorAt(source, SKJS.STErrorDetail::default),
     Array[
       "Type '{ a: number; }'",
       "is not assignable to type 'Closed<{ a: number; }>'",
       "The target is a closed object type: every unnamed key is provably absent, but the source is an open object type that may have unknown extra keys",
     ],
-    renderSingleSubtypingErrorAt(source, SKJS.STErrorDetail::default),
     "default detail for Closed<T>",
   );
-  // Pinning current pre-fix behavior (#738): full detail omits the recursive
-  // probe error here too.
+  // At full detail, the recursive probe witness (`unknown <: never`) is also
+  // surfaced after the closed-target explanation.
   SKTest.expectEq(
+    renderSingleSubtypingErrorAt(source, SKJS.STErrorDetail::full),
     Array[
       "Type '{ a: number; }'",
       "is not assignable to type 'Closed<{ a: ...; }>'",
       "Type '{ a: number; }'",
       "is not assignable to type 'Closed<{ a: number; }>'",
       "The target is a closed object type: every unnamed key is provably absent, but the source is an open object type that may have unknown extra keys",
+      "Type 'unknown'",
+      "is not assignable to type 'never'",
     ],
-    renderSingleSubtypingErrorAt(source, SKJS.STErrorDetail::full),
-    "full detail for Closed<T> (pre-fix omits probe error)",
+    "full detail for Closed<T>",
   );
 }
 

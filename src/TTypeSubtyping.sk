@@ -926,36 +926,44 @@ base class STErrorOnTFields(
         err.toError(subst, tenv, detailForRec),
         kind.readonlyHintPos(index2.pos),
       )
-    | STRecFieldsMissingIndex(_err, index2, _fields1, _fields2) ->
+    | STRecFieldsMissingIndex(err, index2, _fields1, _fields2) ->
       // Mirror STRecFieldsMissingField: the leaf reason ("Missing index
-      // signature") is the substantive message and belongs in the always-shown
-      // `msgs` slot, not the intermediate `recMsgs` slot. The recursive `err`
-      // is only the mechanical probe witness (`top <: indexValue`, i.e.
-      // `unknown <: …`, or `indexValue <: never` for the setter), which conveys
-      // nothing beyond "the source has no index", so it is dropped.
+      // signature" / closed-target explanation) belongs in the always-shown
+      // `msgs` slot so default/normal/verbose stay concise. When intermediate
+      // depth remains after the enclosing object frame (`detailForRec` still
+      // has budget — i.e., `full` detail, not `normal`/`verbose` where
+      // `ensureIntermediateDepth()` bumps `maxIntermediateDepth` to 1 for the
+      // enclosing object type only), also append `err.toError(...)` so the
+      // underlying probe witness (`unknown <: index.get` or `index.set <:
+      // never`, including alias expansions and hints) is surfaced.
+      missingMsg = if (index2.get.isBottom()) {
+        // A never-valued target index means the target is a CLOSED object
+        // type (e.g. Closed<T>): the real objection is that the open source
+        // may carry unknown extra keys, not a missing signature per se.
+        List[
+          (
+            index2.pos,
+            "The target is a closed object type: every unnamed key is " +
+              "provably absent, but the source is an open object type " +
+              "that may have unknown extra keys",
+          ),
+        ]
+      } else {
+        List[
+          (
+            index2.pos,
+            `Missing index signature '${TypePp::escapeName(
+              index2.name.value,
+            )}' in source type`,
+          ),
+        ]
+      };
       (
         List.Nil(),
-        if (index2.get.isBottom()) {
-          // A never-valued target index means the target is a CLOSED object
-          // type (e.g. Closed<T>): the real objection is that the open source
-          // may carry unknown extra keys, not a missing signature per se.
-          List[
-            (
-              index2.pos,
-              "The target is a closed object type: every unnamed key is " +
-                "provably absent, but the source is an open object type " +
-                "that may have unknown extra keys",
-            ),
-          ]
+        if (detailForRec.maxIntermediateDepth > 0) {
+          missingMsg.concat(err.toError(subst, tenv, detailForRec))
         } else {
-          List[
-            (
-              index2.pos,
-              `Missing index signature '${TypePp::escapeName(
-                index2.name.value,
-              )}' in source type`,
-            ),
-          ]
+          missingMsg
         },
         None(),
       )
