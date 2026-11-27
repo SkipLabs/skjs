@@ -371,4 +371,146 @@ fun testResolveStubsPackageJsonExports(): void {
   );
 }
 
+@test
+fun testNodeModulesWalk(): void {
+  fs = mkStubMem(
+    Array[
+      ("/proj/node_modules/foo/package.json", `{"types": "./lib/foo.d.ts"}`),
+      (
+        "/proj/node_modules/foo/lib/foo.d.ts",
+        `export declare function tag(): "root";`,
+      ),
+      (
+        "/proj/node_modules/shared/index.d.ts",
+        "export declare const s: number;",
+      ),
+      (
+        "/proj/packages/a/node_modules/foo/package.json",
+        `{"types": "./lib/foo.d.ts"}`,
+      ),
+      (
+        "/proj/packages/a/node_modules/foo/lib/foo.d.ts",
+        `export declare function tag(): "nested";`,
+      ),
+      (
+        "/proj/packages/a/node_modules/only-a/index.d.ts",
+        "export declare const a: number;",
+      ),
+      ("/proj/packages/a/node_modules/broken/package.json", "{not json"),
+      (
+        "/proj/node_modules/broken/index.d.ts",
+        "export declare const ok: boolean;",
+      ),
+      // Outside projectRoot: must NOT be visited because walk stops at projectRoot.
+      ("/node_modules/outside/index.d.ts", "export declare const out: string;"),
+      ("/stubs/flat-stub/index.d.ts", "export declare const flat: string;"),
+    ],
+  );
+  projectRoot = SKJS.DAbsolute::create("/proj");
+  stubs = Array[
+    SKJS.DAbsolute::create("/stubs"),
+    SKJS.DAbsolute::create("/proj/node_modules"),
+  ];
+  rootMap = SKJS.RootMap(projectRoot, stubs);
+
+  dirA = SKJS.DPath(
+    SKJS.RootId::project,
+    SKJS.DRelative::create("packages/a/src"),
+  );
+  dirB = SKJS.DPath(
+    SKJS.RootId::project,
+    SKJS.DRelative::create("packages/b/src"),
+  );
+
+  // Nested packages/a/node_modules/foo shadows root node_modules/foo for pkg A.
+  SKTest.expectEq(
+    SKJS.resolveBareModule(fs, dirA, rootMap, "foo"),
+    SKJS.StubFound(
+      SKJS.FPath::create(
+        SKJS.RootId::project,
+        "packages/a/node_modules/foo/lib/foo.d.ts",
+      ),
+    ),
+    "nested node_modules shadows root node_modules",
+  );
+
+  // Package B (no nested node_modules) walks up to root node_modules/foo
+  // and resolves under the matching importStubs RootId.
+  SKTest.expectEq(
+    SKJS.resolveBareModule(fs, dirB, rootMap, "foo"),
+    SKJS.StubFound(
+      SKJS.FPath::create(SKJS.RootId::stub(1), "foo/lib/foo.d.ts"),
+    ),
+    "walk reaches root node_modules when no nested override exists",
+  );
+
+  // Package A walks past its own node_modules when package is only in root.
+  SKTest.expectEq(
+    SKJS.resolveBareModule(fs, dirA, rootMap, "shared"),
+    SKJS.StubFound(
+      SKJS.FPath::create(SKJS.RootId::stub(1), "shared/index.d.ts"),
+    ),
+    "walk continues to ancestor node_modules on miss",
+  );
+
+  // Package present only in nested packages/a/node_modules resolves from A,
+  // but is not visible from sibling package B.
+  SKTest.expectEq(
+    SKJS.resolveBareModule(fs, dirA, rootMap, "only-a"),
+    SKJS.StubFound(
+      SKJS.FPath::create(
+        SKJS.RootId::project,
+        "packages/a/node_modules/only-a/index.d.ts",
+      ),
+    ),
+    "nested-only package resolves from its own subtree",
+  );
+  SKTest.expectEq(
+    SKJS.resolveBareModule(fs, dirB, rootMap, "only-a"),
+    SKJS.StubNotFound(),
+    "nested-only package is not visible to sibling package",
+  );
+
+  // Malformed package.json in closer node_modules short-circuits with StubError
+  // rather than silently falling through to an ancestor.
+  SKJS.resolveBareModule(fs, dirA, rootMap, "broken") match {
+  | SKJS.StubError(msg) ->
+    SKTest.expectTrue(
+      msg.contains("Invalid package.json for module 'broken'"),
+      `unexpected error message: ${msg}`,
+    )
+  | other -> SKTest.fail(`Expected StubError, got ${other}`)
+  };
+
+  // Walk stops at projectRoot: node_modules above projectRoot is not consulted.
+  SKTest.expectEq(
+    SKJS.resolveBareModule(fs, dirA, rootMap, "outside"),
+    SKJS.StubNotFound(),
+    "walk stops at projectRoot",
+  );
+
+  // Flat non-node_modules --import-stubs fallback still works unchanged.
+  SKTest.expectEq(
+    SKJS.resolveBareModule(fs, dirA, rootMap, "flat-stub"),
+    SKJS.StubFound(
+      SKJS.FPath::create(SKJS.RootId::stub(0), "flat-stub/index.d.ts"),
+    ),
+    "flat non-node_modules stub dir fallback still works",
+  );
+
+  // When root node_modules is NOT passed in --import-stubs, walk still finds
+  // it under RootId::project.
+  rootMapNoNmStub = SKJS.RootMap(
+    projectRoot,
+    Array[SKJS.DAbsolute::create("/stubs")],
+  );
+  SKTest.expectEq(
+    SKJS.resolveBareModule(fs, dirB, rootMapNoNmStub, "foo"),
+    SKJS.StubFound(
+      SKJS.FPath::create(SKJS.RootId::project, "node_modules/foo/lib/foo.d.ts"),
+    ),
+    "walk finds root node_modules under RootId::project even without --import-stubs",
+  );
+}
+
 module end;

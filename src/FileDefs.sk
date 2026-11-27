@@ -739,7 +739,8 @@ mutable class FileDefsState private {
       | None() -> StubNotFound()
       }
     } else {
-      // Try path alias resolution first
+      // Try path alias resolution first, then walk ancestor node_modules
+      // directories up to projectRoot before falling back to --import-stubs.
       resolvePathAlias(
         this.fs,
         this.rootMap.projectRoot,
@@ -747,7 +748,7 @@ mutable class FileDefsState private {
         name,
       ) match {
       | Some(fileName) -> StubFound(fileName)
-      | None() -> resolveStubs(this.fs, this.rootMap.importStubs, name)
+      | None() -> resolveBareModule(this.fs, this.dirName, this.rootMap, name)
       }
     };
     resolved match {

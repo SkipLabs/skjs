@@ -128,6 +128,37 @@ class Files(
       )
     };
 
+    // Load TypeScript files inside any `<ancestor>/node_modules/` directory
+    // reachable when walking up from loaded project source files to `absRoot`,
+    // skipping any `node_modules` directory already loaded via `importStubs`.
+    // These files are stored under `RootId::project` so `resolveNodeModulesWalk`
+    // targets exist in `filesContent`/`parsedFiles`, while `Checker.checkFiles`
+    // skips type-checking files inside `node_modules/` directly.
+    stubSet = absImportStubs.collect(Set);
+    visitedDirs = mutable Set<DAbsolute>[];
+    nodeModulesRel = DRelative::create("node_modules");
+    for (fpath => _absPath in srcFiles.clone()) {
+      if (!fpath.rootId.isProject()) continue;
+      cur = absRoot / fpath.relative.dirName;
+      if (!isDirWithin(cur, absRoot)) continue;
+      loop {
+        if (visitedDirs.contains(cur)) {
+          break void
+        };
+        visitedDirs.insert(cur);
+        nmDir = cur / nodeModulesRel;
+        if (!stubSet.contains(nmDir) && fs.isDirectory(nmDir.toString())) {
+          fs.readFilesRecursive(nmDir.toString(), isTsFile).each(p ->
+            addFile(p, RootId::project, rootStr)
+          )
+        };
+        if (cur == absRoot || cur.isRoot()) {
+          break void
+        };
+        !cur = cur.parent()
+      }
+    };
+
     isInit = context.unsafeMaybeGetEagerDir(filesDirName) is None();
     fileHdl = createOrReuseEagerDir(
       context,
