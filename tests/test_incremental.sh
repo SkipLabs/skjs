@@ -736,6 +736,66 @@ out=$(run_check --data)
 expect_markers "ifaceBaseCallSigEditPropagatesThroughExtends" "\"callUser\"" "$out"
 
 ########################################################################
+# 23. Overloaded function body trial does not duplicate __SKJS_show
+#     markers or leak body dependencies onto signature-only DefKeys
+########################################################################
+
+reset_cache
+cat > "$FILE" <<'EOF'
+function ov(x: string): string;
+function ov(x: number): number;
+function ov(x: string | number): string | number {
+  __SKJS_show("ovImpl");
+  if (typeof x === "string") {
+    return x;
+  }
+  return x + 1;
+}
+function user(): void {
+  __SKJS_show("user");
+  let _a: string = ov("hi");
+  let _b: number = ov(42);
+}
+function independent(): void {
+  __SKJS_show("independent");
+}
+EOF
+
+# Init: ovImpl prints once (body trials suppress __SKJS_show side effects).
+out=$(run_check --init)
+expect_markers "overloadBodyTrialInitSingleMarker" "\"independent\"
+\"ovImpl\"
+\"user\"" "$out"
+
+out=$(run_check --data)
+expect_markers "overloadBodyTrialNoChange" "" "$out"
+
+# Body-only edit to the implementation: only ovImpl recomputes (once);
+# callers and unrelated functions stay cached.
+cat > "$FILE" <<'EOF'
+function ov(x: string): string;
+function ov(x: number): number;
+function ov(x: string | number): string | number {
+  __SKJS_show("ovImpl");
+  if (typeof x === "string") {
+    return x + "!";
+  }
+  return x + 2;
+}
+function user(): void {
+  __SKJS_show("user");
+  let _a: string = ov("hi");
+  let _b: number = ov(42);
+}
+function independent(): void {
+  __SKJS_show("independent");
+}
+EOF
+
+out=$(run_check --data)
+expect_markers "overloadBodyTrialBodyEditRecomputesImplOnce" "\"ovImpl\"" "$out"
+
+########################################################################
 # Summary
 ########################################################################
 total=$((successes + failures))

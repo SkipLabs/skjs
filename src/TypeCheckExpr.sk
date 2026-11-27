@@ -2476,7 +2476,9 @@ extension class TypeChecker {
           this.verbose,
         )
       };
-      print_error(actual);
+      if (!tcenv.inOverloadTrial) {
+        print_error(actual);
+      };
       if (args.size() >= 2) {
         expectedTy = this.expr(tcenv, args[1], true);
         expectedTy.getConstantString() match {

@@ -343,10 +343,17 @@ extension class TypeChecker {
       }
     };
     group = deduped.toArray();
-    // Only the first declaration of the group reports group-level errors.
-    if (fd.getPos() != group[0].getPos()) return void;
     hasBody = (f: TopLevelFunDef) -> f.hasBody;
     bodies = group.filter(hasBody);
+    // Run the group check on a single owner declaration so each group error is
+    // reported once. When there is a single implementation, run on that
+    // implementation's DefKey: it already reads `funDefBodyMap`, so the
+    // TS2394 body trial does not attach a body dependency to signature-only
+    // declarations (keeping signature-only DefKeys cached on body-only edits).
+    // Otherwise (missing or duplicate implementations — no body trial runs),
+    // run on the first declaration of the group.
+    owner = if (bodies.size() == 1) bodies[0] else group[0];
+    if (fd.getPos() != owner.getPos()) return void;
     // A group is ambient only if EVERY member is (`declare ...` or .d.ts);
     // a mixed group still needs an implementation (tsc TS2391 on the
     // non-ambient member).
