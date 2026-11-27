@@ -1,16 +1,12 @@
-// Assertion signatures (`asserts x` and `asserts x is T`) — pinning tests for
-// issue #583.
+// Assertion signatures (`asserts x` and `asserts x is T`) — issue #583.
 //
-// Declared/ambient assertion signatures are currently rejected with SKJS9013;
-// these tests pin the current behavior before assertion signatures are
-// implemented.
+// Declared/ambient assertion signatures narrow the asserted local variable for
+// the remainder of the enclosing scope after a top-level expression statement
+// call returns normally.
 
 // 1. Basic declared assertion functions (`asserts x` and `asserts x is T`).
-// @skjs-expect-error 'asserts' type predicates are not yet supported by SKJS
 declare function assertTruthy(x: unknown): asserts x;
-// @skjs-expect-error 'asserts' type predicates are not yet supported by SKJS
 declare function assertString(x: unknown): asserts x is string;
-// @skjs-expect-error 'asserts' type predicates are not yet supported by SKJS
 declare function assertDefined<T>(x: T | null | undefined): asserts x is T;
 
 function useAssertString(x: string | number): string {
@@ -33,8 +29,7 @@ function useAssertDefined(x: number | null | undefined): number {
   return x;
 }
 
-// 2. Assertion on an optional parameter or a second parameter.
-// @skjs-expect-error 'asserts' type predicates are not yet supported by SKJS
+// 2. Assertion on a non-first parameter.
 declare function assertSecond(label: string, x: unknown): asserts x is number;
 
 function useSecond(x: string | number): number {
@@ -43,9 +38,7 @@ function useSecond(x: string | number): number {
 }
 
 // 3. Function type annotations with assertion signatures.
-// @skjs-expect-error 'asserts' type predicates are not yet supported by SKJS
 type AssertStrFn = (x: unknown) => asserts x is string;
-// @skjs-expect-error 'asserts' type predicates are not yet supported by SKJS
 type AssertTruthFn = (x: unknown) => asserts x;
 
 declare const fnAssertStr: AssertStrFn;
@@ -61,18 +54,16 @@ function useFnTypeTruth(x: string | null): string {
   return x;
 }
 
-// 4. Interface and class methods with `asserts this` and `asserts this is T`.
+// 4. Interface methods with `asserts this` and `asserts this is T`.
 interface ReadyBox {
   readonly value: string;
 }
 interface MaybeBox {
   readonly value: string | null;
-  // @skjs-expect-error 'asserts' type predicates are not yet supported by SKJS
   assertReady(): asserts this is ReadyBox;
 }
 
 interface SelfAssertBox {
-  // @skjs-expect-error 'asserts' type predicates are not yet supported by SKJS
   assertSelf(): asserts this;
 }
 
@@ -85,14 +76,12 @@ function useAssertSelf(box: SelfAssertBox): void {
   box.assertSelf();
 }
 
-// 5. Generic and overloaded assertion signatures.
-// @skjs-expect-error 'asserts' type predicates are not yet supported by SKJS
+// 5. Overloaded assertion signatures.
 declare function assertKind(x: unknown, kind: "str"): asserts x is string;
-// @skjs-expect-error 'asserts' type predicates are not yet supported by SKJS
 declare function assertKind(x: unknown, kind: "num"): asserts x is number;
 
 function useOverload(x: string | number | boolean): number {
-  assertKind(x, "num");
+  assertKind(x, "num" as const);
   return x;
 }
 
@@ -103,19 +92,19 @@ function useUnionAgree(cond: boolean, x: string | number): string {
   return x;
 }
 
-// @skjs-expect-error 'asserts' type predicates are not yet supported by SKJS
 type AssertNumFn = (x: unknown) => asserts x is number;
 declare const fnAssertNum: AssertNumFn;
 
 function useUnionDisagree(cond: boolean, x: string | number): string {
   const fn: AssertStrFn | AssertNumFn = cond ? fnAssertStr : fnAssertNum;
   fn(x);
+  // @ts-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
 // 7. Soundness: captured mutable `let` must NOT be narrowed by an assertion
 // call, because the callee could mutate the outer binding via a closure before
-// returning normally (even without calling `mutate()` explicitly at the call
+// returning normally (even without calling the callback explicitly at the call
 // site, `assertString` itself could invoke a previously registered callback).
 declare function registerCallback(cb: () => void): void;
 function useCapturedMutableLet(): string {
@@ -124,13 +113,15 @@ function useCapturedMutableLet(): string {
     x = 42;
   });
   assertString(x);
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
-// 8. Non-top-level expression statement: optional chaining (`?.`) or value-used
-// calls must NOT narrow the surrounding scope.
+// 8. Non-top-level expression statement: optional chaining (`?.`) can skip the
+// call when the receiver is nullish, so it must NOT narrow.
 function useOptionalChain(box: MaybeBox | undefined): string {
   box?.assertReady();
+  // @ts-expect-error Property access is not allowed on this type
   return box.value;
 }
 
@@ -142,16 +133,17 @@ function useTryCatch(x: string | number): string {
     const ok: string = x;
     return ok;
   } catch {
+    // @ts-expect-error Type of returned value is not assignable to the function's return type
     return x;
   }
 }
 
 // 10. Assertion function subtyping:
 // - Dropping an assertion predicate to `(...) => void` is allowed.
-// - Assigning a plain `(...) => void` to an assertion signature is rejected.
+// - Assigning a plain `(...) => void` to an assertion signature is rejected
+//   (stricter than tsc, which unsoundly accepts it).
 // - Assigning a different assertion kind or incompatible target is rejected.
 declare function plainVoid(x: unknown): void;
-// @skjs-expect-error 'asserts' type predicates are not yet supported by SKJS
 declare function assertLiteralA(x: unknown): asserts x is "a";
 
 function testDropToVoid(): void {
@@ -160,21 +152,25 @@ function testDropToVoid(): void {
 }
 
 function testBadPlainToAssert(): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const badPlainToAssert: AssertStrFn = plainVoid;
   void badPlainToAssert;
 }
 
 function testBadPlainToTruth(): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const badPlainToTruth: AssertTruthFn = plainVoid;
   void badPlainToTruth;
 }
 
 function testBadTruthToIs(): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const badTruthToIs: AssertStrFn = assertTruthy;
   void badTruthToIs;
 }
 
 function testBadIsToTruth(): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const badIsToTruth: AssertTruthFn = assertString;
   void badIsToTruth;
 }
@@ -185,12 +181,12 @@ function testCovariantTarget(): void {
 }
 
 function testBadWiderTarget(): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const badWiderTarget: (x: unknown) => asserts x is "a" = assertString;
   void badWiderTarget;
 }
 
 // 10b. Standalone `asserts x` on boolean condition expression (`asserts cond`).
-// @skjs-expect-error 'asserts' type predicates are not yet supported by SKJS
 declare function assertCondition(cond: boolean): asserts cond;
 
 function useAssertCondition(x: string | number): string {
@@ -200,22 +196,22 @@ function useAssertCondition(x: string | number): string {
 
 // 11. Assertion functions on bodied implementations remain rejected (soundness:
 // SKJS does not verify the body against the claimed assertion).
-// @skjs-expect-error 'asserts' type predicates are not yet supported by SKJS
+// @skjs-expect-error An assertion signature ('asserts') is only supported on declared function, method, or function-type signatures
 function badBodiedAssert(x: unknown): asserts x is string {
   if (typeof x !== "string") {
     throw new Error("not string");
   }
 }
 
-// @skjs-expect-error 'asserts' type predicates are not yet supported by SKJS
-function badBodiedTruthy(x: unknown): asserts x {
+// @skjs-expect-error An assertion signature ('asserts') is only supported on declared function, method, or function-type signatures
+function badBodiedTruthy(x: boolean): asserts x {
   if (!x) {
     throw new Error("falsy");
   }
 }
 
 class BadClassAssert {
-  // @skjs-expect-error 'asserts' type predicates are not yet supported by SKJS
+  // @skjs-expect-error An assertion signature ('asserts') is only supported on declared function, method, or function-type signatures
   check(x: unknown): asserts x is string {
     if (typeof x !== "string") {
       throw new Error("not string");
@@ -225,15 +221,15 @@ class BadClassAssert {
 
 // 12. Validation errors: unknown parameter, rest parameter, nested position,
 // and construct signature.
-// @skjs-expect-error 'asserts' type predicates are not yet supported by SKJS
+// @ts-expect-error Cannot find parameter 'y'
 declare function badUnknownParam(x: unknown): asserts y is string;
-// @skjs-expect-error 'asserts' type predicates are not yet supported by SKJS
+// @ts-expect-error Cannot find parameter 'y'
 declare function badUnknownParamTruthy(x: unknown): asserts y;
-// @skjs-expect-error 'asserts' type predicates are not yet supported by SKJS
+// @ts-expect-error A type predicate cannot reference a rest parameter
 declare function badRest(...xs: readonly unknown[]): asserts xs is string[];
-// @skjs-expect-error 'asserts' type predicates are not yet supported by SKJS
+// @ts-expect-error A type predicate is only allowed in return type position for functions and methods
 declare function badNested(x: unknown): Promise<asserts x is string>;
-// @skjs-expect-error 'asserts' type predicates are not yet supported by SKJS
+// @ts-expect-error A type predicate is only allowed in return type position for functions and methods
 type BadConstruct = new (x: unknown) => asserts x is string;
-// @skjs-expect-error 'asserts' type predicates are not yet supported by SKJS
+// @ts-expect-error Cannot find type 'NonExistentAssertType'
 declare function badTargetType(x: unknown): asserts x is NonExistentAssertType;

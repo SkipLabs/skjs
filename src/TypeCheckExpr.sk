@@ -1630,7 +1630,18 @@ extension class TypeChecker {
       for (f in tfuns.allFuns()) {
         if (!f.tparams.isEmpty()) return None();
         if (f.thisParam is ImplicitShape _) return None();
-        boundSigs.push(f with {thisParam => NoThis()})
+        // A bound function fixes `this` to `thisArg` (not the call site's
+        // receiver), so drop any `asserts this` predicate to avoid narrowing a
+        // wrong subject. Parameter assertions stay valid.
+        boundAssertPred = f.assertPred.flatMap(ap ->
+          ap.subject match {
+          | ASThis() -> None()
+          | ASParam _ -> Some(ap)
+          }
+        );
+        boundSigs.push(
+          f with {thisParam => NoThis(), assertPred => boundAssertPred},
+        )
       };
       if (boundSigs.isEmpty()) return None();
       // The rebound function keeps EVERY overload, so thisArg must be
@@ -6502,6 +6513,7 @@ extension class TypeChecker {
   ): (Bool, TType, Array<(PosRange, String)>) {
     saved = tcenv.subst.save();
     publication = tcenv.results.savePublication();
+    savedCallAssertPredicates = tcenv.callAssertPredicates;
     entryErrors = tcenv.results.errors.size();
     entryWarnings = tcenv.results.warnings.size();
     entryHiddenChecks = tcenv.hiddenEscapeChecks.size();
@@ -6514,6 +6526,7 @@ extension class TypeChecker {
     | exn ->
       tcenv.subst.restore(saved);
       tcenv.results.restorePublication(publication);
+      tcenv.!callAssertPredicates = savedCallAssertPredicates;
       while (tcenv.hiddenEscapeChecks.size() > entryHiddenChecks) {
         _ = tcenv.hiddenEscapeChecks.pop()
       };
@@ -6533,6 +6546,7 @@ extension class TypeChecker {
     msgs = exnMsgs.default(trialMsgs.toArray());
     tcenv.subst.restore(saved);
     tcenv.results.restorePublication(publication);
+    tcenv.!callAssertPredicates = savedCallAssertPredicates;
     while (tcenv.hiddenEscapeChecks.size() > entryHiddenChecks) {
       _ = tcenv.hiddenEscapeChecks.pop()
     };
@@ -6578,6 +6592,7 @@ extension class TypeChecker {
   ): TType {
     saved = tcenv.subst.save();
     publication = tcenv.results.savePublication();
+    savedCallAssertPredicates = tcenv.callAssertPredicates;
     entryErrors = tcenv.results.errors.size();
     result = try {
       this.proposeAndValidateCall(
@@ -6596,11 +6611,13 @@ extension class TypeChecker {
     | exn ->
       tcenv.subst.restore(saved);
       tcenv.results.restorePublication(publication);
+      tcenv.!callAssertPredicates = savedCallAssertPredicates;
       throw exn
     };
     if (tcenv.results.errors.size() != entryErrors) {
       tcenv.subst.restore(saved);
-      tcenv.results.restorePublication(publication)
+      tcenv.results.restorePublication(publication);
+      tcenv.!callAssertPredicates = savedCallAssertPredicates
     };
     result
   }
@@ -6850,7 +6867,8 @@ extension class TypeChecker {
       tcenv.results.errors.size() == entryErrors &&
       plan.validate(tcenv, this)
     ) {
-      tcenv.recordCalls(tfun.cgNodes)
+      tcenv.recordCalls(tfun.cgNodes);
+      tcenv.recordCallAssertPredicate(pos, tfun.assertPred)
     };
     tfun.retType
   }
