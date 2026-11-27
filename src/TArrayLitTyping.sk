@@ -246,7 +246,9 @@ class ArrayLitTyping() {
     | Some(stypes) ->
       stypes.any(stype ->
         stype match {
-        | TPrimValue(_, Some _, _) -> true
+        | TPrimValue(_, Some _, _)
+        | TPrimString(Some _, _) ->
+          true
         | _ -> false
         }
       )
@@ -301,7 +303,7 @@ class ArrayLitTyping() {
   // Excludes literal numeric indices (e.g., x[0]) which could be tuple or array.
   static private fun shouldRefineArrayFromIndexType(idxSType: SType): Bool {
     idxSType match {
-    | TPrimValue(TString(), _, _) -> true
+    | TPrimString(_, _) -> true
     | TPrimValue(TSymbol(), _, _) -> true
     | TPrimValue(TNum(), None(), _) -> true
     | _ -> false

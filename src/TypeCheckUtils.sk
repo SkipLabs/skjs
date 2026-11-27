@@ -234,7 +234,7 @@ extension class TypeChecker {
     | Some(stypes) ->
       stypes.all(stype ->
         stype match {
-        | TPrimValue(TString(), _, _) -> true
+        | TPrimString(_, _) -> true
         | TPrimValue(TNum(), _, _) -> true
         | TPrimValue(TBigInt(), _, _) -> true
         | TPrimValue(TBool(), _, _) -> true
@@ -287,7 +287,7 @@ extension class TypeChecker {
     pos: PosRange,
     msg: String,
     ty: TType,
-  ): TPrimValueKind {
+  ): TPrimNonStringKind {
     ty.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
       stypes.singleElt()
     ) match {

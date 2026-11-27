@@ -2589,7 +2589,7 @@ base class TEnv{
       )
     | TATemplate(strings, types) ->
       this.normalizeTemplate(tcenvb, pos, strings, types)
-    | TAStringLiteral(x) -> TType::single(TPrimValue::single(TString(), x, pos))
+    | TAStringLiteral(x) -> TType::single(TPrimString::single(x, pos))
     | TANumLiteral(x) ->
       TType::single(TPrimValue::single(TNum(), x.val, pos, x.userVal))
     | TATypeOf(expr) -> this.typeOfExpr(tcenvb, expr)
@@ -2599,7 +2599,7 @@ base class TEnv{
         | TPKNull() -> TPrimUnit(TNull(), pos)
         | TPKBool() -> TPrimValue::boolean(pos)
         | TPKNum() -> TPrimValue::number(pos)
-        | TPKString() -> TPrimValue::string(pos)
+        | TPKString() -> TPrimString::full(pos)
         | TPKBigInt() -> TPrimValue::bigint(pos)
         | TPKSymbol() -> TPrimValue::symbol(pos)
         },
@@ -2925,7 +2925,7 @@ base class TEnv{
           TSCode(2322),
         )
       };
-      return TType::single(TPrimValue(TString(), None(), pos))
+      return TType::single(TPrimString(None(), pos))
     };
 
     // `never` has no values, so a template containing it has none either: no
@@ -2949,7 +2949,7 @@ base class TEnv{
       !holes.isEmpty() &&
       holes.all(h -> h is THBareString _)
     ) {
-      return TType::single(TPrimValue(TString(), None(), pos))
+      return TType::single(TPrimString(None(), pos))
     };
 
     values = mutable Vector<String>[strings[0]];
@@ -2968,7 +2968,7 @@ base class TEnv{
             ],
             TSCode(2590),
           );
-          return TType::single(TPrimValue(TString(), None(), pos))
+          return TType::single(TPrimString(None(), pos))
         };
         next = mutable Vector<String>[];
         for (prefix in values) {
@@ -2993,7 +2993,7 @@ base class TEnv{
     };
 
     PrimLiterals::ofSet(SortedSet::createFromItems(values), pos) match {
-    | Some(lits) -> TType::single(TPrimValue(TString(), Some(lits), pos))
+    | Some(lits) -> TType::single(TPrimString(Some(lits), pos))
     // Unreachable: `values` starts non-empty and only grows, and an empty hole
     // is handled by the `never` case above. Guarded because an empty literal set
     // would silently mean the WHOLE `string` primitive, not `never`.
@@ -3028,7 +3028,7 @@ base class TEnv{
         | Some(stypes) ->
           for (stype in stypes) {
             stype match {
-            | TPrimValue(TString(), Some(lits), _)
+            | TPrimString(Some(lits), _)
             | TPrimValue(TBool(), Some(lits), _) ->
               // A string literal's value is already cooked, and a boolean's is
               // its runtime spelling, so both are used verbatim.
@@ -3054,7 +3054,7 @@ base class TEnv{
               // normalizes to None().
               values.push("false");
               values.push("true")
-            | TPrimValue(TString(), None(), _) ->
+            | TPrimString(None(), _) ->
               // T & string is only a bound when this clause carries an
               // abstract parameter. Only a genuine string union member
               // absorbs the hole's other alternatives.
@@ -3551,7 +3551,7 @@ base class TEnv{
     | Some(stypes) ->
       stypes.all(stype ->
         stype match {
-        | TPrimValue(TString(), None(), _) ->
+        | TPrimString(None(), _) ->
           !hasString = true;
           true
         | TPrimValue(TNum(), None(), _) ->
@@ -3894,10 +3894,10 @@ base class TEnv{
         | Some(stypes) ->
           for (stype in stypes) {
             stype match {
-            | TPrimValue(TString(), None(), _) -> !hasString = true
+            | TPrimString(None(), _) -> !hasString = true
             | TPrimValue(TNum(), None(), _) -> !hasNumber = true
             | TPrimValue(TSymbol(), None(), _) -> !hasSymbol = true
-            | TPrimValue(TString(), Some(lits), _)
+            | TPrimString(Some(lits), _)
             | TPrimValue(TNum(), Some(lits), _) ->
               for (lit in lits.values()) namedLiterals.push(lit.val)
             | TPrimValue(TSymbol(), Some(lits), _) ->
@@ -4419,7 +4419,7 @@ base class TEnv{
       clauses.any(clause -> (!clause.vars.isEmpty() || clause.stypes is None()))
     ) {
       return TType::unionStructural(
-        TType::single(TPrimValue(TString(), None(), pos)),
+        TType::single(TPrimString(None(), pos)),
         TType::single(TPrimValue(TNum(), None(), pos)),
       )
     };
@@ -4458,7 +4458,8 @@ base class TEnv{
               if (!idx.get.isBottom()) !allSymbols = true
             );
           }
-        | prim @ TPrimValue _ ->
+        | prim @ TPrimValue _
+        | prim @ TPrimString _ ->
           obj = boxedClass(prim.asClassName());
           stypes.push(obj)
         | TPrimUnit _ -> void /* bottom */
@@ -4468,11 +4469,11 @@ base class TEnv{
     resultTys = mutable Vector[];
     numbers = SortedSet[];
     if (allStrings) {
-      resultTys.push(TType::single(TPrimValue::string(pos)))
+      resultTys.push(TType::single(TPrimString::full(pos)))
     } else {
       stringsAndNumbers = strings.union(numbers);
       PrimLiterals::ofSet(stringsAndNumbers, pos).each(strLits ->
-        resultTys.push(TType::single(TPrimValue(TString(), Some(strLits), pos)))
+        resultTys.push(TType::single(TPrimString(Some(strLits), pos)))
       )
     };
     if (allNumbers) {
@@ -4540,7 +4541,8 @@ base class TEnv{
               fields.stringIndex.each(sIdx -> resultTys.push(sIdx.get))
             }
           }
-        | prim @ TPrimValue _ ->
+        | prim @ TPrimValue _
+        | prim @ TPrimString _ ->
           expanded = boxedClass(prim.asClassName());
           stypes.push(expanded)
         | TPrimUnit _ -> void

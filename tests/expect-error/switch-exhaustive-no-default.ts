@@ -56,6 +56,30 @@ function nonLiteralScrutinee(x: number): boolean {
   }
 }
 
+// Every value of `"a" | "b"` is handled and every clause returns.
+function exhaustiveStringUnionWithoutDefault(x: "a" | "b"): boolean {
+  switch (x) {
+    case "a":
+      return true;
+    case "b":
+      return false;
+  }
+}
+
+// A string-literal union case left unhandled is flagged non-exhaustive, and an
+// out-of-union case is flagged unreachable.
+// @skjs-expect-error Not all code paths return a value, and the return type does not include 'undefined'
+function stringUnionMissingAndUnreachable(x: "a" | "b"): boolean {
+  // @skjs-expect-warning Switch is not exhaustive; the following cases are unhandled
+  switch (x) {
+    case "a":
+      return true;
+    // @skjs-expect-warning This case is unreachable: its value is not in the switched type
+    case "c":
+      return false;
+  }
+}
+
 // Covering every value is not enough if a clause escapes rather than returns.
 // @skjs-expect-error Not all code paths return a value, and the return type does not include 'undefined'
 function exhaustiveButAClauseBreaks(x: 1 | 2): boolean {

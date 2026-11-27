@@ -195,6 +195,7 @@ extension class STypes {
         | (TPrimUnit _, TPrimUnit _) -> sty1
 
         | (p1 @ TPrimValue _, p2 @ TPrimValue _) -> TPrimValue::union(p1, p2)
+        | (p1 @ TPrimString _, p2 @ TPrimString _) -> TPrimString::union(p1, p2)
 
         | (obj1 @ TObject _, obj2 @ TObject _) -> TObject::union(obj1, obj2)
         | _ -> internal_error("Internal error")
@@ -263,6 +264,17 @@ extension class TPrimValue {
         Some(litsUnion)
       };
       TPrimValue(t1.kind, lits, t1.pos)
+    }
+  }
+}
+
+extension class TPrimString {
+  static fun union(t1: TPrimString, t2: TPrimString): TPrimString {
+    (t1.literals, t2.literals) match {
+    | (None(), _) -> t1
+    | (Some _, None()) -> t2
+    | (Some(lits1), Some(lits2)) ->
+      TPrimString(Some(lits1.union(lits2)), t1.pos)
     }
   }
 }

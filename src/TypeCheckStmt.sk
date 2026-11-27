@@ -256,7 +256,7 @@ extension class TypeChecker {
       ty = kind match {
       | ForIn() ->
         this.checkForInIterable(tcenv, iterable.pos, iterableType);
-        TType::single(TPrimValue::string(st.pos))
+        TType::single(TPrimString::full(st.pos))
       | ForOf() ->
         this.getValueType(tcenv, iterable.pos, iterableType, "for-of loop")
       };
@@ -561,7 +561,8 @@ extension class TypeChecker {
     (cases, casesKnown) = condType
       .getSTypes(tcenv.subst, this, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
-    | Some(TPrimValue(_, Some(lits), _)) ->
+    | Some(TPrimValue(_, Some(lits), _))
+    | Some(TPrimString(Some(lits), _)) ->
       (Map::mcreateFromIterator(lits.values().map(x -> (x.val, x.pos))), true)
     | Some(TPrimValue(TBool _, None(), pos)) ->
       // A boolean carries no literals when it can be either, so listing its
@@ -1047,12 +1048,12 @@ extension class TypeChecker {
             TSCode(2488),
           )
         }
-      | TPrimValue(TString(), _, _) ->
+      | TPrimString(_, _) ->
         !result = TType::union(
           tcenv.subst,
           this,
           result,
-          TType::single(TPrimValue::string(pos)),
+          TType::single(TPrimString::full(pos)),
         )
       | _ ->
         tcenv.error(

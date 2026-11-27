@@ -340,6 +340,9 @@ extension class STypes {
             | (p1 @ TPrimValue _, p2 @ TPrimValue _) ->
               TPrimValue::inter(p1, p2)
 
+            | (p1 @ TPrimString _, p2 @ TPrimString _) ->
+              TPrimString::inter(p1, p2)
+
             | (obj1 @ TObject _, obj2 @ TObject _) ->
               TObject::interWith(obj1, obj2, meetFields)
 
@@ -470,8 +473,16 @@ extension base class SType {
       false
     | (prim1 @ TPrimValue _, prim2 @ TPrimValue _) ->
       TPrimValue::inter(prim1, prim2).isSome()
+    | (prim1 @ TPrimString _, prim2 @ TPrimString _) ->
+      TPrimString::inter(prim1, prim2).isSome()
+    | (TPrimString _, TPrimValue _)
+    | (TPrimValue _, TPrimString _) ->
+      // Different kinds have no common values.
+      false
     | (prim @ TPrimValue _, obj @ TObject _)
-    | (obj @ TObject _, prim @ TPrimValue _) ->
+    | (obj @ TObject _, prim @ TPrimValue _)
+    | (prim @ TPrimString _, obj @ TObject _)
+    | (obj @ TObject _, prim @ TPrimString _) ->
       // A primitive overlaps an object type only through its boxed class:
       // a value of type `Number` can be a primitive number, but a value of
       // type `{ a: string }` cannot
@@ -708,6 +719,17 @@ extension class TFields {
     | (None(), Some(index)) ->
       Some(index)
     | (Some(index1), Some(index2)) -> Some(meetIndex(index1, index2))
+    }
+  }
+}
+
+extension class TPrimString {
+  static fun inter(t1: TPrimString, t2: TPrimString): ?TPrimString {
+    (t1.literals, t2.literals) match {
+    | (_, None()) -> Some(t1)
+    | (None(), Some _) -> Some(t2)
+    | (Some(lits1), Some(lits2)) ->
+      lits1.inter(lits2).map(lits -> TPrimString(Some(lits), t1.pos))
     }
   }
 }

@@ -64,6 +64,11 @@ function negOk(): void {
   const n: -0x10 = -16;
   __SKJS_show(n, "-0x10");
 }
+function negAsConstOk(): void {
+  const o = { n: -0x10, bn: -0x10n } as const;
+  __SKJS_show(o.n, "-0x10");
+  __SKJS_show(o.bn, "-0x10n");
+}
 
 // --- control: strings and booleans print their value, unchanged ---
 
