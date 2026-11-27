@@ -318,8 +318,26 @@ mutable class TCEnv private {
   // contract. In particular, resetting a constructor's unfinished this type
   // would discard the fields it has initialized. Invalidation applies after
   // growth has ended, or to bindings whose object type was fixed from the start.
+  // Also log each invalidated binding into any active try write-log so a throw,
+  // return, break, or continue leaving the try/catch/finally carries the
+  // widened object view (SkipLabs/skjs#869).
   mutable fun forgetObjectRefinements(tenv: TEnv): void {
-    this.scope.forgetObjectRefinements(this.subst, tenv, name ->
+    this.scope.forgetObjectRefinements(
+      this.subst,
+      tenv,
+      name -> !(this.localObjectState(name) is Some(LOCanGrow _)),
+      (name, restored) -> this.recordTryWrite(tenv, name, restored),
+    )
+  }
+
+  // Forget object refinements on `loopScope` at loop entry without logging
+  // into any enclosing try write-log: actual writes inside the loop body will
+  // log when they are checked.
+  mutable fun forgetLoopObjectRefinements(
+    tenv: TEnv,
+    loopScope: mutable Scope,
+  ): void {
+    loopScope.forgetObjectRefinements(this.subst, tenv, name ->
       !(this.localObjectState(name) is Some(LOCanGrow _))
     )
   }

@@ -1,9 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Comprehensive Algebraic Data Types Tests
 // Tests ADT pattern matching, nested ADTs, and complex union types
-// Calls conservatively forget field/discriminant refinements, even for pure
-// formatting and recursive helpers. The annotated reads below need effect
-// summaries to retain their pre-call union alternative.
 ///////////////////////////////////////////////////////////////////////////////
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -73,7 +70,6 @@ function describeShape(shape: Shape): string {
     return "Circle with radius " + shape.radius.toString();
   } else if (shape.kind === "rectangle") {
     return (
-      // @skjs-expect-error Property 'height' exists on some but not all members of the union type, so it may be absent
       "Rectangle " + shape.width.toString() + "x" + shape.height.toString()
     );
   } else if (shape.kind === "triangle") {
@@ -81,7 +77,6 @@ function describeShape(shape: Shape): string {
       "Triangle with base " +
       shape.base.toString() +
       " and height " +
-      // @skjs-expect-error Property 'height' exists on some but not all members of the union type, so it may be absent
       shape.height.toString()
     );
   }
@@ -147,7 +142,6 @@ function handleStringResult(result: ApiResult<string>): string {
       "Success: " + result.data + " (status: " + result.status.toString() + ")"
     );
   } else if (result.kind === "error") {
-    // @skjs-expect-error Property 'message' exists on some but not all members of the union type, so it may be absent
     return "Error " + result.code.toString() + ": " + result.message;
   } else if (result.kind === "loading") {
     return "Loading... " + result.progress.toString() + "%";
@@ -236,7 +230,6 @@ function getStateDescription(state: ConnectionState): string {
       "Error " +
       state.errorCode.toString() +
       ", retry after " +
-      // @skjs-expect-error Property 'retryAfter' exists on some but not all members of the union type, so it may be absent
       state.retryAfter.toString() +
       "ms"
     );
@@ -256,7 +249,6 @@ function countNodes<T>(tree: TreeNode<T>): number {
   if (tree.kind === "leaf") {
     return 1;
   } else if (tree.kind === "branch") {
-    // @skjs-expect-error Property 'right' exists on some but not all members of the union type, so it may be absent
     return 1 + countNodes(tree.left) + countNodes(tree.right);
   }
   return 0;
@@ -266,7 +258,6 @@ function sumNumberTree(tree: TreeNode<number>): number {
   if (tree.kind === "leaf") {
     return tree.value;
   } else if (tree.kind === "branch") {
-    // @skjs-expect-error Property 'right' exists on some but not all members of the union type, so it may be absent
     return tree.value + sumNumberTree(tree.left) + sumNumberTree(tree.right);
   }
   return 0;
@@ -277,7 +268,6 @@ function findInTree<T>(tree: TreeNode<T>, target: T): boolean {
     // Note: We can't use === for generic types, so this is simplified
     return true; // Would need specific comparison logic
   } else if (tree.kind === "branch") {
-    // @skjs-expect-error Property 'right' exists on some but not all members of the union type, so it may be absent
     return findInTree(tree.left, target) || findInTree(tree.right, target);
   }
   return false;
@@ -605,7 +595,6 @@ type ComplexElimination =
 
 function testComplexElimination(value: ComplexElimination): string {
   if (value.kind === "alpha") {
-    // @skjs-expect-error Property 'y' exists on some but not all members of the union type, so it may be absent
     return "Alpha: " + value.x.toString() + " - " + value.y;
   } else if (value.kind === "beta") {
     return "Beta with " + value.items.length.toString() + " items";
@@ -659,7 +648,6 @@ type ChainedElimination =
 
 function testFourBranchElimination(value: FourBranchADT): string {
   if (value.kind === "alpha") {
-    // @skjs-expect-error Property 'metadata' exists on some but not all members of the union type, so it may be absent
     return "Alpha: " + value.value.toString() + " (" + value.metadata + ")";
   } else if (value.kind === "beta") {
     let firstItem = value.items[0];
@@ -683,7 +671,6 @@ function testFourBranchElimination(value: FourBranchADT): string {
     let result = value.callback(42);
     return (
       "Delta: priority=" +
-      // @skjs-expect-error Property 'priority' exists on some but not all members of the union type, so it may be absent
       value.priority.toString() +
       ", callback(42)=" +
       result.toString()

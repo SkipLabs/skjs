@@ -251,10 +251,9 @@ function returningCatchLeavesThePostFlowAlone(
 }
 
 // ——— #869: property writes & calls inside try / catch / finally ———
-// Currently unsoundly accepted (fixed in the next commit): member refinements
-// invalidated on a throwing/returning/breaking/re-narrowed path inside try or
-// catch are not logged into the try write-log, so catch, finally, and post-try
-// code still see the stale pre-try narrowing.
+// Member refinements invalidated on a throwing/returning/continuing/re-narrowed
+// path inside try or catch must be logged into the try write-log so catch,
+// finally, and post-try code see the widened object view.
 
 function aliasWriteBeforeThrowReachesCatch(c: boolean): void {
   const e: { x: number } = { x: 1 };
@@ -266,6 +265,7 @@ function aliasWriteBeforeThrowReachesCatch(c: boolean): void {
         throw "boom";
       }
     } catch {
+      // @skjs-expect-error Type of value is not assignable to the variable's type annotation
       const z: 1 = e.x;
     }
   }
@@ -283,6 +283,7 @@ function aliasWriteBeforeThrowReachesPostTry(c: boolean): void {
     } catch {
       // swallow error
     }
+    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
     const z: 1 = e.x;
   }
 }
@@ -297,6 +298,7 @@ function aliasWriteBeforeReturnReachesFinally(c: boolean): void {
         return;
       }
     } finally {
+      // @skjs-expect-error Type of value is not assignable to the variable's type annotation
       const z: 1 = e.x;
     }
   }
@@ -313,6 +315,7 @@ function aliasWriteBeforeContinueReachesFinally(c: boolean): void {
           continue;
         }
       } finally {
+        // @skjs-expect-error Type of value is not assignable to the variable's type annotation
         const z: 1 = e.x;
       }
     }
@@ -328,6 +331,7 @@ function aliasWriteRenarrowedReachesCatch(mayThrow: () => void): void {
       mayThrow();
       if (e.x !== 1) return;
     } catch {
+      // @skjs-expect-error Type of value is not assignable to the variable's type annotation
       const z: 1 = e.x;
     }
   }
@@ -342,6 +346,7 @@ function aliasWriteRenarrowedReachesFinally(mayThrow: () => void): void {
       mayThrow();
       if (e.x !== 1) return;
     } finally {
+      // @skjs-expect-error Type of value is not assignable to the variable's type annotation
       const z: 1 = e.x;
     }
   }
@@ -356,6 +361,7 @@ function callBeforeThrowReachesCatch(c: boolean, mutate: () => void): void {
         throw "boom";
       }
     } catch {
+      // @skjs-expect-error Type of value is not assignable to the variable's type annotation
       const z: 1 = e.x;
     }
   }
@@ -375,6 +381,7 @@ function nestedInnerTryAliasWriteEscapesToOuterCatch(c: boolean): void {
         // does not suppress the thrown exception
       }
     } catch {
+      // @skjs-expect-error Type of value is not assignable to the variable's type annotation
       const z: 1 = e.x;
     }
   }
@@ -394,6 +401,7 @@ function nestedInnerFinallyAliasWriteEscapesToOuterCatch(c: boolean): void {
         }
       }
     } catch {
+      // @skjs-expect-error Type of value is not assignable to the variable's type annotation
       const z: 1 = e.x;
     }
   }
