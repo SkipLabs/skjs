@@ -736,6 +736,9 @@ class TypePublicationState{
 mutable class TCResultsAcc private {
   errorHandling: ErrorHandling,
   errors: mutable Vector<Error> = mutable Vector[],
+  private seenNamingErrors: mutable Set<
+    (ErrorCode, Array<(PosRange, String)>),
+  > = mutable Set[],
   warnings: mutable Vector<Error> = mutable Vector[],
   callgraph: mutable Vector<(CGNode, CGNodes)> = mutable Vector[],
   classHierarchy: mutable Vector<(Class, Class)> = mutable Vector[],
@@ -786,6 +789,7 @@ mutable class TCResultsAcc private {
     static{
       errorHandling => this.errorHandling,
       errors => this.errors.chill(),
+      seenNamingErrors => this.seenNamingErrors.chill(),
       warnings => this.warnings.chill(),
       callgraph => this.callgraph.chill(),
       classHierarchy => this.classHierarchy.chill(),
@@ -798,6 +802,7 @@ mutable class TCResultsAcc private {
     mutable static{
       errorHandling => this.errorHandling,
       errors => Vector::mcreateFromItems(this.errors),
+      seenNamingErrors => Set::mcreateFromItems(this.seenNamingErrors),
       warnings => Vector::mcreateFromItems(this.warnings),
       callgraph => Vector::mcreateFromItems(this.callgraph),
       classHierarchy => Vector::mcreateFromItems(this.classHierarchy),
@@ -810,18 +815,12 @@ mutable class TCResultsAcc private {
     // Avoid emitting identical NamingErrors twice for the same definition when
     // a deferred type operator (such as `TClosed`) is expanded across multiple
     // passes or isolated proofs in keep-going mode.
-    isDuplicate = err match {
+    shouldPush = err match {
     | NamingError(messages, code) ->
-      this.errors.any(e ->
-        e match {
-        | NamingError(prevMessages, prevCode) ->
-          prevCode == code && prevMessages == messages
-        | _ -> false
-        }
-      )
-    | _ -> false
+      this.seenNamingErrors.maybeInsert((code, messages))
+    | _ -> true
     };
-    if (!isDuplicate) {
+    if (shouldPush) {
       this.errors.push(err)
     }
   }
@@ -876,7 +875,7 @@ mutable class TCResultsAcc private {
 
   mutable fun collectErrors(f: () -> void): void {
     this.errorHandling match {
-    | EHKeepGoing() -> catchError(f).each(this.errors.push)
+    | EHKeepGoing() -> catchError(f).each(this.pushError)
     | EHBacktrace()
     | EHDefault() ->
       f()
