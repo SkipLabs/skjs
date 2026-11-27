@@ -520,10 +520,11 @@ mutable class Scope{
     }
   }
 
-  // Repeated reads must cover every value a loop may write. A fresh condition
-  // or body check can narrow again, but a pre-loop fact is not an invariant.
-  // Unknown write summaries conservatively include every visible binding;
-  // loops with calls also widen bindings that a captured closure may reassign.
+  // Repeated reads must cover every value a loop may write — directly, or
+  // indirectly through a call that can invoke a closure writing a captured
+  // binding. A fresh condition or body check can narrow again, but a pre-loop
+  // fact is not an invariant. Unknown write summaries conservatively include
+  // every visible binding.
   mutable fun widenLoopBindings(
     writes: ?SortedSet<String>,
     hasCallEffects: Bool = false,
@@ -531,17 +532,20 @@ mutable class Scope{
     entryValues = SortedMap[];
     for (entry in this.visibleRefs().items()) {
       ref = entry.i1;
+      name = entry.i0;
+      writtenDirectly = writes.map(names -> names.contains(name)).default(true);
+      writtenByCall =
+        hasCallEffects &&
+        this.mayBeReassignedByCall(Name(ref.type.pos, name));
       if (
         ref.isMutable &&
-        ref.hasDeclaredContract &&
-        (writes.map(names -> names.contains(entry.i0)).default(true) ||
-          (hasCallEffects &&
-            this.mayBeReassignedByCall(Name(ref.type.pos, entry.i0))))
+        this.hasCaptureContract(name, ref) &&
+        (writtenDirectly || writtenByCall)
       ) {
         if (ref.declaredType.isConcretePrimitive()) {
-          !entryValues[entry.i0] = ref.type
+          !entryValues[name] = ref.type
         };
-        this.!refs[entry.i0] = ref with {type => ref.declaredType}
+        this.!refs[name] = ref with {type => ref.declaredType}
       }
     };
     entryValues

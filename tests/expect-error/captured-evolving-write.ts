@@ -74,7 +74,6 @@ function evolvingCompatibleClosureWrites(): number {
 
 // Evolving local mutated by a closure called inside a `while` loop: iteration 1
 // sees `EvolvingNode`, `g()` sets `r = 5`, iteration 2 reads `r.value` on `5`.
-// FIXME(#840): loop entry does not widen captured bindings on call effects.
 function whileLoopCallsMutatingClosure(cond: boolean): void {
   let r = null;
   r = mkEvolvingNode();
@@ -82,6 +81,7 @@ function whileLoopCallsMutatingClosure(cond: boolean): void {
     r = 5;
   };
   while (cond) {
+    // @skjs-expect-error Property 'value' does not exist on this type
     const v: number = r.value;
     void v;
     g();
@@ -89,7 +89,6 @@ function whileLoopCallsMutatingClosure(cond: boolean): void {
 }
 
 // Same in a `for` loop body.
-// FIXME(#840): loop entry does not widen captured bindings on call effects.
 function forLoopCallsMutatingClosure(): void {
   let r = null;
   r = mkEvolvingNode();
@@ -97,6 +96,7 @@ function forLoopCallsMutatingClosure(): void {
     r = 5;
   };
   for (let i = 0; i < 2; i++) {
+    // @skjs-expect-error Property 'value' does not exist on this type
     const v: number = r.value;
     void v;
     g();
@@ -104,7 +104,6 @@ function forLoopCallsMutatingClosure(): void {
 }
 
 // Same when the mutating closure is called in the `for` increment.
-// FIXME(#840): loop entry does not widen captured bindings on call effects.
 function forIncrCallsMutatingClosure(): void {
   let r = null;
   r = mkEvolvingNode();
@@ -112,6 +111,7 @@ function forIncrCallsMutatingClosure(): void {
     r = 5;
   };
   for (let i = 0; i < 2; g()) {
+    // @skjs-expect-error Property 'value' does not exist on this type
     const v: number = r.value;
     void v;
     i++;
@@ -119,7 +119,6 @@ function forIncrCallsMutatingClosure(): void {
 }
 
 // Same in a `for...in` loop.
-// FIXME(#840): loop entry does not widen captured bindings on call effects.
 function forInCallsMutatingClosure(obj: { [k: string]: number }): void {
   let r = null;
   r = mkEvolvingNode();
@@ -128,6 +127,7 @@ function forInCallsMutatingClosure(obj: { [k: string]: number }): void {
   };
   for (const k in obj) {
     void k;
+    // @skjs-expect-error Property 'value' does not exist on this type
     const v: number = r.value;
     void v;
     g();
@@ -135,20 +135,19 @@ function forInCallsMutatingClosure(obj: { [k: string]: number }): void {
 }
 
 // Same when the loop header itself reads `r` before the body calls `g()`.
-// FIXME(#840): loop entry does not widen captured bindings on call effects.
 function whileHeaderReadsMutatedEvolving(): void {
   let r = null;
   r = mkEvolvingNode();
   const g = () => {
     r = 5;
   };
+  // @skjs-expect-error Property 'value' does not exist on this type
   while (r.value > 0) {
     g();
   }
 }
 
 // Same when the loop also directly writes `r = mkEvolvingNode()` alongside `g()`.
-// FIXME(#840): loop entry skips unannotated captured bindings even on direct writes.
 function whileLoopDirectAndClosureWrite(cond: boolean): void {
   let r = null;
   r = mkEvolvingNode();
@@ -156,6 +155,7 @@ function whileLoopDirectAndClosureWrite(cond: boolean): void {
     r = 5;
   };
   while (cond) {
+    // @skjs-expect-error Property 'value' does not exist on this type
     const v: number = r.value;
     void v;
     r = mkEvolvingNode();
@@ -164,7 +164,6 @@ function whileLoopDirectAndClosureWrite(cond: boolean): void {
 }
 
 // Annotated captured local mutated by a closure called inside a loop.
-// Already rejected on main (#869 widened declared-contract bindings on call effects).
 function whileLoopAnnotatedCapturedClosure(cond: boolean): void {
   let r: EvolvingNode | null = null;
   r = mkEvolvingNode();
@@ -181,7 +180,6 @@ function whileLoopAnnotatedCapturedClosure(cond: boolean): void {
 
 // Unannotated concrete-primitive captured local narrowed before a loop whose
 // body mutates it through a closure.
-// FIXME(#840): loop entry does not widen unannotated captured bindings on call effects.
 function whileLoopConcretePrimitiveClosure(cond: boolean): void {
   let x = 1;
   const g = () => {
@@ -189,6 +187,7 @@ function whileLoopConcretePrimitiveClosure(cond: boolean): void {
   };
   if (x === 1) {
     while (cond) {
+      // @skjs-expect-error Type of value is not assignable to the variable's type annotation
       const one: 1 = x;
       void one;
       g();
@@ -197,12 +196,12 @@ function whileLoopConcretePrimitiveClosure(cond: boolean): void {
 }
 
 // Object field refinement must not survive a loop that mutates the field or
-// invokes a call that may mutate it (already rejected on main via #869).
+// invokes a call that may mutate it.
 function whileLoopMutatesRefinedField(cond: boolean): void {
   const cell: { v: number | null } = { v: 1 };
   if (cell.v !== null) {
     while (cond) {
-      // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+      // @ts-expect-error Type of value is not assignable to the variable's type annotation
       const n: number = cell.v;
       void n;
       cell.v = null;
