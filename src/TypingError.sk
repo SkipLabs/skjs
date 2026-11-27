@@ -228,10 +228,37 @@ class SubtypingError(
     detail: STErrorDetail,
   ): Array<(PosRange, String)> {
     e = this.stErr;
+    // Outermost project-source anchors for re-anchoring stub-file positions
+    // emitted by rescued inner frames (e.g. `Array<T>.every` inside
+    // `import-stubs/@types/skjs/index.d.ts`). Fall back to the top-level
+    // error headline position if either type's own position is in a stub.
+    headlinePos = if (this.messages.isEmpty()) {
+      e.ty1.pos
+    } else {
+      this.messages[0].i0
+    };
+    fallbackPos1 = if (e.ty1.pos.fileName.rootId.isProject()) {
+      e.ty1.pos
+    } else {
+      headlinePos
+    };
+    fallbackPos2 = if (e.ty2.pos.fileName.rootId.isProject()) {
+      e.ty2.pos
+    } else {
+      headlinePos
+    };
     render = (names: mutable PpNames) -> {
       passSubst = Subst::mcreateFromSaved(context, this.savedSubst);
       passSubst.!ppNames = Some(names);
-      e.toError(passSubst, this.tenv, detail).toArray()
+      e
+        .toErrorForDiagnostic(
+          passSubst,
+          this.tenv,
+          detail,
+          fallbackPos1,
+          fallbackPos2,
+        )
+        .toArray()
     };
     names = mutable PpNames{};
     rendered = render(names);

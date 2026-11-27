@@ -158,6 +158,67 @@ const kTupleProtocolFieldNames: SortedSet<String> = SortedSet[
   "some",
 ];
 
+// Additional mutable-only members inherited from the `Array<T>` stub class.
+const kArrayProtocolFieldNames: SortedSet<String> = SortedSet[
+  "concat",
+  "copyWithin",
+  "every",
+  "fill",
+  "filter",
+  "find",
+  "findIndex",
+  "flatMap",
+  "forEach",
+  "includes",
+  "indexOf",
+  "join",
+  "lastIndexOf",
+  "length",
+  "map",
+  "pop",
+  "push",
+  "reduce",
+  "reduceRight",
+  "reverse",
+  "shift",
+  "slice",
+  "some",
+  "sort",
+  "splice",
+  "unshift",
+];
+
+// Returns true when `fields` carries no extra symbol fields, non-synthetic
+// string/symbol indexes, or call/construct signatures that an array or tuple
+// shorthand would hide. The only allowed symbol field is the stub
+// `[Symbol.iterator]` inherited from `Iterable<T>` / `Array<T>`.
+fun hasOnlyArrayProtocolExtras(fields: TFields): Bool {
+  if (fields.call is CPresent _ || fields.call is CFunction()) return false;
+  if (fields.new is CPresent _ || fields.new is CFunction()) return false;
+  if (
+    fields.stringIndex.isSome() &&
+    !fields.stringIndex.fromSome().isSynthetic()
+  ) {
+    return false
+  };
+  if (
+    fields.symbolIndex.isSome() &&
+    !fields.symbolIndex.fromSome().isSynthetic()
+  ) {
+    return false
+  };
+  for (sf in fields.symbolFields) {
+    if (
+      !sf.name.value.startsWith(
+        "unique_symbol:@types/skjs/index.d.ts:constant(Symbol):",
+      )
+    ) {
+      return false
+    }
+  };
+  true
+}
+
 // Returns Some((element types, positionals are readonly)) when the tuple
 // shorthand can render `fields` without hiding anything: an array-branded
 // object whose named fields are exactly the positional indexes 0..N-1
@@ -165,6 +226,7 @@ const kTupleProtocolFieldNames: SortedSet<String> = SortedSet[
 // members. Single pass over the fields (no isTuple/asTuple re-walks).
 fun tupleShorthand(fields: TFields): ?(Array<TType>, Bool) {
   if (fields.isArray != Some(true)) return None();
+  if (!hasOnlyArrayProtocolExtras(fields)) return None();
   arity: ?Int = None();
   positionals = mutable Map<Int, TType>[];
   maxIndex = -1;
@@ -199,6 +261,46 @@ fun tupleShorthand(fields: TFields): ?(Array<TType>, Bool) {
   };
   if (readonlyCount != 0 && readonlyCount != n) return None();
   Some((Array::fillBy(n, i -> positionals[i]), readonlyCount != 0))
+}
+
+// Returns Some((element type, isReadonly)) when an expanded `Array<T>` or
+// `ReadonlyArray<T>` object (e.g. a constrained type parameter's expanded
+// upper bound) can render in tsc shorthand (`T[]` / `readonly T[]`) without
+// hiding any extra members.
+fun arrayShorthand(fields: TFields): ?(TType, Bool) {
+  if (fields.isArray != Some(true)) return None();
+  if (!hasOnlyArrayProtocolExtras(fields)) return None();
+  numIdx = fields.numberIndex match {
+  | Some(idx) if (!idx.isSynthetic()) -> idx
+  | _ -> return None()
+  };
+  isReadonly = numIdx.set.isBottom();
+  // An asymmetric mutable index (`get: A, set: B` with A != B, e.g. from an
+  // intersection with another number index) cannot be rendered as `A[]`.
+  if (!isReadonly && numIdx.get != numIdx.set) return None();
+  hasLength = false;
+  for (field in fields.fields) {
+    name = field.name.value;
+    if (!kArrayProtocolFieldNames.contains(name)) return None();
+    if (name == "length") {
+      !hasLength = true;
+      // Only general `length: number` (not a tuple's literal length, and not
+      // an incompatible mutability) qualifies as a plain array.
+      isFullNumber =
+        field.get.insts.isEmpty() &&
+        field.get.clauses.clauses
+          .singleElt()
+          .flatMap(c -> if (c.vars.isEmpty()) c.stypes else None())
+          .flatMap(sts -> sts.singleElt()) match {
+        | Some(TPrimValue(TNum(), None(), _)) -> true
+        | _ -> false
+        };
+      if (!isFullNumber) return None();
+      if (field.set.isBottom() != isReadonly) return None();
+    }
+  };
+  if (!hasLength) return None();
+  Some((numIdx.get, isReadonly))
 }
 
 mutable class TypePp{
@@ -538,17 +640,29 @@ mutable class TypePp{
   }
 
   mutable fun object(level: Int, margin: Margin, fields: TFields): void {
-    // A tuple-shaped object prints as the tuple it denotes when the
-    // shorthand hides nothing: besides its positional fields, a tuple
-    // expansion carries only `length` and the array-protocol members
-    // inherited from the stubs (`map`, `indexOf`, `filter`, ...). Any other
-    // member (e.g. an intersection's extra field) keeps the expanded object
-    // form, which also stays available under --verbose.
+    // A tuple- or array-shaped object prints in tsc shorthand when the
+    // shorthand hides nothing: besides its positional fields (for tuples) or
+    // numeric index (for arrays), an expansion carries only `length`,
+    // `[Symbol.iterator]`, and the array-protocol members inherited from the
+    // stubs (`map`, `indexOf`, `filter`, ...). Any other member (e.g. an
+    // intersection's extra field, symbol property, or string/symbol index)
+    // keeps the expanded object form, which also stays available under
+    // --verbose.
     if (!this.verbose) {
       tupleShorthand(fields) match {
       | Some((elts, isReadonly)) ->
         if (isReadonly) this.out(level, margin, "readonly ");
         return this.tuple(level, margin, elts)
+      | None() -> void
+      };
+      arrayShorthand(fields) match {
+      | Some((elt, isReadonly)) ->
+        if (isReadonly) this.out(level, margin, "readonly ");
+        needsParens = this.compositeNeedsParens(elt);
+        if (needsParens) this.out(level, margin, "(");
+        this.type(level, margin, elt);
+        if (needsParens) this.out(level, margin, ")");
+        return this.out(level, margin, "[]")
       | None() -> void
       }
     };

@@ -122,14 +122,14 @@ function directTupleNestedMismatch(): void {
   const x: [[0], number] = [[1], 0];
 }
 
-// Expanded Array<T> and ReadonlyArray<T> constraints (#672 residual):
-// currently dump the full expanded structural object (all array methods plus
-// a spurious `#`-disambiguation note across reduce/flatMap/reduceRight).
+// Expanded Array<T> and ReadonlyArray<T> constraints (#672 residual) render
+// in tsc shorthand (`(0 | 1)[]` / `readonly (0 | 1)[]`) rather than dumping
+// all stub methods and emitting a spurious `#`-disambiguation note.
 declare function arrConstraint<K extends Array<0 | 1>>(x: K): K;
 function arrayConstraintDump(): void {
   // @skjs-expect-error Argument is not assignable to the parameter's type
   // @skjs-expect-error-line2 Type '5'
-  // @skjs-expect-error-line3 is not assignable to type {
+  // @skjs-expect-error-line3 is not assignable to type '(0 | 1)[]'
   const r = arrConstraint(5);
 }
 
@@ -137,7 +137,7 @@ declare function roArrConstraint<K extends ReadonlyArray<0 | 1>>(x: K): K;
 function readonlyArrayConstraintDump(): void {
   // @skjs-expect-error Argument is not assignable to the parameter's type
   // @skjs-expect-error-line2 Type '5'
-  // @skjs-expect-error-line3 is not assignable to type {
+  // @skjs-expect-error-line3 is not assignable to type 'readonly (0 | 1)[]'
   const r = roArrConstraint(5);
 }
 
@@ -158,11 +158,9 @@ declare function tupleExtraSym<K extends [0, 1] & { [extraSym]: string }>(
   x: K,
 ): K;
 function tupleExtraSymbolShown(arg: [0, 1]): void {
-  // Currently tupleShorthand ignores symbolFields and prints `[0, 1]`,
-  // hiding `[typeof extraSym]: string` so both sides look identical.
   // @skjs-expect-error Argument is not assignable to the parameter's type
   // @skjs-expect-error-line2 Type '[0, 1]'
-  // @skjs-expect-error-line3 is not assignable to type '[0, 1]'
+  // @skjs-expect-error-line3 is not assignable to type {
   const r = tupleExtraSym(arg);
 }
 
@@ -170,16 +168,15 @@ declare function tupleExtraIndex<K extends [0, 1] & { [k: string]: unknown }>(
   x: K,
 ): K;
 function tupleExtraIndexShown(arg: [0, 1]): void {
-  // Currently tupleShorthand ignores stringIndex and prints `[0, 1]`.
   // @skjs-expect-error Argument is not assignable to the parameter's type
   // @skjs-expect-error-line2 Type '[0, 1]'
-  // @skjs-expect-error-line3 is not assignable to type '[0, 1]'
+  // @skjs-expect-error-line3 is not assignable to type {
   const r = tupleExtraIndex(arg);
 }
 
-// Rescued pairs inside nested generic containers (#672 item 2): currently
-// rescue at the innermost stub frame (index.d.ts), reporting `5` vs `0 | 1`
-// with a contravariance hint anchored in import-stubs.
+// Rescued pairs inside nested generic containers (#672 item 2): keep the
+// precise leaf pair (`5` vs `0 | 1`), with stub positions re-anchored in user
+// source (file anchors verified in tests/ErrorRescueDetail.sk).
 declare function wrapNestedArray<K extends 0 | 1>(x: Array<Array<K>>): K;
 function nestedArrayConstraintMismatch(a: Array<Array<5>>): void {
   // @skjs-expect-error Argument is not assignable to the parameter's type

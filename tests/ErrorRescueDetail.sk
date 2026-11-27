@@ -48,16 +48,16 @@ fun testRescuedNestedArrayDetailPositions(): void {
   | err @ SKJS.SubtypingError _ ->
     detail = err.renderDetail(context, SKJS.STErrorDetail::default);
     SKTest.expectTrue(detail.size() >= 2, "expected rescued detail lines");
-    // Pre-fix (#672 item 2): the empty-render rescue fires at the innermost
-    // stub frame inside Array<T>.every, anchoring detail lines in import-stubs.
-    SKTest.expectFalse(
-      detail[0].i0.fileName.rootId.isProject(),
-      `pre-fix: expected stub anchor, got ${detail[0].i0.fileName}`,
-    );
-    SKTest.expectFalse(
-      detail[1].i0.fileName.rootId.isProject(),
-      `pre-fix: expected stub anchor, got ${detail[1].i0.fileName}`,
-    )
+    // #672 item 2: rescued stub-frame positions re-anchor to user source
+    // instead of pointing into `import-stubs/@types/skjs/index.d.ts`.
+    for (entry in detail) {
+      SKTest.expectTrue(
+        entry.i0.fileName.rootId.isProject(),
+        `expected project anchor, got ${entry.i0.fileName} for: ${entry.i1}`,
+      )
+    };
+    SKTest.expectEq("Type '5'", detail[0].i1);
+    SKTest.expectEq("is not assignable to type '0 | 1'", detail[1].i1)
   | _ -> SKTest.fail("expected SubtypingError")
   }
 }
@@ -71,10 +71,14 @@ fun testRescuedNestedReadonlyArrayDetailPositions(): void {
   | err @ SKJS.SubtypingError _ ->
     detail = err.renderDetail(context, SKJS.STErrorDetail::default);
     SKTest.expectTrue(detail.size() >= 2, "expected rescued detail lines");
-    SKTest.expectFalse(
-      detail[0].i0.fileName.rootId.isProject(),
-      `pre-fix: expected stub anchor, got ${detail[0].i0.fileName}`,
-    )
+    for (entry in detail) {
+      SKTest.expectTrue(
+        entry.i0.fileName.rootId.isProject(),
+        `expected project anchor, got ${entry.i0.fileName} for: ${entry.i1}`,
+      )
+    };
+    SKTest.expectEq("Type '5'", detail[0].i1);
+    SKTest.expectEq("is not assignable to type '0 | 1'", detail[1].i1)
   | _ -> SKTest.fail("expected SubtypingError")
   }
 }
@@ -88,27 +92,33 @@ fun testRescuedMapDetailPositions(): void {
   | err @ SKJS.SubtypingError _ ->
     detail = err.renderDetail(context, SKJS.STErrorDetail::default);
     SKTest.expectTrue(detail.size() >= 2, "expected rescued detail lines");
-    SKTest.expectFalse(
-      detail[0].i0.fileName.rootId.isProject(),
-      `pre-fix: expected stub anchor, got ${detail[0].i0.fileName}`,
-    )
+    for (entry in detail) {
+      SKTest.expectTrue(
+        entry.i0.fileName.rootId.isProject(),
+        `expected project anchor, got ${entry.i0.fileName} for: ${entry.i1}`,
+      )
+    };
+    SKTest.expectEq("Type '5'", detail[0].i1);
+    SKTest.expectEq("is not assignable to type '0 | 1'", detail[1].i1)
   | _ -> SKTest.fail("expected SubtypingError")
   }
 }
 
 @test
-fun testArrayConstraintCollisionNotePreFix(): void {
+fun testArrayConstraintRendersShorthandWithoutCollisionNote(): void {
   source = "declare function f<K extends Array<0 | 1>>(x: K): K;\nfunction g(): void { const r = f(5); }\n";
   (context, errors) = checkSingleVirtualFileErrors(source);
   SKTest.expectEq(1, errors.size());
   errors[0] match {
   | err @ SKJS.SubtypingError _ ->
     detail = err.renderDetail(context, SKJS.STErrorDetail::default);
-    // Pre-fix (#672 item 3 residual): expanded Array<0 | 1> dumps all methods
-    // and emits a spurious collision note from reduce/flatMap/reduceRight <U>.
-    SKTest.expectTrue(
+    SKTest.expectEq(2, detail.size());
+    SKTest.expectEq("Type '5'", detail[0].i1);
+    SKTest.expectEq("is not assignable to type '(0 | 1)[]'", detail[1].i1);
+    // No spurious '#' disambiguation note from expanded Array methods.
+    SKTest.expectFalse(
       detail.any(m -> m.i1.contains("#")),
-      "pre-fix: expected spurious '#' disambiguation note on expanded Array",
+      "did not expect '#' disambiguation note on shorthand Array",
     )
   | _ -> SKTest.fail("expected SubtypingError")
   }
