@@ -14,19 +14,17 @@ type StrIdx = { [k: string]: string };
 type Inter = NeverIdx & NumIdx;
 
 // ============================================================================
-// Mutable views of incompatible index intersections (pinned pre-fix #800)
+// Mutable views of incompatible index intersections (#800)
 // ============================================================================
 
 function testNeverAndNumIndexMutableView(x: Inter): void {
-  // Pre-fix (#800): accepted because interIndex leaves set = number on a
-  // get = never slot.
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const m: { [k: string]: number } = x;
   m.b = 1;
 }
 
 function testNumAndStrIndexMutableView(x: NumIdx & StrIdx): void {
-  // Pre-fix (#800): accepted because interIndex leaves set = number | string
-  // on a get = never slot.
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const m: { [k: string]: number } = x;
   m.b = 1;
 }
@@ -34,27 +32,26 @@ function testNumAndStrIndexMutableView(x: NumIdx & StrIdx): void {
 function testClosedAndNumIndexMutableView(
   x: Closed<{ a: number }> & NumIdx,
 ): void {
-  // Pre-fix (#800): accepted because Closed's never index meets NumIdx with
-  // get = never, set = number.
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const m: { [k: string]: number } = x;
   m.b = 1;
 }
 
 // ============================================================================
-// Named field meeting an incompatible index signature (pinned pre-fix #800)
+// Named field meeting an incompatible index signature (#800)
 // ============================================================================
 
 function testNamedFieldWithNeverIndexWrite(
   x: { a: number } & { [k: string]: never },
 ): void {
-  // Pre-fix (#800): accepted because interIndex leaves set = number on `a`.
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   x.a = 1;
 }
 
 function testNamedFieldWithNeverIndexMutableView(
   x: { a: number } & { [k: string]: never },
 ): void {
-  // Pre-fix (#800): accepted because `a` keeps set = number while get = never.
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const m: { a: number } = x;
   m.a = 1;
 }
@@ -62,8 +59,7 @@ function testNamedFieldWithNeverIndexMutableView(
 function testNamedFieldWithDisjointIndexWrite(
   x: { a: number } & { [k: string]: string },
 ): void {
-  // Pre-fix (#800): accepted because interIndex leaves set = number | string
-  // on `a` while get = never.
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   x.a = 1;
 }
 
