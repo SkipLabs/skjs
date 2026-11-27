@@ -249,3 +249,185 @@ function returningCatchLeavesThePostFlowAlone(
   }
   const z: "a" = y;
 }
+
+// ——— #869: property writes & calls inside try / catch / finally ———
+// Currently unsoundly accepted (fixed in the next commit): member refinements
+// invalidated on a throwing/returning/breaking/re-narrowed path inside try or
+// catch are not logged into the try write-log, so catch, finally, and post-try
+// code still see the stale pre-try narrowing.
+
+function aliasWriteBeforeThrowReachesCatch(c: boolean): void {
+  const e: { x: number } = { x: 1 };
+  const f: { x: number } = e;
+  if (e.x === 1) {
+    try {
+      if (c) {
+        f.x = 99;
+        throw "boom";
+      }
+    } catch {
+      const z: 1 = e.x;
+    }
+  }
+}
+
+function aliasWriteBeforeThrowReachesPostTry(c: boolean): void {
+  const e: { x: number } = { x: 1 };
+  const f: { x: number } = e;
+  if (e.x === 1) {
+    try {
+      if (c) {
+        f.x = 99;
+        throw "boom";
+      }
+    } catch {
+      // swallow error
+    }
+    const z: 1 = e.x;
+  }
+}
+
+function aliasWriteBeforeReturnReachesFinally(c: boolean): void {
+  const e: { x: number } = { x: 1 };
+  const f: { x: number } = e;
+  if (e.x === 1) {
+    try {
+      if (c) {
+        f.x = 99;
+        return;
+      }
+    } finally {
+      const z: 1 = e.x;
+    }
+  }
+}
+
+function aliasWriteBeforeContinueReachesFinally(c: boolean): void {
+  const e: { x: number } = { x: 1 };
+  const f: { x: number } = e;
+  if (e.x === 1) {
+    for (let i = 0; i < 2; i++) {
+      try {
+        if (c) {
+          f.x = 99;
+          continue;
+        }
+      } finally {
+        const z: 1 = e.x;
+      }
+    }
+  }
+}
+
+function aliasWriteRenarrowedReachesCatch(mayThrow: () => void): void {
+  const e: { x: number } = { x: 1 };
+  const f: { x: number } = e;
+  if (e.x === 1) {
+    try {
+      f.x = 99;
+      mayThrow();
+      if (e.x !== 1) return;
+    } catch {
+      const z: 1 = e.x;
+    }
+  }
+}
+
+function aliasWriteRenarrowedReachesFinally(mayThrow: () => void): void {
+  const e: { x: number } = { x: 1 };
+  const f: { x: number } = e;
+  if (e.x === 1) {
+    try {
+      f.x = 99;
+      mayThrow();
+      if (e.x !== 1) return;
+    } finally {
+      const z: 1 = e.x;
+    }
+  }
+}
+
+function callBeforeThrowReachesCatch(c: boolean, mutate: () => void): void {
+  const e: { x: number } = { x: 1 };
+  if (e.x === 1) {
+    try {
+      if (c) {
+        mutate();
+        throw "boom";
+      }
+    } catch {
+      const z: 1 = e.x;
+    }
+  }
+}
+
+function nestedInnerTryAliasWriteEscapesToOuterCatch(c: boolean): void {
+  const e: { x: number } = { x: 1 };
+  const f: { x: number } = e;
+  if (e.x === 1) {
+    try {
+      try {
+        if (c) {
+          f.x = 99;
+          throw "boom";
+        }
+      } finally {
+        // does not suppress the thrown exception
+      }
+    } catch {
+      const z: 1 = e.x;
+    }
+  }
+}
+
+function nestedInnerFinallyAliasWriteEscapesToOuterCatch(c: boolean): void {
+  const e: { x: number } = { x: 1 };
+  const f: { x: number } = e;
+  if (e.x === 1) {
+    try {
+      try {
+        // nothing
+      } finally {
+        if (c) {
+          f.x = 99;
+          throw "boom";
+        }
+      }
+    } catch {
+      const z: 1 = e.x;
+    }
+  }
+}
+
+// A pure try without property writes or calls preserves pre-try member
+// refinements in catch and finally.
+function pureTryPreservesMemberRefinement(): void {
+  const e: { x: number } = { x: 1 };
+  if (e.x === 1) {
+    try {
+      const y = 1 + 2;
+    } catch {
+      const z: 1 = e.x;
+    } finally {
+      const z2: 1 = e.x;
+    }
+  }
+}
+
+// A property write before throw does not undo a const non-null refinement.
+function aliasWriteBeforeThrowPreservesNonNull(c: boolean): void {
+  const e: { x: number } | null = { x: 1 };
+  const f: { x: number } = { x: 1 };
+  if (e !== null) {
+    try {
+      if (c) {
+        f.x = 99;
+        throw "boom";
+      }
+    } catch {
+      const g: { x: number } = e;
+    } finally {
+      const g2: { x: number } = e;
+    }
+  }
+}
