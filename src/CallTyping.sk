@@ -5,6 +5,7 @@ class CallSubtypeObligation{
   target: TType,
   messages: Array<(PosRange, String)>,
   code: ErrorCode,
+  trailingMessages: Array<(PosRange, String)> = Array[],
 }
 
 // Inference retains obligations, never acceptance receipts. The original
@@ -26,19 +27,27 @@ mutable class CallSubtypePlan private {
     messages: Array<(PosRange, String)>,
     code: ErrorCode,
     argumentCheck: TypeArgumentCheck = ValidateTypeArguments(),
+    trailingMessages: Array<(PosRange, String)> = Array[],
   ): void {
     pair = (source, target);
     if (!this.retained.contains(pair)) {
       this.!retained = this.retained.set(pair);
       this.obligations.push(
-        CallSubtypeObligation{source, target, messages, code},
+        CallSubtypeObligation{source, target, messages, code, trailingMessages},
       )
     };
     argumentCheck.proposeSubtype(tcenv.subst, tenv, source, target) match {
     | SubtypeProposed() -> void
     | SubtypeProposalRejected(err) ->
       this.!failed = true;
-      tcenv.subtypingError(tcenv.subst, tenv, messages, err, code)
+      tcenv.subtypingError(
+        tcenv.subst,
+        tenv,
+        messages,
+        err,
+        code,
+        trailingMessages,
+      )
     }
   }
 
@@ -65,6 +74,7 @@ mutable class CallSubtypePlan private {
           obligation.messages,
           STUnvalidatedType(why, obligation.source, obligation.target),
           obligation.code,
+          obligation.trailingMessages,
         );
         false
       }

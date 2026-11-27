@@ -19,6 +19,9 @@ function capturedWriteFirstNonNull(): void {
   };
   write();
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 Type 'string'
+  // @skjs-expect-error-line3 is not assignable to type 'null'
+  // @skjs-expect-error-line4 This call may have changed the value of 'x'
   const n: null = x;
   void n;
 }
@@ -35,6 +38,7 @@ function captureBeforeEvolution(): void {
   void before;
   g();
   // @skjs-expect-error Property 'value' does not exist on this type
+  // @skjs-expect-error-line3 This call may have changed the value of 'r'
   const after: number = r.value;
   void after;
 }
@@ -53,6 +57,7 @@ function twoClosuresWriteEvolving(): void {
   g2();
   if (r !== null) {
     // @skjs-expect-error Property 'value' does not exist on this type
+    // @skjs-expect-error-line3 This call may have changed the value of 'r'
     const v: number = r.value;
     void v;
   }
@@ -82,6 +87,7 @@ function whileLoopCallsMutatingClosure(cond: boolean): void {
   };
   while (cond) {
     // @skjs-expect-error Property 'value' does not exist on this type
+    // @skjs-expect-error-line3 This call may have changed the value of 'r'
     const v: number = r.value;
     void v;
     g();
@@ -97,6 +103,7 @@ function forLoopCallsMutatingClosure(): void {
   };
   for (let i = 0; i < 2; i++) {
     // @skjs-expect-error Property 'value' does not exist on this type
+    // @skjs-expect-error-line3 This call may have changed the value of 'r'
     const v: number = r.value;
     void v;
     g();
@@ -112,6 +119,7 @@ function forIncrCallsMutatingClosure(): void {
   };
   for (let i = 0; i < 2; g()) {
     // @skjs-expect-error Property 'value' does not exist on this type
+    // @skjs-expect-error-line3 This call may have changed the value of 'r'
     const v: number = r.value;
     void v;
     i++;
@@ -128,6 +136,7 @@ function forInCallsMutatingClosure(obj: { [k: string]: number }): void {
   for (const k in obj) {
     void k;
     // @skjs-expect-error Property 'value' does not exist on this type
+    // @skjs-expect-error-line3 This call may have changed the value of 'r'
     const v: number = r.value;
     void v;
     g();
@@ -142,6 +151,7 @@ function whileHeaderReadsMutatedEvolving(): void {
     r = 5;
   };
   // @skjs-expect-error Property 'value' does not exist on this type
+  // @skjs-expect-error-line3 This call may have changed the value of 'r'
   while (r.value > 0) {
     g();
   }
@@ -156,6 +166,7 @@ function whileLoopDirectAndClosureWrite(cond: boolean): void {
   };
   while (cond) {
     // @skjs-expect-error Property 'value' does not exist on this type
+    // @skjs-expect-error-line3 This call may have changed the value of 'r'
     const v: number = r.value;
     void v;
     r = mkEvolvingNode();
@@ -172,6 +183,8 @@ function whileLoopAnnotatedCapturedClosure(cond: boolean): void {
   };
   while (cond) {
     // @skjs-expect-error Property access is not allowed on this type
+    // @skjs-expect-error-line2 This has type 'null'
+    // @skjs-expect-error-line3 This call may have changed the value of 'r'
     const v: number = r.value;
     void v;
     g();
@@ -188,6 +201,9 @@ function whileLoopConcretePrimitiveClosure(cond: boolean): void {
   if (x === 1) {
     while (cond) {
       // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+      // @skjs-expect-error-line2 Full type 'number'
+      // @skjs-expect-error-line3 is not assignable to specific type '1'
+      // @skjs-expect-error-line4 This call may have changed the value of 'x'
       const one: 1 = x;
       void one;
       g();
@@ -202,6 +218,9 @@ function whileLoopMutatesRefinedField(cond: boolean): void {
   if (cell.v !== null) {
     while (cond) {
       // @ts-expect-error Type of value is not assignable to the variable's type annotation
+      // @skjs-expect-error-line2 Type 'null'
+      // @skjs-expect-error-line3 is not assignable to type 'number'
+      // @skjs-expect-error-line4 This write may have changed a property of 'cell'
       const n: number = cell.v;
       void n;
       cell.v = null;
@@ -214,6 +233,9 @@ function whileLoopCallsFieldMutator(cond: boolean, clear: () => void): void {
   if (cell.v !== null) {
     while (cond) {
       // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+      // @skjs-expect-error-line2 Type 'null'
+      // @skjs-expect-error-line3 is not assignable to type 'number'
+      // @skjs-expect-error-line4 This call may have changed a property of 'cell'
       const n: number = cell.v;
       void n;
       clear();

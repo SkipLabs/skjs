@@ -28,9 +28,14 @@ extension class TypeChecker {
         TType::single(TPrimUnit(TVoid(), st.pos)) // constructor
       | Some(x) -> x
       };
-      (epos, etype) = eOpt match {
-      | None() -> (pos, TType::single(TPrimUnit(TVoid(), pos)))
-      | Some(e) -> (e.pos, this.returnExprType(tcenv, e))
+      (epos, etype, trailing) = eOpt match {
+      | None() -> (pos, TType::single(TPrimUnit(TVoid(), pos)), Array[])
+      | Some(e) ->
+        (
+          e.pos,
+          this.returnExprType(tcenv, e),
+          this.exprInvalidationNotes(tcenv, e),
+        )
       };
       // In an async function the returned expression and the declared
       // return type are compared by awaited type, like tsc: `return p`
@@ -43,7 +48,15 @@ extension class TypeChecker {
           retType.maybeAwaited(tcenv.subst, this, retType.pos),
         ) match {
         | (Some(subTy), Some(superTy)) ->
-          this.checkSubType(tcenv, epos, msg, subTy, superTy, TSCode(2322))
+          this.checkSubType(
+            tcenv,
+            epos,
+            msg,
+            subTy,
+            superTy,
+            TSCode(2322),
+            trailing,
+          )
         | (None(), _) ->
           // The returned value is a self-referential thenable (TS1062);
           // the comparison is meaningless and skipped.
@@ -54,7 +67,15 @@ extension class TypeChecker {
           void
         }
       } else {
-        this.checkSubType(tcenv, epos, msg, etype, retType, TSCode(2322))
+        this.checkSubType(
+          tcenv,
+          epos,
+          msg,
+          etype,
+          retType,
+          TSCode(2322),
+          trailing,
+        )
       };
       StmtTermination::exprOpt(eOpt).then(StmtTermination::return_)
 
@@ -170,10 +191,18 @@ extension class TypeChecker {
       writes.expr(incr);
       writes.stmts(block);
       tcenv.beginLoopWrites(
-        loopScope.widenLoopBindings(writes.result(), writes.hasCallEffects),
+        loopScope.widenLoopBindings(
+          writes.result(),
+          writes.hasCallEffects,
+          writes.callEffectPos,
+        ),
       );
       if (writes.result().isNone() || writes.hasCallEffects) {
-        tcenv.forgetLoopObjectRefinements(this, loopScope)
+        fieldInvalidation = writes.callEffectPos match {
+        | Some(callPos) -> Some(NICallFieldMutation(callPos))
+        | None() -> writes.unknownPos.map(writePos -> NIPropertyWrite(writePos))
+        };
+        tcenv.forgetLoopObjectRefinements(this, loopScope, fieldInvalidation)
       };
       tcenv.!scope = loopScope;
       preHeader = loopScope.copyRefs();
@@ -306,10 +335,18 @@ extension class TypeChecker {
       writes = mutable CaptureWrites{};
       writes.stmts(block);
       tcenv.beginLoopWrites(
-        loopScope.widenLoopBindings(writes.result(), writes.hasCallEffects),
+        loopScope.widenLoopBindings(
+          writes.result(),
+          writes.hasCallEffects,
+          writes.callEffectPos,
+        ),
       );
       if (writes.result().isNone() || writes.hasCallEffects) {
-        tcenv.forgetLoopObjectRefinements(this, loopScope)
+        fieldInvalidation = writes.callEffectPos match {
+        | Some(callPos) -> Some(NICallFieldMutation(callPos))
+        | None() -> writes.unknownPos.map(writePos -> NIPropertyWrite(writePos))
+        };
+        tcenv.forgetLoopObjectRefinements(this, loopScope, fieldInvalidation)
       };
       ((loopBody, bodyTerm), catcher) = tcenv.withJumpCatcher(true, () ->
         this.block(tcenv, block)
@@ -330,7 +367,7 @@ extension class TypeChecker {
 
       // Exhaustion and IteratorClose happen after the last body observation,
       // including an early break. Do not export that observation past the loop.
-      if (kind is ForOf()) tcenv.invalidateCallEffects(this);
+      if (kind is ForOf()) tcenv.invalidateCallEffects(this, Some(st.pos));
       if (enteredForIn) tcenv.exitForIn();
       StmtTermination::expr(iterable).thenk(() ->
         CondTermination::any.loop_(() -> bodyTerm)
@@ -347,10 +384,18 @@ extension class TypeChecker {
       writes.expr(cond);
       writes.stmts(block);
       tcenv.beginLoopWrites(
-        loopScope.widenLoopBindings(writes.result(), writes.hasCallEffects),
+        loopScope.widenLoopBindings(
+          writes.result(),
+          writes.hasCallEffects,
+          writes.callEffectPos,
+        ),
       );
       if (writes.result().isNone() || writes.hasCallEffects) {
-        tcenv.forgetLoopObjectRefinements(this, loopScope)
+        fieldInvalidation = writes.callEffectPos match {
+        | Some(callPos) -> Some(NICallFieldMutation(callPos))
+        | None() -> writes.unknownPos.map(writePos -> NIPropertyWrite(writePos))
+        };
+        tcenv.forgetLoopObjectRefinements(this, loopScope, fieldInvalidation)
       };
       tcenv.!scope = loopScope;
       preHeader = loopScope.copyRefs();
@@ -1023,7 +1068,7 @@ extension class TypeChecker {
     iterationKind: String,
   ): TType {
     // Runtime iteration invokes Symbol.iterator and next, even for arrays.
-    tcenv.invalidateCallEffects(this);
+    tcenv.invalidateCallEffects(this, Some(pos));
     result = TType::bottom(pos);
 
     stypes = iterableType.getSTypes(tcenv.subst, this, Covariant()) match {

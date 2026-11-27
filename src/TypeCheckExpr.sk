@@ -818,14 +818,14 @@ extension class TypeChecker {
       }
     | PArray(arrPat, rest) ->
       // Iterator acquisition, advancement, and closing can invoke user code.
-      tcenv.invalidateCallEffects(this);
+      tcenv.invalidateCallEffects(this, Some(pos));
       stypes = type.getSTypes(tcenv.subst, this, Covariant());
       stypes.flatMap(s ->
         s.destructuringElements(tcenv.subst, this, arrPat.size())
       ) match {
       | Some(tyl) ->
         for (i in Range(0, min(arrPat.size(), tyl.size()))) {
-          tcenv.invalidateCallEffects(this);
+          tcenv.invalidateCallEffects(this, Some(pos));
           arrPat[i] match {
           | None() -> /* skipped element */ void
           | Some((eltPat, Some(defaultExpr))) ->
@@ -960,7 +960,7 @@ extension class TypeChecker {
             )
           };
           for (i in Range(0, arrPat.size())) {
-            tcenv.invalidateCallEffects(this);
+            tcenv.invalidateCallEffects(this, Some(pos));
             arrPat[i] match {
             | None() -> void
             | Some((eltPat, Some(defaultExpr))) ->
@@ -1031,7 +1031,7 @@ extension class TypeChecker {
           )
         }
       };
-      tcenv.invalidateCallEffects(this)
+      tcenv.invalidateCallEffects(this, Some(pos))
 
     | PObject{fields => objectFields, rest} ->
       fieldsToRemoveForRest = rest match {
@@ -1444,6 +1444,7 @@ extension class TypeChecker {
               ],
               err,
               TSCode(2322),
+              this.exprInvalidationNotes(tcenv, e),
             )
           }
         };
@@ -1487,9 +1488,10 @@ extension class TypeChecker {
     objType: TType,
     fieldName: Name,
     accessKind: AccessKind,
+    receiverNotes: Array<(PosRange, String)> = Array[],
   ): TType {
     idx = Expr(fieldName.pos, EString(fieldName.value));
-    this.get(tcenv, pos, objType, idx, accessKind)
+    this.get(tcenv, pos, objType, idx, accessKind, receiverNotes)
   }
 
   // Returns the access modifier declared on the enclosing class for the
@@ -1781,6 +1783,7 @@ extension class TypeChecker {
     objType: TType,
     idx: Expr,
     accessKind: AccessKind,
+    receiverNotes: Array<(PosRange, String)> = Array[],
   ): TType {
     this.getWithIndexType(
       tcenv,
@@ -1789,6 +1792,7 @@ extension class TypeChecker {
       this.expr(tcenv, idx, true),
       idx.pos,
       accessKind,
+      receiverNotes,
     )
   }
 
@@ -1802,6 +1806,7 @@ extension class TypeChecker {
     idxType: TType,
     idxPos: PosRange,
     accessKind: AccessKind,
+    receiverNotes: Array<(PosRange, String)> = Array[],
   ): TType {
     idxSType = idxType
       .getSTypes(tcenv.subst, this, Covariant())
@@ -2031,7 +2036,7 @@ extension class TypeChecker {
                       "it"
                     }} may be absent`,
                   ),
-                ],
+                ].concat(receiverNotes),
                 TSCode(2339),
               )
             };
@@ -2094,7 +2099,8 @@ extension class TypeChecker {
                   ],
                   TSCode(7053),
                 )
-              | Some(lits) -> obj.getTypeTypingError(lits.toStringList(), pos)
+              | Some(lits) ->
+                obj.getTypeTypingError(lits.toStringList(), pos, receiverNotes)
               }
             | Some(index) ->
               ty = if (isLValue) index.set else {
@@ -2159,7 +2165,7 @@ extension class TypeChecker {
               idxType.pos,
               "This has type " + this.ppType(tcenv, TType::single(stype)),
             ),
-          ],
+          ].concat(receiverNotes),
           TSCode(2339),
         )
       };
@@ -2528,10 +2534,10 @@ extension class TypeChecker {
       | Call _
       | New _
       | InstanceOf _ ->
-        tcenv.invalidateCallEffects(this)
+        tcenv.invalidateCallEffects(this, Some(e.pos))
       | Await _ ->
         !ty = this.stableAliasExprType(tcenv, e, ty);
-        tcenv.invalidateCallEffects(this)
+        tcenv.invalidateCallEffects(this, Some(e.pos))
       | _ -> void
       };
       tcenv.validateHiddenEscapes();
@@ -3397,6 +3403,7 @@ extension class TypeChecker {
         idxType,
         idx.pos,
         accessKind,
+        this.exprInvalidationNotes(tcenv, arr),
       );
       if (isLValue) result else {
         this.propertyReadType(
@@ -3553,7 +3560,14 @@ extension class TypeChecker {
       stableReceiver = if (isLValue) receiverType else {
         this.stableAliasExprType(tcenv, e1, receiverType)
       };
-      result = this.dot(tcenv, e1.pos, receiverType, fieldName, accessKind);
+      result = this.dot(
+        tcenv,
+        e1.pos,
+        receiverType,
+        fieldName,
+        accessKind,
+        this.exprInvalidationNotes(tcenv, e1),
+      );
       if (isLValue) result else {
         this.propertyReadType(
           tcenv,
@@ -3590,7 +3604,7 @@ extension class TypeChecker {
         e1.value match {
         | Dot _
         | Get _ ->
-          tcenv.forgetObjectRefinements(this)
+          tcenv.forgetObjectRefinements(this, Some(NIPropertyWrite(pos)))
         | _ -> void
         };
         // Record the assignment target's type. The `Var` and local-object
@@ -5296,6 +5310,7 @@ extension class TypeChecker {
             this.stableAliasExprType(tcenv, e2, x),
             y,
             TSCode(2322),
+            this.exprInvalidationNotes(tcenv, e2),
           )
         );
         e2.value match {
@@ -5356,6 +5371,7 @@ extension class TypeChecker {
         this.stableAliasExprType(tcenv, e2, ty2),
         ty1,
         TSCode(2322),
+        this.exprInvalidationNotes(tcenv, e2),
       );
       ty1
     }
@@ -5456,14 +5472,14 @@ extension class TypeChecker {
     mostPrecise: Bool,
   ): void {
     (targets, restInner) = this.splitRest(tcenv, elements);
-    tcenv.invalidateCallEffects(this);
+    tcenv.invalidateCallEffects(this, Some(pos));
     stypes = rhsType.getSTypes(tcenv.subst, this, Covariant());
     stypes.flatMap(s ->
       s.destructuringElements(tcenv.subst, this, targets.size())
     ) match {
     | Some(tyl) ->
       for (i => elt in targets) {
-        tcenv.invalidateCallEffects(this);
+        tcenv.invalidateCallEffects(this, Some(pos));
         eltType = if (i < tyl.size()) {
           tyl[i]
         } else {
@@ -5472,7 +5488,7 @@ extension class TypeChecker {
         this.assignElement(tcenv, elt, eltType, mostPrecise)
       };
       restInner.each(inner -> {
-        tcenv.invalidateCallEffects(this);
+        tcenv.invalidateCallEffects(this, Some(pos));
         // Destructuring a rest allocates a fresh array, so nothing aliases it
         // at the tuple's arity: it can be read as a growable array just as well
         // as a tuple. Type it the way an array literal is typed — delayed, so
@@ -5522,7 +5538,7 @@ extension class TypeChecker {
           )
         };
         for (elt in targets) {
-          tcenv.invalidateCallEffects(this);
+          tcenv.invalidateCallEffects(this, Some(pos));
           this.assignElement(
             tcenv,
             elt,
@@ -5531,7 +5547,7 @@ extension class TypeChecker {
           )
         };
         restInner.each(inner -> {
-          tcenv.invalidateCallEffects(this);
+          tcenv.invalidateCallEffects(this, Some(pos));
           this.assignTarget(
             tcenv,
             inner,
@@ -5553,7 +5569,7 @@ extension class TypeChecker {
       }
     };
     // IteratorClose may overwrite facts established by the final target.
-    tcenv.invalidateCallEffects(this)
+    tcenv.invalidateCallEffects(this, Some(pos))
   }
 
   private fun tupleUnionRestType(
@@ -5810,7 +5826,7 @@ extension class TypeChecker {
         setter.fromSome(),
         TSCode(2322),
       );
-      tcenv.forgetObjectRefinements(this)
+      tcenv.forgetObjectRefinements(this, Some(NIPropertyWrite(target.pos)))
     }
   }
 
@@ -6320,6 +6336,7 @@ extension class TypeChecker {
     argumentCheck: TypeArgumentCheck,
   ): TType {
     args = mutable Vector<TType>[];
+    argNotes = mutable Vector<Array<(PosRange, String)>>[];
     moreArgs: ?TType = None();
 
     for (argExpr in argExprs) {
@@ -6328,12 +6345,15 @@ extension class TypeChecker {
         currentSpreadTy = this.expr(tcenv, spreadExpr, mostPrecise);
         spreadTy = this.stableAliasExprType(tcenv, spreadExpr, currentSpreadTy);
         // Consume the iterator before evaluating the following argument.
-        tcenv.invalidateCallEffects(this);
+        tcenv.invalidateCallEffects(this, Some(argExpr.pos));
         stypes = spreadTy.getSTypes(tcenv.subst, this, Covariant());
         if (moreArgs is None()) {
           stypes.flatMap(s -> s.getSingleTuple(tcenv.subst, this)) match {
           | Some(tupElts) ->
-            args.extend(tupElts);
+            for (elt in tupElts) {
+              args.push(elt);
+              argNotes.push(Array[])
+            };
             continue
           | None() -> void
           }
@@ -6385,7 +6405,9 @@ extension class TypeChecker {
           mostPrecise,
         );
         moreArgs match {
-        | None() -> args.push(argTy)
+        | None() ->
+          args.push(argTy);
+          argNotes.push(this.exprInvalidationNotes(tcenv, argExpr))
         | Some(ma) ->
           !moreArgs = Some(TType::union(tcenv.subst, this, ma, argTy))
         }
@@ -6401,6 +6423,7 @@ extension class TypeChecker {
       moreArgs,
       thisArgOpt,
       argumentCheck,
+      argNotes,
     )
   }
 
@@ -6421,6 +6444,7 @@ extension class TypeChecker {
     moreArgs: ?TType,
     thisArgOpt: ?TType,
     argumentCheck: TypeArgumentCheck,
+    argNotes: readonly Vector<Array<(PosRange, String)>> = Vector[],
   ): TType {
     sigs = tfuns.allFuns();
     if (sigs.size() == 1) {
@@ -6434,6 +6458,7 @@ extension class TypeChecker {
         moreArgs,
         thisArgOpt,
         argumentCheck,
+        argNotes,
       )
     };
     failureMsgs = mutable Vector<(PosRange, String)>[];
@@ -6613,14 +6638,15 @@ extension class TypeChecker {
   ): Array<(PosRange, String)> {
     err match {
     | NamingError(messages, _) -> messages
-    | se @ SubtypingError(_, _, messages, _, _) ->
-      getConfig(tcenv.context).errorDetailConfig.getDefault() match {
+    | se @ SubtypingError(_, _, messages, _, _, trailingMessages) ->
+      base = getConfig(tcenv.context).errorDetailConfig.getDefault() match {
       | ErrorDetailHide()
       | ErrorDetailMinimal() ->
         messages
       | d @ STErrorDetail _ ->
         messages.concat(se.renderDetail(tcenv.context, d))
-      }
+      };
+      if (trailingMessages.isEmpty()) base else base.concat(trailingMessages)
     | _ -> Array[]
     }
   }
@@ -6635,6 +6661,7 @@ extension class TypeChecker {
     moreArgs: ?TType,
     thisArgOpt: ?TType,
     argumentCheck: TypeArgumentCheck,
+    argNotes: readonly Vector<Array<(PosRange, String)>> = Vector[],
   ): TType {
     saved = tcenv.subst.save();
     publication = tcenv.results.savePublication();
@@ -6652,6 +6679,7 @@ extension class TypeChecker {
         thisArgOpt,
         argumentCheck,
         entryErrors,
+        argNotes,
       )
     } catch {
     | exn ->
@@ -6712,6 +6740,7 @@ extension class TypeChecker {
     thisArgOpt: ?TType,
     argumentCheck: TypeArgumentCheck,
     entryErrors: Int,
+    argNotes: readonly Vector<Array<(PosRange, String)>> = Vector[],
   ): TType {
     plan = CallSubtypePlan::mcreate();
     if (targs.size() != 0 && targs.size() != tfun.tparams.size()) {
@@ -6885,17 +6914,19 @@ extension class TypeChecker {
             tfun.params[i],
             Array[(pos, "Argument is not assignable to the parameter's type")],
             TSCode(2345),
+            ValidateTypeArguments(),
+            argNotes.maybeGet(i).default(Array[]),
           );
         }
       };
       for (j in Range(0, tfun.optionalParams.size())) {
         i = tfun.params.size() + j;
-        arg = if (i < args.size()) {
-          args[i]
+        (arg, notes) = if (i < args.size()) {
+          (args[i], argNotes.maybeGet(i).default(Array[]))
         } else {
           moreArgs match {
           | None() -> break void
-          | Some(ma) -> ma
+          | Some(ma) -> (ma, Array[])
           }
         };
         plan.propose(
@@ -6905,6 +6936,8 @@ extension class TypeChecker {
           tfun.optionalParams[j],
           Array[(pos, "Argument is not assignable to the parameter's type")],
           TSCode(2345),
+          ValidateTypeArguments(),
+          notes,
         );
       };
       VariadicTyping::proposeRestArgs(

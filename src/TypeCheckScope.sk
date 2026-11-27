@@ -16,6 +16,26 @@ module SKJS;
 // `isMutable` is false for a `const` binding and true for `let`, `var`, a
 // parameter, or a catch clause's variable; `this` is also not mutable, since
 // it cannot be reassigned.
+// Why a binding's flow narrowing was discarded: points diagnostics at the call
+// or property write that may have mutated the binding or its fields.
+base class NarrowingInvalidation uses Equality {
+  children =
+  | NICallReassign(pos: PosRange)
+  | NICallFieldMutation(pos: PosRange)
+  | NIPropertyWrite(pos: PosRange)
+
+  fun toNote(name: String): (PosRange, String) {
+    this match {
+    | NICallReassign(pos) ->
+      (pos, `This call may have changed the value of '${name}'`)
+    | NICallFieldMutation(pos) ->
+      (pos, `This call may have changed a property of '${name}'`)
+    | NIPropertyWrite(pos) ->
+      (pos, `This write may have changed a property of '${name}'`)
+    }
+  }
+}
+
 value class LocalRef(
   type: TType,
   declaredType: TType,
@@ -23,6 +43,7 @@ value class LocalRef(
   isInitialized: Bool,
   isMutable: Bool,
   hasFieldRefinement: Bool = false,
+  invalidation: ?NarrowingInvalidation = None(),
 ) {
   // Only a binding carrying transient field facts needs contract projection.
   fun stableContentsType(
@@ -487,6 +508,12 @@ mutable class Scope{
     bounds
   }
 
+  readonly fun invalidationNote(name: Name): ?(PosRange, String) {
+    this.maybeGetRef(name.value)
+      .flatMap(pair -> pair.i1.invalidation)
+      .map(inv -> inv.toNote(name.value))
+  }
+
   // A property write may affect any visible object alias. Restore object
   // contents from lasting contracts, while retaining current primitive
   // alternatives (changing a field cannot turn a non-null reference into null)
@@ -501,6 +528,7 @@ mutable class Scope{
     tenv: TEnv,
     hasStableContents: Name -> Bool,
     onForget: (Name, TType) -> void = (_, _) -> void,
+    invalidation: ?NarrowingInvalidation = None(),
   ): void {
     for (entry in this.visibleRefs().items()) {
       ref = entry.i1;
@@ -513,7 +541,14 @@ mutable class Scope{
       ) {
         restored = ref.stableContentsType(subst, tenv, true);
         if (restored != ref.type) {
-          this.!refs[entry.i0] = ref with {type => restored};
+          nextInvalidation = invalidation match {
+          | Some _ -> invalidation
+          | None() -> ref.invalidation
+          };
+          this.!refs[entry.i0] = ref with {
+            type => restored,
+            invalidation => nextInvalidation,
+          };
           onForget(name, restored)
         }
       }
@@ -528,6 +563,7 @@ mutable class Scope{
   mutable fun widenLoopBindings(
     writes: ?SortedSet<String>,
     hasCallEffects: Bool = false,
+    callEffectPos: ?PosRange = None(),
   ): SortedMap<String, TType> {
     entryValues = SortedMap[];
     for (entry in this.visibleRefs().items()) {
@@ -545,7 +581,22 @@ mutable class Scope{
         if (ref.declaredType.isConcretePrimitive()) {
           !entryValues[name] = ref.type
         };
-        this.!refs[name] = ref with {type => ref.declaredType}
+        nextInvalidation = if (
+          writtenByCall &&
+          (ref.type != ref.declaredType ||
+            ref.declaredType.getSingleVar().isSome())
+        ) {
+          callEffectPos.map(pos -> NICallReassign(pos)) match {
+          | Some(inv) -> Some(inv)
+          | None() -> ref.invalidation
+          }
+        } else {
+          ref.invalidation
+        };
+        this.!refs[name] = ref with {
+          type => ref.declaredType,
+          invalidation => nextInvalidation,
+        }
       }
     };
     entryValues
@@ -674,6 +725,7 @@ mutable class Scope{
     ty: TType,
     isSubType: (TType, TType) -> void,
     runtimeWrite: Bool = false,
+    invalidation: ?NarrowingInvalidation = None(),
   ): void {
     (throughLoop, upRef) = this.maybeGetRef(name.value) match {
     | None() ->
@@ -706,6 +758,23 @@ mutable class Scope{
       // Retain the existing loop-entry restriction for unsealed bindings.
       isSubType(ty, upRef.type);
     };
+    // Record the cause when an effect widens this binding — or refreshes an
+    // evolving tvar whose union grew inside a closure — and keep it across
+    // partial flow refinements (for example `if (r !== null)` after a call
+    // widened `r` to `Node | number | null`). A direct assignment clears it.
+    nextInvalidation = if (runtimeWrite) {
+      None()
+    } else {
+      invalidation match {
+      | Some(inv) ->
+        if (ty != upRef.type || ty.getSingleVar().isSome()) {
+          Some(inv)
+        } else {
+          upRef.invalidation
+        }
+      | None() -> upRef.invalidation
+      }
+    };
     this.!refs[name.value] = LocalRef(
       ty,
       upRef.declaredType,
@@ -713,6 +782,7 @@ mutable class Scope{
       true,
       upRef.isMutable,
       upRef.hasFieldRefinement,
+      nextInvalidation,
     );
   }
 
@@ -738,6 +808,16 @@ mutable class Scope{
     this.refs.items()
       .filter(x -> !this.locals.containsKey(x.i0))
       .map(x -> NameRef(x.i0, x.i1))
+  }
+
+  private static fun mergeInvalidation(
+    inv1: ?NarrowingInvalidation,
+    inv2: ?NarrowingInvalidation,
+  ): ?NarrowingInvalidation {
+    inv1 match {
+    | Some _ -> inv1
+    | None() -> inv2
+    }
   }
 
   // Fold into this scope another sibling it can also be entered from — a
@@ -780,6 +860,10 @@ mutable class Scope{
         nameRef.ref.isInitialized && curRef.isInitialized,
         curRef.isMutable,
         curRef.hasFieldRefinement || nameRef.ref.hasFieldRefinement,
+        static::mergeInvalidation(
+          nameRef.ref.invalidation,
+          curRef.invalidation,
+        ),
       )
     }
   }
@@ -938,6 +1022,7 @@ mutable class Scope{
         edgeRef.isInitialized && curRef.isInitialized,
         curRef.isMutable,
         curRef.hasFieldRefinement || edgeRef.hasFieldRefinement,
+        static::mergeInvalidation(edgeRef.invalidation, curRef.invalidation),
       )
     };
     // The edge speaks for every binding, not only the ones it mentions: one it
@@ -960,6 +1045,7 @@ mutable class Scope{
             false,
             nameRef.ref.isMutable,
             nameRef.ref.hasFieldRefinement,
+            nameRef.ref.invalidation,
           )
         | _ -> void
         }
@@ -988,6 +1074,7 @@ mutable class Scope{
           cur.isInitialized,
           cur.isMutable,
           true, // The write log carries types without refinement provenance.
+          cur.invalidation,
         )
       | None() -> void
       }
@@ -1029,6 +1116,7 @@ mutable class Scope{
           cur.isInitialized,
           cur.isMutable,
           cur.hasFieldRefinement || nameRef.ref.hasFieldRefinement,
+          static::mergeInvalidation(nameRef.ref.invalidation, cur.invalidation),
         ),
       )
     }
@@ -1083,6 +1171,7 @@ mutable class Scope{
       tyOpt: ?TType = None();
       isInitialized = true;
       hasFieldRefinement = false;
+      invalidation: ?NarrowingInvalidation = None();
       for (scope in scopes) {
         scope.escapingRef(name) match {
         | Some(ref) ->
@@ -1098,7 +1187,11 @@ mutable class Scope{
             },
           );
           !hasFieldRefinement = hasFieldRefinement || ref.hasFieldRefinement;
-          !isInitialized = isInitialized && ref.isInitialized
+          !isInitialized = isInitialized && ref.isInitialized;
+          !invalidation = static::mergeInvalidation(
+            invalidation,
+            ref.invalidation,
+          )
         | None() -> !untouched = true
         }
       };
@@ -1108,7 +1201,11 @@ mutable class Scope{
       if (untouched) {
         !ty = TType::union(subst, tenv, ty, upRef.type);
         !hasFieldRefinement = hasFieldRefinement || upRef.hasFieldRefinement;
-        !isInitialized = isInitialized && upRef.isInitialized
+        !isInitialized = isInitialized && upRef.isInitialized;
+        !invalidation = static::mergeInvalidation(
+          invalidation,
+          upRef.invalidation,
+        )
       };
       this.!refs[name] = LocalRef(
         ty,
@@ -1117,6 +1214,7 @@ mutable class Scope{
         isInitialized,
         upRef.isMutable,
         hasFieldRefinement,
+        invalidation,
       )
     }
   }
@@ -1149,6 +1247,10 @@ mutable class Scope{
           upRef.isInitialized,
           upRef.isMutable,
           upRef.hasFieldRefinement || nameRef.ref.hasFieldRefinement,
+          static::mergeInvalidation(
+            nameRef.ref.invalidation,
+            upRef.invalidation,
+          ),
         )
       | Both(nameRef1, nameRef2) ->
         // Value contracts belong to the binding. Copy provenance may have
@@ -1169,6 +1271,10 @@ mutable class Scope{
           nameRef1.ref.isInitialized && nameRef2.ref.isInitialized,
           upRef.isMutable,
           nameRef1.ref.hasFieldRefinement || nameRef2.ref.hasFieldRefinement,
+          static::mergeInvalidation(
+            nameRef1.ref.invalidation,
+            nameRef2.ref.invalidation,
+          ),
         )
       }
     })
@@ -1195,6 +1301,7 @@ mutable class Scope{
         upRef.isInitialized,
         upRef.isMutable,
         upRef.hasFieldRefinement || nameRef.ref.hasFieldRefinement,
+        static::mergeInvalidation(nameRef.ref.invalidation, upRef.invalidation),
       )
     }
   }

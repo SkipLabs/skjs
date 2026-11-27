@@ -201,7 +201,7 @@ class AnnotationGroup{errorLine: Int, annotations: Array<AnnotationLine>}
 fun errorToFullMessage(error: SKJS.Error): String {
   error match {
   | SKJS.SinglePosError(_pos, errorKind) -> errorKind.toString()
-  | SKJS.SubtypingError(_, _, messages, _stErr, _) -> messages[0].i1
+  | SKJS.SubtypingError(_, _, messages, _stErr, _, _) -> messages[0].i1
   | SKJS.NamingError(messages, _) -> messages[0].i1
   }
 }
@@ -220,11 +220,14 @@ fun getErrorMessages(
 ): Array<String> {
   error match {
   | SKJS.SinglePosError(_, _) -> Array[errorToFullMessage(error)]
-  | err @ SKJS.SubtypingError(_, _, messages, _, _) ->
+  | err @ SKJS.SubtypingError(_, _, messages, _, _, trailingMessages) ->
     stErrMsgs = err.renderDetail(context, SKJS.STErrorDetail::default).map(m ->
       m.i1
     );
-    messages.map(m -> m.i1).concat(stErrMsgs)
+    messages
+      .map(m -> m.i1)
+      .concat(stErrMsgs)
+      .concat(trailingMessages.map(m -> m.i1))
   | SKJS.NamingError(messages, _) -> messages.map(m -> m.i1)
   }
 }

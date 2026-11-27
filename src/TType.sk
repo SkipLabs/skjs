@@ -1361,7 +1361,11 @@ class TObject private (
   // rejecting the access reads as nonsense. Telling the user the field exists
   // on some branches and recovering with that type is a separate improvement
   // (SkipLabs/skjs#716).
-  fun getTypeTypingError<T>(fieldName: String, pos: PosRange): T {
+  fun getTypeTypingError<T>(
+    fieldName: String,
+    pos: PosRange,
+    extraMessages: Array<(PosRange, String)> = Array[],
+  ): T {
     branches = this.getBranches();
     names = SortedSet<FieldNameString>[];
     branches.maybeGet(0).each(first ->
@@ -1405,6 +1409,9 @@ class TObject private (
           "The object type is closed: its unnamed keys are provably absent",
         ),
       )
+    };
+    for (msg in extraMessages) {
+      msgs.push(msg)
     };
     fatalError(msgs.toArray(), TSCode(2339))
   }
