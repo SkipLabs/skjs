@@ -512,7 +512,28 @@ fun resolvePackageInDir(
   StubNotFound()
 }
 
-fun resolveStubs(
+// Map a bare package name to its DefinitelyTyped `@types/` package name:
+//   - "foo"        -> Some("@types/foo")
+//   - "@scope/pkg" -> Some("@types/scope__pkg")
+//   - "@types/..." -> None() (already a @types package)
+fun atTypesPackageName(moduleName: String): ?String {
+  if (moduleName.startsWith("@types/")) return None();
+  if (moduleName.startsWith("@")) {
+    rest = moduleName.stripPrefix("@");
+    parts = rest.split("/");
+    if (parts.size() == 2 && parts[0] != "" && parts[1] != "") {
+      Some(`@types/${parts[0]}__${parts[1]}`)
+    } else {
+      None()
+    }
+  } else if (moduleName != "" && !moduleName.contains("/")) {
+    Some(`@types/${moduleName}`)
+  } else {
+    None()
+  }
+}
+
+private fun resolveStubsDirect(
   fs: Fs,
   importStubs: Array<DAbsolute>,
   moduleName: String,
@@ -544,6 +565,21 @@ fun resolveStubs(
     | Some(msg) -> StubError(msg)
     | None() -> StubNotFound()
     }
+  }
+}
+
+fun resolveStubs(
+  fs: Fs,
+  importStubs: Array<DAbsolute>,
+  moduleName: String,
+): StubResolveResult {
+  resolveStubsDirect(fs, importStubs, moduleName) match {
+  | StubNotFound() ->
+    atTypesPackageName(moduleName) match {
+    | Some(dtPkg) -> resolveStubsDirect(fs, importStubs, dtPkg)
+    | None() -> StubNotFound()
+    }
+  | other -> other
   }
 }
 
