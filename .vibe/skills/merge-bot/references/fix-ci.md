@@ -29,7 +29,8 @@ follow it.
    - "Check shell scripts" → `shellcheck <file>` (and `bin/merge-bot.sh --selftest`
      for the bot script itself), via `make check-sh`
    - "Test" (skargo build/test failures) → `make check-in-docker` /
-     `make test-in-docker`, or narrower: `make check-file-in-docker FILE=<repro.ts>`
+     `make test-in-docker`, or narrower:
+     `make check-file-in-docker FILE=<repro.ts> BIN=./target/host/dev/skjs`
      for a single-file repro
    Do not run the full CI matrix locally; fix the failing step only.
 3. Fix the root cause with the smallest change that keeps the PR's intent.

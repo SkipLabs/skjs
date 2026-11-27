@@ -2,145 +2,80 @@
 
 ## Test Organization
 
-- **Runnable examples**: `examples/src/*.ts` — demonstrate working features and patterns
-- **Unit tests**: `tests/expect-error/*.ts` — both positive (valid code) and negative (invalid code with error annotations) tests
-- **Test projects**: `tests/projects/*/` — multi-file projects, auto-discovered (all must pass at every commit)
-- **TypeScript conformance tests**: `tests/ts-conformance/` — see below
+| Location | Purpose | Harness test |
+| --- | --- | --- |
+| `tests/expect-error/*.ts` | Positive + negative unit tests with diagnostic annotations | `testExpectError` |
+| `tests/projects/*/` | Auto-discovered multi-file projects (with `tsconfig.json`) | `testProjects` |
+| `examples/src/*.ts` | Working examples demonstrating supported patterns | `testExamples` |
+| `tests/ts-conformance/` | Verbatim TypeScript conformance suite (see below) | `testTypeScriptConformance` / `testNotSupportedTypeScriptConformance` |
+| `tests/{cfg,deadcode,constprop,callgraph,callgraph-unsupported}/` | Expectation tests for CFG, dead code, constant prop, call graph | `testCFG`, `testDeadCode`, `testConstantProp`, `testCallGraph*` |
+| `tests/*.sk` | Unit tests for lexer, parser, module resolver, type ops, etc. | `skargo test` |
+| `tests/test_*.sh` | End-to-end shell tests (incremental, affected files, stdin, config) | `make test` |
 
-## TypeScript Conformance Tests
+`testNoLostTest` enforces that no `.ts` or `.js` file sits uncovered under `tests/` or `examples/`.
 
-`tests/ts-conformance/` holds files copied **verbatim** from the official TypeScript test suite (https://github.com/microsoft/TypeScript, `tsc/testdata/tests/cases/conformance/`, baselines in `tsc/testdata/baselines/reference/conformance/`). Do not modify them — that is the point: SKJS runs them as-is.
-
-- `cases/` — files that type-check exactly as the TypeScript reference baselines say (matched by error line numbers against `reference/<name>.errors.txt`). Checked in **conformance mode** (`conformance: true`, see [skjs-rules.md](../skjs-rules.md)), which relaxes SKJS-specific restrictions (`var`, top-level `let`/`var`/statements) so TS files need no rewrites. `// @param: value` header directives are allow-listed (`allowedConfig` in `tests/Main.sk`); tsc strips those lines before compiling, so the harness adds the header count back to reference line numbers.
-- `not-supported/` — verbatim files we **tried to support and could not yet**; each must produce at least one error. A file only lands here after a genuine attempt (identify the blocker, try to implement it); note the blocker in the PR description when moving it. Never copy files straight into `not-supported/`.
-- `reference/` — the `.errors.txt` baselines, copied flat by basename.
-
-To add cases from a TypeScript checkout (from the SKJS root), copy them into `cases/` and **try to make them pass** — the default is to support them, implementing whatever is missing:
-
-```bash
-devtools/copy-ts-tests.sh path/to/.../cases/conformance/some/dir   # into cases/
-```
-
-Then run `make test-in-docker` (`testTypeScriptConformance` / `testNotSupportedTypeScriptConformance`). If a `cases/` file fails, first try to implement the missing support and keep it in `cases/`; only if we genuinely don't support it yet, move it (with `mv`, verbatim) into `not-supported/` and say what blocks it.
-
-## Running Tests
+## Running & Updating Tests
 
 ```bash
-make build-in-docker    # Build
-make test-in-docker     # Run all tests (every commit must pass)
-make check-in-docker    # Type-check Skip code without building
-make fmt                # Format code (skfmt for .sk, prettier for .ts/.json)
+make test-in-docker                     # Full suite (every commit must pass)
+make test-cfg-in-docker                 # CFG expectation tests only
+make test-deadcode-in-docker            # Dead-code expectation tests only
+make check-file-in-docker FILE=tmp.ts BIN=./target/host/dev/skjs  # Single-file check
+make fmt                                # Format (.sk via skfmt, .ts/.json via prettier)
 ```
 
-The `*-in-docker` targets run inside the Skip docker image (directly when in a devcontainer). With a local Skip toolchain, use the native `make test` / `make check` (or `skargo test` / `skargo check`) directly. For comment-only changes, a compilation check (`make check-in-docker` / `skargo check`) is sufficient — comments cannot affect behavior.
+Use native `make test` / `skargo test <filter>` when a local Skip toolchain is available; for comment-only changes, `make check-in-docker` / `skargo check` suffices.
 
-## Critical Rules
+### Updating diagnostic expectations
 
-**SKJS is a typechecker, not a runtime**:
-- Don't call functions or use `console.log()` — the code never executes
-- Tests exercise type-checking behavior only
-- Example: `const x: number = "hello";` tests type errors, not runtime values
-
-**Error and warning annotations**:
-- Use `// @ts-expect-error <exact error message>` for errors TypeScript would also produce
-- Use `// @skjs-expect-error <exact error message>` for SKJS-specific errors
-- Use `// @skjs-expect-warning <exact message>` for non-fatal **warnings** — lint-style diagnostics that are not soundness-critical (e.g. redundant `?.`/`!`, useless `switch` / unused `case` branches, `This equality is always true/false`). Warnings are matched against a separate severity, so a source line with both an error and a warning needs one annotation of each.
-- Annotations also work in `.json` files (e.g. a test project's `tsconfig.json`), written as `//` comments — see `tests/projects/*/tsconfig.json` for examples
-- Run tests first to see actual messages, then add the annotations with exact wording
-- **SKJS reports only one _error_ per definition** — if a function has multiple errors, only the first is reported (unless passing `--keep-going`, which is best-effort — fatal errors may still hide subsequent ones). **Warnings are non-fatal**: every warning in a definition is reported and never aborts checking, and a file whose only diagnostics are warnings exits 0 (does not fail the build).
-- For expected errors that aren't reported due to an earlier error, use plain `// TODO:` comments (not `@ts-expect-error`)
-- **Multiple diagnostics on a single line**: use multiple comment lines, one per diagnostic. Do NOT use slash-separated messages in a single comment.
-- **Avoid duplicate annotations**: use `@ts-expect-error` for TypeScript-specific errors and `@skjs-expect-error` for SKJS errors. Don't duplicate the same annotation twice on consecutive lines.
-
-**Parse error constraints**:
-- Parse errors must appear on the last non-empty line of the file
-- Files with intentional parse errors must be named `*-prettier-ignore.ts` to skip prettier formatting
-- The error line should end with closing braces/brackets if needed (e.g., `error_here; }` not `error_here;\n}`)
-
-**No top-level statements**:
-- SKJS disallows top-level `let` and standalone statements
-- Wrap test code in functions: `function test(): void { /* test code here */ }`
-
-**Keep tests minimal**:
-- One test case per context is sufficient — no need for many variations of the same test
-- Don't test the same thing multiple times with different values
-- Avoid redundant test cases (e.g., `field1`, `field2`, `field3` that all do exactly the same thing)
-
-**Matching TypeScript behavior**:
-- SKJS should not be more permissive than TypeScript
-- When discovering SKJS accepts something TypeScript rejects, fix SKJS to match TypeScript's stricter behavior
-- Use TypeScript (`npx tsc --noEmit <file>`) to verify expected behavior when in doubt
-- When SKJS differs from TypeScript, document the discrepancy with a `// FIXME:` comment explaining what TypeScript does
-- Create regression tests for known discrepancies using `@skjs-expect-error` and FIXME comments
-
-**SKJS-specific type system differences**:
-- Array literals use delayed typing — `[...]` commits to array or tuple based on usage context (type annotation, method calls, etc.)
-- Once committed, the type cannot change (e.g., using `.push()` commits to array, then assigning to a tuple type is an error)
-- SKJS requires explicit type annotations on class and object type fields (stricter than TypeScript's implicit `any`)
-
-**Writing effective tests**:
-- Always include both positive (valid code) and negative (invalid code with errors) test cases
-- Negative tests must produce actual type errors — if the "wrong" behavior still type-checks, the test is ineffective
-- Focus on type checking, never on runtime values or expected outputs
-- Avoid SKJS-unsupported features in tests (e.g., `as` casts, `any` type)
-- Use `??` to handle potentially undefined values (e.g., `arr[i] ?? 0` for array access)
-- If testing requires specific types, use function parameters instead of complex type annotations
-
-## Updating Error Annotations
-
-When error messages change, update all `@ts-expect-error` and `@skjs-expect-error` annotations automatically:
-
-```sh
-UPDATE_EXPECT=1 make test-in-docker   # Add missing annotations, preserve existing
+```bash
+UPDATE_EXPECT=1 make test-in-docker   # Add missing annotations (also regenerates CFG/dead-code/constprop)
 UPDATE_EXPECT=2 make test-in-docker   # Also rewrite existing annotation text
 UPDATE_EXPECT=3 make test-in-docker   # Full rewrite + reorder alphabetically
 ```
 
-This rewrites annotations in `tests/expect-error/` and `examples/src/` to match actual diagnostics, preserving the `@ts-expect-error` vs `@skjs-expect-error` prefix. New errors get `@skjs-expect-error` and new warnings get `@skjs-expect-warning` (errors are emitted before warnings on a given line). Run `make test-in-docker` afterward to verify.
+- Preserves `@ts-expect-error` vs `@skjs-expect-error` prefixes; new diagnostics get `@skjs-expect-error` / `@skjs-expect-warning` (errors before warnings on a line).
+- `@skjs-expect-error-lineN` pins the Nth continuation line of the error anchored by `@skjs-expect-error` above it (requires exactly one `@skjs-expect-error` in the group). The updater refreshes text for already-pinned `-lineN` lines and drops vanished ones, but never adds new `-lineN` pins.
+- Always run `make test-in-docker` (without `UPDATE_EXPECT`) afterward to verify.
 
-A `@skjs-expect-error-lineN` annotation asserts the Nth message line of an error whose first line is pinned by the `@skjs-expect-error` above it, so a group can pin whichever continuation lines the test is about and ignore the rest. Which ones those are is the test author's choice, so no level ever adds one: the updater refreshes the text of the `-lineN` annotations already present and drops those whose message line is gone, but never pins a line you did not pin yourself.
+## Annotation & Authoring Rules
 
-## Regression and Edge Cases
+- **Typechecker, not a runtime**: Never invoke functions or call `console.log()` — code never executes. Wrap test code in functions (`function test(): void { ... }`) because SKJS disallows top-level `let` and non-void top-level statements.
+- **Diagnostic annotations** (placed immediately before the offending line; also supported as `//` comments in `.json` files like `tests/projects/*/tsconfig.json`):
+  - `// @ts-expect-error <exact message>` — error TypeScript (`tsc --strict --noEmit`) also produces
+  - `// @skjs-expect-error <exact message>` — SKJS-specific error
+  - `// @skjs-expect-error-lineN <exact line>` — optional continuation-line assertion (only with a single `@skjs-expect-error`)
+  - `// @skjs-expect-warning <exact message>` — non-fatal lint warning (checked on a separate severity; a line with both an error and a warning needs both)
+- **Multiple diagnostics on one line**: Use separate comment lines (one per diagnostic), never slash-separated messages. Avoid duplicate annotations on consecutive lines.
+- **One error per definition**: Only the first fatal error per definition is reported (unless `--keep-going`). Use plain `// TODO:` (never `@ts-expect-error`) for shadowed errors. Warnings are non-fatal and all are reported.
+- **Parse-error files**:
+  - Must be named `*-prettier-ignore.ts` (skips prettier).
+  - The parse error must be on the last non-empty line, including closing braces/brackets on that line (e.g. `error_here; }` not `error_here;\n}`).
+  - Parse errors abort type-checking for the rest of the file — fix parse errors before debugging missing type errors.
+- **Minimal & effective tests**:
+  - Prefer extending an existing relevant test file over creating a new one.
+  - Include both positive (accepted) and negative (producing an actual error) cases, one case per distinct context (classes, interfaces, type aliases, object literals, functions — test across contexts when relevant).
+  - Run tests first to see actual messages before annotating.
+  - Write comments describing current behavior, not historical changes.
+  - Never delete failing tests to fix failures; document unimplemented negative checks or TS discrepancies with `// FIXME: ...`.
 
-**Testing syntax restrictions**:
-- Test edge cases across all relevant contexts: classes, interfaces, type aliases, object literals, functions, ...
-- Consider whether modifier or other keywords can be used as field/method/variable names in each context
-- Example: if restricting syntax in classes, verify the same keyword works in object types
-- Add FIXME tests documenting where SKJS behavior differs from TypeScript
+## Verifying Against TypeScript
 
-**"Currently rejected" does not mean "handled"**:
+- Verify expected behavior with `npx tsc --strict --noEmit <file>` (use `/tmp` for scratch checks).
+- SKJS must not be more permissive than `tsc --strict` unless documented, and must not copy `tsc`'s soundness holes (see [typescript-soundness-holes.md](typescript-soundness-holes.md)).
+- **"Currently rejected" ≠ "handled"**: Over-strict rejection often masks an unimplemented analog of a handled case. Check `tsc --strict` and check structural analogs explicitly across all key kinds (`string` / `number` / `symbol`).
 
-- Do not use "SKJS already errors on this case" as evidence that it needs no treatment — over-strict rejection often masks a never-implemented analog of a handled case
-- Before declaring a case out of scope, check what TypeScript does with it (`npx tsc --strict --noEmit`) and whether it is the structural analog of a case that IS handled
-- Check analogs across all key kinds (string/number/symbol) explicitly — e.g. a general `symbol`-typed key is the non-literal analog of a general `string`/`number` key
+## TypeScript Conformance Tests
 
-**Verifying with TypeScript**:
-- Always check TypeScript's behavior with `npx tsc --strict --noEmit <file>` when creating regression tests
-- Use `--strict` mode to catch errors TypeScript would normally miss (e.g., null checks)
-- Create temporary test files in `/tmp` for quick verification without polluting the test suite
-- Don't assume SKJS and TypeScript have the same restrictions — verify each case
+`tests/ts-conformance/` holds files copied **verbatim** from [microsoft/TypeScript](https://github.com/microsoft/TypeScript) (`tsc/testdata/tests/cases/conformance/`, baselines in `tsc/testdata/baselines/reference/conformance/`). Never modify them.
 
-**Parse errors hide type errors**:
-- SKJS stops checking after encountering a parse error — subsequent type errors won't be reported
-- If many error annotations aren't triggering, check for parse errors first in the test output
-- Fix parse errors before debugging missing type errors
-- Common culprits: unsupported syntax, typos in keywords, wrong operators
+- `cases/` — pass verbatim in **conformance mode** (`conformance: true`, see [skjs-rules.md](../skjs-rules.md#conformance-mode)), matched by error line numbers against `reference/<name>.errors.txt`. Allow-listed `// @param: value` headers (`allowedConfig` in `tests/Main.sk`) are stripped by `tsc`, so the harness adds the header count back to reference lines.
+- `not-supported/` — verbatim files that must produce at least one error. Only move a file here (`mv`, verbatim) after genuinely trying to implement the missing support, and state the blocker in the PR description. Never copy straight into `not-supported/`.
+- `reference/` — `.errors.txt` baselines, flat by basename.
 
-**Negative tests that don't error**:
-- Not all incorrect code produces errors in SKJS — some checks aren't implemented yet
-- When a negative test doesn't error, document it with FIXME rather than removing it
-- Example: `// FIXME: TypeScript catches this error but SKJS doesn't`
-- These tests document gaps and guide future improvements
+Import workflow (from repo root):
 
-## Common Mistakes
-
-1. **Don't use console.log or function calls in tests** — we're testing a typechecker, not a runtime
-2. **Don't batch expect-error comments** — place them immediately before the error line
-3. **Don't create new files unnecessarily** — prefer modifying existing test files over creating new ones unless testing a distinct feature
-4. **Don't add expect-error comments before running tests** — see the actual error message first, then annotate
-5. **Don't put code after parse errors** — parse errors must be on the last non-empty line
-6. **Don't write comments about changes** — comments should describe the current state (e.g., "Test multiple errors per class") not changes (e.g., "Test that multiple errors per class are now reported")
-7. **Don't remove tests to fix test failures** — fix the annotations or test logic properly instead of deleting the failing test case
-8. **Don't use `@ts-expect-error` in TODO comments** — use plain `// TODO:` for errors that won't be reported due to an earlier error in the function
-9. **Don't assume SKJS matches TypeScript** — when creating regression tests, verify TypeScript's actual behavior first
-10. **Don't forget to test across contexts** — a syntax restriction in one context (classes) may need tests in others (interfaces, types, object literals)
+```bash
+devtools/copy-ts-tests.sh path/to/.../cases/conformance/some/dir   # copies into cases/
+make test-in-docker
+```
