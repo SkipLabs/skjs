@@ -489,23 +489,32 @@ mutable class Scope{
 
   // A property write may affect any visible object alias. Restore object
   // contents from lasting contracts, while retaining current primitive
-  // alternatives: changing a field cannot turn a non-null reference into null.
-  // Do not reset inferred objects to an initial type their writes may outgrow.
+  // alternatives (changing a field cannot turn a non-null reference into null)
+  // and union alternatives separated by disjoint required fields (mutation of
+  // a field within its invariant contract cannot move an object to a disjoint
+  // union arm). Do not reset inferred objects to an initial type their writes
+  // may outgrow.
+  // Reports each invalidated binding (name, restored type) to `onForget` so
+  // callers can mirror the invalidation into any active try write-log.
   mutable fun forgetObjectRefinements(
     subst: mutable Subst,
     tenv: TEnv,
     hasStableContents: Name -> Bool,
+    onForget: (Name, TType) -> void = (_, _) -> void,
   ): void {
     for (entry in this.visibleRefs().items()) {
       ref = entry.i1;
+      name = Name(ref.type.pos, entry.i0);
       if (
         ref.hasDeclaredContract &&
-        hasStableContents(Name(ref.type.pos, entry.i0)) &&
+        hasStableContents(name) &&
         ref.type != ref.declaredType &&
         !ref.type.isFieldFree()
       ) {
-        this.!refs[entry.i0] = ref with {
-          type => ref.stableContentsType(subst, tenv),
+        restored = ref.stableContentsType(subst, tenv, true);
+        if (restored != ref.type) {
+          this.!refs[entry.i0] = ref with {type => restored};
+          onForget(name, restored)
         }
       }
     }
@@ -513,9 +522,11 @@ mutable class Scope{
 
   // Repeated reads must cover every value a loop may write. A fresh condition
   // or body check can narrow again, but a pre-loop fact is not an invariant.
-  // Unknown write summaries conservatively include every visible binding.
+  // Unknown write summaries conservatively include every visible binding;
+  // loops with calls also widen bindings that a captured closure may reassign.
   mutable fun widenLoopBindings(
     writes: ?SortedSet<String>,
+    hasCallEffects: Bool = false,
   ): SortedMap<String, TType> {
     entryValues = SortedMap[];
     for (entry in this.visibleRefs().items()) {
@@ -523,7 +534,9 @@ mutable class Scope{
       if (
         ref.isMutable &&
         ref.hasDeclaredContract &&
-        writes.map(names -> names.contains(entry.i0)).default(true)
+        (writes.map(names -> names.contains(entry.i0)).default(true) ||
+          (hasCallEffects &&
+            this.mayBeReassignedByCall(Name(ref.type.pos, entry.i0))))
       ) {
         if (ref.declaredType.isConcretePrimitive()) {
           !entryValues[entry.i0] = ref.type

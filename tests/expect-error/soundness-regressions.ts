@@ -110,6 +110,18 @@ function memberRefinementAliasWrite(): void {
   }
 }
 
+// #869: alias writes through a nested object container also invalidate the
+// member refinement.
+function memberRefinementNestedAliasWrite(): void {
+  const e: { x: number } = { x: 1 };
+  if (e.x === 1) {
+    const o: { a: { x: number } } = { a: e };
+    o.a.x = 99;
+    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+    const z: 1 = e.x;
+  }
+}
+
 // #840: a captured write to an evolving local is checked, so the local does
 // not keep the type of its last visible assignment.
 class EvolvingNode {

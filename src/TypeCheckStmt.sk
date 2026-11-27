@@ -169,7 +169,12 @@ extension class TypeChecker {
       writes.expr(cond);
       writes.expr(incr);
       writes.stmts(block);
-      tcenv.beginLoopWrites(loopScope.widenLoopBindings(writes.result()));
+      tcenv.beginLoopWrites(
+        loopScope.widenLoopBindings(writes.result(), writes.hasCallEffects),
+      );
+      if (writes.result().isNone() || writes.hasCallEffects) {
+        tcenv.forgetLoopObjectRefinements(this, loopScope)
+      };
       tcenv.!scope = loopScope;
       preHeader = loopScope.copyRefs();
       this.checkBool(tcenv, cond);
@@ -300,7 +305,12 @@ extension class TypeChecker {
       // out, break and continue edges join at the same point.
       writes = mutable CaptureWrites{};
       writes.stmts(block);
-      tcenv.beginLoopWrites(loopScope.widenLoopBindings(writes.result()));
+      tcenv.beginLoopWrites(
+        loopScope.widenLoopBindings(writes.result(), writes.hasCallEffects),
+      );
+      if (writes.result().isNone() || writes.hasCallEffects) {
+        tcenv.forgetLoopObjectRefinements(this, loopScope)
+      };
       ((loopBody, bodyTerm), catcher) = tcenv.withJumpCatcher(true, () ->
         this.block(tcenv, block)
       );
@@ -336,7 +346,12 @@ extension class TypeChecker {
       writes = mutable CaptureWrites{};
       writes.expr(cond);
       writes.stmts(block);
-      tcenv.beginLoopWrites(loopScope.widenLoopBindings(writes.result()));
+      tcenv.beginLoopWrites(
+        loopScope.widenLoopBindings(writes.result(), writes.hasCallEffects),
+      );
+      if (writes.result().isNone() || writes.hasCallEffects) {
+        tcenv.forgetLoopObjectRefinements(this, loopScope)
+      };
       tcenv.!scope = loopScope;
       preHeader = loopScope.copyRefs();
       this.checkBool(tcenv, cond);
