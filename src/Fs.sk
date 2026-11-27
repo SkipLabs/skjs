@@ -12,6 +12,7 @@ base class Fs {
   fun exists(path: String): Bool;
   fun isDirectory(path: String): Bool;
   fun readTextFile(path: String): String;
+  fun readDirectory(path: String): Array<String>;
 
   // Push every file under `path` matching `predicate` into `out`, skipping
   // paths already in `seen` and inserting newly emitted paths into `seen`.
@@ -49,6 +50,11 @@ class DiskFs() extends Fs {
 
   fun readTextFile(path: String): String {
     FileSystem.readTextFile(path)
+  }
+
+  fun readDirectory(path: String): Array<String> {
+    if (!FileSystem.isDirectory(path)) return Array[];
+    FileSystem.readDirectory(path)
   }
 
   protected fun collectFilesRecursive(
@@ -95,6 +101,24 @@ class OverlayFs{underlying: Fs, overlay: Fs} extends Fs {
     }
   }
 
+  fun readDirectory(path: String): Array<String> {
+    seen = mutable Set[];
+    out = mutable Vector[];
+    for (entry in this.underlying.readDirectory(path)) {
+      if (!seen.contains(entry)) {
+        seen.insert(entry);
+        out.push(entry)
+      }
+    };
+    for (entry in this.overlay.readDirectory(path)) {
+      if (!seen.contains(entry)) {
+        seen.insert(entry);
+        out.push(entry)
+      }
+    };
+    out.toArray()
+  }
+
   protected fun collectFilesRecursive(
     path: String,
     predicate: String -> Bool,
@@ -137,6 +161,17 @@ class MemFs private (root: MemDir) extends Fs {
     this.findFile(path) match {
     | Some(content) -> content
     | None() -> invariant_violation(`MemFs does not contain file: ${path}`)
+    }
+  }
+
+  fun readDirectory(path: String): Array<String> {
+    this.findDir(path) match {
+    | None() -> Array[]
+    | Some(dir) ->
+      out = mutable Vector[];
+      for (name => _ in dir.files) out.push(name);
+      for (name => _ in dir.subdirs) out.push(name);
+      out.toArray()
     }
   }
 

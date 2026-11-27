@@ -37,14 +37,14 @@ module SKJS;
 //
 // SUPPORTED — silently accepted:
 //     rootDir, baseUrl, paths, target, module, moduleResolution,
-//     allowImportingTsExtensions, lib
+//     allowImportingTsExtensions, lib, typeRoots, types
 //
 // IGNORED — emit/tooling/IDE options, silently accepted:
 //   Emit: outDir, outFile, declaration, declarationMap,
 //     declarationDir, emitDeclarationOnly, sourceMap, sourceRoot, mapRoot,
 //     removeComments, noEmit, preserveConstEnums, downlevelIteration,
 //     newLine, importsNotUsedAsValues, noEmitOnError
-//   Module: typeRoots, types,
+//   Module:
 //     resolveJsonModule, rootDirs, moduleSuffixes, customConditions
 //   Interop: esModuleInterop, allowSyntheticDefaultImports,
 //     forceConsistentCasingInFileNames, isolatedModules,
@@ -274,6 +274,12 @@ class TsCompilerOptions{
   moduleResolution: ModuleResolution = ModuleResolution::default,
   allowImportingTsExtensions: Bool = false,
   lib: Array<String> = Array[],
+  // Directories searched for ambient `@types` packages (resolved relative to
+  // tsconfig directory). None() uses the TS default (`["./node_modules/@types"]`).
+  typeRoots: ?Array<String> = None(),
+  // Optional allowlist of ambient package names to load from `typeRoots`.
+  // None() loads all packages found under `typeRoots`.
+  types: ?Array<String> = None(),
   truthiness: Truthiness = Truthiness::default,
   // Whether a clause that falls into another is an error (TS7029). SKJS
   // defaults it on, where tsc defaults it off, and honours it either way.
@@ -781,6 +787,23 @@ fun loadTsConfig(fs: Fs, path: String): (TsConfig, Array<TsConfigDiag>) {
       }
     };
 
+    // Extract typeRoots (resolved relative to configDir) and types allowlist.
+    typeRoots = co.maybeGetArray("typeRoots").map(arr ->
+      arr.value
+        .map(v ->
+          Path.resolve(
+            Path.join(
+              configDir.toString(),
+              substituteConfigDir(v.expectString(), configDir),
+            ),
+          )
+        )
+        .collect(Array)
+    );
+    types = co.maybeGetArray("types").map(arr ->
+      arr.value.map(v -> v.expectString()).collect(Array)
+    );
+
     TsCompilerOptions{
       rootDir => co.maybeGetString("rootDir"),
       baseUrl,
@@ -790,6 +813,8 @@ fun loadTsConfig(fs: Fs, path: String): (TsConfig, Array<TsConfigDiag>) {
       moduleResolution,
       allowImportingTsExtensions,
       lib,
+      typeRoots,
+      types,
       truthiness,
       noFallthroughCasesInSwitch,
       conformance,

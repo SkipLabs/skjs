@@ -426,8 +426,14 @@ fun checkFilesWithRoot(
   context = SKStore.Context::mcreate{};
 
   files =
-    SKJS.Files::create(context, fs, root, srcFiles, importStubs) |>
-    expectFilesSuccess;
+    SKJS.Files::create(
+      context,
+      fs,
+      root,
+      srcFiles,
+      importStubs,
+      compilerOptions,
+    ) |> expectFilesSuccess;
 
   SKJS.writeConfig(
     context,

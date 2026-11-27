@@ -1,11 +1,14 @@
 function useCustomGlobal(): string {
-  // @skjs-expect-error Cannot find name
   return CUSTOM_GLOBAL;
 }
 
 function useCustomHelper(): boolean {
-  // @skjs-expect-error Cannot find name
   return customHelper(42);
+}
+
+function badCustomHelper(): boolean {
+  // @skjs-expect-error Argument is not assignable to the parameter's type
+  return customHelper("nope");
 }
 
 function defaultNotLoaded(): number {

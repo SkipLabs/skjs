@@ -1,5 +1,9 @@
 function useAllowed(): number {
-  // @skjs-expect-error Cannot find name
+  return ALLOWED_VAL;
+}
+
+function badAllowed(): string {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return ALLOWED_VAL;
 }
 

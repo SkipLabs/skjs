@@ -522,7 +522,14 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   context = SKStore.runWithGcReturnContext(
     SKStore.Context::create{},
     (context) ~> {
-      files = Files::create(context, fs, root, allSrcFiles, importStubs) match {
+      files = Files::create(
+        context,
+        fs,
+        root,
+        allSrcFiles,
+        importStubs,
+        checkerCompilerOptionsFinal,
+      ) match {
       | Failure(err) ->
         print_error(err);
         return SKStore.CStop(None())
@@ -783,6 +790,7 @@ class Checker private {
       context,
       fs,
       builtinsFileName,
+      files.ambientFiles,
       files.rootMap,
       parsedFiles,
     );
