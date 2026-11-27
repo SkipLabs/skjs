@@ -1,3 +1,3 @@
-// Extensionless relative side-effect import under node16 (pinned to pre-change parse error).
-// @skjs-expect-error 'a variable name' expected
+// Extensionless relative side-effect import under node16 reports the extension rule.
+// @skjs-expect-error Relative imports require a '.js', '.mjs', or '.cjs' extension. Use 'moduleResolution: "bundler"' for extensionless imports.
 import "./side-effect";
