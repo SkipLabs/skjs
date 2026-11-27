@@ -1,0 +1,117 @@
+// Pins the file anchors of rescued subtyping diagnostics (issue #672 item 2).
+// `@skjs-expect-error-lineN` checks message text only, not the `PosRange` file
+// of continuation lines; this test asserts directly on `renderDetail` positions.
+module SKJSTests;
+
+fun checkSingleVirtualFileErrors(
+  source: String,
+): (mutable SKStore.Context, Array<SKJS.Error>) {
+  rootDir = Path.resolve(".");
+  virtualFile = Path.join(rootDir, "__skjs_rescue_pos_test__.ts");
+  overlay = SKJS.MemFs::fromMap(Map[virtualFile => source]);
+  fs = SKJS.OverlayFs{underlying => SKJS.DiskFs(), overlay};
+  context = SKStore.Context::mcreate{};
+  files =
+    SKJS.Files::create(
+      context,
+      fs,
+      rootDir,
+      Array[virtualFile],
+      Array["./import-stubs"],
+    ) |> expectFilesSuccess;
+  SKJS.writeConfig(
+    context,
+    SKJS.CheckerConfig{
+      compilerOptions => SKJS.TsCompilerOptions{},
+      errorHandling => SKJS.EHKeepGoing(),
+      errorDetailConfig => SKJS.ErrorDetailConfig::default(),
+    },
+  );
+  checker = SKJS.Checker::create{context, fs, files}.fromSuccess();
+  targetFPath = SKJS.FPath::create(
+    SKJS.RootId::project,
+    "__skjs_rescue_pos_test__.ts",
+  );
+  errors = checker
+    .checkFiles(context)
+    .getArray(context, targetFPath)
+    .flatMap(res -> res.errors);
+  (context, errors)
+}
+
+@test
+fun testRescuedNestedArrayDetailPositions(): void {
+  source = "declare function wrap<K extends 0 | 1>(x: Array<Array<K>>): K;\nfunction f(a: Array<Array<5>>): void { const r = wrap(a); }\n";
+  (context, errors) = checkSingleVirtualFileErrors(source);
+  SKTest.expectEq(1, errors.size());
+  errors[0] match {
+  | err @ SKJS.SubtypingError _ ->
+    detail = err.renderDetail(context, SKJS.STErrorDetail::default);
+    SKTest.expectTrue(detail.size() >= 2, "expected rescued detail lines");
+    // Pre-fix (#672 item 2): the empty-render rescue fires at the innermost
+    // stub frame inside Array<T>.every, anchoring detail lines in import-stubs.
+    SKTest.expectFalse(
+      detail[0].i0.fileName.rootId.isProject(),
+      `pre-fix: expected stub anchor, got ${detail[0].i0.fileName}`,
+    );
+    SKTest.expectFalse(
+      detail[1].i0.fileName.rootId.isProject(),
+      `pre-fix: expected stub anchor, got ${detail[1].i0.fileName}`,
+    )
+  | _ -> SKTest.fail("expected SubtypingError")
+  }
+}
+
+@test
+fun testRescuedNestedReadonlyArrayDetailPositions(): void {
+  source = "declare function wrap<K extends 0 | 1>(x: ReadonlyArray<ReadonlyArray<K>>): K;\nfunction f(a: ReadonlyArray<ReadonlyArray<5>>): void { const r = wrap(a); }\n";
+  (context, errors) = checkSingleVirtualFileErrors(source);
+  SKTest.expectEq(1, errors.size());
+  errors[0] match {
+  | err @ SKJS.SubtypingError _ ->
+    detail = err.renderDetail(context, SKJS.STErrorDetail::default);
+    SKTest.expectTrue(detail.size() >= 2, "expected rescued detail lines");
+    SKTest.expectFalse(
+      detail[0].i0.fileName.rootId.isProject(),
+      `pre-fix: expected stub anchor, got ${detail[0].i0.fileName}`,
+    )
+  | _ -> SKTest.fail("expected SubtypingError")
+  }
+}
+
+@test
+fun testRescuedMapDetailPositions(): void {
+  source = "declare function wrap<K extends 0 | 1>(x: Map<string, K>): K;\nfunction f(a: Map<string, 5>): void { const r = wrap(a); }\n";
+  (context, errors) = checkSingleVirtualFileErrors(source);
+  SKTest.expectEq(1, errors.size());
+  errors[0] match {
+  | err @ SKJS.SubtypingError _ ->
+    detail = err.renderDetail(context, SKJS.STErrorDetail::default);
+    SKTest.expectTrue(detail.size() >= 2, "expected rescued detail lines");
+    SKTest.expectFalse(
+      detail[0].i0.fileName.rootId.isProject(),
+      `pre-fix: expected stub anchor, got ${detail[0].i0.fileName}`,
+    )
+  | _ -> SKTest.fail("expected SubtypingError")
+  }
+}
+
+@test
+fun testArrayConstraintCollisionNotePreFix(): void {
+  source = "declare function f<K extends Array<0 | 1>>(x: K): K;\nfunction g(): void { const r = f(5); }\n";
+  (context, errors) = checkSingleVirtualFileErrors(source);
+  SKTest.expectEq(1, errors.size());
+  errors[0] match {
+  | err @ SKJS.SubtypingError _ ->
+    detail = err.renderDetail(context, SKJS.STErrorDetail::default);
+    // Pre-fix (#672 item 3 residual): expanded Array<0 | 1> dumps all methods
+    // and emits a spurious collision note from reduce/flatMap/reduceRight <U>.
+    SKTest.expectTrue(
+      detail.any(m -> m.i1.contains("#")),
+      "pre-fix: expected spurious '#' disambiguation note on expanded Array",
+    )
+  | _ -> SKTest.fail("expected SubtypingError")
+  }
+}
+
+module end;
