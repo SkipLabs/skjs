@@ -736,18 +736,60 @@ mutable class TypeReadContext private {
     remainder match {
     | None() -> STOk()
     | Some(required) ->
-      TObject::isSubWith(required, right, (f, g) -> this.fieldsSubtype(f, g))
+      TObject::isSubWith(required, right, (f, g) ->
+        this.fieldsSubtype(f, g, Some(TObject::shapeCarrierForBranch(left, f)))
+      )
+    }
+  }
+
+  // Mirror of TType::isSubMemberGetter for read-only proof observation:
+  // check top-level shape-method call signatures against `carrier` without
+  // caching the carrier-dependent judgment in the subtype memo.
+  private mutable fun memberGetterSubtype(
+    u1: TType,
+    u2: TType,
+    carrier: ?TType,
+  ): STResult<TType> {
+    if (carrier is None() || !u2.hasTopLevelShapeMethod()) {
+      return this.subtype(u1, u2)
+    };
+    if (u1 == u2) return STOk();
+    if (u2.isTop()) return STOk();
+    left = this.expandClauses(u1, Covariant());
+    right = if (this.allowTargetGrowth) {
+      this.positiveTargetClauses(u2)
+    } else {
+      this.expandClauses(u2, Contravariant())
+    };
+    Clauses::isSubWith(left, right, (a, b) ->
+      STypes::isSubWith(a, b, (x, y) ->
+        TObject::isSubWith(x, y, (f, g) ->
+          TFields::isSubWith(
+            f,
+            g,
+            (l, r) -> this.subtype(l, r),
+            (l, r) -> this.subtype(l, r),
+            (l, r) -> this.funsSubtype(l, r, carrier),
+            (pos, name) -> this.symbolId(pos, name),
+          )
+        )
+      )
+    ) match {
+    | STOk() -> STOk()
+    | err @ STErrorOnClauses _ -> STRecType(err, u1, u2)
     }
   }
 
   private mutable fun fieldsSubtype(
     left: TFields,
     right: TFields,
+    carrier: ?TType = None(),
   ): STResult<TFields> {
     TFields::isSubWith(
       left,
       right,
       (a, b) -> this.subtype(a, b),
+      (a, b) -> this.memberGetterSubtype(a, b, carrier),
       (a, b) -> this.funsSubtype(a, b),
       (pos, name) -> this.symbolId(pos, name),
     )
@@ -757,7 +799,11 @@ mutable class TypeReadContext private {
   // matched by some source signature — and, for an overloaded source, only by
   // one whose arity covers the target's parameters (argument-count dispatch
   // matters at runtime, so a shorter source signature must not match).
-  private mutable fun funsSubtype(a: TFuns, b: TFuns): STResult<TFuns> {
+  private mutable fun funsSubtype(
+    a: TFuns,
+    b: TFuns,
+    shapeCarrier: ?TType = None(),
+  ): STResult<TFuns> {
     multiSource = a.allFuns().size() > 1;
     for (t in b.allFuns()) {
       matched = false;
@@ -769,7 +815,7 @@ mutable class TypeReadContext private {
           s.params.size() + s.optionalParams.size() >=
             t.params.size() + t.optionalParams.size();
         if (!matched && covers) {
-          this.functionSubtype(s, t) match {
+          this.functionSubtype(s, t, shapeCarrier) match {
           | STOk() -> !matched = true
           | err @ STErrorOnTFun _ ->
             if (firstErr is None()) !firstErr = Some(err)
@@ -780,7 +826,7 @@ mutable class TypeReadContext private {
         // No source signature's arity covers the target: reject with a real
         // type error instead of crashing on fromSome(None).
         err = firstErr.default(
-          this.functionSubtype(a.allFuns()[0], t) match {
+          this.functionSubtype(a.allFuns()[0], t, shapeCarrier) match {
           | e @ STErrorOnTFun _ -> e
           | STOk() -> STRecFunParam(None(), 0, a.allFuns()[0], t)
           },
@@ -791,13 +837,18 @@ mutable class TypeReadContext private {
     STOk()
   }
 
-  private mutable fun functionSubtype(left: TFun, right: TFun): STResult<TFun> {
+  private mutable fun functionSubtype(
+    left: TFun,
+    right: TFun,
+    shapeCarrier: ?TType = None(),
+  ): STResult<TFun> {
     result = TFun::isSubWith(
       left,
       right,
       (a, b) -> this.subtype(a, b),
       spread -> spread.flatMap(type -> this.spreadTuple(type)),
       (type, variance) -> this.restElement(type, variance),
+      shapeCarrier,
     );
     if (result is STOk() && this.allowTargetGrowth) {
       for (source in left.cgNodes.nodes) {

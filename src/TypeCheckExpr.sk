@@ -1629,7 +1629,9 @@ extension class TypeChecker {
       boundSigs = mutable Vector[];
       for (f in tfuns.allFuns()) {
         if (!f.tparams.isEmpty()) return None();
-        if (f.thisParam is ImplicitShape _) return None();
+        if (f.thisParam is ImplicitShape _ || f.thisParam is DetachedShape _) {
+          return None()
+        };
         // A bound function fixes `this` to `thisArg` (not the call site's
         // receiver), so drop any `asserts this` predicate to avoid narrowing a
         // wrong subject. Parameter assertions stay valid.
@@ -1710,7 +1712,9 @@ extension class TypeChecker {
     // A shape method's carrier type is erased, so no sound thisArg check is
     // possible for a rebind — do not synthesize .call/.apply/.bind on it
     // (a sound under-approximation: the fields stay unbound).
-    if (f.thisParam is ImplicitShape _) return None();
+    if (f.thisParam is ImplicitShape _ || f.thisParam is DetachedShape _) {
+      return None()
+    };
     // The thisArg of `.call`/`.apply`/`.bind` is checked against the
     // function's `this`: an implicit class `this` requires the receiver to
     // be the class instance (sound; TS resolves it to `unknown`), an
@@ -5202,7 +5206,11 @@ extension class TypeChecker {
     index: TType,
     readType: TType,
   ): TType {
-    result = this.extractedMethodType(tcenv.subst, readType);
+    // Keep the property-read expression's span on the returned type (like
+    // other expressions) so downstream diagnostics — e.g. assigning `other.m`
+    // into a field slot — point at the expression rather than the method's
+    // declaration site.
+    result = this.extractedMethodType(tcenv.subst, readType).withPos(pos);
     if (receiver != stableReceiver && !result.isFieldFree()) {
       contract = this.extractedMethodType(
         tcenv.subst,
@@ -6779,6 +6787,19 @@ extension class TypeChecker {
             SKJSCode(2075),
           )
         }
+      // Once detached from its original carrier (by extraction or object
+      // copy), a shape method cannot be invoked even if re-attached to a
+      // different object.
+      | DetachedShape() ->
+        tcenv.error(
+          Array[
+            (
+              pos,
+              "A shape method can only be called on the object it was accessed on",
+            ),
+          ],
+          SKJSCode(2075),
+        )
       // An implicit class `this` is the type of the object the method was
       // resolved from, so an attached call (`e1.m()` / `e1[k]()`, which supplies
       // `thisArgOpt`) inherently satisfies it. Skip the check there: for a union

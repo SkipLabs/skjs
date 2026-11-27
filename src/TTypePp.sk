@@ -453,7 +453,9 @@ mutable class TypePp{
         pp.out(level, margin, "(");
         tfun.thisParam match {
         | NoThis() -> void
-        | ImplicitShape() -> pp.out(level, margin, "this: <shape>")
+        | ImplicitShape()
+        | DetachedShape() ->
+          pp.out(level, margin, "this: <shape>")
         | Explicit(thisTy)
         | ImplicitClass(thisTy) ->
           pp.out(level, margin, "this: ");
@@ -513,7 +515,8 @@ mutable class TypePp{
         pp.newLine();
         tfun.thisParam match {
         | NoThis() -> void
-        | ImplicitShape() ->
+        | ImplicitShape()
+        | DetachedShape() ->
           pp.out(level, margin, "this: <shape>,");
           pp.newLine()
         | Explicit(thisTy)

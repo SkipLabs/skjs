@@ -107,6 +107,7 @@ mutable base class ApplyType(
       f.thisParam match {
       | NoThis() -> NoThis()
       | ImplicitShape() -> ImplicitShape()
+      | DetachedShape() -> DetachedShape()
       | Explicit(ty) -> Explicit(this.type(env, ty))
       | ImplicitClass(ty) -> ImplicitClass(this.type(env, ty))
       },
