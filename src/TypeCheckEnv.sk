@@ -120,8 +120,12 @@ base class LocalObjectState {
   // `bound` is the optional type annotation that constrains growth.
   | LOCanGrow(bound: ?TType)
   // Object has been used (read/passed), type is now frozen.
-  // Position records where it was first used (for error messages).
-  | LOUsed(PosRange)
+  // `usedPos` records where it was first used (for error messages).
+  // `indexView` records the first successful annotated index view of the
+  // object, if that first use was one: a later index view that is a subtype
+  // super-view of `indexView` (e.g. an identical repeat or a readonly
+  // widening) is sound and need not be rejected by the second-view gate.
+  | LOUsed(usedPos: PosRange, indexView: ?TType = None())
 }
 
 // A `break` or `continue` leaves a loop or switch mid-block, carrying the state
@@ -332,7 +336,9 @@ mutable class TCEnv private {
   }
 
   // Freeze the in-scope growable local object `local` (no-op if it is not one),
-  // recording the use position for diagnostics.
+  // recording the first use position for diagnostics without clobbering an
+  // already-recorded LOUsed state (preserving the first-use position and any
+  // recorded first index view).
   mutable fun markLocalObjectUsed(local: Name): void {
     this.scope.bindingPos(local) match {
     | Some(p) if (this.localObjects.containsKey(p)) ->
@@ -342,8 +348,24 @@ mutable class TCEnv private {
       };
       this.localObjectContracts![p] = contract;
       this.scope.establishObjectContract(local, contract);
-      this.localObjects![p] = LOUsed(local.pos)
+      if (!(this.localObjects[p] is LOUsed _)) {
+        this.localObjects![p] = LOUsed(local.pos)
+      }
     | _ -> void
+    }
+  }
+
+  // Record the first index view established on the in-scope tracked local
+  // object `local`, if it has not already recorded one.
+  mutable fun recordLocalObjectIndexView(local: Name, viewType: TType): void {
+    this.scope.bindingPos(local) match {
+    | Some(p) ->
+      this.localObjects.maybeGet(p) match {
+      | Some(LOUsed(usedPos, None())) ->
+        this.localObjects![p] = LOUsed(usedPos, Some(viewType))
+      | _ -> void
+      }
+    | None() -> void
     }
   }
 

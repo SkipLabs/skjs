@@ -1329,15 +1329,21 @@ extension class TypeChecker {
       // BEFORE `this.expr`, because reading a `Var` flips a tracked local
       // object's growth state LOCanGrow -> LOUsed: is this initializer a
       // by-reference view of an already-used, or loop-escaping, tracked local?
-      (viewSrcTracked, viewSrcUsedPos, viewSrcThroughLoop) = e.value match {
+      (
+        viewSrcTracked,
+        viewSrcUsedPos,
+        viewSrcIndexView,
+        viewSrcThroughLoop,
+      ) = e.value match {
       | Var(local) ->
         tcenv.localObjectState(local) match {
-        | Some(LOUsed(usedPos)) ->
-          (true, Some(usedPos), tcenv.scope.isThroughLoop(local))
-        | Some(_) -> (true, None(), tcenv.scope.isThroughLoop(local))
-        | None() -> (false, None(), false)
+        | Some(LOUsed(usedPos, indexView)) ->
+          (true, Some(usedPos), indexView, tcenv.scope.isThroughLoop(local))
+        | Some(LOCanGrow _) ->
+          (true, None(), None(), tcenv.scope.isThroughLoop(local))
+        | None() -> (false, None(), None(), false)
         }
-      | _ -> (false, None(), false)
+      | _ -> (false, None(), None(), false)
       };
       ty = this.expr(tcenv, e, kind is BKConst());
       // Wrap null/undefined initializers in a bound TVar so the variable
@@ -1358,10 +1364,33 @@ extension class TypeChecker {
         annot = this.normalize(tcenv, annotAst);
         aliasType = this.stableAliasExprType(tcenv, e, ty);
         !annot = this.preserveCopyProvenance(tcenv.subst, aliasType, annot);
+        annotIsIndex = viewSrcTracked && this.annotHasIndex(tcenv, annot);
+        // A second view of an already-used local object at an index type is
+        // compatible (and sound) when not crossing a loop and the local's
+        // first use established an index view `prevView` that is already a
+        // subtype of `annot` (e.g. an identical repeat, a mutable->readonly
+        // view, or a covariant readonly widening). Checking `prevView <: annot`
+        // uses the ordinary object/index subtyping rules — rejecting mutable
+        // widenings, readonly->mutable upgrades, and incompatible value/key
+        // types — while keeping the real subtype check on `aliasType <: annot`
+        // below so any mutations to `t`'s own fields remain checked too.
+        compatibleRepeat =
+          annotIsIndex &&
+          !viewSrcThroughLoop &&
+          (viewSrcIndexView match {
+          | Some(prevView) ->
+            this.materializeSubtypeDecision(
+              tcenv,
+              annotAst.pos,
+              prevView,
+              annot,
+            )
+          | None() -> false
+          });
         if (
-          viewSrcTracked &&
-          (viewSrcUsedPos is Some(_) || viewSrcThroughLoop) &&
-          this.annotHasIndex(tcenv, annot)
+          annotIsIndex &&
+          (viewSrcThroughLoop ||
+            (viewSrcUsedPos is Some(_) && !compatibleRepeat))
         ) {
           // A fresh object literal's implicit-index capability is a
           // single-consumption grant. A SECOND by-reference view (or a view
@@ -1374,17 +1403,14 @@ extension class TypeChecker {
           // keeping a later precise read of the local sound. The diagnostic's
           // second line points at the first use (or, for the through-loop arm,
           // the declaration) so the user sees why the view is rejected.
-          (viewSrcPos, viewSrcMsg) = e.value match {
-          | Var(local) ->
-            viewSrcUsedPos match {
-            | Some(usedPos) ->
-              (usedPos, "But this object has already been used here")
-            | None() ->
-              (
-                tcenv.scope.bindingPos(local).default(local.pos),
-                "But this object is declared outside the loop",
-              )
-            }
+          (viewSrcPos, viewSrcMsg) = (e.value, viewSrcUsedPos) match {
+          | (Var(local), _) if (viewSrcThroughLoop) ->
+            (
+              tcenv.scope.bindingPos(local).default(local.pos),
+              "But this object is declared outside the loop",
+            )
+          | (Var(_), Some(usedPos)) ->
+            (usedPos, "But this object has already been used here")
           | _ -> (e.pos, "But this object has already been used here")
           };
           tcenv.error(
@@ -1398,14 +1424,28 @@ extension class TypeChecker {
             TSCode(2322),
           );
         } else {
-          this.checkSubType(
-            tcenv,
-            annotAst.pos,
-            "Type of value is not assignable to the variable's type annotation",
-            aliasType,
-            annot,
-            TSCode(2322),
-          );
+          TType::isSub(tcenv.subst, this, aliasType, annot) match {
+          | STOk() ->
+            if (annotIsIndex && viewSrcUsedPos is None()) {
+              e.value match {
+              | Var(local) -> tcenv.recordLocalObjectIndexView(local, annot)
+              | _ -> void
+              }
+            }
+          | err @ STErrorOnTType _ ->
+            tcenv.subtypingError(
+              tcenv.subst,
+              this,
+              Array[
+                (
+                  annotAst.pos,
+                  "Type of value is not assignable to the variable's type annotation",
+                ),
+              ],
+              err,
+              TSCode(2322),
+            )
+          }
         };
         (annot, true)
       }
@@ -5943,7 +5983,7 @@ extension class TypeChecker {
         )
       };
       None()
-    | Some(LOUsed(usedPos)) -> Some(usedPos)
+    | Some(LOUsed(usedPos, _)) -> Some(usedPos)
     | None() -> None()
     };
     tcenv.scope
