@@ -447,21 +447,168 @@ private fun tryPackageTarget(
       return Some(FPath::create(rootId, relToRoot))
     }
   };
+  // If target ends with a JS extension (e.g. "./lib/foo.js" in exports `default`),
+  // map it to its sibling TS declaration/source file (matches TS behavior).
+  if (hasJsLikeExtension(relTarget)) {
+    suffix = Path.extname(relTarget);
+    stripped = relTarget.stripSuffix(suffix);
+    exts = suffix match {
+    | ".mjs" -> Array[".d.mts", ".mts", ".d.ts", ".ts"]
+    | ".cjs" -> Array[".d.cts", ".cts", ".d.ts", ".ts"]
+    | _ -> Array[".d.ts", ".ts", ".tsx"]
+    };
+    for (ext in exts) {
+      candidate = stripped + ext;
+      absPath = Path.resolve(Path.join(pkgDir.toString(), candidate));
+      if (!absPath.startsWith(rootStr)) continue;
+      if (fs.exists(absPath) && !fs.isDirectory(absPath)) {
+        relToRoot = Path.relativeTo{path => absPath, base => rootStr};
+        return Some(FPath::create(rootId, relToRoot))
+      }
+    }
+  };
   None()
 }
 
-// Resolve a bare package `moduleName` inside a single stub/node_modules root.
+// Split a bare module specifier into `(packageName, subpathKey)`:
+//   - "foo"             -> ("foo", ".")
+//   - "foo/bar/baz"     -> ("foo", "./bar/baz")
+//   - "@scope/pkg"      -> ("@scope/pkg", ".")
+//   - "@scope/pkg/sub"  -> ("@scope/pkg", "./sub")
+fun splitBarePackageSpecifier(moduleName: String): ?(String, String) {
+  parts = moduleName.split("/");
+  if (parts.isEmpty() || parts[0] == "") return None();
+  if (parts[0].startsWith("@")) {
+    if (parts.size() < 2 || parts[1] == "") return None();
+    pkgName = `${parts[0]}/${parts[1]}`;
+    subpath = if (parts.size() == 2) {
+      "."
+    } else {
+      "./" + parts.slice(2, parts.size()).join("/")
+    };
+    Some((pkgName, subpath))
+  } else {
+    pkgName = parts[0];
+    subpath = if (parts.size() == 1) {
+      "."
+    } else {
+      "./" + parts.slice(1, parts.size()).join("/")
+    };
+    Some((pkgName, subpath))
+  }
+}
+
+// Extract a string target from a package.json `exports` target value.
+// Follows condition objects by checking `"types"` first, then `"default"`,
+// recursing into nested condition objects (e.g. `{ "import": { "types": ... } }`
+// is intentionally out of scope per #611, only `types` and `default`).
+private fun resolveExportTarget(val: JSON.Value): ?String {
+  val match {
+  | JSON.String(s) -> Some(s)
+  | JSON.Null() -> None()
+  | JSON.Array(arr) ->
+    for (item in arr) {
+      resolveExportTarget(item) match {
+      | some @ Some(_) -> return some
+      | None() -> void
+      }
+    };
+    None()
+  | obj @ JSON.Object _ ->
+    for (cond in Array["types", "default"]) {
+      obj.maybeGet(cond) match {
+      | Some(v) ->
+        resolveExportTarget(v) match {
+        | some @ Some(_) -> return some
+        | None() -> void
+        }
+      | None() -> void
+      }
+    };
+    None()
+  | _ -> None()
+  }
+}
+
+// Look up `subpathKey` (e.g. ".", "./utils", "./sub/helper") in a package.json
+// `exports` value. Returns:
+//   - Some(targetString) if matched and a `types`/`default` target was found
+//   - None() if the subpath is not exported (or maps to null / no matching target)
+private fun lookupExportsEntry(
+  exportsVal: JSON.Value,
+  subpathKey: String,
+): ?String {
+  exportsVal match {
+  | JSON.String(_)
+  | JSON.Array(_) ->
+    if (subpathKey == ".") resolveExportTarget(exportsVal) else None()
+  | obj @ JSON.Object _ ->
+    // Distinguish a subpath map (keys starting with ".") from a shorthand
+    // condition object for "." (e.g. { "types": "./index.d.ts" }).
+    isSubpathMap = obj.value.keys().any(k -> k.startsWith("."));
+    if (!isSubpathMap) {
+      if (subpathKey == ".") resolveExportTarget(obj) else None()
+    } else {
+      // 1. Exact subpath match.
+      obj.maybeGet(subpathKey) match {
+      | Some(entry) -> return resolveExportTarget(entry)
+      | None() -> void
+      };
+      // 2. Pattern match (keys containing a single '*'), preferring longest
+      //    matching prefix (matches Node/TS exports pattern specificity).
+      bestPrefixLen = -1;
+      bestTarget: ?String = None();
+      for (pattern => entry in obj.value) {
+        if (!pattern.contains("*")) continue;
+        matchPathPattern(subpathKey, pattern) match {
+        | Some(captured) ->
+          prefixLen = pattern.split("*")[0].length();
+          if (prefixLen > bestPrefixLen) {
+            resolveExportTarget(entry) match {
+            | Some(rawTarget) ->
+              !bestPrefixLen = prefixLen;
+              !bestTarget = Some(
+                if (rawTarget.contains("*")) {
+                  rawTarget.replace("*", captured)
+                } else {
+                  rawTarget
+                },
+              )
+            | None() -> void
+            }
+          }
+        | None() -> void
+        }
+      };
+      bestTarget
+    }
+  | _ -> None()
+  }
+}
+
+// Resolve a bare package `moduleName` (which may include a subpath such as
+// `"pkg/utils"` or `"@scope/pkg/sub"`) inside a single stub/node_modules root.
 // Order:
-//   1. <pkg>/package.json `types` (or `typings`) field, resolved relative to <pkg>/
-//   2. <pkg>/index.d.ts
-//   3. <pkg>/index.ts / <pkg>/index.tsx
+//   1. If `<pkg>/package.json` exists:
+//      a. If `exports` is present, it is authoritative (allowlist): resolve
+//         the subpath through `exports` (`types` then `default`), and if not
+//         defined return `StubError("Package subpath '...' is not defined by 'exports'...")`
+//         without falling back to `types` or `index.*`.
+//      b. Otherwise, for root imports (subpath `.`), read `types` then `typings`.
+//   2. For root imports without `exports`: `<pkg>/index.d.ts`, `<pkg>/index.ts`,
+//      `<pkg>/index.tsx`.
+//   3. For subpath imports without `exports`: `<pkg>/<subpath>` via `tryPackageTarget`.
 fun resolvePackageInDir(
   fs: Fs,
   rootId: RootId,
   rootDir: DAbsolute,
   moduleName: String,
 ): StubResolveResult {
-  pkgRel = DRelative::create(moduleName);
+  (pkgName, subpathKey) = splitBarePackageSpecifier(moduleName) match {
+  | Some(pair) -> pair
+  | None() -> return StubNotFound()
+  };
+  pkgRel = DRelative::create(pkgName);
   pkgDir = rootDir / pkgRel;
   pkgJsonPath = FAbsolute(pkgDir, "package.json").toString();
 
@@ -471,45 +618,68 @@ fun resolvePackageInDir(
       Success(JSON.decode(raw).expectObject())
     } catch {
     | e @ JSON.JSONError _ ->
-      Failure(
-        `Invalid package.json for module '${moduleName}': ${e.getMessage()}`,
-      )
+      Failure(`Invalid package.json for module '${pkgName}': ${e.getMessage()}`)
     | e @ JSON.InvalidJSONError _ ->
-      Failure(
-        `Invalid package.json for module '${moduleName}': ${e.getMessage()}`,
-      )
+      Failure(`Invalid package.json for module '${pkgName}': ${e.getMessage()}`)
     | e -> throw e
     };
     pkgObj = pkgObjRes match {
     | Success(obj) -> obj
     | Failure(msg) -> return StubError(msg)
     };
-    typesField = pkgObj.maybeGet("types") match {
-    | Some(JSON.String(s)) -> Some(s)
-    | _ ->
-      pkgObj.maybeGet("typings") match {
-      | Some(JSON.String(s)) -> Some(s)
-      | _ -> None()
+    pkgObj.maybeGet("exports") match {
+    | Some(exportsVal) ->
+      lookupExportsEntry(exportsVal, subpathKey) match {
+      | Some(target) if (target != "") ->
+        tryPackageTarget(fs, rootId, rootDir, pkgRel, target) match {
+        | Some(fpath) -> return StubFound(fpath)
+        | None() ->
+          return StubError(
+            `Package subpath '${subpathKey}' in '${pkgName}' resolved to missing target '${target}'`,
+          )
+        }
+      | _ ->
+        return StubError(
+          `Package subpath '${subpathKey}' is not defined by 'exports' in '${pkgName}/package.json'`,
+        )
       }
+    | None() -> void
     };
-    typesField match {
-    | Some(target) if (target != "") ->
-      tryPackageTarget(fs, rootId, rootDir, pkgRel, target) match {
-      | Some(fpath) -> return StubFound(fpath)
-      | None() -> void
+    if (subpathKey == ".") {
+      typesField = pkgObj.maybeGet("types") match {
+      | Some(JSON.String(s)) -> Some(s)
+      | _ ->
+        pkgObj.maybeGet("typings") match {
+        | Some(JSON.String(s)) -> Some(s)
+        | _ -> None()
+        }
+      };
+      typesField match {
+      | Some(target) if (target != "") ->
+        tryPackageTarget(fs, rootId, rootDir, pkgRel, target) match {
+        | Some(fpath) -> return StubFound(fpath)
+        | None() -> void
+        }
+      | _ -> void
       }
-    | _ -> void
     }
   };
 
-  for (entry in Array["index.d.ts", "index.ts", "index.tsx"]) {
-    path = FAbsolute(pkgDir, entry);
-    pathStr = path.toString();
-    if (fs.exists(pathStr) && !fs.isDirectory(pathStr)) {
-      return StubFound(FPath::create(rootId, `${moduleName}/${entry}`))
+  if (subpathKey == ".") {
+    for (entry in Array["index.d.ts", "index.ts", "index.tsx"]) {
+      path = FAbsolute(pkgDir, entry);
+      pathStr = path.toString();
+      if (fs.exists(pathStr) && !fs.isDirectory(pathStr)) {
+        return StubFound(FPath::create(rootId, `${pkgName}/${entry}`))
+      }
+    };
+    StubNotFound()
+  } else {
+    tryPackageTarget(fs, rootId, rootDir, pkgRel, subpathKey) match {
+    | Some(fpath) -> StubFound(fpath)
+    | None() -> StubNotFound()
     }
-  };
-  StubNotFound()
+  }
 }
 
 // Map a bare package name to its DefinitelyTyped `@types/` package name:

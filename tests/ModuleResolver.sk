@@ -228,4 +228,147 @@ fun testResolveStubsAtTypesFallback(): void {
   );
 }
 
+@test
+fun testResolveStubsPackageJsonExports(): void {
+  stubs = Array[SKJS.DAbsolute::create("/stubs")];
+
+  fs = mkStubMem(
+    Array[
+      (
+        "/stubs/dual/package.json",
+        `{
+          "types": "./legacy.d.ts",
+          "exports": {
+            ".": { "types": "./lib/index.d.ts", "import": "./lib/index.mjs" },
+            "./utils": { "types": "./lib/utils.d.ts", "default": "./lib/utils.js" },
+            "./sub/*": { "types": "./lib/sub/*.d.ts" },
+            "./blocked": null
+          }
+        }`,
+      ),
+      ("/stubs/dual/legacy.d.ts", "export declare const old: number;"),
+      ("/stubs/dual/lib/index.d.ts", "export declare const cur: string;"),
+      ("/stubs/dual/lib/utils.d.ts", "export declare const u: number;"),
+      ("/stubs/dual/lib/sub/a.d.ts", "export declare const a: boolean;"),
+      ("/stubs/dual/internal.d.ts", "export declare const s: string;"),
+    ],
+  );
+
+  // `exports["."].types` takes precedence over top-level `types`.
+  SKTest.expectEq(
+    SKJS.resolveStubs(fs, stubs, "dual"),
+    SKJS.StubFound(
+      SKJS.FPath::create(SKJS.RootId::stub(0), "dual/lib/index.d.ts"),
+    ),
+    "exports['.'].types overrides top-level types",
+  );
+
+  // Exact subpath export.
+  SKTest.expectEq(
+    SKJS.resolveStubs(fs, stubs, "dual/utils"),
+    SKJS.StubFound(
+      SKJS.FPath::create(SKJS.RootId::stub(0), "dual/lib/utils.d.ts"),
+    ),
+    "exports['./utils'].types",
+  );
+
+  // Pattern subpath export.
+  SKTest.expectEq(
+    SKJS.resolveStubs(fs, stubs, "dual/sub/a"),
+    SKJS.StubFound(
+      SKJS.FPath::create(SKJS.RootId::stub(0), "dual/lib/sub/a.d.ts"),
+    ),
+    "exports['./sub/*'].types",
+  );
+
+  // Unexported subpath fails with TS-style exports diagnostic (no fallback).
+  SKJS.resolveStubs(fs, stubs, "dual/internal") match {
+  | SKJS.StubError(msg) ->
+    SKTest.expectTrue(
+      msg.contains("Package subpath './internal' is not defined by 'exports'"),
+      `unexpected error message: ${msg}`,
+    )
+  | other ->
+    SKTest.fail(`Expected StubError for unexported subpath, got ${other}`)
+  };
+
+  // Explicitly null-blocked subpath also fails with exports diagnostic.
+  SKJS.resolveStubs(fs, stubs, "dual/blocked") match {
+  | SKJS.StubError(msg) ->
+    SKTest.expectTrue(
+      msg.contains("Package subpath './blocked' is not defined by 'exports'"),
+      `unexpected error message: ${msg}`,
+    )
+  | other -> SKTest.fail(`Expected StubError for null export, got ${other}`)
+  };
+
+  // Shorthand condition object (no "." key) and `default` condition fallback.
+  fsShorthand = mkStubMem(
+    Array[
+      (
+        "/stubs/short/package.json",
+        `{"exports": { "default": "./lib/entry.js" }}`,
+      ),
+      ("/stubs/short/lib/entry.d.ts", "export declare const s: number;"),
+    ],
+  );
+  SKTest.expectEq(
+    SKJS.resolveStubs(fsShorthand, stubs, "short"),
+    SKJS.StubFound(
+      SKJS.FPath::create(SKJS.RootId::stub(0), "short/lib/entry.d.ts"),
+    ),
+    "shorthand exports condition object with default .js -> .d.ts",
+  );
+
+  // String shorthand exports (`"exports": "./lib/main.d.ts"`).
+  fsStr = mkStubMem(
+    Array[
+      ("/stubs/strpkg/package.json", `{"exports": "./lib/main.d.ts"}`),
+      ("/stubs/strpkg/lib/main.d.ts", "export declare const m: number;"),
+    ],
+  );
+  SKTest.expectEq(
+    SKJS.resolveStubs(fsStr, stubs, "strpkg"),
+    SKJS.StubFound(
+      SKJS.FPath::create(SKJS.RootId::stub(0), "strpkg/lib/main.d.ts"),
+    ),
+    "string shorthand exports for '.'",
+  );
+  SKJS.resolveStubs(fsStr, stubs, "strpkg/other") match {
+  | SKJS.StubError(msg) ->
+    SKTest.expectTrue(
+      msg.contains("Package subpath './other' is not defined by 'exports'"),
+      `unexpected error message: ${msg}`,
+    )
+  | other ->
+    SKTest.fail(
+      `Expected StubError for subpath on string exports, got ${other}`,
+    )
+  };
+
+  // Longest-prefix pattern wins over shorter wildcard.
+  fsSpecific = mkStubMem(
+    Array[
+      (
+        "/stubs/spec/package.json",
+        `{
+          "exports": {
+            "./*": "./generic/*.d.ts",
+            "./deep/*": "./specific/*.d.ts"
+          }
+        }`,
+      ),
+      ("/stubs/spec/generic/deep/x.d.ts", "export declare const g: number;"),
+      ("/stubs/spec/specific/x.d.ts", "export declare const s: string;"),
+    ],
+  );
+  SKTest.expectEq(
+    SKJS.resolveStubs(fsSpecific, stubs, "spec/deep/x"),
+    SKJS.StubFound(
+      SKJS.FPath::create(SKJS.RootId::stub(0), "spec/specific/x.d.ts"),
+    ),
+    "longest-prefix exports pattern wins",
+  );
+}
+
 module end;
