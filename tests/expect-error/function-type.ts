@@ -93,6 +93,7 @@ function testFunctionTypeofFunction(f: Function): void {
 }
 
 function testFunctionTypeofObject(f: Function): void {
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   if (typeof f === "object") {
     const n: never = f;
   }

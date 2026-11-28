@@ -36,6 +36,7 @@ const negativeBinary: string = negativeNumber.toString(2);
 const originalValue: bigint = 42n;
 const valueOfResult: bigint = originalValue.valueOf();
 const valueOfEquals: boolean = originalValue === valueOfResult;
+// @skjs-expect-warning This comparison is always true because the operands always hold the same single value
 const valueOfSameType: boolean = typeof originalValue === typeof valueOfResult;
 
 // Test toLocaleString

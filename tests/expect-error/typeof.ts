@@ -396,7 +396,7 @@ function testIncorrectRefinement(x: number | string): number {
 
 // SKJS correctly rejects functions in typeof === "object" checks
 function testFunctionAsObject(x: (() => void) | string): () => void {
-  // TODO: warn for condition always false
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   if (typeof x === "object") {
     return x;
   } else {
@@ -674,6 +674,7 @@ function testNeverAfterRefinement(x: never): number {
 
 // Union that becomes never after refinement
 function testBecomesNever(x: number): string {
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   if (typeof x === "string") {
     // This branch is never taken since x is number
     return x;

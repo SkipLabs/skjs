@@ -38,6 +38,7 @@ function testCtorTypeofFunction(): string {
 // (it is typeof "function"), so the else branch keeps F (#774).
 function testCtorTypeofObjectElse(): void {
   const F = C;
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   if (typeof F === "object") {
   } else {
     // @ts-expect-error Type of value is not assignable to the variable's type annotation
@@ -63,6 +64,7 @@ function testCtorNew(): C {
 // excludes it entirely.
 function testCtorTypeofObjectTrue(): void {
   const F = C;
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   if (typeof F === "object") {
     const n: never = F;
   }
@@ -184,6 +186,7 @@ function testStrengthenedAfterFunctionElse(o: {}): void {
 // remains. Matches tsc ({} -> Function -> never).
 function testProvenCallableThenObject(o: {}): void {
   if (typeof o === "function") {
+    // @skjs-expect-warning This comparison is always false because the operand types do not overlap
     if (typeof o === "object") {
       const n: never = o;
     }
@@ -227,6 +230,7 @@ function testProvenCallableTruthiness(o: {}): void {
 
 // A class instance is not callable: the "function" branch is never.
 function testInstanceTypeofFunction(c: C): void {
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   if (typeof c === "function") {
     const n: never = c;
   }
@@ -235,18 +239,21 @@ function testInstanceTypeofFunction(c: C): void {
 // Arrays (mutable and readonly) are never callable: the "function" branch is
 // never.
 function testArrayTypeofFunction(xs: number[]): void {
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   if (typeof xs === "function") {
     const n: never = xs;
   }
 }
 
 function testReadonlyArrayTypeofFunction(xs: readonly number[]): void {
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   if (typeof xs === "function") {
     const n: never = xs;
   }
 }
 
 function testTupleTypeofFunction(t: [number, string]): void {
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   if (typeof t === "function") {
     const n: never = t;
   }
@@ -256,6 +263,7 @@ function testTupleTypeofFunction(t: [number, string]): void {
 // objects: never callable.
 function testLiteralTypeofFunction(): void {
   const o = { a: 1 };
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   if (typeof o === "function") {
     const n: never = o;
   }
@@ -266,6 +274,7 @@ function testSpreadTypeofFunction(f: () => void): void {
   // object even when the source is a function. (tsc types the spread as `{}`
   // and cannot prove the branch empty; SKJS can, soundly.)
   const o = { ...f };
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   if (typeof o === "function") {
     const n: never = o;
   }
@@ -279,6 +288,7 @@ enum En {
 
 function testEnumObjectTypeofFunction(): void {
   const e = En;
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   if (typeof e === "function") {
     const n: never = e;
   }

@@ -343,15 +343,9 @@ extension class TypeChecker {
       };
       this.setLocalFilterMap(tcenv, local, default, filterMap)
     | _ ->
-      tcenv.error(
-        Array[
-          (
-            typePos,
-            `'${typeStr}' is not a valid operand for a 'typeof' comparison`,
-          ),
-        ],
-        TSCode(2367),
-      )
+      // Invalid typeof tag literals are already reported as TS2367 in
+      // checkComparisonOverlap when type-checking the comparison expression.
+      void
     }
   }
 
