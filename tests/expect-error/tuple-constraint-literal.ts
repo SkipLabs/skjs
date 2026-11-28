@@ -211,3 +211,232 @@ function unionLiteralConstraintStillRejects(): void {
   // @skjs-expect-error-line3 is not assignable to type '[0 | 2, 1 | 3]'
   const r = unionLit([1, 3]);
 }
+
+// Soundness check for the mutable constraint above: the callee can legally
+// mutate `x[0]` to `0` (per the constraint `[0 | 2, 1 | 3]`), so inferring
+// `K = [2, 3]` as tsc does is unsound (r[0] would be 0 at runtime while typed
+// `2`). SKJS keeps `K = [0 | 2, 1 | 3]` and rejects the narrow annotation.
+function mutateUnionLit<K extends [0 | 2, 1 | 3]>(x: K): K {
+  const zero: 0 = 0;
+  x[0] = zero;
+  return x;
+}
+function mutableConstraintPreventsUnsoundMutation(): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 Type '0 | 2'
+  // @skjs-expect-error-line3 is not assignable to type '2'
+  // @skjs-expect-error-line4 Value '0' is missing
+  const r: [2, 3] = mutateUnionLit([2, 3]);
+  const wide: [0 | 2, 1 | 3] = mutateUnionLit([2, 3]);
+}
+
+// Readonly tuple constraints are covariant: the callee cannot mutate `x`, so
+// inferring `K` as the argument's own element types is sound (#934).
+// Currently pinned to the pre-fix behavior (SKJS pins `K` to the constraint's
+// element types even when the constraint is `readonly`).
+declare function roUnionLit<K extends readonly [0 | 2, 1 | 3]>(x: K): K;
+function roUnionLiteralConstraintKeepsArgument(): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 Type '0 | 2'
+  // @skjs-expect-error-line3 is not assignable to type '2'
+  // @skjs-expect-error-line4 Value '0' is missing
+  const r: [2, 3] = roUnionLit([2, 3]);
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 Type '0 | 2'
+  // @skjs-expect-error-line3 is not assignable to type '2'
+  // @skjs-expect-error-line4 Value '0' is missing
+  const ro: readonly [2, 3] = roUnionLit([2, 3]);
+}
+
+// In a `let` context (non-mostPrecise), a fresh literal element still keeps
+// its precise literal type when its constraint position expects a literal.
+function roUnionLiteralConstraintLetContext(): void {
+  let r = roUnionLit([2, 3]);
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 Type '0 | 2'
+  // @skjs-expect-error-line3 is not assignable to type '2'
+  // @skjs-expect-error-line4 Value '0' is missing
+  const ok: [2, 3] = r;
+}
+
+// An element outside its readonly constraint position is still rejected.
+function roUnionLiteralConstraintRejectsOutOfBounds(): void {
+  // @skjs-expect-error Argument is not assignable to the parameter's type
+  // @skjs-expect-error-line2 Type '[1, 3]'
+  // @skjs-expect-error-line3 is not assignable to type 'readonly [0 | 2, 1 | 3]'
+  const r = roUnionLit([1, 3]);
+}
+
+// Mixed literal + non-literal position under a readonly constraint:
+// position 0 expects a literal (`0 | 2` -> `2`), while position 1 expects
+// `number` (not a literal, so `5` widens to `number`, matching tsc).
+declare function roWidenUnion<K extends readonly [0 | 2, number]>(x: K): K;
+function roMixedLiteralAndBase(): void {
+  const r = roWidenUnion([2, 5]);
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 Type '0 | 2'
+  // @skjs-expect-error-line3 is not assignable to type '2'
+  // @skjs-expect-error-line4 Value '0' is missing
+  const ok: [2, number] = r;
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 Type '0 | 2'
+  // @skjs-expect-error-line3 is not assignable to type '2'
+  // @skjs-expect-error-line4 Value '0' is missing
+  const tooNarrow: [2, 5] = r;
+}
+
+// Non-literal variable elements under a union-of-base-types readonly constraint.
+declare function roBaseUnion<
+  K extends readonly [number | string, boolean | number],
+>(x: K): K;
+function roBaseUnionKeepsArgument(n: number, b: boolean): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 Type 'string'
+  // @skjs-expect-error-line3 is not assignable to type 'number'
+  const r: [number, boolean] = roBaseUnion([n, b]);
+}
+
+// Subclass elements under a readonly tuple constraint.
+class TupleAnimal {
+  a: number = 0;
+}
+class TupleDog extends TupleAnimal {
+  d: number = 1;
+}
+declare function roClassTuple<K extends readonly [TupleAnimal, TupleAnimal]>(
+  x: K,
+): K;
+function roSubclassTupleKeepsArgument(d: TupleDog, a: TupleAnimal): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 Type '{ a: number; }'
+  // @skjs-expect-error-line3 is not assignable to type '{ a: number; d: number; }'
+  const r: [TupleDog, TupleAnimal] = roClassTuple([d, a]);
+}
+
+// Nested readonly tuples: both outer and inner positions keep the argument's
+// element types.
+declare function roNestUnion<
+  K extends readonly [readonly [0 | 2, 1 | 3], readonly [4 | 6, 5 | 7]],
+>(x: K): K;
+function roNestedTuplesKeepArgument(): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 This would not be an error if this field were readonly
+  const r: [[2, 3], [6, 7]] = roNestUnion([
+    [2, 3],
+    [6, 7],
+  ]);
+}
+
+// Mixed readonly/mutable nesting: a mutable inner tuple cannot narrow because
+// the callee can mutate `x[0][0] = 0`; a mutable outer tuple cannot narrow
+// because the callee can replace `x[0] = [0, 1]`.
+function mutateInnerTuple<K extends readonly [[0 | 2, 1 | 3]]>(x: K): K {
+  const zero: 0 = 0;
+  x[0][0] = zero;
+  return x;
+}
+function roOuterMutableInnerStaysWide(): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 Type '0 | 2'
+  // @skjs-expect-error-line3 is not assignable to type '2'
+  // @skjs-expect-error-line4 Value '0' is missing
+  const r: [[2, 3]] = mutateInnerTuple([[2, 3]]);
+  const wide: [[0 | 2, 1 | 3]] = mutateInnerTuple([[2, 3]]);
+}
+
+function mutateOuterTuple<K extends [readonly [0 | 2, 1 | 3]]>(x: K): K {
+  x[0] = [0, 1];
+  return x;
+}
+function mutableOuterRoInnerStaysWide(): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 This would not be an error if this field were readonly
+  const r: [[2, 3]] = mutateOuterTuple([[2, 3]]);
+  const wide: [readonly [0 | 2, 1 | 3]] = mutateOuterTuple([[2, 3]]);
+}
+
+// Union of readonly tuples: each matching arm keeps the argument's elements,
+// while cross-products stay rejected.
+declare function roArmsUnion<
+  K extends readonly [0 | 2, 1 | 3] | readonly [4 | 6, 5 | 7],
+>(x: K): K;
+function roUnionArmsKeepArgument(): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 Type '0 | 1 | 2 | 3'
+  const r1: [2, 3] = roArmsUnion([2, 3]);
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 Type '4 | 6'
+  // @skjs-expect-error-line3 is not assignable to type '6'
+  // @skjs-expect-error-line4 Value '4' is missing
+  const r2: [6, 7] = roArmsUnion([6, 7]);
+}
+function roUnionArmsRejectCrossProduct(): void {
+  // @skjs-expect-error Argument is not assignable to the parameter's type
+  const bad = roArmsUnion([2, 7]);
+}
+
+// Multi-parameter call with a readonly tuple constraint: same literal tuple
+// infers `[2, 3]`, distinct tuples infer their union `[2, 3] | [0, 1]`.
+declare function roTwoUnion<K extends readonly [0 | 2, 1 | 3]>(a: K, b: K): K;
+function roTwoParamsSame(): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 Type '0 | 2'
+  // @skjs-expect-error-line3 is not assignable to type '2'
+  // @skjs-expect-error-line4 Value '0' is missing
+  const r: [2, 3] = roTwoUnion([2, 3], [2, 3]);
+}
+function roTwoParamsDistinct(): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 Type '0 | 2'
+  // @skjs-expect-error-line3 is not assignable to type '0'
+  // @skjs-expect-error-line4 Value '2' is missing
+  const r: [2, 3] | [0, 1] = roTwoUnion([2, 3], [0, 1]);
+}
+function roTwoParamsRejectBadSecond(): void {
+  // @skjs-expect-error Argument is not assignable to the parameter's type
+  const r = roTwoUnion([2, 3], [0, 9]);
+}
+
+// Intersection of readonly and mutable tuple constraints must stay wide (the
+// mutable part allows mutation inside the callee).
+declare function roAndMutUnion<
+  K extends readonly [0 | 2, 1 | 3] & [0 | 2, 1 | 3],
+>(x: K): K;
+function roAndMutIntersectionStaysWide(): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 Type '0 | 2'
+  // @skjs-expect-error-line3 is not assignable to type '2'
+  // @skjs-expect-error-line4 Value '0' is missing
+  const r: [2, 3] = roAndMutUnion([2, 3]);
+  const wide: [0 | 2, 1 | 3] = roAndMutUnion([2, 3]);
+}
+
+// Aliasing soundness: if an uncommitted array literal variable is passed to a
+// readonly-constrained generic that returns it at `K = [2, 3]`, mutating the
+// original variable to `0` must be rejected so `r` cannot observe `0` at type
+// `2`.
+function roAliasedMutationAfterCall(): void {
+  const arr = [2, 3];
+  const r = roUnionLit(arr);
+  const zero: 0 = 0;
+  // Currently arr committed to [0 | 2, 1 | 3], so `arr[0] = zero` is accepted
+  // while `r: [2, 3]` is rejected. After #934, `arr` commits to `[2, 3]` and
+  // `arr[0] = zero` must be rejected instead.
+  arr[0] = zero;
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 Type '0 | 2'
+  // @skjs-expect-error-line3 is not assignable to type '2'
+  // @skjs-expect-error-line4 Value '0' is missing
+  const ok: [2, 3] = r;
+}
+function roAliasedMutationOutOfConstraint(): void {
+  let saved: readonly [0 | 2, 1 | 3] = [0, 1];
+  const save = <K extends readonly [0 | 2, 1 | 3]>(x: K): K => {
+    saved = x;
+    return x;
+  };
+  const arr = [2, 3];
+  const r = save(arr);
+  // @skjs-expect-error Type is not assignable to the assignment target's type
+  arr[0] = 99;
+}
