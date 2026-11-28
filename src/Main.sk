@@ -838,11 +838,13 @@ class Checker private {
       SKStore.DirName::create("/defs/"),
       (context, _self, key) ~> {
         tc = this.checker.withConfig(getConfig(context));
-        results = try {
-          Success(tc.checkDef(context, key.def).chill())
-        } catch {
-        | e -> Failure(e)
-        };
+        results = SKStore.withRegion(context, (_, context) ~> {
+          try {
+            Success(tc.checkDef(context, key.def).chill())
+          } catch {
+          | e -> Failure(e)
+          }
+        });
         Array[TCResultsAccFile(results)]
       },
     );

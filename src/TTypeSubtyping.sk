@@ -1759,6 +1759,11 @@ extension class TType {
     if (subst.isObservingTypeReads()) {
       return None()
     };
+    // When openTy contains no TVars anywhere, there is nothing to grow or
+    // structurally decompose for TVars. Skip expanding openTy and boundTy!
+    if (subst.caches().isVarFree(openTy)) {
+      return None()
+    };
     // First failed constraint check from speculative growth. It is only
     // rendered by isSub_ if the overall subtyping check also fails. Note the
     // approximation: this is the first failure on *any* TVar reached by the
@@ -1804,11 +1809,21 @@ extension class TType {
     // individually, growing only the uncovered ones. expand(None()) unfolds
     // TSInst/TInter/TArrayLit into clauses so aliases on boundTy are
     // decomposed the same way openTy's are, giving symmetric precision.
-    expandedBound = boundTy.expand(subst, tenv, None());
+    expandedBoundOpt: ?TType = None();
+    getExpandedBound = () -> {
+      expandedBoundOpt match {
+      | Some(b) -> b
+      | None() ->
+        b = boundTy.expand(subst, tenv, None());
+        !expandedBoundOpt = Some(b);
+        b
+      }
+    };
     growUncovered = (tvar: TVar) -> {
       if (expandedOpen.clauses.isEmpty()) {
         subst.grow(tenv, tvar, boundTy, variance)
       } else {
+        expandedBound = getExpandedBound();
         for (boundInst in expandedBound.insts) {
           boundInst match {
           | tv @ TVar _ ->
@@ -2336,6 +2351,62 @@ extension class TType {
     ) is STOk _
   }
 
+  private static fun unwrapTransparentInst(
+    subst: mutable Subst,
+    tenv: TEnv,
+    ty: TType,
+  ): TType {
+    cur = ty;
+    seen = SortedSet[];
+    loop {
+      cur.getSingleInst() match {
+      | Some(TSInst(name, targs)) ->
+        if (!tenv.isTypeAliasDef(subst, name)) break cur;
+        id = tenv.typeDefinitionIdentity(subst, name);
+        if (seen.contains(id)) break cur;
+        !seen = seen.set(id);
+        expanded = tenv.expandNamed(subst, name, targs);
+        // Only follow transparent chains of named type aliases (`type A = B`).
+        // Keep `innerName.pos` intact because `Name.pos.fileName` determines
+        // module lookup scope in `FileDefs::getType`. Stop before any alias
+        // whose expansion contains a deferred `TClosed` operator so `Closed<T>`
+        // keeps the outermost alias's use-site position during `expandGraph`
+        // (#814).
+        if (
+          expanded.getSingleInst().isSome() &&
+          !static::expandsToClosed(subst, tenv, expanded, seen)
+        ) {
+          !cur = expanded
+        } else {
+          break cur
+        }
+      | None() -> break cur
+      }
+    }
+  }
+
+  private static fun expandsToClosed(
+    subst: mutable Subst,
+    tenv: TEnv,
+    ty: TType,
+    seen: SortedSet<TypeDefinitionIdentity>,
+  ): Bool {
+    cur = ty;
+    visited = seen;
+    loop {
+      if (cur.insts.any(i -> i is TClosed _)) break true;
+      cur.getSingleInst() match {
+      | Some(TSInst(name, targs)) ->
+        if (!tenv.isTypeAliasDef(subst, name)) break false;
+        id = tenv.typeDefinitionIdentity(subst, name);
+        if (visited.contains(id)) break false;
+        !visited = visited.set(id);
+        !cur = tenv.expandNamed(subst, name, targs)
+      | None() -> break false
+      }
+    }
+  }
+
   private static fun isSub_(
     subst: mutable Subst,
     tenv: TEnv,
@@ -2347,6 +2418,28 @@ extension class TType {
         TQSubtype(subst.inferenceVersion(), u1, u2),
       );
       return STOk()
+    };
+    !tenv.seenSub = tenv.seenSub.set((subst.inferenceVersion(), u1, u2));
+    subst.introduceTypeQueryAssumption(
+      TQSubtype(subst.inferenceVersion(), u1, u2),
+    );
+    orig1 = u1;
+    orig2 = u2;
+    !u1 = static::unwrapTransparentInst(subst, tenv, u1);
+    !u2 = static::unwrapTransparentInst(subst, tenv, u2);
+    if (u1 == u2) return STOk();
+    if (u1 != orig1 || u2 != orig2) {
+      if (subst.knownSubtype(u1, u2)) return STOk();
+      if (tenv.seenSub.contains((subst.inferenceVersion(), u1, u2))) {
+        subst.recordRecursiveTypeQuery(
+          TQSubtype(subst.inferenceVersion(), u1, u2),
+        );
+        return STOk()
+      };
+      !tenv.seenSub = tenv.seenSub.set((subst.inferenceVersion(), u1, u2));
+      subst.introduceTypeQueryAssumption(
+        TQSubtype(subst.inferenceVersion(), u1, u2),
+      );
     };
     // Two recursive aliases whose type arguments grow at each level never
     // repeat a `seenSub` entry, so their descent is bounded by how many times
@@ -2377,7 +2470,7 @@ extension class TType {
         fatalError(
           Array[
             (
-              u1.pos,
+              orig1.pos,
               "Type instantiation is excessively deep and possibly infinite",
             ),
           ],
@@ -2387,10 +2480,6 @@ extension class TType {
       !tenv.subtypingHeadDepth = tenv.subtypingHeadDepth.set(key, count + 1)
     | _ -> void
     };
-    !tenv.seenSub = tenv.seenSub.set((subst.inferenceVersion(), u1, u2));
-    subst.introduceTypeQueryAssumption(
-      TQSubtype(subst.inferenceVersion(), u1, u2),
-    );
 
     // Shortcut: TInter(tys) <: u2 if u2 is one of the tys
     u1.getSingleInter() match {
@@ -2406,6 +2495,7 @@ extension class TType {
     savedSubst = subst.save();
     // grow TVars in u2 from u1, preserving any failed constraint check for
     // hint extraction if the overall subtyping check also fails.
+    versionBeforeGrow = subst.inferenceVersion();
     constraintErr = static::growTVars(subst, tenv, u1, u2, Contravariant());
     // seal TVars in u1 from u2 (its constraint-check hints are not relevant)
     _ = static::growTVars(subst, tenv, u2, u1, Covariant());
@@ -2425,13 +2515,40 @@ extension class TType {
       u1,
       Some(Contravariant()),
     );
+    // If growTVars or literal-form establishment bumped inferenceVersion, the
+    // recursive premises registered above were tagged with the pre-growth
+    // version. Register them at the post-growth version too so recursive
+    // members checked inside `isSubClauses` hit `seenSub`/`seenNamedSub`
+    // instead of re-expanding the entire enclosing type a second time.
+    if (subst.inferenceVersion() != versionBeforeGrow) {
+      curVer = subst.inferenceVersion();
+      !tenv.seenSub = tenv.seenSub.set((curVer, orig1, orig2));
+      subst.introduceTypeQueryAssumption(TQSubtype(curVer, orig1, orig2));
+      if (u1 != orig1 || u2 != orig2) {
+        !tenv.seenSub = tenv.seenSub.set((curVer, u1, u2));
+        subst.introduceTypeQueryAssumption(TQSubtype(curVer, u1, u2));
+      };
+      (u1.getSingleInst(), u2.getSingleInst()) match {
+      | (Some(inst1), Some(inst2)) ->
+        namedPair = (
+          curVer,
+          tenv.expansionCacheKey(subst, inst1.name, inst1.targs),
+          tenv.expansionCacheKey(subst, inst2.name, inst2.targs),
+        );
+        !tenv.seenNamedSub = tenv.seenNamedSub.set(namedPair);
+        subst.introduceTypeQueryAssumption(
+          TQNamedSubtype(namedPair.i0, namedPair.i1, namedPair.i2),
+        )
+      | _ -> void
+      }
+    };
     clauses1 = u1.expandToClauses(subst, tenv, Covariant());
     clauses2 = u2.expandToClauses(subst, tenv, Contravariant());
 
     static::isSubClauses(subst, tenv, clauses1, clauses2) match {
     | STOk() -> STOk()
     | err @ STErrorOnClauses _ ->
-      hints = static::originSuggestions(subst, tenv, u1, u2);
+      hints = static::originSuggestions(subst, tenv, orig1, orig2);
       constraintErr match {
       | Some(cerr) ->
         cerrMsgs = cerr.toError(subst, tenv, STErrorDetail::full);
@@ -2446,7 +2563,7 @@ extension class TType {
       | None() -> void
       };
       subst.restore(savedSubst);
-      STRecTypeWithHint(err, hints, u1, u2)
+      STRecTypeWithHint(err, hints, orig1, orig2)
     }
   }
 }
@@ -2519,7 +2636,9 @@ extension class TFun {
       };
       !tsubst[tparam2.id] = tparam1;
     };
-    !f2 = (mutable RenameClauses()).fun_(tsubst, f2);
+    if (!tsubst.isEmpty()) {
+      !f2 = RenameClauses::create(tsubst).fun_(tsubst, f2);
+    };
     // `thisParam` is contravariant. A missing this on the subtype side is
     // `this: unknown` (the function ignores its receiver): sound to accept. A
     // missing this on the SUPERTYPE side is a free-call permit, so the

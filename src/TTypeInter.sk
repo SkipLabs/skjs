@@ -144,6 +144,8 @@ extension class TType {
     expandPrim = (primClassName) -> TType::inst(primClassName, TArgs(Array[]));
     if (ty2.isTop() || ty1.isBottom()) return ty1;
     if (ty1.isTop() || ty2.isBottom()) return ty2;
+    if (subst.knownSubtype(ty1, ty2)) return ty1;
+    if (subst.knownSubtype(ty2, ty1)) return ty2;
     // A match guard is a readonly context, so these binding reads -- which
     // register an observed dependency -- run in the arm bodies instead. The
     // order in which they are consulted is the order of the original arms.
