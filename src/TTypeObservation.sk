@@ -924,18 +924,30 @@ mutable class TypeReadContext private {
     context = this with {tenv};
     a = context.expandClauses(left, Covariant());
     b = context.expandClauses(right, Covariant());
-    (a.primKind(), b.getObject()) match {
-    | (Some(name), Some(obj)) ->
+    (a.primKind(), b.getObjectClause()) match {
+    | (Some(name), Some((vars, obj))) ->
       if (
         context.isSubtype(TType::inst(name, TArgs(Array[])), TType::single(obj))
-      ) return left
+      ) {
+        return if (vars.isEmpty()) {
+          left
+        } else {
+          TType::ofClauses(left.pos, a.withVars(vars))
+        }
+      }
     | _ -> void
     };
-    (b.primKind(), a.getObject()) match {
-    | (Some(name), Some(obj)) ->
+    (b.primKind(), a.getObjectClause()) match {
+    | (Some(name), Some((vars, obj))) ->
       if (
         context.isSubtype(TType::inst(name, TArgs(Array[])), TType::single(obj))
-      ) return right
+      ) {
+        return if (vars.isEmpty()) {
+          right
+        } else {
+          TType::ofClauses(right.pos, b.withVars(vars))
+        }
+      }
     | _ -> void
     };
     TType::ofClauses(

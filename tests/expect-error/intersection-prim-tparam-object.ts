@@ -1,26 +1,26 @@
-// Regression / pinning tests for SkipLabs/skjs#72:
+// Regression tests for SkipLabs/skjs#72:
 // Intersecting a primitive type with a type parameter constrained to an object
 // type (e.g. `string & T` where `T extends { readonly length: number }` or
-// `number & T` where `T extends {}`) must NOT drop `T` and simplify to the
-// bare primitive. Doing so over-approximates the intersection and then reuses
-// that over-approximation in contravariant (target) positions, allowing a raw
-// primitive to be returned as `string & T` and then coerced at call sites to
-// any concrete subtype of the object constraint (runtime TypeError).
+// `number & T` where `T extends {}`) must preserve `T` rather than dropping it
+// and simplifying to the bare primitive. Dropping `T` over-approximates the
+// intersection and reuses that over-approximation in contravariant (target)
+// positions, allowing a raw primitive to be returned as `string & T` and then
+// coerced at call sites to any concrete subtype of the object constraint.
 
 type Inter<A, B> = A & B;
 
 // 1. Primitive on left, constrained type parameter on right (via alias and direct).
-// BUG (#72): currently accepted because `Clauses::getObject()` ignores `clause.vars`
-// and simplifies `string & T` to `string`, dropping `T`.
 function primLeftAlias<T extends { readonly length: number }>(
   s: string,
 ): Inter<string, T> {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return s;
 }
 
 function primLeftDirect<T extends { readonly length: number }>(
   s: string,
 ): string & T {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return s;
 }
 
@@ -28,21 +28,25 @@ function primLeftDirect<T extends { readonly length: number }>(
 function primRightAlias<T extends { readonly length: number }>(
   s: string,
 ): Inter<T, string> {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return s;
 }
 
 function primRightDirect<T extends { readonly length: number }>(
   s: string,
 ): T & string {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return s;
 }
 
 // 3. Other primitives with `{}` constraint (number, boolean).
 function numAndEmptyObj<T extends {}>(n: number): Inter<number, T> {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return n;
 }
 
 function boolAndEmptyObj<T extends {}>(b: boolean): Inter<T, boolean> {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return b;
 }
 
@@ -50,6 +54,7 @@ function boolAndEmptyObj<T extends {}>(b: boolean): Inter<T, boolean> {
 function literalAndObjTParam<T extends { readonly length: number }>(
   s: "hello",
 ): Inter<"hello", T> {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return s;
 }
 
@@ -58,6 +63,7 @@ function tparamPrimAndObjTParam<
   S extends string,
   T extends { readonly length: number },
 >(s: S): Inter<S, T> {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return s;
 }
 
@@ -66,13 +72,11 @@ function unionPrimAndObjTParam<
   S extends string,
   T extends { readonly length: number },
 >(x: S | "fallback"): Inter<S | "fallback", T> {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
-// 7. End-to-end unsound coercion enabled by the bug: `primLeftAlias` accepts
-// returning `"hello"` as `Inter<string, T>`, and instantiating `T` with an
-// incompatible object type produces `never` at the call site, silently
-// assigning `"hello"` to `{ readonly length: number; boom: () => void }`.
+// 7. Call site of `primLeftAlias` (whose unsound body is now rejected above).
 function crashViaPrimLeft(): void {
   const o: { readonly length: number; boom: () => void } = primLeftAlias<{
     readonly length: number;
@@ -82,20 +86,18 @@ function crashViaPrimLeft(): void {
 }
 
 // 8. Sound positive checks: a value of type `string & T` or `T & string` is
-// assignable to `string`, exposes `length`, and round-trips to `string & T`.
+// assignable to `string`, exposes `length`, and preserves `T` in its clauses.
 function useInterLeft<T extends { readonly length: number }>(
   x: string & T,
 ): { s: string; len: number; same: T & string } {
-  // BUG (#72): currently prints `string`, dropping `T`.
-  __SKJS_show_expanded(x, "string");
+  __SKJS_show_expanded(x, "T extends string");
   return { s: x, len: x.length, same: x };
 }
 
 function useInterRight<T extends { readonly length: number }>(
   x: T & string,
 ): { s: string; len: number; same: string & T } {
-  // BUG (#72): currently prints `string`, dropping `T`.
-  __SKJS_show_expanded(x, "string");
+  __SKJS_show_expanded(x, "T extends string");
   return { s: x, len: x.length, same: x };
 }
 
@@ -108,8 +110,7 @@ function narrowLeftPreservesTParam<T extends { readonly length: number }>(
   fallback: T & string,
 ): T & string {
   if (t === s) {
-    // BUG (#72): currently narrows to bare `string`, dropping `T`.
-    __SKJS_show_expanded(t, "string");
+    __SKJS_show_expanded(t, "T extends string");
     return t;
   }
   return fallback;
@@ -121,8 +122,7 @@ function narrowRightPreservesTParam<T extends { readonly length: number }>(
   fallback: string & T,
 ): string & T {
   if (s === t) {
-    // BUG (#72): currently narrows to bare `string`, dropping `T`.
-    __SKJS_show_expanded(s, "string");
+    __SKJS_show_expanded(s, "T extends string");
     return s;
   }
   return fallback;
