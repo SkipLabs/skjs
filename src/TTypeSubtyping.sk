@@ -240,6 +240,29 @@ base class STErrorOnObject(
   children =
   | STRecObject(List<(TFields, STErrorOnTFields)>, fields1: TFields)
 
+  // When checking a multi-branch object union (e.g. `Json` = `JsonObject |
+  // readonly (Json | null)[]`) at non-full detail, drop target branches whose
+  // array-ness disagrees with `fields1` whenever at least one matching branch
+  // exists. That way a non-array object failing against `Json` blames the
+  // object/index-signature branch instead of `readonly (null | Json)[]`'s
+  // missing `'every'` field, and an array failing against the union blames the
+  // array branch instead of the object index signature. Falls back to all
+  // branches when none match (or at `full` detail).
+  private static fun selectBranchErrors(
+    errs: List<(TFields, STErrorOnTFields)>,
+    fields1: TFields,
+    detail: STErrorDetail,
+  ): List<(TFields, STErrorOnTFields)> {
+    if (detail.maxIntermediateDepth > 0) {
+      return errs
+    };
+    srcIsArray = fields1.isArray == Some(true);
+    matching = errs.filter(entry ->
+      (entry.i0.isArray == Some(true)) == srcIsArray
+    );
+    if (matching.isEmpty()) errs else matching
+  }
+
   fun toError(
     subst: mutable Subst,
     tenv: TEnv,
@@ -248,7 +271,8 @@ base class STErrorOnObject(
     detail: STErrorDetail,
   ): List<(PosRange, String)>
   | STRecObject(errs, fields1, o1, o2) ->
-    msgs = List::createFromItems(errs)
+    selectedErrs = STErrorOnObject::selectBranchErrors(errs, fields1, detail);
+    msgs = selectedErrs
       .map(fields2_err -> {
         (fields2, err) = fields2_err;
         if (o2.getBranches().size() > 1) {

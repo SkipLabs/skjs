@@ -166,7 +166,8 @@ fun testClosedTargetMissingIndexErrorDetail(): void {
 fun testObjectUnionBranchDetailLevels(): void {
   // Non-array named object assigned to `{ readonly [k: string]: string } |
   // readonly string[]` (#660): at default/normal/verbose detail, the array
-  // branch is unrelated noise; at full detail, every failing branch is shown.
+  // branch is filtered out so only the matching object branch is reported;
+  // at full detail, every failing branch is shown.
   source =
     "type Named = { readonly a: string };\n" +
     "function f(x: Named): { readonly [k: string]: string } | readonly string[] {\n" +
@@ -176,9 +177,6 @@ fun testObjectUnionBranchDetailLevels(): void {
   SKTest.expectEq(
     renderSingleSubtypingErrorAt(source, SKJS.STErrorDetail::default),
     Array[
-      "Type '{ readonly a: string; }'",
-      "is not assignable to type 'readonly string[]'",
-      "The field 'every' is missing",
       "Type '{ readonly a: string; }'",
       "is not assignable to type '{ readonly [k: string]: string; }'",
       "Missing index signature 'k' in source type",
@@ -191,13 +189,21 @@ fun testObjectUnionBranchDetailLevels(): void {
       "Type 'Named'",
       "is not assignable to type '{ readonly [k: string]: string; } | readonly string[]'",
       "Type '{ readonly a: string; }'",
-      "is not assignable to type 'readonly string[]'",
-      "The field 'every' is missing",
-      "Type '{ readonly a: string; }'",
       "is not assignable to type '{ readonly [k: string]: string; }'",
       "Missing index signature 'k' in source type",
     ],
     "normal detail",
+  );
+  SKTest.expectEq(
+    renderSingleSubtypingErrorAt(source, SKJS.STErrorDetail::verbose),
+    Array[
+      "Type 'Named'",
+      "is not assignable to type '{ readonly [k: string]: string; } | readonly string[]'",
+      "Type '{ readonly a: string; }'",
+      "is not assignable to type '{ readonly [k: string]: string; }'",
+      "Missing index signature 'k' in source type",
+    ],
+    "verbose detail",
   );
   SKTest.expectEq(
     renderSingleSubtypingErrorAt(source, SKJS.STErrorDetail::full),
