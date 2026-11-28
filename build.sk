@@ -10,17 +10,15 @@ fun gitCommitHash(): String {
 
   // Fall back to GITHUB_SHA (GitHub Actions) or CIRCLE_SHA1 (CircleCI)
   // in CI runners where git refuses to operate on the bind-mounted workspace
-  // ("dubious ownership").
+  // ("dubious ownership"). Also fall back to "unknown" if no source succeeds.
   Environ.varOpt("GITHUB_SHA") match {
   | Some(sha) if (!sha.isEmpty()) -> sha.take(7)
   | _ ->
     Environ.varOpt("CIRCLE_SHA1") match {
     | Some(sha) if (!sha.isEmpty()) -> sha.take(7)
     | _ ->
-      print_string(
-        "Error: could not determine git commit hash via `git rev-parse`, GITHUB_SHA, or CIRCLE_SHA1",
-      );
-      skipExit(1)
+      // Cannot determine commit hash; use placeholder for provenance.
+      "unknown"
     }
   }
 }
