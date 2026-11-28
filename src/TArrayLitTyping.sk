@@ -396,6 +396,167 @@ class ArrayLitTyping() {
     }
   }
 
+  // Widens a concrete primitive literal type to its base primitive type (e.g.
+  // `5` -> `number`, `"a"` -> `string`, `true` -> `boolean`). Non-literal
+  // types are returned unchanged. Used when inferring argument-derived element
+  // types under a readonly tuple constraint whose position does not expect a
+  // literal type (e.g. `K extends readonly [0 | 2, number]` called with
+  // `[2, 5]` infers `[2, number]`, matching tsc).
+  static private fun widenConcretePrimitive(ty: TType): TType {
+    ty.getSingleConstant() match {
+    | Some(TPrimValue(kind, Some _, pos)) ->
+      TType::single(TPrimValue::full(kind, pos))
+    | Some(TPrimString(Some _, pos)) -> TType::single(TPrimString::full(pos))
+    | _ -> ty
+    }
+  }
+
+  // Attempts to infer the argument's own element types for `arrLit` checked
+  // against a tuple constraint `targetElts`, returning `Some(tupleTy)` when
+  // the literal's own inferred tuple satisfies `targets` (typically the
+  // readonly tuple constraint(s) of a generic type parameter) and `None()`
+  // otherwise (e.g. when any constraint is mutable and therefore invariant, or
+  // an element does not subtype its target position). On `None()`, the
+  // substitution is restored to its state on entry.
+  //
+  // Why this is separate from `checkTupleTarget`:
+  //   - `checkTupleTarget` commits `arrLit` to `targetElts` (contextual
+  //     widening) and lets contextual element TVars grow to `targetElts[i]`.
+  //     That is the only sound choice for a mutable tuple constraint
+  //     (`K extends [0 | 2, 1 | 3]`), because the callee may legally mutate
+  //     `x[0] = 0`.
+  //   - For a readonly tuple constraint (`K extends readonly [0 | 2, 1 | 3]`),
+  //     the callee cannot mutate `x` and readonly tuples are covariant, so
+  //     binding both `arrLit` and `K` to the argument's own element types
+  //     (`[2, 3]`) is sound and matches TypeScript (#934).
+  //   - Checking the candidate `argTuple` against every member of `targets`
+  //     (under frozen candidates) enforces soundness uniformly for mutable
+  //     constraints, mixed mutable/readonly nesting (`readonly [[0 | 2]]`,
+  //     `[readonly [0 | 2]]`), and readonly & mutable intersections: whenever
+  //     any constraint forbids covariant narrowing, the check fails cleanly
+  //     and the caller falls back to `checkTupleTarget`.
+  static private fun inferTupleFromArgument(
+    subst: mutable Subst,
+    tenv: TEnv,
+    arrLit: TArrayLit,
+    targetElts: Array<TType>,
+    targets: Array<TType>,
+  ): ?TType {
+    savedSubst = subst.save();
+    inferredElts = mutable Vector[];
+    for (i in Range(0, targetElts.size())) {
+      targetElt = targetElts[i];
+      eltTy = ArrayLitTyping::effectiveElt(subst, tenv, arrLit, i, targetElt);
+      inferredElt = ArrayLitTyping::getSingleArrayLitUncommitted(
+        subst,
+        tenv,
+        eltTy,
+      ) match {
+      | Some(innerLit) ->
+        // Nested uncommitted array literal: if `targetElt` is a single tuple
+        // of matching arity, try inferring the inner literal's own element
+        // types first (for nested readonly tuples like
+        // `readonly [readonly [0 | 2, 1 | 3]]`), falling back to contextual
+        // widening (`checkTupleTarget`) when the inner position is mutable.
+        innerTargetOpt = targetElt
+          .getSTypes(subst, tenv, Covariant())
+          .flatMap(stypes -> stypes.getSingleTuple(subst, tenv))
+          .flatMap(innerTargets ->
+            if (innerTargets.size() == innerLit.tupleElts.size()) {
+              Some(innerTargets)
+            } else {
+              None()
+            }
+          );
+        innerTargetOpt match {
+        | Some(innerTargets) ->
+          ArrayLitTyping::inferTupleFromArgument(
+            subst,
+            tenv,
+            innerLit,
+            innerTargets,
+            Array[targetElt],
+          ) match {
+          | Some(innerTuple) -> innerTuple
+          | None() ->
+            ArrayLitTyping::checkTupleTarget(
+              subst,
+              tenv,
+              innerLit,
+              innerTargets,
+            ) match {
+            | STOk() ->
+              TType::tuple(innerLit.selector.pos(), innerTargets, false)
+            | STError _ ->
+              subst.restore(savedSubst);
+              return None()
+            }
+          }
+        | None() ->
+          // Non-tuple nested target (e.g. `readonly number[]`): let ordinary
+          // subtyping commit the inner literal and read its committed form.
+          TType::isSub(subst, tenv, eltTy, targetElt) match {
+          | STOk() ->
+            ArrayLitTyping::arrayLitCommittedType(
+              subst,
+              tenv,
+              innerLit,
+            ).default(eltTy)
+          | STError _ ->
+            subst.restore(savedSubst);
+            return None()
+          }
+        }
+      | None() ->
+        // For a contextual-element wrapper TVar around a concrete primitive
+        // (created by TypeCheckExpr for concrete primitives in array literals),
+        // read its raw concrete value rather than letting `TType::isSub`
+        // covariantly grow/seal it to `targetElt`. Widen concrete primitives
+        // when the target position does not expect a literal (matching tsc:
+        // `readonly [0 | 2, number]` with `[2, 5]` infers `[2, number]`).
+        // Non-primitive wrappers (object literals with open `TVIDForField`
+        // fields) stay wrapped so contextual field typing and the literal's
+        // own commitment remain coherent.
+        rawElt = eltTy.getSingleVar() match {
+        | Some(eltVar) if (eltVar.isForContextualElement()) ->
+          subst.peekRaw(eltVar) match {
+          | Some(raw) if (raw.isConcretePrimitive()) ->
+            if (ArrayLitTyping::targetExpectsLiteral(subst, tenv, targetElt)) {
+              raw
+            } else {
+              ArrayLitTyping::widenConcretePrimitive(raw)
+            }
+          | _ -> eltTy
+          }
+        | _ -> eltTy
+        };
+        if (!(TType::isSub(subst, tenv, rawElt, targetElt) is STOk())) {
+          subst.restore(savedSubst);
+          return None()
+        };
+        rawElt
+      };
+      inferredElts.push(inferredElt)
+    };
+    argTuple = TType::tuple(
+      arrLit.selector.pos(),
+      inferredElts.toArray(),
+      false,
+    );
+    // Verify the argument-derived tuple satisfies every target constraint
+    // (this rejects narrowing whenever any constraint is mutable/invariant).
+    if (
+      !targets.all(target ->
+        TType::isSub(subst, tenv, argTuple, target) is STOk()
+      )
+    ) {
+      subst.restore(savedSubst);
+      return None()
+    };
+    ArrayLitTyping::arrayLitCommitType(subst, tenv, arrLit, argTuple);
+    Some(argTuple)
+  }
+
   // Commits the literal to a concrete tuple target's element types
   // (contextual widening) and verifies each literal element subtypes its
   // target position, restoring the substitution on the first element that
@@ -623,6 +784,7 @@ class ArrayLitTyping() {
         // and the element-wise check runs per arm, accepting when some arm
         // accepts (#933) -- a positional merge of the arms would admit
         // cross-products matching no arm (#932).
+        allConstraints = tvar.constraints.collect(Array);
         for (targetElts in ArrayLitTyping::faithfulTupleConstraintArms(
           subst,
           tenv,
@@ -645,6 +807,25 @@ class ArrayLitTyping() {
           // -- and any enclosing check -- is unaffected.
           wasFreezing = subst.freezeCandidates;
           subst.!freezeCandidates = true;
+          // First try inferring the argument's own element types (#934). This
+          // succeeds for covariant (readonly) tuple constraints and fails
+          // cleanly for invariant (mutable) constraints, where contextual
+          // widening to `targetElts` via `checkTupleTarget` is the only sound
+          // choice.
+          argTupleOpt = ArrayLitTyping::inferTupleFromArgument(
+            subst,
+            tenv,
+            arrLit,
+            targetElts,
+            allConstraints,
+          );
+          argTupleOpt match {
+          | Some(argTuple) ->
+            subst.!freezeCandidates = wasFreezing;
+            subst.grow(tenv, tvar, argTuple, Contravariant());
+            return Some(STOk())
+          | None() -> void
+          };
           eltResult = ArrayLitTyping::checkTupleTarget(
             subst,
             tenv,
