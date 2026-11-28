@@ -83,6 +83,12 @@ class Files(
     compilerOptions: TsCompilerOptions = TsCompilerOptions{},
   ): Result<Files, String> {
     if (importStubs.isEmpty()) {
+      nodeModulesDir = Path.join(Path.resolve(root), "node_modules");
+      if (fs.isDirectory(nodeModulesDir)) {
+        return Failure(
+          "--import-stubs is required (found 'node_modules' in project root; pass --import-stubs <skjs-stubs> --import-stubs ./node_modules, or --import-stubs ./node_modules if @types/skjs is installed there)",
+        )
+      };
       return Failure("--import-stubs is required");
     };
     if (srcFileSeq.isEmpty()) {

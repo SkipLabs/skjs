@@ -22,6 +22,12 @@ make clean-in-docker                                # Clean build artifacts
 
 `*-in-docker` runs inside the Skip docker image (directly in a devcontainer). With a local Skip toolchain, use `make build` / `make test` / `make check` or `skargo` directly. For comment-only changes, `make check-in-docker` / `skargo check` suffices.
 
+To check a project with `node_modules` dependencies, layer `--import-stubs` (the first directory provides `@types/skjs` builtins; `import-stubs/` stays the default fallback for SKJS's own tests):
+
+```bash
+./target/host/dev/skjs check --import-stubs ./import-stubs --import-stubs ./node_modules src/index.ts
+```
+
 ### Fast debugging loop
 
 - Save binary variants to compare before/after on a `tmp_*.ts` repro (gitignored):

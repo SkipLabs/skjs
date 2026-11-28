@@ -189,7 +189,9 @@ const checkArgs: Array<Cli.Arg> = Array[
   Cli.Arg::string("import-stubs")
     .value_name("IMPORT-PATH")
     .repeatable()
-    .about("Path to directory containing stubs for imports"),
+    .about(
+      "Path to directory containing stubs or node_modules for imports (repeatable; the first directory provides @types/skjs builtins)",
+    ),
   Cli.Arg::bool("log-affected-files").about(
     "Output a list of files potentially affected by changes since laqst run.  Requires `--data` persistent cache.",
   ),
@@ -406,11 +408,6 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
     srcFiles.collect(Array).concat(stdinTsFiles)
   };
 
-  if (importStubs.size() > 1) {
-    print_error(
-      "More than one --import-stubs specified; using first one for builtins file",
-    );
-  };
   logAffectedFiles = args.getBool("log-affected-files");
   if (logAffectedFiles) {
     if (args.maybeGetString("init").isSome()) {
