@@ -264,7 +264,7 @@ function f(x: unknown): number {
 const n: number = f(42); // runtime: undefined
 ```
 
-**Test:** [tests/expect-error/type-predicate-requires-no-body.ts](../tests/expect-error/type-predicate-requires-no-body.ts), [tests/expect-error/type-predicate-syntax.ts](../tests/expect-error/type-predicate-syntax.ts), [tests/expect-error/type-predicate-narrowing.ts](../tests/expect-error/type-predicate-narrowing.ts) · **SKJS:** rejects bodied predicates — `error: A type predicate ('x is T') is only supported as the top-level return type of a declared function or method signature` (declared/ambient predicates narrow at call sites)
+**Test:** [tests/expect-error/type-predicate-bodied.ts](../tests/expect-error/type-predicate-bodied.ts), [tests/expect-error/type-predicate-requires-no-body.ts](../tests/expect-error/type-predicate-requires-no-body.ts), [tests/expect-error/type-predicate-syntax.ts](../tests/expect-error/type-predicate-syntax.ts), [tests/expect-error/type-predicate-narrowing.ts](../tests/expect-error/type-predicate-narrowing.ts) · **SKJS:** verifies every reachable `return` in a bodied type predicate in both directions (`true` proves `subject <: T`; `false` proves no value of `T` can return `false`), rejecting lying or partial bodies — `error: Cannot prove 'x' is 'string' when returning 'true': 'x' has type 'number'` (`SKJS2085`)
 
 ### A narrowing survives a call that invalidates it
 

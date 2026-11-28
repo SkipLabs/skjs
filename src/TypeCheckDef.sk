@@ -305,6 +305,54 @@ extension class TypeChecker {
     )
   }
 
+  // Remap an overload's return type onto the implementation's parameter names
+  // for an implementation-compatibility trial: if the overload returns a type
+  // predicate (`ovParam is T`), translate `ovParam` positionally to the
+  // corresponding implementation parameter name so `normalizeReturnType`
+  // resolves it against the trial's parameter list.
+  static fun overloadTrialRetType(
+    implSig: FunDefSigData,
+    ovSig: FunDefSigData,
+  ): (PosRange, ?Type) {
+    (retPos, retTyOpt) = ovSig.retType;
+    remapped = retTyOpt.map(retTy ->
+      retTy.value match {
+      | TAIs(
+        Type(lhsPos, TAInst(ovName, args)),
+        rhs,
+      ) if (args.isEmpty() && ovName.value != "this") ->
+        ovParams = ovSig.params.filter(p -> !p.isThisParam());
+        implParams = implSig.params.filter(p -> !p.isThisParam());
+        ovIdxOpt: ?Int = None();
+        for (i => p in ovParams) {
+          p.name.value match {
+          | PVar(n) if (n.value == ovName.value) ->
+            !ovIdxOpt = Some(i);
+            break void
+          | _ -> void
+          }
+        };
+        ovIdxOpt match {
+        | Some(idx) if (idx < implParams.size()) ->
+          implParams[idx].name.value match {
+          | PVar(implName) ->
+            Type(
+              retTy.pos,
+              TAIs(
+                Type(lhsPos, TAInst(Name(ovName.pos, implName.value), args)),
+                rhs,
+              ),
+            )
+          | _ -> retTy
+          }
+        | _ -> retTy
+        }
+      | _ -> retTy
+      }
+    );
+    (retPos, remapped)
+  }
+
   // Validate a same-named group of top-level function declarations as one
   // overload set (pushDef lets them coexist instead of reporting a duplicate
   // identifier). When the group has an implementation, the implementation
@@ -441,7 +489,7 @@ extension class TypeChecker {
               sig => FSInline(
                 ovSig.tparams,
                 static::overloadTrialParams(implSig, ovSig),
-                ovSig.retType,
+                static::overloadTrialRetType(implSig, ovSig),
               ),
             };
             trialResults = TCResultsAcc::mcreate{

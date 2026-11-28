@@ -1537,28 +1537,18 @@ base class TEnv{
     }
   }
 
-  // Type predicates (`x is T`) and assertion signatures (`asserts x`,
-  // `asserts x is T`) are only accepted on bodyless (ambient/interface)
-  // signatures, since SKJS does not verify the body against the claimed
-  // narrowing. Called from funDef/method-checking, right where the body is
-  // already legitimately read (to check its statements) — deliberately NOT from
-  // normalizeReturnType/funDefSetup, which must stay independent of body
-  // content for incremental checking (see normalizeReturnType's doc comment).
+  // Assertion signatures (`asserts x`, `asserts x is T`) are only accepted on
+  // bodyless (ambient/interface) signatures, since SKJS does not verify the
+  // body against the claimed narrowing. Called from funDef/method-checking,
+  // right where the body is already legitimately read (to check its
+  // statements) — deliberately NOT from normalizeReturnType/funDefSetup, which
+  // must stay independent of body content for incremental checking (see
+  // normalizeReturnType's doc comment).
   fun rejectTypePredicateOnBodiedSignature(
     tcenvb: mutable TCEnvBase,
     retTypeAst: ?Type,
   ): void {
     retTypeAst match {
-    | Some(Type(pos, TAIs _)) ->
-      tcenvb.error(
-        Array[
-          (
-            pos,
-            "A type predicate ('x is T') is only supported as the top-level return type of a declared function or method signature",
-          ),
-        ],
-        SKJSCode(9032),
-      )
     | Some(Type(pos, TAAsserts _))
     | Some(Type(pos, TAAssertIs _)) ->
       tcenvb.error(

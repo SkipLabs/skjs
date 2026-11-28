@@ -668,6 +668,30 @@ extension class TypeChecker {
     }
   }
 
+  // Like `block` with a condition, but skips checking `stmts` (returning
+  // `reachable = false`) when the condition narrows an outer binding to
+  // `never` inside an overload compatibility trial (e.g. `if (tag === "s") ...`
+  // when checking the `tag: "n"` overload). Outside overload trials, always
+  // checks `stmts` so user code still receives diagnostics inside dead
+  // branches.
+  fun blockIfReachable(
+    tcenv: mutable TCEnv,
+    stmts: Array<Stmt>,
+    cond: (Expr, Bool),
+  ): (readonly Scope, StmtTermination, Bool) {
+    scopeCopy = tcenv.scope;
+    scope = tcenv.mcreateSubScope{isLoop => false};
+    tcenv.!scope = scope;
+    this.evalCond(tcenv, cond.i0, cond.i1);
+    if (tcenv.inOverloadTrial && scope.hasBottomNarrowing(tcenv.subst, this)) {
+      tcenv.!scope = scopeCopy;
+      return (scope, StmtTermination::skip, false)
+    };
+    term = this.blockStatements(tcenv, stmts);
+    tcenv.!scope = scopeCopy;
+    (scope, term, true)
+  }
+
   fun block(
     tcenv: mutable TCEnv,
     stmts: Array<Stmt>,
@@ -703,6 +727,9 @@ extension class TypeChecker {
     this.reserveBlockBindings(tcenv, stmts);
     term = StmtTermination::skip;
     for (stmt in stmts) {
+      if (tcenv.inOverloadTrial && !term.mayFallthrough) {
+        break void
+      };
       !term = term.then(this.stmt(tcenv, stmt))
     };
     term
@@ -4809,7 +4836,10 @@ extension class TypeChecker {
     // starts with no catchers: a break/continue inside it must find its own
     // loop or switch, never an enclosing function's (see `recordBreak`).
     savedJumpCatchers = tcenv.jumpCatchers;
+    savedPendingFinallyDepth = tcenv.pendingFinallyEffectDepth;
     tcenv.!jumpCatchers = mutable Vector[];
+    tcenv.!pendingFinallyEffectDepth = 0;
+    !this.activeTypePred = None();
     tcenv.!scope = tcenv.mcreateSubScope{
       isLoop => false,
       isFunction => true,
@@ -4909,6 +4939,7 @@ extension class TypeChecker {
     tcenv.!scope = savedScope;
     tcenv.!callingContext = savedCallingContext;
     tcenv.!jumpCatchers = savedJumpCatchers;
+    tcenv.!pendingFinallyEffectDepth = savedPendingFinallyDepth;
 
     // Build a CFG for the lambda body, keyed by its AnonymousLambda node, just
     // like funDef does for named functions and methods. An expression body

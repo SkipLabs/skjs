@@ -79,7 +79,13 @@ extension class TypeChecker {
           (x is TPrimUnit(TUndefined(), _) || x is TPrimUnit(TVoid(), _)) ==
             target;
         default = None();
-        this.setLocal(tcenv, local, default, filter)
+        this.setLocal(tcenv, local, default, filter);
+        if (!target) {
+          tcenv.scope.addExcludedType(
+            local,
+            TType::single(TPrimUnit(TUndefined(), otherExpr.pos)),
+          )
+        }
       | _ ->
         // Equality observes both values. Establish their inferred types in
         // the live substitution before computing a branch-local refinement;
@@ -114,7 +120,8 @@ extension class TypeChecker {
                 TType::removeConstant(scratch, readEnv, comparisonType, c)
               ,
             );
-            tcenv.scope.set(local, diffed, (_, _) -> void)
+            tcenv.scope.set(local, diffed, (_, _) -> void);
+            tcenv.scope.addExcludedType(local, TType::single(c))
           | None() -> void
           }
         }
@@ -270,29 +277,65 @@ extension class TypeChecker {
     | "symbol" ->
       filter = x ~> (x is TPrimValue(TSymbol(), _, _)) == target;
       default = if (target) Some(TPrimValue::symbol(typePos)) else None();
-      this.setLocal(tcenv, local, default, filter)
+      this.setLocal(tcenv, local, default, filter);
+      if (!target) {
+        tcenv.scope.addExcludedType(
+          local,
+          TType::single(TPrimValue::symbol(typePos)),
+        )
+      }
     | "string" ->
       filter = x ~> (x is TPrimString(_, _)) == target;
       default = if (target) Some(TPrimString::full(typePos)) else None();
-      this.setLocal(tcenv, local, default, filter)
+      this.setLocal(tcenv, local, default, filter);
+      if (!target) {
+        tcenv.scope.addExcludedType(
+          local,
+          TType::single(TPrimString::full(typePos)),
+        )
+      }
     | "number" ->
       filter = x ~> (x is TPrimValue(TNum(), _, _)) == target;
       default = if (target) Some(TPrimValue::number(typePos)) else None();
-      this.setLocal(tcenv, local, default, filter)
+      this.setLocal(tcenv, local, default, filter);
+      if (!target) {
+        tcenv.scope.addExcludedType(
+          local,
+          TType::single(TPrimValue::number(typePos)),
+        )
+      }
     | "bigint" ->
       filter = x ~> (x is TPrimValue(TBigInt(), _, _)) == target;
       default = if (target) Some(TPrimValue::bigint(typePos)) else None();
-      this.setLocal(tcenv, local, default, filter)
+      this.setLocal(tcenv, local, default, filter);
+      if (!target) {
+        tcenv.scope.addExcludedType(
+          local,
+          TType::single(TPrimValue::bigint(typePos)),
+        )
+      }
     | "boolean" ->
       filter = x ~> (x is TPrimValue(TBool(), _, _)) == target;
       default = if (target) Some(TPrimValue::boolean(typePos)) else None();
-      this.setLocal(tcenv, local, default, filter)
+      this.setLocal(tcenv, local, default, filter);
+      if (!target) {
+        tcenv.scope.addExcludedType(
+          local,
+          TType::single(TPrimValue::boolean(typePos)),
+        )
+      }
     | "undefined" ->
       filter = x ~>
         (x is TPrimUnit(TUndefined(), _) || x is TPrimUnit(TVoid(), _)) ==
           target;
       default = None();
-      this.setLocal(tcenv, local, default, filter)
+      this.setLocal(tcenv, local, default, filter);
+      if (!target) {
+        tcenv.scope.addExcludedType(
+          local,
+          TType::single(TPrimUnit(TUndefined(), typePos)),
+        )
+      }
     | "object" ->
       // An object branch is typeof "object" iff it is not typeof "function"
       // (see TFields::narrowByTypeofFunction); null joins the true branch
@@ -341,7 +384,15 @@ extension class TypeChecker {
       } else {
         None()
       };
-      this.setLocalFilterMap(tcenv, local, default, filterMap)
+      this.setLocalFilterMap(tcenv, local, default, filterMap);
+      if (!target) {
+        tcenv.scope.addExcludedType(
+          local,
+          TType::single(
+            this.newObject(tcenv.subst, Name(local.pos, "Function"), Array[]),
+          ),
+        )
+      }
     | _ ->
       tcenv.error(
         Array[
@@ -397,7 +448,58 @@ extension class TypeChecker {
           ,
         )
       };
-      tcenv.scope.set(local, narrowed, (_, _) -> void)
+      tcenv.scope.set(local, narrowed, (_, _) -> void);
+      if (target) {
+        // Mark transient field refinement when the predicate narrowed an
+        // existing object's mutable field type (e.g. `MutableBox` narrowed to
+        // `ReadyBox` where `value: string | null` became `string`), NOT when
+        // it merely narrowed `unknown` or selected a subtype with new fields
+        // (e.g. `NodeBase` -> `Leaf`, `unknown` -> `T`): otherwise returning
+        // the narrowed value via `stableAliasType` would project it back to
+        // its un-narrowed declared type.
+        narrowedMutableField =
+          !expandedLocal.isFieldFree() &&
+          !narrowed.isFieldFree() &&
+          this.narrowedExistingMutableField(
+            tcenv.subst,
+            expandedLocal,
+            narrowed,
+          );
+        if (narrowedMutableField) {
+          tcenv.scope.markFieldRefinement(local)
+        }
+      } else {
+        tcenv.scope.addExcludedType(local, expandedTarget)
+      }
+    }
+  }
+
+  // True when `narrowed` strengthens the readable type of a mutable field
+  // (one with a non-bottom `set` type) already declared on an object branch
+  // of `before`. Such a refinement is transient because an alias write could
+  // restore the field's wider declared type.
+  private fun narrowedExistingMutableField(
+    subst: mutable Subst,
+    before: TType,
+    narrowed: TType,
+  ): Bool {
+    beforeObj = before.clauses.getObject();
+    afterObj = narrowed.clauses.getObject();
+    (beforeObj, afterObj) match {
+    | (Some(bObj), Some(aObj)) ->
+      bObj.getBranches().any(bFields ->
+        aObj.getBranches().any(aFields ->
+          bFields.fields.any(bField ->
+            !bField.set.expand(subst, this, None()).isBottom() &&
+              (aFields.fields.maybeGet(bField.name) match {
+              | Some(aField) ->
+                !(TType::isSub(subst, this, bField.get, aField.get) is STOk())
+              | None() -> false
+              })
+          )
+        )
+      )
+    | _ -> false
     }
   }
 
@@ -435,6 +537,16 @@ extension class TypeChecker {
           tObj.mapOpt(tFields -> tFields.interIsArray(false))
         | _ -> Some(stype)
         }
+      );
+      tcenv.scope.addExcludedType(
+        local,
+        TType::single(
+          this.newObject(
+            tcenv.subst,
+            Name(local.pos, "ReadonlyArray"),
+            Array[TType::top(local.pos)],
+          ),
+        ),
       )
     }
   }
@@ -683,21 +795,41 @@ extension class TypeChecker {
       | _ -> void
       }
 
-    | InstanceOf(
-      Expr(_, Var(local)),
-      rhs @ Expr(_, Var(className)),
-    ) if (target) ->
+    | InstanceOf(Expr(_, Var(local)), rhs @ Expr(_, Var(className))) ->
       // Only the class declaration selected in value space can supply an
       // instance type. A custom hasInstance hook proves no class membership.
       if (tcenv.scope.maybeGet(className) is None()) {
         this.defMap.getAll(tcenv, className).find(def -> def.hasValue()) match {
         | Some(cls @ Class{kind => CKClass()}) ->
           if (!this.rhsDeclaresHasInstance(tcenv, rhs)) {
-            this.evalInstanceof(
-              tcenv,
-              local,
-              this.runtimeClassName(tcenv, className, cls),
-            )
+            runtimeName = this.runtimeClassName(tcenv, className, cls);
+            if (target) {
+              this.evalInstanceof(tcenv, local, runtimeName)
+            } else {
+              // Under nominal classes without a custom `[Symbol.hasInstance]`,
+              // `!(x instanceof C)` proves `x` is not an instance of `C` (nor
+              // any subclass of `C`). We record `C<unknown, ...>` in
+              // `excludedTypes` rather than narrowing `local`'s positive type
+              // (keeping `evalInstanceof` else-branch unchanged for ordinary
+              // code, while enabling bodied predicate false-branch proofs).
+              c = this.getClass(tcenv.subst, runtimeName);
+              skolemTArgs = this.makeSkolemTArgsOf(tcenv.subst, c, runtimeName);
+              skolemFields = this.newFieldsOf(
+                tcenv.subst,
+                c,
+                runtimeName,
+                skolemTArgs,
+              );
+              excludedClassObj = this.objectOfFields(
+                skolemFields,
+                runtimeName,
+                skolemTArgs,
+              );
+              tcenv.scope.addExcludedType(
+                local,
+                TType::single(excludedClassObj),
+              )
+            }
           }
         | _ -> void
         }

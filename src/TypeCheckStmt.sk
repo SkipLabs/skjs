@@ -54,7 +54,11 @@ extension class TypeChecker {
           void
         }
       } else {
-        this.checkSubType(tcenv, epos, msg, etype, retType, TSCode(2322))
+        errCountBefore = tcenv.results.errors.size();
+        this.checkSubType(tcenv, epos, msg, etype, retType, TSCode(2322));
+        if (tcenv.results.errors.size() == errCountBefore) {
+          this.checkActiveTypePred(tcenv, eOpt, etype, pos)
+        }
       };
       StmtTermination::exprOpt(eOpt).then(StmtTermination::return_)
 
@@ -136,10 +140,18 @@ extension class TypeChecker {
       // narrowing (#970). After the `if`, a call from either branch may have
       // run, so the epoch advances to the branches' maximum.
       guardEpoch = tcenv.effectEpoch;
-      (scope1, term1) = this.block(tcenv, block1, Some((e, true)));
+      (scope1, term1, thenReachable) = this.blockIfReachable(
+        tcenv,
+        block1,
+        (e, true),
+      );
       thenEpoch = tcenv.effectEpoch;
       tcenv.!effectEpoch = guardEpoch;
-      (scope2, term2) = this.block(tcenv, block2, Some((e, false)));
+      (scope2, term2, elseReachable) = this.blockIfReachable(
+        tcenv,
+        block2,
+        (e, false),
+      );
       elseEpoch = tcenv.effectEpoch;
       tcenv.!effectEpoch = if (thenEpoch > elseEpoch) thenEpoch else elseEpoch;
       // A branch that cannot complete normally is not a path out of the `if`:
@@ -149,14 +161,22 @@ extension class TypeChecker {
       // jump to that merge. So only a branch that can fall through contributes
       // its scope here, and a jump guard (`if (x === undefined) continue;`)
       // leaves the other branch's narrowing to survive alone.
-      (term1.mayFallthrough, term2.mayFallthrough) match {
+      (
+        thenReachable && term1.mayFallthrough,
+        elseReachable && term2.mayFallthrough,
+      ) match {
       | (false, false) ->
         void /* TODO: everything that follows is unreachable */
       | (false, true) -> tcenv.popScopeReplace(scope2)
       | (true, false) -> tcenv.popScopeReplace(scope1)
       | (true, true) -> tcenv.mergeScope(this, scope1, scope2)
       };
-      StmtTermination::cond(e).if_(() -> term1, () -> term2)
+      (thenReachable, elseReachable) match {
+      | (true, true) -> StmtTermination::cond(e).if_(() -> term1, () -> term2)
+      | (true, false) -> StmtTermination::expr(e).then(term1)
+      | (false, true) -> StmtTermination::expr(e).then(term2)
+      | (false, false) -> StmtTermination::expr(e)
+      }
 
     | For(initStmt, cond, incr, block) ->
       scopeCopy = tcenv.scope;
@@ -394,6 +414,21 @@ extension class TypeChecker {
       // whose writes must then reach what the edge carries; mark the catchers
       // now so those edges can be found once the finally is checked.
       edgeMarks = tcenv.jumpEdgeMarks();
+      // If a `finally` block contains calls or property writes (unknown
+      // targets), any early `return` from `try` or `catch` executes `finally`
+      // before returning to the caller, so transient mutable-field refinements
+      // proven at the `return` site cannot survive to the caller.
+      finallyHasFieldOrCallEffects = finallyBlock match {
+      | None() -> false
+      | Some(finallyStmts) ->
+        cw = mutable CaptureWrites{};
+        cw.stmts(finallyStmts);
+        cw.hasCallEffects || cw.result().isNone()
+      };
+      savedPendingFinallyDepth = tcenv.pendingFinallyEffectDepth;
+      if (finallyHasFieldOrCallEffects) {
+        tcenv.!pendingFinallyEffectDepth = savedPendingFinallyDepth + 1
+      };
       // Log every write the try block makes: an exception can leave it after
       // any prefix, so the catch and finally entries below union the log in
       // (SkipLabs/skjs#963). Each block gets its own log; what escapes to any
@@ -455,6 +490,9 @@ extension class TypeChecker {
         (tryTerm.noThrow() / catchTerm, Some(catchLog))
       | None() -> (tryTerm, None())
       };
+      // Restore before checking `finally` itself (a `return` inside `finally`
+      // does not re-run this `finally`, only any outer enclosing `finally`).
+      tcenv.!pendingFinallyEffectDepth = savedPendingFinallyDepth;
 
       (finalTerm, finallyLogOpt, finallyMayThrow) = finallyBlock match {
       | Some(finallyStmts) ->
