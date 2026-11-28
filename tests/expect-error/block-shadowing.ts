@@ -160,7 +160,7 @@ function innerBlockWritesOuterBinding(): void {
   {
     x = "s";
   }
-  __SKJS_show_expanded(x, "number | string");
+  __SKJS_show_expanded(x, "string");
 }
 
 function blockLocalNotVisibleAfter(): void {

@@ -109,9 +109,6 @@ value class StmtTermination private {
     if (this.mayLoop) return Some("loop forever");
     None()
   }
-  fun isTerminal(): Bool {
-    !this.mayFallthrough && (this.mayReturn || this.mayThrow)
-  }
 
   static fun it<T>(it: mutable Iterator<T>, f: T -> this): this {
     it.next() match {
@@ -138,13 +135,18 @@ value class StmtTermination private {
       static::seq(expressions, static::expr)
     | TypeOf(e)
     | VoidOp(e)
-    | Await(e)
     | As(e, _ty)
     | Satisfies(e, _ty)
     | AsConst(e) ->
       static::expr(e)
+    | Await(e) ->
+      // Awaiting a rejected promise throws at runtime, and a never-settling
+      // promise suspends forever.
+      static::expr(e).then(static::unknownCall)
     | Spread(e) ->
-      static::expr(e) /* We assume the typechecker checks it's an iterable */
+      // Spreading invokes `[Symbol.iterator]` and `.next()`, which may throw
+      // or diverge.
+      static::expr(e).then(static::unknownCall)
     | New(e, _targs, args) ->
       static::expr(e).thenk(() ->
         static::seq(args, static::expr).then(static::unknownCall)

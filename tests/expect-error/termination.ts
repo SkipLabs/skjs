@@ -23,9 +23,7 @@ function throwInForIncr(): void {
 // next iteration. When the increment can throw, the `for` loop can exit via
 // that exception, which runs an enclosing `finally` (and can therefore break an
 // enclosing `while (true)` and fall through an `if` branch).
-// Pre-fix: `For` chained `incr` before `continueToFallthrough()`, so a
-// `continue`-only body skipped `incr`'s `mayThrow` and made the outer `while`
-// appear non-terminating.
+// @skjs-expect-error Not all code paths return a value, and the return type does not include 'undefined'
 function forContinueIncrThrowsFallsThroughFunction(): number {
   while (true) {
     try {
@@ -50,6 +48,7 @@ function forContinueIncrThrowsInIfBranch(x: string | number): string {
       }
     }
   }
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
@@ -70,6 +69,7 @@ async function awaitThrowsInIfBranch(
       }
     }
   }
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
@@ -89,6 +89,7 @@ function spreadThrowsInIfBranch(
       }
     }
   }
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
@@ -122,14 +123,11 @@ function ifInfiniteLoopNarrowsAfter(x: string | number): string {
 // Positive: a bare block executes unconditionally when it falls through, so
 // writes, narrowings, and definite assignments inside it survive after the
 // block (matching `tsc`).
-// Pre-fix: `Block` called `popScope` (merge with pre-block state) on
-// fallthrough instead of `popScopeReplace`.
 function bareBlockDefiniteAssignment(): string {
   let x: string;
   {
     x = "ok";
   }
-  // @skjs-expect-error Variable 'x' is used before being assigned
   return x;
 }
 
@@ -138,7 +136,6 @@ function bareBlockReassignment(): string {
   {
     x = "ok";
   }
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
@@ -148,7 +145,6 @@ function bareBlockReturnGuardNarrows(x: string | number): string {
       return "num";
     }
   }
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
