@@ -459,18 +459,25 @@ function go(a: readonly number[]): void {
 
 **Test:** [tests/expect-error/object-type-readonly-fields.ts](../tests/expect-error/object-type-readonly-fields.ts), [tests/expect-error/index-signatures-ops.ts](../tests/expect-error/index-signatures-ops.ts) · **SKJS:** rejects — `Type 'number'` / `is not assignable to type 'never'` pointing at `ReadonlyArray`'s index in the stubs, plus `This would not be an error if this field were readonly`; a readonly index's setter is `never` ([skjs-rules.md](../skjs-rules.md) rule 28)
 
-### Non-literal index writes ignore the declared fields the key could name
+### Non-literal index writes ignore the declared fields and narrower number index the key could name
 
-For `x[k] = v` with a non-literal `k`, tsc checks `v` only against the index signature's value type. The declared properties `k` could name at runtime — `readonly` ones, and ones typed narrower than the index value type — are not consulted, though tsc *does* reject the same write with a literal key (TS2540 / TS2322). `k` can be `"a"`, storing `"z"` into a property declared `1`, so the immediately following `x.a` read is typed `1` while holding a string; with a `readonly` field in range the write goes through a field the type declares unwritable, and every holder of that type can observe it change.
+For `x[k] = v` with a non-literal `k`, tsc checks `v` only against the matched index signature's value type. Neither the declared properties `k` could name at runtime — `readonly` ones, and ones typed narrower than the index value type — nor a narrower or `readonly` `number` index signature on a dual-indexed type (`{ [k: string]: S; [k: number]: N }` where `k: string` can be `"0"` or `"Infinity"`) are consulted, though tsc *does* reject the same write with a literal key (TS2540 / TS2322). `k` can be `"a"` or `"0"`, storing an incompatible value into a narrower or `readonly` slot, so the immediately following `x.a` or `x[0]` read contradicts its declared type.
 
 ```ts
-function bad(x: { a: 1; [k: string]: string | number }, k: string): 1 {
+function badField(x: { a: 1; [k: string]: string | number }, k: string): 1 {
   x[k] = "z"; // tsc: OK — only the index signature is checked
   return x.a; // typed `1`, may hold "z" at runtime
 }
+function badDual(
+  x: { [k: string]: string | string[]; [k: number]: string },
+  k: string,
+): string | undefined {
+  x[k] = ["a"]; // tsc: OK — only the string index is checked, though k may be "0"
+  return x[0]; // typed `string | undefined`, may hold ["a"] at runtime
+}
 ```
 
-**Test:** [tests/expect-error/index-signatures.ts](../tests/expect-error/index-signatures.ts) · **SKJS:** rejects — `error: Type is not assignable to the assignment target's type` / `Type 'string'` / `is not assignable to type '1'`. SKJS intersects the index setter with every reachable declared-field setter; a `readonly` field contributes a `never` setter, making the write unsatisfiable ([skjs-rules.md](../skjs-rules.md) rule 28)
+**Test:** [tests/expect-error/index-signatures.ts](../tests/expect-error/index-signatures.ts) · **SKJS:** rejects — `error: Type is not assignable to the assignment target's type`. SKJS intersects the index setter with every reachable declared-field setter and (for a non-literal `string` key) every branch's `number` index setter; a `readonly` field or `readonly`/`never` number index contributes a `never` setter, making the write unsatisfiable ([skjs-rules.md](../skjs-rules.md) rule 28)
 
 ### Writes through a union-typed receiver use the union, not the intersection, of the arms' setters
 

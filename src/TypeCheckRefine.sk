@@ -658,7 +658,7 @@ extension class TypeChecker {
                     },
                   )
                 | None() ->
-                  tf.nonSyntheticIndexForKeyKind(key.toPrimValueKind()) match {
+                  tf.nonSyntheticIndexForFieldKey(key) match {
                   | Some(indexField) if (indexField.get.isBottom()) ->
                     // A never-valued index (e.g. Closed<T>) proves the key
                     // absent: this branch cannot produce `true`, so it is
