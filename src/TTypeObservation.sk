@@ -455,7 +455,9 @@ mutable class TypeReadContext private {
 
   private mutable fun constrainRead(tv: TVar, value: TType): TType {
     for (constraint in tv.constraints) {
-      !value = this.intersection(value, constraint, false)
+      if (!this.isSubtype(value, constraint)) {
+        !value = this.intersection(value, constraint, false)
+      }
     };
     value
   }
@@ -649,6 +651,56 @@ mutable class TypeReadContext private {
     })
   }
 
+  private mutable fun unwrapTransparentInst(ty: TType): TType {
+    cur = ty;
+    seen = SortedSet[];
+    loop {
+      cur.getSingleInst() match {
+      | Some(TSInst(name, targs)) ->
+        if (!this.tenv.isTypeAliasDef(this.declaration(), name)) break cur;
+        id = this.tenv.typeDefinitionIdentity(this.declaration(), name);
+        if (seen.contains(id)) break cur;
+        !seen = seen.set(id);
+        expanded = this.expandNamed(name, targs);
+        // Only follow transparent chains of named type aliases (`type A = B`).
+        // Keep `innerName.pos` intact because `Name.pos.fileName` determines
+        // module lookup scope in `FileDefs::getType`. Stop before any alias
+        // whose expansion contains a deferred `TClosed` operator so `Closed<T>`
+        // keeps the outermost alias's use-site position during `expandGraph`
+        // (#814).
+        if (
+          expanded.getSingleInst().isSome() &&
+          !this.expandsToClosed(expanded, seen)
+        ) {
+          !cur = expanded
+        } else {
+          break cur
+        }
+      | None() -> break cur
+      }
+    }
+  }
+
+  private mutable fun expandsToClosed(
+    ty: TType,
+    seen: SortedSet<TypeDefinitionIdentity>,
+  ): Bool {
+    cur = ty;
+    visited = seen;
+    loop {
+      if (cur.insts.any(i -> i is TClosed _)) break true;
+      cur.getSingleInst() match {
+      | Some(TSInst(name, targs)) ->
+        if (!this.tenv.isTypeAliasDef(this.declaration(), name)) break false;
+        id = this.tenv.typeDefinitionIdentity(this.declaration(), name);
+        if (visited.contains(id)) break false;
+        !visited = visited.set(id);
+        !cur = this.expandNamed(name, targs)
+      | None() -> break false
+      }
+    }
+  }
+
   private mutable fun subtype_(u1: TType, u2: TType): STResult<TType> {
     tenv = this.tenv;
     if (tenv.seenSub.contains((this.scratch.inferenceVersion(), u1, u2))) {
@@ -656,6 +708,30 @@ mutable class TypeReadContext private {
         TQSubtype(this.scratch.inferenceVersion(), u1, u2),
       );
       return STOk()
+    };
+    !tenv.seenSub = tenv.seenSub.set((this.scratch.inferenceVersion(), u1, u2));
+    this.scratch.introduceTypeQueryAssumption(
+      TQSubtype(this.scratch.inferenceVersion(), u1, u2),
+    );
+    orig1 = u1;
+    orig2 = u2;
+    !u1 = this.unwrapTransparentInst(u1);
+    !u2 = this.unwrapTransparentInst(u2);
+    if (u1 == u2) return STOk();
+    if (u1 != orig1 || u2 != orig2) {
+      if (this.scratch.knownSubtype(u1, u2)) return STOk();
+      if (tenv.seenSub.contains((this.scratch.inferenceVersion(), u1, u2))) {
+        this.scratch.recordRecursiveTypeQuery(
+          TQSubtype(this.scratch.inferenceVersion(), u1, u2),
+        );
+        return STOk()
+      };
+      !tenv.seenSub = tenv.seenSub.set(
+        (this.scratch.inferenceVersion(), u1, u2),
+      );
+      this.scratch.introduceTypeQueryAssumption(
+        TQSubtype(this.scratch.inferenceVersion(), u1, u2),
+      );
     };
     // Two recursive aliases whose type arguments grow at each level never
     // repeat a `seenSub` entry, so their descent is bounded by how many times
@@ -686,7 +762,7 @@ mutable class TypeReadContext private {
         fatalError(
           Array[
             (
-              u1.pos,
+              orig1.pos,
               "Type instantiation is excessively deep and possibly infinite",
             ),
           ],
@@ -696,10 +772,6 @@ mutable class TypeReadContext private {
       !tenv.subtypingHeadDepth = tenv.subtypingHeadDepth.set(key, count + 1)
     | _ -> void
     };
-    !tenv.seenSub = tenv.seenSub.set((this.scratch.inferenceVersion(), u1, u2));
-    this.scratch.introduceTypeQueryAssumption(
-      TQSubtype(this.scratch.inferenceVersion(), u1, u2),
-    );
 
     // Shortcut: TInter(tys) <: u2 if u2 is one of the tys
     u1.getSingleInter() match {
@@ -718,7 +790,7 @@ mutable class TypeReadContext private {
       STypes::isSubWith(a, b, (x, y) -> context.objectSubtype(x, y))
     ) match {
     | STOk() -> STOk()
-    | err @ STErrorOnClauses _ -> STRecType(err, u1, u2)
+    | err @ STErrorOnClauses _ -> STRecType(err, orig1, orig2)
     }
   }
 

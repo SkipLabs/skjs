@@ -173,8 +173,201 @@ mutable base class ApplyType(
   }
 }
 
-mutable class RenameClauses() extends ApplyType {
+mutable class RenameClauses(
+  targetIds: SortedSet<Id>,
+  mutable typeHasTargetMemo: SortedMap<TType, Bool> = SortedMap[],
+  mutable instHasTargetMemo: SortedMap<TInst, Bool> = SortedMap[],
+  mutable clauseHasTargetMemo: SortedMap<Clause, Bool> = SortedMap[],
+  mutable objectHasTargetMemo: SortedMap<TObject, Bool> = SortedMap[],
+  mutable fieldsHasTargetMemo: SortedMap<TFields, Bool> = SortedMap[],
+  mutable funHasTargetMemo: SortedMap<TFun, Bool> = SortedMap[],
+) extends ApplyType {
   type Env = SortedMap<Id, TParamWithConstraint>;
+
+  static fun create(subst: SortedMap<Id, TParamWithConstraint>): mutable this {
+    ids = SortedSet::createFromIterator(subst.keys());
+    mutable static(ids)
+  }
+
+  private mutable fun typeHasTarget(ty: TType): Bool {
+    this.typeHasTargetMemo.maybeGet(ty) match {
+    | Some(res) -> res
+    | None() ->
+      // Conservative cycle guard: mark false while on stack (types are DAGs
+      // anyway, matching ApplyType::visiting).
+      this.!typeHasTargetMemo = this.typeHasTargetMemo.set(ty, false);
+      res =
+        ty.insts.any(inst -> this.instHasTarget(inst)) ||
+        ty.clauses.any(clause -> this.clauseHasTarget(clause));
+      if (res) this.!typeHasTargetMemo = this.typeHasTargetMemo.set(ty, true);
+      res
+    }
+  }
+
+  private mutable fun instHasTarget(inst: TInst): Bool {
+    this.instHasTargetMemo.maybeGet(inst) match {
+    | Some(res) -> res
+    | None() ->
+      this.!instHasTargetMemo = this.instHasTargetMemo.set(inst, false);
+      res = inst match {
+      | TSInst(_, targs) -> targs.targs.any(t -> this.typeHasTarget(t))
+      | TInter(tys) -> tys.any(t -> this.typeHasTarget(t))
+      | TClosed(_, inner) -> this.typeHasTarget(inner)
+      | TVar(_, _, constraints) -> constraints.any(t -> this.typeHasTarget(t))
+      | TArrayLit(_, tupleElts, freshElts) ->
+        tupleElts.any(t -> this.typeHasTarget(t)) ||
+          freshElts.any(opt ->
+            opt.map(t -> this.typeHasTarget(t)).default(false)
+          )
+      };
+      if (res) this.!instHasTargetMemo = this.instHasTargetMemo.set(inst, true);
+      res
+    }
+  }
+
+  private mutable fun clauseHasTarget(clause: Clause): Bool {
+    this.clauseHasTargetMemo.maybeGet(clause) match {
+    | Some(res) -> res
+    | None() ->
+      this.!clauseHasTargetMemo = this.clauseHasTargetMemo.set(clause, false);
+      res =
+        clause.vars.any(tp -> this.targetIds.contains(tp.id)) ||
+        clause.stypes
+          .map(stypes -> stypes.any(st -> this.stypeHasTarget(st)))
+          .default(false);
+      if (res) {
+        this.!clauseHasTargetMemo = this.clauseHasTargetMemo.set(clause, true)
+      };
+      res
+    }
+  }
+
+  private mutable fun stypeHasTarget(st: SType): Bool {
+    st match {
+    | TPrimUnit _
+    | TPrimValue _
+    | TPrimString _ ->
+      false
+    | obj @ TObject _ ->
+      this.objectHasTargetMemo.maybeGet(obj) match {
+      | Some(res) -> res
+      | None() ->
+        this.!objectHasTargetMemo = this.objectHasTargetMemo.set(obj, false);
+        res = obj.getBranches().any(fields -> this.fieldsHasTarget(fields));
+        if (res) {
+          this.!objectHasTargetMemo = this.objectHasTargetMemo.set(obj, true)
+        };
+        res
+      }
+    }
+  }
+
+  private mutable fun fieldsHasTarget(fields: TFields): Bool {
+    this.fieldsHasTargetMemo.maybeGet(fields) match {
+    | Some(res) -> res
+    | None() ->
+      this.!fieldsHasTargetMemo = this.fieldsHasTargetMemo.set(fields, false);
+      res =
+        fields.fields.values().any(f ->
+          this.typeHasTarget(f.get) || this.typeHasTarget(f.set)
+        ) ||
+        fields.symbolFields.values().any(f ->
+          this.typeHasTarget(f.get) || this.typeHasTarget(f.set)
+        ) ||
+        fields.stringIndex
+          .map(f -> this.typeHasTarget(f.get) || this.typeHasTarget(f.set))
+          .default(false) ||
+        fields.numberIndex
+          .map(f -> this.typeHasTarget(f.get) || this.typeHasTarget(f.set))
+          .default(false) ||
+        fields.symbolIndex
+          .map(f -> this.typeHasTarget(f.get) || this.typeHasTarget(f.set))
+          .default(false) ||
+        this.callabilityHasTarget(fields.new) ||
+        this.callabilityHasTarget(fields.call);
+      if (res) {
+        this.!fieldsHasTargetMemo = this.fieldsHasTargetMemo.set(fields, true)
+      };
+      res
+    }
+  }
+
+  private mutable fun callabilityHasTarget(call: Callability): Bool {
+    call match {
+    | CPresent(sig) -> sig.allFuns().any(f -> this.funHasTarget(f))
+    | CAbsent()
+    | CUnknown()
+    | CFunction() ->
+      false
+    }
+  }
+
+  private mutable fun funHasTarget(f: TFun): Bool {
+    this.funHasTargetMemo.maybeGet(f) match {
+    | Some(res) -> res
+    | None() ->
+      this.!funHasTargetMemo = this.funHasTargetMemo.set(f, false);
+      res =
+        f.tparams.any(tp ->
+          this.targetIds.contains(tp.id) ||
+            tp.cstr.map(c -> this.typeHasTarget(c)).default(false)
+        ) ||
+        f.thisParam.tyOpt().map(t -> this.typeHasTarget(t)).default(false) ||
+        f.params.any(t -> this.typeHasTarget(t)) ||
+        f.optionalParams.any(t -> this.typeHasTarget(t)) ||
+        f.spreadParam.map(t -> this.typeHasTarget(t)).default(false) ||
+        this.typeHasTarget(f.retType) ||
+        (f.assertPred match {
+        | Some(AssertPred(_, AKIs(target))) -> this.typeHasTarget(target)
+        | Some(AssertPred(_, AKTruthy()))
+        | None() ->
+          false
+        });
+      if (res) this.!funHasTargetMemo = this.funHasTargetMemo.set(f, true);
+      res
+    }
+  }
+
+  mutable fun type(env: this::Env, ty: TType): TType {
+    if (!this.typeHasTarget(ty)) return ty;
+    if (this.visiting.contains(ty)) {
+      internal_error("Internal error:  found a Cyclic type in ApplyType")
+    };
+    this.seen.maybeGet(ty) match {
+    | None() ->
+      !this.visiting = this.visiting.set(ty);
+      result = this.type_(env, ty);
+      this.!seen[ty] = result;
+      result
+    | Some(x) -> x
+    }
+  }
+
+  mutable fun fields(env: this::Env, fields: TFields): TFields {
+    if (!this.fieldsHasTarget(fields)) return fields;
+    fields.map(x -> this.field(env, x), x -> this.funs(env, x))
+  }
+
+  mutable fun fun_(env: this::Env, f: TFun): TFun {
+    if (!this.funHasTarget(f)) return f;
+    TFun(
+      f.tparams.map(x -> this.typeParamWithConstraint(env, x)),
+      f.thisParam match {
+      | NoThis() -> NoThis()
+      | ImplicitShape() -> ImplicitShape()
+      | DetachedShape() -> DetachedShape()
+      | Explicit(ty) -> Explicit(this.type(env, ty))
+      | ImplicitClass(ty) -> ImplicitClass(this.type(env, ty))
+      },
+      f.params.map(x -> this.type(env, x)),
+      f.optionalParams.map(x -> this.type(env, x)),
+      f.spreadParam.map(x -> this.type(env, x)),
+      this.type(env, f.retType),
+      f.cgNodes,
+      f.assertPred.map(ap -> ap.mapTarget(t -> this.type(env, t))),
+    )
+  }
+
   mutable fun typeParamWithConstraint(
     subst: this::Env,
     tparam: TParamWithConstraint,

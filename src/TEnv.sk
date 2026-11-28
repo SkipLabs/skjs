@@ -262,6 +262,14 @@ base class TEnv{
     quoteRenderedType(prettyPrintType(false, ty, tcenv.subst, this))
   }
 
+  fun isTypeAliasDef(tcenvb: mutable TCEnvBase, name: Name): Bool {
+    if (name.value.startsWith(kMissingTypeAnnotationPrefix)) {
+      false
+    } else {
+      this.defMap.getType(tcenvb, name) is TypeDef _
+    }
+  }
+
   // Resolve before memoizing: mention spelling is not declaration identity.
   fun typeDefinitionIdentity(
     tcenvb: mutable TCEnvBase,

@@ -1149,7 +1149,17 @@ mutable class Subst private {
       }
     };
     for (cstr in tvar.constraints) {
-      !result = TType::inter(this, tenv, result, cstr);
+      if (!this.knownSubtype(result, cstr)) {
+        savedCstr = this.save();
+        wasFreezing = this.freezeCandidates;
+        this.!freezeCandidates = true;
+        subOk = TType::isSub(this, tenv, result, cstr) is STOk();
+        this.!freezeCandidates = wasFreezing;
+        if (!subOk || this.typeOwnerEpoch() != savedCstr.typeOwnerEpoch()) {
+          this.restore(savedCstr);
+          !result = TType::inter(this, tenv, result, cstr);
+        }
+      }
     };
     result
   }

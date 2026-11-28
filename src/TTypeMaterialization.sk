@@ -45,7 +45,7 @@ fun expandNamedCached(
   subst.memoizedExpansion(key) match {
   | Some(expanded) -> expanded
   | None() ->
-    shareable = !targs.targs.any(t -> subst.caches().isVarFree(t));
+    shareable = targs.targs.all(t -> subst.caches().isVarFree(t));
     shared = if (shareable) subst.sharedExpansion(key) else None();
     shared match {
     | Some(expanded) ->
