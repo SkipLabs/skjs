@@ -774,6 +774,22 @@ function go(): void {
 
 **Test:** [tests/expect-error/duplicate-constraint-add.ts](../tests/expect-error/duplicate-constraint-add.ts) · **SKJS:** rejects the call — `Type 'string'` / `is not assignable to type '{ length: number; }'`; the body's write is accepted, SKJS blocks the instantiation instead ([skjs-rules.md](../skjs-rules.md) rule 27)
 
+### A mutable tuple-constrained type parameter narrows to the literal's elements, then the body mutates through the constraint
+
+For `function mutate<K extends [0 | 2, 1 | 3]>(x: K): K`, tsc infers `K = [2, 3]` at `mutate([2, 3])` because mutable tuples are checked covariantly, while inside the body `x` has the mutable constraint `[0 | 2, 1 | 3]` and may legally write `x[0] = 0`. The caller receives `r` typed `[2, 3]` whose `r[0]` is `0` at runtime. The same hole arises when a mutable inner tuple sits inside a readonly outer tuple (`K extends readonly [[0 | 2, 1 | 3]]`, writing `x[0][0] = 0`).
+
+```ts
+function mutate<K extends [0 | 2, 1 | 3]>(x: K): K {
+  x[0] = 0; // legal at the mutable constraint [0 | 2, 1 | 3]
+  return x;
+}
+function go(): void {
+  const r: [2, 3] = mutate([2, 3]); // tsc: OK — r[0] is 0 at runtime, typed 2
+}
+```
+
+**Test:** [tests/expect-error/tuple-constraint-literal.ts](../tests/expect-error/tuple-constraint-literal.ts) · **SKJS:** rejects the narrow annotation — mutable tuples are invariant, so SKJS contextually widens `K` to the constraint `[0 | 2, 1 | 3]` (`Type '0 | 2' is not assignable to type '2'`). With a `readonly` tuple constraint (`K extends readonly [0 | 2, 1 | 3]`), writes through `x` are rejected in the body and SKJS soundly infers `K = [2, 3]` · **Issue:** SkipLabs/skjs#934
+
 ## Classes, interfaces & declarations
 
 ### A base constructor can call an overridden method before derived fields are initialized
