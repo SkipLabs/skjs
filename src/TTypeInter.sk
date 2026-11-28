@@ -279,7 +279,11 @@ extension class TField {
     y: TField,
   ): TField {
     get = TType::interForTypeConstruction(subst, tenv, x.get, y.get);
-    set = TType::union(subst, tenv, x.set, y.set);
+    set = if (get.isBottom()) {
+      TType::bottom(x.pos)
+    } else {
+      TType::union(subst, tenv, x.set, y.set)
+    };
     TField::interContracts(x, y, get, set)
   }
 
@@ -291,12 +295,16 @@ extension class TField {
     set: TType,
   ): TField {
     isOptional = x.isOptional && y.isOptional;
+    // A bottom getter proves the slot can never hold a value; keeping a live
+    // setter on it would produce a self-inconsistent slot (get = never,
+    // set != never) that still satisfies mutable views in subtyping (#800).
+    consistentSet = if (get.isBottom()) TType::bottom(x.pos) else set;
     TField{
       pos => x.pos,
       name => x.name,
       isOptional,
       get,
-      set,
+      set => consistentSet,
       access => x.access.combine(y.access),
       // Either conjunct can establish that the present property is copied.
       mayBeOmittedByCopy => x.mayBeOmittedByCopy && y.mayBeOmittedByCopy,

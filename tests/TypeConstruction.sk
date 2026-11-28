@@ -491,4 +491,26 @@ fun testCallPlanRetainsEarlierObligations(): void {
   );
 }
 
+@test
+fun testInterIndexBottomGetterSetterConsistency(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst) with {expandInter => true};
+  pos = SKJS.PosRange::none;
+  neverField = constructionField(SKJS.TType::bottom(pos));
+  numField = constructionField(observationNumber());
+  strField = constructionField(observationString());
+
+  neverAndNum = SKJS.TField::interIndex(subst, tenv, neverField, numField);
+  SKTest.expectEq(true, neverAndNum.get.isBottom());
+  SKTest.expectEq(true, neverAndNum.set.isBottom());
+
+  numAndStr = SKJS.TField::interIndex(subst, tenv, numField, strField);
+  SKTest.expectEq(true, numAndStr.get.isBottom());
+  SKTest.expectEq(true, numAndStr.set.isBottom());
+
+  namedNeverAndNum = SKJS.TField::inter(subst, tenv, neverField, numField);
+  SKTest.expectEq(true, namedNeverAndNum.get.isBottom());
+  SKTest.expectEq(true, namedNeverAndNum.set.isBottom());
+}
+
 module end;
