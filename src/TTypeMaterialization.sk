@@ -28,6 +28,23 @@ value class MappedKeyShape(
   symbolLiterals: Array<String>,
 )
 
+// Single tuple or array branch of a homomorphic mapped type target.
+base class HomomorphicSeqBranch {
+  children =
+  | HomomorphicTuple(elts: Array<TType>, isReadonly: Bool)
+  | HomomorphicArray(elem: TType, isReadonly: Bool)
+}
+
+// Classification of `T` in `{ [mod] [P in keyof T][op]: V }` when `T` is a
+// bound type parameter.
+base class HomomorphicTargetShape {
+  children =
+  | HTAbstract()
+  | HTNever()
+  | HTSequence(branches: Array<HomomorphicSeqBranch>)
+  | HTOther()
+}
+
 // Shared expansion-memo logic for both expandNamed publishers (TEnv and
 // TypeReadContext). The two cache layers (issue #1092): the per-Subst memo,
 // which is rollback-scoped and always receives a computed expansion, and the

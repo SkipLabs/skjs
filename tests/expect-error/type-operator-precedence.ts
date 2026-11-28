@@ -154,15 +154,15 @@ function testArrayUnion(): void {
 // TypeScript parses: { a: number }["a"] | string = (({ a: number })["a"]) | string = number | string
 ///////////////////////////////////////////////////////////////////////////////
 
-// SKJS doesn't fully support indexed access types yet
-// @skjs-expect-error Indexed access types ('T[K]') are not yet supported by SKJS
+// Indexed access with literal key binds tighter than union:
+// ({ a: number }["a"]) | string = number | string
 type IndexedUnion = { a: number }["a"] | string;
 
 function testIndexedUnion(): void {
-  // Skip tests for unimplemented feature
-  // const a: IndexedUnion = 42;
-  // const b: IndexedUnion = "hello";
-  // const c: IndexedUnion = true;
+  const a: IndexedUnion = 42;
+  const b: IndexedUnion = "hello";
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  const c: IndexedUnion = true;
 }
 
 ///////////////////////////////////////////////////////////////////////////////

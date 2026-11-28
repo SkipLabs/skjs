@@ -568,6 +568,54 @@ mutable class TypeReadContext private {
     )
   }
 
+  mutable fun indexedAccess(
+    objType: TType,
+    keyType: TType,
+    pos: PosRange,
+  ): TType {
+    this.lifetime.checkActive();
+    this.tenv.indexedAccessFrom(
+      this.expandClauses(objType, Covariant()),
+      this.expandVectors(keyType, Some(Covariant())),
+      pos,
+      name -> this.tenv.newObject(this.declaration(), name, Array[]),
+    )
+  }
+
+  // Classify `T` for homomorphic mapped types without expanding tuple/array
+  // classes into raw structural objects, so pure `Array`/`ReadonlyArray`/
+  // `SKJS_TupleN`/`SKJS_ReadonlyTupleN` shapes stay distinct from
+  // intersections or subclasses that add extra properties.
+  mutable fun classifyHomomorphicTarget(type: TType): HomomorphicTargetShape {
+    this.lifetime.checkActive();
+    // Reset seenInstantiate for the argument's own alias expansion so nested
+    // applications of the same mapped-type alias (e.g. `BoxAll<BoxAll<T>>`)
+    // expand the inner argument instead of treating it as a recursive cycle.
+    // `isCircularTypeDef` still guards genuinely circular aliases.
+    argContext = this with {
+      tenv => this.tenv with {seenInstantiate => SortedSet[]},
+    };
+    TEnv::classifyHomomorphicTargetWith(type, (inst, _useSitePos) ->
+      inst match {
+      | TSInst(name, targs) ->
+        if (
+          argContext.tenv
+            .maybeGetTypeDef(argContext.declaration().context, name)
+            .isSome()
+        ) {
+          Some(argContext.expandNamed(name, targs))
+        } else {
+          None()
+        }
+      | TInter _ -> None()
+      | TClosed _ -> None()
+      | tv @ TVar _ ->
+        Some(argContext.constrainRead(tv, argContext.peekRaw(tv).fromSome()))
+      | arrLit @ TArrayLit _ -> Some(argContext.literalSelection(arrLit))
+      }
+    )
+  }
+
   mutable fun closedObject(pos: PosRange, type: TType): TType {
     this.lifetime.checkActive();
     this.tenv.closedObjectFrom(

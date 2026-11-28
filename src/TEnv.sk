@@ -779,6 +779,24 @@ base class TEnv{
         visited,
         typeofVisited,
       )
+    // `T[K]` resolves both T and K immediately (`type R = R["a"]` is circular).
+    | TAGet(tyObj, tyKey) ->
+      this.requiresTypeDef(
+        context,
+        target,
+        tyObj,
+        shadowed,
+        visited,
+        typeofVisited,
+      ) ||
+        this.requiresTypeDef(
+          context,
+          target,
+          tyKey,
+          shadowed,
+          visited,
+          typeofVisited,
+        )
     // `typeof v` forces the declared type of the value `v`, so the alias is
     // reached whenever v's annotation reaches it — `type R = typeof v` with
     // `declare const v: R` is circular, exactly as `type R = R` is. The
@@ -873,12 +891,11 @@ base class TEnv{
       }
     // Every remaining annotation defers, and a new one is far likelier to
     // defer than not: naming a type inside an object, array, tuple, or
-    // signature does not resolve it. Three exceptions are immediate in tsc and
+    // signature does not resolve it. Two exceptions are immediate in tsc and
     // silent here only because SKJS rejects them before circularity could
-    // matter — `TAGet` (`type R = R["x"]`), `TAExtendsQuestion`
-    // (`type R = R extends string ? 1 : 2`) and `TAImport` are all "not yet
-    // supported". Whichever of them lands first should be given an arm above
-    // rather than left to this one.
+    // matter — `TAExtendsQuestion` (`type R = R extends string ? 1 : 2`) and
+    // `TAImport` are both "not yet supported". Whichever of them lands first
+    // should be given an arm above rather than left to this one.
     | _ -> false
     }
   }
@@ -930,6 +947,7 @@ base class TEnv{
     | TAInter(ty1, ty2) ->
       walk(ty1) || walk(ty2)
     | TAKeyOf(operand) -> walk(operand)
+    | TAGet(tyObj, tyKey) -> walk(tyObj) || walk(tyKey)
     | TAReadonly(inner) -> walk(inner)
     | TAArray(elt) -> walk(elt)
     | TATuple(elts) ->
@@ -2605,8 +2623,12 @@ base class TEnv{
         },
       )
     | TAObject(fields) ->
-      tFields = this.createTFields(tcenvb, fields, isTopLevelConst);
-      TType::single(TObject::createSingleBranch(tFields, None(), pos))
+      this.tryNormalizeHomomorphicSequence(tcenvb, pos, fields) match {
+      | Some(seqTy) -> seqTy
+      | None() ->
+        tFields = this.createTFields(tcenvb, fields, isTopLevelConst);
+        TType::single(TObject::createSingleBranch(tFields, None(), pos))
+      }
     | TAInst(Name(p, "object"), targs) ->
       if (targs.size() != 0) {
         tcenvb.error(
@@ -2839,34 +2861,21 @@ base class TEnv{
       }
     | taTuple @ TATuple _ -> this.normalizeTuple(tcenvb, pos, taTuple, false)
     | TAGet(tyObj, tyKey) ->
-      tyKey.value match {
-      | TAPrim(TPKNum()) ->
-        // T[number] requires an established shape. A generic bound is not
-        // an exact result type for every instantiation of the parameter.
-        objType = this.normalize(tcenvb, tyObj);
-        this.materializeReadContext<TType>(
-          tcenvb,
-          pos,
-          context -> context.numberIndexed(objType, pos),
-          (scratch, readEnv) ->
-            readEnv.numberIndexedFromClauses(
-              objType.expandToClauses(scratch, readEnv, Covariant()),
-              pos,
-              name -> readEnv.newObject(scratch, name, Array[]),
-            )
-          ,
-        )
-      | _ ->
-        fatalError(
-          Array[
-            (
-              pos,
-              "Indexed access types ('T[K]') are not yet supported by SKJS",
-            ),
-          ],
-          SKJSCode(9021),
-        )
-      }
+      objType = this.normalize(tcenvb, tyObj);
+      keyType = this.normalize(tcenvb, tyKey);
+      this.materializeReadContext<TType>(
+        tcenvb,
+        pos,
+        context -> context.indexedAccess(objType, keyType, pos),
+        (scratch, readEnv) ->
+          readEnv.indexedAccessFrom(
+            objType.expandToClauses(scratch, readEnv, Covariant()),
+            keyType.expandToVectors(scratch, readEnv, Some(Covariant())),
+            pos,
+            name -> readEnv.newObject(scratch, name, Array[]),
+          )
+        ,
+      )
     }
   }
 
@@ -4042,6 +4051,12 @@ base class TEnv{
                 SKJSCode(9030),
               )
             } else {
+              mappedReadonly = readonly_ match {
+              | Some(OFReadonly(rPos)) -> Some(rPos)
+              | Some(OFRemoveReadonly _)
+              | None() ->
+                None()
+              };
               // Bind P to a deliberately-unresolvable inst type. If V references
               // P, expansion later surfaces a clear "Type … not found" error
               // naming the poison alias. For Record (V doesn't reference P),
@@ -4065,7 +4080,7 @@ base class TEnv{
                       pos => boundName.pos,
                       name => boundName.value,
                       isOptional => true,
-                      isReadonly => None(),
+                      isReadonly => mappedReadonly,
                       type => valueType,
                       access => FAPublic(),
                       mayBeOmittedByCopy => true,
@@ -4078,7 +4093,7 @@ base class TEnv{
                   pos => boundName.pos,
                   name => litVal,
                   isOptional => isFieldOptional,
-                  isReadonly => None(),
+                  isReadonly => mappedReadonly,
                   type => valueType,
                   access => FAPublic(),
                 };
@@ -4089,7 +4104,7 @@ base class TEnv{
                   pos => boundName.pos,
                   name => uniqueId,
                   isOptional => isFieldOptional,
-                  isReadonly => None(),
+                  isReadonly => mappedReadonly,
                   type => valueType,
                   access => FAPublic(),
                 };
@@ -4495,6 +4510,389 @@ base class TEnv{
       PrimLiterals::ofSet(symbols, pos).each(symLits ->
         resultTys.push(TType::single(TPrimValue(TSymbol(), Some(symLits), pos)))
       )
+    };
+    TType::unionStructuralN(pos, resultTys)
+  }
+
+  static fun classifyHomomorphicTargetWith(
+    targetTy: TType,
+    expandInst: (TInst, ?PosRange) -> ?TType,
+  ): HomomorphicTargetShape {
+    targetTy.expandGraph(expandInst) match {
+    | None() -> HTOther()
+    | Some((insts, clauses)) ->
+      // Abstract type parameters (possibly carrying a constraint in stypes)
+      // must be classified as abstract before inspecting stypes, matching
+      // Closed<T> and checkAbstractProjection.
+      if (clauses.any(c -> !c.vars.isEmpty())) {
+        return HTAbstract()
+      };
+      // Any concrete non-sequence clause (primitive, plain object, etc.) means
+      // the target is not purely a tuple/array (or union thereof).
+      if (!clauses.isEmpty()) {
+        return HTOther()
+      };
+      if (insts.isEmpty()) {
+        return HTNever()
+      };
+      branches = mutable Vector<HomomorphicSeqBranch>[];
+      for (inst in insts) {
+        inst match {
+        | TSInst(Name(_, "Array"), TArgs(args)) if (args.size() == 1) ->
+          branches.push(HomomorphicArray(args[0], false))
+        | TSInst(Name(_, "ReadonlyArray"), TArgs(args)) if (args.size() == 1) ->
+          branches.push(HomomorphicArray(args[0], true))
+        | TSInst(name, TArgs(args)) ->
+          tupleKind(name.value) match {
+          | Some(kind) if (kind.arity == args.size()) ->
+            branches.push(HomomorphicTuple(args, kind.isReadonly))
+          | _ -> return HTOther()
+          }
+        | _ -> return HTOther()
+        }
+      };
+      HTSequence(branches.toArray())
+    }
+  }
+
+  // Handle tuple- and array-preserving homomorphic mapped types:
+  //   { [readonly | +readonly | -readonly] [P in keyof T][? | +? | -?]: V }
+  // when `T` is a bound type parameter whose instantiation is `never`, a pure
+  // tuple/array, or a union of pure tuples/arrays (or abstract during
+  // type-definition validation). Returns `None()` to fall back to the general
+  // object mapped-type path in `createTFields`.
+  private fun tryNormalizeHomomorphicSequence(
+    tcenvb: mutable TCEnvBase,
+    pos: PosRange,
+    fieldTypes: Array<ObjectField>,
+  ): ?TType {
+    if (fieldTypes.size() != 1) return None();
+    fd = fieldTypes[0] match {
+    | f @ ObjectFieldValue _ -> f
+    | _ -> return None()
+    };
+    (boundName, targetName, asOpt, op) = fd.name match {
+    | FNIn(
+      bName,
+      Type(_, TAKeyOf(Type(_, TAInst(tName, targs)))),
+      aOpt,
+      fOp,
+    ) if (targs.isEmpty()) ->
+      (bName, tName, aOpt, fOp)
+    | _ -> return None()
+    };
+    // Homomorphic tuple/array preservation only applies when `T` in `keyof T`
+    // is a bound type parameter (matching TypeScript's homomorphic check).
+    targetTy = this.bindings.maybeGet(targetName.value) match {
+    | Some(ty) -> ty
+    | None() -> return None()
+    };
+    if (asOpt.isSome()) {
+      tcenvb.error(
+        Array[
+          (fd.pos, "Mapped type 'as' clauses are not yet supported by SKJS"),
+        ],
+        SKJSCode(9028),
+      );
+      return Some(TType::bottom(pos))
+    };
+    fieldTy = fd.type match {
+    | None() ->
+      fatalError(
+        Array[
+          (
+            fd.pos,
+            `Member '${fd.name.getName()}' must have an explicit type annotation`,
+          ),
+        ],
+        TSCode(7008),
+      )
+    | Some(ty) -> ty
+    };
+    errPos = this.instantiateAt.default(fd.pos);
+    shape = this.materializeReadContext<HomomorphicTargetShape>(
+      tcenvb,
+      errPos,
+      context -> context.classifyHomomorphicTarget(targetTy),
+      (scratch, readEnv) -> {
+        argEnv = readEnv with {seenInstantiate => SortedSet[]};
+        TEnv::classifyHomomorphicTargetWith(targetTy, (inst, _useSitePos) ->
+          inst match {
+          | TSInst(name, targs) ->
+            if (argEnv.maybeGetTypeDef(scratch.context, name).isSome()) {
+              Some(argEnv.expandNamed(scratch, name, targs))
+            } else {
+              None()
+            }
+          | TInter _ -> None()
+          | TClosed _ -> None()
+          | tvar @ TVar _ -> Some(scratch.get(argEnv, tvar, Covariant()))
+          | arrLit @ TArrayLit _ ->
+            Some(ArrayLitTyping::expand(scratch, argEnv, arrLit))
+          }
+        )
+      },
+    );
+    shape match {
+    | HTAbstract() ->
+      if (this.inTypeDefValidation) {
+        // Generic alias body validation: defer expansion until a concrete
+        // instantiation supplies `T` (just like `createTFields` and `Closed<T>`).
+        Some(TType::single(TObject::createEmpty(pos)))
+      } else {
+        tcenvb.error(
+          Array[
+            (
+              errPos,
+              "Mapped types with an abstract key type are not yet supported by SKJS",
+            ),
+          ],
+          SKJSCode(9029),
+        );
+        Some(TType::bottom(pos))
+      }
+    | HTNever() -> Some(TType::bottom(pos))
+    | HTOther() -> None()
+    | HTSequence(branches) ->
+      outReadonly = (srcIsReadonly: Bool) ->
+        fd.readonly_ match {
+        | Some(OFReadonly _) -> true
+        | Some(OFRemoveReadonly _) -> false
+        | None() -> srcIsReadonly
+        };
+      results = mutable Vector<TType>[];
+      for (branch in branches) {
+        branch match {
+        | HomomorphicTuple(elts, srcIsReadonly) ->
+          op match {
+          | Some(FNQuestion _)
+          | Some(FNAdd _) ->
+            tcenvb.error(
+              Array[
+                (
+                  errPos,
+                  "Optional tuple elements are not yet supported by SKJS",
+                ),
+              ],
+              SKJSCode(9023),
+            )
+          | Some(FNRemove _)
+          | None() ->
+            void
+          };
+          branchTy = TType::tuple(pos, elts, srcIsReadonly);
+          branchEnv = this;
+          !branchEnv.bindings[targetName.value] = branchTy;
+          mappedElts = Array::fillBy(elts.size(), i -> {
+            eltEnv = branchEnv;
+            !eltEnv.bindings[boundName.value] = TType::single(
+              TPrimString::single(i.toString(), boundName.pos),
+            );
+            eltEnv.normalize(tcenvb, fieldTy)
+          });
+          results.push(
+            TType::tuple(pos, mappedElts, outReadonly(srcIsReadonly)),
+          )
+        | HomomorphicArray(elemTy, srcIsReadonly) ->
+          branchTy = TType::inst(
+            Name(pos, if (srcIsReadonly) "ReadonlyArray" else "Array"),
+            TArgs(Array[elemTy]),
+          );
+          branchEnv = this;
+          !branchEnv.bindings[targetName.value] = branchTy;
+          !branchEnv.bindings[boundName.value] = TType::single(
+            TPrimValue::number(boundName.pos),
+          );
+          mappedElem = branchEnv.normalize(tcenvb, fieldTy);
+          !mappedElem = op match {
+          | Some(FNQuestion _)
+          | Some(FNAdd _) ->
+            TType::unionStructural(
+              mappedElem,
+              TType::single(TPrimUnit(TUndefined(), pos)),
+            )
+          | Some(FNRemove _) ->
+            TType::removeConstantFromExpanded(
+              pos,
+              this.materializeReadContext<TType>(
+                tcenvb,
+                pos,
+                context -> context.expand(mappedElem, Some(Covariant())),
+                (scratch, readEnv) ->
+                  mappedElem.expand(scratch, readEnv, Some(Covariant()))
+                ,
+              ),
+              TPrimUnit(TUndefined(), pos),
+            )
+          | None() -> mappedElem
+          };
+          results.push(
+            TType::inst(
+              Name(
+                pos,
+                if (outReadonly(srcIsReadonly)) "ReadonlyArray" else "Array",
+              ),
+              TArgs(Array[mappedElem]),
+            ),
+          )
+        }
+      };
+      Some(TType::unionStructuralN(pos, results))
+    }
+  }
+
+  // `T[K]` for `number` keys and finite unions of string/number literal keys.
+  fun indexedAccessFrom(
+    objClauses: Clauses,
+    keyExpanded: ?(mutable Vector<TInst>, mutable Vector<Clause>),
+    pos: PosRange,
+    boxedClass: Name -> TObject,
+  ): TType {
+    errPos = this.instantiateAt.default(pos);
+    // Classify `K` first so we detect abstract/unsupported keys uniformly.
+    (keyInsts, keyClauses) = keyExpanded match {
+    | Some(pair) -> pair
+    | None() ->
+      fatalError(
+        Array[
+          (
+            errPos,
+            "Indexed access types ('T[K]') are not yet supported by SKJS",
+          ),
+        ],
+        SKJSCode(9021),
+      )
+    };
+    keyIsAbstract = keyClauses.any(c -> !c.vars.isEmpty());
+    if (keyIsAbstract) {
+      if (this.inTypeDefValidation) {
+        return TType::top(pos)
+      };
+      fatalError(
+        Array[
+          (
+            errPos,
+            "Indexed access on an abstract type is not yet supported by SKJS; use a known object or array shape with explicit type parameters",
+          ),
+        ],
+        SKJSCode(9034),
+      )
+    };
+    if (!keyInsts.isEmpty() || keyClauses.any(c -> c.stypes is None())) {
+      fatalError(
+        Array[
+          (
+            errPos,
+            "Indexed access types ('T[K]') are not yet supported by SKJS",
+          ),
+        ],
+        SKJSCode(9021),
+      )
+    };
+    hasNumber = false;
+    litKeys = mutable Vector<String>[];
+    for (clause in keyClauses) {
+      for (stype in clause.stypes.fromSome()) {
+        stype match {
+        | TPrimValue(TNum(), None(), _) -> !hasNumber = true
+        | TPrimString(Some(lits), _)
+        | TPrimValue(TNum(), Some(lits), _) ->
+          for (lit in lits.values()) litKeys.push(lit.val)
+        | _ ->
+          fatalError(
+            Array[
+              (
+                errPos,
+                "Indexed access types ('T[K]') are not yet supported by SKJS",
+              ),
+            ],
+            SKJSCode(9021),
+          )
+        }
+      }
+    };
+    if (!hasNumber && litKeys.isEmpty()) {
+      // `T[never]` -> `never`
+      return TType::bottom(pos)
+    };
+    // Abstract `T`: defer during type-definition validation, reject elsewhere.
+    this.checkAbstractProjection(objClauses, pos, "Indexed access");
+    if (
+      this.inTypeDefValidation &&
+      objClauses.any(clause -> !clause.vars.isEmpty())
+    ) {
+      return TType::top(pos)
+    };
+    resultTys = mutable Vector<TType>[];
+    if (hasNumber) {
+      resultTys.push(this.numberIndexedFromClauses(objClauses, pos, boxedClass))
+    };
+    if (!litKeys.isEmpty()) {
+      if (objClauses.any(clause -> clause.stypes is None())) {
+        fatalError(
+          Array[
+            (
+              errPos,
+              "Indexed access types ('T[K]') are not yet supported by SKJS",
+            ),
+          ],
+          SKJSCode(9021),
+        )
+      };
+      for (keyName in litKeys) {
+        for (clause in objClauses) {
+          stypes = Vector::mcreateFromItems(clause.stypes.fromSome());
+          while (!stypes.isEmpty()) {
+            stype = stypes.pop();
+            stype match {
+            | obj @ TObject _ ->
+              for (fields in obj.getAllFields()) {
+                fields.maybeGet(keyName) match {
+                | Some(field) ->
+                  resultTys.push(
+                    TFields::resolveFieldReadWith(field, pos, (ty, p) ->
+                      TType::unionStructural(
+                        ty,
+                        TType::single(TPrimUnit(TUndefined(), p)),
+                      )
+                    ),
+                  )
+                | None() ->
+                  // Tuples carry an inherited `[n: number]: T0 | ...` index
+                  // signature, so out-of-bounds numeric keys (e.g. `Pair[2]`
+                  // or `Pair["2"]`) must NOT fall back to `numberIndex`.
+                  isTupleOutOfBounds =
+                    fields.isTuple().isSome() &&
+                    isJSNumberKeyName(keyName);
+                  if (isTupleOutOfBounds) {
+                    fields.getTypeTypingError(keyName, errPos)
+                  };
+                  fields.indexForFieldName(keyName) match {
+                  | Some(idx) if (!idx.isSynthetic() && !idx.get.isBottom()) ->
+                    resultTys.push(idx.get)
+                  | _ -> fields.getTypeTypingError(keyName, errPos)
+                  }
+                }
+              }
+            | prim @ TPrimValue _
+            | prim @ TPrimString _ ->
+              stypes.push(boxedClass(prim.asClassName()))
+            | TPrimUnit _ ->
+              fatalError(
+                Array[
+                  (
+                    errPos,
+                    `Property '${TypePp::escapeName(
+                      keyName,
+                    )}' does not exist on this type`,
+                  ),
+                ],
+                TSCode(2339),
+              )
+            }
+          }
+        }
+      }
     };
     TType::unionStructuralN(pos, resultTys)
   }
