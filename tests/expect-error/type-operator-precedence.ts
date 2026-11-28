@@ -122,13 +122,16 @@ function testNestedKeyof1(): void {
   const a: NestedKeyof1 = "x";
 }
 
-// Without the bug fix, this is what keyof { x: number } | string incorrectly parses as
+// Without the precedence fix, `keyof { x: number } | string` would parse as
+// `keyof ({ x: number } | string)` which is `never` (no keys in common).
 type NestedKeyofBuggy = keyof ({ x: number } | string);
 
 function testNestedKeyofBuggy(): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const a: NestedKeyofBuggy = "x";
-  // This SHOULD work with the buggy parsing (all string methods)
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const b: NestedKeyofBuggy = "charAt";
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const c: NestedKeyofBuggy = "toString";
 }
 

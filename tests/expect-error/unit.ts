@@ -86,9 +86,12 @@ function check5(t1: [number] | [boolean]): number | boolean {
   return x;
 }
 
+// Mutable tuples carry invariant Array methods (e.g. concat/pop/push), so
+// `[A] & [B]` is not assignable to `[A & B]` (tsc rejects this too).
 function check6(
   t1: [{ field1: number }] & [{ field2: boolean }],
 ): [{ field1: number; field2: boolean }] {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return t1;
 }
 

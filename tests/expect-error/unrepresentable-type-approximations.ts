@@ -1,10 +1,10 @@
-// Pinning tests for silent type-representation approximations (#76):
-//   1. `keyof unknown`, `keyof never`, and `keyof (A | B)` (union of types)
-//      currently over-approximate `keyof` instead of intersecting member keys /
-//      computing exact contravariant bounds.
+// Regression tests for silent type-representation approximations (#76):
+//   1. `keyof unknown`, `keyof never`, `keyof (A | B)`, and `keyof` on string
+//      index signatures compute exact contravariant key sets instead of
+//      over-approximating.
 //   2. Materialized function intersection `F1 & F2` on incomparable signatures
-//      currently collapses to `never` in TypeReadContext::funsInter, allowing
-//      values of inhabited overloaded intersections to be laundered to any type.
+//      preserves both overload signatures instead of silently collapsing to
+//      `never` in TypeReadContext::funsInter.
 
 ///////////////////////////////////////////////////////////////////////////////
 // Part 1: keyof on unknown, never, and unions
@@ -23,28 +23,23 @@ type KStrNumIdxUnion = keyof (
   | { [k: number]: number }
 );
 
-function pinKeyofUnknown(k: KUnknown): void {
-  // BUG (#76): keyof unknown currently over-approximates as `number | string`
-  // instead of `never`, so arbitrary strings/numbers are accepted and `k` is
-  // not assignable to `never`.
-  const s: KUnknown = "anything";
-  const n: KUnknown = 42;
+function testKeyofUnknown(k: KUnknown): void {
+  // keyof unknown is `never`.
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  const s: KUnknown = "anything";
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  const n: KUnknown = 42;
   const nev: never = k;
 }
 
-function pinKeyofNever(): void {
-  // BUG (#76): keyof never currently evaluates to `never` instead of
-  // `string | number | symbol`.
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+function testKeyofNever(): void {
+  // keyof never is `string | number | symbol`.
   const s: KNever = "a";
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const n: KNever = 42;
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const sym: KNever = Symbol();
 }
 
-function pinKeyofUnion(
+function testKeyofUnion(
   u: KUnionObj,
   d: KDisjointObj,
   kn: KObjNull,
@@ -55,40 +50,36 @@ function pinKeyofUnion(
   const ok1: KUnionObj = "a";
   const ok2: KObjStrIdx = "a";
 
-  // BUG (#76): keyof (A | B) currently unions member keys instead of
-  // intersecting them, accepting non-common keys and rejecting narrowing to
-  // the common key set.
-  const badB: KUnionObj = "b";
-  const badC: KUnionObj = "c";
+  // keyof (A | B) = (keyof A) & (keyof B).
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  const badB: KUnionObj = "b";
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  const badC: KUnionObj = "c";
   const onlyA: "a" = u;
 
-  const badDisjoint: KDisjointObj = "a";
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  const badDisjoint: KDisjointObj = "a";
   const emptyDisjoint: never = d;
 
-  const badNull: KObjNull = "a";
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  const badNull: KObjNull = "a";
   const emptyNull: never = kn;
 
-  const badUndef: KObjUndef = "a";
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  const badUndef: KObjUndef = "a";
   const emptyUndef: never = ku;
 
-  const badStrIdx: KObjStrIdx = "other";
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  const badStrIdx: KObjStrIdx = "other";
   const onlyAStrIdx: "a" = ks;
 }
 
-function pinKeyofStringIndex(k: KStrNumIdxUnion): void {
-  // BUG (#76): keyof { [k: string]: number } currently omits `number`
-  // (JS coerces number keys to strings, so tsc evaluates it to `string | number`).
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+function testKeyofStringIndex(k: KStrNumIdxUnion): void {
+  // keyof { [k: string]: number } is `string | number` (JS coerces numeric keys).
   const numKey: KStrIdx = 42;
-  // BUG (#76): keyof ({ [k: string]: number } | { [k: number]: number })
-  // currently unions to `string | number` instead of intersecting to `number`.
-  const badStr: KStrNumIdxUnion = "abc";
+  // keyof ({ [k: string]: number } | { [k: number]: number }) is `number`.
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  const badStr: KStrNumIdxUnion = "abc";
   const onlyNum: number = k;
 }
 
@@ -102,17 +93,17 @@ type FI = F1 & F2;
 
 declare const fi: FI;
 
-function pinLaunderFunctionIntersection(): number {
-  // BUG (#76): FI collapses to `never` during type-read normalization, so an
-  // inhabited overloaded function value is unsoundly assignable to `number`!
+function testNoLaunderFunctionIntersection(): number {
+  // FI is an overloaded callable, NOT `never`, so it cannot be returned as `number`.
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return fi;
 }
 
 type ObjFI = { f: F1 } & { f: F2 };
 declare const ofi: ObjFI;
 
-function pinLaunderPropertyFunctionIntersection(): number {
-  // BUG (#76): Same silent collapse inside intersected object properties.
+function testNoLaunderPropertyFunctionIntersection(): number {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return ofi.f;
 }
 
@@ -121,29 +112,31 @@ type Ctor2 = new (x: string) => { b: string };
 type CtorI = Ctor1 & Ctor2;
 declare const ct: CtorI;
 
-function pinLaunderConstructIntersection(): number {
-  // BUG (#76): Same silent collapse for construct-signature intersections.
+function testNoLaunderConstructIntersection(): number {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return ct;
 }
 
 declare function ovl(x: number): string;
 declare function ovl(x: string): boolean;
 
-function pinAssignFunctionIntersection(): void {
-  // BUG (#76): Because FI collapsed to `never`, an overloaded function cannot
-  // be assigned to FI.
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+function testAssignFunctionIntersection(): void {
   const g: FI = ovl;
 }
 
-function pinCallFunctionIntersection1(): string {
-  // BUG (#76): Because FI collapsed to `never`, calling fi fails with
-  // "This expression is not callable".
-  // @skjs-expect-error This expression is not callable
+function testCallFunctionIntersection1(): string {
   return fi(1);
 }
 
-function pinCallFunctionIntersection2(): boolean {
-  // @skjs-expect-error This expression is not callable
+function testCallFunctionIntersection2(): boolean {
   return fi("hi");
+}
+
+function testForOfIntersectedReadonlyArrays(
+  xs: readonly number[] & readonly unknown[],
+): number {
+  for (const x of xs) {
+    return x;
+  }
+  return 0;
 }

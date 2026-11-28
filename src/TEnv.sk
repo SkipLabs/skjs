@@ -4409,25 +4409,86 @@ base class TEnv{
     )
   }
 
+  // Exact `keyof` over expanded clauses.
+  // `keyof` is contravariant:
+  //   - `keyof unknown` = `never`
+  //   - `keyof never`   = `string | number | symbol`
+  //   - `keyof (A | B)` = `(keyof A) & (keyof B)`
+  // For an object branch with a non-bottom string index, JS coerces numeric
+  // keys to strings so the index contributes both `string` and `number`.
   fun keyOfFromClauses(
     clauses: Clauses,
     pos: PosRange,
     boxedClass: Name -> TObject,
   ): TType {
     this.checkAbstractProjection(clauses, pos, "keyof");
-    if (
-      clauses.any(clause -> (!clause.vars.isEmpty() || clause.stypes is None()))
-    ) {
-      return TType::unionStructural(
-        TType::single(TPrimString(None(), pos)),
-        TType::single(TPrimValue(TNum(), None(), pos)),
-      )
+    // `keyof unknown` is `never`: an unknown value guarantees no keys.
+    if (clauses.any(clause -> clause.stypes is None())) {
+      return TType::bottom(pos)
     };
-    allStrings = false;
-    allNumbers = false;
-    allSymbols = false;
-    strings = SortedSet[];
-    symbols = SortedSet[];
+    // Collect the key set of each union member (clause -> stype -> object
+    // branch), then intersect across all members. An empty union (`never`)
+    // has no members and therefore yields `string | number | symbol`.
+    memberAllStrings = false;
+    memberAllNumbers = false;
+    memberAllSymbols = false;
+    memberStrings = SortedSet[];
+    memberNumbers = SortedSet[];
+    memberSymbols = SortedSet[];
+    hasMember = false;
+
+    intersectMember = (
+      allStr: Bool,
+      allNum: Bool,
+      allSym: Bool,
+      strs: SortedSet<String>,
+      nums: SortedSet<String>,
+      syms: SortedSet<String>,
+    ) -> {
+      if (!hasMember) {
+        !hasMember = true;
+        !memberAllStrings = allStr;
+        !memberAllNumbers = allNum;
+        !memberAllSymbols = allSym;
+        !memberStrings = strs;
+        !memberNumbers = nums;
+        !memberSymbols = syms;
+      } else {
+        !memberStrings = if (memberAllStrings && allStr) {
+          SortedSet[]
+        } else if (memberAllStrings) {
+          strs
+        } else if (allStr) {
+          memberStrings
+        } else {
+          memberStrings.intersection(strs)
+        };
+        !memberAllStrings = memberAllStrings && allStr;
+
+        !memberNumbers = if (memberAllNumbers && allNum) {
+          SortedSet[]
+        } else if (memberAllNumbers) {
+          nums
+        } else if (allNum) {
+          memberNumbers
+        } else {
+          memberNumbers.intersection(nums)
+        };
+        !memberAllNumbers = memberAllNumbers && allNum;
+
+        !memberSymbols = if (memberAllSymbols && allSym) {
+          SortedSet[]
+        } else if (memberAllSymbols) {
+          syms
+        } else if (allSym) {
+          memberSymbols
+        } else {
+          memberSymbols.intersection(syms)
+        };
+        !memberAllSymbols = memberAllSymbols && allSym;
+      }
+    };
+
     for (clause in clauses) {
       invariant(clause.vars.isEmpty(), "keyof with non-empty variables");
       stypes = Vector::mcreateFromIterator(clause.stypes.fromSome().values());
@@ -4436,20 +4497,19 @@ base class TEnv{
         stype match {
         | obj @ TObject(_, _, _) ->
           for (fields in obj.getAllFields()) {
-            if (!allStrings || !allNumbers) {
-              for (field in fields.fields) {
-                !strings = strings.set(field.name.value);
-              }
-            };
-            if (!allSymbols) {
-              for (symbolField in fields.symbolFields) {
-                !symbols = symbols.set(symbolField.name.value);
-              }
-            };
+            allStrings = false;
+            allNumbers = false;
+            allSymbols = false;
+            strings = SortedSet[];
+            numbers = SortedSet[];
+            symbols = SortedSet[];
             // A never-valued index (get = bottom, e.g. from Closed<T>) proves
             // its keys absent, so it widens keyof by nothing.
             fields.stringIndex.each(idx ->
-              if (!idx.get.isBottom()) !allStrings = true
+              if (!idx.get.isBottom()) {
+                !allStrings = true;
+                !allNumbers = true;
+              }
             );
             fields.numberIndex.each(idx ->
               if (!idx.get.isBottom()) !allNumbers = true
@@ -4457,42 +4517,80 @@ base class TEnv{
             fields.symbolIndex.each(idx ->
               if (!idx.get.isBottom()) !allSymbols = true
             );
+            if (!allStrings || !allNumbers) {
+              for (field in fields.fields) {
+                name = field.name.value;
+                if (!allStrings) !strings = strings.set(name);
+                // A key that is the String() form of a number literal also has
+                // that number literal type in keyof, including the "Infinity"
+                // key (the literal named Infinity, rule 30) and "-Infinity".
+                if (!allNumbers && isExactJSNumberName(name)) {
+                  !numbers = numbers.set(name)
+                };
+              }
+            };
+            if (!allSymbols) {
+              for (symbolField in fields.symbolFields) {
+                !symbols = symbols.set(symbolField.name.value);
+              }
+            };
+            intersectMember(
+              allStrings,
+              allNumbers,
+              allSymbols,
+              strings,
+              numbers,
+              symbols,
+            );
           }
         | prim @ TPrimValue _
         | prim @ TPrimString _ ->
           obj = boxedClass(prim.asClassName());
           stypes.push(obj)
-        | TPrimUnit _ -> void /* bottom */
+        | TPrimUnit _ ->
+          // null / undefined / void have no keys: intersecting with an empty
+          // key set yields empty.
+          intersectMember(
+            false,
+            false,
+            false,
+            SortedSet[],
+            SortedSet[],
+            SortedSet[],
+          )
         }
       }
     };
+    if (!hasMember) {
+      // `keyof never` = `string | number | symbol`
+      return TType::unionStructuralN(
+        pos,
+        Array[
+          TType::single(TPrimString::full(pos)),
+          TType::single(TPrimValue::number(pos)),
+          TType::single(TPrimValue::symbol(pos)),
+        ],
+      )
+    };
     resultTys = mutable Vector[];
-    numbers = SortedSet[];
-    if (allStrings) {
+    if (memberAllStrings) {
       resultTys.push(TType::single(TPrimString::full(pos)))
     } else {
-      stringsAndNumbers = strings.union(numbers);
-      PrimLiterals::ofSet(stringsAndNumbers, pos).each(strLits ->
+      PrimLiterals::ofSet(memberStrings, pos).each(strLits ->
         resultTys.push(TType::single(TPrimString(Some(strLits), pos)))
       )
     };
-    if (allNumbers) {
+    if (memberAllNumbers) {
       resultTys.push(TType::single(TPrimValue::number(pos)))
     } else {
-      // A key that is the String() form of a number literal also has that
-      // number literal type in keyof, including the "Infinity" key (the
-      // literal named Infinity, rule 30) and "-Infinity".
-      for (str in strings) {
-        if (isExactJSNumberName(str)) !numbers = numbers.set(str)
-      };
-      PrimLiterals::ofSet(numbers, pos).each(nbrLits ->
+      PrimLiterals::ofSet(memberNumbers, pos).each(nbrLits ->
         resultTys.push(TType::single(TPrimValue(TNum(), Some(nbrLits), pos)))
       )
     };
-    if (allSymbols) {
+    if (memberAllSymbols) {
       resultTys.push(TType::single(TPrimValue::symbol(pos)))
     } else {
-      PrimLiterals::ofSet(symbols, pos).each(symLits ->
+      PrimLiterals::ofSet(memberSymbols, pos).each(symLits ->
         resultTys.push(TType::single(TPrimValue(TSymbol(), Some(symLits), pos)))
       )
     };
