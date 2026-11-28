@@ -216,18 +216,23 @@ extension class TypeChecker {
       tcenv.popScopeReplace(initScope);
       initTerm.thenk(() ->
         StmtTermination::cond(cond).loop_(() ->
-          bodyTerm.thenk(() ~> StmtTermination::expr(incr))
+          // A `continue` inside a `for` loop executes `incr` before re-testing
+          // `cond`, so `continue` must reach `incr` before `loop_` folds it.
+          bodyTerm.continueToFallthrough().thenk(() ~>
+            StmtTermination::expr(incr)
+          )
         )
       )
     | Block(stmts) ->
       // A bare block is its own lexical scope, like any other block: names
       // declared in it shadow outer names inside it and are not visible
-      // after it. Writes it makes to outer bindings still reach the code
-      // after, via the pop merge below.
+      // after it. When the block completes normally, control flowed
+      // unconditionally through it, so its post-block bindings replace the
+      // enclosing scope's views (`popScopeReplace`); when it cannot fall
+      // through, the code after is unreachable and the enclosing scope is left
+      // untouched (matching `If` when neither branch falls through).
       (blockScope, term) = this.block(tcenv, stmts);
       if (term.mayFallthrough) {
-        tcenv.popScope(this, blockScope)
-      } else {
         tcenv.popScopeReplace(blockScope)
       };
       term
@@ -588,7 +593,7 @@ extension class TypeChecker {
     // whatever the fallen-into clause does. A clause that only returns, throws,
     // continues, or loops forever does not reach the code after either. The
     // block is still checked either way — only its scope is dropped. (`If` has
-    // no fall-through between arms, so it drops on `isTerminal` alone.)
+    // no fall-through between arms, so it drops on `!mayFallthrough` alone.)
     scopes = mutable Vector<readonly Scope>[];
     // `default` runs only for a value no `case` matched, so its body is narrowed
     // by that: the conjunction of `scrutinee !== <label>` over the cases. Every
