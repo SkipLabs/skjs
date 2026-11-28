@@ -12,16 +12,76 @@ import type { Json, JsonObject } from "@skipruntime/core";
 
 type Named = { readonly a: string };
 
-// Rejected through the `Json` union (the issue's verbatim repro). The union's
-// array branch contributes noise, so only the top-level rejection is pinned.
+// Rejected through the `Json` union (the issue's verbatim repro).
 interface JsonBox<T extends Json> {
   get(): T;
 }
 // @skjs-expect-error Type argument does not satisfy the constraint
+// @skjs-expect-error-line2 This is of type: 'Named'
+// @skjs-expect-error-line3 It does not satisfy the constraint: 'Json'
+// @skjs-expect-error-line4 Type '{ readonly a: string; }'
+// @skjs-expect-error-line5 is not assignable to type 'readonly (null | Json)[]'
+// @skjs-expect-error-line6 The field 'every' is missing
+// @skjs-expect-error-line7 Type '{ readonly a: string; }'
+// @skjs-expect-error-line8 is not assignable to type '{ readonly [key: string]: null | Json; }'
+// @skjs-expect-error-line9 Missing index signature 'key' in source type
 export class JsonC implements JsonBox<Named> {
   get(): Named {
     return { a: "x" };
   }
+}
+
+// Direct return of a named object type against `Json`.
+function namedAsJson(x: Named): Json {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  // @skjs-expect-error-line2 Type '{ readonly a: string; }'
+  // @skjs-expect-error-line3 is not assignable to type 'readonly (null | Json)[]'
+  // @skjs-expect-error-line4 The field 'every' is missing
+  // @skjs-expect-error-line5 Type '{ readonly a: string; }'
+  // @skjs-expect-error-line6 is not assignable to type '{ readonly [key: string]: null | Json; }'
+  // @skjs-expect-error-line7 Missing index signature 'key' in source type
+  return x;
+}
+
+// Named object type against an explicit index-signature | array union.
+function namedAsIndexOrArray(
+  x: Named,
+): { readonly [k: string]: string } | readonly string[] {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  // @skjs-expect-error-line2 Type '{ readonly a: string; }'
+  // @skjs-expect-error-line3 is not assignable to type 'readonly string[]'
+  // @skjs-expect-error-line4 The field 'every' is missing
+  // @skjs-expect-error-line5 Type '{ readonly a: string; }'
+  // @skjs-expect-error-line6 is not assignable to type '{ readonly [k: string]: string; }'
+  // @skjs-expect-error-line7 Missing index signature 'k' in source type
+  return x;
+}
+
+// Symmetric: an array failing against an index-signature | array union should
+// blame the array branch rather than the index-signature branch.
+function arrayAsIndexOrArray(
+  x: readonly string[],
+): { readonly [k: string]: number } | readonly number[] {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  // @skjs-expect-error-line2 Type 'string'
+  // @skjs-expect-error-line3 is not assignable to type 'number'
+  // @skjs-expect-error-line4 Function parameter types are checked contravariantly: target parameter type 'string' must be assignable to source parameter type 'number'
+  // @skjs-expect-error-line5 Type '(this: readonly string[], (string) => boolean) => boolean'
+  // @skjs-expect-error-line6 is not assignable to type 'number'
+  return x;
+}
+
+// Fallback: when NO target branch matches the source's array-ness (e.g. a
+// non-array object against a union of array types), keep all failing branches.
+function namedAsArrayUnion(x: Named): readonly string[] | number[] {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  // @skjs-expect-error-line2 Type '{ readonly a: string; }'
+  // @skjs-expect-error-line3 is not assignable to type 'readonly string[]'
+  // @skjs-expect-error-line4 The field 'every' is missing
+  // @skjs-expect-error-line5 Type '{ readonly a: string; }'
+  // @skjs-expect-error-line6 is not assignable to type 'number[]'
+  // @skjs-expect-error-line7 The field 'concat' is missing
+  return x;
 }
 
 // Rejected through `JsonObject` (no array-branch noise), so the actionable
