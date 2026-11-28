@@ -438,7 +438,7 @@ function testSameSymbolIndexView(c: boolean): void {
 }
 
 // First view outside a loop, identical repeat inside a loop: still rejected
-// by the through-loop arm (preserving #1057's loop rule).
+// by the through-loop arm (conservative general rule — see testViewInsideLoop).
 function testLoopViewAfterPriorSameView(): void {
   const t = {};
   const f: { [k: string]: number } = t;
@@ -449,11 +449,29 @@ function testLoopViewAfterPriorSameView(): void {
   }
 }
 
-// Index view of an outside-declared local inside a loop: rejected by the
-// second-view index gate's through-loop arm — the loop body could grant the
-// index view on every iteration while the local keeps its own type, so the view
-// is an unrecordable aliasing hazard. Declare the local inside the loop instead.
-// TODO(#1057): build a soundness-breaking witness or keep this as a general rule.
+// Index view of an outside-declared local inside a loop: kept as a conservative
+// general rule of the second-view index gate's through-loop arm (SkipLabs/skjs#1057).
+//
+// Why this is a conservative general rule rather than a standalone soundness witness:
+//   - A single syntactic index view `const f: A = t` inside a loop evaluates against
+//     one fixed static annotation `A` on every iteration, so repeating the view on
+//     each iteration grants the same capability each time (and a loop-local `instanceof`
+//     hidden witness in `A` is already blocked by `checkHiddenBindingEscape` from
+//     escaping into `t`'s outer-scope synthetic index).
+//   - Any conflicting second index view inside or after the loop is already rejected
+//     by the non-loop arm (`prevView <: annot` fails).
+//   - Any pre-view read of `t` inside or before the loop marks `t` as `LOUsed(_, None())`,
+//     so the non-loop arm already rejects `f`; any post-view read of `t.x` sees `t.x`'s
+//     TVar already widened by `t <: A`; adding a new field inside a loop is already
+//     rejected by `SKJSCode(2069)`.
+//   - An index view followed by a conflicting named-optional view (e.g. `{ a?: number }`)
+//     is a straight-line gap tracked under #678 (`testAliasNeverIndexThenMutableOptional`),
+//     not a loop-specific hole; likewise a generic closure capturing `t` crosses a
+//     function boundary rather than a loop.
+//
+// Keeping the through-loop arm mirrors the general local-object loop rule (no
+// field growth of an outside-declared local inside a loop, `SKJSCode(2069)`):
+// annotate `t` at its declaration outside the loop, or declare it inside the loop.
 function testViewInsideLoop(): void {
   const t = {};
   for (const i of [1, 2]) {

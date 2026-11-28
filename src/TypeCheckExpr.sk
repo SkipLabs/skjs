@@ -1393,16 +1393,19 @@ extension class TypeChecker {
             (viewSrcUsedPos is Some(_) && !compatibleRepeat))
         ) {
           // A fresh object literal's implicit-index capability is a
-          // single-consumption grant. A SECOND by-reference view (or a view
-          // that escapes a loop) of the same tracked local at an
-          // index-signature type would alias the local under an incompatible
-          // index capability — the aliasing type-confusion pinned by the
-          // testAlias* / testViewInsideLoop / testThroughLoopViewThenPreciseRead
-          // witnesses. Reject at the view site. We SKIP (not fail) the subtype
-          // check so its setter direction cannot widen the local's own fields,
-          // keeping a later precise read of the local sound. The diagnostic's
-          // second line points at the first use (or, for the through-loop arm,
-          // the declaration) so the user sees why the view is rejected.
+          // single-consumption grant. A SECOND incompatible by-reference view
+          // of the same tracked local at an index-signature type would alias
+          // the local under a conflicting index capability (the aliasing
+          // type-confusion pinned by the testAlias* witnesses). Crossing a
+          // loop (`viewSrcThroughLoop`) is also rejected as a conservative
+          // general rule matching the no-in-loop-growth rule for local objects
+          // (`SKJSCode(2069)`; see SkipLabs/skjs#1057 and `testViewInsideLoop`
+          // / `testThroughLoopViewThenPreciseRead`). Reject at the view site
+          // and SKIP (rather than fail) the subtype check so its setter
+          // direction cannot widen the local's own fields, keeping a later
+          // precise read of the local sound. The diagnostic's second line
+          // points at the first use (or, for the through-loop arm, the
+          // declaration) so the user sees why the view is rejected.
           (viewSrcPos, viewSrcMsg) = (e.value, viewSrcUsedPos) match {
           | (Var(local), _) if (viewSrcThroughLoop) ->
             (
