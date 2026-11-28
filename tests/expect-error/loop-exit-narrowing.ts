@@ -11,7 +11,6 @@ function whileNotNullExit(x: string | null): null {
   while (x !== null) {
     x = null;
   }
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
@@ -19,7 +18,6 @@ function whileEqNullExit(x: string | null): string {
   while (x === null) {
     x = "ok";
   }
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
@@ -27,7 +25,6 @@ function whileOrExit(x: 1 | 2 | 3, three: 3): 3 {
   while (x === 1 || x === 2) {
     x = three;
   }
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
@@ -35,7 +32,6 @@ function whileTypeofExit(x: string | number): number {
   while (typeof x === "string") {
     x = 1;
   }
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
@@ -45,8 +41,6 @@ function whileDiscriminatedUnionExit(
   while (s.kind === "a") {
     s = { kind: "b", b: "done" };
   }
-  // @skjs-expect-error Property 'b' exists on some but not all members of the union type, so it may be absent
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return s.b;
 }
 
@@ -54,7 +48,6 @@ function whileMemberNotNullExit(o: { v: string | null }): null {
   while (o.v !== null) {
     o.v = null;
   }
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return o.v;
 }
 
@@ -65,7 +58,6 @@ function whileWithCallInBodyExit(
   while (x !== null) {
     x = step();
   }
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
@@ -76,7 +68,6 @@ function whileMemberWithCallInBodyExit(
   while (o.v !== null) {
     step(o);
   }
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return o.v;
 }
 
@@ -92,7 +83,6 @@ function whileWithContinueExit(
     }
     x = null;
   }
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
@@ -103,7 +93,6 @@ function whileWithReturnInBodyExit(x: string | null, done: boolean): null {
     }
     x = null;
   }
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
@@ -114,7 +103,6 @@ function whileBreakAlsoNarrows(x: "go" | "stop" | null): "stop" | null {
     }
     x = null;
   }
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
@@ -126,7 +114,6 @@ function whileBreakAssignsSameAsExit(x: string | null, flag: boolean): null {
     }
     x = null;
   }
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
@@ -142,7 +129,6 @@ function whileCapturedMutatedByBodyCallExit(
     step();
     reset();
   }
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
@@ -150,7 +136,6 @@ function forNotNullExit(x: string | null, next: () => string | null): null {
   for (; x !== null; x = next()) {
     const s: string = x;
   }
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
@@ -161,7 +146,6 @@ function forDiscriminatedUnionExit(
   for (; s.kind === "a"; s = step()) {
     const n: number = s.a;
   }
-  // @skjs-expect-error Property 'b' exists on some but not all members of the union type, so it may be absent
   return s.b;
 }
 
@@ -174,7 +158,6 @@ function forBreakAlsoNarrows(
       break;
     }
   }
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
