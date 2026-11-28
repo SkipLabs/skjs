@@ -4123,14 +4123,23 @@ extension class TypeChecker {
     | As(subExpr, tyAst) ->
       annot = this.normalize(tcenv, tyAst);
       inferredTy = this.expr(tcenv, subExpr, true);
-      this.checkSubType(
-        tcenv,
-        pos,
-        "This 'as' cast is unsound: the source type is not assignable to the target type",
-        this.stableAliasExprType(tcenv, subExpr, inferredTy),
-        annot,
-        SKJSCode(2003),
-      );
+      stableSrc = this.stableAliasExprType(tcenv, subExpr, inferredTy);
+      // Branded primitive construction (`x as Branded`, issue #630): allow
+      // adding phantom brands when `annot` is a branded type, the source's
+      // underlying value is assignable to the unbranded target, and every
+      // existing brand on the source is preserved on the target (preventing
+      // cross-brand casts like `orderId as UserId` while permitting
+      // `s as UserId` and `userId as AdminUserId`).
+      if (!this.isSoundBrandingCast(tcenv, stableSrc, annot)) {
+        this.checkSubType(
+          tcenv,
+          pos,
+          "This 'as' cast is unsound: the source type is not assignable to the target type",
+          stableSrc,
+          annot,
+          SKJSCode(2003),
+        )
+      };
       annot
     | Satisfies(subExpr, tyAst) ->
       annot = this.normalize(tcenv, tyAst);
@@ -6930,6 +6939,53 @@ extension class TypeChecker {
       tcenv.recordCallAssertPredicate(pos, tfun.assertPred)
     };
     tfun.retType
+  }
+
+  // Whether `source as target` is a sound branding cast (issue #630):
+  // `target` carries at least one phantom brand, and every clause of `source`
+  // matches a clause of `target` whose underlying value accepts `source`'s
+  // value (same underlying primitive) and whose brands satisfy `source`'s
+  // brands (preventing cross-brand casts like `orderId as UserId` or
+  // `OrderId | number as UserId | number`, while allowing `s as UserId` and
+  // `userId as AdminUserId`).
+  private fun isSoundBrandingCast(
+    tcenv: mutable TCEnv,
+    source: TType,
+    target: TType,
+  ): Bool {
+    targetClauses = target.expandToClauses(tcenv.subst, this, Contravariant());
+    if (!targetClauses.hasBrands()) return false;
+    saved = tcenv.subst.save();
+    sourceClauses = source.expandToClauses(tcenv.subst, this, Covariant());
+    ok = sourceClauses.all(srcClause ->
+      targetClauses.any(tgtClause -> {
+        branchSaved = tcenv.subst.save();
+        matched =
+          srcClause.vars.contains(tgtClause.vars) &&
+          Clauses::brandsAreSub(tgtClause.brands, srcClause.brands, (l, r) ->
+            TType::isSub(tcenv.subst, this, l, r)
+          ) &&
+          TType::isSub(
+            tcenv.subst,
+            this,
+            TType::ofClauses(
+              source.pos,
+              Clauses::singleClause(srcClause.withoutBrands()),
+            ),
+            TType::ofClauses(
+              target.pos,
+              Clauses::singleClause(tgtClause.withoutBrands()),
+            ),
+          ) is STOk();
+        if (!matched) tcenv.subst.restore(branchSaved);
+        matched
+      })
+    );
+    if (!ok) {
+      tcenv.subst.restore(saved);
+      return false
+    };
+    true
   }
 }
 

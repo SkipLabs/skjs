@@ -714,8 +714,11 @@ mutable class TypeReadContext private {
     } else {
       context.expandClauses(u2, Contravariant())
     };
-    Clauses::isSubWith(left, right, (a, b) ->
-      STypes::isSubWith(a, b, (x, y) -> context.objectSubtype(x, y))
+    Clauses::isSubWith(
+      left,
+      right,
+      (a, b) -> STypes::isSubWith(a, b, (x, y) -> context.objectSubtype(x, y)),
+      (a, b) -> context.subtype(a, b),
     ) match {
     | STOk() -> STOk()
     | err @ STErrorOnClauses _ -> STRecType(err, u1, u2)
@@ -761,19 +764,23 @@ mutable class TypeReadContext private {
     } else {
       this.expandClauses(u2, Contravariant())
     };
-    Clauses::isSubWith(left, right, (a, b) ->
-      STypes::isSubWith(a, b, (x, y) ->
-        TObject::isSubWith(x, y, (f, g) ->
-          TFields::isSubWith(
-            f,
-            g,
-            (l, r) -> this.subtype(l, r),
-            (l, r) -> this.subtype(l, r),
-            (l, r) -> this.funsSubtype(l, r, carrier),
-            (pos, name) -> this.symbolId(pos, name),
+    Clauses::isSubWith(
+      left,
+      right,
+      (a, b) ->
+        STypes::isSubWith(a, b, (x, y) ->
+          TObject::isSubWith(x, y, (f, g) ->
+            TFields::isSubWith(
+              f,
+              g,
+              (l, r) -> this.subtype(l, r),
+              (l, r) -> this.subtype(l, r),
+              (l, r) -> this.funsSubtype(l, r, carrier),
+              (pos, name) -> this.symbolId(pos, name),
+            )
           )
-        )
-      )
+        ),
+      (l, r) -> this.subtype(l, r),
     ) match {
     | STOk() -> STOk()
     | err @ STErrorOnClauses _ -> STRecType(err, u1, u2)
@@ -928,14 +935,28 @@ mutable class TypeReadContext private {
     | (Some(name), Some(obj)) ->
       if (
         context.isSubtype(TType::inst(name, TArgs(Array[])), TType::single(obj))
-      ) return left
+      ) return left;
+      if (!narrowing) {
+        obj.asBrandEntries() match {
+        | Some(brands) ->
+          return TType::ofClauses(left.pos, a.withBrands(brands))
+        | None() -> void
+        }
+      }
     | _ -> void
     };
     (b.primKind(), a.getObject()) match {
     | (Some(name), Some(obj)) ->
       if (
         context.isSubtype(TType::inst(name, TArgs(Array[])), TType::single(obj))
-      ) return right
+      ) return right;
+      if (!narrowing) {
+        obj.asBrandEntries() match {
+        | Some(brands) ->
+          return TType::ofClauses(right.pos, b.withBrands(brands))
+        | None() -> void
+        }
+      }
     | _ -> void
     };
     TType::ofClauses(

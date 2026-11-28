@@ -377,7 +377,12 @@ base class STErrorOnClauses(
     msgs = List::createFromItems(errs)
       .map(clause2_err -> {
         (clause2, err) = clause2_err;
-        if (!clause1.vars.isEmpty() || !clause2.vars.isEmpty()) {
+        if (
+          !clause1.vars.isEmpty() ||
+          !clause2.vars.isEmpty() ||
+          !clause1.brands.isEmpty() ||
+          !clause2.brands.isEmpty()
+        ) {
           msgs = err.toError(
             subst,
             tenv,
@@ -1532,15 +1537,40 @@ extension class STypes {
 }
 
 extension class Clauses {
+  // Whether `brands1` satisfies `brands2` (every required brand entry in
+  // `brands2` is matched by an entry in `brands1` with the same symbol/name,
+  // compatible optionality, and subtype payload). Using `typeSub` here lets
+  // generic brand parameters like `Branded<string, B>` unify `B` with `"UserId"`.
+  static fun brandsAreSub(
+    brands1: ArraySet<TBrandEntry>,
+    brands2: ArraySet<TBrandEntry>,
+    typeSub: (TType, TType) -> STResult<TType>,
+  ): Bool {
+    if (brands2.isEmpty()) return true;
+    if (brands1.isEmpty()) return false;
+    brands2.all(b2 ->
+      brands1.any(b1 ->
+        b1.isSymbol == b2.isSymbol &&
+          b1.name == b2.name &&
+          (!b1.isOptional || b2.isOptional) &&
+          typeSub(b1.type, b2.type) is STOk()
+      )
+    )
+  }
+
   static fun isSubWith(
     clauses1: Clauses,
     clauses2: Clauses,
     concreteSub: (STypes, STypes) -> STResult<STypes>,
+    typeSub: (TType, TType) -> STResult<TType>,
   ): STResult<Clauses> {
     for (inter1 in clauses1) {
       errors = List[];
       for (inter2 in clauses2) {
-        if (!inter1.vars.contains(inter2.vars)) {
+        if (
+          !inter1.vars.contains(inter2.vars) ||
+          !Clauses::brandsAreSub(inter1.brands, inter2.brands, typeSub)
+        ) {
           continue;
         };
         (inter1.stypes, inter2.stypes) match {
@@ -1780,22 +1810,16 @@ extension class TType {
     // probe before the next one.
     isCovered = (disjunct: TType) -> {
       saved = subst.save();
-      expandedOpen.clauses.any(clause ->
-        clause.stypes match {
-        | Some(stypes) ->
-          stypes.any(stype -> {
-            hit = TType::isSub(
-              subst,
-              tenv,
-              disjunct,
-              TType::single(stype),
-            ) is STOk();
-            subst.restore(saved);
-            hit
-          })
-        | None() -> false
-        }
-      )
+      expandedOpen.clauses.any(clause -> {
+        hit = TType::isSub(
+          subst,
+          tenv,
+          disjunct,
+          TType::ofClauses(expandedOpen.pos, Clauses::singleClause(clause)),
+        ) is STOk();
+        subst.restore(saved);
+        hit
+      })
     };
 
     // Grow tvar with boundTy minus the non-TVar branches of expandedOpen.
@@ -2163,23 +2187,27 @@ extension class TType {
     savedSubst = subst.save();
     clauses1 = u1.expandToClauses(subst, tenv, Covariant());
     clauses2 = u2.expandToClauses(subst, tenv, Contravariant());
-    Clauses::isSubWith(clauses1, clauses2, (stypes1, stypes2) ->
-      STypes::isSubWith(stypes1, stypes2, (obj1, obj2) ->
-        TObject::isSubWith(obj1, obj2, (f1, f2) -> {
-          savedBranchSubst = subst.save();
-          res = TFields::isSubWith(
-            f1,
-            f2,
-            (left, right) -> static::isSub(subst, tenv, left, right),
-            (left, right) -> static::isSub(subst, tenv, left, right),
-            (left, right) ->
-              static::isSubFuns(subst, tenv, left, right, carrier),
-            (pos, name) -> tenv.getWellKnownSymbolUniqueId(subst, pos, name),
-          );
-          if (res is STError _) subst.restore(savedBranchSubst);
-          res
-        })
-      )
+    Clauses::isSubWith(
+      clauses1,
+      clauses2,
+      (stypes1, stypes2) ->
+        STypes::isSubWith(stypes1, stypes2, (obj1, obj2) ->
+          TObject::isSubWith(obj1, obj2, (f1, f2) -> {
+            savedBranchSubst = subst.save();
+            res = TFields::isSubWith(
+              f1,
+              f2,
+              (left, right) -> static::isSub(subst, tenv, left, right),
+              (left, right) -> static::isSub(subst, tenv, left, right),
+              (left, right) ->
+                static::isSubFuns(subst, tenv, left, right, carrier),
+              (pos, name) -> tenv.getWellKnownSymbolUniqueId(subst, pos, name),
+            );
+            if (res is STError _) subst.restore(savedBranchSubst);
+            res
+          })
+        ),
+      (left, right) -> static::isSub(subst, tenv, left, right),
     ) match {
     | STOk() -> STOk()
     | err @ STErrorOnClauses _ ->
@@ -2231,8 +2259,11 @@ extension class TType {
     clauses2: Clauses,
   ): STResult<Clauses> {
     savedSubst = subst.save();
-    result = Clauses::isSubWith(clauses1, clauses2, (left, right) ->
-      static::isSubSTypes(subst, tenv, left, right)
+    result = Clauses::isSubWith(
+      clauses1,
+      clauses2,
+      (left, right) -> static::isSubSTypes(subst, tenv, left, right),
+      (left, right) -> static::isSub(subst, tenv, left, right),
     );
     if (result is STError _) subst.restore(savedSubst);
     result

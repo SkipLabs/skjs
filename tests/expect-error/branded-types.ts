@@ -1,11 +1,9 @@
 // Branded primitive types (issue #630):
 // `P & { readonly __brand: "Tag" }` / `P & { readonly [sym]: Tag }`
 //
-// Pre-change pinning test: primitive & non-boxing-object intersections
-// currently collapse to `never`, making branded types uninhabited and
-// causing downstream false positives / unsoundness (e.g., `UserId`
-// assignable to `OrderId` and `number` because `never <: T`, while
-// `.length`, `+`, and `as` construction fail).
+// Primitive & readonly-brand-object intersections preserve the underlying
+// primitive with phantom brand tags instead of collapsing to `never`, while
+// keeping phantom brand fields inaccessible for soundness.
 
 declare const brandSym: unique symbol;
 
@@ -39,42 +37,34 @@ declare function makeMultiFieldBrand(s: string): MultiFieldBrand;
 
 // Construction via `as` cast from underlying primitive
 function testCastUserId(s: string): UserId {
-  // @skjs-expect-error This 'as' cast is unsound: the source type is not assignable to the target type
   return s as UserId;
 }
 
 function testCastOrderId(s: string): OrderId {
-  // @skjs-expect-error This 'as' cast is unsound: the source type is not assignable to the target type
   return s as OrderId;
 }
 
 function testCastReverseOrderId(s: string): ReverseOrderId {
-  // @skjs-expect-error This 'as' cast is unsound: the source type is not assignable to the target type
   return s as ReverseOrderId;
 }
 
 function testCastOptionalBrandId(s: string): OptionalBrandId {
-  // @skjs-expect-error This 'as' cast is unsound: the source type is not assignable to the target type
   return s as OptionalBrandId;
 }
 
 function testCastPositiveInt(n: number): PositiveInt {
-  // @skjs-expect-error This 'as' cast is unsound: the source type is not assignable to the target type
   return n as PositiveInt;
 }
 
 function testCastTaggedUser(s: string): TaggedUser {
-  // @skjs-expect-error This 'as' cast is unsound: the source type is not assignable to the target type
   return s as TaggedUser;
 }
 
 function testCastMultiFieldBrand(s: string): MultiFieldBrand {
-  // @skjs-expect-error This 'as' cast is unsound: the source type is not assignable to the target type
   return s as MultiFieldBrand;
 }
 
 function testCastAdminUserId(uid: UserId): AdminUserId {
-  // Currently `UserId` collapses to `never`, so `uid as AdminUserId` passes vacuously
   return uid as AdminUserId;
 }
 
@@ -91,8 +81,14 @@ function testWrongBaseCastUnknown(u: unknown): UserId {
 
 // Cross-brand `as` cast must be rejected (OrderId is not assignable to UserId via bare `as`)
 function testCrossBrandCast(oid: OrderId): UserId {
-  // Currently `OrderId` collapses to `never`, so `oid as UserId` silently succeeds!
+  // @skjs-expect-error This 'as' cast is unsound: the source type is not assignable to the target type
   return oid as UserId;
+}
+
+// Union cross-brand `as` cast must also be rejected
+function testUnionCrossBrandCast(x: OrderId | number): UserId | number {
+  // @skjs-expect-error This 'as' cast is unsound: the source type is not assignable to the target type
+  return x as UserId | number;
 }
 
 // Upcasting branded type to underlying primitive
@@ -137,45 +133,43 @@ function testPlainStringToTaggedUser(s: string): TaggedUser {
 
 // Distinct brands must not be assignable to each other
 function testUserIdToOrderId(uid: UserId): OrderId {
-  // Currently collapses to `never`, so this unsoundly passes!
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return uid;
 }
 
 function testOrderIdToUserId(oid: OrderId): UserId {
-  // Currently collapses to `never`, so this unsoundly passes!
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return oid;
 }
 
 function testTaggedUserToOrder(tu: TaggedUser): TaggedOrder {
-  // Currently collapses to `never`, so this unsoundly passes!
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return tu;
 }
 
 function testTaggedOrderToUser(to: TaggedOrder): TaggedUser {
-  // Currently collapses to `never`, so this unsoundly passes!
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return to;
 }
 
 function testUserIdToAdminUserId(uid: UserId): AdminUserId {
-  // Currently collapses to `never`, so this unsoundly passes!
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return uid;
 }
 
 function testUserIdToNumber(uid: UserId): number {
-  // Currently collapses to `never`, so this unsoundly passes!
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return uid;
 }
 
 // Primitive operations on branded values
 function testStringMemberLength(): number {
   const uid: UserId = makeUserId("alice");
-  // @skjs-expect-error Cannot access a property on type 'UserId'
   return uid.length;
 }
 
 function testStringMemberUpper(): string {
   const uid: UserId = makeUserId("alice");
-  // @skjs-expect-error Cannot access a property on type 'UserId'
   return uid.toUpperCase();
 }
 
@@ -185,7 +179,6 @@ function testStringEqualityAndTemplate(): void {
   const _eq: boolean = uid === uid2;
   const _eqStr: boolean = uid === "alice";
   const _tpl: string = `user:${uid}`;
-  // @skjs-expect-error Operator '+' cannot be applied to these types
   const _concat: string = uid + "-x";
   const _use = [_eq, _eqStr, _tpl, _concat];
 }
@@ -193,7 +186,6 @@ function testStringEqualityAndTemplate(): void {
 function testNumberOps(): void {
   const p: PositiveInt = makePositiveInt(10);
   const p2: PositiveInt = makePositiveInt(20);
-  // @skjs-expect-error Operator '+' cannot be applied to these types
   const _sum: number = p + p2;
   const _cmp: boolean = p < p2;
   const _neg: number = -p;
@@ -202,7 +194,6 @@ function testNumberOps(): void {
 
 function testNumberMethod(): string {
   const p: PositiveInt = makePositiveInt(10);
-  // @skjs-expect-error Cannot access a property on type 'PositiveInt'
   return p.toFixed(2);
 }
 
@@ -213,18 +204,17 @@ function testBooleanOps(): boolean {
 
 function testBigIntOps(): bigint {
   const b: BigId = makeBigId(10n);
-  // @skjs-expect-error Operator '+' cannot be applied to these types
   return b + 1n;
 }
 
 // Soundness: phantom brand fields must NOT be accessible on branded values!
 function testBrandFieldNotAccessible(uid: UserId): unknown {
-  // @skjs-expect-error Cannot access a property on type 'UserId'
+  // @skjs-expect-error This index key is not assignable to the index signature: expected 'number', got 'string'
   return uid.__brand;
 }
 
 function testSymbolBrandFieldNotAccessible(tu: TaggedUser): unknown {
-  // @skjs-expect-error Cannot access a property on type 'TaggedUser'
+  // @skjs-expect-error This symbol property does not exist on the object
   return tu[brandSym];
 }
 
@@ -252,7 +242,14 @@ function testBoxedMemberIntersection(s: string): string {
   return x;
 }
 
-// Generic function returning branded type
+// Non-brand mutable object intersection still collapses to never
+type MutableNotBrand = string & { mutable: number };
+function testMutableIntersectionStillNever(s: string): MutableNotBrand {
+  // @skjs-expect-error This 'as' cast is unsound: the source type is not assignable to the target type
+  return s as MutableNotBrand;
+}
+
+// Generic function returning branded type & inferring brand tag parameter
 function identityBrand<T>(x: T): T {
   return x;
 }
@@ -260,11 +257,23 @@ function testGenericRoundTrip(uid: UserId): UserId {
   return identityBrand(uid);
 }
 
+type Branded<T, B extends string> = T & { readonly __brand: B };
+declare function getBrandTag<B extends string>(x: Branded<string, B>): B;
+function testGenericBrandInference(uid: UserId): "UserId" {
+  return getBrandTag(uid);
+}
+
+// Branded literal preserves literal value and brand
+type FooBrand = "foo" & { readonly __brand: "Foo" };
+function testBrandedLiteral(): "foo" {
+  const x: FooBrand = "foo" as FooBrand;
+  return x;
+}
+
 // Branded key in Record / object index
 function testRecordWithBrandedKey(
   rec: Record<string, number>,
   uid: UserId,
 ): number | undefined {
-  // @skjs-expect-error This type cannot be used as an index
   return rec[uid];
 }

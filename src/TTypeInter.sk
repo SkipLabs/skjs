@@ -192,7 +192,12 @@ extension class TType {
         TType::single(stype),
       ) match {
       | STOk() -> return ty1
-      | STError _ -> void
+      | STError _ ->
+        stype.asBrandEntries() match {
+        | Some(brands) ->
+          return TType::fromClauses(ty1.pos, clauses1.withBrands(brands))
+        | None() -> void
+        }
       }
     | _ -> void
     };
@@ -205,7 +210,12 @@ extension class TType {
         TType::single(stype),
       ) match {
       | STOk() -> return ty2
-      | STError _ -> void
+      | STError _ ->
+        stype.asBrandEntries() match {
+        | Some(brands) ->
+          return TType::fromClauses(ty2.pos, clauses2.withBrands(brands))
+        | None() -> void
+        }
       }
     | _ -> void
     };
@@ -385,20 +395,21 @@ extension class Clause {
     meetFields: (TFields, TFields) -> ?TFields,
   ): ?Clause {
     vars = clause1.vars.union(clause2.vars);
+    brands = clause1.brands.union(clause2.brands);
     (clause1.stypes, clause2.stypes) match {
     | (None(), stypes)
     | (stypes, None()) ->
-      Some(Clause(vars, stypes))
+      Some(Clause(vars, stypes, brands))
     | (Some(stypes1), Some(stypes2)) ->
       STypes::interWith(stypes1, stypes2, meetFields).map(stypes ->
-        Clause(vars, Some(stypes))
+        Clause(vars, Some(stypes), brands)
       )
     }
   }
 }
 
 extension class Clauses {
-  // Preserve distribution order and merge equal parameter sets structurally.
+  // Preserve distribution order and merge equal clause keys structurally.
   static fun interWith(
     clauses1: Clauses,
     clauses2: Clauses,
@@ -410,10 +421,11 @@ extension class Clauses {
         Clause::interWith(clause1, clause2, meetFields) match {
         | None() -> void
         | Some(inter) ->
-          if (!result.containsKey(inter.vars)) {
-            !result[inter.vars] = inter;
+          key = inter.project();
+          if (!result.containsKey(key)) {
+            !result[key] = inter;
           } else {
-            !result[inter.vars] = Clause::union(result[inter.vars], inter)
+            !result[key] = Clause::union(result[key], inter)
           }
         }
       }
