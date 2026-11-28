@@ -266,6 +266,22 @@ const n: number = f(42); // runtime: undefined
 
 **Test:** [tests/expect-error/type-predicate-requires-no-body.ts](../tests/expect-error/type-predicate-requires-no-body.ts), [tests/expect-error/type-predicate-syntax.ts](../tests/expect-error/type-predicate-syntax.ts), [tests/expect-error/gap-type-predicate-narrowing.ts](../tests/expect-error/gap-type-predicate-narrowing.ts) · **SKJS:** rejects — `error: A type predicate ('x is T') is only supported as the top-level return type of a declared function or method signature`
 
+### An assertion function's body is never checked against the claim
+
+tsc accepts `asserts x` and `asserts x is T` on an implemented function and only requires the body to return `void`; it never verifies that every non-throwing exit establishes the claimed condition. An empty body, a missing throw on one branch, a `finally` block that swallows a throw with `return`, or reassigning the parameter (`x = "ok"`, which does not mutate the caller's variable) all compile cleanly and silently narrow the caller's binding to a false type. Like user-defined type predicates, this is an *intentional escape hatch* in tsc.
+
+```ts
+function assertString(x: unknown): asserts x is string {
+  // tsc: OK — empty body never throws, yet call sites narrow x to string
+}
+function f(x: unknown): number {
+  assertString(x);
+  return x.length; // runtime: TypeError on f(42)
+}
+```
+
+**Test:** [tests/expect-error/assertion-functions-bodied.ts](../tests/expect-error/assertion-functions-bodied.ts), [tests/projects/assertion-functions-truthiness/src/index.ts](../tests/projects/assertion-functions-truthiness/src/index.ts) · **SKJS:** verifies every normal exit (`return` and fallthrough) against the asserted predicate (`SKJS2083`), forbids reassigning or defaulting the asserted parameter (`TS2588` / `SKJS2084`), and checks the outer parameter across block shadows and `try`/`finally` ([skjs-rules.md](../skjs-rules.md) rule 36)
+
 ### A narrowing survives a call that invalidates it
 
 tsc's control-flow analysis resets a narrowing only on a syntactic assignment to the same reference in the same function. Assignments performed inside a nested function body are not part of the enclosing function's flow graph, so a call that reassigns the narrowed local through a closure leaves the narrowing in force. `reset()` runs synchronously and sets `x` to `null` before the read, so `x`, statically `string`, is `null`. The property form is the same rule: after `if (x.f !== null) { sideEffect(); }`, `x.f` is still typed `number` although the callee may have written `null` through an alias. This is a well-known deliberate tsc trade-off.

@@ -1503,8 +1503,7 @@ base class TEnv{
     }
   }
 
-  // Type predicates (`x is T`) and assertion signatures (`asserts x`,
-  // `asserts x is T`) are only accepted on bodyless (ambient/interface)
+  // Type predicates (`x is T`) are only accepted on bodyless (ambient/interface)
   // signatures, since SKJS does not verify the body against the claimed
   // narrowing. Called from funDef/method-checking, right where the body is
   // already legitimately read (to check its statements) — deliberately NOT from
@@ -1524,17 +1523,6 @@ base class TEnv{
           ),
         ],
         SKJSCode(9032),
-      )
-    | Some(Type(pos, TAAsserts _))
-    | Some(Type(pos, TAAssertIs _)) ->
-      tcenvb.error(
-        Array[
-          (
-            pos,
-            "An assertion signature ('asserts') is only supported on declared function, method, or function-type signatures",
-          ),
-        ],
-        SKJSCode(9013),
       )
     | _ -> void
     }

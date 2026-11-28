@@ -8,11 +8,22 @@ module SKJS;
 /* Type-checker */
 /***************************************************************************/
 
+// Active assertion postcondition for a bodied assertion function (`asserts x`,
+// `asserts x is T`, `asserts this`, `asserts this is T`). Checked at every
+// normal exit (explicit `return` and implicit body fallthrough).
+value class ActiveAssert(
+  subjectName: String,
+  subjectBindingPos: PosRange,
+  pred: AssertPred,
+  retPos: PosRange,
+)
+
 class TypeChecker{
   errorHandling: ErrorHandling,
   super: ?(CstrType, TType) = None(),
   isAsync: Bool = false,
   retType: ?TType = None(),
+  activeAssert: ?ActiveAssert = None(),
   // The class whose body is currently being type-checked, identified by
   // its declaration Name (whose pos also identifies the declaring file).
   // Set once at the top of class_ and inherited through funDefSetup into

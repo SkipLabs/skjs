@@ -889,7 +889,14 @@ extension class TypeChecker {
           TType::inter(scratch, readEnv, expandedLocal, expandedTarget)
         ,
       );
-      tcenv.scope.set(local, narrowed, (_, _) -> void)
+      tcenv.scope.set(local, narrowed, (_, _) -> void);
+      // Narrowing an object type via `asserts x is T` / `asserts this is T` may
+      // strengthen mutable fields (e.g. `value: string | null` -> `string`).
+      // Mark field refinement so a later alias write invalidates the transient
+      // field fact back to the binding's lasting contract.
+      if (!narrowed.isFieldFree()) {
+        tcenv.scope.markFieldRefinement(local)
+      }
     }
   }
 
@@ -900,7 +907,10 @@ extension class TypeChecker {
   // (issue #654). No-op if `local` is not in the local scope (e.g. a const).
   fun evalTruthiness(tcenv: mutable TCEnv, local: Name, target: Bool): void {
     filterMap = stype -> stype.truthinessResidue(target);
-    this.setLocalFilterMap(tcenv, local, None(), filterMap)
+    this.setLocalFilterMap(tcenv, local, None(), filterMap);
+    if (target) {
+      tcenv.scope.markProvenTruthy(local)
+    }
   }
 
   // Narrows `local.fieldName` based on its truthiness (`if (local.field)`), the

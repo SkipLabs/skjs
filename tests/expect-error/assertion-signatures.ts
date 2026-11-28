@@ -194,24 +194,22 @@ function useAssertCondition(x: string | number): string {
   return x;
 }
 
-// 11. Assertion functions on bodied implementations remain rejected (soundness:
-// SKJS does not verify the body against the claimed assertion).
-// @skjs-expect-error An assertion signature ('asserts') is only supported on declared function, method, or function-type signatures
-function badBodiedAssert(x: unknown): asserts x is string {
+// 11. Bodied assertion functions are accepted when every normal return path
+// proves the asserted postcondition (full bodied coverage lives in
+// `assertion-functions-bodied.ts`).
+function okBodiedAssert(x: unknown): asserts x is string {
   if (typeof x !== "string") {
     throw new Error("not string");
   }
 }
 
-// @skjs-expect-error An assertion signature ('asserts') is only supported on declared function, method, or function-type signatures
-function badBodiedTruthy(x: boolean): asserts x {
+function okBodiedTruthy(x: boolean): asserts x {
   if (!x) {
     throw new Error("falsy");
   }
 }
 
-class BadClassAssert {
-  // @skjs-expect-error An assertion signature ('asserts') is only supported on declared function, method, or function-type signatures
+class OkClassAssert {
   check(x: unknown): asserts x is string {
     if (typeof x !== "string") {
       throw new Error("not string");

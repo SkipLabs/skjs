@@ -305,6 +305,50 @@ extension class TypeChecker {
     )
   }
 
+  // Remap an overload's `asserts <ovName>` / `asserts <ovName> is T` return
+  // type so `<ovName>` names the implementation's parameter at the same
+  // positional index (overload compatibility is positional, not by name).
+  static fun overloadTrialRetType(
+    implSig: FunDefSigData,
+    ovSig: FunDefSigData,
+  ): (PosRange, ?Type) {
+    remapName = (ovName: Name) -> {
+      if (ovName.value == "this") {
+        ovName
+      } else {
+        ovNonThis = ovSig.params.filter(p -> !p.isThisParam());
+        implNonThis = implSig.params.filter(p -> !p.isThisParam());
+        ovIdxOpt: ?Int = None();
+        for (i => p in ovNonThis) {
+          p.name.value match {
+          | PVar(n) if (n.value == ovName.value) ->
+            !ovIdxOpt = Some(i);
+            break void
+          | _ -> void
+          }
+        };
+        ovIdxOpt match {
+        | Some(idx) if (idx < implNonThis.size()) ->
+          implNonThis[idx].name.value match {
+          | PVar(implName) -> Name(ovName.pos, implName.value)
+          | _ -> ovName
+          }
+        | _ -> ovName
+        }
+      }
+    };
+    (retPos, retTyOpt) = ovSig.retType;
+    mapped = retTyOpt.map(rty ->
+      rty.value match {
+      | TAAsserts(ovName) -> Type(rty.pos, TAAsserts(remapName(ovName)))
+      | TAAssertIs(ovName, rhs) ->
+        Type(rty.pos, TAAssertIs(remapName(ovName), rhs))
+      | _ -> rty
+      }
+    );
+    (retPos, mapped)
+  }
+
   // Validate a same-named group of top-level function declarations as one
   // overload set (pushDef lets them coexist instead of reporting a duplicate
   // identifier). When the group has an implementation, the implementation
@@ -441,7 +485,7 @@ extension class TypeChecker {
               sig => FSInline(
                 ovSig.tparams,
                 static::overloadTrialParams(implSig, ovSig),
-                ovSig.retType,
+                static::overloadTrialRetType(implSig, ovSig),
               ),
             };
             trialResults = TCResultsAcc::mcreate{

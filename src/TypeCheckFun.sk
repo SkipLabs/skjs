@@ -56,10 +56,155 @@ extension class TypeChecker {
     typedParams = sig.params.mapWithIndex((i, param) ->
       (param.name, paramTypes[i])
     );
-    !this.retType = sig.retType.i1.map(rty ->
-      this.normalizeReturnType(subst, rty, sig.params).i0
-    );
+    !this.activeAssert = None();
+    sig.retType.i1 match {
+    | None() -> !this.retType = None()
+    | Some(rty) ->
+      (retType, assertPredOpt) = this.normalizeReturnType(
+        subst,
+        rty,
+        sig.params,
+      );
+      !this.retType = Some(retType);
+      assertPredOpt.each(pred -> {
+        pred.subject match {
+        | ASThis() ->
+          tcenv.scope.bindingPosOf("this") match {
+          | Some(bindPos) ->
+            !this.activeAssert = Some(
+              ActiveAssert("this", bindPos, pred, rty.pos),
+            )
+          | None() ->
+            // Receiverless `this` (`this: void` / `this: undefined`) cannot
+            // satisfy an `asserts this` postcondition.
+            !this.activeAssert = Some(
+              ActiveAssert("this", fdPos, pred, rty.pos),
+            )
+          }
+        | ASParam(paramIdx) ->
+          nonThisParams = sig.params.filter(p -> !p.isThisParam());
+          if (paramIdx >= 0 && paramIdx < nonThisParams.size()) {
+            param = nonThisParams[paramIdx];
+            param.default.each(defaultExpr ->
+              tcenv.error(
+                Array[
+                  (
+                    defaultExpr.pos,
+                    "An asserted parameter cannot have a default value",
+                  ),
+                ],
+                SKJSCode(2084),
+              )
+            );
+            param.name.value match {
+            | PVar(name) ->
+              // Reassigning a parameter inside the body does not mutate the
+              // caller's variable, so proving the postcondition on a
+              // reassigned parameter would be unsound. Make the asserted
+              // parameter immutable for the duration of the body.
+              tcenv.scope.setImmutable(name);
+              !this.activeAssert = Some(
+                ActiveAssert(name.value, name.pos, pred, rty.pos),
+              )
+            | _ -> void
+            }
+          }
+        }
+      })
+    };
     (this, tcenv, typedParams)
+  }
+
+  // Verify that the active assertion postcondition holds at a normal exit
+  // (explicit `return` or implicit fallthrough at the end of the body).
+  fun checkActiveAssert(
+    tcenv: mutable TCEnv,
+    exitScope: readonly Scope,
+    exitPos: PosRange,
+  ): void {
+    // An exit inside a statically unreachable branch (where some outer binding
+    // was narrowed to `never`, e.g. the untaken branch of an overload trial)
+    // can never execute at runtime.
+    if (exitScope.hasBottomNarrowing(tcenv.subst, this)) {
+      return void
+    };
+    this.activeAssert.each(aa -> {
+      exitScope.maybeGetRefForBinding(
+        aa.subjectName,
+        aa.subjectBindingPos,
+      ) match {
+      | None() ->
+        tcenv.error(
+          Array[
+            (
+              exitPos,
+              `Assertion body does not establish the asserted predicate on '${
+                aa.subjectName
+              }'`,
+            ),
+            (aa.retPos, "Assertion signature declared here"),
+          ],
+          SKJSCode(2083),
+        )
+      | Some(ref) ->
+        // If an enclosing `finally` with field writes/calls will still execute
+        // on the way out of this `return`, transient mutable-field refinements
+        // on the subject do not survive the `finally` block.
+        subjectType = if (tcenv.pendingFinallyEffectDepth > 0) {
+          ref.stableContentsType(tcenv.subst, this, true)
+        } else {
+          ref.type
+        };
+        aa.pred.kind match {
+        | AKIs(target) ->
+          TType::isSub(tcenv.subst, this, subjectType, target) match {
+          | STOk() -> void
+          | err @ STErrorOnTType _ ->
+            tcenv.subtypingError(
+              tcenv.subst,
+              this,
+              Array[
+                (
+                  exitPos,
+                  `Assertion body does not establish that '${
+                    aa.subjectName
+                  }' has type ${this.ppType(tcenv, target)}`,
+                ),
+                (aa.retPos, "Assertion signature declared here"),
+              ],
+              err,
+              SKJSCode(2083),
+            )
+          }
+        | AKTruthy() ->
+          proven =
+            ref.provenTruthy ||
+            {
+              verdict = subjectType.conditionVerdict(tcenv.subst, this);
+              !verdict.incomplete &&
+                !verdict.containsVoid &&
+                verdict.falsyCount is FZero()
+            };
+          if (!proven) {
+            tcenv.error(
+              Array[
+                (
+                  exitPos,
+                  `Assertion body does not establish that '${
+                    aa.subjectName
+                  }' is truthy (its type here is ${this.ppType(
+                    tcenv,
+                    subjectType,
+                  )})`,
+                ),
+                (aa.retPos, "Assertion signature declared here"),
+              ],
+              SKJSCode(2083),
+            )
+          }
+        }
+      }
+    })
   }
 
   // Reserve every binding without projecting types or evaluating pattern
@@ -459,7 +604,7 @@ extension class TypeChecker {
       | None() -> void
       | Some(retType) ->
         checkBody = () -> {
-          (_, term) = this.block(tcenv, body);
+          (bodyScope, term) = this.block(tcenv, body);
           if (term.mayFallthrough) {
             if (retType.expand(tcenv.subst, this, None()).isBottom()) {
               // tsc's TS2355: a `never`-annotated body that can complete
@@ -484,6 +629,8 @@ extension class TypeChecker {
                 ],
                 TSCode(2366),
               )
+            } else if (!this.isAsync) {
+              this.checkActiveAssert(tcenv, bodyScope, fdPos)
             }
           };
           tcenv.validateHiddenEscapes();

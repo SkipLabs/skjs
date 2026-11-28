@@ -16,6 +16,10 @@ module SKJS;
 // `isMutable` is false for a `const` binding and true for `let`, `var`, a
 // parameter, or a catch clause's variable; `this` is also not mutable, since
 // it cannot be reassigned.
+// `provenTruthy` is true when control-flow narrowing has proven that the
+// binding's current runtime value is JS-truthy (`Boolean(x) === true`), even
+// when its type (`unknown`, `string`, `number`, `bigint`) cannot represent
+// "truthy" in `TType` alone. Reset on any runtime write and merged with `&&`.
 value class LocalRef(
   type: TType,
   declaredType: TType,
@@ -23,6 +27,7 @@ value class LocalRef(
   isInitialized: Bool,
   isMutable: Bool,
   hasFieldRefinement: Bool = false,
+  provenTruthy: Bool = false,
 ) {
   // Only a binding carrying transient field facts needs contract projection.
   fun stableContentsType(
@@ -241,7 +246,7 @@ mutable class Scope{
       (!ref.type.isFieldFree() ||
         (ref.isMutable && !this.captureNeverWritten(name)))
     ) {
-      ref with {type => ref.declaredType}
+      ref with {type => ref.declaredType, provenTruthy => false}
     } else {
       ref
     }
@@ -274,6 +279,25 @@ mutable class Scope{
   // `bindingPos` by bare name.
   readonly fun bindingPosOf(value: String): ?PosRange {
     this.maybeGetLocalValue(value).map(declName -> declName.pos)
+  }
+
+  // Look up the current `LocalRef` for a specific binding identified by
+  // `(name, bindingPos)`, skipping any inner scope that shadowed `name` with
+  // a different declaration. Used by bodied assertion verification so an inner
+  // `const x = "hi"` cannot masquerade as the asserted parameter `x`.
+  readonly fun maybeGetRefForBinding(
+    name: String,
+    bindingPos: PosRange,
+  ): ?LocalRef {
+    this.bindingPosOf(name) match {
+    | Some(pos) if (pos == bindingPos) ->
+      this.refs.maybeGet(name) match {
+      | Some(ref) -> Some(ref)
+      | None() ->
+        this.up.flatMap(up -> up.maybeGetRefForBinding(name, bindingPos))
+      }
+    | _ -> this.up.flatMap(up -> up.maybeGetRefForBinding(name, bindingPos))
+    }
   }
 
   readonly private fun maybeGetRefHelper(
@@ -437,6 +461,20 @@ mutable class Scope{
     }
   }
 
+  mutable fun markProvenTruthy(name: Name): void {
+    this.maybeGetRef(name.value) match {
+    | Some((_, ref)) -> this.!refs[name.value] = ref with {provenTruthy => true}
+    | None() -> void
+    }
+  }
+
+  mutable fun setImmutable(name: Name): void {
+    this.maybeGetRef(name.value) match {
+    | Some((_, ref)) -> this.!refs[name.value] = ref with {isMutable => false}
+    | None() -> void
+    }
+  }
+
   readonly fun hasFieldRefinement(name: Name): Bool {
     this.maybeGetRef(name.value)
       .map(pair -> pair.i1.hasFieldRefinement)
@@ -541,7 +579,10 @@ mutable class Scope{
         if (ref.declaredType.isConcretePrimitive()) {
           !entryValues[entry.i0] = ref.type
         };
-        this.!refs[entry.i0] = ref with {type => ref.declaredType}
+        this.!refs[entry.i0] = ref with {
+          type => ref.declaredType,
+          provenTruthy => false,
+        }
       }
     };
     entryValues
@@ -709,6 +750,7 @@ mutable class Scope{
       true,
       upRef.isMutable,
       upRef.hasFieldRefinement,
+      if (runtimeWrite) false else upRef.provenTruthy,
     );
   }
 
@@ -734,6 +776,15 @@ mutable class Scope{
     this.refs.items()
       .filter(x -> !this.locals.containsKey(x.i0))
       .map(x -> NameRef(x.i0, x.i1))
+  }
+
+  // True when any escaping binding in this scope was narrowed to bottom
+  // (`never`), proving that the branch is statically unreachable (for example,
+  // the `else` branch of `if (kind === "str")` when `kind: "str"`).
+  readonly fun hasBottomNarrowing(subst: mutable Subst, tenv: TEnv): Bool {
+    this.escapingRefs().any(nameRef ->
+      nameRef.ref.type.expand(subst, tenv, None()).isBottom()
+    )
   }
 
   // Fold into this scope another sibling it can also be entered from — a
@@ -776,6 +827,7 @@ mutable class Scope{
         nameRef.ref.isInitialized && curRef.isInitialized,
         curRef.isMutable,
         curRef.hasFieldRefinement || nameRef.ref.hasFieldRefinement,
+        nameRef.ref.provenTruthy && curRef.provenTruthy,
       )
     }
   }
@@ -884,7 +936,8 @@ mutable class Scope{
           old.declaredType != kv.i1.declaredType ||
           old.hasDeclaredContract != kv.i1.hasDeclaredContract ||
           old.isInitialized != kv.i1.isInitialized ||
-          old.hasFieldRefinement != kv.i1.hasFieldRefinement
+          old.hasFieldRefinement != kv.i1.hasFieldRefinement ||
+          old.provenTruthy != kv.i1.provenTruthy
       };
       if (changed) {
         !acc = acc.set(kv.i0, kv.i1)
@@ -934,28 +987,38 @@ mutable class Scope{
         edgeRef.isInitialized && curRef.isInitialized,
         curRef.isMutable,
         curRef.hasFieldRefinement || edgeRef.hasFieldRefinement,
+        edgeRef.provenTruthy && curRef.provenTruthy,
       )
     };
     // The edge speaks for every binding, not only the ones it mentions: one it
     // does not was left at the state above this scope, since the jump touched
     // nothing below its baseline for it. The exit merge already unions the
-    // parent's value on that account; the initialization bit is this scope's
-    // to keep honest — a binding this scope's own paths assigned is not
-    // assigned on the edge's path unless it already was above
-    // (SkipLabs/skjs#969: a `continue` past the assignment must not leave the
-    // for-increment reading the binding as assigned).
+    // parent's value on that account; the initialization and provenTruthy bits
+    // are this scope's to keep honest — a binding this scope's own paths
+    // assigned or narrowed is not assigned/proven on the edge's path unless it
+    // already was above (SkipLabs/skjs#969: a `continue` past the assignment
+    // must not leave the for-increment reading the binding as assigned).
     for (nameRef in this.escapingRefs()) {
       ownerPos = this.bindingPosOf(nameRef.name).fromSome();
-      if (nameRef.ref.isInitialized && !snap.containsKey(ownerPos)) {
+      if (
+        (nameRef.ref.isInitialized || nameRef.ref.provenTruthy) &&
+        !snap.containsKey(ownerPos)
+      ) {
         this.up.fromSome().maybeGetRef(nameRef.name) match {
-        | Some((_, upRef)) if (!upRef.isInitialized) ->
+        | Some(
+          (_, upRef),
+        ) if (
+          (nameRef.ref.isInitialized && !upRef.isInitialized) ||
+          (nameRef.ref.provenTruthy && !upRef.provenTruthy)
+        ) ->
           this.!refs[nameRef.name] = LocalRef(
             nameRef.ref.type,
             nameRef.ref.declaredType,
             nameRef.ref.hasDeclaredContract,
-            false,
+            nameRef.ref.isInitialized && upRef.isInitialized,
             nameRef.ref.isMutable,
             nameRef.ref.hasFieldRefinement,
+            nameRef.ref.provenTruthy && upRef.provenTruthy,
           )
         | _ -> void
         }
@@ -984,6 +1047,7 @@ mutable class Scope{
           cur.isInitialized,
           cur.isMutable,
           true, // The write log carries types without refinement provenance.
+          false,
         )
       | None() -> void
       }
@@ -1025,6 +1089,7 @@ mutable class Scope{
           cur.isInitialized,
           cur.isMutable,
           cur.hasFieldRefinement || nameRef.ref.hasFieldRefinement,
+          cur.provenTruthy && nameRef.ref.provenTruthy,
         ),
       )
     }
@@ -1079,6 +1144,7 @@ mutable class Scope{
       tyOpt: ?TType = None();
       isInitialized = true;
       hasFieldRefinement = false;
+      provenTruthy = true;
       for (scope in scopes) {
         scope.escapingRef(name) match {
         | Some(ref) ->
@@ -1094,7 +1160,8 @@ mutable class Scope{
             },
           );
           !hasFieldRefinement = hasFieldRefinement || ref.hasFieldRefinement;
-          !isInitialized = isInitialized && ref.isInitialized
+          !isInitialized = isInitialized && ref.isInitialized;
+          !provenTruthy = provenTruthy && ref.provenTruthy
         | None() -> !untouched = true
         }
       };
@@ -1104,7 +1171,8 @@ mutable class Scope{
       if (untouched) {
         !ty = TType::union(subst, tenv, ty, upRef.type);
         !hasFieldRefinement = hasFieldRefinement || upRef.hasFieldRefinement;
-        !isInitialized = isInitialized && upRef.isInitialized
+        !isInitialized = isInitialized && upRef.isInitialized;
+        !provenTruthy = provenTruthy && upRef.provenTruthy
       };
       this.!refs[name] = LocalRef(
         ty,
@@ -1113,6 +1181,7 @@ mutable class Scope{
         isInitialized,
         upRef.isMutable,
         hasFieldRefinement,
+        provenTruthy,
       )
     }
   }
@@ -1145,6 +1214,7 @@ mutable class Scope{
           upRef.isInitialized,
           upRef.isMutable,
           upRef.hasFieldRefinement || nameRef.ref.hasFieldRefinement,
+          upRef.provenTruthy && nameRef.ref.provenTruthy,
         )
       | Both(nameRef1, nameRef2) ->
         // Value contracts belong to the binding. Copy provenance may have
@@ -1165,6 +1235,7 @@ mutable class Scope{
           nameRef1.ref.isInitialized && nameRef2.ref.isInitialized,
           upRef.isMutable,
           nameRef1.ref.hasFieldRefinement || nameRef2.ref.hasFieldRefinement,
+          nameRef1.ref.provenTruthy && nameRef2.ref.provenTruthy,
         )
       }
     })
@@ -1191,6 +1262,7 @@ mutable class Scope{
         upRef.isInitialized,
         upRef.isMutable,
         upRef.hasFieldRefinement || nameRef.ref.hasFieldRefinement,
+        upRef.provenTruthy && nameRef.ref.provenTruthy,
       )
     }
   }
