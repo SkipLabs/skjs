@@ -214,9 +214,11 @@ mutable class Lexer private {
       } else if (c == '`') {
         !pos = this.scanTemplateBody(pos + 1)
       } else if (c == '/' && pos + 1 < n && this.contents[pos + 1] == '/') {
-        // Line comment: skip to the next line terminator.
+        // Line comment: skip to the next line terminator (<LF>, <CR>, <LS>, <PS>).
         !pos = pos + 2;
-        while (pos < n && this.contents[pos] != '\n') !pos = pos + 1
+        while (pos < n && !isJSLineTerminator(this.contents[pos])) {
+          !pos = pos + 1
+        }
       } else if (c == '/' && pos + 1 < n && this.contents[pos + 1] == '*') {
         // Block comment: skip to the closing '*/'.
         !pos = pos + 2;
@@ -341,11 +343,11 @@ mutable class Lexer private {
   }
 
   // ECMA-262 sec 12.9.3: the source character immediately following a
-  // NumericLiteral may not be an IdentifierStart -- `2z` is a syntax error,
-  // not the tokens `2` and `z`. (A following digit cannot happen: the scan
-  // consumed it.)
+  // NumericLiteral may not be an IdentifierStart (literal or Unicode-escaped)
+  // -- `2z` and `2\u0061` are syntax errors, not two tokens. (A following digit
+  // cannot happen: the scan consumed it.)
   readonly fun checkNoIdentifierAfterNumber(pos: Int): void {
-    if (pos < this.contents.size() && isJSIdentifierStart(this.contents[pos])) {
+    if (this.identifierCharAt(pos, isJSIdentifierStart).isSome()) {
       this.error(pos, IdentifierAfterNumber())
     }
   }

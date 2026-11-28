@@ -67,12 +67,16 @@ fun normalizeTemplateLineTerminators(raw: String): String {
 // of the backslash -- returns the character it denotes and the index just past
 // it. None when there is no escape there or it is malformed, which leaves the
 // backslash to be reported as the invalid character it is.
+//
+// Unlike string literals, ECMA-262 sec 12.7.1 does NOT combine UTF-16 surrogate
+// pair escapes (`\uD800\uDC00`) into an astral code point in an IdentifierName:
+// astral characters in escaped form must use `\u{...}`.
 fun decodeIdentifierEscape(chars: Array<Char>, pos: Int): ?(Char, Int) {
   if (pos + 1 >= chars.size() || chars[pos] != '\\' || chars[pos + 1] != 'u') {
     return None()
   };
   out = mutable Vector<Char>[];
-  decodeUnicodeEscape(chars, pos + 1, out) match {
+  decodeUnicodeEscape(chars, pos + 1, out, false) match {
   | Success(next) if (out.size() == 1) -> Some((out[0], next))
   | _ -> None()
   }
@@ -192,11 +196,13 @@ fun decodeJSStringLiteral(body: String): Result<String, ParsingKind> {
 
 // Decodes a \u escape whose 'u' is at index `i`. Appends the decoded code point
 // to `out` and returns the index just past the escape, or a Failure. Handles
-// \uHHHH (combining a high+low surrogate pair) and \u{H..}.
+// \uHHHH (combining a high+low surrogate pair when `allowSurrogatePairs` is
+// true, i.e. string/template literals) and \u{H..}.
 private fun decodeUnicodeEscape(
   chars: Array<Char>,
   i: Int,
   out: mutable Vector<Char>,
+  allowSurrogatePairs: Bool = true,
 ): Result<Int, ParsingKind> {
   n = chars.size();
   if (i + 1 < n && chars[i + 1] == '{') {
@@ -223,6 +229,9 @@ private fun decodeUnicodeEscape(
     | None() -> Failure(HexDigitExpected())
     | Some(hi) ->
       if (hi >= 0xD800 && hi <= 0xDBFF) {
+        if (!allowSurrogatePairs) {
+          return Failure(UnrepresentableSurrogateEscape())
+        };
         // High surrogate: must be followed by a \uLLLL low surrogate.
         lowStart = i + 5;
         if (

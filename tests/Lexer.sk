@@ -186,6 +186,26 @@ fun testTemplateTypeInParenthesizedTypeLexesCleanly(): void {
       threw,
       `${content}: a template type in a parenthesized type must parse cleanly`,
     )
+  };
+  // Line comments inside a template interpolation end at any ECMAScript
+  // LineTerminator (<LF>, <CR>, <LS>, <PS>).
+  for (code in Array[0x0A, 0x0D, 0x2028, 0x2029]) {
+    term = Char::fromCode(code).toString();
+    content = `type T = (x: ${bt}a$\{// c${term}"hi"}b${bt}) => void;`;
+    fileName = SKJS.FPath::create(SKJS.RootId::project, "tmp.ts");
+    lexer = SKJS.Lexer::mcreate(fileName, content);
+    parser = mutable SKJS.Parser(lexer);
+    threw = try {
+      _ = parser.toplevelDefs();
+      false
+    } catch {
+    | SKJS.ErrorExn(_) -> true
+    | exn -> throw exn
+    };
+    SKTest.expectFalse(
+      threw,
+      `U+${code} ending line comment in template interpolation`,
+    )
   }
 }
 
@@ -473,6 +493,7 @@ fun testUnicodeIdentifiers(): void {
 @test
 fun testNumberThenIdentifier(): void {
   eacute = Char::fromCode(0xE9).toString();
+  bs = Char::fromCode(92).toString();
   for (src in Array[
     "function g(): void { const y = 2z; const _ = y; }",
     `function g(): void { const y = 2${eacute}; const _ = y; }`,
@@ -490,6 +511,28 @@ fun testNumberThenIdentifier(): void {
     | exn -> throw exn
     };
     SKTest.expectTrue(threw, `${src}: an identifier may not follow a number`)
+  };
+  // An escaped IdentifierStart directly after a number (`2\u0061`) is also
+  // forbidden by ECMA-262 sec 12.9.3.
+  for (src in Array[
+    `function g(): void { const a: void = undefined; const y = 2${bs}u0061; const _ = y; }`,
+    `function g(): void { const a: void = undefined; const y = 0x1fn${bs}u0061; const _ = y; }`,
+    `function g(): void { const a: void = undefined; const y = .5${bs}u0061; const _ = y; }`,
+  ]) {
+    fileName = SKJS.FPath::create(SKJS.RootId::project, "tmp.ts");
+    lexer = SKJS.Lexer::mcreate(fileName, src);
+    parser = mutable SKJS.Parser(lexer);
+    threw = try {
+      _ = parser.toplevelDefs();
+      false
+    } catch {
+    | SKJS.ErrorExn(_) -> true
+    | exn -> throw exn
+    };
+    SKTest.expectTrue(
+      threw,
+      `${src}: an escaped identifier may not follow a number`,
+    )
   }
 }
 
@@ -556,6 +599,26 @@ fun testIdentifierEscapes(): void {
     (`function f(): void { const a${bs}uZZZZ = 1; const _ = a; }`, false),
     // A backslash that begins no escape at all stays an invalid character.
     (`function f(): void { const a = 1; const _ = ${bs}q; }`, false),
+    // Braced astral code point (U+10000, Linear B Syllable B008 A, ID_Start) is
+    // valid in ECMA-262 sec 12.7.
+    (
+      `function f(): void { const ${bs}u{10000} = 1; const _ = ${bs}u{10000}; }`,
+      true,
+    ),
+    // UTF-16 surrogate pair escapes (\uD800\uDC00) are NOT valid in an
+    // IdentifierName (ECMA-262 sec 12.7.1; node and tsc reject with TS1127).
+    (
+      `function f(): void { const ${bs}uD800${bs}uDC00 = 1; const _ = ${bs}uD800${bs}uDC00; }`,
+      false,
+    ),
+    (
+      `function f(): void { const a${bs}uD800${bs}uDC00 = 1; const _ = a${bs}uD800${bs}uDC00; }`,
+      false,
+    ),
+    (
+      `class C { #${bs}uD800${bs}uDC00: number = 1; get(): number { return this.#${bs}uD800${bs}uDC00; } }`,
+      false,
+    ),
   ];
   for (case in cases) {
     (content, shouldParse) = case;
