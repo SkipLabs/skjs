@@ -162,4 +162,71 @@ fun testClosedTargetMissingIndexErrorDetail(): void {
   );
 }
 
+@test
+fun testObjectUnionBranchDetailLevels(): void {
+  // Non-array named object assigned to `{ readonly [k: string]: string } |
+  // readonly string[]` (#660): at default/normal/verbose detail, the array
+  // branch is filtered out so only the matching object branch is reported;
+  // at full detail, every failing branch is shown.
+  source =
+    "type Named = { readonly a: string };\n" +
+    "function f(x: Named): { readonly [k: string]: string } | readonly string[] {\n" +
+    "  return x;\n" +
+    "}\n";
+
+  SKTest.expectEq(
+    renderSingleSubtypingErrorAt(source, SKJS.STErrorDetail::default),
+    Array[
+      "Type '{ readonly a: string; }'",
+      "is not assignable to type '{ readonly [k: string]: string; }'",
+      "Missing index signature 'k' in source type",
+    ],
+    "default detail",
+  );
+  SKTest.expectEq(
+    renderSingleSubtypingErrorAt(source, SKJS.STErrorDetail::normal),
+    Array[
+      "Type 'Named'",
+      "is not assignable to type '{ readonly [k: string]: string; } | readonly string[]'",
+      "Type '{ readonly a: string; }'",
+      "is not assignable to type '{ readonly [k: string]: string; }'",
+      "Missing index signature 'k' in source type",
+    ],
+    "normal detail",
+  );
+  SKTest.expectEq(
+    renderSingleSubtypingErrorAt(source, SKJS.STErrorDetail::verbose),
+    Array[
+      "Type 'Named'",
+      "is not assignable to type '{ readonly [k: string]: string; } | readonly string[]'",
+      "Type '{ readonly a: string; }'",
+      "is not assignable to type '{ readonly [k: string]: string; }'",
+      "Missing index signature 'k' in source type",
+    ],
+    "verbose detail",
+  );
+  SKTest.expectEq(
+    renderSingleSubtypingErrorAt(source, SKJS.STErrorDetail::full),
+    Array[
+      "Type 'Named'",
+      "is not assignable to type '{ readonly [k: string]: string; } | readonly string[]'",
+      "Type '{ readonly a: string; }'",
+      "is not assignable to '{ readonly [k: string]: string; } | readonly string[]'",
+      "Type '{ readonly a: string; }'",
+      "is not assignable to type 'readonly string[]'",
+      "Type '{ readonly a: string; }'",
+      "is not assignable to type 'readonly string[]'",
+      "The field 'every' is missing",
+      "Type '{ readonly a: string; }'",
+      "is not assignable to type '{ readonly [k: string]: string; }'",
+      "Type '{ readonly a: string; }'",
+      "is not assignable to type '{ readonly [k: string]: string; }'",
+      "Missing index signature 'k' in source type",
+      "Type 'unknown'",
+      "is not assignable to type 'string'",
+    ],
+    "full detail",
+  );
+}
+
 module end;
