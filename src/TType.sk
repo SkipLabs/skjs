@@ -530,7 +530,7 @@ class TType private {
     | Some((insts, clauses)) ->
       mappedClauses: mutable Vector<Clause> = mutable Vector[];
       for (clause0 in clauses) {
-        Clause::create(clause0.vars, f(clause0.stypes)) match {
+        Clause::create(clause0.vars, f(clause0.stypes), clause0.brands) match {
         | None() -> void
         | Some(clause) -> mappedClauses.push(clause)
         }
@@ -582,9 +582,23 @@ class TType private {
         )
       };
       clause0.stypes match {
-      | None() -> clause1
+      | None() ->
+        if (clause0.brands.isEmpty()) {
+          clause1
+        } else {
+          TType::interBrands(clause1, clause0.brands)
+        }
       | Some(stypes) ->
-        sty = TType::fromSTypes(this.pos, stypes);
+        sty = TType::fromClauses(
+          this.pos,
+          Clauses::singleClause(
+            Clause::create(
+              ArraySet::empty(),
+              Some(stypes),
+              clause0.brands,
+            ).fromSome(),
+          ),
+        );
         // When clause1 already satisfies the constraint, inter(clause1,
         // constraint) = clause1, letting us skip the (potentially
         // exponentially expensive) intersection. But `isSub` may seal
@@ -639,6 +653,16 @@ class TType private {
   // Conservatively recognize types whose values have no mutable field facts
   // to forget when copied or captured. Unexpanded instances are not assumed
   // field-free; call signatures without properties are safe value snapshots.
+  static fun withoutBrands(subst: mutable Subst, tenv: TEnv, ty: TType): TType {
+    clauses = ty.expandToClauses(subst, tenv, Covariant());
+    TType::fromClauses(ty.pos, clauses.withoutBrands())
+  }
+
+  static fun interBrands(ty: TType, brands: ArraySet<TBrandEntry>): TType {
+    if (brands.isEmpty()) return ty;
+    TType::create(ty.pos, ty.insts, ty.clauses.withBrands(brands))
+  }
+
   fun isFieldFree(): Bool {
     this.insts.isEmpty() &&
       this.clauses.all(clause ->
@@ -1111,6 +1135,33 @@ class TObject private (
       None(),
       pos,
     )
+  }
+
+  // Extract phantom brand entries when `this` is a brand-shaped object type
+  // intersected with a primitive (issue #630): a single-branch structural
+  // object with at least one readonly named or unique-symbol field, and no
+  // mutable fields, index signatures, call/construct signatures, or class/array
+  // identity.
+  fun asBrandEntries(): ?ArraySet<TBrandEntry> {
+    branches = this.getBranches();
+    if (branches.size() != 1) return None();
+    fields = branches[0];
+    if (fields.classIds.isSome() || fields.isArray.isSome()) return None();
+    if (fields.hasNonSyntheticIndex()) return None();
+    if (fields.call is CPresent _ || fields.call is CFunction()) return None();
+    if (fields.new is CPresent _ || fields.new is CFunction()) return None();
+    entries = mutable Vector<TBrandEntry>[];
+    for (field in fields.fields) {
+      if (!field.set.isBottom()) return None();
+      entries.push(TBrandEntry(false, field.name, field.isOptional, field.get))
+    };
+    for (field in fields.symbolFields) {
+      if (!field.set.isBottom()) return None();
+      entries.push(TBrandEntry(true, field.name, field.isOptional, field.get))
+    };
+    if (entries.isEmpty()) None() else {
+      Some(ArraySet::createFromMVector(entries))
+    }
   }
 
   /* Transformers */
@@ -4124,28 +4175,55 @@ class TParamWithConstraint(
 
 class TParam(name: String, fileName: FPath, id: Id) uses XXHashable, Orderable
 
+/* Phantom brand entry on a branded primitive type (issue #630).
+ * Represents one phantom property from `P & { readonly __brand: "Tag" }` or
+ * `P & { readonly [sym]: Tag }`: distinct brands prevent accidental
+ * cross-assignment between branded primitives while never exposing the
+ * phantom property at runtime. */
+class TBrandEntry(
+  isSymbol: Bool,
+  name: FieldNameString,
+  isOptional: Bool,
+  type: TType,
+) uses XXHashable, Orderable {
+  fun mapType(f: TType -> TType): TBrandEntry {
+    this with {type => f(this.type)}
+  }
+}
+
+class ClauseKey(
+  vars: ArraySet<TParam>,
+  brands: ArraySet<TBrandEntry>,
+) uses XXHashable, Orderable
+
 /* Clause */
 //
 // Interpretation:
-// 〚 clause 〛 = 〚 clause.vars 〛 ⨅ 〚 clause.stypes 〛
+// 〚 clause 〛 = 〚 clause.vars 〛 ⨅ 〚 clause.stypes 〛 ⨅ 〚 clause.brands 〛
 // 〚 vars 〛 = ⨅ 〚 v 〛, for v in vars
+// 〚 brands 〛 = phantom nominal tags attached to a branded primitive
 // 〚 stypes 〛 = Top     if stypes is None
 //              〚 st 〛  if stypes = Some(st)
 //                \-->  see STypes, this is a union
 //
-// In particular, Clause(ArraySet[], None()) represents ⊤
-//                Clause(_, Some(STypes::empty())) represents ⊥
+// In particular, Clause(ArraySet[], None(), ArraySet[]) represents ⊤
+//                Clause(_, Some(STypes::empty()), _) represents ⊥
 class Clause private (
   vars: ArraySet<TParam>,
   stypes: ?STypes,
-) uses XXHashable, Orderable, Projectable<ArraySet<TParam>> {
+  brands: ArraySet<TBrandEntry> = ArraySet::empty(),
+) uses XXHashable, Orderable, Projectable<ClauseKey> {
   /* Invariant: Clause cannot be bottom */
 
   // Returns None if the result is bottom (i.e. if stypes is Some(bottom))
-  static fun create(vars: ArraySet<TParam>, stypes: ?STypes): ?Clause {
+  static fun create(
+    vars: ArraySet<TParam>,
+    stypes: ?STypes,
+    brands: ArraySet<TBrandEntry> = ArraySet::empty(),
+  ): ?Clause {
     stypes match {
     | Some(s) if (s.isEmpty()) -> None()
-    | _ -> Some(Clause(vars, stypes))
+    | _ -> Some(Clause(vars, stypes, brands))
     }
   }
 
@@ -4169,10 +4247,11 @@ class Clause private (
   fun map_(
     fVars: ArraySet<TParam> -> ArraySet<TParam>,
     fSTypesOpt: (?STypes) -> ?STypes,
+    fBrands: ArraySet<TBrandEntry> -> ArraySet<TBrandEntry> = b -> b,
   ): ?Clause {
     fSTypesOpt(this.stypes) match {
     | Some(sTypes) if (sTypes.isEmpty()) -> None()
-    | sTypes -> Some(Clause(fVars(this.vars), sTypes))
+    | sTypes -> Some(Clause(fVars(this.vars), sTypes, fBrands(this.brands)))
     }
   }
 
@@ -4180,14 +4259,27 @@ class Clause private (
   fun map(
     fTParam: TParam -> TParam,
     fSTypesOpt: (?STypes) -> ?STypes,
+    fBrandType: TType -> TType = t -> t,
   ): ?Clause {
-    this.map_(vars -> vars.mapToSet(fTParam), fSTypesOpt)
+    this.map_(
+      vars -> vars.mapToSet(fTParam),
+      fSTypesOpt,
+      brands -> brands.mapToSet(b -> b.mapType(fBrandType)),
+    )
   }
 
   // t.mapSTypes(f) is t with stypes updated by f
   // Returns None if the result is bottom
   fun mapSTypes(f: (?STypes) -> ?STypes): ?Clause {
     this.map_(vars -> vars, f)
+  }
+
+  fun withBrands(brands: ArraySet<TBrandEntry>): Clause {
+    this with {brands => this.brands.union(brands)}
+  }
+
+  fun withoutBrands(): Clause {
+    if (this.brands.isEmpty()) this else this with {brands => ArraySet::empty()}
   }
 
   fun getConstantString(): ?PrimLiteral {
@@ -4199,11 +4291,11 @@ class Clause private (
   }
 
   fun isTop(): Bool {
-    this.stypes is None() && this.vars.isEmpty()
+    this.stypes is None() && this.vars.isEmpty() && this.brands.isEmpty()
   }
 
-  fun project(): ArraySet<TParam> {
-    this.vars
+  fun project(): ClauseKey {
+    ClauseKey(this.vars, this.brands)
   }
 
   fun toString(subst: mutable Subst, tenv: TEnv): String {
@@ -4216,13 +4308,13 @@ class Clause private (
 // Interpretation:
 // 〚 clauses 〛 = ⨆ 〚 c 〛, for c in clauses.clauses
 class Clauses private (
-  clauses: InternalKeyedArrayMap<ArraySet<TParam>, Clause>,
+  clauses: InternalKeyedArrayMap<ClauseKey, Clause>,
 ) extends Sequence<Clause> uses XXHashable, Orderable {
   /*
     Invariant: if one of the clauses is Top, then there are no other clauses
    */
   private static fun create(
-    clauses: InternalKeyedArrayMap<ArraySet<TParam>, Clause>,
+    clauses: InternalKeyedArrayMap<ClauseKey, Clause>,
   ): Clauses {
     if (clauses.any(c -> c.isTop())) Clauses::top() else Clauses(clauses)
   }
@@ -4236,11 +4328,27 @@ class Clauses private (
   }
 
   fun filterMap(f: Clause -> ?Clause): Clauses {
-    Clauses::create(
-      InternalKeyedArrayMap::createFromIterator(
-        this.clauses.values().filterMap(f),
-      ),
-    )
+    result = Clauses::empty();
+    for (clause in this.clauses) {
+      f(clause).each(mapped ->
+        !result = Clauses::union(result, Clauses::singleClause(mapped))
+      )
+    };
+    result
+  }
+
+  fun withBrands(brands: ArraySet<TBrandEntry>): Clauses {
+    if (brands.isEmpty()) this else {
+      this.filterMap(clause -> Some(clause.withBrands(brands)))
+    }
+  }
+
+  fun withoutBrands(): Clauses {
+    this.filterMap(clause -> Some(clause.withoutBrands()))
+  }
+
+  fun hasBrands(): Bool {
+    this.clauses.any(clause -> !clause.brands.isEmpty())
   }
 
   fun size(): Int {
@@ -4415,9 +4523,10 @@ mutable class TVarScan{seen: mutable Set<Int> = mutable Set[]} {
   mutable fun scanClause(clause: Clause): Bool {
     if (!this.mark(clause)) return false;
     // Clause.vars are rigid TParams and carry no types.
-    clause.stypes
-      .map(stypes -> stypes.any(st -> this.scanSType(st)))
-      .default(false)
+    clause.brands.any(brand -> this.scanType(brand.type)) ||
+      clause.stypes
+        .map(stypes -> stypes.any(st -> this.scanSType(st)))
+        .default(false)
   }
 
   mutable fun scanSType(st: SType): Bool {

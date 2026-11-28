@@ -290,7 +290,9 @@ fun arrayShorthand(fields: TFields): ?(TType, Bool) {
         field.get.insts.isEmpty() &&
         field.get.clauses.clauses
           .singleElt()
-          .flatMap(c -> if (c.vars.isEmpty()) c.stypes else None())
+          .flatMap(c ->
+            if (c.vars.isEmpty() && c.brands.isEmpty()) c.stypes else None()
+          )
           .flatMap(sts -> sts.singleElt()) match {
         | Some(TPrimValue(TNum(), None(), _)) -> true
         | _ -> false
@@ -1053,6 +1055,31 @@ mutable class TypePp{
     }
   }
 
+  mutable fun brandEntries(
+    level: Int,
+    margin: Margin,
+    brands: ArraySet<TBrandEntry>,
+  ): void {
+    this.out(level, margin, "{");
+    for (entry in brands) {
+      this.out(level, margin, " readonly ");
+      if (entry.isSymbol) {
+        this.out(
+          level,
+          margin,
+          `[${TypePp::displayUniqueSymbolId(entry.name.value)}]`,
+        )
+      } else {
+        this.out(level, margin, TypePp::escapeName(entry.name.value))
+      };
+      if (entry.isOptional) this.out(level, margin, "?");
+      this.out(level, margin, ": ");
+      this.type(level, margin, entry.type);
+      this.out(level, margin, ";")
+    };
+    this.out(level, margin, " }")
+  }
+
   mutable fun clause(level: Int, margin: Margin, clause: Clause): void {
     for (j => tparam in clause.vars) {
       if (j != 0) {
@@ -1062,11 +1089,20 @@ mutable class TypePp{
     };
     clause.stypes match {
     | None() ->
-      invariant(!clause.vars.isEmpty(), "several clauses with a Top clause");
+      invariant(
+        !clause.vars.isEmpty() || !clause.brands.isEmpty(),
+        "several clauses with a Top clause",
+      );
       void
     | Some(c) ->
       if (!clause.vars.isEmpty()) this.out(level, margin, " extends ");
       this.sTypes(level, margin, c)
+    };
+    if (!clause.brands.isEmpty()) {
+      if (!clause.vars.isEmpty() || clause.stypes.isSome()) {
+        this.out(level, margin, " & ")
+      };
+      this.brandEntries(level, margin, clause.brands)
     }
   }
 
@@ -1215,7 +1251,9 @@ mutable class TypePp{
         | None() -> 0
         | Some(sts) -> sts.size()
         };
-        if (clause.vars.size() + stypesCount > 1) return true;
+        if (clause.vars.size() + stypesCount > 1 || !clause.brands.isEmpty()) {
+          return true
+        };
         clause.stypes match {
         | Some(sts) ->
           for (sty in sts) {

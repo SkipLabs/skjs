@@ -45,6 +45,7 @@ mutable base class ApplyType(
     clause.map(
       x -> this.typeParam(env, x),
       sTypesOpt -> this.sTypesOpt(env, sTypesOpt),
+      ty -> this.type(env, ty),
     )
   }
 

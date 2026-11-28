@@ -217,8 +217,8 @@ extension class TInsts {
 
 extension class Clause {
   static fun union(clause1: Clause, clause2: Clause): Clause {
-    if (clause1.vars != clause2.vars) {
-      internal_error("clause vars must be equal for union")
+    if (clause1.vars != clause2.vars || clause1.brands != clause2.brands) {
+      internal_error("clause keys must be equal for union")
     };
     stypesOpt = (clause1.stypes, clause2.stypes) match {
     | (None(), _)
@@ -226,7 +226,7 @@ extension class Clause {
       None()
     | (Some(x), Some(y)) -> Some(STypes::union(x, y))
     };
-    Clause(clause1.vars, stypesOpt)
+    Clause(clause1.vars, stypesOpt, clause1.brands)
   }
 }
 
