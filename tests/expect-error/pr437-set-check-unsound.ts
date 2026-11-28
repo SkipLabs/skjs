@@ -103,13 +103,11 @@ function testBrokenDiscriminant(s: Shape): void {
 
 // ============================================================
 // Case 5: Readonly tuple field to mutable
-// Note: errors here are from per-field TVar inference, not the set check
 // ============================================================
 
 function testReadonlyTupleField(): void {
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const obj: { readonly pair: [string, number] } = { pair: ["a", 1] };
-  // Rejected — readonly pair assigned to mutable pair (via per-field TVar inference)
+  // Correctly rejected — readonly pair assigned to mutable pair
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const mutable_alias: { pair: [string, number] } = obj;
   mutable_alias.pair = ["b", 2];

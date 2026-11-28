@@ -68,22 +68,17 @@ function nestedTuplesDepth3(): void {
   const r = nest3([[[0]]]);
 }
 
-// FIXME: TypeScript accepts this call. The faithfulness probe recurses at
-// most kProjectionDepth levels into the constraint, so a deeper literal falls
-// back to the whole-tuple check and the inner literals are rejected again
-// (#942).
+// Arbitrary nesting depth: whole-tuple subtyping checks the covariant field
+// getter before the contravariant setter when a field holds an uncommitted
+// array literal, so inner literals commit against their own positions at any
+// depth, and the faithfulness probe does not need a depth bound (#942).
 declare function nest5<K extends [[[[[0]]]]]>(x: K): K;
 function nestedTuplesDepth5(): void {
-  // @skjs-expect-error Argument is not assignable to the parameter's type
   const r = nest5([[[[[0]]]]]);
 }
 
-// Depth 6, readonly depth 5, multi-element depth 5, and nested inner union
-// of tuples all fall back to whole-tuple subtyping and fail for the same
-// reason (#942).
 declare function nest6<K extends [[[[[[0]]]]]]>(x: K): K;
 function nestedTuplesDepth6(): void {
-  // @skjs-expect-error Argument is not assignable to the parameter's type
   const r = nest6([[[[[[0]]]]]]);
 }
 
@@ -91,13 +86,11 @@ declare function nest5ro<
   K extends readonly [readonly [readonly [readonly [readonly [0]]]]],
 >(x: K): K;
 function nestedTuplesDepth5Readonly(): void {
-  // @skjs-expect-error Argument is not assignable to the parameter's type
   const r = nest5ro([[[[[0]]]]]);
 }
 
 declare function nest5multi<K extends [[[[[0, 1], [2, 3]]]]]>(x: K): K;
 function nestedTuplesDepth5Multi(): void {
-  // @skjs-expect-error Argument is not assignable to the parameter's type
   const r = nest5multi([
     [
       [
@@ -112,9 +105,7 @@ function nestedTuplesDepth5Multi(): void {
 
 declare function nestInnerUnion<K extends [[0, 1] | [2, 3]]>(x: K): K;
 function nestedInnerUnionValid(): void {
-  // @skjs-expect-error Argument is not assignable to the parameter's type
   const r1 = nestInnerUnion([[0, 1]]);
-  // @skjs-expect-error Argument is not assignable to the parameter's type
   const r2 = nestInnerUnion([[2, 3]]);
 }
 
