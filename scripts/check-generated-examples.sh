@@ -13,6 +13,11 @@
 # - OUT_DIR: output directory for reports (default: ./.generated-examples-check)
 # - PROJECT_ROOT: repo root (default: current working directory)
 # - CLEAN: if set to 1, remove OUT_DIR before running (same as --clean)
+# - SKJS_PROFILE: build profile to use when SKJS_BIN is not set: release (default) or dev
+# - SKJS_BIN: explicit path to skjs binary (overrides SKJS_PROFILE)
+# - BASELINE_TSV: path to a previous summary.tsv to compare skjs_ms against
+# - MAX_REGRESSION_PCT: max allowed percentage slowdown vs BASELINE_TSV (default: 50)
+# - MIN_REGRESSION_MS: ignore regressions smaller than this many ms (default: 200)
 #
 set -u -o pipefail
 
@@ -25,11 +30,16 @@ Options:
   --clean   Remove the output directory (OUT_DIR) before running.
 
 Environment:
-  TS_VERSION   TypeScript version for npx (default: 5.7.3)
-  OUT_DIR      Output directory for reports (default: ./.generated-examples-check)
-  PROJECT_ROOT Repo root (default: current working directory)
-  CLEAN        If set to 1, same as --clean
-  ONLY_PROJECT If set, check only that project directory (e.g. generated-examples/search-index-service)
+  TS_VERSION          TypeScript version for npx (default: 5.7.3)
+  OUT_DIR             Output directory for reports (default: ./.generated-examples-check)
+  PROJECT_ROOT        Repo root (default: current working directory)
+  CLEAN               If set to 1, same as --clean
+  ONLY_PROJECT        If set, check only that project directory (e.g. generated-examples/counter)
+  SKJS_PROFILE        Build profile when SKJS_BIN is unset: release (default) or dev
+  SKJS_BIN            Explicit path to skjs binary (overrides SKJS_PROFILE)
+  BASELINE_TSV        Optional baseline summary.tsv to gate skjs_ms regressions against
+  MAX_REGRESSION_PCT  Max allowed slowdown vs BASELINE_TSV in percent (default: 50)
+  MIN_REGRESSION_MS   Minimum absolute slowdown in ms to flag a regression (default: 200)
 EOF
 }
 
@@ -47,8 +57,30 @@ fi
 TS_VERSION="${TS_VERSION:-5.7.3}"
 OUT_DIR="${OUT_DIR:-.generated-examples-check}"
 PROJECT_ROOT="${PROJECT_ROOT:-$(pwd)}"
+BASELINE_TSV="${BASELINE_TSV:-}"
+MAX_REGRESSION_PCT="${MAX_REGRESSION_PCT:-50}"
+MIN_REGRESSION_MS="${MIN_REGRESSION_MS:-200}"
 
-SKJS_BIN="${PROJECT_ROOT}/target/host/dev/skjs"
+# Default to the release binary (what users run), not dev (issue #1034).
+# SKJS_BIN overrides everything; otherwise SKJS_PROFILE selects release|dev.
+SKJS_PROFILE="${SKJS_PROFILE:-release}"
+if [[ -n "${SKJS_BIN:-}" ]]; then
+  case "${SKJS_BIN}" in
+    */target/host/release/*) SKJS_PROFILE="release" ;;
+    */target/host/dev/*)     SKJS_PROFILE="dev" ;;
+    *)                       SKJS_PROFILE="custom" ;;
+  esac
+else
+  case "${SKJS_PROFILE}" in
+    release) SKJS_BIN="${PROJECT_ROOT}/target/host/release/skjs" ;;
+    dev)     SKJS_BIN="${PROJECT_ROOT}/target/host/dev/skjs" ;;
+    *)
+      echo "ERROR: SKJS_PROFILE must be 'release' or 'dev' (got '${SKJS_PROFILE}')"
+      exit 2
+      ;;
+  esac
+fi
+
 IMPORT_STUBS_DIR="${PROJECT_ROOT}/import-stubs"
 GENERATED_DIR="${PROJECT_ROOT}/generated-examples"
 
@@ -84,7 +116,7 @@ if [[ "${CLEAN}" == "1" ]]; then
   rm -rf "${resolved_out}"
 fi
 mkdir -p "${OUT_DIR}"
-echo -e "project\ttsc_ms\ttsc_error_count\tskjs_ms\tskjs_error_count" > "${summary_tsv}"
+echo -e "project\ttsc_ms\ttsc_error_count\tskjs_profile\tskjs_ms\tskjs_error_count" > "${summary_tsv}"
 
 tsc_version_file="${OUT_DIR}/tsc-version.txt"
 mkdir -p "${OUT_DIR}"
@@ -114,10 +146,16 @@ fi
 if [[ ! -x "${SKJS_BIN}" ]]; then
   # Common case inside the Docker image: build outputs are not present yet.
   if command -v skargo >/dev/null 2>&1; then
-    echo "SKJS binary missing; attempting build with skargo build..."
-    skargo build || true
+    if [[ "${SKJS_PROFILE}" == "release" ]]; then
+      echo "SKJS release binary missing; attempting build with skargo build --release --bin skjs..."
+      skargo build --release --bin skjs || true
+    elif [[ "${SKJS_PROFILE}" == "dev" ]]; then
+      echo "SKJS dev binary missing; attempting build with skargo build --bin skjs..."
+      skargo build --bin skjs || true
+    fi
   fi
 fi
+echo "skjs binary: ${SKJS_BIN} (profile: ${SKJS_PROFILE})"
 
 tmpdir="$(mktemp -d)"
 cleanup() { rm -rf "${tmpdir}"; }
@@ -429,15 +467,19 @@ while IFS= read -r project_rel; do
   skjs_ms="$(echo "${skjs_res}" | tail -n 1 | awk '{print $2}')"
   skjs_errs="$(echo "${skjs_res}" | tail -n 1 | awk '{print $3}')"
 
-  echo -e "${project_rel}\t${tsc_ms}\t${tsc_errs}\t${skjs_ms}\t${skjs_errs}" >> "${summary_tsv}"
+  echo -e "${project_rel}\t${tsc_ms}\t${tsc_errs}\t${SKJS_PROFILE}\t${skjs_ms}\t${skjs_errs}" >> "${summary_tsv}"
 done <<< "${projects}"
 
 # Produce a JSON summary (requires node, which is available in skiplabs/skip image).
-node - <<'NODE'
+SKJS_BIN="${SKJS_BIN}" SKJS_PROFILE="${SKJS_PROFILE}" OUT_DIR="${OUT_DIR}" \
+  BASELINE_TSV="${BASELINE_TSV}" MAX_REGRESSION_PCT="${MAX_REGRESSION_PCT}" \
+  MIN_REGRESSION_MS="${MIN_REGRESSION_MS}" node - <<'NODE'
 const fs = require('fs');
 const path = require('path');
 
 const outDir = process.env.OUT_DIR || '.generated-examples-check';
+const skjsBin = process.env.SKJS_BIN || './target/host/release/skjs';
+const skjsProfile = process.env.SKJS_PROFILE || 'release';
 const summaryTsv = path.join(outDir, 'summary.tsv');
 const tsv = fs.readFileSync(summaryTsv, 'utf8').trimEnd().split('\n');
 const header = tsv[0].split('\t');
@@ -552,6 +594,15 @@ function enrich(top, projectsBySig, samplesBySig) {
   }));
 }
 
+function runExec(cmd, args) {
+  try {
+    const { execFileSync } = require('child_process');
+    return execFileSync(cmd, args, { stdio: ['ignore', 'pipe', 'ignore'] }).toString('utf8').trim();
+  } catch {
+    return null;
+  }
+}
+
 const summary = {
   generated_at: new Date().toISOString(),
   ts_version: fs.existsSync(path.join(outDir, 'tsc-version.txt'))
@@ -562,7 +613,9 @@ const summary = {
     npm: runCmd('npm --version'),
     git_skjs_sha: runCmd('git -C . rev-parse HEAD'),
     git_skip_sha: runCmd('git -C ../skip rev-parse HEAD'),
-    skjs_version: runCmd('./target/host/dev/skjs --version'),
+    skjs_bin: skjsBin,
+    skjs_profile: skjsProfile,
+    skjs_version: runExec(skjsBin, ['--version']),
   },
   counts,
   error_cardinality: {
@@ -580,5 +633,63 @@ echo "  - ${summary_tsv}"
 echo "  - ${summary_json}"
 echo "  - ${OUT_DIR}/<project>/tsc.txt"
 echo "  - ${OUT_DIR}/<project>/skjs.txt"
+
+if [[ -n "${BASELINE_TSV}" ]]; then
+  if [[ ! -f "${BASELINE_TSV}" ]]; then
+    echo "ERROR: BASELINE_TSV does not exist: ${BASELINE_TSV}" >&2
+    exit 2
+  fi
+  node - "${BASELINE_TSV}" "${summary_tsv}" "${MAX_REGRESSION_PCT}" "${MIN_REGRESSION_MS}" <<'NODE'
+const fs = require('fs');
+const [,, baselinePath, currentPath, maxPctRaw, minMsRaw] = process.argv;
+const maxPct = Number(maxPctRaw);
+const minMs = Number(minMsRaw);
+
+function readTsv(p) {
+  const lines = fs.readFileSync(p, 'utf8').trimEnd().split(/\r?\n/);
+  const hdr = lines[0].split('\t');
+  const map = new Map();
+  for (const line of lines.slice(1)) {
+    if (!line.trim()) continue;
+    const cols = line.split('\t');
+    const obj = {};
+    for (let i = 0; i < hdr.length; i++) obj[hdr[i]] = cols[i];
+    map.set(obj.project, {
+      skjs_ms: Number(obj.skjs_ms),
+      skjs_profile: obj.skjs_profile || 'unknown',
+    });
+  }
+  return map;
+}
+
+const base = readTsv(baselinePath);
+const cur = readTsv(currentPath);
+const regressions = [];
+let compared = 0;
+
+for (const [proj, curRow] of cur.entries()) {
+  const baseRow = base.get(proj);
+  if (!baseRow) continue;
+  compared++;
+  const deltaMs = curRow.skjs_ms - baseRow.skjs_ms;
+  const pct = baseRow.skjs_ms > 0 ? (deltaMs * 100) / baseRow.skjs_ms : 0;
+  if (baseRow.skjs_profile !== 'unknown' && curRow.skjs_profile !== baseRow.skjs_profile) {
+    console.warn(`WARN: ${proj} profile mismatch: baseline=${baseRow.skjs_profile}, current=${curRow.skjs_profile}`);
+  }
+  if (deltaMs >= minMs && pct > maxPct) {
+    regressions.push({ proj, baseMs: baseRow.skjs_ms, curMs: curRow.skjs_ms, deltaMs, pct });
+  }
+}
+
+if (regressions.length > 0) {
+  console.error(`PERF REGRESSION: ${regressions.length}/${compared} project(s) exceeded +${maxPct}% (and >= +${minMs}ms) vs ${baselinePath}:`);
+  for (const r of regressions) {
+    console.error(`  ${r.proj}: ${r.baseMs}ms -> ${r.curMs}ms (+${r.deltaMs}ms, +${r.pct.toFixed(1)}%)`);
+  }
+  process.exit(1);
+}
+console.log(`Perf baseline check passed (${compared} project(s) compared against ${baselinePath}; threshold +${maxPct}% / +${minMs}ms).`);
+NODE
+fi
 
 
