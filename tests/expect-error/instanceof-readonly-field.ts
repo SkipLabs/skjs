@@ -24,7 +24,7 @@ function readonlyStaysReadonly(o: {
   const x: { readonly a: string; readonly b: number } = o;
   if (x instanceof Cell) {
     // @skjs-expect-error Type is not assignable to the assignment target's type
-    // @skjs-expect-error-line2 Type 'number & Cell#T'
+    // @skjs-expect-error-line2 Type 'Cell#T & number'
     // @skjs-expect-error-line3 is not assignable to type 'never'
     x.a = x.b;
   }

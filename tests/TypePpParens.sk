@@ -30,7 +30,7 @@ fun testInterAtomMembersUnparenthesized(): void {
 @test
 fun testInterUnionMemberParenthesized(): void {
   ty = SKJS.TType::unexpandedInter(numberLiteralUnion(), namedInst("A"));
-  SKTest.expectEq("A & (1 | 2)", renderType(ty));
+  SKTest.expectEq("(1 | 2) & A", renderType(ty));
 }
 
 fun arrayOf(name: String, elt: SKJS.TType): SKJS.TType {
@@ -66,6 +66,57 @@ fun testCompactKeepsSpaceBeforeUnicodeName(): void {
   ty = arrayOf("ReadonlyArray", namedInst(delta));
   rendered = SKJS.rawPrettyPrint(true, pp -> pp.type(0, SKJS.Margin{}, ty));
   SKTest.expectEq(`readonly ${delta}[]`, rendered);
+}
+
+fun tparamType(name: String, idSuffix: String): SKJS.TType {
+  pos = SKJS.PosRange::none;
+  tp = SKJS.TParamWithConstraint(
+    name,
+    pos.fileName,
+    SKJS.Id::createSynthetic(idSuffix),
+    None(),
+  );
+  SKJS.TType::fromTParamWithConstraintWith(pos, tp, (l, r) ->
+    SKJS.TType::unexpandedInter(l, r)
+  )
+}
+
+fun numberType(): SKJS.TType {
+  SKJS.TType::single(SKJS.TPrimValue(SKJS.TNum(), None(), SKJS.PosRange::none))
+}
+
+// TInter stores members in an ArraySet<TType> ordered by TType::compare
+// (XXHash). Two type parameters with the same user-visible name (`Cell#T`)
+// but different synthetic Ids hash differently relative to `number`, so
+// printing `TInter` in set order is hash-dependent rather than canonical.
+@test
+fun testInterOrderIndependentOfHash(): void {
+  num = numberType();
+  // Pick two synthetic Ids whose TType::xxhash straddles `number`'s hash:
+  // one hashes below `number` and one hashes above `number`.
+  below: ?SKJS.TType = None();
+  above: ?SKJS.TType = None();
+  for (i in Range(0, 100)) {
+    tp = tparamType("Cell#T", `skolem:${i}`);
+    if (below.isNone() && tp < num) !below = Some(tp);
+    if (above.isNone() && tp > num) !above = Some(tp);
+    if (below.isSome() && above.isSome()) break void;
+  };
+  tpBelow = below.fromSome();
+  tpAbove = above.fromSome();
+  rBelow = renderType(SKJS.TType::unexpandedInter(num, tpBelow));
+  rAbove = renderType(SKJS.TType::unexpandedInter(num, tpAbove));
+  SKTest.expectEq("Cell#T & number", rBelow);
+  SKTest.expectEq("Cell#T & number", rAbove);
+  // Symmetric insertion order yields the same result.
+  SKTest.expectEq(
+    "Cell#T & number",
+    renderType(SKJS.TType::unexpandedInter(tpBelow, num)),
+  );
+  SKTest.expectEq(
+    "Cell#T & number",
+    renderType(SKJS.TType::unexpandedInter(tpAbove, num)),
+  );
 }
 
 module end;
