@@ -178,12 +178,14 @@ extension class TypeChecker {
       tcenv.!scope = loopScope;
       preHeader = loopScope.copyRefs();
       this.checkBool(tcenv, cond);
+      guardEpoch = tcenv.effectEpoch;
       // The header's write effects, to re-run on the back edges below: a
       // `continue` (and the body's normal end) re-enters the header — the
       // increment first, then the condition — so by the time the loop exits
       // through that re-entry, the condition's writes have run again
       // (SkipLabs/skjs#968).
       headerWrites = loopScope.headerWriteEffects(preHeader);
+      preBodyRefs = loopScope.copyRefs();
       // The loop catches the `break`/`continue` inside its body — they bind to
       // it, not to an enclosing switch — and its exits carry their edges: a
       // jump leaves mid-body with the state at the jump, which the body's
@@ -202,16 +204,18 @@ extension class TypeChecker {
       // The increment runs before the condition on the way back, so the
       // condition's writes are the last to land on the folded back edges.
       loopScope.applyHeaderWrites(headerWrites);
-      for (snap in catcher.breaks) {
-        loopScope.uniteSnapshot(tcenv.subst, this, snap)
-      };
-      this.checkHiddenBindingEscape(tcenv, st.pos, firstLocalSkolem, initScope);
-      loopScope.limitLoopExit(tcenv.subst, this, tcenv.loopWriteBounds.pop());
-      // The entry path exits through the header too: its writes ran before the
-      // first test could turn false (the increment does not run on that path).
-      initScope.applyHeaderWrites(headerWrites);
-      tcenv.!scope = initScope;
-      tcenv.popScope(this, loopScope);
+      this.finishCondLoopExit(
+        tcenv,
+        st.pos,
+        firstLocalSkolem,
+        initScope,
+        loopScope,
+        cond,
+        guardEpoch,
+        headerWrites,
+        preBodyRefs,
+        catcher.breaks,
+      );
       tcenv.!scope = scopeCopy;
       tcenv.popScopeReplace(initScope);
       initTerm.thenk(() ->
@@ -355,11 +359,13 @@ extension class TypeChecker {
       tcenv.!scope = loopScope;
       preHeader = loopScope.copyRefs();
       this.checkBool(tcenv, cond);
+      guardEpoch = tcenv.effectEpoch;
       // The header's write effects, to re-run on the back edges below: a
       // `continue` (and the body's normal end) re-enters the header, so by
       // the time the loop exits through that re-entry, the header's writes
       // have run again and overwritten the folded state (SkipLabs/skjs#968).
       headerWrites = loopScope.headerWriteEffects(preHeader);
+      preBodyRefs = loopScope.copyRefs();
       // See the `For` case: the loop catches its body's jumps and folds their
       // edges into its exit. A `continue` re-enters the header, whose
       // condition turning false then leaves the loop with the edge's state, so
@@ -376,16 +382,18 @@ extension class TypeChecker {
       // writes run again on the folded state. A `break` skips the header, so
       // its edges join after, unrewritten.
       loopScope.applyHeaderWrites(headerWrites);
-      for (snap in catcher.breaks) {
-        loopScope.uniteSnapshot(tcenv.subst, this, snap)
-      };
-      this.checkHiddenBindingEscape(tcenv, st.pos, firstLocalSkolem, scopeCopy);
-      loopScope.limitLoopExit(tcenv.subst, this, tcenv.loopWriteBounds.pop());
-      // The entry path exits through the header as well: its writes ran before
-      // the first test could turn false.
-      scopeCopy.applyHeaderWrites(headerWrites);
-      tcenv.!scope = scopeCopy;
-      tcenv.popScope(this, loopScope);
+      this.finishCondLoopExit(
+        tcenv,
+        st.pos,
+        firstLocalSkolem,
+        scopeCopy,
+        loopScope,
+        cond,
+        guardEpoch,
+        headerWrites,
+        preBodyRefs,
+        catcher.breaks,
+      );
       StmtTermination::cond(cond).loop_(() -> bodyTerm)
     | Switch(e, branches) -> this.switch(tcenv, e, branches)
     | Try(tryBlock, catchClause, finallyBlock) ->
@@ -1068,6 +1076,65 @@ extension class TypeChecker {
       }
     };
     result
+  }
+
+  // Finalize the post-loop scope for condition-guarded loops (`while` and
+  // `for`). Normal exits (0-iteration entry and back-edge re-entry) leave
+  // directly after `cond` evaluates to false, so `evalCond(tcenv, cond, false)`
+  // refines the normal-exit path under `guardEpoch`. `break` edges bypass the
+  // header test and join as separate sibling paths alongside the narrowed
+  // normal exit.
+  private fun finishCondLoopExit(
+    tcenv: mutable TCEnv,
+    loopPos: PosRange,
+    firstLocalSkolem: Int,
+    baseScope: mutable Scope,
+    loopScope: mutable Scope,
+    cond: Expr,
+    guardEpoch: Int,
+    headerWrites: SortedMap<String, LocalRef>,
+    preBodyRefs: SortedMap<String, LocalRef>,
+    breaks: readonly Vector<readonly Map<PosRange, (String, LocalRef)>>,
+  ): void {
+    this.checkHiddenBindingEscape(tcenv, loopPos, firstLocalSkolem, baseScope);
+    writeBounds = tcenv.loopWriteBounds.pop();
+    loopScope.limitLoopExit(tcenv.subst, this, writeBounds);
+    postLoopEpoch = tcenv.effectEpoch;
+    // Build the normal-exit state: 0-iteration entry (baseScope + headerWrites)
+    // joined with the back-edge exit (`loopScope`, which already has body end,
+    // `continue` edges, any `for` increment, `headerWrites`, and `writeBounds`).
+    tcenv.!scope = baseScope;
+    normalExit = tcenv.mcreateSubScope{isLoop => false};
+    normalExit.applyHeaderWrites(headerWrites);
+    normalExit.uniteFallenInto(tcenv.subst, this, loopScope);
+    // Apply `evalCond(cond, false)` against `guardEpoch` so calls inside the
+    // loop body or `for` increment (which ran *before* the exiting header test)
+    // do not make `cond`'s reads look stale, while calls *inside `cond` itself*
+    // still invalidate earlier reads via `exprEffectEpochs < guardEpoch`.
+    tcenv.!scope = normalExit;
+    tcenv.!effectEpoch = guardEpoch;
+    this.evalCond(tcenv, cond, false);
+    tcenv.!effectEpoch = if (postLoopEpoch > tcenv.effectEpoch) {
+      postLoopEpoch
+    } else {
+      tcenv.effectEpoch
+    };
+    tcenv.!scope = baseScope;
+    if (breaks.isEmpty()) {
+      tcenv.popScopeReplace(normalExit)
+    } else {
+      exits = mutable Vector<readonly Scope>[normalExit];
+      for (snap in breaks) {
+        breakScope = tcenv.mcreateSubScope{isLoop => false};
+        // A binding not touched below `loopScope` before `break` holds the
+        // widened loop-entry + header-write state (`preBodyRefs`).
+        breakScope.applyHeaderWrites(preBodyRefs);
+        breakScope.seedRefs(snap);
+        breakScope.limitLoopExit(tcenv.subst, this, writeBounds);
+        exits.push(breakScope)
+      };
+      tcenv.mergeScopes(this, exits.toArray(), false)
+    }
   }
 }
 
