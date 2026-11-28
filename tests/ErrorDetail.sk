@@ -225,7 +225,7 @@ fun testMissingPropertyNeverIndexMessages(): void {
     "closed object missing property",
   );
 
-  // Number never-index with numeric key: currently omits the never-index note.
+  // Number never-index with numeric key: reports the covering never-index note.
   SKTest.expectEq(
     singleErrorMessages(
       "function f(x: { readonly a: number; [k: number]: never }): void { const v = x[0]; }\n",
@@ -233,11 +233,12 @@ fun testMissingPropertyNeverIndexMessages(): void {
     Array[
       "Property '0' does not exist on this type",
       "Possible options are:\na",
+      "This key is provably absent: its covering index signature is never",
     ],
     "never number index numeric key",
   );
 
-  // Symbol never-index with string key: currently falsely emits the closed note.
+  // Symbol never-index with string key: plain missing property (no closed note).
   SKTest.expectEq(
     singleErrorMessages(
       "function f(x: { readonly a: number; [k: symbol]: never }): void { const v = x.b; }\n",
@@ -245,22 +246,24 @@ fun testMissingPropertyNeverIndexMessages(): void {
     Array[
       "Property 'b' does not exist on this type",
       "Possible options are:\na",
-      "The object type is closed: its unnamed keys are provably absent",
     ],
     "never symbol index string key",
   );
 
-  // Closed<T> symbol key: currently emits no closed/never-index note.
+  // Closed<T> symbol key: reports the closed-object note.
   SKTest.expectEq(
     singleErrorMessages(
       "declare const sym: unique symbol;\n" +
         "function f(x: Closed<{ readonly a: number }>): void { const v = x[sym]; }\n",
     ),
-    Array["This symbol property does not exist on the object"],
+    Array[
+      "This symbol property does not exist on the object",
+      "The object type is closed: its unnamed keys are provably absent",
+    ],
     "closed object missing symbol key",
   );
 
-  // Closed<T> destructuring: currently emits no closed/never-index note.
+  // Closed<T> destructuring: reports the closed-object note.
   SKTest.expectEq(
     singleErrorMessages(
       "function f(x: Closed<{ readonly a: number }>): void { const { b } = x; }\n",
@@ -268,9 +271,92 @@ fun testMissingPropertyNeverIndexMessages(): void {
     Array[
       "Property 'b' does not exist on this type",
       "Out of 'Closed<{ readonly a: ...; }>'",
+      "The object type is closed: its unnamed keys are provably absent",
     ],
     "closed object destructuring",
   );
+
+  // TFields::getTypeTypingError directly distinguishes closed, never-index,
+  // and plain undeclared missing properties.
+  pos = SKJS.PosRange::none;
+  neverStr = SKJS.TField::createNeverIndex("k", pos);
+  neverSym = SKJS.TField::createNeverIndex("s", pos);
+  openBranch = SKJS.TFields::empty();
+  SKTest.expectEq(
+    openBranch.absentKeyNote("b"),
+    None(),
+    "TFields open branch absentKeyNote",
+  );
+  neverStrBranch = SKJS.TFields::create{
+    tIndexes => SKJS.TIndexes{stringIndex => Some(neverStr)},
+  };
+  SKTest.expectEq(
+    neverStrBranch.absentKeyNote("b"),
+    Some("This key is provably absent: its covering index signature is never"),
+    "TFields never-string-index absentKeyNote",
+  );
+  closedBranch = openBranch.withNeverIndexes(neverStr, neverSym);
+  SKTest.expectEq(
+    closedBranch.absentKeyNote("b"),
+    Some("The object type is closed: its unnamed keys are provably absent"),
+    "TFields closed branch absentKeyNote",
+  );
+  neverNumBranch = SKJS.TFields::create{
+    tIndexes => SKJS.TIndexes{numberIndex => Some(neverStr)},
+  };
+  SKTest.expectEq(
+    neverNumBranch.absentKeyNote("0"),
+    Some("This key is provably absent: its covering index signature is never"),
+    "TFields never-number-index numeric key absentKeyNote",
+  );
+  SKTest.expectEq(
+    neverNumBranch.absentKeyNote("b"),
+    None(),
+    "TFields never-number-index non-numeric key absentKeyNote",
+  );
+  // Confirm TFields::getTypeTypingError actually emits the note in the thrown error.
+  closedErr = SKJS.catchError(() -> {
+    _: void = closedBranch.getTypeTypingError("b", pos);
+  }).fromSome();
+  closedErr match {
+  | ne @ SKJS.NamingError _ ->
+    SKTest.expectEq(
+      ne.messages.map(m -> m.i1),
+      Array[
+        "Property 'b' does not exist on this type",
+        "The object type is closed: its unnamed keys are provably absent",
+      ],
+      "TFields::getTypeTypingError closed branch",
+    )
+  | _ -> invariant_violation("expected NamingError")
+  };
+  neverStrErr = SKJS.catchError(() -> {
+    _: void = neverStrBranch.getTypeTypingError("b", pos);
+  }).fromSome();
+  neverStrErr match {
+  | ne @ SKJS.NamingError _ ->
+    SKTest.expectEq(
+      ne.messages.map(m -> m.i1),
+      Array[
+        "Property 'b' does not exist on this type",
+        "This key is provably absent: its covering index signature is never",
+      ],
+      "TFields::getTypeTypingError never-string-index branch",
+    )
+  | _ -> invariant_violation("expected NamingError")
+  };
+  openErr = SKJS.catchError(() -> {
+    _: void = openBranch.getTypeTypingError("b", pos);
+  }).fromSome();
+  openErr match {
+  | ne @ SKJS.NamingError _ ->
+    SKTest.expectEq(
+      ne.messages.map(m -> m.i1),
+      Array["Property 'b' does not exist on this type"],
+      "TFields::getTypeTypingError open branch",
+    )
+  | _ -> invariant_violation("expected NamingError")
+  };
 }
 
 module end;

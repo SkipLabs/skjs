@@ -1361,7 +1361,18 @@ class TObject private (
   // rejecting the access reads as nonsense. Telling the user the field exists
   // on some branches and recovering with that type is a separate improvement
   // (SkipLabs/skjs#716).
-  fun getTypeTypingError<T>(fieldName: String, pos: PosRange): T {
+  //
+  // `probedKeys` is the exact set of missing literal keys being accessed when
+  // known (e.g. from `PrimLiterals` in element access); omitted for single
+  // named-key lookups where `fieldName` is the key itself. Used to check
+  // whether the missing key(s) are covered by a non-synthetic never-valued
+  // index (Closed<T> or an index collapsed to never), rather than merely
+  // undeclared on an open type (#803).
+  fun getTypeTypingError<T>(
+    fieldName: String,
+    pos: PosRange,
+    probedKeys: ?Array<String> = None(),
+  ): T {
     branches = this.getBranches();
     names = SortedSet<FieldNameString>[];
     branches.maybeGet(0).each(first ->
@@ -1371,14 +1382,6 @@ class TObject private (
         }
       }
     );
-    // Distinguish a key that is not declared on an OPEN type from one on a
-    // CLOSED type (a never-valued index, e.g. Closed<T>): there the key is
-    // provably absent, not merely undeclared.
-    isBottomIdx = (idx: ?TField) ->
-      idx match {
-      | Some(i) -> i.get.isBottom()
-      | None() -> false
-      };
     msgs = mutable Vector[
       (
         pos,
@@ -1394,19 +1397,38 @@ class TObject private (
     if (!optionNames.isEmpty()) {
       msgs.push((pos, "Possible options are:\n" + optionNames.join("\n")))
     };
-    if (
-      branches.any(b ->
-        isBottomIdx(b.stringIndex) || isBottomIdx(b.symbolIndex)
-      )
-    ) {
-      msgs.push(
-        (
-          pos,
-          "The object type is closed: its unnamed keys are provably absent",
-        ),
-      )
-    };
+    keys = probedKeys.default(Array[fieldName]);
+    TObject::absentKeyNote(branches, b ->
+      keys.any(k -> b.isProvablyAbsentByNeverIndex(k))
+    ).each(note -> msgs.push((pos, note)));
     fatalError(msgs.toArray(), TSCode(2339))
+  }
+
+  // Diagnostic note explaining when missing symbol key(s) are provably absent
+  // via a closed object type or a never-valued symbol index signature (#803).
+  fun missingSymbolKeyNote(): ?String {
+    TObject::absentKeyNote(this.getBranches(), b ->
+      b.isSymbolProvablyAbsentByNeverIndex()
+    )
+  }
+
+  // Shared note classifying whether absent key(s) are provably absent across
+  // `branches` because the type is closed (all branches `isClosedObject()`) or
+  // because a covering non-synthetic never-valued index proves the key absent
+  // in at least one branch (e.g. `{ [k: number]: never }` or an intersection
+  // whose index collapsed to `never`). Returns None for plain undeclared keys.
+  static fun absentKeyNote(
+    branches: Array<TFields>,
+    branchProvesAbsent: TFields -> Bool,
+  ): ?String {
+    if (branches.isEmpty() || !branches.any(branchProvesAbsent)) {
+      return None()
+    };
+    if (branches.all(b -> b.isClosedObject())) {
+      Some("The object type is closed: its unnamed keys are provably absent")
+    } else {
+      Some("This key is provably absent: its covering index signature is never")
+    }
   }
 
   fun maybeGetSymbolType(
@@ -3379,6 +3401,40 @@ class TFields protected {
     }
   }
 
+  // True when `name` is not a named field of this branch and its covering
+  // non-synthetic index is never-valued (proving the key absent, as in
+  // `Closed<T>`, `{ [k: number]: never }`, or an intersected index collapsed
+  // to `never`).
+  fun isProvablyAbsentByNeverIndex(name: String): Bool {
+    if (this.maybeGet(name).isSome()) return false;
+    this.indexForFieldName(name) match {
+    | Some(idx) -> !idx.isSynthetic() && idx.get.isBottom()
+    | None() -> false
+    }
+  }
+
+  // True when this branch has a non-synthetic never-valued symbol index
+  // (proving every unnamed symbol key absent).
+  fun isSymbolProvablyAbsentByNeverIndex(): Bool {
+    this.nonSyntheticIndexForKeyKind(TSymbol()) match {
+    | Some(idx) -> idx.get.isBottom()
+    | None() -> false
+    }
+  }
+
+  // Diagnostic note for a missing string/numeric key on this single branch:
+  // distinguishes a closed object (`Closed<T>` / `as const`), a covering
+  // never-valued index, and a plain undeclared property (#803).
+  fun absentKeyNote(fieldName: String): ?String {
+    if (!this.isProvablyAbsentByNeverIndex(fieldName)) {
+      None()
+    } else if (this.isClosedObject()) {
+      Some("The object type is closed: its unnamed keys are provably absent")
+    } else {
+      Some("This key is provably absent: its covering index signature is never")
+    }
+  }
+
   // Returns Some(length) when this TFields is an array-branded object whose
   // `length` field has a non-negative literal-number type N AND every
   // positional field `0..N-1` is present.
@@ -3520,20 +3576,23 @@ class TFields protected {
   }
 
   fun getTypeTypingError<T>(fieldName: String, pos: PosRange): T {
-    base = (
-      pos,
-      `Property '${TypePp::escapeName(fieldName)}' does not exist on this type`,
-    );
+    msgs = mutable Vector[
+      (
+        pos,
+        `Property '${TypePp::escapeName(
+          fieldName,
+        )}' does not exist on this type`,
+      ),
+    ];
     // Only list options when there are any (see the TObject overload).
     optionNames = this.fields.toArray().map(x ->
       TypePp::escapeName(x.name.value)
     );
-    msgs = if (optionNames.isEmpty()) {
-      Array[base]
-    } else {
-      Array[base, (pos, "Possible options are:\n" + optionNames.join("\n"))]
+    if (!optionNames.isEmpty()) {
+      msgs.push((pos, "Possible options are:\n" + optionNames.join("\n")))
     };
-    fatalError(msgs, TSCode(2339))
+    this.absentKeyNote(fieldName).each(note -> msgs.push((pos, note)));
+    fatalError(msgs.toArray(), TSCode(2339))
   }
 
   fun getType(

@@ -27,7 +27,7 @@ type StrIdxInter = StrIdx & StrIdxStr;
 // undefined. tsc types this access as a silent never.
 function testInterAccess(x: StrIdxInter): undefined {
   // @skjs-expect-error Property 'key' does not exist on this type
-  // @skjs-expect-error-line2 The object type is closed: its unnamed keys are provably absent
+  // @skjs-expect-error-line2 This key is provably absent: its covering index signature is never
   return x["key"];
 }
 
@@ -38,6 +38,7 @@ type NumIdxInter = NumIdxA & NumIdxB;
 // number & string = never on a number index: numeric keys are provably absent.
 function testNumInterAccess(x: NumIdxInter): undefined {
   // @skjs-expect-error Property '0' does not exist on this type
+  // @skjs-expect-error-line2 This key is provably absent: its covering index signature is never
   return x[0];
 }
 

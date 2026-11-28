@@ -1089,18 +1089,19 @@ extension class TypeChecker {
             // fire at runtime — it is not useless (#799). The 2339 error
             // below already covers the misuse.
             !defaultIsUseless = None();
-            tcenv.error(
-              Array[
-                (
-                  fieldName.pos,
-                  `Property '${TypePp::escapeName(
-                    fieldName.value,
-                  )}' does not exist on this type`,
-                ),
-                (type.pos, `Out of ${this.ppType(tcenv, type)}`),
-              ],
-              TSCode(2339),
-            )
+            msgs = mutable Vector[
+              (
+                fieldName.pos,
+                `Property '${TypePp::escapeName(
+                  fieldName.value,
+                )}' does not exist on this type`,
+              ),
+              (type.pos, `Out of ${this.ppType(tcenv, type)}`),
+            ];
+            fields.absentKeyNote(fieldName.value).each(note ->
+              msgs.push((fieldName.pos, note))
+            );
+            tcenv.error(msgs.toArray(), TSCode(2339))
           | Some(tfield) ->
             this.checkFieldAccess(tcenv, tfield, fieldName.pos);
             undefined = (pos) -> TType::single(TPrimUnit(TUndefined(), pos));
@@ -1940,12 +1941,11 @@ extension class TypeChecker {
                   TSCode(7053),
                 )
               } else {
-                fatalError(
-                  Array[
-                    (pos, "This symbol property does not exist on the object"),
-                  ],
-                  TSCode(2339),
-                )
+                msgs = mutable Vector[
+                  (pos, "This symbol property does not exist on the object"),
+                ];
+                obj.missingSymbolKeyNote().each(note -> msgs.push((pos, note)));
+                fatalError(msgs.toArray(), TSCode(2339))
               }
             | Some(index) ->
               ty = if (isLValue) index.set else {
@@ -2094,7 +2094,12 @@ extension class TypeChecker {
                   ],
                   TSCode(7053),
                 )
-              | Some(lits) -> obj.getTypeTypingError(lits.toStringList(), pos)
+              | Some(lits) ->
+                obj.getTypeTypingError(
+                  lits.toStringList(),
+                  pos,
+                  Some(lits.values().map(lit -> lit.val).collect(Array)),
+                )
               }
             | Some(index) ->
               ty = if (isLValue) index.set else {
