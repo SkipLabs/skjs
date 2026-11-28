@@ -753,8 +753,9 @@ interface ParamsDictionary {
 
 // Dynamic string key write on a dual-indexed object: `k` can be a numeric
 // string like "0", so writing `string[]` violates the `[key: number]: string`
-// contract (currently accepted).
+// contract and must be rejected.
 function dualDynamicStringWriteNarrowNum(p: ParamsDictionary, k: string): void {
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   p[k] = ["a"];
 }
 
@@ -765,39 +766,42 @@ function dualDynamicStringWriteOk(p: ParamsDictionary, k: string): void {
 }
 
 // Dynamic string key write when the number index is readonly: `k` can name a
-// numeric key governed by the readonly number index (currently accepted).
+// numeric key governed by the readonly number index, so the write is rejected.
 function dualDynamicStringWriteReadonlyNum(
   p: { [key: string]: number; readonly [key: number]: number },
   k: string,
 ): void {
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   p[k] = 42;
 }
 
 // Dynamic string key write on a union where one branch has a narrower number
-// index (currently accepted).
+// index must be rejected.
 function unionDualDynamicStringWrite(
   p: ParamsDictionary | { [key: string]: string | string[] },
   k: string,
 ): void {
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   p[k] = ["a"];
 }
 
-// Dynamic string key write when the number index is `never` (currently
-// accepted).
+// Dynamic string key write when the number index is `never` must be rejected.
 function dualDynamicStringWriteNeverNum(
   p: { [key: string]: number; [key: number]: never },
   k: string,
 ): void {
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   p[k] = 1;
 }
 
 // Dynamic string key read on a non-conforming dual-indexed object: `k` can be
-// a numeric string like "0", so the read must include `number` from the number
-// index (currently accepted at `boolean | undefined`).
+// a numeric string like "0", so the read includes `number` from the number
+// index.
 function dualDynamicStringReadNonConformingTooNarrow(
   p: { [key: string]: boolean; [key: number]: number },
   k: string,
 ): boolean | undefined {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return p[k];
 }
 
@@ -809,38 +813,38 @@ function dualDynamicStringReadNonConforming(
 }
 
 // Dynamic string key read on a union containing a non-conforming dual-indexed
-// branch (currently accepted at `boolean | undefined`).
+// branch includes `number` from that branch's number index.
 function unionDualDynamicStringReadNonConformingTooNarrow(
   p:
     | { [key: string]: boolean; [key: number]: number }
     | { [key: string]: boolean },
   k: string,
 ): boolean | undefined {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return p[k];
 }
 
 // Non-finite numeric string literals ("Infinity", "-Infinity", "NaN") are
 // governed by the number index on a dual-indexed type (String(Infinity) ===
-// "Infinity"). Currently `indexForFieldName` uses finite `isJSNumericString`
-// and routes them to the string index instead.
+// "Infinity").
 function dualInfinityRead(p: ParamsDictionary): string | undefined {
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const a: string | undefined = p["Infinity"];
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const b: string | undefined = p["-Infinity"];
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return p["NaN"];
 }
 
 function dualInfinityWrite(p: ParamsDictionary): void {
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   p["Infinity"] = ["a"];
 }
 
 function dualNegInfinityWrite(p: ParamsDictionary): void {
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   p["-Infinity"] = ["a"];
 }
 
 function dualNaNWrite(p: ParamsDictionary): void {
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   p["NaN"] = ["a"];
 }
 
@@ -848,6 +852,7 @@ function dualClosedInfinityToDual(x: Closed<{ readonly Infinity: string[] }>): {
   readonly [key: string]: string | string[];
   readonly [key: number]: string;
 } {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
@@ -855,8 +860,6 @@ function dualClosedInfinityToDual(x: Closed<{ readonly Infinity: string[] }>): {
 // non-finite numeric names), rather than always looking up `stringIndex`.
 function inRefinesNumberIndexStringKey(x: { [k: number]: string }): string {
   if ("0" in x) {
-    // @skjs-expect-error Property '0' was confirmed present by `in` but its declaration is unknown — accessing it is unsafe (it could be private)
-    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return x["0"];
   }
   return "";
@@ -864,8 +867,6 @@ function inRefinesNumberIndexStringKey(x: { [k: number]: string }): string {
 
 function inRefinesNumberIndexNumKey(x: { [k: number]: string }): string {
   if (0 in x) {
-    // @skjs-expect-error Property '0' was confirmed present by `in` but its declaration is unknown — accessing it is unsafe (it could be private)
-    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return x[0];
   }
   return "";
@@ -873,8 +874,6 @@ function inRefinesNumberIndexNumKey(x: { [k: number]: string }): string {
 
 function inRefinesNumberIndexInfinity(x: { [k: number]: string }): string {
   if ("Infinity" in x) {
-    // @skjs-expect-error Property 'Infinity' was confirmed present by `in` but its declaration is unknown — accessing it is unsafe (it could be private)
-    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return x["Infinity"];
   }
   return "";
@@ -882,7 +881,6 @@ function inRefinesNumberIndexInfinity(x: { [k: number]: string }): string {
 
 function inRefinesDualIndexRead(p: ParamsDictionary): string {
   if ("0" in p) {
-    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return p["0"];
   }
   return "";
@@ -890,7 +888,6 @@ function inRefinesDualIndexRead(p: ParamsDictionary): string {
 
 function inRefinesDualIndexInfinityRead(p: ParamsDictionary): string {
   if ("Infinity" in p) {
-    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return p["Infinity"];
   }
   return "";
@@ -898,6 +895,7 @@ function inRefinesDualIndexInfinityRead(p: ParamsDictionary): string {
 
 function inRefinesDualIndexWrite(p: ParamsDictionary): void {
   if ("0" in p) {
+    // @skjs-expect-error Type is not assignable to the assignment target's type
     p["0"] = ["a"];
   }
 }

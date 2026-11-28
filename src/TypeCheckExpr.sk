@@ -2119,6 +2119,30 @@ extension class TypeChecker {
               // checked against the declared fields and found absent, so they
               // only hit the index.
               if (remainingIdxSType.primLiterals().isNone()) {
+                // A non-literal `string` key may also name a numeric key at
+                // runtime (e.g. `"0"`, `"Infinity"`), hitting any branch's
+                // `numberIndex` instead of `stringIndex`:
+                //   - read: union non-bottom `numberIndex.get` (matters when
+                //     `numberIndex` is not a subtype of `stringIndex`).
+                //   - write: intersect `numberIndex.set` (even when `readonly`
+                //     or `never`, whose `set` is `bottom`, blocking the write
+                //     that could violate the stricter numeric index invariant).
+                if (remainingIdxSType is TPrimString _) {
+                  for (numIdx in obj.nonSyntheticNumberIndexes()) {
+                    if (isLValue) {
+                      addResultCase(numIdx.set)
+                    } else if (!numIdx.get.isBottom()) {
+                      addResultCase(
+                        TType::unionUndefined(
+                          tcenv.subst,
+                          this,
+                          numIdx.get,
+                          pos,
+                        ),
+                      )
+                    }
+                  }
+                };
                 for (namedFd in obj.namedFieldsForKeyKind(
                   remainingIdxSType.asPrimValueKind(),
                 )) {
@@ -5128,6 +5152,9 @@ extension class TypeChecker {
                       .nonSyntheticIndexForKeyKind(TString())
                       .map(field -> field.get)
                       .default(TType::top(pos)),
+                  );
+                  fields.nonSyntheticNumberIndex().each(numIdx ->
+                    if (!numIdx.get.isBottom()) add(numIdx.get)
                   );
                   for (field in fields.namedFieldsForKeyKind(TString())) {
                     add(field.get)
