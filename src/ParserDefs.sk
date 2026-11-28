@@ -974,7 +974,7 @@ extension class Parser {
             name => Pattern(pos, PVar(pName)),
             optional,
             type,
-            default,
+            default => _default,
           } ->
             isParameterProperty = false;
             !param.modifiers.modifiers = modifiers.modifiers.filter(modifier ->
@@ -1012,14 +1012,31 @@ extension class Parser {
                   name => FNNormal(pName),
                   optional,
                   type => fieldType,
-                  value => default,
+                  // Parameter property defaults belong to the constructor
+                  // parameter (`param.default`), not to a separate field
+                  // initializer; the synthesized `this.x = x` below
+                  // initializes the property from the parameter. Leaving
+                  // `value => None()` avoids duplicating the default `Expr`
+                  // AST node (and its `PosRange`) in two places and matches
+                  // TypeScript semantics (`constructor(public x = 0)` runs the
+                  // default as a parameter initializer, not a class field).
+                  value => None(),
                   modifiers,
                 },
               );
-              eThis = Expr(pos, Var(Name(pos, "this")));
-              eName = Expr(pos, Var(pName));
-              eThisDotName = Expr(pos, Dot(NormalDot(), eThis, pName));
-              eAssign = Expr(pos, Binop(BOAssignment(), eThisDotName, eName));
+              // Give each synthesized `Expr` a distinct `syntheticId` so
+              // `Expr.pos` stays unique across the AST (issue #708) while
+              // still resolving to `pos` in diagnostics.
+              eThis = Expr(pos.synthetic(1), Var(Name(pos, "this")));
+              eName = Expr(pos.synthetic(2), Var(pName));
+              eThisDotName = Expr(
+                pos.synthetic(3),
+                Dot(NormalDot(), eThis, pName),
+              );
+              eAssign = Expr(
+                pos.synthetic(4),
+                Binop(BOAssignment(), eThisDotName, eName),
+              );
               initializationStatements.push(Stmt(pos, StmtExpr(eAssign)))
             }
           | _ -> void

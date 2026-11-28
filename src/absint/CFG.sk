@@ -151,6 +151,156 @@ value class CFG{
   }
 }
 
+private mutable class ExprPosUniquenessChecker{
+  seen: mutable Set<PosRange> = mutable Set[],
+} {
+  mutable fun checkExpr(e: Expr): void {
+    if (!this.seen.maybeInsert(e.pos)) {
+      internal_error(
+        "CFGBuilder: duplicate Expr PosRange: " + inspect(e).toString(),
+      )
+    };
+    e.value match {
+    | Number _
+    | BigInt _
+    | Var _
+    | EString _
+    | Regexp _ ->
+      void
+    | Spread(e1)
+    | TypeOf(e1)
+    | VoidOp(e1)
+    | Await(e1)
+    | Dot(_, e1, _)
+    | Unop(_, e1)
+    | PostOp(_, e1)
+    | As(e1, _)
+    | AsConst(e1)
+    | Satisfies(e1, _)
+    | Async(e1) ->
+      this.checkExpr(e1)
+    | Get(e1, e2)
+    | Binop(_, e1, e2)
+    | In(e1, e2)
+    | InstanceOf(e1, e2) ->
+      this.checkExpr(e1);
+      this.checkExpr(e2)
+    | New(e1, _, args)
+    | Call(e1, _, args) ->
+      this.checkExpr(e1);
+      args.each(a -> this.checkExpr(a))
+    | Params(params) -> params.each(p -> this.checkParam(p))
+    | Object(fields) ->
+      for (f in fields) {
+        f match {
+        | FDNormal(_, v) -> this.checkExpr(v)
+        | FDComputed(k, v) ->
+          this.checkExpr(k);
+          this.checkExpr(v)
+        | FDSpread(v) -> this.checkExpr(v)
+        | FDMethod{sig, body} ->
+          sig match {
+          | FSInline(_, ps, _) -> ps.each(p -> this.checkParam(p))
+          | FSRef _ -> void
+          };
+          body match {
+          | FBInline(FDBSome(ss)) -> ss.each(s -> this.checkStmt(s))
+          | FBInline(FDBNone())
+          | FBRef _ ->
+            void
+          }
+        }
+      }
+    | Closure(_, params, _, body) ->
+      params.each(p -> this.checkParam(p));
+      body match {
+      | CBExpr(e1) -> this.checkExpr(e1)
+      | CBBlock(ss) -> ss.each(s -> this.checkStmt(s))
+      }
+    | EArray(elts) -> elts.each(a -> this.checkExpr(a))
+    | EIf(e1, e2, e3) ->
+      this.checkExpr(e1);
+      this.checkExpr(e2);
+      this.checkExpr(e3)
+    | TemplateLiteral(_, exprs) -> exprs.each(a -> this.checkExpr(a))
+    }
+  }
+
+  mutable fun checkPat(p: Pattern): void {
+    p.value match {
+    | PVar _ -> void
+    | PArray(elts, _) ->
+      for (eltOpt in elts) {
+        eltOpt.each(pair -> {
+          this.checkPat(pair.i0);
+          pair.i1.each(e -> this.checkExpr(e))
+        })
+      }
+    | PObject{fields} ->
+      for (f in fields) {
+        this.checkPat(f.i1);
+        f.i2.each(e -> this.checkExpr(e))
+      }
+    }
+  }
+
+  mutable fun checkParam(p: Param): void {
+    this.checkPat(p.name);
+    p.default.each(e -> this.checkExpr(e))
+  }
+
+  mutable fun checkStmt(s: Stmt): void {
+    s.value match {
+    | StmtEmpty()
+    | Break()
+    | Continue() ->
+      void
+    | StmtExpr(e)
+    | Throw(e) ->
+      this.checkExpr(e)
+    | Return(_, eOpt) -> eOpt.each(e -> this.checkExpr(e))
+    | If(cond, thenStmts, elseOpt) ->
+      this.checkExpr(cond);
+      thenStmts.each(st -> this.checkStmt(st));
+      elseOpt.each(es -> es.each(st -> this.checkStmt(st)))
+    | ForInOf(_, init, iter, body) ->
+      this.checkStmt(init);
+      this.checkExpr(iter);
+      body.each(st -> this.checkStmt(st))
+    | For(init, cond, incr, body) ->
+      this.checkStmt(init);
+      this.checkExpr(cond);
+      this.checkExpr(incr);
+      body.each(st -> this.checkStmt(st))
+    | While(cond, body) ->
+      this.checkExpr(cond);
+      body.each(st -> this.checkStmt(st))
+    | Bind(_, bindings) ->
+      for (b in bindings) {
+        this.checkPat(b.pat);
+        b.value.each(e -> this.checkExpr(e))
+      }
+    | Switch(scrut, branches) ->
+      this.checkExpr(scrut);
+      for (br in branches) {
+        br.case match {
+        | Case(e) -> this.checkExpr(e)
+        | Default() -> void
+        };
+        br.block.each(st -> this.checkStmt(st))
+      }
+    | Block(ss) -> ss.each(st -> this.checkStmt(st))
+    | Try(tryStmts, catchOpt, finOpt) ->
+      tryStmts.each(st -> this.checkStmt(st));
+      catchOpt.each(c -> {
+        c.param.each(p -> this.checkPat(p));
+        c.body.each(st -> this.checkStmt(st))
+      });
+      finOpt.each(fs -> fs.each(st -> this.checkStmt(st)))
+    }
+  }
+}
+
 mutable class CFGBuilder{
   mutable blocks: SortedMap<CFGBlockId, CFGBlock> = SortedMap[],
   mutable currentInstrs: mutable Vector<CFGInstr> = mutable Vector[],
@@ -166,6 +316,17 @@ mutable class CFGBuilder{
   normalExit: CFGBlockId,
   exnExit: CFGBlockId,
 } {
+  // Enforce the `Expr.pos` uniqueness invariant across a function body's AST
+  // before lowering it into a CFG (issue #708), so every expression node can
+  // safely be identified by its `PosRange` in `exprTypes` and CFG analyses.
+  // Note: `finally` blocks may be lowered into multiple CFG paths during
+  // control-flow construction, so uniqueness is checked on the source AST
+  // before lowering.
+  static fun checkUniqueExprPos(stmts: Array<Stmt>): void {
+    checker = mutable ExprPosUniquenessChecker{};
+    stmts.each(s -> checker.checkStmt(s))
+  }
+
   static fun build(
     name: String,
     pos: PosRange,
@@ -175,6 +336,7 @@ mutable class CFGBuilder{
     exprTypes: SortedMap<(PosRange, Bool, Bool), TType>,
     stmtTerminations: SortedMap<PosRange, StmtTermination>,
   ): CFG {
+    static::checkUniqueExprPos(body);
     entryId = CFGBlockId(0);
     normalExitId = CFGBlockId(1);
     exnExitId = CFGBlockId(2);

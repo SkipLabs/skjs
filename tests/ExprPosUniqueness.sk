@@ -10,8 +10,8 @@ mutable class ExprPosCollector{
   duplicates: mutable Vector<String> = mutable Vector[],
 } {
   mutable fun visitExpr(e: SKJS.Expr): void {
-    desc = `${e.pos.symbol}:${e.pos.relStart.value}-${
-      e.pos.relEnd.value
+    desc = `${e.pos.symbol}:${e.pos.relStart.value}-${e.pos.relEnd.value}#${
+      e.pos.syntheticId
     } (${inspect(e.value)})`;
     this.seen.maybeGet(e.pos) match {
     | Some(prev) ->
@@ -375,39 +375,53 @@ fun buildCfgJsonForSource(source: String): String {
   `[${", ".join(cfgs.map(SKJS.cfgToJson))}]`
 }
 
-// Pinning test for issue #708: constructor parameter property desugaring
-// currently reuses `pName.pos` across all four synthesized Exprs
-// (`this`, `x`, `this.x`, `this.x = x`), and duplicates the parameter default
-// Expr into both the constructor Param and the synthesized ClassFieldValue.
-// Because `assignLocalObject` also typechecks a synthetic `EString` at
-// `fieldName.pos == pName.pos` with `mostPrecise = true`, `CFGBuilder` looks
-// up `(x.pos, true, false)` and gets `"x"` instead of `number` for the RHS `x`.
+// Issue #708: constructor parameter property desugaring gives each synthesized
+// Expr (`this`, `x`, `this.x`, `this.x = x`) a distinct `PosRange` via
+// `PosRange::synthetic`, and leaves `ClassFieldValue.value` as `None()` so the
+// parameter default is not duplicated. In the CFG, the synthesized `this.x = x`
+// RHS `x` now gets its true type `number` instead of colliding with `"x"`.
 @test
 fun testParamPropertyExprPosUniqueness(): void {
   source = "class Box {\n  constructor(public x: number = 0) {}\n}\n";
   dups = findDuplicateExprPosInSource("param-prop.ts", source);
-  // Pre-fix: 3 duplicates from `this.x = x` sharing `x`'s PosRange plus
-  // 1 duplicate from sharing the default expression `0` on both the parameter
-  // and the synthesized ClassFieldValue.
   SKTest.expectEq(
     dups.size(),
-    4,
-    "pre-fix: expected 4 duplicate Expr PosRanges from parameter property",
+    0,
+    "expected no duplicate Expr PosRanges from parameter property",
   );
 
   cfgJson = buildCfgJsonForSource(source);
-  // Pre-fix: RHS `x` collides with the synthetic field-name string `"x"` in
-  // `exprTypes`, so the CFG records its type as `"x"` instead of `number`.
   SKTest.expectTrue(
-    cfgJson.contains(`"value": {"expr": "x", "type": "\\"x\\""}`),
-    `pre-fix: expected collided type "\\"x\\"" in CFG JSON, got: ${cfgJson}`,
+    cfgJson.contains(`"value": {"expr": "x", "type": "number"}`),
+    `expected type "number" for RHS x in CFG JSON, got: ${cfgJson}`,
   )
 }
 
-// Pinning test: non-parameter-property syntax (shorthand properties,
-// parenthesized expressions, destructuring defaults, optional chaining,
-// compound assignment, template literals, arrow functions) already produces
-// unique Expr PosRanges.
+// Verify that `CFGBuilder::checkUniqueExprPos` rejects a hand-built AST with
+// duplicate `Expr.pos` values.
+@test
+fun testCFGBuilderRejectsDuplicateExprPos(): void {
+  pos = SKJS.PosRange::none;
+  e = SKJS.Expr(pos, SKJS.Number(SKJS.NumLit("1", None())));
+  stmts = Array[
+    SKJS.Stmt(pos, SKJS.StmtExpr(e)),
+    SKJS.Stmt(pos, SKJS.StmtExpr(e)),
+  ];
+  threw = try {
+    SKJS.CFGBuilder::checkUniqueExprPos(stmts);
+    false
+  } catch {
+  | _ -> true
+  };
+  SKTest.expectTrue(
+    threw,
+    "expected CFGBuilder::checkUniqueExprPos to reject duplicate Expr PosRange",
+  )
+}
+
+// Non-parameter-property syntax (shorthand properties, parenthesized
+// expressions, destructuring defaults, optional chaining, compound assignment,
+// template literals, arrow functions) produces unique Expr PosRanges.
 @test
 fun testExprPosUniquenessGeneralSyntax(): void {
   source =
@@ -421,6 +435,45 @@ fun testExprPosUniquenessGeneralSyntax(): void {
     "}\n";
   dups = findDuplicateExprPosInSource("general.ts", source);
   SKTest.expectEq(dups.size(), 0, "expected no duplicate Expr PosRanges")
+}
+
+// Scan every TypeScript fixture in the repository to enforce that no parsed
+// AST produces duplicate Expr PosRanges within a file (issue #708).
+@test
+fun testCorpusExprPosUniqueness(): void {
+  cwdPrefix = getcwd() + "/";
+  dirs = Array[
+    "./examples/src",
+    "./tests/expect-error",
+    "./tests/cfg",
+    "./tests/deadcode",
+    "./tests/constprop",
+    "./tests/callgraph",
+    "./tests/projects",
+    "./tests/ts-conformance/cases",
+    "./import-stubs",
+  ];
+  allDups = mutable Vector<String>[];
+  for (d in dirs) {
+    for (f in FileSystem.readFilesRecursive(Path.resolve(d))) {
+      if (SKJS.isTsFile(f)) {
+        relPath = f.stripPrefix(cwdPrefix);
+        source = FileSystem.readTextFile(f);
+        for (dup in findDuplicateExprPosInSource(relPath, source)) {
+          allDups.push(dup)
+        }
+      }
+    }
+  };
+  SKTest.expectEq(
+    allDups.size(),
+    0,
+    if (allDups.isEmpty()) {
+      "no duplicate Expr PosRanges"
+    } else {
+      `found ${allDups.size()} duplicate Expr PosRanges, first: ${allDups[0]}`
+    },
+  )
 }
 
 module end;
