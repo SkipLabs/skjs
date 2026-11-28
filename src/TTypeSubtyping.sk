@@ -1146,6 +1146,19 @@ extension class TFields {
         indexFor(fields2, f1.name) match {
         | None() -> void
         | Some(idx2) ->
+          // A real (non-synthetic, non-never) index exposes every covered key
+          // publicly (`r[k]`). A non-public source field (e.g. `private`) must
+          // not leak through a public index signature. A never-valued target
+          // index rejects every present field anyway via the value check below
+          // (keeping the more specific `T is not assignable to never` error for
+          // excess properties against `Closed<T>`).
+          if (
+            !idx2.isSynthetic() &&
+            !idx2.get.isBottom() &&
+            !f1.access.isCompatibleWith(idx2.access)
+          ) {
+            return STRecFieldsFieldAccess(f1, idx2, fields1, fields2)
+          };
           memberGetterSub(f1.get, idx2.get) match {
           | err @ STErrorOnTType _ ->
             return STRecFieldsFieldIndex(

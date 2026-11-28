@@ -3327,7 +3327,7 @@ extension class TypeChecker {
         };
         cstr = this.newConstructorOf(tcenv.subst, c, className, tArgs);
         this.callConstructor(tcenv, pos, cstr, args);
-        this.newOf(tcenv.subst, c, className, tArgs)
+        this.newFreshOf(tcenv.subst, c, className, tArgs, pos)
       | None() ->
         subExprTy = this.expr(tcenv, subExpr, mostPrecise);
         subExprTy.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ->
