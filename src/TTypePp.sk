@@ -1142,16 +1142,7 @@ mutable class TypePp{
               pp.type(level, margin, eltTy);
             };
             pp.out(level, margin, ">")
-          | TInter(tys) ->
-            j = 0;
-            for (ity in tys) {
-              needsParens = pp.compositeNeedsParens(ity);
-              if (needsParens) pp.out(level, margin, "(");
-              pp.type(level, margin, ity);
-              if (needsParens) pp.out(level, margin, ")");
-              if (j < tys.size() - 1) pp.out(level, margin, " & ");
-              !j = j + 1;
-            }
+          | TInter(tys) -> pp.inter(level, margin, tys)
           | TClosed(_, inner) ->
             pp.out(level, margin, "Closed<");
             pp.type(level, margin, inner);
@@ -1177,16 +1168,7 @@ mutable class TypePp{
               pp.type(level, margin, eltTy);
             };
             pp.out(level, margin, ">")
-          | TInter(tys) ->
-            i = 0;
-            for (ity in tys) {
-              needsParens = pp.compositeNeedsParens(ity);
-              if (needsParens) pp.out(level, margin, "(");
-              pp.type(level, margin, ity);
-              if (needsParens) pp.out(level, margin, ")");
-              if (i < tys.size() - 1) pp.out(level, margin, " & ");
-              !i = i + 1;
-            }
+          | TInter(tys) -> pp.inter(level, margin, tys)
           | TClosed(_, inner) ->
             pp.out(level, margin, "Closed<");
             pp.type(level, margin, inner);
@@ -1196,6 +1178,49 @@ mutable class TypePp{
         }
       },
     );
+  }
+
+  // Renders an unexpanded intersection in a deterministic order independent of
+  // `TType::compare` (which compares `XXHash`). `TInter` holds an
+  // `ArraySet<TType>` sorted by hash, so iterating it directly flips output
+  // order whenever an unrelated edit shifts a member's hash (e.g. a skolem's
+  // Id). Sort by each member's compact display string instead; passing
+  // `names => this.names` lets the second diagnostic pass order disambiguated
+  // type parameters (`T#1 & T#2`) by their assigned ordinals too (recording
+  // the same names twice is deduplicated by `PpNames::assignOrdinals`).
+  private mutable fun inter(
+    level: Int,
+    margin: Margin,
+    tys: ArraySet<TType>,
+  ): void {
+    probeMargin = Margin{max_depth => margin.max_depth};
+    keyed = mutable Vector<(String, TType)>[];
+    for (ity in tys) {
+      probe = mutable TypePp{
+        compact => true,
+        names => this.names,
+        verbose => this.verbose,
+        substValues => this.substValues,
+        applyType => this.applyType,
+        expandingTVars => this.expandingTVars,
+      };
+      key = probe.render(pp -> {
+        needsParens = pp.compositeNeedsParens(ity);
+        if (needsParens) pp.out(0, probeMargin, "(");
+        pp.type(0, probeMargin, ity);
+        if (needsParens) pp.out(0, probeMargin, ")");
+      });
+      keyed.push((key, ity))
+    };
+    sorted = keyed.sortedBy(pair ~> pair.i0);
+    for (i => pair in sorted) {
+      ity = pair.i1;
+      needsParens = this.compositeNeedsParens(ity);
+      if (needsParens) this.out(level, margin, "(");
+      this.type(level, margin, ity);
+      if (needsParens) this.out(level, margin, ")");
+      if (i < sorted.size() - 1) this.out(level, margin, " & ");
+    }
   }
 
   // Whether `ty` must be parenthesized when embedded in a composite
