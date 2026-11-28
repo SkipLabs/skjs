@@ -23,6 +23,13 @@ value class PosRange private (
   fileName: FPath,
   relStart: Pos,
   relEnd: Pos,
+  // Disambiguator for AST nodes synthesized from the same source span (e.g.
+  // constructor parameter property desugaring). `0` for parsed source nodes;
+  // positive integers for distinct synthesized nodes. Ignored by
+  // `PositionResolver` so diagnostics still point at the exact source span,
+  // while `Hashable`/`Orderable`/`Equality` distinguish them so `Expr.pos`
+  // remains unique across an AST.
+  syntheticId: Int = 0,
 ) uses XXHashable, Hashable, Orderable {
   const none: this = PosRange(SPTopLevel(), FPath::nil, Pos::none, Pos::none);
 
@@ -31,6 +38,14 @@ value class PosRange private (
     relativeStart = Pos(start.value - symbolPos);
     relativeEnd = Pos(end.value - symbolPos);
     static(lexer.currentSymbol, lexer.fileName, relativeStart, relativeEnd)
+  }
+
+  // Derive a distinct `PosRange` pointing at the same source span for a
+  // synthesized AST node. Callers must pass a strictly positive `id` unique
+  // among all nodes synthesized from `this`.
+  fun synthetic(id: Int): this {
+    invariant(id > 0, "PosRange::synthetic requires a positive id");
+    this with {syntheticId => id}
   }
 
   fun extend(end: PosRange): this {

@@ -1488,8 +1488,17 @@ extension class TypeChecker {
     fieldName: Name,
     accessKind: AccessKind,
   ): TType {
-    idx = Expr(fieldName.pos, EString(fieldName.value));
-    this.get(tcenv, pos, objType, idx, accessKind)
+    idxType = TType::single(
+      TPrimString::single(fieldName.value, fieldName.pos),
+    );
+    this.getWithIndexType(
+      tcenv,
+      pos,
+      objType,
+      idxType,
+      fieldName.pos,
+      accessKind,
+    )
   }
 
   // Returns the access modifier declared on the enclosing class for the
@@ -3188,16 +3197,23 @@ extension class TypeChecker {
       callViaReceiver = (
         e1: Expr,
         distribute: Bool,
-        idx: Expr,
+        idxOpt: ?Expr,
+        idxTy: TType,
+        idxPos: PosRange,
         getPos: PosRange,
         accessKind: AccessKind,
       ) -> {
         e1Ty = this.expr(tcenv, e1, mostPrecise);
         stableReceiver = this.stableAliasExprType(tcenv, e1, e1Ty);
-        idxTy = this.expr(tcenv, idx, true);
-        !e1Ty = this.indexedReadReceiver(tcenv, e1Ty, stableReceiver, idx);
+        !idxTy = idxOpt match {
+        | Some(idx) ->
+          t = this.expr(tcenv, idx, true);
+          !e1Ty = this.indexedReadReceiver(tcenv, e1Ty, stableReceiver, idx);
+          t
+        | None() -> idxTy
+        };
         resolve = (recv: TType, ak: AccessKind) ->
-          this.getWithIndexType(tcenv, getPos, recv, idxTy, idx.pos, ak);
+          this.getWithIndexType(tcenv, getPos, recv, idxTy, idxPos, ak);
         callOn = (recv: TType) -> {
           stableBranch = if (stableReceiver == e1Ty) {
             this.stableAliasExprType(tcenv, e1, recv)
@@ -3270,11 +3286,22 @@ extension class TypeChecker {
         callViaReceiver(
           e1,
           dotKind is NormalDot _,
-          Expr(fieldName.pos, EString(fieldName.value)),
+          None(),
+          TType::single(TPrimString::single(fieldName.value, fieldName.pos)),
+          fieldName.pos,
           e1.pos,
           accessKind,
         )
-      | Get(e1, idx) -> callViaReceiver(e1, true, idx, f.pos, AKNormal())
+      | Get(e1, idx) ->
+        callViaReceiver(
+          e1,
+          true,
+          Some(idx),
+          TType::bottom(idx.pos),
+          idx.pos,
+          f.pos,
+          AKNormal(),
+        )
       | _ -> dispatchCall(this.expr(tcenv, f, mostPrecise), None())
       };
       // `console.assert` only logs — it does not throw — so its condition
@@ -5313,13 +5340,14 @@ extension class TypeChecker {
       tcenv.localObjectState(local).isSome() &&
       !this.assignmentRebinds(tcenv, local, None(), e2)
     ) ->
-      keyExpr = Expr(fieldName.pos, EString(fieldName.value));
       this.assignLocalObject(
         tcenv,
         pos,
         e1.pos,
         local,
-        keyExpr,
+        None(),
+        TType::single(TPrimString::single(fieldName.value, fieldName.pos)),
+        fieldName.pos,
         e2,
         mostPrecise,
       )
@@ -5335,7 +5363,9 @@ extension class TypeChecker {
         pos,
         e1.pos,
         local,
-        keyExpr,
+        Some(keyExpr),
+        TType::bottom(keyExpr.pos),
+        keyExpr.pos,
         e2,
         mostPrecise,
       )
@@ -5942,7 +5972,9 @@ extension class TypeChecker {
     pos: PosRange,
     e1Pos: PosRange,
     local: Name,
-    keyExpr: Expr,
+    keyExprOpt: ?Expr,
+    staticKeyType: TType,
+    keyPos: PosRange,
     e2: Expr,
     mostPrecise: Bool,
   ): TType {
@@ -5951,13 +5983,16 @@ extension class TypeChecker {
     if (tcenv.scope.isThroughFunction(local)) tcenv.markLocalObjectUsed(local);
     // The computed key runs before the RHS, including any writes that affect
     // the RHS's type. Keep the optimized local-object path in source order.
-    keyType = this.expr(tcenv, keyExpr, true);
+    keyType = keyExprOpt match {
+    | Some(keyExpr) -> this.expr(tcenv, keyExpr, true)
+    | None() -> staticKeyType
+    };
     fieldType = this.expr(tcenv, e2, mostPrecise);
     stableFieldType = this.stableAliasExprType(tcenv, e2, fieldType);
     fieldKeys = keyType
       .getSTypes(tcenv.subst, this, Covariant())
       .flatMap(stypes -> stypes.singleElt()) match {
-    | Some(stype) -> FieldKey::allOfSType(keyExpr.pos, stype)
+    | Some(stype) -> FieldKey::allOfSType(keyPos, stype)
     | _ -> Array[]
     };
     if (fieldKeys.isEmpty()) {
@@ -5970,7 +6005,7 @@ extension class TypeChecker {
         e1Pos,
         tcenv.scope.get(local),
         keyType,
-        keyExpr.pos,
+        keyPos,
         AKLValue(),
       );
       this.checkSubType(
@@ -5988,7 +6023,7 @@ extension class TypeChecker {
         pos,
         e1Pos,
         local,
-        keyExpr,
+        keyPos,
         keyType,
         fieldType,
         stableFieldType,
@@ -6005,7 +6040,7 @@ extension class TypeChecker {
     pos: PosRange,
     e1Pos: PosRange,
     local: Name,
-    keyExpr: Expr,
+    keyPos: PosRange,
     keyType: TType,
     fieldType: TType,
     stableFieldType: TType,
@@ -6033,7 +6068,7 @@ extension class TypeChecker {
             e1Pos,
             objectType,
             keyType,
-            keyExpr.pos,
+            keyPos,
             AKNormal(),
           ),
           TSCode(2322),
