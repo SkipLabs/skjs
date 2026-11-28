@@ -1247,18 +1247,38 @@ extension class TFields {
         // getter is load-bearing for inference (reordering breaks
         // pr437-set-check-unsound). Then check the getter (covariant) once.
         //
+        // Exception: when `f1.set` is an uncommitted array literal (e.g. a
+        // nested tuple literal inside a tuple/object field), checking the
+        // contravariant setter `f2.set <: ArrayLit` first would hit
+        // ArrayLitTyping Case 1 and commit the literal to `Array<...>` before
+        // the covariant getter `ArrayLit <: f2.get` can commit it contextually
+        // against the target field type (#942). When `f2.set` is bottom
+        // (readonly target), `bottom <: f1.set` holds trivially without
+        // forcing an Array commitment either. In that case run the getter
+        // first so the literal commits in covariant position, then check the
+        // setter against the committed type.
+        //
         // Exact optional semantics for the getter: `f?: T` promises that a
         // PRESENT key holds a T, so the sub's field -- which describes present
         // values -- must satisfy bare T, never T | undefined (the | undefined
         // of an optional read accounts for ABSENCE only, the Right(f2) case).
-        setterResult = typeSub(f2.set, f1.set);
-        // The getter is checked whether or not the setter passed: its result
-        // decides both the getter error and whether `readonly` (which drops
-        // the setter check) would fix a setter failure. Its inference commit
-        // needs no cleanup when the setter failed -- this whole comparison
-        // then returns an STError, and `TFields::isSub` restores the subst on
-        // error (the invariant every `isSub` upholds).
-        getterResult = memberGetterSub(f1.get, f2.get);
+        (setterResult, getterResult) = if (
+          f1.set.getSingleArrayLit().isSome()
+        ) {
+          gRes = memberGetterSub(f1.get, f2.get);
+          sRes = if (f2.set.isBottom()) STOk() else typeSub(f2.set, f1.set);
+          (sRes, gRes)
+        } else {
+          sRes = typeSub(f2.set, f1.set);
+          // The getter is checked whether or not the setter passed: its result
+          // decides both the getter error and whether `readonly` (which drops
+          // the setter check) would fix a setter failure. Its inference commit
+          // needs no cleanup when the setter failed -- this whole comparison
+          // then returns an STError, and `TFields::isSub` restores the subst on
+          // error (the invariant every `isSub` upholds).
+          gRes = memberGetterSub(f1.get, f2.get);
+          (sRes, gRes)
+        };
         setterResult match {
         | STOk() ->
           getterResult match {

@@ -63,11 +63,6 @@
 
 module SKJS;
 
-// How far into a tuple type's element types the faithfulness probe recurses
-// before giving up. Small on purpose: nesting this deep is rare, and giving up
-// only forgoes the element-wise fast path.
-const kProjectionDepth: Int = 4;
-
 class ArrayLitTyping() {
   // Returns the single uncommitted ArrayLit in ty, or None if none/committed/multiple.
   static private fun getSingleArrayLitUncommitted(
@@ -399,18 +394,15 @@ class ArrayLitTyping() {
   // Commits the literal to a concrete tuple target's element types
   // (contextual widening) and verifies each literal element subtypes its
   // target position, restoring the substitution on the first element that
-  // fails. Shared by case 2c (a direct tuple target) and case 2a' (a
-  // tuple-shaped generic constraint).
+  // fails. Used by case 2a' (a tuple-shaped generic constraint, including
+  // per-arm checks on a union of tuples).
   //
-  // Checking element-by-element is the point: it commits each element
-  // against its own position before anything else looks at it. A whole-tuple
-  // `TType::isSub([<elts>], target)` instead reaches the literal's elements
-  // through the tuple's position-unioning members -- the number index and
-  // the array methods (`pop(): T0 | T1 | ...`) -- and an element that is
-  // itself an uncommitted nested literal fails there: it meets the union of
-  // all the target's positions rather than its own (#942). Flat literals no
-  // longer need this path (growTVars seeds same-arity tuple pairs
-  // positionally since #948, which fixed #914); nested ones do.
+  // Checking element-by-element commits each element against its own target
+  // position directly (including union-of-tuples arms, #933). Whole-tuple
+  // `TType::isSub([<elts>], target)` also handles nested literals cleanly
+  // since `TFields::isSub_NamedFields` checks the covariant getter before
+  // the contravariant setter when a field holds an uncommitted array literal
+  // (#942).
   static private fun checkTupleTarget(
     subst: mutable Subst,
     tenv: TEnv,
@@ -439,20 +431,21 @@ class ArrayLitTyping() {
   }
 
   // True when a tuple built from `elts` satisfies every member of `targets` --
-  // i.e. reducing those targets to `elts` lost nothing -- and, recursively,
-  // when each element's own tuple projection is faithful too: the outer probe
-  // compares an element against itself, so a lossy element clears it
-  // trivially and must be re-checked one level down. The probe is
+  // i.e. reducing those targets to `elts` lost nothing. The probe is
   // conflation-free -- the candidate is built from the targets' own element
   // types, never from a literal's commitment variables -- and runs under
   // save/restore, so a rejected probe leaves no bounds behind.
+  //
+  // No recursive projection check is needed: `checkTupleTarget` checks each
+  // element against the real `targetElts[i]` type directly (where Case 2c
+  // validates every candidate tuple branch against `targetElts[i]`), rather
+  // than flattening `targetElts[i]` via `getSingleTuple`.
   static private fun projectionIsFaithful(
     subst: mutable Subst,
     tenv: TEnv,
     pos: PosRange,
     elts: Array<TType>,
     targets: Array<TType>,
-    depth: Int,
   ): Bool {
     candidate = TType::tuple(pos, elts, false);
     saved = subst.save();
@@ -460,55 +453,9 @@ class ArrayLitTyping() {
       TType::isSub(subst, tenv, candidate, target) is STOk()
     );
     subst.restore(saved);
-    probeOk &&
-      elts.all(elt ->
-        ArrayLitTyping::faithfullyProjectable(subst, tenv, elt, depth)
-      )
+    probeOk
   }
 
-  // True when `ty` is not tuple-shaped at all (nothing gets flattened), or
-  // when its own tuple projection is faithful all the way down. Depth-bounded
-  // because a tuple type can be recursive; past the bound this answers false,
-  // which forgoes the element-wise fast path.
-  static private fun faithfullyProjectable(
-    subst: mutable Subst,
-    tenv: TEnv,
-    ty: TType,
-    depth: Int,
-  ): Bool {
-    if (depth <= 0) return false;
-    ty.getSTypes(subst, tenv, Covariant()).flatMap(sTypes ->
-      sTypes.getSingleTuple(subst, tenv)
-    ) match {
-    | None() -> true
-    | Some(innerElts) ->
-      ArrayLitTyping::projectionIsFaithful(
-        subst,
-        tenv,
-        ty.pos,
-        innerElts,
-        Array[ty],
-        depth - 1,
-      )
-    }
-  }
-
-  // Returns the element types of the first tuple-shaped constraint of
-  // matching arity, provided that projection is faithful; None otherwise.
-  //
-  // Reducing a constraint to element types (`getSingleTuple`) is lossy: a
-  // union of tuples reduces position-wise (`[0, 1] | [2, 3]` gives
-  // `[0 | 2, 1 | 3]`, admitting the cross-product `[0, 3]` that matches
-  // neither arm), an intersection loses its non-positional members
-  // (`[0, 1] & { foo: string }` gives `[0, 1]`, admitting a literal with no
-  // `foo`), and a constraint that is itself an abstract type parameter cannot
-  // be reduced at all. Checking a literal against such a projection would
-  // accept values the real constraint rejects, so the element-wise path is
-  // only taken for arms whose projection provably means what the constraint
-  // means (see projectionIsFaithful); otherwise the caller checks the literal
-  // against the whole constrained variable, which sees the union arms, the
-  // intersection members, and the type parameter.
-  //
   // Returns the faithful tuple arms of matching arity, one per tuple branch
   // of the constraints -- NOT a positional merge of them. A union of tuples
   // like `[0, 1] | [2, 3]` yields the two arms `[0, 1]` and `[2, 3]`; merging
@@ -552,7 +499,6 @@ class ArrayLitTyping() {
           pos,
           elts,
           allConstraints,
-          kProjectionDepth,
         )
       ) {
         arms.push(elts)
@@ -610,19 +556,13 @@ class ArrayLitTyping() {
       // Case 2a': constrained type variable → commit based on constraint type
       | Some(tvar) ->
         // A tuple-shaped constraint of matching arity: check the literal
-        // element-by-element against the constraint's tuple (as case 2c does
-        // for a direct tuple target) and bind the variable to it. The
-        // whole-tuple isSub below handles flat literals since #948, but
-        // still rejects a literal with NESTED uncommitted literals -- those
-        // meet the constraint tuple's position-unioning members instead of
-        // their own positions (#942; see checkTupleTarget). Arrays keep the
-        // isSub path below: growing every element to the shared element type
-        // is exactly the widening the array case needs.
-        //
-        // A union-of-tuples constraint contributes one arm per tuple branch,
-        // and the element-wise check runs per arm, accepting when some arm
-        // accepts (#933) -- a positional merge of the arms would admit
-        // cross-products matching no arm (#932).
+        // element-by-element against each faithful tuple arm of the
+        // constraint and bind the variable to the matching arm. A
+        // union-of-tuples constraint contributes one arm per tuple branch,
+        // accepting when some arm accepts (#933) -- a positional merge of the
+        // arms would admit cross-products matching no arm (#932). Arrays keep
+        // the isSub path below: growing every element to the shared element
+        // type is exactly the widening the array case needs.
         for (targetElts in ArrayLitTyping::faithfulTupleConstraintArms(
           subst,
           tenv,
