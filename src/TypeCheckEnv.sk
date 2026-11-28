@@ -182,6 +182,12 @@ mutable class TCEnv private {
   // not confuse results. These are symbolic types, not subtype-result caches.
   mutable stableExprTypes: SortedMap<(PosRange, TType), TType> = SortedMap[],
   mutable stmtTerminations: SortedMap<PosRange, StmtTermination> = SortedMap[],
+  // Depth of enclosing `try`/`catch` blocks that have a `finally` clause whose
+  // statements may perform field writes or calls. A `return` inside such a
+  // `try`/`catch` cannot rely on transient field refinements on a predicate's
+  // subject, because `finally` runs before the function returns and may mutate
+  // mutable fields (e.g. `this.value = null`).
+  mutable pendingFinallyEffectDepth: Int = 0,
   /*
    * Tracks local objects: object literals bound to variables that can grow.
    *

@@ -1,16 +1,24 @@
-// A type predicate (`x is T`) is only accepted on a bodyless
-// (ambient/interface) signature: SKJS doesn't check the body against the
-// claimed predicate, so accepting it on an implemented function/method
-// would let the implementation lie about the narrowing.
+// A type predicate (`x is T`) is verified on implemented functions and methods
+// (see `type-predicate-bodied.ts`): valid bodies whose return expressions
+// soundly prove both true and false directions are accepted, while lying or
+// incomplete bodies are rejected.
 
-// @skjs-expect-error A type predicate ('x is T') is only supported as the top-level return type of a declared function or method signature
 function isString(x: unknown): x is string {
   return typeof x === "string";
 }
 
+function badIsString(x: unknown): x is string {
+  // @skjs-expect-error Cannot prove 'x' is 'string' when returning 'true': 'x' has type 'number'
+  return typeof x === "number";
+}
+
 class Checker {
-  // @skjs-expect-error A type predicate ('x is T') is only supported as the top-level return type of a declared function or method signature
   isNumber(x: unknown): x is number {
     return typeof x === "number";
+  }
+
+  badIsNumber(x: unknown): x is number {
+    // @skjs-expect-error Cannot prove 'x' is 'number' when returning 'true': 'x' has type 'string'
+    return typeof x === "string";
   }
 }

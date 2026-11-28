@@ -693,7 +693,7 @@ extension class TypeChecker {
                 sig => FSInline(
                   ovSig.tparams,
                   static::overloadTrialParams(implSig, ovSig),
-                  ovSig.retType,
+                  static::overloadTrialRetType(implSig, ovSig),
                 ),
               };
               trialResults = TCResultsAcc::mcreate{

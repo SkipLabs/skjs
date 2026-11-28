@@ -56,10 +56,347 @@ extension class TypeChecker {
     typedParams = sig.params.mapWithIndex((i, param) ->
       (param.name, paramTypes[i])
     );
-    !this.retType = sig.retType.i1.map(rty ->
-      this.normalizeReturnType(subst, rty, sig.params).i0
-    );
+    sig.retType.i1 match {
+    | None() -> !this.retType = None()
+    | Some(rty) ->
+      (retType, _, typePredOpt) = this.normalizeReturnType(
+        subst,
+        rty,
+        sig.params,
+      );
+      !this.retType = Some(retType);
+      typePredOpt.each(pred -> {
+        hasBody = this.getFunBody(subst.context, fd) is FDBSome _;
+        if (hasBody) {
+          pred.subject match {
+          | TPSThis() ->
+            // A receiverless `this: void` / `this: undefined` leaves `this`
+            // unbound in scope; record `fdPos` as the binding pos so
+            // `maybeGetRefForBinding("this", fdPos)` returns None and the
+            // return-site check rejects it.
+            !this.activeTypePred = Some(
+              ActiveTypePred("this", fdPos, pred, rty.pos),
+            )
+          | TPSParam(paramIdx) ->
+            // Map the non-`this` positional index back to the AST param.
+            idx = 0;
+            for (i => p in sig.params) {
+              if (i == 0 && p.isThisParam()) {
+                continue
+              };
+              if (idx == paramIdx) {
+                // Default initializers substitute a local value when the
+                // caller passes `undefined`, without changing the caller's
+                // binding — unsound for a type predicate.
+                p.default.each(defaultExpr ->
+                  tcenv.error(
+                    Array[
+                      (
+                        defaultExpr.pos,
+                        "A type predicate parameter cannot have a default initializer",
+                      ),
+                    ],
+                    SKJSCode(2086),
+                  )
+                );
+                p.name.value match {
+                | PVar(name) ->
+                  // Reassigning the predicate parameter locally does not
+                  // update the caller's variable; keep it immutable.
+                  tcenv.scope.setImmutable(name);
+                  !this.activeTypePred = Some(
+                    ActiveTypePred(name.value, name.pos, pred, rty.pos),
+                  )
+                | _ -> void
+                };
+                break void
+              };
+              !idx = idx + 1
+            }
+          }
+        }
+      })
+    };
     (this, tcenv, typedParams)
+  }
+
+  // Verify a `return expr;` statement inside a bodied type predicate function
+  // or method (`x is T` / `this is T`). Because call sites narrow BOTH the
+  // true branch (intersection with `target`) AND the false branch (subtracting
+  // `target`), every reachable `return` must soundly establish BOTH directions:
+  //
+  // 1. True-branch soundness (unless `expr` is statically `false` or the true
+  //    branch is unreachable): under `evalCond(expr, true)`, the subject's
+  //    (stable) type must be a subtype of `target`.
+  // 2. False-branch soundness (unless `expr` is statically `true` or the false
+  //    branch is unreachable): assuming the subject inhabits `target` (i.e.
+  //    intersected with `target`), evaluating `evalCond(expr, false)` and
+  //    applying the subject's accumulated `excludedTypes` must reduce the
+  //    subject to `never` — proving no value of `target` can produce `false`.
+  fun checkActiveTypePred(
+    tcenv: mutable TCEnv,
+    eOpt: ?Expr,
+    etype: TType,
+    returnPos: PosRange,
+  ): void {
+    this.activeTypePred match {
+    | None() -> void
+    | Some(active) ->
+      // Unreachable return (e.g. `return unreachableNever()`).
+      expandedRet = etype.expand(tcenv.subst, this, Some(Covariant()));
+      if (expandedRet.isBottom()) {
+        return void
+      };
+      // Static boolean literal detection so `return true` skips the false
+      // check and `return false` skips the true check.
+      staticBool: ?Bool = expandedRet.getSingleConstant() match {
+      | Some(TPrimValue(TBool(), Some(lits), _)) ->
+        if (lits.contains("true")) Some(true) else Some(false)
+      | _ -> None()
+      };
+      // Look up the exact original subject binding (shadow-safe).
+      baseRefOpt = tcenv.scope.maybeGetRefForBinding(
+        active.subjectName,
+        active.subjectBindingPos,
+      );
+      baseRef = baseRefOpt match {
+      | None() ->
+        // E.g. receiverless `this: void` in a `this is T` function.
+        tcenv.error(
+          Array[
+            (
+              returnPos,
+              `Cannot prove type predicate on '${
+                active.subjectName
+              }' for type ${this.ppType(tcenv, active.pred.target)} because '${
+                active.subjectName
+              }' is not in scope`,
+            ),
+            (active.retPos, "The type predicate is declared here"),
+          ],
+          SKJSCode(2085),
+        );
+        return void
+      | Some(r) -> r
+      };
+      // If this return unwinds through an enclosing `finally` with calls or
+      // field writes, transient mutable-field refinements on the subject do
+      // not survive the `finally` block.
+      hasPendingFinally = tcenv.pendingFinallyEffectDepth > 0;
+      target = active.pred.target.expand(tcenv.subst, this, Some(Covariant()));
+      // Helper: project a LocalRef's type to its stable contents if a pending
+      // side-effecting `finally` will run before control returns to the caller.
+      projectRefType = (ref: LocalRef) ->
+        if (hasPendingFinally) {
+          ref.stableContentsType(tcenv.subst, this, true)
+        } else {
+          ref.type
+        };
+      // --- 1. True-branch soundness ---
+      if (staticBool != Some(false)) {
+        savedScope = tcenv.scope;
+        trueScope = tcenv.mcreateSubScope{isLoop => false};
+        tcenv.!scope = trueScope;
+        eOpt.each(e -> this.evalCond(tcenv, e, true));
+        trueUnreachable = trueScope.hasBottomNarrowing(tcenv.subst, this);
+        trueRef = trueScope
+          .maybeGetRefForBinding(active.subjectName, active.subjectBindingPos)
+          .default(baseRef);
+        tcenv.!scope = savedScope;
+        if (!trueUnreachable) {
+          subjectTrueTy = projectRefType(trueRef);
+          // Even if `evalCond` narrowed a mutable field inside `return expr`,
+          // a pending side-effecting `finally` invalidates it; `evalCond` on
+          // `this.value !== null` sets `hasFieldRefinement` on `trueRef`, so
+          // `projectRefType(trueRef)` projects it back to the declared contract.
+          if (
+            !(TType::isSub(tcenv.subst, this, subjectTrueTy, target) is STOk())
+          ) {
+            tcenv.error(
+              Array[
+                (
+                  returnPos,
+                  `Cannot prove '${active.subjectName}' is ${this.ppType(
+                    tcenv,
+                    active.pred.target,
+                  )} when returning 'true': '${
+                    active.subjectName
+                  }' has type ${this.ppType(tcenv, subjectTrueTy)}`,
+                ),
+                (active.retPos, "The type predicate is declared here"),
+              ],
+              SKJSCode(2085),
+            );
+            return void
+          }
+        }
+      };
+      // --- 2. False-branch soundness ---
+      // Prove that no runtime value of `subject` inhabiting `target` can reach
+      // this `return` and evaluate `expr` to `false`.
+      // We test this by running `evalCond(expr, false)` in a fresh sub-scope,
+      // intersecting the resulting subject type with `target` (dropping object
+      // branches with disjoint required fields, such as `Square & Circle`),
+      // subtracting accumulated `excludedTypes`, and finally re-running
+      // `evalCond(expr, false)` under the assumption `subject: residual` when
+      // `residual` is still non-bottom.
+      if (staticBool != Some(true)) {
+        savedScope = tcenv.scope;
+        falseScope = tcenv.mcreateSubScope{isLoop => false};
+        tcenv.!scope = falseScope;
+        eOpt.each(e -> this.evalCond(tcenv, e, false));
+        falseUnreachable = falseScope.hasBottomNarrowing(tcenv.subst, this);
+        falseRef = falseScope
+          .maybeGetRefForBinding(active.subjectName, active.subjectBindingPos)
+          .default(baseRef);
+        tcenv.!scope = savedScope;
+        if (!falseUnreachable) {
+          subjectFalseTy = projectRefType(falseRef).expand(
+            tcenv.subst,
+            this,
+            Some(Covariant()),
+          );
+          // First compute the residual overlap between the false-branch
+          // subject type and `target`, pruning object branches whose required
+          // fields are statically disjoint (e.g. `Square & Circle` where
+          // `kind: "square" & "circle"` is `never`).
+          residual = this.intersectWithExpandedFields(
+            tcenv,
+            returnPos,
+            subjectFalseTy,
+            target,
+          );
+          // Second, subtract every negative fact proven on the subject along
+          // this path (`excludedTypes`). If a pending side-effecting `finally`
+          // runs, drop non-field-free exclusions since field writes can
+          // invalidate them.
+          effectiveExcluded = if (hasPendingFinally) {
+            falseRef.excludedTypes.filter(t -> t.isFieldFree())
+          } else {
+            falseRef.excludedTypes
+          };
+          for (ex in effectiveExcluded) {
+            if (!residual.isBottom()) {
+              expandedEx = ex.expand(tcenv.subst, this, Some(Covariant()));
+              !residual = this.materializeReadContext<TType>(
+                tcenv,
+                returnPos,
+                context -> context.excludeType(residual, expandedEx),
+                (scratch, readEnv) ->
+                  TType::excludeTypeWith(
+                    residual.pos,
+                    residual.expand(scratch, readEnv, Some(Covariant())),
+                    expandedEx.expand(scratch, readEnv, Some(Covariant())),
+                    (left, right) ->
+                      TType::isSub(scratch, readEnv, left, right) is STOk()
+                    ,
+                  )
+                ,
+              )
+            }
+          };
+          // Third, if `residual` is still non-bottom AND `eOpt` is present,
+          // re-evaluate `evalCond(e, false)` with the subject assumed to have
+          // type `residual` (this handles expressions like `typeof x === "string"`
+          // on `unknown` where intersecting with `target` first exposes
+          // concrete branches for `evalCond`).
+          if (!residual.isBottom()) {
+            eOpt.each(e -> {
+              savedScope2 = tcenv.scope;
+              assumedScope = tcenv.mcreateSubScope{isLoop => false};
+              tcenv.!scope = assumedScope;
+              // Seed the subject binding directly (shadow-safe: only seed if
+              // the name at the return site resolves to the subject binding).
+              if (
+                assumedScope.bindingPosOf(active.subjectName) ==
+                Some(active.subjectBindingPos)
+              ) {
+                assumedScope.set(
+                  Name(returnPos, active.subjectName),
+                  residual,
+                  (_, _) -> void,
+                );
+                this.evalCond(tcenv, e, false);
+                if (assumedScope.hasBottomNarrowing(tcenv.subst, this)) {
+                  !residual = TType::bottom(returnPos)
+                } else {
+                  assumedRef = assumedScope
+                    .maybeGetRefForBinding(
+                      active.subjectName,
+                      active.subjectBindingPos,
+                    )
+                    .default(falseRef);
+                  !residual = projectRefType(assumedRef).expand(
+                    tcenv.subst,
+                    this,
+                    Some(Covariant()),
+                  )
+                }
+              };
+              tcenv.!scope = savedScope2
+            })
+          };
+          if (!residual.isBottom()) {
+            tcenv.error(
+              Array[
+                (
+                  returnPos,
+                  `Cannot prove '${active.subjectName}' is not ${this.ppType(
+                    tcenv,
+                    active.pred.target,
+                  )} when returning 'false': a value of type ${this.ppType(
+                    tcenv,
+                    residual,
+                  )} may still reach this return`,
+                ),
+                (active.retPos, "The type predicate is declared here"),
+              ],
+              SKJSCode(2085),
+            )
+          }
+        }
+      }
+    }
+  }
+
+  // Intersect `left` and `right` (in narrowing mode) and prune any resulting
+  // object branch that has a required field whose intersected read type is
+  // `never` (e.g., `Square & Circle` where `kind: "square" & "circle"`).
+  // `TFields::inter` intentionally keeps `TUnexpandedInter` on fields and
+  // does not collapse branches whose required fields meet to `never`, so we
+  // check each intersected object branch explicitly here.
+  private fun intersectWithExpandedFields(
+    tcenv: mutable TCEnv,
+    pos: PosRange,
+    left: TType,
+    right: TType,
+  ): TType {
+    interTy = this.materializeReadContext<TType>(
+      tcenv,
+      pos,
+      context -> context.intersection(left, right, true),
+      (scratch, readEnv) -> TType::inter(scratch, readEnv, left, right),
+    );
+    expanded = interTy.expand(tcenv.subst, this, Some(Covariant()));
+    expanded.mapSTypes(tcenv.subst, this, Some(Covariant()), stypesOpt ->
+      stypesOpt.map(stypes ->
+        stypes.filterMap(stype ->
+          stype match {
+          | obj @ TObject _ ->
+            obj.mapOpt(fields -> {
+              uninhabited = fields.fields.any(field ->
+                !field.isOptional &&
+                  field.get
+                    .expand(tcenv.subst, this, Some(Covariant()))
+                    .isBottom()
+              );
+              if (uninhabited) None() else Some(fields)
+            })
+          | other -> Some(other)
+          }
+        )
+      )
+    )
   }
 
   // Reserve every binding without projecting types or evaluating pattern

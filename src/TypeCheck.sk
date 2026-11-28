@@ -8,11 +8,24 @@ module SKJS;
 /* Type-checker */
 /***************************************************************************/
 
+// Active type predicate obligation for a bodied type predicate function or
+// method (`x is T`, `this is T`). Checked at every `return expr;` statement
+// for both true-branch soundness (`expr === true` => `subject <: target`) and
+// false-branch soundness (`expr === false` => `subject` has no overlap with
+// `target`).
+value class ActiveTypePred(
+  subjectName: String,
+  subjectBindingPos: PosRange,
+  pred: TypePred,
+  retPos: PosRange,
+)
+
 class TypeChecker{
   errorHandling: ErrorHandling,
   super: ?(CstrType, TType) = None(),
   isAsync: Bool = false,
   retType: ?TType = None(),
+  activeTypePred: ?ActiveTypePred = None(),
   // The class whose body is currently being type-checked, identified by
   // its declaration Name (whose pos also identifies the declaring file).
   // Set once at the top of class_ and inherited through funDefSetup into

@@ -23,6 +23,13 @@ value class LocalRef(
   isInitialized: Bool,
   isMutable: Bool,
   hasFieldRefinement: Bool = false,
+  // Types proven NOT to be inhabited by this binding on the current control
+  // path (e.g., `string` after `typeof x !== "string"`, or `Cat` after
+  // `!(x instanceof Cat)` for a nominal class without custom
+  // `[Symbol.hasInstance]`). Used by bodied type predicate false-branch
+  // verification when `type` itself cannot represent a complement such as
+  // `unknown \ string`.
+  excludedTypes: Array<TType> = Array[],
 ) {
   // Only a binding carrying transient field facts needs contract projection.
   fun stableContentsType(
@@ -276,6 +283,25 @@ mutable class Scope{
     this.maybeGetLocalValue(value).map(declName -> declName.pos)
   }
 
+  // Look up the current `LocalRef` for a specific binding identified by
+  // `(name, bindingPos)`, skipping any inner scope that shadowed `name` with
+  // a different declaration. Used by bodied type predicate verification so an
+  // inner `const x = "hi"` cannot masquerade as the predicate parameter `x`.
+  readonly fun maybeGetRefForBinding(
+    name: String,
+    bindingPos: PosRange,
+  ): ?LocalRef {
+    this.bindingPosOf(name) match {
+    | Some(pos) if (pos == bindingPos) ->
+      this.refs.maybeGet(name) match {
+      | Some(ref) -> Some(ref)
+      | None() ->
+        this.up.flatMap(up -> up.maybeGetRefForBinding(name, bindingPos))
+      }
+    | _ -> this.up.flatMap(up -> up.maybeGetRefForBinding(name, bindingPos))
+    }
+  }
+
   readonly private fun maybeGetRefHelper(
     throughLoop: Bool,
     throughFunction: Bool,
@@ -437,6 +463,41 @@ mutable class Scope{
     }
   }
 
+  mutable fun setImmutable(name: Name): void {
+    this.maybeGetRef(name.value) match {
+    | Some((_, ref)) -> this.!refs[name.value] = ref with {isMutable => false}
+    | None() -> void
+    }
+  }
+
+  // Record a type proven NOT to be inhabited by `name` on the current path.
+  // Only records when `name` is in local scope (matches `setLocalFilterMap`).
+  mutable fun addExcludedType(name: Name, excluded: TType): void {
+    this.maybeGetRef(name.value) match {
+    | Some((_, ref)) ->
+      if (!ref.excludedTypes.contains(excluded)) {
+        this.!refs[name.value] = ref with {
+          excludedTypes => ref.excludedTypes.concat(Array[excluded]),
+        }
+      }
+    | None() -> void
+    }
+  }
+
+  // Intersect two `excludedTypes` arrays when merging control-flow paths:
+  // a negative fact holds after a merge only if it held on BOTH incoming
+  // paths.
+  private static fun intersectExcludedTypes(
+    a: Array<TType>,
+    b: Array<TType>,
+  ): Array<TType> {
+    if (a.isEmpty() || b.isEmpty()) {
+      Array[]
+    } else {
+      a.filter(t -> b.contains(t))
+    }
+  }
+
   readonly fun hasFieldRefinement(name: Name): Bool {
     this.maybeGetRef(name.value)
       .map(pair -> pair.i1.hasFieldRefinement)
@@ -513,7 +574,14 @@ mutable class Scope{
       ) {
         restored = ref.stableContentsType(subst, tenv, true);
         if (restored != ref.type) {
-          this.!refs[entry.i0] = ref with {type => restored};
+          this.!refs[entry.i0] = ref with {
+            type => restored,
+            // Field mutations can invalidate field-based exclusions (e.g.
+            // `!(this.isReady())` where `ReadyBox` constrains mutable fields),
+            // so drop non-field-free excluded types while keeping primitive /
+            // nominal-class exclusions that field writes cannot falsify.
+            excludedTypes => ref.excludedTypes.filter(t -> t.isFieldFree()),
+          };
           onForget(name, restored)
         }
       }
@@ -541,7 +609,10 @@ mutable class Scope{
         if (ref.declaredType.isConcretePrimitive()) {
           !entryValues[entry.i0] = ref.type
         };
-        this.!refs[entry.i0] = ref with {type => ref.declaredType}
+        this.!refs[entry.i0] = ref with {
+          type => ref.declaredType,
+          excludedTypes => Array[],
+        }
       }
     };
     entryValues
@@ -709,6 +780,7 @@ mutable class Scope{
       true,
       upRef.isMutable,
       upRef.hasFieldRefinement,
+      if (runtimeWrite) Array[] else upRef.excludedTypes,
     );
   }
 
@@ -734,6 +806,15 @@ mutable class Scope{
     this.refs.items()
       .filter(x -> !this.locals.containsKey(x.i0))
       .map(x -> NameRef(x.i0, x.i1))
+  }
+
+  // True when any outer binding refined in this scope was narrowed to `never`,
+  // meaning this branch is statically unreachable (e.g. an untaken branch of
+  // an overload compatibility trial).
+  readonly fun hasBottomNarrowing(subst: mutable Subst, tenv: TEnv): Bool {
+    this.escapingRefs().any(nameRef ->
+      nameRef.ref.type.expand(subst, tenv, None()).isBottom()
+    )
   }
 
   // Fold into this scope another sibling it can also be entered from — a
@@ -776,6 +857,10 @@ mutable class Scope{
         nameRef.ref.isInitialized && curRef.isInitialized,
         curRef.isMutable,
         curRef.hasFieldRefinement || nameRef.ref.hasFieldRefinement,
+        static::intersectExcludedTypes(
+          nameRef.ref.excludedTypes,
+          curRef.excludedTypes,
+        ),
       )
     }
   }
@@ -884,7 +969,8 @@ mutable class Scope{
           old.declaredType != kv.i1.declaredType ||
           old.hasDeclaredContract != kv.i1.hasDeclaredContract ||
           old.isInitialized != kv.i1.isInitialized ||
-          old.hasFieldRefinement != kv.i1.hasFieldRefinement
+          old.hasFieldRefinement != kv.i1.hasFieldRefinement ||
+          old.excludedTypes != kv.i1.excludedTypes
       };
       if (changed) {
         !acc = acc.set(kv.i0, kv.i1)
@@ -934,6 +1020,10 @@ mutable class Scope{
         edgeRef.isInitialized && curRef.isInitialized,
         curRef.isMutable,
         curRef.hasFieldRefinement || edgeRef.hasFieldRefinement,
+        static::intersectExcludedTypes(
+          edgeRef.excludedTypes,
+          curRef.excludedTypes,
+        ),
       )
     };
     // The edge speaks for every binding, not only the ones it mentions: one it
@@ -956,6 +1046,7 @@ mutable class Scope{
             false,
             nameRef.ref.isMutable,
             nameRef.ref.hasFieldRefinement,
+            nameRef.ref.excludedTypes,
           )
         | _ -> void
         }
@@ -1025,6 +1116,10 @@ mutable class Scope{
           cur.isInitialized,
           cur.isMutable,
           cur.hasFieldRefinement || nameRef.ref.hasFieldRefinement,
+          static::intersectExcludedTypes(
+            cur.excludedTypes,
+            nameRef.ref.excludedTypes,
+          ),
         ),
       )
     }
@@ -1079,6 +1174,7 @@ mutable class Scope{
       tyOpt: ?TType = None();
       isInitialized = true;
       hasFieldRefinement = false;
+      excludedOpt: ?Array<TType> = None();
       for (scope in scopes) {
         scope.escapingRef(name) match {
         | Some(ref) ->
@@ -1094,17 +1190,29 @@ mutable class Scope{
             },
           );
           !hasFieldRefinement = hasFieldRefinement || ref.hasFieldRefinement;
-          !isInitialized = isInitialized && ref.isInitialized
+          !isInitialized = isInitialized && ref.isInitialized;
+          !excludedOpt = Some(
+            excludedOpt match {
+            | None() -> ref.excludedTypes
+            | Some(acc) ->
+              static::intersectExcludedTypes(acc, ref.excludedTypes)
+            },
+          )
         | None() -> !untouched = true
         }
       };
       // `name` is here because it escapes at least one scope, so the fold above
       // ran at least once.
       ty = tyOpt.fromSome();
+      excludedTypes = excludedOpt.default(Array[]);
       if (untouched) {
         !ty = TType::union(subst, tenv, ty, upRef.type);
         !hasFieldRefinement = hasFieldRefinement || upRef.hasFieldRefinement;
-        !isInitialized = isInitialized && upRef.isInitialized
+        !isInitialized = isInitialized && upRef.isInitialized;
+        !excludedTypes = static::intersectExcludedTypes(
+          excludedTypes,
+          upRef.excludedTypes,
+        )
       };
       this.!refs[name] = LocalRef(
         ty,
@@ -1113,6 +1221,7 @@ mutable class Scope{
         isInitialized,
         upRef.isMutable,
         hasFieldRefinement,
+        excludedTypes,
       )
     }
   }
@@ -1145,6 +1254,10 @@ mutable class Scope{
           upRef.isInitialized,
           upRef.isMutable,
           upRef.hasFieldRefinement || nameRef.ref.hasFieldRefinement,
+          static::intersectExcludedTypes(
+            upRef.excludedTypes,
+            nameRef.ref.excludedTypes,
+          ),
         )
       | Both(nameRef1, nameRef2) ->
         // Value contracts belong to the binding. Copy provenance may have
@@ -1165,6 +1278,10 @@ mutable class Scope{
           nameRef1.ref.isInitialized && nameRef2.ref.isInitialized,
           upRef.isMutable,
           nameRef1.ref.hasFieldRefinement || nameRef2.ref.hasFieldRefinement,
+          static::intersectExcludedTypes(
+            nameRef1.ref.excludedTypes,
+            nameRef2.ref.excludedTypes,
+          ),
         )
       }
     })
@@ -1191,6 +1308,10 @@ mutable class Scope{
         upRef.isInitialized,
         upRef.isMutable,
         upRef.hasFieldRefinement || nameRef.ref.hasFieldRefinement,
+        static::intersectExcludedTypes(
+          upRef.excludedTypes,
+          nameRef.ref.excludedTypes,
+        ),
       )
     }
   }
