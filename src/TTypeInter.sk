@@ -183,28 +183,41 @@ extension class TType {
     // Returning the primitive requires a live subtype justification against
     // the object's constraint, which may itself contain inference candidates.
     // Keep its commitments; a discarded clone's success is not sufficient.
-    (clauses1.primKind(), clauses2.getObject()) match {
-    | (Some(primKind), Some(stype)) ->
+    // If the object clause carries rigid type parameters (e.g. `T extends {}`),
+    // preserve them on the resulting clauses so `string & T` never drops `T`
+    // into an over-approximation reused in contravariant positions (#72).
+    (clauses1.primKind(), clauses2.getObjectClause()) match {
+    | (Some(primKind), Some((vars, stype))) ->
       TType::isSub(
         subst,
         tenv,
         expandPrim(primKind),
         TType::single(stype),
       ) match {
-      | STOk() -> return ty1
+      | STOk() ->
+        return if (vars.isEmpty()) {
+          ty1
+        } else {
+          TType::fromClauses(ty1.pos, clauses1.withVars(vars))
+        }
       | STError _ -> void
       }
     | _ -> void
     };
-    (clauses2.primKind(), clauses1.getObject()) match {
-    | (Some(primKind), Some(stype)) ->
+    (clauses2.primKind(), clauses1.getObjectClause()) match {
+    | (Some(primKind), Some((vars, stype))) ->
       TType::isSub(
         subst,
         tenv,
         expandPrim(primKind),
         TType::single(stype),
       ) match {
-      | STOk() -> return ty2
+      | STOk() ->
+        return if (vars.isEmpty()) {
+          ty2
+        } else {
+          TType::fromClauses(ty2.pos, clauses2.withVars(vars))
+        }
       | STError _ -> void
       }
     | _ -> void

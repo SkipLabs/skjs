@@ -4350,13 +4350,44 @@ class Clauses private (
   }
 
   fun getObject(): ?TObject {
+    this.getObjectClause().map(pair -> pair.i1)
+  }
+
+  // Returns the single object clause together with its type-parameter guards.
+  // Callers that collapse an intersection against this object must preserve
+  // `vars` — dropping non-empty `vars` turns `string & T` (for `T extends {}`)
+  // into bare `string`, an unsound over-approximation (SkipLabs/skjs#72).
+  fun getObjectClause(): ?(ArraySet<TParam>, TObject) {
     this.clauses.singleElt().flatMap(clause ->
       clause.stypes.flatMap(stypes -> {
         stypes.singleElt() match {
-        | Some(obj @ TObject _) -> Some(obj)
+        | Some(obj @ TObject _) -> Some((clause.vars, obj))
         | _ -> None()
         }
       })
+    )
+  }
+
+  // Intersect every clause with the given rigid type parameters, merging
+  // clauses whose combined parameter sets collide.
+  fun withVars(vars: ArraySet<TParam>): Clauses {
+    if (vars.isEmpty()) return this;
+    result = SortedMap[];
+    for (clause in this.clauses) {
+      Clause::create(clause.vars.union(vars), clause.stypes) match {
+      | None() -> void
+      | Some(merged) ->
+        if (!result.containsKey(merged.vars)) {
+          !result[merged.vars] = merged
+        } else {
+          !result[merged.vars] = Clause::union(result[merged.vars], merged)
+        }
+      }
+    };
+    Clauses(
+      InternalKeyedArrayMap::createFromSortedIterator(
+        result.items().map(x -> x.i1).iterator(),
+      ),
     )
   }
 
