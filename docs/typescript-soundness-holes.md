@@ -264,7 +264,7 @@ function f(x: unknown): number {
 const n: number = f(42); // runtime: undefined
 ```
 
-**Test:** [tests/expect-error/type-predicate-requires-no-body.ts](../tests/expect-error/type-predicate-requires-no-body.ts), [tests/expect-error/type-predicate-syntax.ts](../tests/expect-error/type-predicate-syntax.ts), [tests/expect-error/gap-type-predicate-narrowing.ts](../tests/expect-error/gap-type-predicate-narrowing.ts) · **SKJS:** rejects — `error: A type predicate ('x is T') is only supported as the top-level return type of a declared function or method signature`
+**Test:** [tests/expect-error/type-predicate-requires-no-body.ts](../tests/expect-error/type-predicate-requires-no-body.ts), [tests/expect-error/type-predicate-syntax.ts](../tests/expect-error/type-predicate-syntax.ts), [tests/expect-error/type-predicate-narrowing.ts](../tests/expect-error/type-predicate-narrowing.ts) · **SKJS:** rejects bodied predicates — `error: A type predicate ('x is T') is only supported as the top-level return type of a declared function or method signature` (declared/ambient predicates narrow at call sites)
 
 ### A narrowing survives a call that invalidates it
 

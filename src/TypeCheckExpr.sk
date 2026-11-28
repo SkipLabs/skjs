@@ -1633,16 +1633,26 @@ extension class TypeChecker {
           return None()
         };
         // A bound function fixes `this` to `thisArg` (not the call site's
-        // receiver), so drop any `asserts this` predicate to avoid narrowing a
-        // wrong subject. Parameter assertions stay valid.
+        // receiver), so drop any `asserts this` or `this is T` predicate to
+        // avoid narrowing a wrong subject. Parameter predicates stay valid.
         boundAssertPred = f.assertPred.flatMap(ap ->
           ap.subject match {
           | ASThis() -> None()
           | ASParam _ -> Some(ap)
           }
         );
+        boundTypePred = f.typePred.flatMap(tp ->
+          tp.subject match {
+          | TPSThis() -> None()
+          | TPSParam _ -> Some(tp)
+          }
+        );
         boundSigs.push(
-          f with {thisParam => NoThis(), assertPred => boundAssertPred},
+          f with {
+            thisParam => NoThis(),
+            assertPred => boundAssertPred,
+            typePred => boundTypePred,
+          },
         )
       };
       if (boundSigs.isEmpty()) return None();
@@ -6560,6 +6570,7 @@ extension class TypeChecker {
     saved = tcenv.subst.save();
     publication = tcenv.results.savePublication();
     savedCallAssertPredicates = tcenv.callAssertPredicates;
+    savedCallPredicates = tcenv.callPredicates;
     entryErrors = tcenv.results.errors.size();
     entryWarnings = tcenv.results.warnings.size();
     entryHiddenChecks = tcenv.hiddenEscapeChecks.size();
@@ -6573,6 +6584,7 @@ extension class TypeChecker {
       tcenv.subst.restore(saved);
       tcenv.results.restorePublication(publication);
       tcenv.!callAssertPredicates = savedCallAssertPredicates;
+      tcenv.!callPredicates = savedCallPredicates;
       while (tcenv.hiddenEscapeChecks.size() > entryHiddenChecks) {
         _ = tcenv.hiddenEscapeChecks.pop()
       };
@@ -6593,6 +6605,7 @@ extension class TypeChecker {
     tcenv.subst.restore(saved);
     tcenv.results.restorePublication(publication);
     tcenv.!callAssertPredicates = savedCallAssertPredicates;
+    tcenv.!callPredicates = savedCallPredicates;
     while (tcenv.hiddenEscapeChecks.size() > entryHiddenChecks) {
       _ = tcenv.hiddenEscapeChecks.pop()
     };
@@ -6639,6 +6652,7 @@ extension class TypeChecker {
     saved = tcenv.subst.save();
     publication = tcenv.results.savePublication();
     savedCallAssertPredicates = tcenv.callAssertPredicates;
+    savedCallPredicates = tcenv.callPredicates;
     entryErrors = tcenv.results.errors.size();
     result = try {
       this.proposeAndValidateCall(
@@ -6658,12 +6672,14 @@ extension class TypeChecker {
       tcenv.subst.restore(saved);
       tcenv.results.restorePublication(publication);
       tcenv.!callAssertPredicates = savedCallAssertPredicates;
+      tcenv.!callPredicates = savedCallPredicates;
       throw exn
     };
     if (tcenv.results.errors.size() != entryErrors) {
       tcenv.subst.restore(saved);
       tcenv.results.restorePublication(publication);
-      tcenv.!callAssertPredicates = savedCallAssertPredicates
+      tcenv.!callAssertPredicates = savedCallAssertPredicates;
+      tcenv.!callPredicates = savedCallPredicates
     };
     result
   }
@@ -6927,7 +6943,8 @@ extension class TypeChecker {
       plan.validate(tcenv, this)
     ) {
       tcenv.recordCalls(tfun.cgNodes);
-      tcenv.recordCallAssertPredicate(pos, tfun.assertPred)
+      tcenv.recordCallAssertPredicate(pos, tfun.assertPred);
+      tcenv.recordCallPredicate(pos, tfun.typePred)
     };
     tfun.retType
   }

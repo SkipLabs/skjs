@@ -172,6 +172,11 @@ mutable class TCEnv private {
   // a union-distributed call whose branches disagreed on the assertion (or
   // where any branch had none), suppressing narrowing.
   mutable callAssertPredicates: SortedMap<PosRange, ?AssertPred> = SortedMap[],
+  // Instantiated type predicates recorded at validated call sites (keyed by
+  // call expression position), consumed by evalStableCond for narrowing.
+  // None() marks a union-distributed call whose branches disagreed on the
+  // predicate (or where any branch had no predicate), suppressing narrowing.
+  mutable callPredicates: SortedMap<PosRange, ?TypePred> = SortedMap[],
   // Composed alias contracts captured while branch scopes are still available.
   // Key by occurrence and its current type, so different precision modes do
   // not confuse results. These are symbolic types, not subtype-result caches.
@@ -704,6 +709,23 @@ mutable class TCEnv private {
       | _ -> None()
       };
       this.!callAssertPredicates[pos] = merged
+    }
+  }
+
+  // Record the instantiated type predicate of a validated call at `pos`.
+  // When a call is distributed across multiple union receiver branches, each
+  // branch calls this with the same `pos`: keep the predicate only when every
+  // branch produces the exact same subject and target, otherwise suppress it
+  // (None) so narrowing cannot over-narrow one branch using another's claim.
+  mutable fun recordCallPredicate(pos: PosRange, pred: ?TypePred): void {
+    this.callPredicates.maybeGet(pos) match {
+    | None() -> this.!callPredicates[pos] = pred
+    | Some(existing) ->
+      merged = (existing, pred) match {
+      | (Some(p1), Some(p2)) if (p1 == p2) -> Some(p1)
+      | _ -> None()
+      };
+      this.!callPredicates[pos] = merged
     }
   }
 
