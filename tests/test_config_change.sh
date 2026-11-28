@@ -104,7 +104,8 @@ else
 fi
 
 missing_nm_out=$(
-  cd "$LAYER_DIR" && "$SKJS_ABS" check "$LAYER_DIR/app.ts" 2>&1 || true
+  cd "$LAYER_DIR"
+  "$SKJS_ABS" check "$LAYER_DIR/app.ts" 2>&1 || true
 )
 expect_contains "missingImportStubsRequiresFlag" \
   "--import-stubs is required" "$missing_nm_out"
@@ -117,7 +118,8 @@ cat > "$NO_NM_DIR/app.ts" <<'EOF'
 export const ok: number = 1;
 EOF
 missing_plain_out=$(
-  cd "$NO_NM_DIR" && "$SKJS_ABS" check "$NO_NM_DIR/app.ts" 2>&1 || true
+  cd "$NO_NM_DIR"
+  "$SKJS_ABS" check "$NO_NM_DIR/app.ts" 2>&1 || true
 )
 if [ "$missing_plain_out" = "--import-stubs is required" ]; then
   echo "$OK ConfigChange missingImportStubsNoNodeModulesPlain"
