@@ -664,10 +664,12 @@ extension base class TEnv {
       TObject::createSingleBranch(
         TFields::create{
           fields,
-          // The runtime enum object is a plain object: never callable.
+          // The runtime enum object is a plain object: never callable or
+          // primitive.
           call => CAbsent(),
           new => CAbsent(),
           isArray => Some(false),
+          isNonPrimitive => true,
         },
         None(),
         en.name.pos,

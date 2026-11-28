@@ -775,6 +775,9 @@ base class STErrorOnTFields(
   // Nominal classes: the target is a class instance type the source is not
   // an instance of. Carries the class the target names.
   | STRecFieldsClassIdentity(Name)
+  // `object` vs `{}`: the target excludes primitive values, while the source
+  // admits them (e.g. `{}` assigned to `object`).
+  | STRecFieldsPrimitiveAllowed()
 
   fun toError(
     subst: mutable Subst,
@@ -882,6 +885,17 @@ base class STErrorOnTFields(
             `Only an instance of class '${
               className.value
             }' (or a subclass) has this type; use 'new' or an interface for structural shapes`,
+          ),
+        ],
+        None(),
+      )
+    | STRecFieldsPrimitiveAllowed(_fields1, _fields2) ->
+      (
+        List.Nil(),
+        List[
+          (
+            pos1,
+            "Type '{}' admits primitive values, which are not assignable to non-primitive type 'object'",
           ),
         ],
         None(),
@@ -1430,6 +1444,10 @@ extension class TFields {
       return STRecFieldsClassIdentity(missing, fields1, fields2)
     | None() -> void
     };
+    // `object` excludes primitive values while `{}` admits them (#674).
+    if (!fields2.admitsPrimitives() && fields1.admitsPrimitives()) {
+      return STRecFieldsPrimitiveAllowed(fields1, fields2)
+    };
     STOk()
   }
 
@@ -1515,9 +1533,19 @@ extension class STypes {
         // configuration, and `void`'s only runtime value is `undefined`, so
         // the judgment is sound (issue #871). `null` stays rejected — SKJS's
         // strict-null semantics keep `void` and `null` disjoint.
+        // Non-nullish primitives (`TPrimValue`, `TPrimString`) are assignable
+        // to `{}` (an object branch that admits primitives), but NOT to
+        // `object` or member-bearing shapes (issue #674).
         if (
-          sty1 is TPrimUnit(TUndefined(), _) &&
-          stypes2.any(st -> st is TPrimUnit(TVoid(), _))
+          (sty1 is TPrimUnit(TUndefined(), _) &&
+            stypes2.any(st -> st is TPrimUnit(TVoid(), _))) ||
+          ((sty1 is TPrimValue _ || sty1 is TPrimString _) &&
+            stypes2.any(st ->
+              st match {
+              | obj2 @ TObject _ -> obj2.admitsPrimitives()
+              | _ -> false
+              }
+            ))
         ) {
           Success(void)
         } else {

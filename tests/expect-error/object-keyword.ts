@@ -8,37 +8,30 @@
 //   member-bearing structural object type, function, array, class instance,
 //   and object literal is a subtype of `object`.
 //
-// Pinning test: records current behavior on main where `object` is lowered
-// identically to `{}` (both reject primitives and both are mutually
-// assignable). Each function tests a single case so SKJS's one-error-per-def
-// rule exercises every case independently.
+// Each function tests a single case so SKJS's one-error-per-def rule exercises
+// every case independently.
 
 ///////////////////////////////////////////////////////////////////////////////
 // 1. Primitives vs `{}` and `object`
 ///////////////////////////////////////////////////////////////////////////////
 
 function stringToEmpty(): {} {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return "hello";
 }
 
 function numberToEmpty(): {} {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return 42;
 }
 
 function booleanToEmpty(): {} {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return true;
 }
 
 function bigintToEmpty(): {} {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return 1n;
 }
 
 function symbolToEmpty(): {} {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return Symbol("s");
 }
 
@@ -93,7 +86,6 @@ function undefinedToObject(): object {
 }
 
 function primUnionToEmpty(x: string | number | boolean | bigint | symbol): {} {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
@@ -112,9 +104,11 @@ function objectToEmpty(o: object): {} {
   return o;
 }
 
-// Currently accepted because `object` is lowered to `{}`; must be rejected once
-// `{}` admits primitives (otherwise `string <: {} <: object` breaks soundness).
+// Rejected for soundness: `{}` admits primitives, so allowing `{}` into
+// `object` would break transitivity (`string <: {} <: object`). Stricter than
+// tsc, which unsoundly allows `{}` -> `object`.
 function emptyToObject(e: {}): object {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return e;
 }
 
@@ -126,12 +120,12 @@ function emptyInterfaceToEmpty(x: EmptyInterface): {} {
 }
 
 function primToEmptyInterface(): EmptyInterface {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return "hello";
 }
 
 // Empty structural interface is equivalent to `{}`: cannot flow into `object`.
 function emptyInterfaceToObject(x: EmptyInterface): object {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
@@ -194,7 +188,7 @@ function numberToFixedShape(): { toFixed(digits?: number): string } {
 
 function printObjectInError(): object {
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
-  // @skjs-expect-error-line3 is not assignable to type '{}'
+  // @skjs-expect-error-line3 is not assignable to type 'object'
   return "hello";
 }
 
@@ -209,13 +203,10 @@ function printEmptyInError(): {} {
 ///////////////////////////////////////////////////////////////////////////////
 
 function interStringWithObject(x: string & object): never {
-  // Currently `string & object` simplifies to `string` because `object` is `{}`.
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
 function interNumberWithObject(x: number & object): never {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
@@ -224,14 +215,13 @@ function interStringWithEmpty(x: string & {}): string {
 }
 
 function interNullableWithEmpty(x: (string | null | undefined) & {}): string {
-  // Currently `(string | null | undefined) & {}` collapses to `never`.
   return x;
 }
 
 function interNullableWithEmptyNotNever(
   x: (string | null | undefined) & {},
 ): never {
-  // Currently accepted because `(string | null | undefined) & {}` collapses to never.
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
@@ -258,7 +248,7 @@ function interStringAndNumberWithObject(x: (string | number) & object): never {
 ///////////////////////////////////////////////////////////////////////////////
 
 function eqObjectAndString(o: object, s: string): boolean {
-  // Currently no warning because `object` lowers to `{}`.
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   return o === s;
 }
 
@@ -274,9 +264,8 @@ function narrowEqEmptyAndString(e: {}, s: string): string {
 }
 
 function narrowEqObjectAndString(o: object, s: string): never {
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   if (o === s) {
-    // Currently `o` narrows to `string` instead of `never`.
-    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return o;
   }
   throw new Error("unreachable");
@@ -295,7 +284,6 @@ function typeofUnknownObjectToObject(u: unknown): object | null {
 
 function typeofEmptyString(e: {}): string {
   if (typeof e === "string") {
-    // Currently narrows to `never` (so returning `e` as `string` works trivially).
     return e;
   }
   return "";
@@ -303,7 +291,7 @@ function typeofEmptyString(e: {}): string {
 
 function typeofEmptyStringNotNever(e: {}): void {
   if (typeof e === "string") {
-    // Currently accepted (unsound once string <: {}): narrows to `never`.
+    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
     const n: never = e;
   }
 }
@@ -316,6 +304,7 @@ function typeofObjectString(o: object): void {
 
 function typeofEmptyNumberNotNever(e: {}): void {
   if (typeof e === "number") {
+    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
     const n: never = e;
   }
 }
@@ -337,8 +326,6 @@ function typeofObjectThenFunction(o: object): void {
   if (typeof o === "object") {
   } else if (typeof o === "function") {
   } else {
-    // Currently fails because `object` is not tracked as non-primitive.
-    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
     const n: never = o;
   }
 }
@@ -364,7 +351,7 @@ function typeofEmptyFuncThenObj(e: {}): void {
   if (typeof e === "function") {
   } else if (typeof e === "object") {
   } else {
-    // Currently narrows to `never` (unsound once `{}` admits primitives).
+    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
     const n: never = e;
   }
 }
@@ -377,6 +364,7 @@ function truthyEmpty(e: {}): void {
   // @skjs-expect-error A condition is expected to be of type boolean or a type with a single falsy value
   if (e) {
   } else {
+    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
     const n: never = e;
   }
 }
@@ -402,7 +390,9 @@ function inOperatorOnEmptyLiteral(): boolean {
 }
 
 // `"a" in e` where `e: {}` throws TypeError at runtime when `e` is a primitive.
+// Stricter than tsc, which unsoundly allows `in` on `{}`.
 function inOperatorOnEmpty(e: {}): boolean {
+  // @skjs-expect-error The right-hand side of an 'in' expression must be an object
   return "a" in e;
 }
 
@@ -415,6 +405,7 @@ function objectKeysOnEmptyLiteral(): string[] {
 }
 
 function objectKeysOnEmpty(e: {}): string[] {
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   return Object.keys(e);
 }
 
@@ -442,7 +433,6 @@ function callGenericExtendsEmptyValid(): void {
 }
 
 function callGenericExtendsEmptyPrim(): void {
-  // @skjs-expect-error Argument is not assignable to the parameter's type
   const _a = genericExtendsEmpty("hello");
 }
 

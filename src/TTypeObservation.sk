@@ -926,16 +926,30 @@ mutable class TypeReadContext private {
     b = context.expandClauses(right, Covariant());
     (a.primKind(), b.getObject()) match {
     | (Some(name), Some(obj)) ->
-      if (
-        context.isSubtype(TType::inst(name, TArgs(Array[])), TType::single(obj))
-      ) return left
+      obj.mapOpt(f -> if (f.isNonPrimitive) None() else Some(f)) match {
+      | Some(boxable) ->
+        if (
+          context.isSubtype(
+            TType::inst(name, TArgs(Array[])),
+            TType::single(boxable),
+          )
+        ) return left
+      | None() -> void
+      }
     | _ -> void
     };
     (b.primKind(), a.getObject()) match {
     | (Some(name), Some(obj)) ->
-      if (
-        context.isSubtype(TType::inst(name, TArgs(Array[])), TType::single(obj))
-      ) return right
+      obj.mapOpt(f -> if (f.isNonPrimitive) None() else Some(f)) match {
+      | Some(boxable) ->
+        if (
+          context.isSubtype(
+            TType::inst(name, TArgs(Array[])),
+            TType::single(boxable),
+          )
+        ) return right
+      | None() -> void
+      }
     | _ -> void
     };
     TType::ofClauses(

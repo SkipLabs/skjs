@@ -164,16 +164,16 @@ function testObjectKeywordTypeofFunction(o: object): void {
   }
 }
 
-// Once the "function" check fails, an unknown-callability branch strengthens
-// to definitely-not-callable, so a subsequent "object" else drops it: after
-// both tests fail nothing of `{}` remains. (The residual `never` ignores
-// primitive inhabitants of `{}` — a pre-existing approximation, cf. #674 —
-// tsc keeps `{}` here.)
+// Once the "function" check fails, `{}` strengthens to
+// definitely-not-callable, but `{}` still admits non-nullish primitives
+// (#674), so a subsequent "object" else keeps `{}` rather than narrowing to
+// `never` — matching tsc.
 function testStrengthenedAfterFunctionElse(o: {}): void {
   if (typeof o === "function") {
   } else {
     if (typeof o === "object") {
     } else {
+      // @ts-expect-error Type of value is not assignable to the variable's type annotation
       const n: never = o;
     }
   }

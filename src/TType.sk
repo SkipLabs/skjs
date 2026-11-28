@@ -1093,6 +1093,16 @@ class TObject private (
     TObject::createSingleBranch(TFields::empty(), None(), pos)
   }
 
+  static fun createNonPrimitive(pos: PosRange): TObject {
+    TObject::createSingleBranch(TFields::nonPrimitive(), None(), pos)
+  }
+
+  // True if any branch of this object type admits primitive values (i.e. is
+  // the unconstrained empty object type `{}`).
+  fun admitsPrimitives(): Bool {
+    this.branches.any(fields -> fields.admitsPrimitives())
+  }
+
   static fun createCallWithPos(tFuns: TFuns, pos: PosRange): TObject {
     TObject::createSingleBranch(
       TFields::create{call => CPresent(tFuns)},
@@ -2188,9 +2198,15 @@ base class SType private (
     | TPrimUnit(TUndefined(), _)
     | TPrimUnit(TNull(), _) ->
       SFValues(FOne(), false)
-    | TObject _
-    | TPrimValue(TSymbol(), _, _) ->
-      SFValues(FZero(), true)
+    | obj @ TObject _ ->
+      // `{}` admits falsy primitives ("" / 0 / -0 / NaN / false / 0n), while
+      // non-primitive objects are always truthy.
+      if (obj.admitsPrimitives()) {
+        SFValues(FMany(), true)
+      } else {
+        SFValues(FZero(), true)
+      }
+    | TPrimValue(TSymbol(), _, _) -> SFValues(FZero(), true)
     | TPrimValue(TBool(), None(), _)
     | TPrimString(None(), _)
     | TPrimValue(TBigInt(), None(), _) ->
@@ -2242,9 +2258,17 @@ base class SType private (
     | TPrimUnit(TUndefined(), _)
     | TPrimUnit(TNull(), _) ->
       if (target) None() else Some(this)
-    | TObject _
-    | TPrimValue(TSymbol(), _, _) ->
-      if (target) Some(this) else None()
+    | obj @ TObject _ ->
+      if (target) {
+        Some(obj)
+      } else {
+        // Non-primitive objects are always truthy, so only branches that admit
+        // primitives (such as `{}`) can reach the falsy side.
+        obj.mapOpt(fields ->
+          if (fields.admitsPrimitives()) Some(fields) else None()
+        )
+      }
+    | TPrimValue(TSymbol(), _, _) -> if (target) Some(this) else None()
     | TPrimString(None(), _)
     | TPrimValue(TNum(), None(), _)
     | TPrimValue(TBigInt(), None(), _) ->
@@ -2936,9 +2960,19 @@ class TFields protected {
   // the members; Some(identity) = only instances of that class (or a
   // subclass). See TEnv::classIdentity.
   classIds: ?ClassIdentity = None(),
+  // True when primitive values are excluded (the `object` keyword type,
+  // object literals, enum objects, `typeof x === "object"` refinements).
+  // False on empty structural shapes (`{}`), which admit non-nullish
+  // primitives; non-empty / nominal / array / callable branches exclude
+  // primitives structurally via `admitsPrimitives()`.
+  isNonPrimitive: Bool = false,
 } extends TIndexesBase uses XXHashable, Orderable {
   static fun empty(): TFields {
     TFields{}
+  }
+
+  static fun nonPrimitive(): TFields {
+    TFields{isNonPrimitive => true}
   }
 
   private static fun createFromSortedIterator{
@@ -2949,6 +2983,7 @@ class TFields protected {
     call: Callability = CUnknown(),
     isArray: ?Bool = None(),
     classIds: ?ClassIdentity = None(),
+    isNonPrimitive: Bool = false,
   }: TFields {
     // Array-branded objects (arrays, tuples) are never callable or
     // constructible, so an unconstrained mode is lowered to CAbsent. As
@@ -2978,6 +3013,7 @@ class TFields protected {
       call,
       isArray,
       classIds,
+      isNonPrimitive,
     }
   }
 
@@ -2989,6 +3025,7 @@ class TFields protected {
     new: Callability = CUnknown(),
     call: Callability = CUnknown(),
     isArray: ?Bool = None(),
+    isNonPrimitive: Bool = false,
   }: TFields {
     TFields::createFromSortedIterator{
       fields => fields.values(),
@@ -2997,6 +3034,7 @@ class TFields protected {
       new,
       call,
       isArray,
+      isNonPrimitive,
     }
   }
 
@@ -3008,6 +3046,7 @@ class TFields protected {
     call: Callability = CUnknown(),
     isArray: ?Bool = None(),
     classIds: ?ClassIdentity = None(),
+    isNonPrimitive: Bool = false,
   }: TFields {
     brandKey = FieldNameString(kArrayBrandFieldName);
     fields.maybeGet(brandKey) match {
@@ -3084,6 +3123,7 @@ class TFields protected {
       call,
       isArray,
       classIds,
+      isNonPrimitive,
     }
   }
 
@@ -3103,6 +3143,28 @@ class TFields protected {
       !(this.new is CFunction()) &&
       !(this.call is CPresent _) &&
       !(this.call is CFunction())
+  }
+
+  // True when this branch admits primitive values (the empty structural shape
+  // `{}` and empty interfaces/structural aliases). Since SKJS does not box
+  // primitives into member-bearing shapes, any member, nominal class identity,
+  // array brand, call/construct signature, or explicit `isNonPrimitive` flag
+  // excludes all primitives.
+  fun admitsPrimitives(): Bool {
+    !this.isNonPrimitive &&
+      this.isEmpty() &&
+      this.classIds is None() &&
+      this.isArray != Some(true)
+  }
+
+  // True when this branch represents the bare `object` keyword type (no
+  // members, no class/array brand, not an empty object literal which carries
+  // `isArray == Some(false)`).
+  fun isBareNonPrimitive(): Bool {
+    this.isNonPrimitive &&
+      this.isEmpty() &&
+      this.classIds is None() &&
+      this.isArray is None()
   }
 
   // Narrows this branch by the outcome of a runtime typeof-"function" test
@@ -3154,6 +3216,12 @@ class TFields protected {
     this with {classIds => None()}
   }
 
+  // Mark this branch as excluding primitive values (e.g. after a runtime
+  // `typeof x === "object"` check).
+  fun asNonPrimitive(): TFields {
+    this with {isNonPrimitive => true}
+  }
+
   // Meet this branch's class identity with `ids` (see TFields::interClassIds):
   // None when the branch is already an instance of an unrelated class.
   fun interClassIdentity(ids: ?ClassIdentity): ?TFields {
@@ -3163,13 +3231,15 @@ class TFields protected {
   }
 
   // Copying properties creates a plain object, regardless of the source kind:
-  // not callable, not an array, and not an instance of any class.
+  // not callable, not an array, not a primitive, and not an instance of any
+  // class.
   fun asPropertyCopy(): TFields {
     this with {
       call => CAbsent(),
       new => CAbsent(),
       isArray => Some(false),
       classIds => None(),
+      isNonPrimitive => true,
     }
   }
 
@@ -3204,6 +3274,7 @@ class TFields protected {
       call => this.call.mapSig(fTFuns),
       isArray => this.isArray,
       classIds => this.classIds,
+      isNonPrimitive => this.isNonPrimitive,
     }
   }
 
@@ -3615,6 +3686,20 @@ class STypes private (
 
   fun filterMap(f: SType -> ?SType): STypes {
     STypes(this.stypes.filterMap(f))
+  }
+
+  // Like `filterMap`, but `f` may return an `SType` with a different tag (e.g.
+  // narrowing `{}` to `string` under `typeof x === "string"`). Results are
+  // unioned so duplicate tags are merged cleanly.
+  fun flatMapSTypes(f: SType -> ?SType): STypes {
+    acc = STypes::empty();
+    for (stype in this.stypes.values()) {
+      f(stype) match {
+      | None() -> void
+      | Some(mapped) -> !acc = STypes::union(acc, STypes::single(mapped))
+      }
+    };
+    acc
   }
 
   fun isEmpty(): Bool {

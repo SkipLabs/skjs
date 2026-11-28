@@ -691,6 +691,12 @@ mutable class TypePp{
     ) {
       return this.out(level, margin, "Function")
     };
+    // A bare non-primitive branch is the `object` keyword type (or the
+    // non-null side of `typeof u === "object"`). Print it as `object` to
+    // distinguish it from `{}`.
+    if (!this.verbose && fields.isBareNonPrimitive()) {
+      return this.out(level, margin, "object")
+    };
     // Closed object branch: never string & symbol indexes (and no declared
     // number index) represent `Closed<{ ... }>` (from `Closed<T>` or
     // `as const`). Render the shorthand in field-level diagnostics (e.g.
