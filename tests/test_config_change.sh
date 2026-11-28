@@ -6,6 +6,7 @@
 set -euo pipefail
 
 SKJS="${SKJS:-./target/host/dev/skjs}"
+SKJS_ABS="$(realpath "$SKJS")"
 TMPDIR="$(mktemp -d)"
 CACHE="$TMPDIR/cache"
 STUBS="./import-stubs"
@@ -34,7 +35,7 @@ expect_contains() {
   local test_name="$1"
   local needle="$2"
   local output="$3"
-  if echo "$output" | grep -qF "$needle"; then
+  if echo "$output" | grep -qF -- "$needle"; then
     echo "$OK ConfigChange $test_name"
     successes=$((successes + 1))
   else
@@ -74,6 +75,42 @@ expect_contains "dataRunSeesNewTruthiness" "$BOOL_MSG" "$out"
 # And switching back must restore the original diagnostic.
 out=$(run_check --data "$CACHE")
 expect_contains "dataRunSeesRestoredTruthiness" "$SAFE_MSG" "$out"
+
+# Layered --import-stubs directories (e.g. builtins + project node_modules)
+# and missing --import-stubs when node_modules/ exists in the project root.
+# Pre-#615 behavior pinned here; updated in the implementation commit.
+STUBS_ABS="$(realpath "$STUBS")"
+LAYER_DIR="$TMPDIR/layered"
+mkdir -p "$LAYER_DIR/node_modules/greet-pkg"
+cat > "$LAYER_DIR/node_modules/greet-pkg/index.d.ts" <<'EOF'
+export declare function hello(name: string): string;
+EOF
+cat > "$LAYER_DIR/app.ts" <<'EOF'
+import { hello } from "greet-pkg";
+function use(): string {
+  return hello("world");
+}
+EOF
+
+layer_out=$("$SKJS" check --import-stubs "$STUBS_ABS" \
+  --import-stubs "$LAYER_DIR/node_modules" "$LAYER_DIR/app.ts" 2>&1 || true)
+expect_contains "layeredImportStubsWarnsBefore615" \
+  "More than one --import-stubs specified; using first one for builtins file" \
+  "$layer_out"
+
+missing_nm_out=$(
+  cd "$LAYER_DIR" && "$SKJS_ABS" check "$LAYER_DIR/app.ts" 2>&1 || true
+)
+expect_contains "missingImportStubsRequiresFlag" \
+  "--import-stubs is required" "$missing_nm_out"
+if echo "$missing_nm_out" | grep -qF -- "--import-stubs ./node_modules"; then
+  echo "$FAIL ConfigChange missingImportStubsNoNodeModulesHintBefore615"
+  echo "  expected no node_modules hint before #615, got: $missing_nm_out"
+  failures=$((failures + 1))
+else
+  echo "$OK ConfigChange missingImportStubsNoNodeModulesHintBefore615"
+  successes=$((successes + 1))
+fi
 
 total=$((successes + failures))
 echo "Failures: $failures, successes: $successes (total: $total)"
