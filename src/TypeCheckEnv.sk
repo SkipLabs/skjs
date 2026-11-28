@@ -60,8 +60,16 @@ mutable base class TCEnvBase private {
     messages: Array<(PosRange, String)>,
     stErr: STErrorOnTType,
     code: ErrorCode,
+    trailingMessages: Array<(PosRange, String)> = Array[],
   ): void {
-    this.results.subtypingError(subst, tenv, messages, stErr, code)
+    this.results.subtypingError(
+      subst,
+      tenv,
+      messages,
+      stErr,
+      code,
+      trailingMessages,
+    )
   }
 
   mutable fun notSupported(pos: PosRange, what: String): void {
@@ -321,12 +329,16 @@ mutable class TCEnv private {
   // Also log each invalidated binding into any active try write-log so a throw,
   // return, break, or continue leaving the try/catch/finally carries the
   // widened object view (SkipLabs/skjs#869).
-  mutable fun forgetObjectRefinements(tenv: TEnv): void {
+  mutable fun forgetObjectRefinements(
+    tenv: TEnv,
+    invalidation: ?NarrowingInvalidation = None(),
+  ): void {
     this.scope.forgetObjectRefinements(
       this.subst,
       tenv,
       name -> !(this.localObjectState(name) is Some(LOCanGrow _)),
       (name, restored) -> this.recordTryWrite(tenv, name, restored),
+      invalidation,
     )
   }
 
@@ -336,14 +348,23 @@ mutable class TCEnv private {
   mutable fun forgetLoopObjectRefinements(
     tenv: TEnv,
     loopScope: mutable Scope,
+    invalidation: ?NarrowingInvalidation = None(),
   ): void {
-    loopScope.forgetObjectRefinements(this.subst, tenv, name ->
-      !(this.localObjectState(name) is Some(LOCanGrow _))
+    loopScope.forgetObjectRefinements(
+      this.subst,
+      tenv,
+      name -> !(this.localObjectState(name) is Some(LOCanGrow _)),
+      (_, _) -> void,
+      invalidation,
     )
   }
 
-  mutable fun invalidateCallEffects(tenv: TEnv): void {
+  mutable fun invalidateCallEffects(
+    tenv: TEnv,
+    causePos: ?PosRange = None(),
+  ): void {
     this.!effectEpoch = this.effectEpoch + 1;
+    reassignInvalidation = causePos.map(pos -> NICallReassign(pos));
     for (entry in this.scope.callWriteBounds().items()) {
       name = Name(entry.i1.pos, entry.i0);
       // A call cannot initialize a binding whose declaration is still pending.
@@ -352,10 +373,20 @@ mutable class TCEnv private {
           .map(p -> this.pendingBindings.contains(p))
           .default(false)
       ) {
-        this.updateLocalType(tenv, name, entry.i1, (_, _) -> void)
+        this.updateLocalType(
+          tenv,
+          name,
+          entry.i1,
+          (_, _) -> void,
+          false,
+          reassignInvalidation,
+        )
       }
     };
-    this.forgetObjectRefinements(tenv)
+    this.forgetObjectRefinements(
+      tenv,
+      causePos.map(pos -> NICallFieldMutation(pos)),
+    )
   }
 
   // Freeze the in-scope growable local object `local` (no-op if it is not one),
@@ -454,6 +485,7 @@ mutable class TCEnv private {
     ty: TType,
     isSubType: (TType, TType) -> void,
     runtimeWrite: Bool = false,
+    invalidation: ?NarrowingInvalidation = None(),
   ): void {
     // A callback can run after its enclosing frame replaces this binding.
     // Its write is an observable use even if no value has been read yet.
@@ -476,6 +508,7 @@ mutable class TCEnv private {
           tenv.preserveCopyProvenance(this.subst, source, target),
         ),
       runtimeWrite,
+      invalidation,
     );
     this.scope.preserveAssignedCopyProvenance(tenv, this.subst, name, ty)
   }
@@ -897,15 +930,23 @@ mutable class TCResultsAcc private {
     messages: Array<(PosRange, String)>,
     stErr: STErrorOnTType,
     code: ErrorCode,
+    trailingMessages: Array<(PosRange, String)> = Array[],
   ): void {
     this.errorHandling match {
     | EHKeepGoing() ->
       this.errors.push(
-        SubtypingError(subst.saveAll(), tenv, messages, stErr, code),
+        SubtypingError(
+          subst.saveAll(),
+          tenv,
+          messages,
+          stErr,
+          code,
+          trailingMessages,
+        ),
       )
     | EHBacktrace()
     | EHDefault() ->
-      subtypingError(subst, tenv, messages, stErr, code)
+      subtypingError(subst, tenv, messages, stErr, code, trailingMessages)
     }
   }
 

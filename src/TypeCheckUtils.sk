@@ -70,6 +70,29 @@ extension class TypeChecker {
     }
   }
 
+  fun exprInvalidationNotes(
+    tcenv: mutable TCEnv,
+    e: Expr,
+  ): Array<(PosRange, String)> {
+    this.exprRootVar(e).flatMap(name ->
+      tcenv.scope.invalidationNote(name)
+    ) match {
+    | Some(note) -> Array[note]
+    | None() -> Array[]
+    }
+  }
+
+  private fun exprRootVar(e: Expr): ?Name {
+    e.value match {
+    | Var(n) -> Some(n)
+    | Dot(_, recv, _)
+    | Get(recv, _)
+    | PostOp(POExcl(), recv) ->
+      this.exprRootVar(recv)
+    | _ -> None()
+    }
+  }
+
   fun checkSubType(
     tcenv: mutable TCEnv,
     pos: PosRange,
@@ -77,11 +100,19 @@ extension class TypeChecker {
     ty1: TType,
     ty2: TType,
     code: ErrorCode,
+    trailingMessages: Array<(PosRange, String)> = Array[],
   ): void {
     TType::isSub(tcenv.subst, this, ty1, ty2) match {
     | STOk() -> void
     | err @ STErrorOnTType _ ->
-      tcenv.subtypingError(tcenv.subst, this, Array[(pos, msg)], err, code)
+      tcenv.subtypingError(
+        tcenv.subst,
+        this,
+        Array[(pos, msg)],
+        err,
+        code,
+        trailingMessages,
+      )
     }
   }
 

@@ -8,13 +8,29 @@ module SKJS;
 mutable class CaptureWrites{
   mutable names: SortedSet<String> = SortedSet[],
   mutable unknown: Bool = false,
+  mutable unknownPos: ?PosRange = None(),
   mutable captures: SortedSet<String> = SortedSet[],
   mutable unknownCaptures: Bool = false,
   mutable depth: Int = 0,
   trackReads: Bool = false,
   reads: mutable Vector<Expr> = mutable Vector[],
   mutable hasCallEffects: Bool = false,
+  mutable callEffectPos: ?PosRange = None(),
 } {
+  private mutable fun markCallEffect(pos: PosRange): void {
+    this.!hasCallEffects = true;
+    if (this.callEffectPos.isNone()) {
+      this.!callEffectPos = Some(pos)
+    }
+  }
+
+  private mutable fun markUnknown(pos: PosRange): void {
+    this.!unknown = true;
+    if (this.unknownPos.isNone()) {
+      this.!unknownPos = Some(pos)
+    }
+  }
+
   readonly fun result(): ?SortedSet<String> {
     if (this.unknown) None() else Some(this.names)
   }
@@ -23,17 +39,18 @@ mutable class CaptureWrites{
     if (this.unknownCaptures) None() else Some(this.captures)
   }
 
-  mutable fun target(e: Expr): void {
+  mutable fun target(e: Expr, writePos: ?PosRange = None()): void {
     e.value match {
     | Var(n) -> this.!names = this.names.set(n.value)
     | EArray(elements) ->
-      this.!hasCallEffects = true;
+      pos = writePos.default(e.pos);
+      this.markCallEffect(pos);
       // Preserve the existing unknown-target summary, but retain the binding
       // names too for consumers distinguishing rebinding from property writes.
-      this.!unknown = true;
-      elements.each(element -> this.target(element))
-    | Spread(inner) -> this.target(inner)
-    | _ -> this.!unknown = true
+      this.markUnknown(pos);
+      elements.each(element -> this.target(element, writePos))
+    | Spread(inner) -> this.target(inner, writePos)
+    | _ -> this.markUnknown(writePos.default(e.pos))
     }
   }
 
@@ -51,7 +68,7 @@ mutable class CaptureWrites{
     p.value match {
     | PVar _ -> void
     | PArray(elements, _) ->
-      this.!hasCallEffects = true;
+      this.markCallEffect(p.pos);
       elements.each(element ->
         element.each(item -> {
           item.i1.each(e -> this.expr(e));
@@ -94,11 +111,11 @@ mutable class CaptureWrites{
       this.stmts(yes);
       no.each(ss -> this.stmts(ss))
     | ForInOf(kind, init, e, body) ->
-      if (kind is ForOf()) this.!hasCallEffects = true;
+      if (kind is ForOf()) this.markCallEffect(s.pos);
       init.value match {
       | StmtExpr(target) -> this.target(target)
       | Bind _ -> void
-      | _ -> this.!unknown = true
+      | _ -> this.markUnknown(init.pos)
       };
       this.stmt(init);
       this.expr(e);
@@ -114,7 +131,7 @@ mutable class CaptureWrites{
     | Bind(kind, bindings) ->
       // A var initializer may assign a function-scoped binding repeatedly.
       if (kind is BKVar()) {
-        this.!unknown = true
+        this.markUnknown(s.pos)
       };
       for (b in bindings) {
         this.pattern(b.pat);
@@ -161,7 +178,7 @@ mutable class CaptureWrites{
         this.!captures = this.captures.set(n.value)
       }
     | Spread(x) ->
-      this.!hasCallEffects = true;
+      this.markCallEffect(e.pos);
       this.expr(x)
     | TypeOf(x)
     | VoidOp(x)
@@ -171,7 +188,7 @@ mutable class CaptureWrites{
     | Async(x) ->
       this.expr(x)
     | Await(x) ->
-      this.!hasCallEffects = true;
+      this.markCallEffect(e.pos);
       this.expr(x)
     | Dot(_, x, _) -> this.expr(x)
     | Get(x, y)
@@ -180,12 +197,12 @@ mutable class CaptureWrites{
       this.expr(y)
     | InstanceOf(x, y) ->
       // Membership can invoke an inherited/custom Symbol.hasInstance hook.
-      this.!hasCallEffects = true;
+      this.markCallEffect(e.pos);
       this.expr(x);
       this.expr(y)
     | New(x, _, args)
     | Call(x, _, args) ->
-      this.!hasCallEffects = true;
+      this.markCallEffect(e.pos);
       // A callee lookup is not the observation a returned type guard tests.
       // Capture/write summaries still traverse it; read-footprint scans use
       // the arguments whose observed values can justify narrowing.
@@ -201,7 +218,7 @@ mutable class CaptureWrites{
       this.expr(x)
     | Binop(op, x, y) ->
       if (op is BOAssignment() || op is BOOpAssignment _) {
-        this.target(x)
+        this.target(x, Some(e.pos))
       };
       this.expr(x);
       this.expr(y)
@@ -218,7 +235,7 @@ mutable class CaptureWrites{
         // Method bodies may live behind incremental references. Decline the
         // optimization here; ordinary capture checking remains available.
         | FDMethod _ ->
-          this.!unknown = true;
+          this.markUnknown(e.pos);
           this.!unknownCaptures = true
         }
       }

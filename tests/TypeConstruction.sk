@@ -368,7 +368,7 @@ fun testLiteralConstructionRejectsUnprovedElement(): void {
   );
   SKTest.expectEq(
     error match {
-    | Some(SKJS.SubtypingError(_, _, _, stErr, _)) ->
+    | Some(SKJS.SubtypingError(_, _, _, stErr, _, _)) ->
       stErr.ty1 == num && stErr.ty2 == str
     | _ -> false
     },
@@ -477,7 +477,7 @@ fun testCallPlanRetainsEarlierObligations(): void {
   SKTest.expectEq(accepted, false);
   SKTest.expectEq(
     error match {
-    | Some(SKJS.SubtypingError(_, _, _, stErr, _)) ->
+    | Some(SKJS.SubtypingError(_, _, _, stErr, _, _)) ->
       stErr.ty1 == original && stErr.ty2 == num
     | _ -> false
     },

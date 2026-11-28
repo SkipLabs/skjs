@@ -208,6 +208,7 @@ class SubtypingError(
   messages: Array<(PosRange, String)>,
   stErr: STErrorOnTType,
   code: ErrorCode,
+  trailingMessages: Array<(PosRange, String)> = Array[],
 ) extends TypingError {
   // The expanded detail lines for this error, at the given detail level.
   //
@@ -311,6 +312,9 @@ class SubtypingError(
     | detail @ STErrorDetail _ ->
       !messages = messages.concat(this.renderDetail(context, detail))
     };
+    if (!this.trailingMessages.isEmpty()) {
+      !messages = messages.concat(this.trailingMessages)
+    };
 
     static::resolveMessages(messages, context, rootMap, newLinesMap, symbolsMap)
   }
@@ -347,8 +351,18 @@ fun subtypingError<T>(
   messages: Array<(PosRange, String)>,
   stErr: STErrorOnTType,
   code: ErrorCode,
+  trailingMessages: Array<(PosRange, String)> = Array[],
 ): T {
-  throw ErrorExn(SubtypingError(subst.saveAll(), tenv, messages, stErr, code))
+  throw ErrorExn(
+    SubtypingError(
+      subst.saveAll(),
+      tenv,
+      messages,
+      stErr,
+      code,
+      trailingMessages,
+    ),
+  )
 }
 
 fun notSupported<T>(pos: PosRange, what: String): T {
