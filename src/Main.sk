@@ -245,7 +245,7 @@ const checkArgs: Array<Cli.Arg> = Array[
     .long("conformance")
     .default(false)
     .about(
-      "Conformance mode: relax SKJS-specific restrictions so TypeScript files check verbatim (`var` declarations, top-level `let`/`var`). `var` hoisting is not modeled (SkipLabs/skjs#841). Turns on the tsconfig 'conformance' option",
+      "Conformance mode: relax SKJS-specific restrictions so TypeScript files check verbatim (top-level `let`/`var`, non-void top-level statements). Turns on the tsconfig 'conformance' option",
     ),
   Cli.Arg::bool("user-literal-spelling")
     .long("user-literal-spelling")

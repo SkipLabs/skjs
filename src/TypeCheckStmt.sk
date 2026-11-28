@@ -59,28 +59,18 @@ extension class TypeChecker {
       StmtTermination::exprOpt(eOpt).then(StmtTermination::return_)
 
     | Bind(bkind, bindings) ->
-      if (bkind is BKVar() && !this.conformance) {
-        // `var` stays an error rather than a warning: unlike `let`/`const` it is
-        // function-scoped and hoisted, which SKJS's block-scoped narrow-on-write
-        // typing does not yet model. Supporting it soundly is tracked in
-        // SkipLabs/skjs#841. In conformance mode it is accepted and checked
-        // like `let` (block-scoped, mutable) so TypeScript files can be
-        // checked verbatim.
-        tcenv.error(
-          Array[(st.pos, "Unexpected 'var'; use 'let' or 'const' instead")],
-          ESLintCode("no-var"),
-        )
-      };
-
-      // Every name in the declaration shadows outer names before any
-      // initializer runs. Initialize the reserved bindings in source order.
-      for (binding in bindings) {
-        this.reserveBindingNames(
-          tcenv,
-          binding.pat,
-          TType::top(binding.pat.pos),
-          !(bkind is BKConst()),
-        )
+      // Lexical declarations (`let`/`const`) shadow outer names before any
+      // initializer runs. `var` declarations are hoisted to the enclosing
+      // function body scope instead.
+      if (!(bkind is BKVar())) {
+        for (binding in bindings) {
+          this.reserveBindingNames(
+            tcenv,
+            binding.pat,
+            TType::top(binding.pat.pos),
+            !(bkind is BKConst()),
+          )
+        }
       };
       for (binding in bindings) {
         (ty, isInitialized) = this.bindType(
@@ -115,6 +105,7 @@ extension class TypeChecker {
           isLocalObject,
           false,
           binding.value.map(e -> this.stableAliasExprType(tcenv, e, ty)),
+          binding.value.isSome(),
         );
         if (binding.type.isNone()) {
           (binding.pat.value, binding.value) match {
@@ -222,34 +213,35 @@ extension class TypeChecker {
     | Block(stmts) ->
       // A bare block is its own lexical scope, like any other block: names
       // declared in it shadow outer names inside it and are not visible
-      // after it. Writes it makes to outer bindings still reach the code
-      // after, via the pop merge below.
+      // after it. Because a bare block always executes unconditionally, its
+      // writes and definite assignments replace the enclosing state on exit.
       (blockScope, term) = this.block(tcenv, stmts);
-      if (term.mayFallthrough) {
-        tcenv.popScope(this, blockScope)
-      } else {
-        tcenv.popScopeReplace(blockScope)
-      };
+      tcenv.popScopeReplace(blockScope);
       term
     | ForInOf(kind, initStmt, iterable, block) ->
       scopeCopy = tcenv.scope;
       initScope = tcenv.mcreateSubScope{isLoop => false};
       tcenv.!scope = initScope;
 
-      // The loop's lexical bindings shadow outer names even while its
-      // iterable is evaluated. Binding each iteration then initializes them.
-      initStmt.value match {
-      | Bind(bindingKind, bindings) ->
-        for (binding in bindings) {
-          this.reserveBindingNames(
-            tcenv,
-            binding.pat,
-            TType::top(binding.pat.pos),
-            !(bindingKind is BKConst()),
-          )
+      isVarLoopInit = initStmt.value is Bind(BKVar(), _);
+      // Lexical loop bindings (`let`/`const`) shadow outer names even while
+      // the iterable is evaluated. `var` bindings are hoisted to the function
+      // scope and written per iteration inside `loopScope` so a 0-iteration
+      // loop does not mark an unassigned `var` as definitely initialized.
+      if (!isVarLoopInit) {
+        initStmt.value match {
+        | Bind(bindingKind, bindings) ->
+          for (binding in bindings) {
+            this.reserveBindingNames(
+              tcenv,
+              binding.pat,
+              TType::top(binding.pat.pos),
+              !(bindingKind is BKConst()),
+            )
+          }
+        | _ ->
+          void // Invalid loop targets are diagnosed by bindLoopVar.
         }
-      | _ ->
-        void // Invalid loop targets are diagnosed by bindLoopVar.
       };
 
       iterableType = this.expr(tcenv, iterable, true);
@@ -261,7 +253,9 @@ extension class TypeChecker {
         this.getValueType(tcenv, iterable.pos, iterableType, "for-of loop")
       };
 
-      this.bindLoopVar(tcenv, initStmt, ty);
+      if (!isVarLoopInit) {
+        this.bindLoopVar(tcenv, initStmt, ty)
+      };
 
       // The variable position must be a plain target, so that binding it per
       // iteration cannot itself divert control. Reported here, once — the
@@ -304,12 +298,18 @@ extension class TypeChecker {
       // edges into its exit. With no condition or increment to run on the way
       // out, break and continue edges join at the same point.
       writes = mutable CaptureWrites{};
+      if (isVarLoopInit) {
+        writes.stmt(initStmt)
+      };
       writes.stmts(block);
       tcenv.beginLoopWrites(
         loopScope.widenLoopBindings(writes.result(), writes.hasCallEffects),
       );
       if (writes.result().isNone() || writes.hasCallEffects) {
         tcenv.forgetLoopObjectRefinements(this, loopScope)
+      };
+      if (isVarLoopInit) {
+        this.bindLoopVar(tcenv, initStmt, ty)
       };
       ((loopBody, bodyTerm), catcher) = tcenv.withJumpCatcher(true, () ->
         this.block(tcenv, block)
@@ -398,12 +398,11 @@ extension class TypeChecker {
       // any prefix, so the catch and finally entries below union the log in
       // (SkipLabs/skjs#963). Each block gets its own log; what escapes to any
       // enclosing try is decided at the end, gated on who can actually throw.
+      tryScope = tcenv.mcreateSubScope{isLoop => false};
       (tryTerm, tryLog) = tcenv.withTryWriteLog(() -> {
-        tryScope = tcenv.mcreateSubScope{isLoop => false};
         tcenv.!scope = tryScope;
         term = this.blockStatements(tcenv, tryBlock);
         tcenv.!scope = scopeCopy;
-        tcenv.popScope(this, tryScope);
         term
       });
 
@@ -439,9 +438,14 @@ extension class TypeChecker {
           tcenv.!scope = scopeCopy;
           term
         });
-        if (catchTerm.mayFallthrough) {
-          tcenv.popScope(this, catchScope)
-        } else {
+        // Merge the paths that can fall through out of try/catch into
+        // `scopeCopy`. If both try and catch may fall through, merge them so
+        // definite assignments made by BOTH paths survive; if only one falls
+        // through, its state replaces `scopeCopy`.
+        (tryTerm.mayFallthrough, catchTerm.mayFallthrough) match {
+        | (true, true) -> tcenv.mergeScope(this, tryScope, catchScope)
+        | (true, false) ->
+          tcenv.popScopeReplace(tryScope);
           // The catch never completes normally, so its state is not part of
           // the flow after the construct — merging it would put states there
           // that only exceptions ever saw. It still leaves along its own
@@ -449,11 +453,17 @@ extension class TypeChecker {
           // the seeds in scope), and a return or throw unwinds through every
           // enclosing finally — the enclosing log carries it there.
           tcenv.propagateScopeToTryLog(this, catchScope)
+        | (false, true) -> tcenv.popScopeReplace(catchScope)
+        | (false, false) -> tcenv.propagateScopeToTryLog(this, catchScope)
         };
         // TODO: warning if tryTerm.mayThrow is false
         // Remove mayThrow from try and combine with catch
         (tryTerm.noThrow() / catchTerm, Some(catchLog))
-      | None() -> (tryTerm, None())
+      | None() ->
+        if (tryTerm.mayFallthrough) {
+          tcenv.popScopeReplace(tryScope)
+        };
+        (tryTerm, None())
       };
 
       (finalTerm, finallyLogOpt, finallyMayThrow) = finallyBlock match {
@@ -469,8 +479,12 @@ extension class TypeChecker {
           tcenv.!scope = finallyScope;
           term = this.blockStatements(tcenv, finallyStmts);
           tcenv.!scope = scopeCopy;
-          tcenv.popScope(this, finallyScope);
           tcenv.foldFinallyIntoJumpEdges(this, edgeMarks, finallyScope);
+          if (term.mayFallthrough) {
+            tcenv.popScopeReplace(finallyScope)
+          } else {
+            tcenv.popScope(this, finallyScope)
+          };
           term
         });
         // TODO: warning if afterCatchTerm always loops or terminates normally

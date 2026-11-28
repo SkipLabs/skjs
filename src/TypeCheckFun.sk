@@ -459,7 +459,7 @@ extension class TypeChecker {
       | None() -> void
       | Some(retType) ->
         checkBody = () -> {
-          (_, term) = this.block(tcenv, body);
+          (_, term) = this.block(tcenv, body, None(), None(), Array[], true);
           if (term.mayFallthrough) {
             if (retType.expand(tcenv.subst, this, None()).isBottom()) {
               // tsc's TS2355: a `never`-annotated body that can complete

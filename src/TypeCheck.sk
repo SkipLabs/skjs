@@ -30,11 +30,10 @@ class TypeChecker{
   // the narrowing of the clause fallen into does not depend on it.
   noFallthroughCasesInSwitch: Bool = true,
   // Conformance mode (CLI `--conformance` / tsconfig `conformance`): relax
-  // SKJS-specific restrictions so TypeScript files check verbatim — `var`
-  // (read in `Bind`, TypeCheckStmt.sk, and in top-level `Var` resolution,
-  // TypeCheckExpr.sk) and top-level `let`/`var` (TypeCheckDef.sk). See
-  // TsCompilerOptions.conformance; SkipLabs/skjs#841 tracks real `var`
-  // semantics.
+  // SKJS-specific restrictions so TypeScript files check verbatim — top-level
+  // `let`/`var` (TypeCheckDef.sk and top-level `Var` resolution in
+  // TypeCheckExpr.sk) and non-void top-level expression statements. See
+  // TsCompilerOptions.conformance.
   conformance: Bool = false,
   // Positions of top-level let/var initializers currently being resolved in
   // conformance mode (toplevelVarInitType, TypeCheckExpr.sk); guards circular

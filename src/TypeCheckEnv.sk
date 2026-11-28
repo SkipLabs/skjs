@@ -212,6 +212,10 @@ mutable class TCEnv private {
   // First-use contents contracts survive child scopes and callback checking.
   // Their symbolic field types remain dependencies of the live substitution.
   localObjectContracts: mutable Map<PosRange, TType> = mutable Map[],
+  // Established contracts for unannotated hoisted `var` bindings, keyed by the
+  // hoisted declaration's PosRange so sibling branches (e.g. `if`/`else`) and
+  // post-merge writes see the contract established by an earlier `var` site.
+  hoistedVarContracts: mutable Map<PosRange, (TType, Bool)> = mutable Map[],
   mutable forInContext: ?ForInContext = None(),
   // Stack of enclosing loops/switches, innermost last; see `JumpCatcher`.
   mutable jumpCatchers: mutable Vector<mutable JumpCatcher> = mutable Vector[],
@@ -461,6 +465,11 @@ mutable class TCEnv private {
     this.scope.bindingPos(name)
       .flatMap(p -> this.localObjectContracts.maybeGet(p))
       .each(contract -> this.scope.establishObjectContract(name, contract));
+    this.scope.bindingPos(name)
+      .flatMap(p -> this.hoistedVarContracts.maybeGet(p))
+      .each(contract ->
+        this.scope.refineVarContract(name, contract.i0, contract.i1)
+      );
     this.recordTryWrite(tenv, name, ty);
     for (bounds in this.loopWriteBounds) {
       bounds.maybeGet(name.value).each(previous ->
