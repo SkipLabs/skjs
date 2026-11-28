@@ -9,6 +9,10 @@ check:
 build:
 	skargo build
 
+.PHONY: build-release
+build-release:
+	skargo build --release --bin skjs
+
 JUNITXML_FLAGS=$(if $(JUNITXML),--junitxml $(JUNITXML))
 # Passed straight to the prebuilt test binary on a build-cache hit (skargo
 # test would forward it to the binary as --junitxml=...).
@@ -28,9 +32,16 @@ else
 endif
 	parallel --halt now,fail=1 ::: \
 		./tests/test_incremental.sh \
+		./tests/test_incremental_perf.sh \
 		./tests/test_affected_files.sh \
 		./tests/test_stdin.sh \
 		./tests/test_config_change.sh
+
+# Run the incremental performance regression test against the release binary
+# (builds target/host/release/skjs if missing).
+.PHONY: test-perf
+test-perf: build-release
+	SKJS=./target/host/release/skjs ./tests/test_incremental_perf.sh
 
 # Run only the CFG expectation tests (UPDATE_EXPECT=1 to regenerate expectations)
 .PHONY: test-cfg
@@ -83,6 +94,14 @@ endif
 .PHONY: test-in-docker
 test-in-docker:
 	$(DOCKER_RUN) make test
+
+.PHONY: test-perf-in-docker
+test-perf-in-docker:
+	$(DOCKER_RUN) make test-perf
+
+.PHONY: build-release-in-docker
+build-release-in-docker:
+	$(DOCKER_RUN) make build-release
 
 .PHONY: test-cfg-in-docker
 test-cfg-in-docker:

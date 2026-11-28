@@ -10,7 +10,7 @@
 | `tests/ts-conformance/` | Verbatim TypeScript conformance suite (see below) | `testTypeScriptConformance` / `testNotSupportedTypeScriptConformance` |
 | `tests/{cfg,deadcode,constprop,callgraph,callgraph-unsupported}/` | Expectation tests for CFG, dead code, constant prop, call graph | `testCFG`, `testDeadCode`, `testConstantProp`, `testCallGraph*` |
 | `tests/*.sk` | Unit tests for lexer, parser, module resolver, type ops, etc. | `skargo test` |
-| `tests/test_*.sh` | End-to-end shell tests (incremental, affected files, stdin, config) | `make test` |
+| `tests/test_*.sh` | End-to-end shell tests (incremental, incremental perf budget, affected files, stdin, config) | `make test` |
 
 `testNoLostTest` enforces that no `.ts` or `.js` file sits uncovered under `tests/` or `examples/`.
 
@@ -18,6 +18,7 @@
 
 ```bash
 make test-in-docker                     # Full suite (every commit must pass)
+make test-perf-in-docker                # Incremental latency budget against release binary
 make test-cfg-in-docker                 # CFG expectation tests only
 make test-deadcode-in-docker            # Dead-code expectation tests only
 make check-file-in-docker FILE=tmp.ts BIN=./target/host/dev/skjs  # Single-file check
