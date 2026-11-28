@@ -253,6 +253,12 @@ const checkArgs: Array<Cli.Arg> = Array[
     .about(
       "Print the user-written spelling of number/bigint literals in diagnostics (e.g. '0xf', not the canonical '15'). Turns on the tsconfig 'userLiteralSpelling' option",
     ),
+  Cli.Arg::bool("exempt-constant-rechecks")
+    .long("exempt-constant-rechecks")
+    .default(false)
+    .about(
+      "Exempt narrowed-discriminant re-checks against hoisted literal-initialized constants and enum members from the always-true comparison warning (SKJS2074). Turns on the tsconfig 'exemptConstantRechecks' option",
+    ),
   Cli.Arg::string("emit-cfg")
     .long("emit-cfg")
     .value_name("FORMAT")
@@ -465,10 +471,18 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   };
   // A CLI `--user-literal-spelling` flag turns the tsconfig
   // `userLiteralSpelling` option on; it can only enable it, never disable it.
-  checkerCompilerOptionsFinal = if (args.getBool("user-literal-spelling")) {
+  userLiteralOptions = if (args.getBool("user-literal-spelling")) {
     checkerCompilerOptions with {userLiteralSpelling => true}
   } else {
     checkerCompilerOptions
+  };
+  // A CLI `--exempt-constant-rechecks` flag turns the tsconfig
+  // `exemptConstantRechecks` option on; it can only enable it, never disable
+  // it.
+  checkerCompilerOptionsFinal = if (args.getBool("exempt-constant-rechecks")) {
+    userLiteralOptions with {exemptConstantRechecks => true}
+  } else {
+    userLiteralOptions
   };
 
   errorFormat = ErrorFormat::ofString(args.getString("error-format")) match {

@@ -104,6 +104,17 @@ extension class TypeChecker {
           !isLocalObject &&
           !ty.isFieldFree() &&
           ty.getSingleVar().isNone();
+        isLiteralConst =
+          bkind is BKConst() &&
+          binding.pat.value is PVar _ &&
+          binding.value
+            .map(e ->
+              e.value match {
+              | AsConst(sub) -> sub.isLiteral()
+              | _ -> e.isLiteral()
+              }
+            )
+            .default(false);
         tcenv.!exprTypes[(binding.pat.pos, false, true)] = ty;
         this.bind(
           tcenv,
@@ -115,6 +126,7 @@ extension class TypeChecker {
           isLocalObject,
           false,
           binding.value.map(e -> this.stableAliasExprType(tcenv, e, ty)),
+          isLiteralConst,
         );
         if (binding.type.isNone()) {
           (binding.pat.value, binding.value) match {

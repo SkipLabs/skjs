@@ -75,6 +75,54 @@ expect_contains "dataRunSeesNewTruthiness" "$BOOL_MSG" "$out"
 out=$(run_check --data "$CACHE")
 expect_contains "dataRunSeesRestoredTruthiness" "$SAFE_MSG" "$out"
 
+# Test exemptConstantRechecks flag across --data cache runs.
+cat > "$TMPDIR/const_recheck.ts" <<'EOF'
+const B = "b";
+function f(x: "a" | "b"): string {
+  if (x === "a") {
+    return "first";
+  } else if (x === B) {
+    return "second";
+  }
+  return "";
+}
+EOF
+
+RECHECK_MSG="always true because the operands always hold the same single value"
+RECHECK_CACHE="$TMPDIR/recheck-cache"
+
+run_recheck() {
+  {
+    "$SKJS" check --keep-going --import-stubs "$STUBS" "$@" \
+      "$TMPDIR/const_recheck.ts" >/dev/null
+  } 2>&1 || true
+}
+
+expect_not_contains() {
+  local test_name="$1"
+  local needle="$2"
+  local output="$3"
+  if echo "$output" | grep -qF "$needle"; then
+    echo "$FAIL ConfigChange $test_name"
+    echo "  expected diagnostics NOT to contain: $needle"
+    echo "  got:"
+    echo "    ${output//$'\n'/$'\n'    }"
+    failures=$((failures + 1))
+  else
+    echo "$OK ConfigChange $test_name"
+    successes=$((successes + 1))
+  fi
+}
+
+out=$(run_recheck --init "$RECHECK_CACHE")
+expect_contains "initDefaultConstantRecheck" "$RECHECK_MSG" "$out"
+
+out=$(run_recheck --data "$RECHECK_CACHE" --exempt-constant-rechecks)
+expect_not_contains "dataRunSeesExemptConstantRechecks" "$RECHECK_MSG" "$out"
+
+out=$(run_recheck --data "$RECHECK_CACHE")
+expect_contains "dataRunSeesRestoredConstantRecheck" "$RECHECK_MSG" "$out"
+
 total=$((successes + failures))
 echo "Failures: $failures, successes: $successes (total: $total)"
 if [ "$failures" -gt 0 ]; then

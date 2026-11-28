@@ -298,14 +298,144 @@ function negativeLiteralRecheck(x: 1 | -1): string {
   return "";
 }
 
-// FIXME: the literal exemption is syntactic, so re-checking against a
-// hoisted constant still warns where the inline literal would be exempt
+// Default behavior (`exemptConstantRechecks` off): the literal exemption is
+// syntactic, so re-checking against a hoisted constant or enum member warns.
+// The opt-in flag-on behavior (`exemptConstantRechecks: true`) is tested in
+// tests/projects/exempt-constant-rechecks/.
 const B = "b";
 function namedConstantRecheck(x: "a" | "b"): string {
   if (x === "a") {
     return "first";
     // @skjs-expect-warning This comparison is always true because the operands always hold the same single value
   } else if (x === B) {
+    return "second";
+  }
+  return "";
+}
+
+// Re-checking a narrowed discriminant against a local literal-initialized const
+function localNamedConstantRecheck(x: "a" | "b"): string {
+  const b = "b";
+  if (x === "a") {
+    return "first";
+    // @skjs-expect-warning This comparison is always true because the operands always hold the same single value
+  } else if (x === b) {
+    return "second";
+  }
+  return "";
+}
+
+// Re-checking a narrowed discriminant field against a hoisted constant
+type TaggedAB = { kind: "a"; n: number } | { kind: "b"; s: string };
+function fieldNamedConstantRecheck(x: TaggedAB): string {
+  if (x.kind === "a") {
+    return "first";
+    // @skjs-expect-warning This comparison is always true because the operands always hold the same single value
+  } else if (x.kind === B) {
+    return "second";
+  }
+  return "";
+}
+
+// Re-checking a narrowed enum discriminant against an enum member
+enum Color {
+  Red = "red",
+  Blue = "blue",
+}
+
+function enumMemberRecheck(x: Color): string {
+  if (x === Color.Red) {
+    return "red";
+    // @skjs-expect-warning This comparison is always true because the operands always hold the same single value
+  } else if (x === Color.Blue) {
+    return "blue";
+  }
+  return "";
+}
+
+// Re-checking against a bracket-indexed enum member (`Color["Blue"]`)
+function enumBracketMemberRecheck(x: Color): string {
+  if (x === Color.Red) {
+    return "red";
+    // @skjs-expect-warning This comparison is always true because the operands always hold the same single value
+  } else if (x === Color["Blue"]) {
+    return "blue";
+  }
+  return "";
+}
+
+// Symmetric operand order: constant on the left, narrowed discriminant on the right
+function namedConstantOnLeftRecheck(x: "a" | "b"): string {
+  if (x === "a") {
+    return "first";
+    // @skjs-expect-warning This comparison is always true because the operands always hold the same single value
+  } else if (B === x) {
+    return "second";
+  }
+  return "";
+}
+
+// Comparing two literal-initialized constants is still always true and must warn
+const A1 = "a";
+const A2 = "a";
+function twoTopLevelConstants(): boolean {
+  // @skjs-expect-warning This comparison is always true because the operands always hold the same single value
+  return A1 === A2;
+}
+
+function twoLocalConstants(): boolean {
+  const x = 1;
+  const y = 1;
+  // @skjs-expect-warning This comparison is always true because the operands always hold the same single value
+  return x === y;
+}
+
+function twoEnumMembersSameValue(): boolean {
+  // @skjs-expect-warning This comparison is always true because the operands always hold the same single value
+  return Color.Red === Color.Red;
+}
+
+// Comparing a non-narrowed singleton parameter against a hoisted constant or
+// enum member must still warn (unlike a narrowed discriminant re-check)
+function singletonParamVsNamedConstant(x: "b"): boolean {
+  // @skjs-expect-warning This comparison is always true because the operands always hold the same single value
+  return x === B;
+}
+
+function singletonParamVsEnumMember(x: Color.Blue): boolean {
+  // @skjs-expect-warning This comparison is always true because the operands always hold the same single value
+  return x === Color.Blue;
+}
+
+// Comparing a constant against an inline literal still exempts the literal
+// (not a bug if someone writes a literal comparison; keep explicit coverage)
+function topLevelConstVsLiteral(): boolean {
+  return B === "b";
+}
+
+// Comparing a mutable `let` initialized to a literal is NOT a constant alias
+function narrowedVsMutableLet(x: "a" | "b"): string {
+  let b: "b" = "b" as const;
+  if (x === "a") {
+    return "first";
+    // @skjs-expect-warning This comparison is always true because the operands always hold the same single value
+  } else if (x === b) {
+    return "second";
+  }
+  return "";
+}
+
+// Comparing a const initialized from a non-literal expression (even if typed
+// as a singleton) is NOT a literal-constant alias
+function getB(): "b" {
+  return "b";
+}
+function narrowedVsNonLiteralConst(x: "a" | "b"): string {
+  const b = getB();
+  if (x === "a") {
+    return "first";
+    // @skjs-expect-warning This comparison is always true because the operands always hold the same single value
+  } else if (x === b) {
     return "second";
   }
   return "";

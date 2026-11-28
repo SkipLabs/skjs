@@ -789,6 +789,7 @@ extension class TypeChecker {
     isLocalObject: Bool,
     isParameter: Bool = false,
     stableType: ?TType = None(),
+    isLiteralConst: Bool = false,
   ): void {
     pos = pat.pos;
     pat.value match {
@@ -804,6 +805,7 @@ extension class TypeChecker {
           type,
           hasDeclaredContract,
           isInitialized,
+          isLiteralConst,
         );
         tcenv.!pendingBindings = tcenv.pendingBindings.remove(local.pos)
       } else {
@@ -814,6 +816,8 @@ extension class TypeChecker {
           hasDeclaredContract,
           isInitialized,
           !(kind is BKConst()),
+          SortedSet[],
+          isLiteralConst,
         )
       }
     | PArray(arrPat, rest) ->
@@ -2363,12 +2367,18 @@ extension class TypeChecker {
             SKJSCode(2040),
           )
         } else if (
-          // Comparing against a literal is exempt: re-checking a narrowed
-          // discriminant (e.g. `else if (color.kind === "blue")` on the
-          // last variant of a union) is idiomatic, not a bug.
+          // Comparing against a literal is exempt. When
+          // `exemptConstantRechecks` is enabled, re-checking a narrowed
+          // discriminant against a hoisted literal-initialized `const` or enum
+          // member (`else if (x === B)` / `x === Color.Blue`) is exempt the
+          // same way; unnarrowed singletons and constant-vs-constant
+          // comparisons still warn.
           !e1.isLiteral() &&
           !e2.isLiteral() &&
-          this.isSameSingletonValue(stypes1, stypes2)
+          this.isSameSingletonValue(stypes1, stypes2) &&
+          (!this.exemptConstantRechecks ||
+            (!this.isNarrowedConstantRecheck(tcenv, subst, e1, e2) &&
+              !this.isNarrowedConstantRecheck(tcenv, subst, e2, e1)))
         ) {
           alwaysResult = op_ match {
           | BOStrictEquality() -> "true"
@@ -2387,6 +2397,116 @@ extension class TypeChecker {
       | _ -> void
       }
     | _ -> void
+    }
+  }
+
+  // Whether `target` is a binding (or field on a binding) whose declared type
+  // is wider than a single value and `constant` is a literal-initialized
+  // `const` or enum member — the hoisted-constant counterpart of re-checking a
+  // narrowed discriminant against an inline literal.
+  private fun isNarrowedConstantRecheck(
+    tcenv: mutable TCEnv,
+    subst: mutable Subst,
+    target: Expr,
+    constant: Expr,
+  ): Bool {
+    this.isNamedConstantOperand(tcenv, constant) &&
+      this.isNarrowedOperand(tcenv, subst, target)
+  }
+
+  // Whether `e` names a literal-initialized `const` binding (local or
+  // top-level) or an enum member (`E.A`, `E["A"]`).
+  private fun isNamedConstantOperand(tcenv: mutable TCEnv, e: Expr): Bool {
+    e.value match {
+    | Var(name) ->
+      if (tcenv.scope.maybeGet(name) is Some _) {
+        tcenv.scope.isLiteralConst(name)
+      } else {
+        this.defMap.getAll(tcenv, name).any(def ->
+          def match {
+          | FDVar(VDKConst(), _, _, Some(init)) ->
+            init.value match {
+            | AsConst(sub) -> sub.isLiteral()
+            | _ -> init.isLiteral()
+            }
+          | _ -> false
+          }
+        )
+      }
+    | Dot(NormalDot(), Expr(_, Var(baseName)), _) ->
+      tcenv.scope.maybeGet(baseName) is None() &&
+        this.defMap.getAll(tcenv, baseName).any(def -> def is Enum _)
+    | Get(
+      Expr(_, Var(baseName)),
+      key,
+    ) if (this.directLiteralSType(key) is Some _) ->
+      tcenv.scope.maybeGet(baseName) is None() &&
+        this.defMap.getAll(tcenv, baseName).any(def -> def is Enum _)
+    | _ -> false
+    }
+  }
+
+  // Whether `e` is a local binding (or direct field access on one) whose
+  // declared type can hold more than one value, meaning its current singleton
+  // type came from flow narrowing rather than a singleton declaration.
+  private fun isNarrowedOperand(
+    tcenv: mutable TCEnv,
+    subst: mutable Subst,
+    e: Expr,
+  ): Bool {
+    e.value match {
+    | Var(name) ->
+      tcenv.scope.declaredType(name) match {
+      | Some(declTy) ->
+        declTy.getSTypes(subst, this, Covariant()) match {
+        | Some(declStypes) -> !this.isSameSingletonValue(declStypes, declStypes)
+        | None() -> true
+        }
+      | None() -> false
+      }
+    | Dot(NormalDot(), Expr(_, Var(baseName)), Name(_, fieldName)) ->
+      tcenv.scope.declaredType(baseName) match {
+      | Some(declTy) ->
+        declTy.getSTypes(subst, this, Covariant()) match {
+        | Some(declStypes) ->
+          fieldStypes: ?STypes = None();
+          for (sty in declStypes) {
+            sty match {
+            | obj @ TObject _ ->
+              for (tFields in obj.getAllFields()) {
+                tFields.maybeGetType(
+                  subst,
+                  this,
+                  fieldName,
+                  e.pos,
+                  false,
+                ) match {
+                | Some(fieldTy) ->
+                  fieldTy.getSTypes(subst, this, Covariant()) match {
+                  | Some(fst) ->
+                    !fieldStypes = Some(
+                      fieldStypes match {
+                      | None() -> fst
+                      | Some(acc) -> STypes::union(acc, fst)
+                      },
+                    )
+                  | None() -> return true
+                  }
+                | None() -> return true
+                }
+              }
+            | _ -> return true
+            }
+          };
+          fieldStypes match {
+          | Some(fst) -> !this.isSameSingletonValue(fst, fst)
+          | None() -> false
+          }
+        | None() -> true
+        }
+      | None() -> false
+      }
+    | _ -> false
     }
   }
 
