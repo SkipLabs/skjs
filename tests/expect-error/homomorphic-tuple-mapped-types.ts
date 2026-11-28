@@ -4,23 +4,14 @@
 // types.
 ///////////////////////////////////////////////////////////////////////////////
 
-// @skjs-expect-error Indexed access types ('T[K]') are not yet supported by SKJS
 type Mutable<T> = { -readonly [P in keyof T]: T[P] };
-// @skjs-expect-error Indexed access types ('T[K]') are not yet supported by SKJS
 type ReadonlyMapped<T> = { readonly [P in keyof T]: T[P] };
-// @skjs-expect-error Indexed access types ('T[K]') are not yet supported by SKJS
 type PlusReadonlyMapped<T> = { +readonly [P in keyof T]: T[P] };
-// @skjs-expect-error Indexed access types ('T[K]') are not yet supported by SKJS
 type IdentityMapped<T> = { [P in keyof T]: T[P] };
-// @skjs-expect-error Indexed access types ('T[K]') are not yet supported by SKJS
 type BoxAll<T> = { [P in keyof T]: [T[P]] };
-// @skjs-expect-error Indexed access types ('T[K]') are not yet supported by SKJS
 type MutableBoxAll<T> = { -readonly [P in keyof T]: [T[P]] };
-// @skjs-expect-error Indexed access types ('T[K]') are not yet supported by SKJS
 type KeyedAll<T> = { [P in keyof T]: { key: P; val: T[P] } };
-// @skjs-expect-error Indexed access types ('T[K]') are not yet supported by SKJS
 type RequiredMapped<T> = { [P in keyof T]-?: T[P] };
-// @skjs-expect-error Indexed access types ('T[K]') are not yet supported by SKJS
 type OptionalMapped<T> = { [P in keyof T]?: T[P] };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -38,16 +29,19 @@ function mutTupleWorks(): MutTuple {
 
 function mutTupleWrongElem(): void {
   const t: MutTuple = [1, "a"];
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   t[0] = "nope";
 }
 
 // Soundness: readonly tuple is NOT assignable to mutable tuple
 function mutTupleRejectsReadonly(ro: readonly [number, string]): MutTuple {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return ro;
 }
 
 // Soundness: mutable tuple is invariant in its element types (stricter than tsc)
 function mutTupleRejectsNarrowMutable(narrow: [1, "a"]): MutTuple {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return narrow;
 }
 
@@ -62,12 +56,14 @@ function roTupleAcceptsMutable(m: [number, string]): RoTuple {
 }
 
 function roTupleForbidsWrite(t: RoTuple): void {
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   t[0] = 2;
 }
 
 type PlusRoTuple = PlusReadonlyMapped<[number, string]>;
 
 function plusRoTupleForbidsWrite(t: PlusRoTuple): void {
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   t[0] = 2;
 }
 
@@ -78,6 +74,7 @@ function plusRoTupleForbidsWrite(t: PlusRoTuple): void {
 type IdRo = IdentityMapped<readonly [number, string]>;
 
 function idRoForbidsWrite(t: IdRo): void {
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   t[0] = 2;
 }
 
@@ -102,6 +99,7 @@ function boxedRoWorks(): BoxedRo {
 }
 
 function boxedRoForbidsWrite(b: BoxedRo): void {
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   b[0] = [2];
 }
 
@@ -127,6 +125,7 @@ function keyedTupWorks(): KeyedTup {
 }
 
 function keyedTupRejectsWrongIndex(): KeyedTup {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return [
     { key: "1", val: 1 },
     { key: "1", val: "a" },
@@ -143,6 +142,7 @@ function keyedArrWorks(): KeyedArr {
 }
 
 function keyedArrRejectsStringKey(): KeyedArr {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return [{ key: "0", val: "a" }];
 }
 
@@ -160,12 +160,14 @@ function mutArrWorks(): MutArr {
 }
 
 function mutArrRejectsReadonly(ro: readonly number[]): MutArr {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return ro;
 }
 
 type RoArr = ReadonlyMapped<number[]>;
 
 function roArrForbidsWrite(a: RoArr): void {
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   a[0] = 3;
 }
 
@@ -177,6 +179,7 @@ function boxArrWorks(): BoxArr {
 }
 
 function boxArrForbidsWrite(a: BoxArr): void {
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   a[0] = ["c"];
 }
 
@@ -197,6 +200,7 @@ function distTuplesAcceptsBranch2(): DistTuples {
 }
 
 function distTuplesRejectsMixed(): DistTuples {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return [[1], [2]];
 }
 
@@ -206,8 +210,8 @@ function distMixedAcceptsTuple(): DistMixed {
   return [1, "a"];
 }
 
-function distMixedAcceptsArray(): DistMixed {
-  return [true, false, true];
+function distMixedAcceptsArray(a: boolean[]): DistMixed {
+  return a;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -245,7 +249,7 @@ function unfreezePair<A, B>(p: readonly [A, B]): Mutable<readonly [A, B]> {
 
 function useUnfreezePair(): [number, string] {
   const x: readonly [number, string] = [1, "a"];
-  const y = unfreezePair(x);
+  const y = unfreezePair<number, string>(x);
   y[0] = 2;
   return y;
 }
@@ -257,6 +261,7 @@ function useUnfreezePair(): [number, string] {
 type ReqRo = RequiredMapped<readonly [number, string]>;
 
 function reqRoForbidsWrite(t: ReqRo): void {
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   t[0] = 2;
 }
 
@@ -268,7 +273,12 @@ function optArrWorks(): OptArr {
 }
 
 // Optional tuple elements are not yet supported by SKJS
+// @skjs-expect-error Optional tuple elements are not yet supported by SKJS
 type OptTuple = OptionalMapped<readonly [number, string]>;
+
+function forceOptTuple(): OptTuple {
+  return [1, "a"];
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 // 11. Abstract T outside type-definition validation stays rejected
@@ -276,8 +286,9 @@ type OptTuple = OptionalMapped<readonly [number, string]>;
 
 function abstractHomomorphic<T extends readonly unknown[]>(
   x: T,
-  // @skjs-expect-error keyof on an abstract type is not yet supported by SKJS; use a known object or array shape with explicit type parameters
+  // @skjs-expect-error Mapped types with an abstract key type are not yet supported by SKJS
 ): Mutable<T> {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
@@ -288,21 +299,21 @@ function abstractHomomorphic<T extends readonly unknown[]>(
 type RoMap = { readonly [P in "a" | "b"]: number };
 
 function roMapForbidsWrite(m: RoMap): void {
-  // Currently unsoundly accepted because createTFields drops readonly_ for FNIn.
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   m.a = 2;
 }
 
 type PlusRoMap = { +readonly [P in "a" | "b"]: number };
 
 function plusRoMapForbidsWrite(m: PlusRoMap): void {
-  // Currently unsoundly accepted because createTFields drops readonly_ for FNIn.
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   m.a = 2;
 }
 
 type RoStringMap = { readonly [P in string]: number };
 
 function roStringMapForbidsWrite(m: RoStringMap): void {
-  // Currently unsoundly accepted because createTFields drops readonly_ for FNIn.
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   m["x"] = 2;
 }
 
@@ -310,24 +321,26 @@ function roStringMapForbidsWrite(m: RoStringMap): void {
 // 13. Indexed access T[K] with literal keys & circularity
 ///////////////////////////////////////////////////////////////////////////////
 
-// @skjs-expect-error Indexed access types ('T[K]') are not yet supported by SKJS
 type Pair0 = Pair[0];
-// @skjs-expect-error Indexed access types ('T[K]') are not yet supported by SKJS
 type Pair1 = Pair["1"];
-// @skjs-expect-error Indexed access types ('T[K]') are not yet supported by SKJS
 type PairLen = Pair["length"];
-// @skjs-expect-error Indexed access types ('T[K]') are not yet supported by SKJS
 type Pair01 = Pair[0 | 1];
-// @skjs-expect-error Indexed access types ('T[K]') are not yet supported by SKJS
+// @skjs-expect-error Property '2' does not exist on this type
 type PairOOB = Pair[2];
 
+function indexedTupleWorks(flag: boolean): [Pair0, Pair1, PairLen, Pair01] {
+  return [1, "a", 2, flag ? 1 : "a"];
+}
+
 type Obj = { a: number; b?: string };
-// @skjs-expect-error Indexed access types ('T[K]') are not yet supported by SKJS
 type ObjA = Obj["a"];
-// @skjs-expect-error Indexed access types ('T[K]') are not yet supported by SKJS
 type ObjB = Obj["b"];
-// @skjs-expect-error Indexed access types ('T[K]') are not yet supported by SKJS
+// @skjs-expect-error Property 'missing' does not exist on this type
 type ObjMissing = Obj["missing"];
 
-// @skjs-expect-error Indexed access types ('T[K]') are not yet supported by SKJS
+function indexedObjWorks(flag: boolean): [ObjA, ObjB] {
+  return [1, flag ? "x" : undefined];
+}
+
+// @skjs-expect-error Type alias 'CircIdx' circularly references itself
 type CircIdx = CircIdx["a"];
