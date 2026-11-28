@@ -188,15 +188,8 @@ fun testTemplateTypeInParenthesizedTypeLexesCleanly(): void {
     )
   };
   // Line comments inside a template interpolation end at any ECMAScript
-  // LineTerminator (<LF>, <CR>, <LS>, <PS>). Currently scanInterpolation only
-  // stops at <LF>, so <CR>/<LS>/<PS> swallow the closing `}` and throw.
-  for (case in Array[
-    (0x0A, false),
-    (0x0D, true),
-    (0x2028, true),
-    (0x2029, true),
-  ]) {
-    (code, expectedThrew) = case;
+  // LineTerminator (<LF>, <CR>, <LS>, <PS>).
+  for (code in Array[0x0A, 0x0D, 0x2028, 0x2029]) {
     term = Char::fromCode(code).toString();
     content = `type T = (x: ${bt}a$\{// c${term}"hi"}b${bt}) => void;`;
     fileName = SKJS.FPath::create(SKJS.RootId::project, "tmp.ts");
@@ -209,9 +202,8 @@ fun testTemplateTypeInParenthesizedTypeLexesCleanly(): void {
     | SKJS.ErrorExn(_) -> true
     | exn -> throw exn
     };
-    SKTest.expectEq(
+    SKTest.expectFalse(
       threw,
-      expectedThrew,
       `U+${code} ending line comment in template interpolation`,
     )
   }
@@ -521,8 +513,7 @@ fun testNumberThenIdentifier(): void {
     SKTest.expectTrue(threw, `${src}: an identifier may not follow a number`)
   };
   // An escaped IdentifierStart directly after a number (`2\u0061`) is also
-  // forbidden by ECMA-262 sec 12.9.3, but checkNoIdentifierAfterNumber currently
-  // only checks literal characters, so the lexer emits two tokens (`2`, `a`).
+  // forbidden by ECMA-262 sec 12.9.3.
   for (src in Array[
     `function g(): void { const a: void = undefined; const y = 2${bs}u0061; const _ = y; }`,
     `function g(): void { const a: void = undefined; const y = 0x1fn${bs}u0061; const _ = y; }`,
@@ -538,9 +529,9 @@ fun testNumberThenIdentifier(): void {
     | SKJS.ErrorExn(_) -> true
     | exn -> throw exn
     };
-    SKTest.expectFalse(
+    SKTest.expectTrue(
       threw,
-      `${src}: pin current behavior (escaped identifier after number accepted)`,
+      `${src}: an escaped identifier may not follow a number`,
     )
   }
 }
@@ -616,19 +607,17 @@ fun testIdentifierEscapes(): void {
     ),
     // UTF-16 surrogate pair escapes (\uD800\uDC00) are NOT valid in an
     // IdentifierName (ECMA-262 sec 12.7.1; node and tsc reject with TS1127).
-    // Currently accepted because decodeIdentifierEscape delegates to string
-    // literal decoding which combines surrogate pairs.
     (
       `function f(): void { const ${bs}uD800${bs}uDC00 = 1; const _ = ${bs}uD800${bs}uDC00; }`,
-      true,
+      false,
     ),
     (
       `function f(): void { const a${bs}uD800${bs}uDC00 = 1; const _ = a${bs}uD800${bs}uDC00; }`,
-      true,
+      false,
     ),
     (
       `class C { #${bs}uD800${bs}uDC00: number = 1; get(): number { return this.#${bs}uD800${bs}uDC00; } }`,
-      true,
+      false,
     ),
   ];
   for (case in cases) {
