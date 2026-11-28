@@ -284,6 +284,10 @@ class TsCompilerOptions{
   // Whether a clause that falls into another is an error (TS7029). SKJS
   // defaults it on, where tsc defaults it off, and honours it either way.
   noFallthroughCasesInSwitch: Bool = true,
+  // Whether unreachable statements are allowed (tsc `allowUnreachableCode`).
+  // SKJS defaults it to false (reports TS7027 errors), where tsc leaves it
+  // undefined (warnings); setting it to true suppresses TS7027.
+  allowUnreachableCode: Bool = false,
   // SKJS-specific conformance mode (CLI `--conformance`, tsconfig
   // `"conformance": true`): relax SKJS-specific restrictions so TypeScript
   // files can be checked verbatim, as the TypeScript conformance suite
@@ -741,6 +745,10 @@ fun loadTsConfig(fs: Fs, path: String): (TsConfig, Array<TsConfigDiag>) {
       .maybeGetBool("noFallthroughCasesInSwitch")
       .default(true);
 
+    allowUnreachableCode = co
+      .maybeGetBool("allowUnreachableCode")
+      .default(false);
+
     truthiness = co.maybeGetString("truthiness") match {
     | None() -> Truthiness::default
     | Some(v) ->
@@ -817,6 +825,7 @@ fun loadTsConfig(fs: Fs, path: String): (TsConfig, Array<TsConfigDiag>) {
       types,
       truthiness,
       noFallthroughCasesInSwitch,
+      allowUnreachableCode,
       conformance,
       userLiteralSpelling,
     }

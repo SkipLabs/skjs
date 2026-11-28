@@ -29,6 +29,11 @@ class TypeChecker{
   // tsconfig `noFallthroughCasesInSwitch`). Read in `switch` (TypeCheckStmt.sk);
   // the narrowing of the clause fallen into does not depend on it.
   noFallthroughCasesInSwitch: Bool = true,
+  // Whether unreachable statements are allowed (CLI `--allow-unreachable-code`
+  // / tsconfig `allowUnreachableCode`). When false (default), statements
+  // following a non-falling-through statement report TS7027. Read in
+  // `blockStatements` (TypeCheckExpr.sk).
+  allowUnreachableCode: Bool = false,
   // Conformance mode (CLI `--conformance` / tsconfig `conformance`): relax
   // SKJS-specific restrictions so TypeScript files check verbatim — `var`
   // (read in `Bind`, TypeCheckStmt.sk, and in top-level `Var` resolution,
@@ -50,6 +55,7 @@ class TypeChecker{
       errorHandling => config.errorHandling,
       truthiness => config.compilerOptions.truthiness,
       noFallthroughCasesInSwitch => config.compilerOptions.noFallthroughCasesInSwitch,
+      allowUnreachableCode => config.compilerOptions.allowUnreachableCode,
       conformance => config.compilerOptions.conformance,
       verbose => config.verbose,
     }

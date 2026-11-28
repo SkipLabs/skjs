@@ -136,12 +136,26 @@ extension class TypeChecker {
       // narrowing (#970). After the `if`, a call from either branch may have
       // run, so the epoch advances to the branches' maximum.
       guardEpoch = tcenv.effectEpoch;
-      (scope1, term1) = this.block(tcenv, block1, Some((e, true)));
+      (scope1, rawTerm1, thenUnreachable) = this.blockWithReachability(
+        tcenv,
+        block1,
+        Some((e, true)),
+      );
       thenEpoch = tcenv.effectEpoch;
       tcenv.!effectEpoch = guardEpoch;
-      (scope2, term2) = this.block(tcenv, block2, Some((e, false)));
+      (scope2, rawTerm2, elseUnreachable) = this.blockWithReachability(
+        tcenv,
+        block2,
+        Some((e, false)),
+      );
       elseEpoch = tcenv.effectEpoch;
       tcenv.!effectEpoch = if (thenEpoch > elseEpoch) thenEpoch else elseEpoch;
+      // A branch whose guard narrowed an outer binding from non-`never` to
+      // `never` cannot be entered at runtime (e.g. the empty `else` of an
+      // exhaustive `if`/`else if` chain). Still type-checked above, but its
+      // termination is `unreachable` so it neither falls through nor merges.
+      term1 = if (thenUnreachable) StmtTermination::unreachable else rawTerm1;
+      term2 = if (elseUnreachable) StmtTermination::unreachable else rawTerm2;
       // A branch that cannot complete normally is not a path out of the `if`:
       // a return/throw branch never re-joins the flow, one that loops forever
       // never leaves, and a break/continue branch re-joins after the enclosing
@@ -150,8 +164,7 @@ extension class TypeChecker {
       // its scope here, and a jump guard (`if (x === undefined) continue;`)
       // leaves the other branch's narrowing to survive alone.
       (term1.mayFallthrough, term2.mayFallthrough) match {
-      | (false, false) ->
-        void /* TODO: everything that follows is unreachable */
+      | (false, false) -> void
       | (false, true) -> tcenv.popScopeReplace(scope2)
       | (true, false) -> tcenv.popScopeReplace(scope1)
       | (true, true) -> tcenv.mergeScope(this, scope1, scope2)

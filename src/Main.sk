@@ -253,6 +253,12 @@ const checkArgs: Array<Cli.Arg> = Array[
     .about(
       "Print the user-written spelling of number/bigint literals in diagnostics (e.g. '0xf', not the canonical '15'). Turns on the tsconfig 'userLiteralSpelling' option",
     ),
+  Cli.Arg::bool("allow-unreachable-code")
+    .long("allow-unreachable-code")
+    .default(false)
+    .about(
+      "Allow unreachable statements without reporting TS7027. Turns on the tsconfig 'allowUnreachableCode' option",
+    ),
   Cli.Arg::string("emit-cfg")
     .long("emit-cfg")
     .value_name("FORMAT")
@@ -465,10 +471,17 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   };
   // A CLI `--user-literal-spelling` flag turns the tsconfig
   // `userLiteralSpelling` option on; it can only enable it, never disable it.
-  checkerCompilerOptionsFinal = if (args.getBool("user-literal-spelling")) {
+  userLiteralSpellingOptions = if (args.getBool("user-literal-spelling")) {
     checkerCompilerOptions with {userLiteralSpelling => true}
   } else {
     checkerCompilerOptions
+  };
+  // A CLI `--allow-unreachable-code` flag turns the tsconfig
+  // `allowUnreachableCode` option on; it can only enable it, never disable it.
+  checkerCompilerOptionsFinal = if (args.getBool("allow-unreachable-code")) {
+    userLiteralSpellingOptions with {allowUnreachableCode => true}
+  } else {
+    userLiteralSpellingOptions
   };
 
   errorFormat = ErrorFormat::ofString(args.getString("error-format")) match {

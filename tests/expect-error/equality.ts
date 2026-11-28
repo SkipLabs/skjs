@@ -285,6 +285,7 @@ function exhaustiveNarrowedCheck(x: "a" | "b"): string {
   } else if (x === "b") {
     return "second";
   }
+  // @skjs-expect-error Unreachable code detected
   return "";
 }
 
@@ -295,6 +296,7 @@ function negativeLiteralRecheck(x: 1 | -1): string {
   } else if (x === -1) {
     return "neg";
   }
+  // @skjs-expect-error Unreachable code detected
   return "";
 }
 
@@ -308,6 +310,7 @@ function namedConstantRecheck(x: "a" | "b"): string {
   } else if (x === B) {
     return "second";
   }
+  // @skjs-expect-error Unreachable code detected
   return "";
 }
 

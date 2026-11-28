@@ -20,6 +20,7 @@ function processColor(color: Color): string {
   } else if (color.kind === "blue") {
     return "Blue with intensity: " + color.intensity.toString();
   }
+  // @skjs-expect-error Unreachable code detected
   return "Unknown color";
 }
 
@@ -31,6 +32,7 @@ function getColorIntensity(color: Color): number {
   } else if (color.kind === "blue") {
     return color.intensity;
   }
+  // @skjs-expect-error Unreachable code detected
   return 0;
 }
 
@@ -51,6 +53,7 @@ function calculateArea(shape: Shape): number {
   } else if (shape.kind === "triangle") {
     return 0.5 * shape.base * shape.height;
   }
+  // @skjs-expect-error Unreachable code detected
   return 0;
 }
 
@@ -62,6 +65,7 @@ function getShapePerimeter(shape: Shape): number {
   } else if (shape.kind === "triangle") {
     return shape.base + shape.height + shape.base; // simplified
   }
+  // @skjs-expect-error Unreachable code detected
   return 0;
 }
 
@@ -80,6 +84,7 @@ function describeShape(shape: Shape): string {
       shape.height.toString()
     );
   }
+  // @skjs-expect-error Unreachable code detected
   return "Unknown shape";
 }
 
@@ -109,10 +114,12 @@ function processMessage(message: Message): string {
     } else if (userData.kind === "activity") {
       return "User activity: " + userData.sessionCount.toString() + " sessions";
     }
+    // @skjs-expect-error Unreachable code detected
     return "Unknown user data";
   } else if (message.kind === "system") {
     return "System " + message.level + ": " + message.code.toString();
   }
+  // @skjs-expect-error Unreachable code detected
   return "Unknown message";
 }
 
@@ -124,6 +131,7 @@ function extractMessageId(message: Message): string {
   } else if (message.kind === "system") {
     return "system-" + message.code.toString();
   }
+  // @skjs-expect-error Unreachable code detected
   return "unknown";
 }
 
@@ -146,6 +154,7 @@ function handleStringResult(result: ApiResult<string>): string {
   } else if (result.kind === "loading") {
     return "Loading... " + result.progress.toString() + "%";
   }
+  // @skjs-expect-error Unreachable code detected
   return "Unknown result";
 }
 
@@ -157,6 +166,7 @@ function handleNumberResult(result: ApiResult<number>): string {
   } else if (result.kind === "loading") {
     return "Loading number... " + result.progress.toString() + "%";
   }
+  // @skjs-expect-error Unreachable code detected
   return "Unknown number result";
 }
 
@@ -215,6 +225,7 @@ function transitionState(
     }
     return current;
   }
+  // @skjs-expect-error Unreachable code detected
   return current;
 }
 
@@ -234,6 +245,7 @@ function getStateDescription(state: ConnectionState): string {
       "ms"
     );
   }
+  // @skjs-expect-error Unreachable code detected
   return "Unknown state";
 }
 
@@ -251,6 +263,7 @@ function countNodes<T>(tree: TreeNode<T>): number {
   } else if (tree.kind === "branch") {
     return 1 + countNodes(tree.left) + countNodes(tree.right);
   }
+  // @skjs-expect-error Unreachable code detected
   return 0;
 }
 
@@ -260,6 +273,7 @@ function sumNumberTree(tree: TreeNode<number>): number {
   } else if (tree.kind === "branch") {
     return tree.value + sumNumberTree(tree.left) + sumNumberTree(tree.right);
   }
+  // @skjs-expect-error Unreachable code detected
   return 0;
 }
 
@@ -270,6 +284,7 @@ function findInTree<T>(tree: TreeNode<T>, target: T): boolean {
   } else if (tree.kind === "branch") {
     return findInTree(tree.left, target) || findInTree(tree.right, target);
   }
+  // @skjs-expect-error Unreachable code detected
   return false;
 }
 
@@ -285,6 +300,7 @@ function mapOption<T, U>(option: Option<T>, fn: (value: T) => U): Option<U> {
   } else if (option.kind === "none") {
     return { kind: "none" };
   }
+  // @skjs-expect-error Unreachable code detected
   return { kind: "none" };
 }
 
@@ -294,6 +310,7 @@ function unwrapOption<T>(option: Option<T>, defaultValue: T): T {
   } else if (option.kind === "none") {
     return defaultValue;
   }
+  // @skjs-expect-error Unreachable code detected
   return defaultValue;
 }
 
@@ -328,6 +345,7 @@ function processDataValue(data: DataValue): string {
   } else if (data.kind === "list") {
     return "List with " + data.items.length.toString() + " items";
   }
+  // @skjs-expect-error Unreachable code detected
   return "Unknown data";
 }
 
@@ -346,6 +364,7 @@ function countDataValues(data: DataValue): number {
     }
     return count;
   }
+  // @skjs-expect-error Unreachable code detected
   return 0;
 }
 

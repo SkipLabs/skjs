@@ -14,7 +14,8 @@ module SKJS;
     representation of each field.
     Field mayX means "the statement may X".
     If only one field is set, then the statement will always X.
-    If no fields is set, then the statement is unreachable (should not happen).
+    If no fields is set, then the statement is unreachable (e.g. a branch whose
+    guard narrows a binding to `never`).
 */
 value class StmtTermination private {
   mayReturn: Bool = false,
@@ -24,6 +25,7 @@ value class StmtTermination private {
   mayLoop: Bool = false,
   mayFallthrough: Bool = false,
 } {
+  const unreachable: this = StmtTermination{};
   const return_: this = StmtTermination{mayReturn => true};
   const break_: this = StmtTermination{mayBreak => true};
   const continue_: this = StmtTermination{mayContinue => true};
