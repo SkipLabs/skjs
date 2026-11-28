@@ -21,7 +21,13 @@ extension class TypeChecker {
         this.checkIsIgnorable(tcenv, e.pos, ty)
       };
       this.evalAssertCallStmt(tcenv, e);
-      StmtTermination::expr(e)
+      // An expression typed `never` (e.g. a call to a `never`-returning helper
+      // such as `fail(...)`) cannot complete normally at runtime.
+      if (ty.expand(tcenv.subst, this, None()).isBottom()) {
+        StmtTermination::throw_
+      } else {
+        StmtTermination::expr(e)
+      }
     | Return(pos, eOpt) ->
       retType = this.retType match {
       | None() ->
@@ -54,7 +60,8 @@ extension class TypeChecker {
           void
         }
       } else {
-        this.checkSubType(tcenv, epos, msg, etype, retType, TSCode(2322))
+        this.checkSubType(tcenv, epos, msg, etype, retType, TSCode(2322));
+        this.checkActiveAssert(tcenv, tcenv.scope, pos)
       };
       StmtTermination::exprOpt(eOpt).then(StmtTermination::return_)
 
@@ -146,10 +153,15 @@ extension class TypeChecker {
       // a return/throw branch never re-joins the flow, one that loops forever
       // never leaves, and a break/continue branch re-joins after the enclosing
       // switch or loop — through its jump edge, which carries the state at the
-      // jump to that merge. So only a branch that can fall through contributes
-      // its scope here, and a jump guard (`if (x === undefined) continue;`)
-      // leaves the other branch's narrowing to survive alone.
-      (term1.mayFallthrough, term2.mayFallthrough) match {
+      // jump to that merge. Similarly, a branch whose guard narrowed an outer
+      // binding to `never` is statically unreachable and cannot fall through.
+      thenReachable =
+        term1.mayFallthrough &&
+        !scope1.hasBottomNarrowing(tcenv.subst, this);
+      elseReachable =
+        term2.mayFallthrough &&
+        !scope2.hasBottomNarrowing(tcenv.subst, this);
+      (thenReachable, elseReachable) match {
       | (false, false) ->
         void /* TODO: everything that follows is unreachable */
       | (false, true) -> tcenv.popScopeReplace(scope2)
@@ -394,6 +406,20 @@ extension class TypeChecker {
       // whose writes must then reach what the edge carries; mark the catchers
       // now so those edges can be found once the finally is checked.
       edgeMarks = tcenv.jumpEdgeMarks();
+      // If `finally` may write fields or invoke calls, a `return` inside `try`
+      // or `catch` will execute `finally` before leaving the function, which
+      // can invalidate transient mutable-field refinements on an asserted
+      // subject (e.g. `this.value = null`).
+      finallyHasEffects = finallyBlock match {
+      | None() -> false
+      | Some(finallyStmts) ->
+        fw = mutable CaptureWrites{};
+        fw.stmts(finallyStmts);
+        fw.result().isNone() || fw.hasCallEffects
+      };
+      if (finallyHasEffects) {
+        tcenv.!pendingFinallyEffectDepth = tcenv.pendingFinallyEffectDepth + 1
+      };
       // Log every write the try block makes: an exception can leave it after
       // any prefix, so the catch and finally entries below union the log in
       // (SkipLabs/skjs#963). Each block gets its own log; what escapes to any
@@ -454,6 +480,9 @@ extension class TypeChecker {
         // Remove mayThrow from try and combine with catch
         (tryTerm.noThrow() / catchTerm, Some(catchLog))
       | None() -> (tryTerm, None())
+      };
+      if (finallyHasEffects) {
+        tcenv.!pendingFinallyEffectDepth = tcenv.pendingFinallyEffectDepth - 1
       };
 
       (finalTerm, finallyLogOpt, finallyMayThrow) = finallyBlock match {
