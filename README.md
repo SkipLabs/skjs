@@ -19,6 +19,11 @@ mkdir import-stubs && tar -xzf import-stubs.tgz -C import-stubs
 
 # Check a TypeScript file
 ./skjs_*_linux_amd64 check --import-stubs ./import-stubs path/to/file.ts
+
+# Check a project that uses npm dependencies in ./node_modules
+# (layer ./import-stubs first for @types/skjs builtins, or pass only
+# --import-stubs ./node_modules when @types/skjs is installed there)
+./skjs_*_linux_amd64 check --import-stubs ./import-stubs --import-stubs ./node_modules src/index.ts
 ```
 
 See [docs/binary-distribution.md](docs/binary-distribution.md) for arm64 builds, checksums, and other install details.

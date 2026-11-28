@@ -203,7 +203,20 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
 - **Rule**: Relative imports must start with `./` or `../`.
 - **Extensions**: In `node16`/`nodenext` `moduleResolution` (default), relative imports must end with `.js`, `.mjs`, or `.cjs`. In `bundler` mode, extensions are optional.
 - **Side-effect imports**: Module specifiers in side-effect imports (`import './side-effect.js'`, `import 'pkg'`) are always resolved (equivalent to tsc's `--noUncheckedSideEffectImports`), reporting TS2307 when the target cannot be found.
-- **Bare imports**: Resolved against `--import-stubs` (`package.json` `types`/`typings` or `index.{d.ts,ts,tsx}`).
+- **Bare imports & `node_modules` resolution**: Bare package specifiers (`pkg`, `pkg/sub`, `@scope/pkg`, `@scope/pkg/sub`) are resolved in TS-compatible order:
+  1. **Upward `node_modules` walk**: starting from the importing file's directory up to the project root (inclusive), checking `<ancestor>/node_modules/<pkg>` at each level (first match wins).
+  2. **Layered `--import-stubs` fallback**: each `--import-stubs <dir>` directory is searched in order (both flat stub trees like `./import-stubs` and `node_modules/` directories work; passing multiple `--import-stubs` flags is supported for layering, with the first directory providing `@types/skjs/index.d.ts` builtins).
+  3. **Within a package directory**:
+     - If `package.json` has `exports`, it is authoritative (allowlist): subpaths (including `*` wildcard patterns) are matched and condition objects consult `"types"` then `"default"` (mapping `.js`/`.mjs`/`.cjs` targets to sibling `.d.ts`/`.ts`/`.tsx` files); subpaths not listed in `exports` error without falling back.
+     - Otherwise, root imports consult `package.json` `types` then `typings`, falling back to `index.{d.ts,ts,tsx}`; subpath imports resolve `<pkg>/<subpath>` (with `.d.ts`/`.ts`/`.tsx` or directory `index.*`).
+  4. **`@types/*` fallback**: if a package has no bundled types, SKJS falls back to `@types/<pkg>` (or `@types/<scope>__<pkg>` for scoped packages) across the `--import-stubs` roots.
+  5. **Ambient declarations (`typeRoots` / `types`)**: `compilerOptions.typeRoots` (defaulting to `<projectRoot>/node_modules/@types`) and `compilerOptions.types` control which ambient `@types/*` packages are loaded globally alongside SKJS's `@types/skjs` builtins.
+- **Known `node_modules` resolution gaps**:
+  - **Symlinks / pnpm store layout**: symlinked package directories (e.g. pnpm's `.pnpm/` virtual store) are not specially dereferenced or isolated beyond standard filesystem traversal.
+  - **Walk bound**: the upward `node_modules` walk stops at the project root rather than walking to the filesystem root.
+  - **Conditional `exports`**: only the `"types"` and `"default"` conditions are inspected (module-system conditions such as `"import"`, `"require"`, `"node"`, or `"browser"` are not evaluated).
+  - **JSON / non-TS modules**: `resolveJsonModule` and non-TypeScript asset imports are not supported.
+- **Verified by**: `tests/ModuleResolver.sk` and `tests/projects/{package-json-types,package-json-exports,node-modules-walk,at-types-fallback,type-roots-default,type-roots-custom,types-filter,node-modules-workflow}/`.
 
 ### 16. Function Signatures Must Be Fully Annotated
 - **Rule**: Every function parameter requires an explicit type annotation — in function/method declarations, arrow callbacks, and function *type* annotations (e.g. `type F = (x) => void`). Named function declarations must also supply an explicit return type; arrow callbacks currently infer their return type but still need annotated parameters.
