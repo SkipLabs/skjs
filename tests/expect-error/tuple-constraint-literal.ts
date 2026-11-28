@@ -78,6 +78,104 @@ function nestedTuplesDepth5(): void {
   const r = nest5([[[[[0]]]]]);
 }
 
+// Depth 6, readonly depth 5, multi-element depth 5, and nested inner union
+// of tuples all fall back to whole-tuple subtyping and fail for the same
+// reason (#942).
+declare function nest6<K extends [[[[[[0]]]]]]>(x: K): K;
+function nestedTuplesDepth6(): void {
+  // @skjs-expect-error Argument is not assignable to the parameter's type
+  const r = nest6([[[[[[0]]]]]]);
+}
+
+declare function nest5ro<
+  K extends readonly [readonly [readonly [readonly [readonly [0]]]]],
+>(x: K): K;
+function nestedTuplesDepth5Readonly(): void {
+  // @skjs-expect-error Argument is not assignable to the parameter's type
+  const r = nest5ro([[[[[0]]]]]);
+}
+
+declare function nest5multi<K extends [[[[[0, 1], [2, 3]]]]]>(x: K): K;
+function nestedTuplesDepth5Multi(): void {
+  // @skjs-expect-error Argument is not assignable to the parameter's type
+  const r = nest5multi([
+    [
+      [
+        [
+          [0, 1],
+          [2, 3],
+        ],
+      ],
+    ],
+  ]);
+}
+
+declare function nestInnerUnion<K extends [[0, 1] | [2, 3]]>(x: K): K;
+function nestedInnerUnionValid(): void {
+  // @skjs-expect-error Argument is not assignable to the parameter's type
+  const r1 = nestInnerUnion([[0, 1]]);
+  // @skjs-expect-error Argument is not assignable to the parameter's type
+  const r2 = nestInnerUnion([[2, 3]]);
+}
+
+// Nested mismatches and unsound nested constraints must stay rejected.
+function nestedMismatch(): void {
+  // @skjs-expect-error Argument is not assignable to the parameter's type
+  const r = nest([
+    [0, 1],
+    [2, 9],
+  ]);
+}
+
+function nestedDepth5Mismatch(): void {
+  // @skjs-expect-error Argument is not assignable to the parameter's type
+  const r = nest5([[[[[1]]]]]);
+}
+
+declare function nestArms<K extends [[0, 1], [2, 3]] | [[4, 5], [6, 7]]>(
+  x: K,
+): K;
+function nestedUnionArms(): void {
+  const ok1 = nestArms([
+    [0, 1],
+    [2, 3],
+  ]);
+  const ok2 = nestArms([
+    [4, 5],
+    [6, 7],
+  ]);
+  // @skjs-expect-error Argument is not assignable to the parameter's type
+  const cross = nestArms([
+    [0, 1],
+    [6, 7],
+  ]);
+}
+
+function nestedInnerUnionCross(): void {
+  // @skjs-expect-error Argument is not assignable to the parameter's type
+  const r = nestInnerUnion([[0, 3]]);
+}
+
+declare function nestBranded<K extends [[0, 1]] & { foo: string }>(x: K): K;
+function nestedIntersectionMissingMember(): void {
+  // @skjs-expect-error Argument is not assignable to the parameter's type
+  const r = nestBranded([[0, 1]]);
+}
+
+function nestedAbstractConstraint<L extends [[0, number]]>(
+  f: <K extends L>(x: K) => K,
+): void {
+  // @skjs-expect-error Argument is not assignable to the parameter's type
+  const r = f([[0, 5]]);
+}
+
+declare function nestViaVar<B, K extends [[B]]>(b: B, x: K): K;
+function nestedOpenConstraintVariable(): void {
+  const good = nestViaVar("a", [["a"]]);
+  // @skjs-expect-error Argument is not assignable to the parameter's type
+  const bad = nestViaVar("a", [[1]]);
+}
+
 // The same variable used for two parameters: two equal tuples agree.
 declare function two<K extends [0, 1]>(a: K, b: K): K;
 function twoParametersAgree(): void {
