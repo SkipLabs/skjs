@@ -14,6 +14,7 @@ export function localNotArray(c: Local): string {
 }
 
 export function localNotCallable(c: Local): string {
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   if (typeof c === "function") {
     const n: never = c;
     return n;

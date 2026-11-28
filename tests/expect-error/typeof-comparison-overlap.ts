@@ -4,10 +4,6 @@
 // permissive than tsc), while strict equality/inequality (`===` / `!==`)
 // narrows each `typeof expr` operand to the set of runtime `typeof` tags
 // reachable by `expr`'s type and runs the standard SKJS2040 / SKJS2074 check.
-//
-// Pre-fix pins: currently `typeof expr` is checked as wide `string`, so
-// impossible `typeof` comparisons like `typeof x === "boolean"` on `x: number`
-// emit no warning.
 
 class BoxedClass {
   x: number = 1;
@@ -18,6 +14,7 @@ class BoxedClass {
 function branchNarrowingInsideBodyStillReachesAfter(cond: boolean): number {
   let x: number | string = 1;
   if (cond) {
+    // @skjs-expect-warning This comparison is always false because the operand types do not overlap
     if (typeof x === "boolean") {
       const n: never = x;
     }
@@ -30,23 +27,32 @@ function branchNarrowingInsideBodyStillReachesAfter(cond: boolean): number {
 
 // Basic primitive mismatches
 function primitiveMismatches(x: number | string): boolean {
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   const a = typeof x === "boolean";
+  // @skjs-expect-warning This comparison is always true because the operand types do not overlap
   const b = typeof x !== "boolean";
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   const c = "object" === typeof x;
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   const d = typeof x === "undefined";
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   const e = typeof x === "symbol";
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   const f = typeof x === "bigint";
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   const g = typeof x === "function";
   return a && b && c && d && e && f && g;
 }
 
 // Comparing two typeof expressions with disjoint operand types
 function typeofVsTypeof(a: number, b: string): boolean {
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   return typeof a === typeof b;
 }
 
 // Comparing two typeof expressions that hold the same single runtime tag
 function typeofVsTypeofSameSingleton(a: number, b: number): boolean {
+  // @skjs-expect-warning This comparison is always true because the operands always hold the same single value
   return typeof a === typeof b;
 }
 
@@ -64,6 +70,7 @@ function typeofVsStringUnion(
   tag: "boolean" | "symbol",
   wide: "number" | "boolean",
 ): boolean {
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   const disjoint = typeof x === tag;
   const overlapping = typeof x === wide;
   return disjoint && overlapping;
@@ -71,6 +78,7 @@ function typeofVsStringUnion(
 
 // Invalid typeof tag outside an `if` condition (not reached by evalTypeofEquality)
 function invalidTagOutsideIf(x: number | string): boolean {
+  // @skjs-expect-error 'array' is not a valid operand for a 'typeof' comparison
   return typeof x === "array";
 }
 
@@ -99,6 +107,7 @@ function validChecks(
 // `null` has typeof "object" at runtime
 function nullTypeof(x: null): boolean {
   const ok = typeof x === "object";
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   const bad = typeof x === "undefined";
   return ok && bad;
 }
@@ -106,7 +115,9 @@ function nullTypeof(x: null): boolean {
 // Class instances are non-callable objects: typeof is "object", never "function" or primitive
 function classInstanceTypeof(c: BoxedClass): boolean {
   const okObj = typeof c === "object";
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   const badFn = typeof c === "function";
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   const badNum = typeof c === "number";
   return okObj && badFn && badNum;
 }
@@ -114,8 +125,11 @@ function classInstanceTypeof(c: BoxedClass): boolean {
 // Plain object literals and arrays are definitely non-callable objects
 function arrayAndLiteralTypeof(arr: number[]): boolean {
   const obj = { a: 1 };
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   const badArrFn = typeof arr === "function";
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   const badArrStr = typeof arr === "string";
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   const badObjFn = typeof obj === "function";
   const okArr = typeof arr === "object";
   return badArrFn && badArrStr && badObjFn && okArr;
@@ -127,8 +141,10 @@ function callableAndCtorTypeof(
   ctor: typeof BoxedClass,
 ): boolean {
   const okFn = typeof fn === "function";
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   const badFnObj = typeof fn === "object";
   const okCtor = typeof ctor === "function";
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   const badCtorObj = typeof ctor === "object";
   return okFn && badFnObj && okCtor && badCtorObj;
 }
@@ -139,6 +155,7 @@ function callableAndCtorTypeof(
 function structuralObjectTypeof(o: { a: number }): boolean {
   const maybeObj = typeof o === "object";
   const maybeFn = typeof o === "function";
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   const neverNum = typeof o === "number";
   return maybeObj && maybeFn && neverNum;
 }
@@ -159,14 +176,17 @@ function boxedPrimitiveSoundness(
   const eObj = typeof empty === "object";
   const eFn = typeof empty === "function";
   // `undefined` and `null` do not satisfy `{}`:
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   const eUndef = typeof empty === "undefined";
 
   // `"hi"` has `.length: number`, so `"string"` is possible; `"number"` is not.
   const lStr = typeof hasLength === "string";
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   const lNum = typeof hasLength === "number";
 
   // `1` has `.toFixed()`, so `"number"` is possible; `"boolean"` is not.
   const fNum = typeof hasToFixed === "number";
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   const fBool = typeof hasToFixed === "boolean";
 
   return (
@@ -196,6 +216,7 @@ function topAndBottomTypeof<T>(u: unknown, t: T, n: never): boolean {
 // Constrained type parameter: checked through its constraint.
 function constrainedTypeParam<T extends number | string>(x: T): boolean {
   const ok = typeof x === "number";
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   const bad = typeof x === "boolean";
   return ok && bad;
 }

@@ -75,6 +75,7 @@ function f1(x: string | number) {
 
 function f2(x: string | number): never {
   while (true) {
+    // @skjs-expect-warning This comparison is always false because the operand types do not overlap
     if (typeof x === "boolean") {
       return x; // never
     }

@@ -2305,6 +2305,104 @@ extension class TypeChecker {
     ty
   }
 
+  private static fun isValidTypeofTag(tag: String): Bool {
+    tag match {
+    | "string" | "number" | "bigint" | "boolean" | "symbol" | "undefined"
+    | "object" | "function" ->
+      true
+    | _ -> false
+    }
+  }
+
+  // Resolve an operand of `===`/`!==` to its diagnostic simple-type set for
+  // overlap checking. A `typeof subExpr` expression keeps its wide `string`
+  // type in value position (matching tsc), so for strict-comparison overlap we
+  // refine it to the set of runtime `typeof` tag literals reachable by
+  // `subExpr`'s type. Returns None() when the operand is unconstrained (top /
+  // `unknown` / unconstrained type parameter) or empty (`never`), or contains
+  // `void` (already warned by nonVoidExpr).
+  private fun comparisonOperandSTypes(
+    subst: mutable Subst,
+    tcenv: mutable TCEnv,
+    e: Expr,
+    ty: TType,
+  ): ?STypes {
+    e match {
+    | Expr(pos, TypeOf(subExpr)) ->
+      subTy = this.lookupExprType(tcenv, subExpr);
+      this.typeofResultSTypes(subst, pos, subTy)
+    | _ ->
+      ty.getSTypes(subst, this, Covariant()) match {
+      | Some(stypes) if (!stypes.isEmpty()) ->
+        isVoid = (sty: SType) -> sty is TPrimUnit(TVoid(), _);
+        if (stypes.any(isVoid)) None() else Some(stypes)
+      | _ -> None()
+      }
+    }
+  }
+
+  // Over-approximation of the runtime `typeof` string literals reachable by
+  // `subTy`. Soundness: if a runtime value `v` inhabits `subTy`, then
+  // `typeof v` is in the returned string-literal set.
+  // - `void` is excluded (nonVoidExpr already warned on `typeof (void)`).
+  // - Structural `TObject` branches include `"object"`/`"function"` per their
+  //   callability mode, plus every boxed primitive whose wrapper class is a
+  //   subtype of the object branch (e.g. `string` inhabits `{ length: number }`
+  //   and all five non-nullish primitives inhabit `{}`).
+  private fun typeofResultSTypes(
+    subst: mutable Subst,
+    pos: PosRange,
+    subTy: TType,
+  ): ?STypes {
+    subTy.getSTypes(subst, this, Covariant()) match {
+    | Some(stypes) if (!stypes.isEmpty()) ->
+      tags = mutable Set[];
+      for (sty in stypes) {
+        sty match {
+        | TPrimUnit(TVoid(), _) -> return None()
+        | TPrimUnit(TUndefined(), _) -> tags.insert("undefined")
+        | TPrimUnit(TNull(), _) -> tags.insert("object")
+        | TPrimString(_, _) -> tags.insert("string")
+        | TPrimValue(kind, _, _) -> tags.insert(kind.toString())
+        | obj @ TObject _ ->
+          for (branch in obj.getBranches()) {
+            branch.call match {
+            | CPresent _
+            | CFunction() ->
+              tags.insert("function")
+            | CAbsent() -> tags.insert("object")
+            | CUnknown() ->
+              tags.insert("object");
+              tags.insert("function")
+            }
+          };
+          // A primitive value can inhabit an object type through its boxed
+          // wrapper class (same check as SType::overlaps).
+          for (primTag in Array[
+            "string",
+            "number",
+            "boolean",
+            "bigint",
+            "symbol",
+          ]) {
+            if (!tags.contains(primTag)) {
+              boxed = TType::inst(Name(pos, primTag), TArgs(Array[]));
+              if (
+                TType::isSub(subst, this, boxed, TType::single(obj)) is STOk()
+              ) {
+                tags.insert(primTag)
+              }
+            }
+          }
+        }
+      };
+      PrimLiterals::ofSet(SortedSet::createFromItems(tags), pos).map(lits ->
+        STypes::single(TPrimString(Some(lits), pos))
+      )
+    | _ -> None()
+    }
+  }
+
   // Strict-comparison overlap diagnostic: warn when the operands' value sets
   // are provably disjoint, i.e. the comparison always has the same outcome.
   // Both operands expand to their simple-type branches and the comparison is
@@ -2322,20 +2420,36 @@ extension class TypeChecker {
     ty1: TType,
     ty2: TType,
   ): void {
+    // An invalid `typeof` tag literal (e.g. `typeof x === "array"`) is an
+    // error (TS2367) regardless of whether the comparison appears in a
+    // narrowing condition (`if (typeof x === "array")`) or an ordinary
+    // expression (`const b = typeof x === "array"`). Reporting it here once
+    // avoids duplicating SKJS2040 on top of TS2367 and catches non-`if` sites.
+    (e1, e2) match {
+    | (Expr(_, TypeOf(_)), Expr(typePos, EString(tag)))
+    | (Expr(typePos, EString(tag)), Expr(_, TypeOf(_))) if (
+      !static::isValidTypeofTag(tag)
+    ) ->
+      tcenv.error(
+        Array[
+          (
+            typePos,
+            `'${tag}' is not a valid operand for a 'typeof' comparison`,
+          ),
+        ],
+        TSCode(2367),
+      );
+      return void
+    | _ -> void
+    };
     // A diagnostic check ("always false/true?"), not a type assignment: it
     // runs on a detached diagnostic computation, so the relations it consults
     // neither grow type variables nor publish an accepted judgment.
     subst = tcenv.subst.diagnosticComputation();
-    ty1.getSTypes(subst, this, Covariant()) match {
-    | Some(stypes1) if (!stypes1.isEmpty()) ->
-      ty2.getSTypes(subst, this, Covariant()) match {
-      | Some(stypes2) if (!stypes2.isEmpty()) ->
-        // A void operand is already an error (nonVoidExpr — void is
-        // non-observable): skip the lint instead of piling a warning on top
-        isVoid = (sty: SType) -> sty is TPrimUnit(TVoid(), _);
-        if (stypes1.any(isVoid) || stypes2.any(isVoid)) {
-          return void
-        };
+    this.comparisonOperandSTypes(subst, tcenv, e1, ty1) match {
+    | Some(stypes1) ->
+      this.comparisonOperandSTypes(subst, tcenv, e2, ty2) match {
+      | Some(stypes2) ->
         overlap = stypes1.any(sty1 ->
           stypes2.any(sty2 -> SType::overlaps(subst, this, sty1, sty2))
         );
