@@ -23,6 +23,7 @@
 type HasToUpperCase = { toUpperCase(): string };
 type HasToFixed = { toFixed(digits?: number): string };
 type HasToString = { toString(): string };
+type HasBigIntToString = { toString(radix?: number): string };
 type HasReadonlyLength = { readonly length: number };
 type HasValueOfNumber = { valueOf(): number };
 type HasReadonlyToFixedWithThis = {
@@ -34,40 +35,37 @@ type StringArrayLike = {
 };
 
 function stringLitToMethodShape(): HasToUpperCase {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return "hi";
 }
 
 function stringToMethodShape(s: string): HasToUpperCase {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return s;
 }
 
 function numberLitToMethodShape(): HasToFixed {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return 42;
 }
 
 function numberToMethodShape(n: number): HasToFixed {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return n;
 }
 
 function numberToValueOf(): HasValueOfNumber {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return 42;
 }
 
 function boolLitToToString(): HasToString {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return true;
 }
 
 function boolToToString(b: boolean): HasToString {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return b;
 }
 
+// `bigint.toString(radix?: number)` accepts an optional parameter; SKJS
+// rejects assigning a function with extra optional parameters to a 0-arity
+// target (`() => string`), so `bigint` inhabits `{ toString(radix?: number): string }`
+// (and `{ valueOf(): bigint }`), while `{ toString(): string }` stays rejected.
 function bigintLitToToString(): HasToString {
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return 1n;
@@ -78,45 +76,54 @@ function bigintToToString(bi: bigint): HasToString {
   return bi;
 }
 
+function bigintLitToBigIntToString(): HasBigIntToString {
+  return 1n;
+}
+
+function bigintToBigIntToString(bi: bigint): HasBigIntToString {
+  return bi;
+}
+
+function bigintToValueOf(bi: bigint): { valueOf(): bigint } {
+  return bi;
+}
+
 function symbolToToString(sym: symbol): HasToString {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return sym;
 }
 
 function stringToReadonlyLength(s: string): HasReadonlyLength {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return s;
 }
 
 function stringLitToReadonlyLength(): HasReadonlyLength {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return "hi";
 }
 
 function stringToArrayLike(s: string): StringArrayLike {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return s;
 }
 
+// Property-syntax `{ readonly toFixed: (this: number, ...) => string }`
+// requires an own enumerable property (not omitted by object spread); prototype
+// methods are non-enumerable (`mayBeOmittedByCopy`), so only method-syntax
+// `{ toFixed(digits?: number): string }` accepts them (same as class methods).
 function numberToReadonlyExplicitThis(): HasReadonlyToFixedWithThis {
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return 42;
 }
 
 function primUnionToToString(x: string | number | boolean): HasToString {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
 function stringToUnionShape(
   s: string,
 ): HasToUpperCase | { readonly a: number } {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return s;
 }
 
 function optionalPrototypeMethod(): { toFixed?(digits?: number): string } {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return 42;
 }
 
@@ -126,12 +133,10 @@ function formatFixed<T extends HasToFixed>(x: T): string {
 }
 
 function callGenericWithNumberLit(): string {
-  // @skjs-expect-error Argument is not assignable to the parameter's type
   return formatFixed(42);
 }
 
 function callGenericWithNumber(n: number): string {
-  // @skjs-expect-error Argument is not assignable to the parameter's type
   return formatFixed(n);
 }
 
@@ -140,7 +145,6 @@ function genericToUpper<T extends HasToUpperCase>(x: T): string {
 }
 
 function callGenericWithString(): string {
-  // @skjs-expect-error Argument is not assignable to the parameter's type
   return genericToUpper("hello");
 }
 
@@ -195,10 +199,12 @@ function stringToMutableIndex(): { [index: number]: string | undefined } {
 }
 
 function directMutateStringLength(s: string): void {
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   s.length = 5;
 }
 
 function directMutateStringIndex(s: string): void {
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   s[0] = "a";
 }
 
@@ -268,7 +274,6 @@ function stringToCallable(): (() => string) & HasToUpperCase {
 
 // Extracting / laundering a shape method after boxing stays rejected (#960 / #1020).
 function detachAfterBoxing(): string {
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const s: HasToUpperCase = "hi";
   const f = s.toUpperCase;
   // @skjs-expect-error A shape method can only be called on the object it was accessed on
@@ -276,10 +281,16 @@ function detachAfterBoxing(): string {
 }
 
 function reattachAfterBoxing(): HasToUpperCase {
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const s: HasToUpperCase = "hi";
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return { toUpperCase: s.toUpperCase };
+}
+
+// Spreading a primitive-inhabited shape cannot assume non-enumerable fields
+// (like `"hi".length`) survived the spread.
+function spreadLengthShape(x: HasReadonlyLength): { readonly length: number } {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  return { ...x };
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -290,10 +301,12 @@ function reattachAfterBoxing(): HasToUpperCase {
 // A shape inhabited by primitives must NOT flow into `object` (otherwise
 // `"hi" <: { toUpperCase(): string } <: object` breaks transitivity).
 function methodShapeToObject(x: HasToUpperCase): object {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
 function lengthShapeToObject(x: HasReadonlyLength): object {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
@@ -309,12 +322,12 @@ function nonPrimReadonlyShapeToObject(x: { readonly custom: number }): object {
 
 // `in` throws TypeError on primitives, so primitive-inhabited shapes reject `in`.
 function inOnMethodShape(x: HasToUpperCase): boolean {
-  // @skjs-expect-warning This condition is always true
+  // @skjs-expect-error The right-hand side of an 'in' expression must be an object
   return "toUpperCase" in x;
 }
 
 function inOnLengthShape(x: HasReadonlyLength): boolean {
-  // @skjs-expect-warning This condition is always true
+  // @skjs-expect-error The right-hand side of an 'in' expression must be an object
   return "length" in x;
 }
 
@@ -339,6 +352,7 @@ function typeofLengthIsString(x: HasReadonlyLength): string {
 
 function typeofLengthIsStringNotNever(x: HasReadonlyLength): void {
   if (typeof x === "string") {
+    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
     const n: never = x;
   }
 }
@@ -351,6 +365,7 @@ function typeofLengthIsNumberIsNever(x: HasReadonlyLength): void {
 
 function typeofToFixedIsNumberNotNever(x: HasToFixed): void {
   if (typeof x === "number") {
+    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
     const n: never = x;
   }
 }
@@ -374,6 +389,7 @@ function typeofLengthFuncThenObjNotNever(x: HasReadonlyLength): void {
   if (typeof x === "function") {
   } else if (typeof x === "object") {
   } else {
+    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
     const n: never = x;
   }
 }
@@ -384,6 +400,7 @@ function truthyLengthElseNotNever(x: HasReadonlyLength): void {
   // @skjs-expect-error A condition is expected to be of type boolean or a type with a single falsy value
   if (x) {
   } else {
+    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
     const n: never = x;
   }
 }
@@ -392,6 +409,7 @@ function truthyToFixedElseNotNever(x: HasToFixed): void {
   // @skjs-expect-error A condition is expected to be of type boolean or a type with a single falsy value
   if (x) {
   } else {
+    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
     const n: never = x;
   }
 }

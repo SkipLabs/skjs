@@ -24,6 +24,7 @@ private base class LookupKind {
 }
 
 base class IDefMap {
+  fun builtinsFile(): FPath;
   fun getType(mutable TCEnvBase, Name): TypeOnlyDef;
   fun getBuiltinValue(mutable TCEnvBase, String): ?FileDef;
   fun isBuiltinValue(mutable TCEnvBase, Name): Bool;
@@ -102,6 +103,10 @@ class DefMap(
       ),
       builtinsFileName,
     )
+  }
+
+  fun builtinsFile(): FPath {
+    this.builtinsFileName
   }
 
   fun getBuiltinValue(tcenvb: mutable TCEnvBase, name: String): ?FileDef {

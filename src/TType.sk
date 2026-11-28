@@ -411,7 +411,7 @@ class TType private {
     allCallable = true;
     allBoolean = true; // vacuously true for empty (never); cleared by any non-boolean member
     for (stype in concrete) {
-      stype.falsiness() match {
+      stype.falsiness(f -> f.admitsFalsyPrimitive(subst, tenv)) match {
       | SFVoid() -> !containsVoid = true
       | SFValues(f, t) ->
         !hasObservable = true;
@@ -448,7 +448,9 @@ class TType private {
   // (`target == false`), with narrowing precision: used to narrow conditions
   // (#654).
   fun truthinessPart(subst: mutable Subst, tenv: TEnv, target: Bool): TType {
-    this.residuePart(subst, tenv, stype -> stype.truthinessResidue(target))
+    this.residuePart(subst, tenv, stype ->
+      stype.truthinessResidue(target, f -> f.admitsFalsyPrimitive(subst, tenv))
+    )
   }
 
   // Same, with value precision (full string/bigint narrow to `""`/`0n` on the
@@ -458,7 +460,11 @@ class TType private {
     tenv: TEnv,
     target: Bool,
   ): TType {
-    this.residuePart(subst, tenv, stype -> stype.truthinessValueResidue(target))
+    this.residuePart(subst, tenv, stype ->
+      stype.truthinessValueResidue(target, f ->
+        f.admitsFalsyPrimitive(subst, tenv)
+      )
+    )
   }
 
   private fun residuePart(
@@ -1097,10 +1103,30 @@ class TObject private (
     TObject::createSingleBranch(TFields::nonPrimitive(), None(), pos)
   }
 
-  // True if any branch of this object type admits primitive values (i.e. is
-  // the unconstrained empty object type `{}`).
+  // True if any branch of this object type is the unconstrained empty object
+  // type `{}` (which admits every non-nullish primitive without boxing).
   fun admitsPrimitives(): Bool {
     this.branches.any(fields -> fields.admitsPrimitives())
+  }
+
+  // True if any branch of this object type can be inhabited by a primitive
+  // (either `{}` directly or a readonly structural shape satisfied by a boxed
+  // primitive prototype, #982).
+  fun admitsAnyPrimitive(subst: mutable Subst, tenv: TEnv): Bool {
+    this.branches.any(fields -> fields.admitsAnyPrimitive(subst, tenv))
+  }
+
+  // True if any branch of this object type can be inhabited by the given
+  // primitive kind (named by its boxed class: "string", "number", "boolean",
+  // "bigint", "symbol").
+  fun admitsPrimitiveKind(
+    subst: mutable Subst,
+    tenv: TEnv,
+    className: Name,
+  ): Bool {
+    this.branches.any(fields ->
+      fields.admitsPrimitiveKind(subst, tenv, className)
+    )
   }
 
   static fun createCallWithPos(tFuns: TFuns, pos: PosRange): TObject {
@@ -2192,16 +2218,17 @@ base class SType private (
   }
 
   // Truthiness classification of this single type (issue #654).
-  fun falsiness(): SFalsiness {
+  fun falsiness(branchAdmitsFalsyPrim: TFields -> Bool): SFalsiness {
     this match {
     | TPrimUnit(TVoid(), _) -> SFVoid()
     | TPrimUnit(TUndefined(), _)
     | TPrimUnit(TNull(), _) ->
       SFValues(FOne(), false)
     | obj @ TObject _ ->
-      // `{}` admits falsy primitives ("" / 0 / -0 / NaN / false / 0n), while
-      // non-primitive objects are always truthy.
-      if (obj.admitsPrimitives()) {
+      // `{}` and primitive-inhabited shapes (e.g. `{ readonly length: number }`,
+      // `{ toFixed(): string }`) admit falsy primitives ("" / 0 / -0 / NaN /
+      // false / 0n), while non-primitive objects are always truthy.
+      if (obj.getBranches().any(branchAdmitsFalsyPrim)) {
         SFValues(FMany(), true)
       } else {
         SFValues(FZero(), true)
@@ -2252,7 +2279,10 @@ base class SType private (
   //     `truthinessValueResidue`.
   //   - full boolean narrows to the matching `true`/`false` literal.
   //   - a literal union keeps the literals on the requested side.
-  fun truthinessResidue(target: Bool): ?SType {
+  fun truthinessResidue(
+    target: Bool,
+    branchAdmitsFalsyPrim: TFields -> Bool,
+  ): ?SType {
     this match {
     | TPrimUnit(TVoid(), _) -> Some(this)
     | TPrimUnit(TUndefined(), _)
@@ -2263,9 +2293,10 @@ base class SType private (
         Some(obj)
       } else {
         // Non-primitive objects are always truthy, so only branches that admit
-        // primitives (such as `{}`) can reach the falsy side.
+        // falsy primitives (such as `{}` or `{ toUpperCase(): string }`) can
+        // reach the falsy side.
         obj.mapOpt(fields ->
-          if (fields.admitsPrimitives()) Some(fields) else None()
+          if (branchAdmitsFalsyPrim(fields)) Some(fields) else None()
         )
       }
     | TPrimValue(TSymbol(), _, _) -> if (target) Some(this) else None()
@@ -2303,13 +2334,16 @@ base class SType private (
   // falsy side wide: its falsy values are `0`, `-0` and `NaN`, and `NaN` has
   // no literal type, so tsc's `0` would be unsound (`NaN && b` evaluates to
   // `NaN`). All other cases are shared with `truthinessResidue`.
-  fun truthinessValueResidue(target: Bool): ?SType {
+  fun truthinessValueResidue(
+    target: Bool,
+    branchAdmitsFalsyPrim: TFields -> Bool,
+  ): ?SType {
     this match {
     | TPrimString(None(), pos) if (!target) ->
       Some(TPrimString::single("", pos))
     | TPrimValue(TBigInt(), None(), pos) if (!target) ->
       Some(TPrimValue::single(TBigInt(), "0n", pos))
-    | _ -> this.truthinessResidue(target)
+    | _ -> this.truthinessResidue(target, branchAdmitsFalsyPrim)
     }
   }
 }
@@ -3145,16 +3179,100 @@ class TFields protected {
       !(this.call is CFunction())
   }
 
-  // True when this branch admits primitive values (the empty structural shape
-  // `{}` and empty interfaces/structural aliases). Since SKJS does not box
-  // primitives into member-bearing shapes, any member, nominal class identity,
-  // array brand, call/construct signature, or explicit `isNonPrimitive` flag
-  // excludes all primitives.
+  // True when this branch is the unconstrained empty structural shape `{}`
+  // (or an empty structural interface/alias), which admits every non-nullish
+  // primitive directly without checking prototype members.
   fun admitsPrimitives(): Bool {
     !this.isNonPrimitive &&
       this.isEmpty() &&
       this.classIds is None() &&
       this.isArray != Some(true)
+  }
+
+  // Fast pure pre-filter: true only when this branch could possibly be
+  // inhabited by a boxed primitive prototype (no `isNonPrimitive`, no nominal
+  // class identity, not an array, no call/construct signature, no string or
+  // symbol index, no symbol fields, no mutable fields, and no mutable number
+  // index). Rejects the vast majority of object types in O(fields) without
+  // consulting `tenv`.
+  fun mayBeInhabitedByPrimitive(): Bool {
+    if (
+      this.isNonPrimitive ||
+      this.classIds is Some _ ||
+      this.isArray == Some(true) ||
+      this.call is CPresent _ ||
+      this.call is CFunction() ||
+      this.new is CPresent _ ||
+      this.new is CFunction() ||
+      !this.symbolFields.isEmpty() ||
+      TFields::nonSynthetic(this.stringIndex).isSome() ||
+      TFields::nonSynthetic(this.symbolIndex).isSome()
+    ) {
+      return false
+    };
+    TFields::nonSynthetic(this.numberIndex) match {
+    | Some(numIdx) if (!numIdx.set.isBottom()) -> return false
+    | _ -> void
+    };
+    this.fields.values().all(f -> f.set.isBottom())
+  }
+
+  // True when the given primitive kind (boxed class name: "string", "number",
+  // "boolean", "bigint", "symbol") inhabits this object branch (#982).
+  fun admitsPrimitiveKind(
+    subst: mutable Subst,
+    tenv: TEnv,
+    className: Name,
+  ): Bool {
+    if (this.admitsPrimitives()) return true;
+    if (!this.mayBeInhabitedByPrimitive()) return false;
+    // Resolve against builtinsFileName so synthetic PosRange::none positions
+    // (from synthesized primitive types) still locate the built-in class.
+    resolvedName = if (className.pos.fileName == FPath::nil) {
+      Name(PosRange::inFile(tenv.defMap.builtinsFile()), className.value)
+    } else {
+      className
+    };
+    boxed = TType::inst(resolvedName, TArgs(Array[]));
+    target = TType::single(
+      TObject::createSingleBranch(this, None(), PosRange::none),
+    );
+    TType::isSub(subst, tenv, boxed, target) is STOk()
+  }
+
+  // Primitive class names that can inhabit this branch, assuming
+  // `mayBeInhabitedByPrimitive()` holds. Only `string` carries a numeric
+  // index signature, so branches with one only need to test `"string"`.
+  fun candidatePrimitiveClassNames(falsyOnly: Bool): Array<String> {
+    if (TFields::nonSynthetic(this.numberIndex).isSome()) {
+      Array["string"]
+    } else if (falsyOnly) {
+      Array["string", "number", "boolean", "bigint"]
+    } else {
+      Array["string", "number", "boolean", "bigint", "symbol"]
+    }
+  }
+
+  // True when ANY non-nullish primitive inhabits this object branch (#982).
+  fun admitsAnyPrimitive(subst: mutable Subst, tenv: TEnv): Bool {
+    if (this.admitsPrimitives()) return true;
+    if (!this.mayBeInhabitedByPrimitive()) return false;
+    builtinPos = PosRange::inFile(tenv.defMap.builtinsFile());
+    this.candidatePrimitiveClassNames(false).any(name ->
+      this.admitsPrimitiveKind(subst, tenv, Name(builtinPos, name))
+    )
+  }
+
+  // True when a primitive with falsy runtime values (`""`, `0`/`NaN`, `false`,
+  // `0n`) inhabits this object branch. `symbol` values are always truthy, so
+  // only the four falsy-capable primitives are tested.
+  fun admitsFalsyPrimitive(subst: mutable Subst, tenv: TEnv): Bool {
+    if (this.admitsPrimitives()) return true;
+    if (!this.mayBeInhabitedByPrimitive()) return false;
+    builtinPos = PosRange::inFile(tenv.defMap.builtinsFile());
+    this.candidatePrimitiveClassNames(true).any(name ->
+      this.admitsPrimitiveKind(subst, tenv, Name(builtinPos, name))
+    )
   }
 
   // True when this branch represents the bare `object` keyword type (no

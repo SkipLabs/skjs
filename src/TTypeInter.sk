@@ -183,16 +183,23 @@ extension class TType {
     // Returning the primitive requires a live subtype justification against
     // the object's constraint, which may itself contain inference candidates.
     // Keep its commitments; a discarded clone's success is not sufficient.
-    // Only branches without `isNonPrimitive` can match a boxed primitive
-    // (excludes `object`, object literals, enum objects, and `typeof === "object"`).
+    // Only branches that can be inhabited by a primitive can match a boxed
+    // primitive (excludes `object`, object literals, mutable shapes, etc.).
     (clauses1.primKind(), clauses2.getObject()) match {
     | (Some(primKind), Some(stype)) ->
-      stype.mapOpt(b -> if (b.isNonPrimitive) None() else Some(b)) match {
+      stype.mapOpt(b ->
+        if (b.mayBeInhabitedByPrimitive()) Some(b) else None()
+      ) match {
       | Some(boxable) ->
+        resolved = if (primKind.pos.fileName == FPath::nil) {
+          Name(PosRange::inFile(tenv.defMap.builtinsFile()), primKind.value)
+        } else {
+          primKind
+        };
         TType::isSub(
           subst,
           tenv,
-          expandPrim(primKind),
+          expandPrim(resolved),
           TType::single(boxable),
         ) match {
         | STOk() -> return ty1
@@ -204,12 +211,19 @@ extension class TType {
     };
     (clauses2.primKind(), clauses1.getObject()) match {
     | (Some(primKind), Some(stype)) ->
-      stype.mapOpt(b -> if (b.isNonPrimitive) None() else Some(b)) match {
+      stype.mapOpt(b ->
+        if (b.mayBeInhabitedByPrimitive()) Some(b) else None()
+      ) match {
       | Some(boxable) ->
+        resolved = if (primKind.pos.fileName == FPath::nil) {
+          Name(PosRange::inFile(tenv.defMap.builtinsFile()), primKind.value)
+        } else {
+          primKind
+        };
         TType::isSub(
           subst,
           tenv,
-          expandPrim(primKind),
+          expandPrim(resolved),
           TType::single(boxable),
         ) match {
         | STOk() -> return ty2
@@ -219,8 +233,11 @@ extension class TType {
       }
     | _ -> void
     };
-    clauses = Clauses::interWith(clauses1, clauses2, (left, right) ->
-      TFields::inter(subst, tenv, left, right)
+    clauses = Clauses::interWith(
+      clauses1,
+      clauses2,
+      (left, right) -> TFields::inter(subst, tenv, left, right),
+      (prim, obj) -> obj.admitsPrimitiveKind(subst, tenv, prim.asClassName()),
     );
     TType::fromClauses(ty1.pos, clauses);
   }
@@ -328,27 +345,31 @@ extension class STypes {
     }
   }
 
-  // Non-nullish primitives inhabit `{}` (an object branch with
-  // `admitsPrimitives()`), so e.g. `(string | null) & {}` keeps `string`,
-  // while `string & object` drops `string` (#674).
-  private static fun primEmptyObjCross(
+  // Non-nullish primitives inhabit `{}` and primitive-compatible structural
+  // shapes (#674, #982), so e.g. `(string | null) & { toUpperCase(): string }`
+  // keeps `string` and `(string | number) & { toFixed(): string }` keeps
+  // `number`, while `string & object` drops `string`.
+  private static fun primObjCross(
     x: SType,
     other: InternalKeyedArrayMap<STypeTag, SType>,
+    primInhabitsObj: (TPrim, TObject) -> Bool,
   ): ?SType {
     (x, other.maybeGet(TagObject())) match {
-    | (TPrimValue _, Some(obj @ TObject _))
-    | (TPrimString _, Some(obj @ TObject _)) if (obj.admitsPrimitives()) ->
-      Some(x)
+    | (p @ TPrimValue _, Some(obj @ TObject _)) ->
+      if (primInhabitsObj(p, obj)) Some(x) else None()
+    | (p @ TPrimString _, Some(obj @ TObject _)) ->
+      if (primInhabitsObj(p, obj)) Some(x) else None()
     | _ -> None()
     }
   }
 
-  // Structural intersection delegates only object-field normalization. None
-  // denotes bottom; primitive and parameter algebra never accesses a solver.
+  // Structural intersection delegates object-field normalization and
+  // primitive-to-object inhabitance checks to the caller. None denotes bottom.
   static fun interWith(
     stypes1: STypes,
     stypes2: STypes,
     meetFields: (TFields, TFields) -> ?TFields,
+    primInhabitsObj: (TPrim, TObject) -> Bool,
   ): ?STypes {
     stypes1.stypes.mergeOption(stypes2.stypes, ior ->
       ior match {
@@ -379,10 +400,11 @@ extension class STypes {
       // 1. A void unit unique to one side meets an undefined unit on the other
       //    (guarded against a duplicate TagUndefined key when this side already
       //    has its own undefined unit, which Both then pairs).
-      // 2. A non-nullish primitive unique to one side meets `{}` on the other.
+      // 2. A non-nullish primitive unique to one side meets an object shape it
+      //    inhabits (`{}` or a matching structural shape) on the other.
       | Left(x) ->
         Some(
-          STypes::primEmptyObjCross(x, stypes2.stypes) match {
+          STypes::primObjCross(x, stypes2.stypes, primInhabitsObj) match {
           | res @ Some _ -> res
           | None() ->
             if (stypes1.stypes.maybeGet(TagUndefined()).isNone()) {
@@ -394,7 +416,7 @@ extension class STypes {
         )
       | Right(y) ->
         Some(
-          STypes::primEmptyObjCross(y, stypes1.stypes) match {
+          STypes::primObjCross(y, stypes1.stypes, primInhabitsObj) match {
           | res @ Some _ -> res
           | None() ->
             if (stypes2.stypes.maybeGet(TagUndefined()).isNone()) {
@@ -418,6 +440,7 @@ extension class Clause {
     clause1: Clause,
     clause2: Clause,
     meetFields: (TFields, TFields) -> ?TFields,
+    primInhabitsObj: (TPrim, TObject) -> Bool,
   ): ?Clause {
     vars = clause1.vars.union(clause2.vars);
     (clause1.stypes, clause2.stypes) match {
@@ -425,8 +448,8 @@ extension class Clause {
     | (stypes, None()) ->
       Some(Clause(vars, stypes))
     | (Some(stypes1), Some(stypes2)) ->
-      STypes::interWith(stypes1, stypes2, meetFields).map(stypes ->
-        Clause(vars, Some(stypes))
+      STypes::interWith(stypes1, stypes2, meetFields, primInhabitsObj).map(
+        stypes -> Clause(vars, Some(stypes)),
       )
     }
   }
@@ -438,11 +461,12 @@ extension class Clauses {
     clauses1: Clauses,
     clauses2: Clauses,
     meetFields: (TFields, TFields) -> ?TFields,
+    primInhabitsObj: (TPrim, TObject) -> Bool,
   ): Clauses {
     result = SortedMap[];
     for (clause1 in clauses1) {
       for (clause2 in clauses2) {
-        Clause::interWith(clause1, clause2, meetFields) match {
+        Clause::interWith(clause1, clause2, meetFields, primInhabitsObj) match {
         | None() -> void
         | Some(inter) ->
           if (!result.containsKey(inter.vars)) {
@@ -521,14 +545,22 @@ extension base class SType {
       // A primitive overlaps `{}` directly, and overlaps a structural object
       // shape only through its boxed class (a value of type `Number` can be a
       // primitive number, whereas `object` and non-primitive object literals
-      // exclude primitives completely, #674).
+      // exclude primitives completely, #674, #982).
       if (obj.admitsPrimitives()) {
         true
       } else {
-        obj.mapOpt(b -> if (b.isNonPrimitive) None() else Some(b)) match {
+        obj.mapOpt(b ->
+          if (b.mayBeInhabitedByPrimitive()) Some(b) else None()
+        ) match {
         | None() -> false
         | Some(boxable) ->
-          boxed = TType::inst(prim.asClassName(), TArgs(Array[]));
+          className = prim.asClassName();
+          resolved = if (className.pos.fileName == FPath::nil) {
+            Name(PosRange::inFile(tenv.defMap.builtinsFile()), className.value)
+          } else {
+            className
+          };
+          boxed = TType::inst(resolved, TArgs(Array[]));
           TType::isSub(subst, tenv, boxed, TType::single(boxable)) is STOk()
         }
       }
