@@ -103,6 +103,7 @@ declare const sym: unique symbol;
 function testReadUnnamedSymbolKey(): void {
   const x: Closed<{ readonly a: number }> = { a: 1 };
   // @skjs-expect-error This symbol property does not exist on the object
+  // @skjs-expect-error-line2 The object type is closed: its unnamed keys are provably absent
   const v = x[sym];
 }
 
@@ -367,4 +368,97 @@ function testClosedShowExpanded(): void {
   __SKJS_show_expanded(named, "Closed<ClosedNamedObj>");
   const empty: Closed<{}> = {};
   __SKJS_show_expanded(empty, "Closed<{}>");
+}
+
+// ============================================================================
+// Never-index vs. undeclared missing-property diagnostics (SkipLabs/skjs#803):
+// Missing-property diagnostics distinguish a closed object (`Closed<T>` /
+// `as const`), a key covered by a never-valued index signature (including an
+// intersected index collapsed to `never`), and a plain undeclared key.
+// ============================================================================
+
+function testNeverNumberIndexNumericKey(x: {
+  readonly a: number;
+  [k: number]: never;
+}): void {
+  // Numeric key is covered by `[k: number]: never`: provably absent via never index.
+  // @skjs-expect-error Property '0' does not exist on this type
+  // @skjs-expect-error-line2 Possible options are:
+  // @skjs-expect-error-line3 This key is provably absent: its covering index signature is never
+  const v = x[0];
+}
+
+function testNeverNumberIndexStringNumericKey(x: {
+  readonly a: number;
+  [k: number]: never;
+}): void {
+  // Numeric string key "0" is covered by `[k: number]: never`: provably absent.
+  // @skjs-expect-error Property '0' does not exist on this type
+  // @skjs-expect-error-line2 Possible options are:
+  // @skjs-expect-error-line3 This key is provably absent: its covering index signature is never
+  const v = x["0"];
+}
+
+function testNeverNumberIndexNonNumericKey(x: {
+  readonly a: number;
+  [k: number]: never;
+}): void {
+  // Non-numeric key is not covered by `[k: number]: never`: stays a plain
+  // missing-property error with no closed/never-index note.
+  // @skjs-expect-error Property 'b' does not exist on this type
+  // @skjs-expect-error-line2 Possible options are:
+  const v = x.b;
+}
+
+function testNeverSymbolIndexStringKey(x: {
+  readonly a: number;
+  [k: symbol]: never;
+}): void {
+  // `[k: symbol]: never` does not cover string key `b`: plain missing property.
+  // @skjs-expect-error Property 'b' does not exist on this type
+  // @skjs-expect-error-line2 Possible options are:
+  const v = x.b;
+}
+
+function testNeverStringIndexRead(x: {
+  readonly a: number;
+  [k: string]: never;
+}): void {
+  // Only string keys have a never index (not a Closed<T> object): report the
+  // covering never-index note rather than claiming the whole object is closed.
+  // @skjs-expect-error Property 'b' does not exist on this type
+  // @skjs-expect-error-line2 Possible options are:
+  // @skjs-expect-error-line3 This key is provably absent: its covering index signature is never
+  const v = x.b;
+}
+
+function testClosedDestructuringMissingKey(
+  x: Closed<{ readonly a: number }>,
+): void {
+  // Destructuring a missing key on a closed object explains that it is closed.
+  // @skjs-expect-error Property 'b' does not exist on this type
+  // @skjs-expect-error-line2 Out of 'Closed<{ readonly a: ...; }>'
+  // @skjs-expect-error-line3 The object type is closed: its unnamed keys are provably absent
+  const { b } = x;
+}
+
+function testNeverSymbolIndexSymbolKey(x: {
+  readonly a: number;
+  [k: symbol]: never;
+}): void {
+  // Symbol key covered by `[k: symbol]: never`: reports the never-index note.
+  // @skjs-expect-error This symbol property does not exist on the object
+  // @skjs-expect-error-line2 This key is provably absent: its covering index signature is never
+  const v = x[sym];
+}
+
+function testUnionClosedAndOpenMissingKey(
+  x: Closed<{ readonly a: number }> | { readonly a: number },
+): void {
+  // Union of a closed branch and an open branch: the whole type is not closed,
+  // but the closed branch's covering never index proves the key absent there.
+  // @skjs-expect-error Property 'b' does not exist on this type
+  // @skjs-expect-error-line2 Possible options are:
+  // @skjs-expect-error-line3 This key is provably absent: its covering index signature is never
+  const v = x.b;
 }
