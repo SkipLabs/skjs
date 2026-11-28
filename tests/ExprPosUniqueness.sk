@@ -1,0 +1,426 @@
+// Tests for uniqueness of Expr PosRange values across an AST (issue #708).
+//
+// `PosRange` is used as a node identifier in `exprTypes` and CFG lowering, so
+// two distinct `Expr` nodes in the same file must never share a `PosRange`.
+module SKJSTests;
+
+mutable class ExprPosCollector{
+  fileName: String,
+  seen: mutable Map<SKJS.PosRange, String> = mutable Map[],
+  duplicates: mutable Vector<String> = mutable Vector[],
+} {
+  mutable fun visitExpr(e: SKJS.Expr): void {
+    desc = `${e.pos.symbol}:${e.pos.relStart.value}-${
+      e.pos.relEnd.value
+    } (${inspect(e.value)})`;
+    this.seen.maybeGet(e.pos) match {
+    | Some(prev) ->
+      this.duplicates.push(`${this.fileName}: DUP ${prev} VS ${desc}`)
+    | None() -> this.seen.set(e.pos, desc)
+    };
+    e.value match {
+    | SKJS.Number _
+    | SKJS.BigInt _
+    | SKJS.Var _
+    | SKJS.EString _
+    | SKJS.Regexp _ ->
+      void
+    | SKJS.Spread(e1)
+    | SKJS.TypeOf(e1)
+    | SKJS.VoidOp(e1)
+    | SKJS.Await(e1)
+    | SKJS.Dot(_, e1, _)
+    | SKJS.Unop(_, e1)
+    | SKJS.PostOp(_, e1)
+    | SKJS.As(e1, _)
+    | SKJS.AsConst(e1)
+    | SKJS.Satisfies(e1, _)
+    | SKJS.Async(e1) ->
+      this.visitExpr(e1)
+    | SKJS.Get(e1, e2)
+    | SKJS.Binop(_, e1, e2)
+    | SKJS.In(e1, e2)
+    | SKJS.InstanceOf(e1, e2) ->
+      this.visitExpr(e1);
+      this.visitExpr(e2)
+    | SKJS.New(e1, targs, args)
+    | SKJS.Call(e1, targs, args) ->
+      this.visitExpr(e1);
+      targs.each(t -> this.visitType(t));
+      args.each(a -> this.visitExpr(a))
+    | SKJS.Params(params) -> params.each(p -> this.visitParam(p))
+    | SKJS.Object(fields) ->
+      for (f in fields) {
+        f match {
+        | SKJS.FDNormal(_, v) -> this.visitExpr(v)
+        | SKJS.FDComputed(k, v) ->
+          this.visitExpr(k);
+          this.visitExpr(v)
+        | SKJS.FDSpread(v) -> this.visitExpr(v)
+        | fd @ SKJS.FDMethod _ -> this.visitFunDef(fd)
+        }
+      }
+    | SKJS.Closure(tparams, params, retOpt, body) ->
+      tparams.each(tp -> this.visitTypeParam(tp));
+      params.each(p -> this.visitParam(p));
+      retOpt.each(t -> this.visitType(t));
+      body match {
+      | SKJS.CBExpr(e1) -> this.visitExpr(e1)
+      | SKJS.CBBlock(stmts) -> stmts.each(s -> this.visitStmt(s))
+      }
+    | SKJS.EArray(elts) -> elts.each(a -> this.visitExpr(a))
+    | SKJS.EIf(e1, e2, e3) ->
+      this.visitExpr(e1);
+      this.visitExpr(e2);
+      this.visitExpr(e3)
+    | SKJS.TemplateLiteral(_, exprs) -> exprs.each(a -> this.visitExpr(a))
+    };
+    e.value match {
+    | SKJS.As(_, t)
+    | SKJS.Satisfies(_, t) ->
+      this.visitType(t)
+    | _ -> void
+    }
+  }
+
+  mutable fun visitStmt(s: SKJS.Stmt): void {
+    s.value match {
+    | SKJS.StmtEmpty()
+    | SKJS.Break()
+    | SKJS.Continue() ->
+      void
+    | SKJS.StmtExpr(e)
+    | SKJS.Throw(e) ->
+      this.visitExpr(e)
+    | SKJS.Return(_, eOpt) -> eOpt.each(e -> this.visitExpr(e))
+    | SKJS.If(cond, thenStmts, elseOpt) ->
+      this.visitExpr(cond);
+      thenStmts.each(st -> this.visitStmt(st));
+      elseOpt.each(es -> es.each(st -> this.visitStmt(st)))
+    | SKJS.ForInOf(_, init, iter, body) ->
+      this.visitStmt(init);
+      this.visitExpr(iter);
+      body.each(st -> this.visitStmt(st))
+    | SKJS.For(init, cond, incr, body) ->
+      this.visitStmt(init);
+      this.visitExpr(cond);
+      this.visitExpr(incr);
+      body.each(st -> this.visitStmt(st))
+    | SKJS.While(cond, body) ->
+      this.visitExpr(cond);
+      body.each(st -> this.visitStmt(st))
+    | SKJS.Bind(_, bindings) ->
+      for (b in bindings) {
+        this.visitPattern(b.pat);
+        b.type.each(t -> this.visitType(t));
+        b.value.each(e -> this.visitExpr(e))
+      }
+    | SKJS.Switch(scrut, branches) ->
+      this.visitExpr(scrut);
+      for (br in branches) {
+        br.case match {
+        | SKJS.Case(e) -> this.visitExpr(e)
+        | SKJS.Default() -> void
+        };
+        br.block.each(st -> this.visitStmt(st))
+      }
+    | SKJS.Block(stmts) -> stmts.each(st -> this.visitStmt(st))
+    | SKJS.Try(tryStmts, catchOpt, finOpt) ->
+      tryStmts.each(st -> this.visitStmt(st));
+      catchOpt.each(c -> {
+        c.param.each(p -> this.visitPattern(p));
+        c.type.each(t -> this.visitType(t));
+        c.body.each(st -> this.visitStmt(st))
+      });
+      finOpt.each(fs -> fs.each(st -> this.visitStmt(st)))
+    }
+  }
+
+  mutable fun visitPattern(p: SKJS.Pattern): void {
+    p.value match {
+    | SKJS.PVar _ -> void
+    | SKJS.PArray(elts, _) ->
+      for (eltOpt in elts) {
+        eltOpt.each(pair -> {
+          this.visitPattern(pair.i0);
+          pair.i1.each(e -> this.visitExpr(e))
+        })
+      }
+    | SKJS.PObject{fields} ->
+      for (f in fields) {
+        this.visitPattern(f.i1);
+        f.i2.each(e -> this.visitExpr(e))
+      }
+    }
+  }
+
+  mutable fun visitParam(p: SKJS.Param): void {
+    this.visitPattern(p.name);
+    p.type.each(t -> this.visitType(t));
+    p.default.each(e -> this.visitExpr(e))
+  }
+
+  mutable fun visitTypeParam(tp: SKJS.TypeParam): void {
+    tp.constraint.each(t -> this.visitType(t));
+    tp.default.each(t -> this.visitType(t))
+  }
+
+  mutable fun visitType(t: SKJS.Type): void {
+    t.value match {
+    | SKJS.TATypeOf(e)
+    | SKJS.TAImport(e, _, _) ->
+      this.visitExpr(e)
+    | SKJS.TATemplate(_, ts)
+    | SKJS.TAInst(_, ts) ->
+      ts.each(x -> this.visitType(x))
+    | SKJS.TAArray(t1)
+    | SKJS.TAReadonly(t1)
+    | SKJS.TAKeyOf(t1)
+    | SKJS.TANew(t1)
+    | SKJS.TAAbstract(t1)
+    | SKJS.TAAssertIs(_, t1) ->
+      this.visitType(t1)
+    | SKJS.TAUnion(t1, t2)
+    | SKJS.TAInter(t1, t2)
+    | SKJS.TAGet(t1, t2)
+    | SKJS.TAExtends(t1, t2)
+    | SKJS.TAIs(t1, t2) ->
+      this.visitType(t1);
+      this.visitType(t2)
+    | SKJS.TAExtendsQuestion(t1, t2, t3, t4) ->
+      this.visitType(t1);
+      this.visitType(t2);
+      this.visitType(t3);
+      this.visitType(t4)
+    | SKJS.TATuple(elts) ->
+      for (elt in elts) {
+        elt match {
+        | SKJS.TEType(_, _, t1)
+        | SKJS.TESpread(_, t1) ->
+          this.visitType(t1)
+        }
+      }
+    | SKJS.TAFun(_, tparams, params, ret, _) ->
+      tparams.each(tp -> this.visitTypeParam(tp));
+      params.each(p -> {
+        this.visitPattern(p.name);
+        p.type.each(pt -> this.visitType(pt))
+      });
+      this.visitType(ret)
+    | SKJS.TAObject(fields) ->
+      for (f in fields) {
+        f match {
+        | SKJS.ObjectFieldValue{type} -> type.each(ft -> this.visitType(ft))
+        | fm @ SKJS.ObjectFieldMethod _ -> this.visitFunDef(fm)
+        }
+      }
+    | SKJS.TAStringLiteral _
+    | SKJS.TANumLiteral _
+    | SKJS.TABigIntLiteral _
+    | SKJS.TAPrim _
+    | SKJS.TAInfer _
+    | SKJS.TAEmptyArray()
+    | SKJS.TAAsserts _
+    | SKJS.TAUniqueSymbol() ->
+      void
+    }
+  }
+
+  mutable fun visitFunDef<N: SKJS.FunDefName>(fd: SKJS.FunDef<N>): void {
+    fd.sig match {
+    | SKJS.FSInline(tparams, params, ret) ->
+      tparams.each(tp -> this.visitTypeParam(tp));
+      params.each(p -> this.visitParam(p));
+      ret.i1.each(t -> this.visitType(t))
+    | SKJS.FSRef _ -> void
+    };
+    fd.body match {
+    | SKJS.FBInline(SKJS.FDBSome(stmts)) -> stmts.each(s -> this.visitStmt(s))
+    | SKJS.FBInline(SKJS.FDBNone())
+    | SKJS.FBRef _ ->
+      void
+    }
+  }
+
+  mutable fun visitDef(d: SKJS.Def): void {
+    this.visitDef_(d.value)
+  }
+
+  mutable fun visitDef_(d: SKJS.Def_): void {
+    d match {
+    | e @ SKJS.Expr _ -> this.visitExpr(e)
+    | SKJS.ExportDeclare(x)
+    | SKJS.Export(x) ->
+      this.visitDef_(x)
+    | SKJS.ExportDefault(x) -> this.visitDef_(x)
+    | SKJS.ExportEq(e)
+    | SKJS.ExportImport(_, e) ->
+      this.visitExpr(e)
+    | SKJS.Declare(x) -> this.visitDef_(x)
+    | SKJS.Module(_, defsOpt) ->
+      defsOpt.each(ds -> ds.each(x -> this.visitDef(x)))
+    | SKJS.Global(ds)
+    | SKJS.Namespace(_, ds) ->
+      ds.each(x -> this.visitDef(x))
+    | SKJS.VarDefs(_, vds) ->
+      for (vd in vds) {
+        this.visitPattern(vd.pat);
+        vd.type.each(t -> this.visitType(t));
+        vd.value.each(e -> this.visitExpr(e))
+      }
+    | SKJS.Enum(_, _, fields, _) ->
+      for (f in fields) {
+        f.i1.each(e -> this.visitExpr(e))
+      }
+    | SKJS.Class{extends_, implements, tparams} ->
+      tparams.each(tp -> this.visitTypeParam(tp));
+      extends_.each(t -> this.visitType(t));
+      implements.each(t -> this.visitType(t))
+    | fd @ SKJS.TopLevelFunDef _ -> this.visitFunDef(fd)
+    | SKJS.TypeDef{tdefParams} -> tdefParams.each(tp -> this.visitTypeParam(tp))
+    | SKJS.ExportNames _
+    | SKJS.ExportNamesFrom _
+    | SKJS.ExportAs _
+    | SKJS.Import _
+    | SKJS.ImportExpr _ ->
+      void
+    }
+  }
+}
+
+fun findDuplicateExprPosInSource(
+  relPath: String,
+  source: String,
+): Array<String> {
+  fpath = SKJS.FPath::create(SKJS.RootId::project, relPath);
+  lexer = SKJS.Lexer::mcreate(fpath, source);
+  parser = mutable SKJS.Parser(lexer);
+  defsOpt = try {
+    Some(parser.toplevelDefs())
+  } catch {
+  | SKJS.ErrorExn _ -> None()
+  | exn -> throw exn
+  };
+  defs = defsOpt match {
+  | None() -> return Array[]
+  | Some(d) -> d
+  };
+  collector = mutable ExprPosCollector{fileName => relPath};
+  for (d in defs) collector.visitDef(d);
+  for ((_, sig) in parser.funDefSigs) {
+    sig.tparams.each(tp -> collector.visitTypeParam(tp));
+    sig.params.each(p -> collector.visitParam(p));
+    sig.retType.i1.each(t -> collector.visitType(t))
+  };
+  for ((_, body) in parser.funDefBodies) {
+    body.body match {
+    | SKJS.FDBSome(stmts) -> stmts.each(s -> collector.visitStmt(s))
+    | SKJS.FDBNone() -> void
+    }
+  };
+  for ((_, cf) in parser.classFieldEntries) {
+    cf.field match {
+    | SKJS.ClassFieldValue{type, value} ->
+      type.each(t -> collector.visitType(t));
+      value.each(e -> collector.visitExpr(e))
+    | fm @ SKJS.ClassFieldMethod _ -> collector.visitFunDef(fm)
+    }
+  };
+  for ((_, mb) in parser.methodBodyEntries) {
+    mb.body match {
+    | SKJS.FDBSome(stmts) -> stmts.each(s -> collector.visitStmt(s))
+    | SKJS.FDBNone() -> void
+    }
+  };
+  for ((_, td) in parser.typeDefBodies) {
+    td.tdefParams.each(tp -> collector.visitTypeParam(tp));
+    collector.visitType(td.body)
+  };
+  collector.duplicates.toArray()
+}
+
+fun buildCfgJsonForSource(source: String): String {
+  virtualPath = "/virtual/expr-pos-test.ts";
+  fs = SKJS.OverlayFs{
+    underlying => SKJS.DiskFs(),
+    overlay => mkMem(Array[(virtualPath, source)]),
+  };
+  context = SKStore.Context::mcreate{};
+  files =
+    SKJS.Files::create(
+      context,
+      fs,
+      "/virtual",
+      Array[virtualPath],
+      Array[Path.resolve("./import-stubs")],
+    ) |> expectFilesSuccess;
+  SKJS.writeConfig(
+    context,
+    SKJS.CheckerConfig{
+      errorHandling => SKJS.EHDefault(),
+      errorDetailConfig => SKJS.ErrorDetailConfig::minimal(),
+      buildCfg => true,
+    },
+  );
+  checker = SKJS.Checker::create{context, fs, files}.fromSuccess();
+  checked = checker.checkFiles(context);
+  filePath = SKJS.FPath::create(SKJS.RootId::project, "expr-pos-test.ts");
+  results = checked.getArray(context, filePath);
+  SKTest.expectEq(1, results.size(), "expected 1 check result");
+  SKTest.expectTrue(
+    results[0].parseError is None() && results[0].errors.isEmpty(),
+    "expected clean typecheck",
+  );
+  cfgs = results[0].cfgs.values().collect(Array).sortedBy(c ~> c.name);
+  `[${", ".join(cfgs.map(SKJS.cfgToJson))}]`
+}
+
+// Pinning test for issue #708: constructor parameter property desugaring
+// currently reuses `pName.pos` across all four synthesized Exprs
+// (`this`, `x`, `this.x`, `this.x = x`), and duplicates the parameter default
+// Expr into both the constructor Param and the synthesized ClassFieldValue.
+// Because `assignLocalObject` also typechecks a synthetic `EString` at
+// `fieldName.pos == pName.pos` with `mostPrecise = true`, `CFGBuilder` looks
+// up `(x.pos, true, false)` and gets `"x"` instead of `number` for the RHS `x`.
+@test
+fun testParamPropertyExprPosUniqueness(): void {
+  source = "class Box {\n  constructor(public x: number = 0) {}\n}\n";
+  dups = findDuplicateExprPosInSource("param-prop.ts", source);
+  // Pre-fix: 3 duplicates from `this.x = x` sharing `x`'s PosRange plus
+  // 1 duplicate from sharing the default expression `0` on both the parameter
+  // and the synthesized ClassFieldValue.
+  SKTest.expectEq(
+    dups.size(),
+    4,
+    "pre-fix: expected 4 duplicate Expr PosRanges from parameter property",
+  );
+
+  cfgJson = buildCfgJsonForSource(source);
+  // Pre-fix: RHS `x` collides with the synthetic field-name string `"x"` in
+  // `exprTypes`, so the CFG records its type as `"x"` instead of `number`.
+  SKTest.expectTrue(
+    cfgJson.contains(`"value": {"expr": "x", "type": "\\"x\\""}`),
+    `pre-fix: expected collided type "\\"x\\"" in CFG JSON, got: ${cfgJson}`,
+  )
+}
+
+// Pinning test: non-parameter-property syntax (shorthand properties,
+// parenthesized expressions, destructuring defaults, optional chaining,
+// compound assignment, template literals, arrow functions) already produces
+// unique Expr PosRanges.
+@test
+fun testExprPosUniquenessGeneralSyntax(): void {
+  source =
+    "const x = 1;\n" +
+    "const obj = { x, y: (x + 1), z: `${x}-${x + 2}` };\n" +
+    "function f(a: number = 1, { b = 2 }: { b?: number } = {}): number {\n" +
+    "  let n = a;\n" +
+    "  n += b;\n" +
+    "  const fn = (k: number = 3) => k + n;\n" +
+    "  return fn(obj.x);\n" +
+    "}\n";
+  dups = findDuplicateExprPosInSource("general.ts", source);
+  SKTest.expectEq(dups.size(), 0, "expected no duplicate Expr PosRanges")
+}
+
+module end;
