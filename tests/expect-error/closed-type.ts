@@ -368,3 +368,92 @@ function testClosedShowExpanded(): void {
   const empty: Closed<{}> = {};
   __SKJS_show_expanded(empty, "Closed<{}>");
 }
+
+// ============================================================================
+// Never-index vs. undeclared missing-property diagnostics (SkipLabs/skjs#803):
+// Pinning current behavior before distinguishing per-key never-index coverage,
+// number/symbol never indexes, and destructuring from plain missing members.
+// ============================================================================
+
+function testNeverNumberIndexNumericKey(x: {
+  readonly a: number;
+  [k: number]: never;
+}): void {
+  // Currently misses the never-index note (only checks stringIndex/symbolIndex).
+  // @skjs-expect-error Property '0' does not exist on this type
+  // @skjs-expect-error-line2 Possible options are:
+  const v = x[0];
+}
+
+function testNeverNumberIndexStringNumericKey(x: {
+  readonly a: number;
+  [k: number]: never;
+}): void {
+  // Currently misses the never-index note for numeric string key "0".
+  // @skjs-expect-error Property '0' does not exist on this type
+  // @skjs-expect-error-line2 Possible options are:
+  const v = x["0"];
+}
+
+function testNeverNumberIndexNonNumericKey(x: {
+  readonly a: number;
+  [k: number]: never;
+}): void {
+  // Non-numeric key is not covered by `[k: number]: never`: stays a plain
+  // missing-property error with no closed/never-index note.
+  // @skjs-expect-error Property 'b' does not exist on this type
+  // @skjs-expect-error-line2 Possible options are:
+  const v = x.b;
+}
+
+function testNeverSymbolIndexStringKey(x: {
+  readonly a: number;
+  [k: symbol]: never;
+}): void {
+  // Currently falsely reports the closed-object note even though `[k: symbol]: never`
+  // does not cover string key `b`.
+  // @skjs-expect-error Property 'b' does not exist on this type
+  // @skjs-expect-error-line2 Possible options are:
+  // @skjs-expect-error-line3 The object type is closed: its unnamed keys are provably absent
+  const v = x.b;
+}
+
+function testNeverStringIndexRead(x: {
+  readonly a: number;
+  [k: string]: never;
+}): void {
+  // Currently reports "The object type is closed" even though only string keys
+  // have a never index (not a Closed<T> object).
+  // @skjs-expect-error Property 'b' does not exist on this type
+  // @skjs-expect-error-line2 Possible options are:
+  // @skjs-expect-error-line3 The object type is closed: its unnamed keys are provably absent
+  const v = x.b;
+}
+
+function testClosedDestructuringMissingKey(
+  x: Closed<{ readonly a: number }>,
+): void {
+  // Currently omits any closed/never-index note during object destructuring.
+  // @skjs-expect-error Property 'b' does not exist on this type
+  // @skjs-expect-error-line2 Out of 'Closed<{ readonly a: ...; }>'
+  const { b } = x;
+}
+
+function testNeverSymbolIndexSymbolKey(x: {
+  readonly a: number;
+  [k: symbol]: never;
+}): void {
+  // Currently gives only the bare symbol-not-found message with no never-index note.
+  // @skjs-expect-error This symbol property does not exist on the object
+  const v = x[sym];
+}
+
+function testUnionClosedAndOpenMissingKey(
+  x: Closed<{ readonly a: number }> | { readonly a: number },
+): void {
+  // Currently reports "The object type is closed" even though one branch is open.
+  // @skjs-expect-error Property 'b' does not exist on this type
+  // @skjs-expect-error-line2 Possible options are:
+  // @skjs-expect-error-line3 The object type is closed: its unnamed keys are provably absent
+  const v = x.b;
+}

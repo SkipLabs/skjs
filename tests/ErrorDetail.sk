@@ -162,4 +162,115 @@ fun testClosedTargetMissingIndexErrorDetail(): void {
   );
 }
 
+fun singleErrorMessages(source: String): Array<String> {
+  virtualPath = "/virtual/error-detail-test.ts";
+  fs = SKJS.OverlayFs{
+    underlying => SKJS.DiskFs(),
+    overlay => mkMem(Array[(virtualPath, source)]),
+  };
+  context = SKStore.Context::mcreate{};
+  files =
+    SKJS.Files::create(
+      context,
+      fs,
+      "/virtual",
+      Array[virtualPath],
+      Array[Path.resolve("./import-stubs")],
+    ) |> expectFilesSuccess;
+  SKJS.writeConfig(
+    context,
+    SKJS.CheckerConfig{
+      errorHandling => SKJS.EHDefault(),
+      errorDetailConfig => SKJS.ErrorDetailConfig::minimal(),
+    },
+  );
+  checker = SKJS.Checker::create{context, fs, files}.fromSuccess();
+  checked = checker.checkFiles(context);
+  filePath = SKJS.FPath::create(SKJS.RootId::project, "error-detail-test.ts");
+  errors = checked.getArray(context, filePath).flatMap(f -> f.errors);
+  SKTest.expectEq(1, errors.size(), `expected 1 error, got ${errors.size()}`);
+  errors[0] match {
+  | ne @ SKJS.NamingError _ -> ne.messages.map(m -> m.i1)
+  | other ->
+    invariant_violation(
+      `expected NamingError, got ${checker.errorToString(context, other)}`,
+    )
+  }
+}
+
+@test
+fun testMissingPropertyNeverIndexMessages(): void {
+  // Plain open object: no closed or never-index note.
+  SKTest.expectEq(
+    singleErrorMessages(
+      "function f(x: { readonly a: number }): void { const v = x.b; }\n",
+    ),
+    Array[
+      "Property 'b' does not exist on this type",
+      "Possible options are:\na",
+    ],
+    "open object missing property",
+  );
+
+  // Closed<T>: closed-object note.
+  SKTest.expectEq(
+    singleErrorMessages(
+      "function f(x: Closed<{ readonly a: number }>): void { const v = x.b; }\n",
+    ),
+    Array[
+      "Property 'b' does not exist on this type",
+      "Possible options are:\na",
+      "The object type is closed: its unnamed keys are provably absent",
+    ],
+    "closed object missing property",
+  );
+
+  // Number never-index with numeric key: currently omits the never-index note.
+  SKTest.expectEq(
+    singleErrorMessages(
+      "function f(x: { readonly a: number; [k: number]: never }): void { const v = x[0]; }\n",
+    ),
+    Array[
+      "Property '0' does not exist on this type",
+      "Possible options are:\na",
+    ],
+    "never number index numeric key",
+  );
+
+  // Symbol never-index with string key: currently falsely emits the closed note.
+  SKTest.expectEq(
+    singleErrorMessages(
+      "function f(x: { readonly a: number; [k: symbol]: never }): void { const v = x.b; }\n",
+    ),
+    Array[
+      "Property 'b' does not exist on this type",
+      "Possible options are:\na",
+      "The object type is closed: its unnamed keys are provably absent",
+    ],
+    "never symbol index string key",
+  );
+
+  // Closed<T> symbol key: currently emits no closed/never-index note.
+  SKTest.expectEq(
+    singleErrorMessages(
+      "declare const sym: unique symbol;\n" +
+        "function f(x: Closed<{ readonly a: number }>): void { const v = x[sym]; }\n",
+    ),
+    Array["This symbol property does not exist on the object"],
+    "closed object missing symbol key",
+  );
+
+  // Closed<T> destructuring: currently emits no closed/never-index note.
+  SKTest.expectEq(
+    singleErrorMessages(
+      "function f(x: Closed<{ readonly a: number }>): void { const { b } = x; }\n",
+    ),
+    Array[
+      "Property 'b' does not exist on this type",
+      "Out of 'Closed<{ readonly a: ...; }>'",
+    ],
+    "closed object destructuring",
+  );
+}
+
 module end;
