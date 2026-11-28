@@ -26,6 +26,10 @@ value class PosRange private (
 ) uses XXHashable, Hashable, Orderable {
   const none: this = PosRange(SPTopLevel(), FPath::nil, Pos::none, Pos::none);
 
+  static fun inFile(fileName: FPath): this {
+    PosRange(SPTopLevel(), fileName, Pos::none, Pos::none)
+  }
+
   static fun create(lexer: readonly Lexer, start: Pos, end: Pos): this {
     symbolPos = lexer.currentSymbolPos;
     relativeStart = Pos(start.value - symbolPos);

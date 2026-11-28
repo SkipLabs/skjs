@@ -518,7 +518,11 @@ mutable class TypeReadContext private {
         this.expandInstance(inst, Some(Covariant()), useSitePos),
       stypes ->
         stypes.map(types ->
-          types.filterMap(stype -> stype.truthinessResidue(target))
+          types.filterMap(stype ->
+            stype.truthinessResidue(target, f ->
+              this.fieldsAdmitsFalsyPrimitive(f)
+            )
+          )
         )
       ,
     )
@@ -715,11 +719,68 @@ mutable class TypeReadContext private {
       context.expandClauses(u2, Contravariant())
     };
     Clauses::isSubWith(left, right, (a, b) ->
-      STypes::isSubWith(a, b, (x, y) -> context.objectSubtype(x, y))
+      STypes::isSubWith(
+        a,
+        b,
+        (x, y) -> context.objectSubtype(x, y),
+        (prim, obj2) -> context.primSubtypeObject(prim, obj2),
+      )
     ) match {
     | STOk() -> STOk()
     | err @ STErrorOnClauses _ -> STRecType(err, u1, u2)
     }
+  }
+
+  private mutable fun primSubtypeObject(prim: TPrim, obj2: TObject): Bool {
+    if (obj2.admitsPrimitives()) return true;
+    obj2.mapOpt(b ->
+      if (b.mayBeInhabitedByPrimitive()) Some(b) else None()
+    ) match {
+    | None() -> false
+    | Some(boxable) ->
+      className = prim.asClassName();
+      resolvedName = if (className.pos.fileName == FPath::nil) {
+        Name(PosRange::inFile(this.tenv.defMap.builtinsFile()), className.value)
+      } else {
+        className
+      };
+      this.isSubtype(
+        TType::inst(resolvedName, TArgs(Array[])),
+        TType::single(boxable),
+      )
+    }
+  }
+
+  private mutable fun fieldsAdmitsPrimitiveKind(
+    fields: TFields,
+    className: Name,
+  ): Bool {
+    if (fields.admitsPrimitives()) return true;
+    if (!fields.mayBeInhabitedByPrimitive()) return false;
+    this.isSubtype(
+      TType::inst(className, TArgs(Array[])),
+      TType::single(
+        TObject::createSingleBranch(fields, None(), PosRange::none),
+      ),
+    )
+  }
+
+  private mutable fun fieldsAdmitsAnyPrimitive(fields: TFields): Bool {
+    if (fields.admitsPrimitives()) return true;
+    if (!fields.mayBeInhabitedByPrimitive()) return false;
+    builtinPos = PosRange::inFile(this.tenv.defMap.builtinsFile());
+    fields.candidatePrimitiveClassNames(false).any(name ->
+      this.fieldsAdmitsPrimitiveKind(fields, Name(builtinPos, name))
+    )
+  }
+
+  private mutable fun fieldsAdmitsFalsyPrimitive(fields: TFields): Bool {
+    if (fields.admitsPrimitives()) return true;
+    if (!fields.mayBeInhabitedByPrimitive()) return false;
+    builtinPos = PosRange::inFile(this.tenv.defMap.builtinsFile());
+    fields.candidatePrimitiveClassNames(true).any(name ->
+      this.fieldsAdmitsPrimitiveKind(fields, Name(builtinPos, name))
+    )
   }
 
   private mutable fun objectSubtype(
@@ -762,17 +823,22 @@ mutable class TypeReadContext private {
       this.expandClauses(u2, Contravariant())
     };
     Clauses::isSubWith(left, right, (a, b) ->
-      STypes::isSubWith(a, b, (x, y) ->
-        TObject::isSubWith(x, y, (f, g) ->
-          TFields::isSubWith(
-            f,
-            g,
-            (l, r) -> this.subtype(l, r),
-            (l, r) -> this.subtype(l, r),
-            (l, r) -> this.funsSubtype(l, r, carrier),
-            (pos, name) -> this.symbolId(pos, name),
-          )
-        )
+      STypes::isSubWith(
+        a,
+        b,
+        (x, y) ->
+          TObject::isSubWith(x, y, (f, g) ->
+            TFields::isSubWith(
+              f,
+              g,
+              (l, r) -> this.subtype(l, r),
+              (l, r) -> this.subtype(l, r),
+              (l, r) -> this.funsSubtype(l, r, carrier),
+              (pos, name) -> this.symbolId(pos, name),
+              branch -> this.fieldsAdmitsAnyPrimitive(branch),
+            )
+          ),
+        (prim, obj2) -> this.primSubtypeObject(prim, obj2),
       )
     ) match {
     | STOk() -> STOk()
@@ -792,6 +858,7 @@ mutable class TypeReadContext private {
       (a, b) -> this.memberGetterSubtype(a, b, carrier),
       (a, b) -> this.funsSubtype(a, b),
       (pos, name) -> this.symbolId(pos, name),
+      branch -> this.fieldsAdmitsAnyPrimitive(branch),
     )
   }
 
@@ -926,11 +993,18 @@ mutable class TypeReadContext private {
     b = context.expandClauses(right, Covariant());
     (a.primKind(), b.getObject()) match {
     | (Some(name), Some(obj)) ->
-      obj.mapOpt(f -> if (f.isNonPrimitive) None() else Some(f)) match {
+      obj.mapOpt(f ->
+        if (f.mayBeInhabitedByPrimitive()) Some(f) else None()
+      ) match {
       | Some(boxable) ->
+        resolved = if (name.pos.fileName == FPath::nil) {
+          Name(PosRange::inFile(this.tenv.defMap.builtinsFile()), name.value)
+        } else {
+          name
+        };
         if (
           context.isSubtype(
-            TType::inst(name, TArgs(Array[])),
+            TType::inst(resolved, TArgs(Array[])),
             TType::single(boxable),
           )
         ) return left
@@ -940,11 +1014,18 @@ mutable class TypeReadContext private {
     };
     (b.primKind(), a.getObject()) match {
     | (Some(name), Some(obj)) ->
-      obj.mapOpt(f -> if (f.isNonPrimitive) None() else Some(f)) match {
+      obj.mapOpt(f ->
+        if (f.mayBeInhabitedByPrimitive()) Some(f) else None()
+      ) match {
       | Some(boxable) ->
+        resolved = if (name.pos.fileName == FPath::nil) {
+          Name(PosRange::inFile(this.tenv.defMap.builtinsFile()), name.value)
+        } else {
+          name
+        };
         if (
           context.isSubtype(
-            TType::inst(name, TArgs(Array[])),
+            TType::inst(resolved, TArgs(Array[])),
             TType::single(boxable),
           )
         ) return right
@@ -954,8 +1035,11 @@ mutable class TypeReadContext private {
     };
     TType::ofClauses(
       left.pos,
-      Clauses::interWith(a, b, (f, g) ->
-        context.intersectFields(f, g, narrowing)
+      Clauses::interWith(
+        a,
+        b,
+        (f, g) -> context.intersectFields(f, g, narrowing),
+        (prim, obj) -> context.primSubtypeObject(prim, obj),
       ),
     )
   }

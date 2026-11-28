@@ -9,7 +9,7 @@ Normative specification of the TypeScript subset checked by SKJS. Where a rule i
 - [Key Rules & Restrictions](#key-rules--restrictions)
   - Scope & bindings: [1. Top-level `let`](#1-no-toplevel-let-declarations) · [1b. Top-level `const` destructuring](#1b-no-destructuring-in-top-level-const-declarations) · [31. Annotated writes & evolving `let`](#31-writes-are-checked-against-an-explicit-annotation-only)
   - Types, literals & operators: [2. Delayed array literals](#2-array-literals-use-delayed-typing) · [8. `keyof`](#8-keyof-operator) · [9. Literal typing & `as const`](#9-literal-typing-and-as-const) · [17. No `any`](#17-the-any-type-is-not-supported) · [18. Template literal strings](#18-template-literal-strings) · [18b. Template literal types](#18b-template-literal-types-partially-supported) · [19. `as` casts](#19-as-casts-are-checked-for-soundness) · [30. Number literals](#30-number-literal-normalization) · [30b. String escapes](#30b-string-literal-escape-decoding) · [30c. Identifier chars](#30c-identifier-characters) · [31. Enums](#31-enums-value-set-semantics) · [33. Circular type params](#33-circular-type-parameter-defaults-and-constraints)
-  - Objects, fields & mutability: [27. Readonly field soundness](#27-readonly-field-soundness-stricter-than-typescript) · [28. Optional fields exact](#28-optional-fields-are-exact-present--t) · [28. Index signatures](#28-index-signatures) · [28b. `Closed<T>`](#28b-closedt--closed-object-types-skjs-extension) · [28. Object spread soundness](#28-object-spread-soundness-stricter-than-typescript) · [37. `object` vs `{}`](#37-object-vs---non-primitive-vs-non-nullish-stricter-than-typescript)
+  - Objects, fields & mutability: [27. Readonly field soundness](#27-readonly-field-soundness-stricter-than-typescript) · [28. Optional fields exact](#28-optional-fields-are-exact-present--t) · [28. Index signatures](#28-index-signatures) · [28b. `Closed<T>`](#28b-closedt--closed-object-types-skjs-extension) · [28. Object spread soundness](#28-object-spread-soundness-stricter-than-typescript) · [37. `object`, `{}` & primitive shapes](#37-object--and-primitive-inhabitance-of-structural-shapes-stricter-than-typescript)
   - Functions & classes: [3. Class inheritance constructors](#3-class-inheritance-constructor-signatures) · [4b. Abstract classes/methods](#4b-abstract-methods-not-supported) · [4c. Static readonly fields](#4c-static-fields-must-be-readonly) · [10. Function overloads](#10-function-overloading-functions-methods-constructors-call-signatures) · [12. Function expressions](#12-function-expressions-not-supported) · [16. Explicit function annotations](#16-function-signatures-must-be-fully-annotated) · [16b. Ambient un-annotated class fields](#16b-un-annotated-class-fields-are-opaque-ambient-classes) · [32. `this` parameter](#32-the-this-parameter--differences-from-typescript) · [35. Nominal classes](#35-class-instance-types-are-nominal-stricter-than-typescript)
   - Narrowing & control flow: [13. Discriminated unions](#13-discriminated-unions) · [20. `for...of`](#20-forof-loop-constraints) · [20b. `switch` & jump edges](#20b-switch-clauses-must-not-fall-through) · [21. Promises & `async`/`await`](#21-promises-and-asyncawait) · [27b. `Array.isArray`](#27b-arrayisarray-narrowing-stays-readonly-unless-provably-mutable-stricter-than-typescript) · [27c. `instanceof` & `Symbol.hasInstance`](#27c-instanceof-narrowing-is-suppressed-for-custom-symbolhasinstance-stricter-than-typescript) · [27d. `typeof === "function"`](#27d-typeof-x--function-narrowing-uses-four-state-callability-stricter-than-typescript) · [27e. Generic `instanceof`](#27e-instanceof-narrowing-binds-hidden-type-arguments-rigidly-stricter-than-typescript) · [27f. `void`/`undefined` equality](#27f-void-and-undefined-overlap-in-equality-narrowing) · [27g. Incomparable function equality](#27g-incomparable-function-signatures-are-not-disjoint-in-equality-narrowing) · [29. Truthiness](#29-truthiness-tests-and-the-truthiness-option) · [36. Assertion signatures](#36-assertion-signatures-asserts-x-and-asserts-x-is-t)
   - Environment & modules: [5. Console surface](#5-console-surface-is-minimal) · [14. Import system](#14-import-system)
@@ -569,19 +569,19 @@ cases and conservatively under-approximates a few others.
     `this: T`, or boxed primitive method) inhabits a method-syntax shape member
     `{ m(): R }` iff the enclosing carrier branch itself satisfies the method's
     declared receiver (`carrier <: thisParam`; SkipLabs/skjs#1020). This
-    restores structural inhabitance for class instances, interfaces, and
-    carrier-satisfied object literals while rejecting all `#993` laundering
-    patterns (such as `{ m: f }` where the literal does not satisfy `f`'s
-    `this`, or re-attaching an extracted shape method to a different carrier).
-    Direct primitive-to-object subtyping (`number <: { toFixed(): string }`)
-    remains tracked separately by SkipLabs/skjs#982.
+    restores structural inhabitance for class instances, interfaces,
+    carrier-satisfied object literals, and non-nullish primitives
+    (`"hi" <: { toUpperCase(): string }`, `42 <: { toFixed(d?: number): string }`,
+    SkipLabs/skjs#982) while rejecting all `#993` laundering patterns (such as
+    `{ m: f }` where the literal does not satisfy `f`'s `this`, or re-attaching
+    an extracted shape method to a different carrier).
 - **`this: void` / `this: undefined` is receiver-less.** Such a function is a
   free function: assignable to a no-`this` type, usable as a no-`this` callback,
   and its `.call`/`.apply`/`.bind` accept any receiver (more permissive than TS,
   which restricts the `.call` receiver). To keep that sound, the body may not
   observe `this` — any use is rejected (stricter than TS, which types `this` as
   `void`/`undefined` inside the body).
-- **Verified by**: `tests/expect-error/this-parameter*.ts`
+- **Verified by**: `tests/expect-error/this-parameter*.ts`, `tests/expect-error/primitive-method-shape.ts`
 
 ### 33. Circular Type-Parameter Defaults and Constraints
 
@@ -634,21 +634,23 @@ union/intersection member, or a reference's arguments) denotes nothing.
   - Two assertion functions are compatible when they assert on the same subject (`this` or the same positional parameter index) and have compatible kinds: `asserts x` matches `asserts x`, and `asserts x is T1` matches `asserts x is T2` covariantly when `T1 <: T2` (sound because assertions never return normally on failure, so there is no false-branch subtraction).
 - **Verified by**: `tests/expect-error/assertion-signatures.ts`
 
-### 37. `object` vs `{}` — Non-Primitive vs Non-Nullish (Stricter than TypeScript)
+### 37. `object`, `{}`, and Primitive Inhabitance of Structural Shapes (Stricter than TypeScript)
 
-- **Rule**: The `object` keyword type and the empty object type `{}` (and empty structural interfaces `interface Empty {}`) are distinct types (#674):
+- **Rule**: The `object` keyword type and the empty object type `{}` (and empty structural interfaces `interface Empty {}`) are distinct types (#674), and non-nullish primitives inhabit structural object shapes satisfied by their boxed prototype (#982):
   - `{}` denotes any **non-nullish** value: it accepts all non-nullish primitives (`string`, `number`, `boolean`, `bigint`, `symbol`) as well as all non-primitive objects, and rejects `null`, `undefined`, and `void`.
-  - `object` denotes **non-primitive** values only: it rejects primitives (`string`, `number`, `boolean`, `bigint`, `symbol`), `null`, `undefined`, `void`, and `{}`.
-  - Primitive boxing into member-bearing object shapes remains off (`string` is not assignable to `{ readonly length: number }`). Consequently, every non-empty structural object type, function, array, tuple, nominal class instance, closed object (`Closed<{}>`), enum object, and object literal (`{}`) is provably non-primitive and assignable to `object`.
+  - `object` denotes **non-primitive** values only: it rejects primitives (`string`, `number`, `boolean`, `bigint`, `symbol`), `null`, `undefined`, `void`, `{}`, and any structural shape that a primitive can inhabit.
+  - **Primitive-to-shape subtyping (#982)**: a non-nullish primitive (`string`, `number`, `boolean`, `bigint`, `symbol`, and their literal subtypes) is assignable to a structural object type when its boxed prototype class (`string`, `number`, `boolean`, `bigint`, `symbol`) satisfies every member of that shape — e.g. `"hi"` inhabits `{ toUpperCase(): string }` and `{ readonly length: number }`, `42` inhabits `{ toFixed(digits?: number): string }`.
+  - **Soundness exclusions**: primitives are **not** assignable to `object`, `Closed<...>`, nominal classes, arrays/tuples, callable/constructible types, shapes with mutable properties or mutable index signatures (e.g. `{ length: number }` rejects `"hi"` because `string.length` is `readonly`), property-syntax free-function slots (`{ readonly toFixed: () => string }` rejects `42` because `Number.prototype.toFixed` requires `this: number`), or property-syntax own-enumerable slots (`{ readonly toFixed: (this: number) => string }` rejects `42` because prototype methods are non-enumerable and omitted by `{ ...x }`). Every non-primitive shape — including any object type with a mutable field, a field not present on any primitive prototype, a call/construct signature, a class identity, an array/tuple brand, `Closed<...>`, an object literal, or `& object` — remains provably non-primitive and assignable to `object`.
 - **Subtyping (stricter than TypeScript for soundness)**:
-  - `object <: {}` holds, but `{} <: object` is **rejected**. TypeScript unsoundly allows `{}` to flow into `object` despite `string <: {}`, breaking transitivity and allowing primitives to reach `object`-typed code (`const e: {} = "hello"; const o: object = e;`).
-- **Intersections, equality, narrowing, truthiness, and `in`**:
-  - `prim & {}` simplifies to `prim` (so `(string | null | undefined) & {}` is `string`, matching TypeScript's `NonNullable` idiom), while `prim & object` collapses to `never`.
-  - `prim === o` (where `o: object`) warns always-false (non-overlapping types), while `prim === e` (where `e: {}`) overlaps and narrows `e` to `prim`.
-  - `typeof u === "object"` narrows `unknown` to `object | null` (not `{} | null`). `typeof e === "string"` narrows `e: {}` to `string` (not `never`), while `typeof o === "string"` narrows `o: object` to `never`. `typeof o !== "object"` followed by `typeof o !== "function"` narrows `object` to `never`, whereas `{}` remains `{}` because it may hold a primitive.
-  - Truthiness: `object` is always truthy (`if (o) {} else { const n: never = o; }` narrows the else branch to `never`), whereas `{}` may hold falsy primitives (`""`, `0`, `false`, `0n`, `NaN`) so its falsy branch stays `{}`.
-  - The `in` operator rejects `{}` as its right-hand side (`TS2361`), because `k in prim` throws `TypeError` at runtime (stricter than TypeScript, which allows `"a" in e` for `e: {}`). Object literals (`"a" in {}`) and `object` values (`"a" in o`) remain accepted.
-- **Verified by**: `tests/expect-error/object-keyword.ts`, `tests/expect-error/equality.ts`, `tests/expect-error/callability.ts`, `tests/expect-error/template-literal-types.ts`
+  - `object <: {}` holds, but neither `{}` nor any primitive-inhabited structural shape (such as `{ readonly length: number }` or `{ toUpperCase(): string }`) is assignable to `object`. TypeScript unsoundly allows `{}` and `{ readonly length: number }` to flow into `object` despite `"hello"` inhabiting them, breaking transitivity and allowing primitives to reach `object`-typed code (`const e: { readonly length: number } = "hello"; const o: object = e;`).
+- **Intersections, equality, narrowing, truthiness, spread, and `in`**:
+  - `prim & S` simplifies to `prim` when `prim` inhabits `S` (so `(string | null | undefined) & {}` is `string`, `(string | null) & { toUpperCase(): string }` is `string`, and `(string | number) & { toFixed(digits?: number): string }` is `number`), while `prim & object` and incompatible `prim & S` collapse to `never`.
+  - `prim === o` (where `o: object`) warns always-false (non-overlapping types), while `prim === e` (where `e` is `{}` or a shape inhabited by `prim`) overlaps and narrows `e` to `prim`.
+  - `typeof u === "object"` narrows `unknown` to `object | null` (not `{} | null`). `typeof x === "string"` narrows `x` to `string` when `string` inhabits `x`'s type (e.g. `{}` or `{ readonly length: number }`) and to `never` otherwise (e.g. `object` or `{ toFixed(digits?: number): string }`). `typeof o !== "object"` followed by `typeof o !== "function"` narrows non-primitive types (`object`, `{ readonly custom: number }`) to `never`, whereas `{}` and primitive-inhabited shapes survive because they may hold a primitive.
+  - Truthiness: non-primitive object types (`object`, `{ readonly custom: number }`) are always truthy (`if (o) {} else { const n: never = o; }` narrows the else branch to `never`), whereas `{}` and shapes inhabited by falsy-capable primitives (`string`, `number`, `boolean`, `bigint` — i.e. `""`, `0`/`NaN`, `false`, `0n`) keep a non-empty falsy branch.
+  - The `in` operator rejects `{}` and any primitive-inhabited shape as its right-hand side (`TS2361`), because `k in prim` throws `TypeError` at runtime (stricter than TypeScript). Non-primitive shapes (`{ readonly custom: number }`, `HasToUpperCase & object`), object literals (`"a" in {}`), and `object` values (`"a" in o`) remain accepted.
+  - Object spread (`{ ...x }`) and rest destructuring (`const { ...r } = x`) on a non-empty primitive-inhabited shape mark copied fields optional, because spreading a primitive omits non-enumerable properties like `string.length` and prototype methods.
+- **Verified by**: `tests/expect-error/object-keyword.ts`, `tests/expect-error/primitive-method-shape.ts`, `tests/expect-error/equality.ts`, `tests/expect-error/callability.ts`, `tests/expect-error/template-literal-types.ts`
 
 ## Coding Guidelines for SKJS
 

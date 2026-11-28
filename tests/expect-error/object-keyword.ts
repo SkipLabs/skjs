@@ -151,7 +151,7 @@ function nonPrimitivesToObject(
   tup: [number, string],
   shape: { a: number },
   optShape: { a?: number },
-  lenShape: { readonly length: number },
+  roCustomShape: { readonly custom: number },
   idxShape: { [k: string]: number },
   closedEmpty: Closed<{}>,
 ): void {
@@ -166,19 +166,23 @@ function nonPrimitivesToObject(
   const o8: object = tup;
   const o9: object = shape;
   const o10: object = optShape;
-  const o11: object = lenShape;
+  const o11: object = roCustomShape;
   const o12: object = idxShape;
   const o13: object = closedEmpty;
 }
 
-// Boxing stays off: primitives do NOT satisfy member-bearing shapes.
-function stringToLengthShape(): { readonly length: number } {
+// Primitives inhabit primitive-compatible structural shapes (#982), so those
+// shapes cannot flow into `object` (preserving transitivity).
+function lengthShapeToObject(lenShape: { readonly length: number }): object {
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  return lenShape;
+}
+
+function stringToLengthShape(): { readonly length: number } {
   return "hello";
 }
 
 function numberToFixedShape(): { toFixed(digits?: number): string } {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return 42;
 }
 

@@ -220,9 +220,9 @@ declare const Number: {
 };
 
 declare class string {
-  length: number;
+  readonly length: number;
 
-  [index: number]: string | undefined;
+  readonly [index: number]: string | undefined;
 
   // Existing methods
   charAt(this: string, pos: number): string;

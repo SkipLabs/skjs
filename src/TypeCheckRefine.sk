@@ -267,18 +267,25 @@ extension class TypeChecker {
     target: Bool,
   ): void {
     // Narrow a primitive `typeof` test (`"string"`, `"number"`, etc.).
-    // On the true side, `{}` (any object branch with `admitsPrimitives()`)
-    // narrows to the tested primitive; non-primitive objects are dropped.
-    // On the false side, `{}` is kept (we cannot subtract a single primitive
-    // from `{}`), and non-primitive objects are kept.
-    narrowPrim = (matchesPrim: SType -> Bool, prim: SType) -> {
+    // On the true side, `{}` and any structural object shape inhabited by the
+    // tested primitive (e.g. `{ readonly length: number }` for `"string"`, #982)
+    // narrow to the tested primitive; other object branches are dropped.
+    // On the false side, object branches are kept (we cannot subtract a single
+    // primitive from `{}` or a structural shape).
+    narrowPrim = (matchesPrim: SType -> Bool, prim: TPrim) -> {
       filterMap = x ->
         if (matchesPrim(x)) {
           if (target) Some(x) else None()
         } else {
           x match {
           | tObj @ TObject _ if (target) ->
-            if (tObj.admitsPrimitives()) Some(prim) else None()
+            if (
+              tObj.admitsPrimitiveKind(tcenv.subst, this, prim.asClassName())
+            ) {
+              Some(prim)
+            } else {
+              None()
+            }
           | _ -> if (target) None() else Some(x)
           }
         };
@@ -317,7 +324,7 @@ extension class TypeChecker {
     | "object" ->
       // An object branch is typeof "object" iff it is non-primitive and not
       // typeof "function"; null joins the true branch below.
-      filterMap = x ~>
+      filterMap = x ->
         x match {
         | tObj @ TObject _ ->
           if (target) {
@@ -329,8 +336,9 @@ extension class TypeChecker {
             )
           } else {
             // `typeof x !== "object"`:
-            // - A branch that admits primitives (`{}`) may still hold a
-            //   primitive even if `call` is `CAbsent()`, so keep it unchanged.
+            // - A branch that admits primitives (`{}` or a primitive-inhabited
+            //   shape, #674 / #982) may still hold a primitive even if `call`
+            //   is `CAbsent()`, so keep it unchanged.
             // - A non-primitive branch cannot be a primitive: if it is not
             //   `typeof "object"`, it must be `typeof "function"`. Strengthen
             //   `isNonPrimitive` branches (such as `object`) to `CFunction`
@@ -338,7 +346,7 @@ extension class TypeChecker {
             //   narrows `object` to `never`. Structural member-bearing shapes
             //   keep `provenCallable = false` (cf. tests/expect-error/typeof.ts).
             tObj.mapOpt(tFields ->
-              if (tFields.admitsPrimitives()) {
+              if (tFields.admitsAnyPrimitive(tcenv.subst, this)) {
                 Some(tFields)
               } else {
                 tFields.narrowByTypeofFunction(true, tFields.isNonPrimitive)
@@ -940,7 +948,10 @@ extension class TypeChecker {
   // semantics are always JavaScript here regardless of the truthiness mode
   // (issue #654). No-op if `local` is not in the local scope (e.g. a const).
   fun evalTruthiness(tcenv: mutable TCEnv, local: Name, target: Bool): void {
-    filterMap = stype -> stype.truthinessResidue(target);
+    filterMap = stype ->
+      stype.truthinessResidue(target, f ->
+        f.admitsFalsyPrimitive(tcenv.subst, this)
+      );
     this.setLocalFilterMap(tcenv, local, None(), filterMap)
   }
 

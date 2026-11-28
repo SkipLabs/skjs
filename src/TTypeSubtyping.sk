@@ -895,7 +895,7 @@ base class STErrorOnTFields(
         List[
           (
             pos1,
-            "Type '{}' admits primitive values, which are not assignable to non-primitive type 'object'",
+            "This type admits primitive values, which are not assignable to non-primitive type 'object'",
           ),
         ],
         None(),
@@ -1326,6 +1326,7 @@ extension class TFields {
     memberGetterSub: (TType, TType) -> STResult<TType>,
     funsSub: (TFuns, TFuns) -> STResult<TFuns>,
     symbolId: (PosRange, String) -> ?String,
+    fieldsAdmitsPrimitive: TFields -> Bool,
   ): STResult<TFields> {
     // Function-like views can execute @@hasInstance even when the field is
     // omitted. Width subtyping must not erase that implicit call contract.
@@ -1444,8 +1445,10 @@ extension class TFields {
       return STRecFieldsClassIdentity(missing, fields1, fields2)
     | None() -> void
     };
-    // `object` excludes primitive values while `{}` admits them (#674).
-    if (!fields2.admitsPrimitives() && fields1.admitsPrimitives()) {
+    // Non-primitive targets (e.g. `object`, `{ m(): R } & object`) exclude
+    // primitive values, so any source branch inhabited by a primitive (`{}` or
+    // a primitive-compatible structural shape, #674 / #982) must be rejected.
+    if (fields2.isNonPrimitive && fieldsAdmitsPrimitive(fields1)) {
       return STRecFieldsPrimitiveAllowed(fields1, fields2)
     };
     STOk()
@@ -1504,6 +1507,7 @@ extension class STypes {
     stypes1: STypes,
     stypes2: STypes,
     objectSub: (TObject, TObject) -> STResult<TObject>,
+    primSubObject: (TPrim, TObject) -> Bool,
   ): STResult<STypes> {
     stypes1.stypes.leq(stypes2.stypes, (sty1, sty2O) ->
       sty2O match {
@@ -1534,19 +1538,28 @@ extension class STypes {
         // the judgment is sound (issue #871). `null` stays rejected — SKJS's
         // strict-null semantics keep `void` and `null` disjoint.
         // Non-nullish primitives (`TPrimValue`, `TPrimString`) are assignable
-        // to `{}` (an object branch that admits primitives), but NOT to
-        // `object` or member-bearing shapes (issue #674).
-        if (
-          (sty1 is TPrimUnit(TUndefined(), _) &&
-            stypes2.any(st -> st is TPrimUnit(TVoid(), _))) ||
-          ((sty1 is TPrimValue _ || sty1 is TPrimString _) &&
-            stypes2.any(st ->
-              st match {
-              | obj2 @ TObject _ -> obj2.admitsPrimitives()
-              | _ -> false
-              }
-            ))
-        ) {
+        // to `{}` directly, and to structural object shapes whose members are
+        // satisfied by the primitive's boxed prototype (issues #674, #982).
+        matched = sty1 match {
+        | TPrimUnit(TUndefined(), _) ->
+          stypes2.any(st -> st is TPrimUnit(TVoid(), _))
+        | prim @ TPrimValue _ ->
+          stypes2.any(st ->
+            st match {
+            | obj2 @ TObject _ -> primSubObject(prim, obj2)
+            | _ -> false
+            }
+          )
+        | prim @ TPrimString _ ->
+          stypes2.any(st ->
+            st match {
+            | obj2 @ TObject _ -> primSubObject(prim, obj2)
+            | _ -> false
+            }
+          )
+        | _ -> false
+        };
+        if (matched) {
           Success(void)
         } else {
           Failure(STTooManySType(sty1, stypes2))
@@ -2192,21 +2205,26 @@ extension class TType {
     clauses1 = u1.expandToClauses(subst, tenv, Covariant());
     clauses2 = u2.expandToClauses(subst, tenv, Contravariant());
     Clauses::isSubWith(clauses1, clauses2, (stypes1, stypes2) ->
-      STypes::isSubWith(stypes1, stypes2, (obj1, obj2) ->
-        TObject::isSubWith(obj1, obj2, (f1, f2) -> {
-          savedBranchSubst = subst.save();
-          res = TFields::isSubWith(
-            f1,
-            f2,
-            (left, right) -> static::isSub(subst, tenv, left, right),
-            (left, right) -> static::isSub(subst, tenv, left, right),
-            (left, right) ->
-              static::isSubFuns(subst, tenv, left, right, carrier),
-            (pos, name) -> tenv.getWellKnownSymbolUniqueId(subst, pos, name),
-          );
-          if (res is STError _) subst.restore(savedBranchSubst);
-          res
-        })
+      STypes::isSubWith(
+        stypes1,
+        stypes2,
+        (obj1, obj2) ->
+          TObject::isSubWith(obj1, obj2, (f1, f2) -> {
+            savedBranchSubst = subst.save();
+            res = TFields::isSubWith(
+              f1,
+              f2,
+              (left, right) -> static::isSub(subst, tenv, left, right),
+              (left, right) -> static::isSub(subst, tenv, left, right),
+              (left, right) ->
+                static::isSubFuns(subst, tenv, left, right, carrier),
+              (pos, name) -> tenv.getWellKnownSymbolUniqueId(subst, pos, name),
+              f -> f.admitsAnyPrimitive(subst, tenv),
+            );
+            if (res is STError _) subst.restore(savedBranchSubst);
+            res
+          }),
+        (prim, obj2) -> static::isSubPrimObject(subst, tenv, prim, obj2),
       )
     ) match {
     | STOk() -> STOk()
@@ -2214,6 +2232,36 @@ extension class TType {
       hints = static::originSuggestions(subst, tenv, u1, u2);
       subst.restore(savedSubst);
       STRecTypeWithHint(err, hints, u1, u2)
+    }
+  }
+
+  private static fun isSubPrimObject(
+    subst: mutable Subst,
+    tenv: TEnv,
+    prim: TPrim,
+    obj2: TObject,
+  ): Bool {
+    if (obj2.admitsPrimitives()) return true;
+    obj2.mapOpt(b ->
+      if (b.mayBeInhabitedByPrimitive()) Some(b) else None()
+    ) match {
+    | None() -> false
+    | Some(boxable) ->
+      className = prim.asClassName();
+      resolvedName = if (className.pos.fileName == FPath::nil) {
+        Name(PosRange::inFile(tenv.defMap.builtinsFile()), className.value)
+      } else {
+        className
+      };
+      boxed = TType::inst(resolvedName, TArgs(Array[]));
+      saved = subst.save();
+      res = static::isSub(subst, tenv, boxed, TType::single(boxable));
+      if (res is STError _) {
+        subst.restore(saved);
+        false
+      } else {
+        true
+      }
     }
   }
 
@@ -2233,6 +2281,7 @@ extension class TType {
         static::isSubMemberGetter(subst, tenv, left, right, carrier),
       (left, right) -> static::isSubFuns(subst, tenv, left, right),
       (pos, name) -> tenv.getWellKnownSymbolUniqueId(subst, pos, name),
+      f -> f.admitsAnyPrimitive(subst, tenv),
     );
     if (res is STError _) subst.restore(savedSubst);
     res
@@ -2245,8 +2294,11 @@ extension class TType {
     stypes2: STypes,
   ): STResult<STypes> {
     savedSubst = subst.save();
-    result = STypes::isSubWith(stypes1, stypes2, (left, right) ->
-      static::isSubObject(subst, tenv, left, right)
+    result = STypes::isSubWith(
+      stypes1,
+      stypes2,
+      (left, right) -> static::isSubObject(subst, tenv, left, right),
+      (prim, obj2) -> static::isSubPrimObject(subst, tenv, prim, obj2),
     );
     if (result is STError _) subst.restore(savedSubst);
     result

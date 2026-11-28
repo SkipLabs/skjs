@@ -1193,12 +1193,20 @@ extension class TypeChecker {
         restBranches = if (sawDefault) stableBranches else branches;
         copiedBranches = mutable Vector<TFields>[];
         for (fields in restBranches) {
+          copied = this.stablePropertyCopyFields(
+            tcenv,
+            fields.removeFields(fieldsToRemoveForRest),
+            stableType.flatMap(ty -> if (ty == type) None() else Some(ty)),
+          );
           copiedBranches.push(
-            this.stablePropertyCopyFields(
-              tcenv,
-              fields.removeFields(fieldsToRemoveForRest),
-              stableType.flatMap(ty -> if (ty == type) None() else Some(ty)),
-            ),
+            if (
+              !fields.isEmpty() &&
+              fields.admitsAnyPrimitive(tcenv.subst, this)
+            ) {
+              copied.map(f -> f with {isOptional => true}, funs -> funs)
+            } else {
+              copied
+            },
           )
         };
         this.bind(
@@ -2803,6 +2811,25 @@ extension class TypeChecker {
           // union (the `cond && { x: T }` idiom, whose type is
           // `false | { x: T }`). A void or string arm, or any
           // non-object/non-primitive stype, makes the whole spread invalid.
+          // Collect the source branches to distribute over. `{ ...(A | B) }`
+          // is `(spread A) | (spread B)`: each object arm contributes its
+          // TObject branches. A union arm that is a primitive spreading to a
+          // no-op — any primitive EXCEPT a string (whose indexed characters
+          // WOULD be copied, e.g. `{...'ab'}` is `{0:'a',1:'b'}`) and void
+          // (which must never be observed) — contributes the accumulated
+          // state UNCHANGED (the "spread did not fire" branch), which makes
+          // the fields the object arms add optional in the distributed
+          // union (the `cond && { x: T }` idiom, whose type is
+          // `false | { x: T }`). A void or string arm, or any
+          // non-object/non-primitive stype, makes the whole spread invalid.
+          //
+          // For an object branch that can be inhabited by a primitive (#982),
+          // spreading a primitive at runtime omits non-enumerable own fields
+          // (e.g. `"hi".length`) and prototype methods (already marked
+          // `mayBeOmittedByCopy`), so if the branch is non-empty and admits a
+          // primitive, treat its fields as potentially omitted by copy (so
+          // `{ ...x }` cannot assume `length` survived the spread). Empty `{}`
+          // has no fields to promise and spreads to `{}` as before.
           sourceBranches = mutable Vector<TFields>[];
           sawNoopPrimitive = false;
           sawInvalid = spreadTy.getSTypes(
@@ -2817,15 +2844,23 @@ extension class TypeChecker {
               stype match {
               | obj @ TObject _ ->
                 sourceBranches.extend(
-                  obj.getBranches().map(fields ->
-                    this.stablePropertyCopyFields(
+                  obj.getBranches().map(fields -> {
+                    copied = this.stablePropertyCopyFields(
                       tcenv,
                       fields,
                       if (stableSpreadTy == spreadTy) None() else {
                         Some(stableSpreadTy)
                       },
-                    )
-                  ),
+                    );
+                    if (
+                      !fields.isEmpty() &&
+                      fields.admitsAnyPrimitive(tcenv.subst, this)
+                    ) {
+                      copied.map(f -> f with {isOptional => true}, funs -> funs)
+                    } else {
+                      copied
+                    }
+                  }),
                 )
               | TPrimUnit(TVoid(), _)
               | TPrimString(_, _) ->
@@ -3878,10 +3913,11 @@ extension class TypeChecker {
             !canBeTrue = true;
             !canBeFalse = true
           | obj @ TObject(_, _, _pos) ->
-            // `{}` admits primitive values at runtime, and `k in prim` throws
-            // a TypeError (ECMA-262 13.10.1), so reject branches that admit
-            // primitives (#674).
-            if (obj.admitsPrimitives()) {
+            // `{}` and primitive-inhabited shapes (e.g. `{ readonly length: number }`,
+            // `{ toUpperCase(): string }`) admit primitive values at runtime,
+            // and `k in prim` throws a TypeError (ECMA-262 13.10.1), so reject
+            // any branch that admits primitives (#674, #982).
+            if (obj.admitsAnyPrimitive(tcenv.subst, this)) {
               tcenv.error(
                 Array[
                   (
