@@ -1159,7 +1159,7 @@ extension class TFields {
           ) {
             return STRecFieldsFieldAccess(f1, idx2, fields1, fields2)
           };
-          typeSub(f1.get, idx2.get) match {
+          memberGetterSub(f1.get, idx2.get) match {
           | err @ STErrorOnTType _ ->
             return STRecFieldsFieldIndex(
               err,
