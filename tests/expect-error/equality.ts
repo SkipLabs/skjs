@@ -339,43 +339,65 @@ class FreshCtor {
 }
 
 function freshObjectLiteral(x: { a: number }, y: object): boolean {
+  // @skjs-expect-warning This comparison is always false because a newly created object is never equal to any other value
   const a = x === { a: 1 };
+  // @skjs-expect-warning This comparison is always false because a newly created object is never equal to any other value
   const b = y === {};
+  // @skjs-expect-warning This comparison is always true because a newly created object is never equal to any other value
   const c = { a: 1 } !== x;
+  // @skjs-expect-warning This comparison is always false because a newly created object is never equal to any other value
   const d = {} === {};
   return a && b && c && d;
 }
 
 function freshArrayLiteral(xs: number[], ys: readonly [1, 2]): boolean {
+  // @skjs-expect-warning This comparison is always false because a newly created object is never equal to any other value
   const a = xs === [];
+  // @skjs-expect-warning This comparison is always false because a newly created object is never equal to any other value
   const b = xs === [1, 2];
+  // @skjs-expect-warning This comparison is always true because a newly created object is never equal to any other value
   const c = [] !== xs;
+  // @skjs-expect-warning This comparison is always false because a newly created object is never equal to any other value
   const d = [] === [];
+  // @skjs-expect-warning This comparison is always false because a newly created object is never equal to any other value
   const e = ys === ([1, 2] as readonly [1, 2]);
   return a && b && c && d && e;
 }
 
 function freshClosure(f: () => void, af: () => Promise<void>): boolean {
+  // @skjs-expect-warning This comparison is always false because a newly created object is never equal to any other value
   const a = f === (() => {});
+  // @skjs-expect-warning This comparison is always false because a newly created object is never equal to any other value
   const b = af === (async () => {});
+  // @skjs-expect-warning This comparison is always true because a newly created object is never equal to any other value
   const c = (() => {}) !== f;
   return a && b && c;
 }
 
 function freshNewInstance(f: FreshBox, b: FreshCtor): boolean {
+  // @skjs-expect-warning This comparison is always false because a newly created object is never equal to any other value
   const r1 = f === new FreshBox();
+  // @skjs-expect-warning This comparison is always false because a newly created object is never equal to any other value
   const r2 = b === new FreshCtor(1);
+  // @skjs-expect-warning This comparison is always true because a newly created object is never equal to any other value
   const r3 = new FreshBox() !== f;
+  // @skjs-expect-warning This comparison is always false because a newly created object is never equal to any other value
   const r4 = new FreshBox() === new FreshBox();
   return r1 && r2 && r3 && r4;
 }
 
 function freshVsUnknownOrGeneric<T>(u: unknown, t: T): boolean {
+  // @skjs-expect-warning This comparison is always false because a newly created object is never equal to any other value
   const a = u === {};
+  // @skjs-expect-warning This comparison is always false because a newly created object is never equal to any other value
   const b = u === [];
+  // @skjs-expect-warning This comparison is always false because a newly created object is never equal to any other value
   const c = u === (() => {});
+  // @skjs-expect-warning This comparison is always false because a newly created object is never equal to any other value
   const d = u === new FreshBox();
+  // @skjs-expect-warning This comparison is always false because a newly created object is never equal to any other value
   const e = t === {};
+  // @skjs-expect-warning This comparison is always false because a newly created object is never equal to any other value
   const f = t === new FreshBox();
   return a && b && c && d && e && f;
 }
@@ -385,25 +407,32 @@ function freshThroughWrappers(
   ro: { readonly a: number },
   f: FreshBox,
 ): boolean {
+  // @skjs-expect-warning This comparison is always false because a newly created object is never equal to any other value
   const a = o === ({ a: 1 } as { a: number });
+  // @skjs-expect-warning This comparison is always false because a newly created object is never equal to any other value
   const b = o === ({ a: 1 } satisfies { a: number });
+  // @skjs-expect-warning This comparison is always false because a newly created object is never equal to any other value
   const c = ({ a: 1 } as const) === ro;
+  // @skjs-expect-warning This comparison is always false because a newly created object is never equal to any other value
   const d = f === (new FreshBox() as FreshBox);
+  // @skjs-expect-warning This comparison is always false because a newly created object is never equal to any other value
   const e = f === (new FreshBox() satisfies FreshBox);
   return a && b && c && d && e;
 }
 
 function freshConditionalBothBranches(c: boolean, x: { a: number }): boolean {
+  // @skjs-expect-warning This comparison is always false because a newly created object is never equal to any other value
   return x === (c ? { a: 1 } : { a: 2 });
 }
 
 function freshVsDisjointPrim(n: number): boolean {
-  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
+  // @skjs-expect-warning This comparison is always false because a newly created object is never equal to any other value
   const a = n === { a: 1 };
-  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
+  // @skjs-expect-warning This comparison is always false because a newly created object is never equal to any other value
   const b = n === [];
-  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
+  // @skjs-expect-warning This comparison is always false because a newly created object is never equal to any other value
   const c = n === new FreshBox();
+  // @skjs-expect-warning This comparison is always false because a newly created object is never equal to any other value
   const d = n === ({} as unknown);
   return a && b && c && d;
 }
@@ -413,10 +442,16 @@ function freshVsVoid(v: void): boolean {
   return v === {};
 }
 
+declare class AmbientFreshBox {
+  x: number;
+  constructor();
+}
+
 function notFreshNoWarning(
   x: { a: number },
   y: { a: number },
   f: FreshBox,
+  amb: AmbientFreshBox,
   ctor: new () => FreshBox,
   s: string,
   n: number,
@@ -424,7 +459,8 @@ function notFreshNoWarning(
 ): boolean {
   const a = x === y;
   const b = f === new ctor();
+  const m = amb === new AmbientFreshBox();
   const d = s === `${n}`;
   const e = x === (c ? { a: 1 } : y);
-  return a && b && d && e;
+  return a && b && m && d && e;
 }

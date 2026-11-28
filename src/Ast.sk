@@ -97,6 +97,7 @@ base class Exportable extends Declarable {
     implements: Array<Type>,
     tparams: Array<TypeParam>,
     bodyRef: ClassBodyRef,
+    isAmbient: Bool = false,
   }
   // `isAmbient` records whether the enum is under a `declare` — its
   // uninitialized members are then opaque (see enumMembers). Unlike other
@@ -124,6 +125,7 @@ fun markAmbientEnumsExportable(d: Exportable): Exportable {
   d match {
   | en @ Enum _ -> en with {isAmbient => true}
   | fd @ TopLevelFunDef _ -> fd with {isAmbient => true}
+  | cls @ Class _ -> cls with {isAmbient => true}
   | Namespace(n, defs) -> Namespace(n, defs.map(markAmbientEnumsDef))
   | other -> other
   }
@@ -472,6 +474,49 @@ extension class Expr(pos: PosRange, value: Expr_) extends Def_ {
       | _ -> false
       }
     | _ -> false
+    }
+  }
+
+  // Whether this expression syntactically evaluates to a freshly allocated
+  // object/function identity that cannot alias any previously existing value
+  // (object literal, array literal, closure / async closure, regexp literal, or
+  // `new` expression — looked through transparent type wrappers `as`,
+  // `as const`, `satisfies`, and conditional expressions where both branches
+  // allocate fresh objects).
+  fun isFreshObject(): Bool {
+    this.value match {
+    | Object _
+    | EArray _
+    | Closure _
+    | Async(Expr(_, Closure _))
+    | Regexp _
+    | New _ ->
+      true
+    | As(inner, _)
+    | AsConst(inner)
+    | Satisfies(inner, _) ->
+      inner.isFreshObject()
+    | EIf(_, thenE, elseE) -> thenE.isFreshObject() && elseE.isFreshObject()
+    | Number _
+    | BigInt _
+    | Var _
+    | Spread _
+    | EString _
+    | TypeOf _
+    | VoidOp _
+    | Await _
+    | Dot _
+    | Get _
+    | Unop _
+    | PostOp _
+    | Binop _
+    | Call _
+    | Params _
+    | In _
+    | InstanceOf _
+    | Async _
+    | TemplateLiteral _ ->
+      false
     }
   }
 }
