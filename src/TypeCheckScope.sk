@@ -176,6 +176,11 @@ mutable class Scope{
   up: ?readonly Scope = None(),
   private mutable locals: SortedMap<String, Name> = SortedMap[],
   private mutable refs: SortedMap<String, LocalRef> = SortedMap[],
+  // Names declared with `var` in this scope (hoisted to the function body's
+  // top-level scope). Distinguished from lexical `let`/`const` bindings so
+  // `var` redeclarations are checked for type agreement (TS2403) while
+  // lexical collisions report TS2451/TS2481.
+  private mutable varLocals: SortedSet<String> = SortedSet[],
   private mutable hasCaptureSummary: Bool = false,
   private mutable captureWrites: ?SortedSet<String> = None(),
   private mutable capturedNames: ?SortedSet<String> = None(),
@@ -369,6 +374,80 @@ mutable class Scope{
       isInitialized,
       isMutable,
     )
+  }
+
+  // Whether `name` is already bound in this scope or in an enclosing
+  // parameter scope (used when hoisting `var` declarations into the function
+  // body's top-level scope).
+  readonly fun hasOwnOrParamBinding(name: String): Bool {
+    if (this.locals.containsKey(name)) {
+      true
+    } else {
+      this.up match {
+      | Some(up) if (up.isParamScope) -> up.locals.containsKey(name)
+      | _ -> false
+      }
+    }
+  }
+
+  // Hoist a `var` binding into the function body's top-level scope.
+  // Never overwrites an existing parameter or previously hoisted `var`.
+  mutable fun bindHoistedVar(
+    name: Name,
+    ty: TType,
+    hasDeclaredContract: Bool,
+    isInitialized: Bool,
+  ): void {
+    this.!locals[name.value] = name;
+    this.!varLocals = this.varLocals.set(name.value);
+    this.!refs[name.value] = LocalRef(
+      ty,
+      ty,
+      hasDeclaredContract,
+      isInitialized,
+      true,
+    )
+  }
+
+  // Look up the enclosing lexical (`let`/`const`/catch-param) binding that
+  // would collide with a `var` declaration at `this` scope, walking up until
+  // the function's top-level body scope (whose `up` is `isParamScope` or
+  // `None()`). A `var` local or function parameter does not collide.
+  readonly fun findCollidingLexical(name: String): ?Name {
+    if (this.locals.containsKey(name) && !this.varLocals.contains(name)) {
+      return this.locals.maybeGet(name)
+    };
+    this.up match {
+    | None() -> None()
+    | Some(up) if (up.isParamScope) -> None()
+    | Some(up) -> up.findCollidingLexical(name)
+    }
+  }
+
+  // Look up the declaration name and current ref of a hoisted `var` (or
+  // matching parameter) in the enclosing function scope, skipping any
+  // intermediate lexical shadowing blocks (already rejected by
+  // `findCollidingLexical` when called at a `var` declaration site).
+  readonly fun lookupDeclaredRef(name: String): ?(Name, LocalRef) {
+    (this.maybeGetLocalValue(name), this.maybeGetRef(name)) match {
+    | (Some(decl), Some((_, ref))) -> Some((decl, ref))
+    | _ -> None()
+    }
+  }
+
+  // Establish the concrete declared contract on a hoisted `var` whose type
+  // was initially an open inference variable (e.g. `var x = 1;`). Updates the
+  // ref in the current scope so subsequent writes and redeclarations check
+  // against the established contract, and preserves `isInitialized`.
+  mutable fun refineVarContract(
+    name: Name,
+    declaredType: TType,
+    hasDeclaredContract: Bool,
+  ): void {
+    this.maybeGetRef(name.value).each(pair -> {
+      ref = pair.i1;
+      this.!refs[name.value] = ref with {declaredType, hasDeclaredContract}
+    })
   }
 
   // Only for names already reserved in this scope. Initialization

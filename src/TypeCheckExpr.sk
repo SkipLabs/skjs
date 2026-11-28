@@ -677,6 +677,7 @@ extension class TypeChecker {
     // this block. See `Scope::uniteFallenInto`.
     fallenFrom: ?readonly Scope = None(),
     reservedStatements: Array<Stmt> = Array[],
+    hoistVars: Bool = false,
   ): (readonly Scope, StmtTermination) {
     scopeCopy = tcenv.scope;
     scope = tcenv.mcreateSubScope{isLoop => false};
@@ -688,10 +689,158 @@ extension class TypeChecker {
     // After `cond`: the fallthrough entry is a separate way in, so its values
     // are unioned with the narrowed own-entry ones, not narrowed by `cond`.
     fallenFrom.each(from -> scope.uniteFallenInto(tcenv.subst, this, from));
+    if (hoistVars) {
+      this.hoistFunctionVars(tcenv, stmts)
+    };
     this.reserveBlockBindings(tcenv, reservedStatements);
     term = this.blockStatements(tcenv, stmts);
     tcenv.!scope = scopeCopy;
     (scope, term)
+  }
+
+  // Hoist all `var` declarations within a function/constructor/lambda body
+  // into the function body's top-level scope before checking any statement.
+  // Nested functions/arrows are inside expressions, so walking statements
+  // naturally stops at function boundaries.
+  fun hoistFunctionVars(tcenv: mutable TCEnv, stmts: Array<Stmt>): void {
+    // Collect `(name, optional explicit annotation)` in source order.
+    collected = mutable Vector<(Name, ?Type)>[];
+    static::collectVarDecls(stmts, collected);
+    // Names declared with `let`/`const` at the top level of the function body
+    // must NOT be overwritten by hoisting a same-named `var`: leave the
+    // lexical reservation intact so the `var` site reports a clean TS2451
+    // redeclaration error without also emitting a bogus TS2403 against the
+    // lexical placeholder.
+    topLexicals = mutable Set<String>[];
+    for (st in stmts) {
+      st.value match {
+      | Bind(kind, bindings) if (!(kind is BKVar())) ->
+        for (binding in bindings) {
+          lexNames = mutable Vector<(Name, ?Type)>[];
+          static::collectPatternNames(binding.pat, lexNames);
+          for (pair in lexNames) {
+            topLexicals.insert(pair.i0.value)
+          }
+        }
+      | _ -> void
+      }
+    };
+    // Track names already hoisted, recording the first explicit annotation (if
+    // any) so the hoisted binding starts with its declared contract when
+    // annotated, or an open TVar when unannotated.
+    byName = mutable Map<String, (Name, ?Type)>[];
+    order = mutable Vector<String>[];
+    for (entry in collected) {
+      (name, annotOpt) = entry;
+      if (!topLexicals.contains(name.value)) {
+        byName.maybeGet(name.value) match {
+        | None() ->
+          order.push(name.value);
+          byName![name.value] = (name, annotOpt)
+        | Some((firstName, None())) if (annotOpt.isSome()) ->
+          byName![name.value] = (firstName, annotOpt)
+        | Some _ -> void
+        }
+      }
+    };
+    for (varName in order) {
+      if (!tcenv.scope.hasOwnOrParamBinding(varName)) {
+        (declName, annotOpt) = byName[varName];
+        annotOpt match {
+        | Some(annotAst) ->
+          ty = this.normalize(tcenv, annotAst);
+          ArrayLitTyping::establishLiteralForms(
+            tcenv.subst,
+            this,
+            ty,
+            TType::top(declName.pos),
+            Some(Covariant()),
+          );
+          undefinedTy = TType::single(TPrimUnit(TUndefined(), declName.pos));
+          isInitialized = this.materializeSubtypeDecision(
+            tcenv,
+            declName.pos,
+            undefinedTy,
+            ty,
+          );
+          tcenv.scope.bindHoistedVar(declName, ty, true, isInitialized)
+        | None() ->
+          ty = this.newTVar(tcenv, declName.pos, FromUntypedVar(declName.pos));
+          tcenv.scope.bindHoistedVar(declName, ty, false, false)
+        }
+      }
+    }
+  }
+
+  private static fun collectVarDecls(
+    stmts: Array<Stmt>,
+    out: mutable Vector<(Name, ?Type)>,
+  ): void {
+    for (st in stmts) {
+      static::collectVarDeclsStmt(st, out)
+    }
+  }
+
+  private static fun collectVarDeclsStmt(
+    st: Stmt,
+    out: mutable Vector<(Name, ?Type)>,
+  ): void {
+    st.value match {
+    | Bind(BKVar(), bindings) ->
+      for (binding in bindings) {
+        // Explicit annotation applies directly only to a simple `var x: T`.
+        // Destructuring patterns like `var { a }: { a: number }` infer each
+        // leaf binding's type when the declaration executes.
+        binding.pat.value match {
+        | PVar(name) -> out.push((name, binding.type))
+        | _ -> static::collectPatternNames(binding.pat, out)
+        }
+      }
+    | Block(body) -> static::collectVarDecls(body, out)
+    | If(_, yes, no) ->
+      static::collectVarDecls(yes, out);
+      no.each(ss -> static::collectVarDecls(ss, out))
+    | For(init, _, _, body) ->
+      static::collectVarDeclsStmt(init, out);
+      static::collectVarDecls(body, out)
+    | ForInOf(_, init, _, body) ->
+      static::collectVarDeclsStmt(init, out);
+      static::collectVarDecls(body, out)
+    | While(_, body) -> static::collectVarDecls(body, out)
+    | Switch(_, branches) ->
+      for (b in branches) {
+        static::collectVarDecls(b.block, out)
+      }
+    | Try(body, catch_, finally_) ->
+      static::collectVarDecls(body, out);
+      catch_.each(c -> static::collectVarDecls(c.body, out));
+      finally_.each(ss -> static::collectVarDecls(ss, out))
+    | Bind _
+    | StmtEmpty()
+    | StmtExpr _
+    | Break()
+    | Continue()
+    | Return _
+    | Throw _ ->
+      void
+    }
+  }
+
+  private static fun collectPatternNames(
+    pat: Pattern,
+    out: mutable Vector<(Name, ?Type)>,
+  ): void {
+    pat.value match {
+    | PVar(name) -> out.push((name, None()))
+    | PArray(elements, rest) ->
+      elements.each(el ->
+        el.each(item -> static::collectPatternNames(item.i0, out))
+      );
+      rest.each(name -> out.push((name, None())))
+    | PObject{fields, rest} ->
+      fields.each(f -> static::collectPatternNames(f.i1, out));
+      rest.each(name -> out.push((name, None())))
+    }
   }
 
   // Shared by ordinary and exception-handling blocks. Reserve lexical
@@ -708,12 +857,12 @@ extension class TypeChecker {
     term
   }
 
-  // Only direct declarations belong to this block; nested scopes reserve
-  // their own names when entered. Conditions have already been checked.
+  // Only direct lexical declarations (`let`/`const`) belong to this block;
+  // `var` declarations are hoisted to the function body scope instead.
   fun reserveBlockBindings(tcenv: mutable TCEnv, stmts: Array<Stmt>): void {
     for (stmt in stmts) {
       stmt.value match {
-      | Bind(kind, bindings) ->
+      | Bind(kind, bindings) if (!(kind is BKVar())) ->
         for (binding in bindings) {
           this.reserveBindingNames(
             tcenv,
@@ -779,6 +928,153 @@ extension class TypeChecker {
     )
   }
 
+  // Bind a single `var` identifier at its declaration site. The binding itself
+  // was already hoisted to the enclosing function body's scope (or shares a
+  // parameter's binding). Here we:
+  // 1. Reject collisions with any lexical (`let`/`const`/catch) binding in the
+  //    same or enclosing block up to the function scope (TS2451 / TS2481).
+  // 2. Check type agreement with the existing binding's declared type (TS2403).
+  // 3. When this declaration carries an initializer (`isVarInit = true`), perform
+  //    a runtime write to update flow type and initialization state; a bare
+  //    redeclaration without initializer preserves the existing flow state.
+  private fun bindVarName(
+    tcenv: mutable TCEnv,
+    local: Name,
+    type: TType,
+    hasDeclaredContract: Bool,
+    isInitialized: Bool,
+    isLocalObject: Bool,
+    isVarInit: Bool,
+  ): void {
+    tcenv.scope.findCollidingLexical(local.value) match {
+    | Some(otherDef) ->
+      tcenv.error(
+        Array[
+          (local.pos, `Cannot redeclare block-scoped variable '${local}'`),
+          (otherDef.pos, "Previous definition was here"),
+        ],
+        TSCode(2451),
+      );
+      return void
+    | None() -> void
+    };
+    tcenv.scope.lookupDeclaredRef(local.value) match {
+    | None() ->
+      // Fallback when `var` is checked outside a hoisted function block (e.g.
+      // synthetic top-level CFG pass).
+      if (isLocalObject && !tcenv.scope.isThroughLoop(local)) {
+        tcenv.localObjects![local.pos] = LOCanGrow(None())
+      };
+      tcenv.scope.bind(
+        tcenv,
+        local,
+        type,
+        hasDeclaredContract,
+        isInitialized,
+        true,
+      )
+    | Some((declName, ref)) ->
+      // If this `var` binding comes from a fresh object literal field's
+      // growable TVar (`var { a } = { a: 0 }`), widen its literal primitive
+      // bound to the base primitive (`number` / `string` / `boolean` / `bigint`),
+      // matching TypeScript's mutable-binding widening for `var`.
+      !type = type.getSingleVar() match {
+      | Some(
+        tvar,
+      ) if (tcenv.subst.getOrigin(tvar) is Some(FromObjectField _)) ->
+        tcenv.subst.peek(this, tvar) match {
+        | Some(boundTy) ->
+          boundTy.getSTypes(tcenv.subst, this, Covariant()).flatMap(s ->
+            s.singleElt()
+          ) match {
+          | Some(TPrimValue(k, Some _, p)) ->
+            TType::single(TPrimValue::full(k, p))
+          | Some(TPrimString(Some _, p)) -> TType::single(TPrimString::full(p))
+          | _ -> type
+          }
+        | None() -> type
+        }
+      | _ -> type
+      };
+      // Determine whether the hoisted `var` already has an established type
+      // (from an explicit annotation, a function parameter, or an earlier
+      // declaration/write — including in a sibling branch via
+      // `hoistedVarContracts`).
+      (declType, declHasContract) = tcenv.hoistedVarContracts.maybeGet(
+        declName.pos,
+      ) match {
+      | Some(pair) -> pair
+      | None() -> (ref.declaredType, ref.hasDeclaredContract)
+      };
+      isUnsettledVar =
+        !declHasContract &&
+        (declType.getSingleVar() match {
+        | Some(tvar) ->
+          tcenv.subst.peek(this, tvar) match {
+          | None() -> true
+          | Some(ty) -> ty.isBottom()
+          }
+        | None() -> false
+        });
+      if (isUnsettledVar) {
+        // First declaration of an unannotated hoisted `var` establishes its
+        // contract (for both later redeclarations and writes across branches).
+        newHasContract = hasDeclaredContract || type.isConcretePrimitive();
+        tcenv.hoistedVarContracts![declName.pos] = (type, newHasContract);
+        tcenv.scope.refineVarContract(local, type, newHasContract);
+        if (isLocalObject && !tcenv.scope.isThroughLoop(local)) {
+          tcenv.localObjects![declName.pos] = LOCanGrow(None())
+        }
+      } else {
+        // Ensure this scope's ref carries the established contract if it came
+        // from a sibling branch.
+        if (
+          declType != ref.declaredType ||
+          declHasContract != ref.hasDeclaredContract
+        ) {
+          tcenv.scope.refineVarContract(local, declType, declHasContract)
+        };
+        // Check TS2403: subsequent `var` declarations must have the same type
+        // as the existing binding (mutual subtyping).
+        if (hasDeclaredContract || isVarInit) {
+          sameType =
+            this.materializeSubtypeDecision(tcenv, local.pos, type, declType) &&
+            this.materializeSubtypeDecision(tcenv, local.pos, declType, type);
+          if (!sameType) {
+            tcenv.error(
+              Array[
+                (
+                  local.pos,
+                  `Subsequent variable declarations must have the same type. Variable '${
+                    local.value
+                  }' must be of type ${this.ppType(
+                    tcenv,
+                    declType,
+                  )}, but here has type ${this.ppType(tcenv, type)}`,
+                ),
+                (declName.pos, "Previous declaration was here"),
+              ],
+              TSCode(2403),
+            );
+            return void
+          }
+        }
+      };
+      if (isVarInit) {
+        tcenv.writeVar(this, local, type, (sub, sup) ->
+          this.checkSubType(
+            tcenv,
+            local.pos,
+            "Type is not assignable to the variable's type",
+            sub,
+            sup,
+            TSCode(2322),
+          )
+        )
+      }
+    }
+  }
+
   fun bind(
     tcenv: mutable TCEnv,
     kind: BindKind,
@@ -789,32 +1085,45 @@ extension class TypeChecker {
     isLocalObject: Bool,
     isParameter: Bool = false,
     stableType: ?TType = None(),
+    isVarInit: Bool = true,
   ): void {
     pos = pat.pos;
     pat.value match {
     | PVar(local) ->
-      if (isLocalObject && !tcenv.scope.isThroughLoop(local)) {
-        // Key by this binding's own declaration position; distinct same-name
-        // bindings get distinct entries (no stale reuse).
-        tcenv.localObjects![local.pos] = LOCanGrow(None())
-      };
-      if (tcenv.pendingBindings.contains(local.pos)) {
-        tcenv.scope.initializeReservedBinding(
-          local,
-          type,
-          hasDeclaredContract,
-          isInitialized,
-        );
-        tcenv.!pendingBindings = tcenv.pendingBindings.remove(local.pos)
-      } else {
-        tcenv.scope.bind(
+      if (kind is BKVar()) {
+        this.bindVarName(
           tcenv,
           local,
           type,
           hasDeclaredContract,
           isInitialized,
-          !(kind is BKConst()),
+          isLocalObject,
+          isVarInit,
         )
+      } else {
+        if (isLocalObject && !tcenv.scope.isThroughLoop(local)) {
+          // Key by this binding's own declaration position; distinct same-name
+          // bindings get distinct entries (no stale reuse).
+          tcenv.localObjects![local.pos] = LOCanGrow(None())
+        };
+        if (tcenv.pendingBindings.contains(local.pos)) {
+          tcenv.scope.initializeReservedBinding(
+            local,
+            type,
+            hasDeclaredContract,
+            isInitialized,
+          );
+          tcenv.!pendingBindings = tcenv.pendingBindings.remove(local.pos)
+        } else {
+          tcenv.scope.bind(
+            tcenv,
+            local,
+            type,
+            hasDeclaredContract,
+            isInitialized,
+            !(kind is BKConst()),
+          )
+        }
       }
     | PArray(arrPat, rest) ->
       // Iterator acquisition, advancement, and closing can invoke user code.
@@ -4852,7 +5161,7 @@ extension class TypeChecker {
           )
         };
         !this.retType = Some(tvar);
-        _ = this.block(tcenv, bl);
+        _ = this.block(tcenv, bl, None(), None(), Array[], true);
         tvar
       }
     | Some(annotatedTypeAst) ->
@@ -4886,7 +5195,7 @@ extension class TypeChecker {
         | CBBlock(bl) ->
           if (isAsync is Some _) !this.isAsync = true;
           !this.retType = Some(annotatedType);
-          _ = this.block(tcenv, bl)
+          _ = this.block(tcenv, bl, None(), None(), Array[], true)
         }
       );
       annotatedType

@@ -1,6 +1,5 @@
-// Conformance mode (`"conformance": true`): `var` in a function body is
-// accepted and checked like `let` (block-scoped, mutable; hoisting is not
-// modeled, SkipLabs/skjs#841).
+// `var` in a function body is supported in both default and conformance mode
+// (function-scoped and hoisted, SkipLabs/skjs#841).
 
 function f(): void {
   var x = 1;

@@ -287,9 +287,8 @@ class TsCompilerOptions{
   // SKJS-specific conformance mode (CLI `--conformance`, tsconfig
   // `"conformance": true`): relax SKJS-specific restrictions so TypeScript
   // files can be checked verbatim, as the TypeScript conformance suite
-  // requires — `var` declarations (checked like `let`: hoisting and
-  // function scoping are not modeled, SkipLabs/skjs#841) and top-level
-  // `let`/`var`. Off by default.
+  // requires — top-level `let`/`var` and non-void top-level statements. Off
+  // by default.
   conformance: Bool = false,
   // SKJS-specific option, not a tsc one: keep the user-written spelling of
   // number/bigint literals (e.g. `0xf`) for diagnostics instead of printing

@@ -1,10 +1,9 @@
-// Default mode: `var` is rejected everywhere — in function bodies with the
-// `no-var` lint error, and at the top level as not supported. Conformance
-// mode (`"conformance": true`, see tests/projects/conformance-mode/) relaxes
-// this; see skjs-rules.md "Conformance mode".
+// Default mode: `var` in function bodies is supported (function-scoped and
+// hoisted, SkipLabs/skjs#841); top-level `var` and `let` remain rejected in
+// default mode and are accepted in conformance mode (`"conformance": true`,
+// see tests/projects/conformance-mode/ and skjs-rules.md "Conformance mode").
 
 function f(): void {
-  // @skjs-expect-error Unexpected 'var'; use 'let' or 'const' instead
   var x = 1;
   x = 2;
 }

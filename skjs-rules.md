@@ -7,7 +7,7 @@ Normative specification of the TypeScript subset checked by SKJS. Where a rule i
 - [Diagnostics: errors vs warnings](#diagnostics-errors-vs-warnings)
 - [Conformance Mode](#conformance-mode)
 - [Key Rules & Restrictions](#key-rules--restrictions)
-  - Scope & bindings: [1. Top-level `let`](#1-no-toplevel-let-declarations) · [1b. Top-level `const` destructuring](#1b-no-destructuring-in-top-level-const-declarations) · [31. Annotated writes & evolving `let`](#31-writes-are-checked-against-an-explicit-annotation-only)
+  - Scope & bindings: [1. Top-level `let`/`var` & function-scoped `var`](#1-toplevel-let--var-and-function-scoped-var-declarations) · [1b. Top-level `const` destructuring](#1b-no-destructuring-in-top-level-const-declarations) · [31. Annotated writes & evolving `let`](#31-writes-are-checked-against-an-explicit-annotation-only)
   - Types, literals & operators: [2. Delayed array literals](#2-array-literals-use-delayed-typing) · [8. `keyof`](#8-keyof-operator) · [9. Literal typing & `as const`](#9-literal-typing-and-as-const) · [17. No `any`](#17-the-any-type-is-not-supported) · [18. Template literal strings](#18-template-literal-strings) · [18b. Template literal types](#18b-template-literal-types-partially-supported) · [19. `as` casts](#19-as-casts-are-checked-for-soundness) · [30. Number literals](#30-number-literal-normalization) · [30b. String escapes](#30b-string-literal-escape-decoding) · [30c. Identifier chars](#30c-identifier-characters) · [31. Enums](#31-enums-value-set-semantics) · [33. Circular type params](#33-circular-type-parameter-defaults-and-constraints)
   - Objects, fields & mutability: [27. Readonly field soundness](#27-readonly-field-soundness-stricter-than-typescript) · [28. Optional fields exact](#28-optional-fields-are-exact-present--t) · [28. Index signatures](#28-index-signatures) · [28b. `Closed<T>`](#28b-closedt--closed-object-types-skjs-extension) · [28. Object spread soundness](#28-object-spread-soundness-stricter-than-typescript)
   - Functions & classes: [3. Class inheritance constructors](#3-class-inheritance-constructor-signatures) · [4b. Abstract classes/methods](#4b-abstract-methods-not-supported) · [4c. Static readonly fields](#4c-static-fields-must-be-readonly) · [10. Function overloads](#10-function-overloading-functions-methods-constructors-call-signatures) · [12. Function expressions](#12-function-expressions-not-supported) · [16. Explicit function annotations](#16-function-signatures-must-be-fully-annotated) · [16b. Ambient un-annotated class fields](#16b-un-annotated-class-fields-are-opaque-ambient-classes) · [32. `this` parameter](#32-the-this-parameter--differences-from-typescript) · [35. Nominal classes](#35-class-instance-types-are-nominal-stricter-than-typescript)
@@ -48,17 +48,19 @@ In tests, warnings are asserted with `// @skjs-expect-warning`; see [docs/testin
 
 SKJS-specific option — CLI `--conformance`, tsconfig `"conformance": true` — off by default. It relaxes SKJS-specific restrictions so that TypeScript files can be checked **verbatim, without modifications**, the way the TypeScript conformance suite (`tests/ts-conformance/`) requires:
 
-- `var` declarations are accepted instead of rejected with the `no-var` error (`Unexpected 'var'; use 'let' or 'const' instead`). Inside a function body a `var` is checked **like `let`**: block-scoped and mutable. Hoisting and function scoping are not modeled (tracked in SkipLabs/skjs#841), so code that relies on them is still rejected.
 - Top-level `let`/`var` are accepted instead of "toplevel let/var is not supported by SKJS". A top-level `var`/`let` reference reads at its annotation, else its widened initializer type, and top-level assignment to it is checked against that type (a top-level `const` stays read-only, TS2588). Top-level bindings do not narrow on write. Top-level expression statements of any type are also accepted (default mode requires them to be `void`).
 
 Conformance mode deliberately trades some of SKJS's stricter guarantees for tsc compatibility; the default mode remains strict.
 
 ## Key Rules & Restrictions
 
-### 1. No Toplevel `let` Declarations
-- **Rule**: Cannot use `let` at top level in default mode (accepted in conformance mode — see [Conformance Mode](#conformance-mode)).
-- **Error**: `"toplevel let is not supported by SKJS (ignored)"`
-- **Workaround**: Use functions, classes, or top-level `const`.
+### 1. Toplevel `let` / `var` and Function-Scoped `var` Declarations
+- **Top-level `let` / `var`**: Rejected at top level in default mode (`"toplevel let is not supported by SKJS (ignored)"` / `"toplevel var is not supported by SKJS (ignored)"`); accepted in conformance mode — see [Conformance Mode](#conformance-mode). Use functions, classes, or top-level `const` in default mode.
+- **Function-body `var`**: Supported in all modes with sound JavaScript/TypeScript semantics:
+  - **Function-scoped hoisting**: `var` declarations inside blocks (`{}`, `if`/`else`, `for`, `for..in`/`for..of`, `while`, `do..while`, `switch`, `try`/`catch`/`finally`) hoist to the enclosing function/method/arrow body scope (never escaping function boundaries).
+  - **Pre-initialization soundness**: A hoisted `var` starts uninitialized unless its declared type includes `undefined`; reading it before definite assignment — including inside closures declared before its initializer — is rejected with `TS2454` (`Variable 'x' is used before being assigned`).
+  - **Redeclaration**: Redeclaring `var` in the same function scope (or redeclaring a function parameter with `var`) requires an identical type (mutual subtyping); a mismatch is rejected with `TS2403`. Redeclaring or hoisting a `var` across a colliding `let`/`const`/`catch` binding is rejected with `TS2451`.
+  - **Loop capture soundness**: Loop-declared `var` bindings share a single mutable binding across iterations; closures capturing them see the widened declared type. `for (var x of ...)` and `for (var k in ...)` do not mark an otherwise unassigned `var` as initialized after the loop because the loop may execute zero times.
 
 ### 1b. No Destructuring in **Top-Level** `const` Declarations
 - **Rule**: Destructuring patterns are rejected when the `const` appears at module scope.
