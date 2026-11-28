@@ -266,27 +266,48 @@ extension class TypeChecker {
     typePos: PosRange,
     target: Bool,
   ): void {
+    // Narrow a primitive `typeof` test (`"string"`, `"number"`, etc.).
+    // On the true side, `{}` (any object branch with `admitsPrimitives()`)
+    // narrows to the tested primitive; non-primitive objects are dropped.
+    // On the false side, `{}` is kept (we cannot subtract a single primitive
+    // from `{}`), and non-primitive objects are kept.
+    narrowPrim = (matchesPrim: SType -> Bool, prim: SType) -> {
+      filterMap = x ->
+        if (matchesPrim(x)) {
+          if (target) Some(x) else None()
+        } else {
+          x match {
+          | tObj @ TObject _ if (target) ->
+            if (tObj.admitsPrimitives()) Some(prim) else None()
+          | _ -> if (target) None() else Some(x)
+          }
+        };
+      default = if (target) Some(STypes::single(prim)) else None();
+      this.setLocalFlatMap(tcenv, local, default, filterMap)
+    };
     typeStr match {
     | "symbol" ->
-      filter = x ~> (x is TPrimValue(TSymbol(), _, _)) == target;
-      default = if (target) Some(TPrimValue::symbol(typePos)) else None();
-      this.setLocal(tcenv, local, default, filter)
+      narrowPrim(
+        x -> x is TPrimValue(TSymbol(), _, _),
+        TPrimValue::symbol(typePos),
+      )
     | "string" ->
-      filter = x ~> (x is TPrimString(_, _)) == target;
-      default = if (target) Some(TPrimString::full(typePos)) else None();
-      this.setLocal(tcenv, local, default, filter)
+      narrowPrim(x -> x is TPrimString(_, _), TPrimString::full(typePos))
     | "number" ->
-      filter = x ~> (x is TPrimValue(TNum(), _, _)) == target;
-      default = if (target) Some(TPrimValue::number(typePos)) else None();
-      this.setLocal(tcenv, local, default, filter)
+      narrowPrim(
+        x -> x is TPrimValue(TNum(), _, _),
+        TPrimValue::number(typePos),
+      )
     | "bigint" ->
-      filter = x ~> (x is TPrimValue(TBigInt(), _, _)) == target;
-      default = if (target) Some(TPrimValue::bigint(typePos)) else None();
-      this.setLocal(tcenv, local, default, filter)
+      narrowPrim(
+        x -> x is TPrimValue(TBigInt(), _, _),
+        TPrimValue::bigint(typePos),
+      )
     | "boolean" ->
-      filter = x ~> (x is TPrimValue(TBool(), _, _)) == target;
-      default = if (target) Some(TPrimValue::boolean(typePos)) else None();
-      this.setLocal(tcenv, local, default, filter)
+      narrowPrim(
+        x -> x is TPrimValue(TBool(), _, _),
+        TPrimValue::boolean(typePos),
+      )
     | "undefined" ->
       filter = x ~>
         (x is TPrimUnit(TUndefined(), _) || x is TPrimUnit(TVoid(), _)) ==
@@ -294,16 +315,36 @@ extension class TypeChecker {
       default = None();
       this.setLocal(tcenv, local, default, filter)
     | "object" ->
-      // An object branch is typeof "object" iff it is not typeof "function"
-      // (see TFields::narrowByTypeofFunction); null joins the true branch
-      // below.
+      // An object branch is typeof "object" iff it is non-primitive and not
+      // typeof "function"; null joins the true branch below.
       filterMap = x ~>
         x match {
         | tObj @ TObject _ ->
-          // Never provenCallable here: even when this branch implies the
-          // value is not typeof "object", it may be a primitive inhabitant
-          // of the branch rather than a callable object.
-          tObj.mapOpt(tFields -> tFields.narrowByTypeofFunction(!target, false))
+          if (target) {
+            // `typeof x === "object"` proves non-primitive and non-function.
+            tObj.mapOpt(tFields ->
+              tFields.narrowByTypeofFunction(false, false).map(narrowed ->
+                narrowed.asNonPrimitive()
+              )
+            )
+          } else {
+            // `typeof x !== "object"`:
+            // - A branch that admits primitives (`{}`) may still hold a
+            //   primitive even if `call` is `CAbsent()`, so keep it unchanged.
+            // - A non-primitive branch cannot be a primitive: if it is not
+            //   `typeof "object"`, it must be `typeof "function"`. Strengthen
+            //   `isNonPrimitive` branches (such as `object`) to `CFunction`
+            //   when `call` is `CUnknown`, so a subsequent `typeof !== "function"`
+            //   narrows `object` to `never`. Structural member-bearing shapes
+            //   keep `provenCallable = false` (cf. tests/expect-error/typeof.ts).
+            tObj.mapOpt(tFields ->
+              if (tFields.admitsPrimitives()) {
+                Some(tFields)
+              } else {
+                tFields.narrowByTypeofFunction(true, tFields.isNonPrimitive)
+              }
+            )
+          }
         | TPrimUnit(TNull(), _) -> if (target) Some(x) else None()
         | _ -> if (target) None() else Some(x)
         };
@@ -311,7 +352,7 @@ extension class TypeChecker {
         Some(
           STypes::union(
             STypes::single(TPrimUnit(TNull(), typePos)),
-            STypes::single(TObject::createEmpty(typePos)),
+            STypes::single(TObject::createNonPrimitive(typePos)),
           ),
         )
       } else {
@@ -958,6 +999,30 @@ extension class TypeChecker {
     default: ?STypes,
     filterMap: SType -> ?SType,
   ): void {
+    this.setLocalMapSTypes(tcenv, local, default, sTypes ->
+      sTypes.filterMap(filterMap)
+    )
+  }
+
+  // Like `setLocalFilterMap`, but allows `flatMap` to change the SType tag
+  // (e.g. narrowing `{}` to `string` on `typeof x === "string"`).
+  fun setLocalFlatMap(
+    tcenv: mutable TCEnv,
+    local: Name,
+    default: ?STypes,
+    flatMap: SType -> ?SType,
+  ): void {
+    this.setLocalMapSTypes(tcenv, local, default, sTypes ->
+      sTypes.flatMapSTypes(flatMap)
+    )
+  }
+
+  private fun setLocalMapSTypes(
+    tcenv: mutable TCEnv,
+    local: Name,
+    default: ?STypes,
+    transform: STypes -> STypes,
+  ): void {
     ty = tcenv.scope.maybeGet(local) match {
     | None() -> /* Non-local */ return void
     | Some(ty) -> ty
@@ -977,7 +1042,7 @@ extension class TypeChecker {
     f = (sTypesOpt) ->
       sTypesOpt match {
       | None() -> default
-      | Some(sTypes) -> Some(sTypes.filterMap(filterMap))
+      | Some(sTypes) -> Some(transform(sTypes))
       };
     // Head expansion was established above. Transform that data without
     // entering inference's expansion adapter again; nested members stay symbolic.

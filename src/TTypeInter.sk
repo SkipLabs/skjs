@@ -183,29 +183,39 @@ extension class TType {
     // Returning the primitive requires a live subtype justification against
     // the object's constraint, which may itself contain inference candidates.
     // Keep its commitments; a discarded clone's success is not sufficient.
+    // Only branches without `isNonPrimitive` can match a boxed primitive
+    // (excludes `object`, object literals, enum objects, and `typeof === "object"`).
     (clauses1.primKind(), clauses2.getObject()) match {
     | (Some(primKind), Some(stype)) ->
-      TType::isSub(
-        subst,
-        tenv,
-        expandPrim(primKind),
-        TType::single(stype),
-      ) match {
-      | STOk() -> return ty1
-      | STError _ -> void
+      stype.mapOpt(b -> if (b.isNonPrimitive) None() else Some(b)) match {
+      | Some(boxable) ->
+        TType::isSub(
+          subst,
+          tenv,
+          expandPrim(primKind),
+          TType::single(boxable),
+        ) match {
+        | STOk() -> return ty1
+        | STError _ -> void
+        }
+      | None() -> void
       }
     | _ -> void
     };
     (clauses2.primKind(), clauses1.getObject()) match {
     | (Some(primKind), Some(stype)) ->
-      TType::isSub(
-        subst,
-        tenv,
-        expandPrim(primKind),
-        TType::single(stype),
-      ) match {
-      | STOk() -> return ty2
-      | STError _ -> void
+      stype.mapOpt(b -> if (b.isNonPrimitive) None() else Some(b)) match {
+      | Some(boxable) ->
+        TType::isSub(
+          subst,
+          tenv,
+          expandPrim(primKind),
+          TType::single(boxable),
+        ) match {
+        | STOk() -> return ty2
+        | STError _ -> void
+        }
+      | None() -> void
       }
     | _ -> void
     };
@@ -318,6 +328,21 @@ extension class STypes {
     }
   }
 
+  // Non-nullish primitives inhabit `{}` (an object branch with
+  // `admitsPrimitives()`), so e.g. `(string | null) & {}` keeps `string`,
+  // while `string & object` drops `string` (#674).
+  private static fun primEmptyObjCross(
+    x: SType,
+    other: InternalKeyedArrayMap<STypeTag, SType>,
+  ): ?SType {
+    (x, other.maybeGet(TagObject())) match {
+    | (TPrimValue _, Some(obj @ TObject _))
+    | (TPrimString _, Some(obj @ TObject _)) if (obj.admitsPrimitives()) ->
+      Some(x)
+    | _ -> None()
+    }
+  }
+
   // Structural intersection delegates only object-field normalization. None
   // denotes bottom; primitive and parameter algebra never accesses a solver.
   static fun interWith(
@@ -350,23 +375,33 @@ extension class STypes {
             }
           },
         )
-      // A void unit unique to one side still meets an undefined unit on the
-      // other side. Guarded against a duplicate TagUndefined key when this
-      // side already has its own undefined unit (which Both then pairs).
+      // Cross-tag meets:
+      // 1. A void unit unique to one side meets an undefined unit on the other
+      //    (guarded against a duplicate TagUndefined key when this side already
+      //    has its own undefined unit, which Both then pairs).
+      // 2. A non-nullish primitive unique to one side meets `{}` on the other.
       | Left(x) ->
         Some(
-          if (stypes1.stypes.maybeGet(TagUndefined()).isNone()) {
-            STypes::voidUndefCross(x, stypes2.stypes)
-          } else {
-            None()
+          STypes::primEmptyObjCross(x, stypes2.stypes) match {
+          | res @ Some _ -> res
+          | None() ->
+            if (stypes1.stypes.maybeGet(TagUndefined()).isNone()) {
+              STypes::voidUndefCross(x, stypes2.stypes)
+            } else {
+              None()
+            }
           },
         )
       | Right(y) ->
         Some(
-          if (stypes2.stypes.maybeGet(TagUndefined()).isNone()) {
-            STypes::voidUndefCross(y, stypes1.stypes)
-          } else {
-            None()
+          STypes::primEmptyObjCross(y, stypes1.stypes) match {
+          | res @ Some _ -> res
+          | None() ->
+            if (stypes2.stypes.maybeGet(TagUndefined()).isNone()) {
+              STypes::voidUndefCross(y, stypes1.stypes)
+            } else {
+              None()
+            }
           },
         )
       }
@@ -483,11 +518,20 @@ extension base class SType {
     | (obj @ TObject _, prim @ TPrimValue _)
     | (prim @ TPrimString _, obj @ TObject _)
     | (obj @ TObject _, prim @ TPrimString _) ->
-      // A primitive overlaps an object type only through its boxed class:
-      // a value of type `Number` can be a primitive number, but a value of
-      // type `{ a: string }` cannot
-      boxed = TType::inst(prim.asClassName(), TArgs(Array[]));
-      TType::isSub(subst, tenv, boxed, TType::single(obj)) is STOk()
+      // A primitive overlaps `{}` directly, and overlaps a structural object
+      // shape only through its boxed class (a value of type `Number` can be a
+      // primitive number, whereas `object` and non-primitive object literals
+      // exclude primitives completely, #674).
+      if (obj.admitsPrimitives()) {
+        true
+      } else {
+        obj.mapOpt(b -> if (b.isNonPrimitive) None() else Some(b)) match {
+        | None() -> false
+        | Some(boxable) ->
+          boxed = TType::inst(prim.asClassName(), TArgs(Array[]));
+          TType::isSub(subst, tenv, boxed, TType::single(boxable)) is STOk()
+        }
+      }
     | (TObject _, TObject _) ->
       // TODO: some object pairs are provably disjoint and could be
       // reported: a shared field with non-overlapping types can leave no
@@ -681,6 +725,7 @@ extension class TFields {
         new,
         isArray,
         classIds,
+        isNonPrimitive => fields1.isNonPrimitive || fields2.isNonPrimitive,
       },
     )
   }

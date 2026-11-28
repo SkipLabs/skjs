@@ -122,10 +122,11 @@ class ObjectSpreadState{
       symbolFields => this.symbolFields,
       tIndexes,
       // An object literal (or spread result) is a plain object: never
-      // callable or constructible.
+      // callable, constructible, or primitive.
       call => CAbsent(),
       new => CAbsent(),
       isArray => Some(false),
+      isNonPrimitive => true,
     }
   }
 
@@ -3877,6 +3878,24 @@ extension class TypeChecker {
             !canBeTrue = true;
             !canBeFalse = true
           | obj @ TObject(_, _, _pos) ->
+            // `{}` admits primitive values at runtime, and `k in prim` throws
+            // a TypeError (ECMA-262 13.10.1), so reject branches that admit
+            // primitives (#674).
+            if (obj.admitsPrimitives()) {
+              tcenv.error(
+                Array[
+                  (
+                    pos,
+                    "The right-hand side of an 'in' expression must be an object",
+                  ),
+                  (e2.pos, `This has type ${this.ppType(tcenv, t2)}`),
+                ],
+                TSCode(2361),
+              );
+              !canBeTrue = true;
+              !canBeFalse = true;
+              continue
+            };
             // Object types are open under width subtyping, so an unnamed key
             // may exist at runtime and `true` stays reachable — UNLESS the
             // key is provably absent: not a named field and covered by a
@@ -4580,7 +4599,10 @@ extension class TypeChecker {
           TObject::createSingleBranch(
             TFields::createFromSorted{
               fields => fieldsMap,
+              call => CAbsent(),
+              new => CAbsent(),
               isArray => Some(false),
+              isNonPrimitive => true,
             }.withNeverIndexes(
               TField::createNeverIndex("k", pos),
               TField::createNeverIndex("s", pos),
