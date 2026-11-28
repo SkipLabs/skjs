@@ -113,9 +113,9 @@ Conformance mode deliberately trades some of SKJS's stricter guarantees for tsc 
 - **Verified by**: `examples/src/console_surface.ts` covers supported calls; `tests/expect-error/console.ts` ensures unsupported helpers like `console.table` stay blocked and that `console.assert` does not narrow.
 
 ### 8. `keyof` Operator
-- **Rule**: `keyof T` is supported on concrete object types, interfaces, classes, tuples, arrays, index signatures, enums (`keyof typeof E`), and primitives.
+- **Rule**: `keyof T` is supported on concrete object types, interfaces, classes, tuples, arrays, index signatures, enums (`keyof typeof E`), unions, `unknown`, `never`, and primitives, with exact contravariant semantics: `keyof unknown` is `never`, `keyof never` is `string | number | symbol`, `keyof (A | B)` is `(keyof A) & (keyof B)` (so `keyof ({ a: number } | null)` is `never`), and `keyof { [k: string]: T }` includes `number` (`string | number`, since JS coerces numeric keys to strings).
 - **Not yet supported**: `keyof` on an abstract type parameter (e.g., `type Keys<T> = keyof T`) is rejected with `"keyof on an abstract type is not yet supported by SKJS; use a known object or array shape with explicit type parameters"`.
-- **Verified by**: `tests/expect-error/keyof.ts`, `tests/expect-error/abstract-type-projection.ts`.
+- **Verified by**: `tests/expect-error/keyof.ts`, `tests/expect-error/abstract-type-projection.ts`, `tests/expect-error/unrepresentable-type-approximations.ts`.
 
 ### 9. Literal Typing and `as const`
 - **Rule**: SKJS automatically uses precise literal types in some contexts but requires the use of `as const` in others
@@ -440,8 +440,8 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
 - **Verified by**: `tests/expect-error/void.ts`
 
 ### 27g. Incomparable Function Signatures Are Not Disjoint in Equality Narrowing
-- **Rule**: two call signatures neither of which subsumes the other can still be inhabited by one function (parameter contravariance: `(x: unknown) => void` is a subtype of both `(s: string) => void` and `(n: number) => void`). So in `if (k === g)` the true branch must not narrow `k` to `never` — the branch is reachable at runtime (issue #768). Refinement keeps the left signature as a sound over-approximation of the shared values. Intersection-type *construction* is unaffected: a materialized `((s: string) => void) & ((n: number) => void)` still collapses to `never`, so an initializer that inhabits only one side is rejected.
-- **Verified by**: `tests/expect-error/equality.ts`
+- **Rule**: two call signatures neither of which subsumes the other can still be inhabited by one function (parameter contravariance: `(x: unknown) => void` is a subtype of both `(s: string) => void` and `(n: number) => void`). So in `if (k === g)` the true branch must not narrow `k` to `never` — the branch is reachable at runtime (issue #768). Refinement keeps the left signature as a sound over-approximation of the shared values. Materialized intersection-type *construction* (`((s: string) => void) & ((n: number) => void)`) concatenates both signatures as an overloaded callable (matching TypeScript): an initializer that inhabits only one side is still rejected (it must satisfy every target overload), while values of the intersection cannot be laundered through `never` and remain callable at every overload.
+- **Verified by**: `tests/expect-error/equality.ts`, `tests/expect-error/unrepresentable-type-approximations.ts`
 
 ### 28. Object Spread Soundness (Stricter than TypeScript)
 - **Rule**: In an object literal with spreads, fields defined before a spread are dropped from the result type

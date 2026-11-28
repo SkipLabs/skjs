@@ -1556,7 +1556,7 @@ class TObject private (
   fun maybeGetRetType(subst: mutable Subst, tenv: TEnv): ?TType {
     this.projectBranches(
       this.pos,
-      fields -> fields.callReturnType(),
+      fields -> fields.zeroArgCallReturnType(subst, tenv),
       (pos, types) -> TType::unionN(subst, tenv, pos, types),
     )
   }
@@ -3416,6 +3416,34 @@ class TFields protected {
 
   fun maybeGetSymbol(uniqueId: String): ?TField {
     this.symbolFields.maybeGet(FieldNameString(uniqueId))
+  }
+
+  fun zeroArgCallReturnType(subst: mutable Subst, tenv: TEnv): ?TType {
+    this.call match {
+    // An overloaded callable satisfies every overload signature, so a zero-arg
+    // call (such as `[Symbol.iterator]()` or `iterator.next()`) returns a value
+    // inhabiting the intersection of all matching zero-arg overload return
+    // types.
+    | CPresent(sig) ->
+      zeroArgRets = sig
+        .allFuns()
+        .filter(f -> f.params.isEmpty())
+        .map(f -> f.retType);
+      if (zeroArgRets.isEmpty()) {
+        this.callReturnType()
+      } else {
+        Some(
+          zeroArgRets.reduce(
+            (acc, ret) -> TType::inter(subst, tenv, acc, ret),
+            zeroArgRets[0],
+          ),
+        )
+      }
+    | CAbsent()
+    | CUnknown()
+    | CFunction() ->
+      None()
+    }
   }
 
   fun callReturnType(): ?TType {

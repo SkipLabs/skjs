@@ -985,15 +985,39 @@ mutable class TypeReadContext private {
     )
   }
 
-  // Pairwise intersection across two overload sets: every kept signature is
-  // accepted by both sides, so the result is a sound set of shared
-  // signatures. NOTE: unlike a materialized `A & B` (see TFuns::inter in
-  // TTypeInter, which concatenates), the OBSERVATION/refinement path must NOT
-  // concatenate: the observed value has to satisfy BOTH sides, so a call
-  // through the result must be accepted by both — keeping only the shared
-  // signatures (or, when narrowing, the left signature as a sound
-  // over-approximation of the shared values) is required for soundness.
+  // Intersect two overload sets.
+  // - For intersection-type construction (`narrowing == false`), keep any
+  //   more-specific signature when one side subsumes the other (avoiding
+  //   redundant overloads like `(readonly number[]) & (readonly unknown[])`
+  //   on inherited methods), and concatenate incomparable signatures as an
+  //   overloaded callable (matching tsc's overloaded-intersection semantics).
+  //   Collapsing incomparable signatures to `never` is unsound because an
+  //   inhabited overloaded function type would launder into arbitrary types.
+  // - For control-flow refinement (`narrowing == true`), keep pairwise shared
+  //   signatures — or the left signature when incomparable (SkipLabs/skjs#768)
+  //   as a sound over-approximation of the shared values — rather than
+  //   concatenating, because equality narrowing must not widen the callable
+  //   signatures of an observed value beyond what is proven.
   private mutable fun funsInter(a: TFuns, b: TFuns, narrowing: Bool): ?TFuns {
+    if (!narrowing) {
+      all = a.allFuns().concat(b.allFuns());
+      allCgs = all.foldl(
+        (acc, f) -> acc.union(f.cgNodes),
+        CGNodes(SortedSet[]),
+      );
+      aSubB = this.funsSubtype(a, b) is STOk();
+      bSubA = this.funsSubtype(b, a) is STOk();
+      kept = if (aSubB) {
+        a.allFuns()
+      } else if (bSubA) {
+        b.allFuns()
+      } else {
+        all
+      };
+      return Some(
+        TFuns::multiple(kept.map(f -> f with {cgNodes => allCgs}), a.pos),
+      )
+    };
     merged = mutable Vector[];
     for (x in a.allFuns()) {
       for (y in b.allFuns()) {
@@ -1005,9 +1029,8 @@ mutable class TypeReadContext private {
           // inhabit both via parameter contravariance, so refinement must
           // not collapse the branch to bottom (SkipLabs/skjs#768). Keep the
           // left signature as a sound over-approximation of the shared
-          // values. Intersection-type construction (narrowing == false)
-          // keeps bottom, so a materialized `A & B` stays a subtype of both.
-          if (narrowing) Some(x) else None(),
+          // values.
+          Some(x),
         ).each(f -> merged.push(f))
       }
     };
@@ -1058,16 +1081,40 @@ mutable class TypeReadContext private {
   }
 
   private mutable fun iteratorElement(obj: TObject, pos: PosRange): ?TType {
+    // An overloaded callable (e.g. `[Symbol.iterator]` on an intersection of
+    // two iterables `A & B`) satisfies every overload signature, so the return
+    // value of a zero-arg call satisfies the intersection of all matching
+    // signatures' return types — not their union.
+    callRet = (fields: TFields) ->
+      fields.call match {
+      | CPresent(sig) ->
+        zeroArgRets = sig
+          .allFuns()
+          .filter(f -> f.params.isEmpty())
+          .map(f -> f.retType);
+        if (zeroArgRets.isEmpty()) {
+          fields.callReturnType()
+        } else {
+          Some(
+            zeroArgRets.reduce(
+              (acc, ret) -> this.intersection(acc, ret, false),
+              zeroArgRets[0],
+            ),
+          )
+        }
+      | CAbsent()
+      | CUnknown()
+      | CFunction() ->
+        None()
+      };
     TType::iteratorElementWith(
       this.symbolId(pos, "iterator").flatMap(id ->
         this.readMember(obj, pos, fields -> fields.maybeGetSymbol(id))
       ),
       type -> this.objectHead(type, Covariant()),
       callable ->
-        callable.projectBranches(
-          callable.pos,
-          fields -> fields.callReturnType(),
-          (position, types) -> TType::unionStructuralN(position, types),
+        callable.projectBranches(callable.pos, callRet, (position, types) ->
+          TType::unionStructuralN(position, types)
         ),
       (object, name) ->
         this.readMember(object, pos, fields -> fields.maybeGet(name))
